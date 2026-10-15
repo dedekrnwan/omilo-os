@@ -1,5 +1,5 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image
+.PHONY: dev api venv web test cli image reset
 
 dev: web api
 
@@ -29,3 +29,8 @@ cli:
 
 image:
 	docker build -t ghcr.io/super-saga/saga-os:dev .
+
+# Start over: moves your Saga OS data (account, helpers, tasks, keys) aside. Stop the server first.
+reset:
+	@if lsof -nP -iTCP:$${SAGA_PORT:-7700} -sTCP:LISTEN >/dev/null 2>&1; then echo "Saga OS is still running on port $${SAGA_PORT:-7700}. Stop it (Ctrl+C) first."; exit 1; fi
+	@d="$${SAGA_DATA_DIR:-$$HOME/.saga-os}"; if [ -d "$$d" ]; then mv "$$d" "$$d-old-$$(date +%Y%m%d-%H%M%S)" && echo "Moved $$d aside. Run make dev to start fresh."; else echo "Nothing to reset ($$d does not exist)."; fi

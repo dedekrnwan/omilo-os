@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -9,6 +9,9 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {  // a fresh (or reset) install has no account yet: go to setup instead
+    api<{ needs_owner: boolean }>("/setup").then((s) => { if (s.needs_owner) router.replace("/setup/"); }).catch(() => {});
+  }, [router]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
