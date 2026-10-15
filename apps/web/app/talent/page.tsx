@@ -1,7 +1,8 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Err, Markdown } from "@/components/ui";
+import { Err } from "@/components/ui";
+import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
 
 /* The talent library: specialists from The Agency (github.com/msitarzewski/agency-agents, MIT).

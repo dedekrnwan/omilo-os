@@ -30,6 +30,10 @@ def engine():
                 cur = conn.cursor()
                 cur.execute("PRAGMA journal_mode=WAL")
                 cur.execute("PRAGMA foreign_keys=ON")
+                cur.execute("PRAGMA synchronous=NORMAL")   # safe with WAL, far fewer disk syncs
+                cur.execute("PRAGMA cache_size=-20000")    # ~20 MB page cache
+                cur.execute("PRAGMA temp_store=MEMORY")
+                cur.execute("PRAGMA busy_timeout=30000")
                 cur.close()
 
         _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)

@@ -1,4 +1,5 @@
 "use client";
+import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
@@ -23,7 +24,7 @@ export default function Harness() {
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => { try { setPool(await api<Pool>("/harness")); } catch (e: any) { setErr(e.message); } }, []);
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
+  usePoll(load, 15000, [load]);
   useEffect(() => { if (pool?.cli.install.state !== "running") return; const t = setInterval(load, 2000); return () => clearInterval(t); }, [pool?.cli.install.state, load]);
 
   const add = async () => {

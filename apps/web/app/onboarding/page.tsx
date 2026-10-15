@@ -3,7 +3,8 @@ import { useRouter } from "next/navigation";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import HermesSetup, { HermesInfo } from "@/components/HermesSetup";
-import { Err, Markdown } from "@/components/ui";
+import { Err } from "@/components/ui";
+import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
 
 /* Hybrid onboarding: a guided form (left) and a setup assistant (right) that fills the form from what the

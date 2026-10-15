@@ -1,11 +1,12 @@
 "use client";
+import { kick, usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import ComposerTools, { Attached } from "@/components/ComposerTools";
-import { Attachments } from "@/components/Markdown";
-import { Err, Markdown, StatusChip } from "@/components/ui";
+import { Err, StatusChip } from "@/components/ui";
+import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
 
 /* The workspace: chat and work on one page (toggle top right), with a side panel for progress, output and the browser. */
@@ -147,10 +148,10 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
     try { setT(await api<Task>(`/tasks/${id}`)); } catch (e: any) { setErr(e.message); }
     if (asked) { try { setTh(await api<FullThread>("/threads", { body: { scope: "task", ref_id: id } })); } catch { /* ignore */ } }
   }, [id, asked]);
-  useEffect(() => { load(); const i = setInterval(load, 2500); return () => clearInterval(i); }, [load]);
+  usePoll(load, () => (t && ["queued", "running"].includes(t.status) ? 2500 : 15000), [load], (n) => n?.url?.includes(id));
   const answer = async (o: string) => {
     if (!th) return;
-    try { setTh(await api<FullThread>(`/threads/${th.id}/messages`, { body: { text: o } })); } catch (e: any) { setErr(e.message); }
+    try { setTh(await api<FullThread>(`/threads/${th.id}/messages`, { body: { text: o } })); kick(id); } catch (e: any) { setErr(e.message); }
   };
   if (!t) return <div className="ws-inner"><Err error={err} /></div>;
   const runs = toRuns(events);
@@ -236,7 +237,7 @@ function WorkspaceInner() {
       setThreads(th); setTasks(tk); setStaff(st);
     } catch (e: any) { setErr(e.message); }
   }, []);
-  useEffect(() => { loadLists(); const t = setInterval(loadLists, 5000); return () => clearInterval(t); }, [loadLists]);
+  usePoll(loadLists, 20000, [loadLists], (n) => n?.kind === "reply" || n?.kind?.startsWith("job"));
 
   const go = useCallback((q: Record<string, string>) => { router.replace(`/chat/?${new URLSearchParams(q)}`); setListOpen(false); }, [router]);
   const openThread = useCallback(async (body: Record<string, string>) => {
@@ -244,14 +245,16 @@ function WorkspaceInner() {
   }, [go]);
   useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "master" }); }, [view, tid, openThread]);
 
-  useEffect(() => {
-    if (view !== "chat" || !tid) { setCurrent(null); return; }
-    let stop = false;
-    const tick = async () => { try { const th = await api<FullThread>(`/threads/${tid}`); if (!stop) setCurrent(th); } catch (e: any) { setErr(e.message); } };
-    tick();
-    const t = setInterval(tick, 1500);
-    return () => { stop = true; clearInterval(t); };
-  }, [view, tid]);
+  // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
+  // unchanged threads cost a 304 thanks to the server's ETag
+  const awaiting = useRef(false);
+  awaiting.current = !!current?.awaiting_reply;
+  useEffect(() => { if (view !== "chat" || !tid) setCurrent(null); }, [view, tid]);
+  usePoll(async () => {
+    if (view !== "chat" || !tid) return;
+    const want = tid;
+    try { const th = await api<FullThread>(`/threads/${want}`); setCurrent((cur) => (want === tid ? th : cur)); } catch (e: any) { setErr(e.message); }
+  }, () => (awaiting.current ? 1500 : 12000), [view, tid], (n) => !!tid && n?.url?.includes(tid));
 
   const threadEvents = useEvents(view === "chat" && tid ? { thread_id: tid } : null);
   const taskEvents = useEvents(view === "work" && taskId && taskId !== "new" ? { task_id: taskId } : null);
@@ -265,7 +268,7 @@ function WorkspaceInner() {
     const body = { text: t.trim() || `(attached ${att.length} file${att.length > 1 ? "s" : ""})`,
       blocks: att.length ? att.map((f) => ({ type: "file", ...f })) : undefined };
     setText(""); setFiles([]);
-    try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body })); } catch (e: any) { setErr(e.message); setText(t); setFiles(att); }
+    try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body })); awaiting.current = true; kick(tid); } catch (e: any) { setErr(e.message); setText(t); setFiles(att); }
   };
 
   const chief = staff.find((s) => s.is_chief);

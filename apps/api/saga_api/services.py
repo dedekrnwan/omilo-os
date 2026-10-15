@@ -13,6 +13,7 @@ from croniter import croniter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import notify as _notify  # noqa: F401  (registers the notice hook)
 from . import policy
 from .config import get_settings
 from .models import (

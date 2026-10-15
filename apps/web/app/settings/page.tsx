@@ -1,8 +1,10 @@
 "use client";
+import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import HermesSetup from "@/components/HermesSetup";
+import NotifySettings from "@/components/NotifySettings";
 import { Err } from "@/components/ui";
 import { api, when } from "@/lib/api";
 
@@ -37,7 +39,7 @@ export default function Settings() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {  // helpers' AI can come up a few seconds after a change
-    const t = setInterval(async () => { try { setHealth(await api("/health/engines")); } catch { /* next time */ } }, 8000);
+    const t = setInterval(async () => { if (document.hidden) return; try { setHealth(await api("/health/engines")); } catch { /* next time */ } }, 30000);
     return () => clearInterval(t);
   }, []);
   useEffect(() => { if (overview) setConc(overview.max_concurrent_tasks); }, [overview]);
@@ -61,6 +63,7 @@ export default function Settings() {
   return (
     <div>
       <h1>Settings</h1>
+      <NotifySettings />
       <div className="paper" style={{ marginBottom: 24 }}>
         <h2>AI</h2>
         <p className="note">The AI your helpers think with.</p>

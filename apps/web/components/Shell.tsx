@@ -1,9 +1,11 @@
 "use client";
+import { usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
 import { ApiError, Overview, api } from "@/lib/api";
-import { PreviewHost } from "./Markdown";
+import PreviewHost from "./PreviewLazy";
+import NotifyHost from "./Notify";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"]] },
@@ -49,11 +51,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     })();
   }, [bare, path, refresh, router]);
 
-  useEffect(() => {
-    if (bare || !ready) return;
-    const t = setInterval(refresh, 10000);
-    return () => clearInterval(t);
-  }, [bare, ready, refresh]);
+  usePoll(() => { if (!bare && ready) return refresh(); }, 30000, [bare, ready, refresh]); // live notices refresh it sooner
 
   useEffect(() => {
     const n = overview?.inbox.open || 0;
@@ -100,6 +98,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     <OverviewCtx.Provider value={{ overview, refresh }}>
       <div className="frame">
         <PreviewHost />
+        {ready && !bare && <NotifyHost onNotice={refresh} />}
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Saga OS"}</b>
           <span className="sp" />

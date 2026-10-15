@@ -3,7 +3,8 @@ import datetime as dt
 import json
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -486,7 +487,22 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.get("/threads/{thid}")
-def thread_detail(thid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def thread_get(thid: str, request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The chat polls this; an ETag from the newest message lets the browser revalidate without downloading it again."""
+    from fastapi.responses import JSONResponse, Response
+    from sqlalchemy import func as _f
+
+    from ..models import Message
+
+    th = _404(db.get(Thread, thid))
+    n, last = db.execute(select(_f.count(Message.id), _f.max(Message.at)).where(Message.thread_id == th.id)).one()
+    tag = f'W/"{th.id}-{n}-{last.timestamp() if last else 0}-{int(th.awaiting_reply)}-{th.updated_at.timestamp() if th.updated_at else 0}"'
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag, "Cache-Control": "no-cache"})
+    return JSONResponse(jsonable_encoder(thread_detail(thid, db, user)), headers={"ETag": tag, "Cache-Control": "no-cache"})
+
+
+def thread_detail(thid: str, db: Session, user: User) -> dict:
     th = _404(db.get(Thread, thid))
     return {**X.thread(th), "messages": [X.message(m) for m in S.thread_messages(db, th)]}
 
@@ -1399,3 +1415,109 @@ class ImportIn(BaseModel):
 @router.post("/import/prototype")
 def import_v0(body: ImportIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     return import_prototype(db, body.files, user.id)
+
+
+# ------------------------------------------------------------------ notifications: live stream and Web Push
+@router.get("/stream")
+async def stream(request: Request, after: int | None = None):
+    """Server-sent events: one `notice` event per new Notice. Also marks the owner as present, so Web Push stays quiet.
+    Auth is checked with a short session of its own, so an open tab does not hold a database connection."""
+    import asyncio as _a
+
+    from fastapi.responses import StreamingResponse
+
+    from .. import notify as N
+    from ..db import session_scope
+    from ..models import Notice
+
+    def poll(last: int) -> tuple[int, list[dict]]:
+        with session_scope() as db:
+            N.mark_present(db, uid)
+            rows = list(db.scalars(select(Notice).where(Notice.id > last).order_by(Notice.id).limit(50)))
+            return (rows[-1].id if rows else last), [N.serialize(n) for n in rows]
+
+    with session_scope() as db:
+        uid = current_user(request, db).id
+        hdr = request.headers.get("last-event-id")
+        last = int(hdr) if hdr and hdr.isdigit() else after if after is not None else N.latest_id(db)
+
+    async def gen():
+        nonlocal last
+        yield f"retry: 3000\nevent: hello\ndata: {json.dumps({'last': last})}\n\n"
+        beat = 0
+        while not await request.is_disconnected():
+            last, rows = await _a.to_thread(poll, last)
+            for n in rows:
+                yield f"id: {n['id']}\nevent: notice\ndata: {json.dumps(n)}\n\n"
+            beat += 1
+            if beat % 15 == 0:
+                yield ": ping\n\n"
+            await _a.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/notices")
+def notices(after: int = 0, limit: int = 30, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import notify as N
+    from ..models import Notice
+
+    q = select(Notice).where(Notice.id > after).order_by(Notice.id.desc()).limit(min(limit, 100))
+    return [N.serialize(n) for n in db.scalars(q)]
+
+
+@router.get("/notify")
+def notify_config(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import notify as N
+    from ..models import PushSub
+
+    return {"kinds": N.KINDS, "prefs": N.prefs(db, user.id), "push": N.push_available(), "vapid_public_key": N.vapid_public_key(),
+            "devices": [{"id": s.id, "agent": s.agent, "created_at": X.iso(s.created_at), "last_ok_at": X.iso(s.last_ok_at)}
+                        for s in db.scalars(select(PushSub).where(PushSub.user_id == user.id))]}
+
+
+@router.put("/notify/prefs")
+def notify_prefs(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import notify as N
+
+    return N.set_prefs(db, user.id, body)
+
+
+class PushSubIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=2000)
+    keys: dict
+    agent: str = ""
+
+
+@router.post("/notify/subscribe")
+def notify_subscribe(body: PushSubIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import PushSub
+
+    if not body.endpoint.startswith("https://") or not {"p256dh", "auth"} <= set(body.keys):
+        raise HTTPException(400, "not a Web Push subscription")
+    for old in db.scalars(select(PushSub).where(PushSub.endpoint == body.endpoint)):
+        db.delete(old)
+    s = PushSub(user_id=user.id, endpoint=body.endpoint, keys={"p256dh": body.keys["p256dh"], "auth": body.keys["auth"]}, agent=body.agent[:200])
+    db.add(s)
+    S.audit(db, user.id, "notify.subscribe", s.id)
+    db.commit()
+    return {"id": s.id}
+
+
+@router.post("/notify/unsubscribe")
+def notify_unsubscribe(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import PushSub
+
+    for s in db.scalars(select(PushSub).where(PushSub.user_id == user.id, PushSub.endpoint == str(body.get("endpoint", "")))):
+        db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/notify/test")
+def notify_test(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Notice
+
+    db.add(Notice(kind="test", title="Notifications work", body="This is how Saga OS will tell you when a helper needs you.", url="/settings/", tag="test"))
+    db.commit()
+    return {"ok": True}

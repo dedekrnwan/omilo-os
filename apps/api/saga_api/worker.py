@@ -45,8 +45,23 @@ class Worker:
             for _th in db.scalars(select(Thread).where(Thread.awaiting_reply.is_(True))):
                 pass  # still awaiting: will be picked up
 
+    async def push_loop(self):
+        """Web Push for notices while no tab is open (every 3 s)."""
+        from . import notify
+
+        while not self._stop.is_set():
+            try:
+                await notify.push_pending(session_scope)
+            except Exception:
+                log.exception("web push failed")
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=3)
+            except TimeoutError:
+                pass
+
     async def run_forever(self):
         self.recover()
+        self._push = asyncio.create_task(self.push_loop())
         interval = get_settings().worker_interval_s
         while not self._stop.is_set():
             try:

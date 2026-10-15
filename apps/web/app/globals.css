@@ -511,3 +511,25 @@ code.fpath:hover { background: var(--hover); }
 .hdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-left: 2px; flex-shrink: 0; }
 .hdot.ok { background: #16a34a; } .hdot.warn { background: #f59e0b; } .hdot.bad { background: #dc2626; }
 .mi .t b .hdot { margin: 0 6px 1px 0; vertical-align: middle; }
+
+/* ---------- notifications ---------- */
+.toasts { position: fixed; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
+.toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px 8px 12px 14px; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg); box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .3); cursor: pointer; animation: toast-in .18s ease-out; }
+.toast:hover { background: var(--soft); }
+.toast > i { font-size: 18px; margin-top: 1px; color: var(--ink-2); }
+.toast.critical { border-color: var(--bad-line); } .toast.critical > i { color: var(--bad); }
+.toast.decision > i { color: var(--warn); }
+.toast .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.toast .tx b { font-weight: 500; font-size: 14px; }
+.toast .tx span { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.notify-ask { position: fixed; left: 50%; transform: translateX(-50%); top: 14px; z-index: 80; display: flex; align-items: center; gap: 10px;
+  width: min(640px, calc(100vw - 24px)); padding: 10px 10px 10px 14px; background: var(--ink); color: #fff; border-radius: var(--r-lg);
+  box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .4); font-size: 13px; }
+.notify-ask i { color: #fff; font-size: 18px; }
+.notify-ask .grow { flex: 1; }
+.notify-ask .btn.primary { background: #fff; color: var(--ink); border-color: #fff; }
+.notify-ask .btn.quiet { color: #d6d3d1; }
+.notify-ask .btn.quiet:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+@media (max-width: 760px) { .toasts { right: 12px; left: 12px; bottom: 12px; width: auto; } .notify-ask { top: 60px; } }

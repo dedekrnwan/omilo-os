@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
-import { Empty, Err, Markdown } from "@/components/ui";
+import { Empty, Err } from "@/components/ui";
+import { Markdown } from "@/components/Markdown";
 import { ago, api } from "@/lib/api";
 
 type File = { name: string; bytes: number; updated_at: string };

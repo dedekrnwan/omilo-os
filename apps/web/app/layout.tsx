@@ -10,7 +10,12 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Shell from "@/components/Shell";
 
-export const metadata: Metadata = { title: "Saga OS", description: "Run your company with a team of AI helpers" };
+const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+export const metadata: Metadata = {
+  title: "Saga OS", description: "Run your company with a team of AI helpers",
+  manifest: `${base}/manifest.webmanifest`, icons: { icon: `${base}/icon-192.png`, apple: `${base}/icon-192.png` },
+  appleWebApp: { capable: true, title: "Saga OS", statusBarStyle: "default" },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

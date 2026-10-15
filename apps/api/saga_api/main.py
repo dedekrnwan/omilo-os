@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from .config import get_settings
@@ -16,6 +17,18 @@ from .routers import api, auth
 from .worker import Worker
 
 log = logging.getLogger("saga")
+
+
+_NO_CACHE = {"Cache-Control": "no-cache"}  # pages: always check for a new build (cheap 304s)
+
+
+def _cache_headers(path: str, file: Path) -> dict:
+    """Hashed build files never change, so browsers keep them a year; pages revalidate; fonts and icons a day."""
+    if path.startswith("_next/static/"):
+        return {"Cache-Control": "public, max-age=31536000, immutable"}
+    if path == "sw.js" or file.suffix in (".html", ".txt", ".webmanifest"):
+        return _NO_CACHE
+    return {"Cache-Control": "public, max-age=86400"}
 
 
 def _web_dir() -> Path | None:
@@ -43,6 +56,7 @@ def build_app() -> FastAPI:
 
     inner = FastAPI(title="Saga OS", version="0.2.0", lifespan=lifespan,
                     docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
+    inner.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)  # event streams are left alone
     if cfg.cors_origins:
         inner.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in cfg.cors_origins.split(",")],
                              allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -66,8 +80,8 @@ def build_app() -> FastAPI:
         if web in target.parents or target == web:
             for cand in (target, target / "index.html", Path(str(target) + ".html")):
                 if cand.is_file():
-                    return FileResponse(cand)
-        return FileResponse(web / "index.html")
+                    return FileResponse(cand, headers=_cache_headers(path, cand))
+        return FileResponse(web / "index.html", headers=_NO_CACHE)
 
     if cfg.base_path:
         outer = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)

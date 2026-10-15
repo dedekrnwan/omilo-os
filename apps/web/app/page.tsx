@@ -1,9 +1,11 @@
 "use client";
+import { usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
-import { Empty, Err, Markdown, StatusChip } from "@/components/ui";
+import { Empty, Err, StatusChip } from "@/components/ui";
+import { Markdown } from "@/components/Markdown";
 import { InboxItem, ago, api } from "@/lib/api";
 
 export default function Inbox() {
@@ -18,7 +20,7 @@ export default function Inbox() {
   const load = useCallback(async () => {
     try { setItems(await api<InboxItem[]>(`/inbox?status=${filter}`)); } catch (e: any) { setErr(e.message); }
   }, [filter]);
-  useEffect(() => { load(); const t = setInterval(load, 8000); return () => clearInterval(t); }, [load]);
+  usePoll(load, 30000, [load], (n) => n?.kind === "inbox" || n?.kind?.startsWith("job"));
 
   const act = async (fn: () => Promise<unknown>) => {
     setErr(null);

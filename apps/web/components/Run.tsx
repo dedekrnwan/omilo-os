@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Markdown } from "@/components/ui";
+import { useEffect, useRef, useState } from "react";
+import { Markdown } from "@/components/Markdown";
+import { usePoll } from "@/lib/poll";
 import { api } from "@/lib/api";
 
 /* Live agent runs: status, reasoning, tool calls, sources, browser and usage, rendered like an agent at work. */
@@ -28,22 +29,27 @@ export function toRuns(events: RunEvent[]): Run[] {
 export function useEvents(q: { task_id?: string; thread_id?: string } | null, every = 1500) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const key = q ? JSON.stringify(q) : "";
-  useEffect(() => {
-    setEvents([]);
+  const st = useRef({ after: 0, lastNew: 0, running: false, key: "" });
+  useEffect(() => { setEvents([]); st.current = { after: 0, lastNew: 0, running: false, key }; }, [key]);
+  // fast while a run is going (or just produced something), slow when idle; paused while the tab is hidden
+  usePoll(async () => {
     if (!q) return;
-    let stop = false, after = 0;
-    const tick = async () => {
-      try {
-        const p = new URLSearchParams({ ...(q as Record<string, string>), after: String(after) });
-        const got = await api<RunEvent[]>(`/events?${p}`);
-        if (!stop && got.length) { after = got[got.length - 1].id; setEvents((x) => [...x, ...got]); }
-      } catch { /* next tick */ }
-    };
-    tick();
-    const t = setInterval(tick, every);
-    return () => { stop = true; clearInterval(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, every]);
+    const k = key;
+    const p = new URLSearchParams({ ...(q as Record<string, string>), after: String(st.current.after) });
+    const got = await api<RunEvent[]>(`/events?${p}`);
+    if (st.current.key !== k || !got.length) return;
+    const first = st.current.after === 0;
+    st.current.after = got[got.length - 1].id;
+    if (!first) st.current.lastNew = Date.now(); // history loaded on open does not count as activity
+    for (const e of got) {
+      if (e.kind !== "status") continue;
+      if (e.data.state === "done" || e.data.state === "failed") st.current.running = false;
+      // a start older than 15 minutes without an end is a run that died, not one in progress
+      else if (e.data.state === "started" || e.data.state === "switching") st.current.running = Date.now() - new Date(e.at).getTime() < 15 * 60_000;
+    }
+    setEvents((x) => [...x, ...got]);
+  }, () => (st.current.running || Date.now() - st.current.lastNew < 20000 ? every : 8000), [key, every],
+  (n) => !!q && ((q.thread_id && n?.url?.includes(q.thread_id)) || (q.task_id && n?.url?.includes(q.task_id))));
   return events;
 }
 

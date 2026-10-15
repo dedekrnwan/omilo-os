@@ -1,27 +1,18 @@
 "use client";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import dart from "highlight.js/lib/languages/dart";
-import diff from "highlight.js/lib/languages/diff";
-import dockerfile from "highlight.js/lib/languages/dockerfile";
-import go from "highlight.js/lib/languages/go";
-import ini from "highlight.js/lib/languages/ini";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdown from "highlight.js/lib/languages/markdown";
-import python from "highlight.js/lib/languages/python";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
 import { Marked, type Tokens } from "marked";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BASE } from "@/lib/api";
 
 /* Rich rendering for helper replies: highlighted code with copy, pretty JSON, tables, image and file previews, downloads. */
 
-for (const [n, l] of Object.entries({ bash, css, dart, diff, dockerfile, go, ini, javascript, json, markdown, python, sql, typescript, xml, yaml })) hljs.registerLanguage(n, l);
+// the highlighter loads on first use (only pages that show code pay for it); until then code shows plain
+type HL = typeof import("./hl").default;
+let hljs: HL | null = null;
+let loading: Promise<void> | null = null;
+export function loadHighlighter(): Promise<void> {
+  loading = loading || import("./hl").then((m) => { hljs = m.default; });
+  return loading;
+}
 const ALIAS: Record<string, string> = { sh: "bash", shell: "bash", zsh: "bash", console: "bash", js: "javascript", jsx: "javascript", mjs: "javascript",
   ts: "typescript", tsx: "typescript", py: "python", yml: "yaml", html: "xml", htm: "xml", svg: "xml", toml: "ini", env: "ini", md: "markdown",
   golang: "go", patch: "diff", docker: "dockerfile", jsonl: "json", text: "plaintext", txt: "plaintext", log: "plaintext", csv: "plaintext" };
@@ -42,6 +33,7 @@ export function prettyJson(src: string): string | null {
 export function highlight(src: string, lang: string): { html: string; lang: string } {
   let l = langOf(lang);
   if (l === "json" || (!l && /^\s*[[{]/.test(src))) { const p = prettyJson(src); if (p) { src = p; l = "json"; } }
+  if (!hljs) return { html: esc(src), lang: l || "" };
   if (l && l !== "plaintext" && hljs.getLanguage(l)) return { html: hljs.highlight(src, { language: l, ignoreIllegals: true }).value, lang: l };
   if (!l && src.length < 20000) {
     const a = hljs.highlightAuto(src, ["bash", "python", "javascript", "typescript", "json", "go", "sql", "yaml", "dart", "xml", "css"]);
@@ -158,8 +150,11 @@ function onRichClick(e: React.MouseEvent | React.KeyboardEvent) {
   }
 }
 
+const NEEDS_HL = /```|^\s*[[{]/;
 export function Markdown({ text }: { text: string }) {
-  const html = useMemo(() => renderMarkdown(text), [text]);
+  const [ready, setReady] = useState(!!hljs);
+  useEffect(() => { if (!hljs && NEEDS_HL.test(text || "")) loadHighlighter().then(() => setReady(true)); }, [text]);
+  const html = useMemo(() => renderMarkdown(text), [text, ready]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="md" onClick={onRichClick} onKeyDown={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
@@ -248,11 +243,12 @@ function TextPreview({ f }: { f: FileRef }) {
     );
   }
   const h = highlight(src, e === "json" || e === "jsonl" ? "json" : e);
+  if (!hljs) loadHighlighter().then(() => setSrc((x) => (x === null ? x : x + "")));
   return <div className="codeblock open pv-code"><pre><code className="hljs" dangerouslySetInnerHTML={{ __html: h.html }} /></pre></div>;
 }
 
-export function PreviewHost() {
-  const [f, setF] = useState<(FileRef & { kind?: string }) | null>(null);
+export function PreviewHost({ initial = null }: { initial?: (FileRef & { kind?: string }) | null }) {
+  const [f, setF] = useState<(FileRef & { kind?: string }) | null>(initial);
   const close = useCallback(() => setF(null), []);
   useEffect(() => {
     const on = (e: Event) => setF((e as CustomEvent).detail);

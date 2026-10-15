@@ -305,3 +305,29 @@ class ThreadTools(Base):
     folders: Mapped[list | None] = mapped_column(JSON, nullable=True)
     connectors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     skills: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
+class Notice(Base):
+    """Something the owner may want to hear about right away: an inbox item, a helper's reply, a finished or failed job.
+    The web app streams these (/api/stream) and Web Push delivers them when no tab is open."""
+    __tablename__ = "notice"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # inbox | reply | job_done | job_failed | test
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(String(300), default="/")
+    tag: Mapped[str] = mapped_column(String(80), default="")  # same tag replaces the previous notification
+    level: Mapped[str] = mapped_column(String(16), default="info")  # critical | decision | info
+
+
+class PushSub(Base):
+    """A browser that accepted Web Push for the owner."""
+    __tablename__ = "push_sub"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("psh"))
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    endpoint: Mapped[str] = mapped_column(Text)
+    keys: Mapped[dict] = mapped_column(JSON, default=dict)
+    agent: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_ok_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

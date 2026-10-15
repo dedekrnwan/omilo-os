@@ -65,6 +65,25 @@ health dot (green: all reachable, amber: a few are not, red: half or more are no
 Replies render like Claude's: highlighted code with Copy (long blocks fold), JSON pretty-printed even without a fence, tables, images and
 file links (`file:///path`, or an absolute path in backticks) that open the preview.
 
+## Notifications
+
+Saga OS tells you right away when a helper needs you: inbox items (approvals, questions, alerts), chat replies, and failed (or, if
+you want, finished) jobs. Notices are written automatically (`Notice` table) and reach you three ways:
+
+- **In the app**: a live stream (`/api/stream`, server-sent events) shows a small pop-up and refreshes the Inbox and counts at once.
+- **Tab in the background**: a system notification, and the tab title shows the count.
+- **No tab open**: Web Push through the service worker (`pywebpush`, VAPID key created in the data dir). Push pauses while a tab is
+  open, so you never get two.
+
+The browser asks for permission only after you press **Turn on** (banner, or Settings → Notifications), where you also pick what to hear
+about and send a test. Browsers allow notifications only on https or `localhost`; on iPhone, add Saga OS to the Home Screen first.
+
+## Speed
+
+Pages poll only as fast as needed: every 1.5 s while a helper is working, every 12–30 s when idle, never while the tab is hidden, and at
+once when a live notice arrives. Unchanged chats answer with `304 Not Modified` (ETag). Responses are gzip-compressed, hashed build files
+are cached for a year, SQLite runs with WAL and `synchronous=NORMAL`, and the code highlighter and file preview load only when used.
+
 ## Hire specialists from The Agency
 
 Team → **Hire a specialist** opens a library of about 280 specialists from
@@ -151,7 +170,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 34 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 35 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

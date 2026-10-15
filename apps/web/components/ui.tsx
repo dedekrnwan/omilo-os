@@ -1,5 +1,4 @@
 "use client";
-export { Markdown } from "./Markdown";
 
 const STATUS: Record<string, [string, string]> = {
   done: ["up", "✓ Done"], running: ["run", "● Running"], queued: ["idle", "○ Queued"], failed: ["down", "✕ Failed"],
