@@ -1,0 +1,28 @@
+{
+  "id": "dev-builder",
+  "name": "Dev builder",
+  "function": "development",
+  "schedule": "*-*-* 01,13:00:00 Asia/Jakarta",
+  "description": "Twice a day: take one 'agent-ready' GitHub issue, implement it, run tests, open a PR.",
+  "harness": "claude-code",
+  "max_turns": 120,
+  "timeout_min": 60,
+  "workdir": ".",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(git:*)",
+    "Bash(gh:*)",
+    "Bash(go:*)",
+    "Bash(flutter:*)",
+    "Bash(dart:*)",
+    "Bash(npm:*)",
+    "Bash(npx:*)",
+    "Bash(make:*)"
+  ],
+  "enabled": true,
+  "model": null
+}

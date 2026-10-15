@@ -1,0 +1,22 @@
+{
+  "id": "sales-prospecting",
+  "name": "Sales prospecting",
+  "function": "sales",
+  "schedule": "Tue,Thu *-*-* 09:00:00 Asia/Jakarta",
+  "description": "Twice a week: research perumahan/developers, update the pipeline, draft outreach for approval.",
+  "harness": "claude-code",
+  "max_turns": 60,
+  "timeout_min": 30,
+  "workdir": "company-os",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch"
+  ],
+  "enabled": true,
+  "model": null
+}

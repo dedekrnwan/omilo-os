@@ -1,0 +1,22 @@
+{
+  "id": "finance-scorecard",
+  "name": "Finance scorecard",
+  "function": "business",
+  "schedule": "Mon *-*-* 07:00:00 Asia/Jakarta",
+  "description": "Weekly: KPIs from the read-only replica, update scorecard + KPIs, write a 3-action memo.",
+  "harness": "claude-code",
+  "max_turns": 40,
+  "timeout_min": 20,
+  "workdir": "company-os",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash(psql:*)",
+    "Bash(python3:*)"
+  ],
+  "enabled": true,
+  "model": null
+}

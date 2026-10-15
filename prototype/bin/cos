@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""cos: control the Company OS from a shell (used by you, systemd timers, and Hermes).
+
+  cos status                       one-screen overview (pending approvals, last run per loop)
+  cos loops                        list loops
+  cos run <loop> [--note TEXT]     run a loop now (blocks until done); --note = extra founder instructions
+  cos rerun <loop> --note TEXT     start a loop in the background with extra instructions (used by chat)
+  cos revise <id> --body-file F    replace a PENDING proposal's text (keeps history) [--summary S]
+  cos propose --loop L --title T --body-file F [--type X --risk R]   add a proposal to the approval queue
+  cos runs [--loop L] [-n 20]      recent runs
+  cos show <run_id>                run details + report
+  cos approvals [--status S]       list approvals (default: pending)
+  cos approval <id>                show one approval in full
+  cos approve <id> [--note TEXT]   approve
+  cos reject <id> --note TEXT      reject (a note is required: the retro loop learns from it)
+  cos enable|disable <loop>        toggle a loop's schedule
+  cos pause | resume               kill switch for all scheduled runs
+  cos accounts                     account pool health
+  cos digest [--hours 24]          short text digest (for chat / Hermes)
+  cos install-timers [--user U]    write systemd units for every loop (run as root)
+Add --json to most commands for machine-readable output.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import cos_core as C  # noqa: E402
+
+ICON = {"success": "✓", "failed": "✗", "timeout": "⏱", "rate_limited": "⚠", "skipped": "–", "running": "…"}
+
+
+def out(data, as_json, text_fn):
+    if as_json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+    else:
+        text_fn(data)
+
+
+def cmd_status(a):
+    loops = C.list_loops()
+    pend = C.list_approvals(status="pending")
+    data = {"paused": C.is_paused(), "pending_approvals": len(pend), "loops": []}
+    for l in loops:
+        last = next(iter(C.list_runs(loop_id=l["id"], limit=1)), None)
+        data["loops"].append({"id": l["id"], "enabled": l.get("enabled", True),
+                              "last_status": last and last["status"], "last_at": last and last["started_at"],
+                              "headline": last and (last.get("headline") or last.get("error"))})
+
+    def text(d):
+        print(f"System: {'PAUSED' if d['paused'] else 'running'} | pending approvals: {d['pending_approvals']}")
+        for l in d["loops"]:
+            st = l["last_status"] or "never"
+            print(f" {ICON.get(st, ' ')} {l['id']:<18} {'on ' if l['enabled'] else 'off'} {(l['last_at'] or '')[:16]:<16} {l['headline'] or ''}")
+    out(data, a.json, text)
+
+
+def cmd_loops(a):
+    out(C.list_loops(), a.json, lambda d: [print(f"{l['id']:<18} {'on ' if l.get('enabled', True) else 'off'} {l['harness']:<12} {l['schedule']:<35} {l['description']}") for l in d])
+
+
+def cmd_run(a):
+    from runner import run_loop
+    rec = run_loop(a.loop, trigger=a.trigger, note=a.note)
+    if a.json:
+        print(json.dumps(rec, indent=2))
+    sys.exit(0 if rec["status"] in ("success", "skipped") else 1)
+
+
+def cmd_rerun(a):
+    import subprocess
+    if not C.get_loop(a.loop):
+        sys.exit("unknown loop")
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run", a.loop, "--trigger", a.trigger, "--note", a.note or ""],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    print(f"started {a.loop} in the background with your instructions; watch it with: cos runs --loop {a.loop}")
+
+
+def cmd_revise(a):
+    body = Path(a.body_file).read_text()
+    x = C.revise_approval(a.id, body, a.summary or "", by=a.by)
+    out(x, a.json, lambda d: print(f"{d['id']} revised (revision {len(d['revisions'])}): {d['title']}"))
+
+
+def cmd_propose(a):
+    if not C.get_loop(a.loop):
+        sys.exit("unknown loop")
+    body = Path(a.body_file).read_text()
+    text = f"---\ntitle: {a.title}\ntype: {a.type}\nrisk: {a.risk}\n---\n{body}"
+    x = C.create_approval(a.loop, None, re.sub(r"[^a-z0-9]+", "-", a.title.lower())[:40], text, by=a.by)
+    out(x, a.json, lambda d: print(f"proposed {d['id']}: {d['title']} (waiting for founder approval)"))
+
+
+def cmd_runs(a):
+    runs = C.list_runs(loop_id=a.loop, limit=a.n)
+    out(runs, a.json, lambda d: [print(f"{ICON.get(r['status'], ' ')} {r['id']:<40} {r.get('account') or '':<8} {r.get('duration_s') or '':>6}s  {r.get('headline') or r.get('error') or ''}") for r in d])
+
+
+def cmd_show(a):
+    r = C.load_run(a.run_id)
+    if not r:
+        sys.exit("no such run")
+    rep = C.run_dir(a.run_id) / "report.md"
+    r["report"] = rep.read_text() if rep.exists() else None
+    out(r, a.json, lambda d: (print(json.dumps({k: v for k, v in d.items() if k != "report"}, indent=2)), print("\n" + (d["report"] or "(no report)"))))
+
+
+def cmd_approvals(a):
+    items = C.list_approvals(status=None if a.status == "all" else a.status)
+    out(items, a.json, lambda d: [print(f"{x['id']}  {x['status']:<9} {x['loop']:<18} [{x['type']}/{x['risk']}] {x['title']}") for x in d] or print("(none)"))
+
+
+def cmd_approval(a):
+    x = C.get_approval(a.id)
+    if not x:
+        sys.exit("no such approval")
+    out(x, a.json, lambda d: print(f"{d['title']}\n{d['loop']} · {d['type']} · risk {d['risk']} · {d['status']}\n\n{d['body']}"))
+
+
+def cmd_decide(a, decision):
+    if decision == "rejected" and not a.note:
+        sys.exit("a --note is required when rejecting")
+    x = C.decide_approval(a.id, decision, a.note or "", by=a.by)
+    out(x, a.json, lambda d: print(f"{d['id']} {d['status']}: {d['title']}"))
+
+
+def cmd_toggle(a, enabled):
+    if not C.get_loop(a.loop):
+        sys.exit("unknown loop")
+    C.set_loop_enabled(a.loop, enabled)
+    print(f"{a.loop} {'enabled' if enabled else 'disabled'}")
+
+
+def cmd_accounts(a):
+    names = sorted({l.get("harness", "claude-code") for l in C.list_loops()})
+    data = [acc for h in names for acc in C.list_accounts(h)]
+    out(data, a.json, lambda d: [print(f"{x['harness']:<12} {x['name']:<10} {x['status']:<9} runs={x['runs']:<4} fails={x['failures']:<3} rl={x['rate_limits']:<3} {x['cooldown_until'] or ''}") for x in d])
+
+
+def cmd_digest(a):
+    runs = C.list_runs(limit=300, since_days=a.hours / 24)
+    pend = C.list_approvals(status="pending")
+    bad = [r for r in runs if r["status"] in ("failed", "timeout", "rate_limited")]
+    lines = [f"Company OS — last {a.hours}h: {len(runs)} runs, {len(bad)} problems, {len(pend)} approvals waiting."
+             + (" SYSTEM PAUSED." if C.is_paused() else "")]
+    for r in bad[:5]:
+        lines.append(f"✗ {r['loop']}: {r['status']} — {r.get('error') or ''}")
+    for r in runs:
+        if (r.get("headline") or "").upper().startswith(("DOWN", "DEGRADED")):
+            lines.append(f"⚠ {r['loop']}: {r['headline']}")
+            break
+    for x in pend[:10]:
+        lines.append(f"• [{x['id']}] {x['loop']}: {x['title']} ({x['type']}, risk {x['risk']})")
+    print("\n".join(lines))
+
+
+def cmd_install_timers(a):
+    unit_dir = Path(a.unit_dir)
+    py = sys.executable
+    cos = Path(__file__).resolve()
+    env_file = "/etc/company-os.env"
+    svc = f"""[Unit]
+Description=Company OS loop %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={a.user}
+EnvironmentFile=-{env_file}
+Environment=COS_ROOT={C.ROOT}
+ExecStart={py} {cos} run %i --trigger schedule
+Nice=5
+"""
+    (unit_dir / "cos-loop@.service").write_text(svc)
+    names = []
+    for l in C.list_loops():
+        t = f"""[Unit]
+Description=Company OS timer: {l['name']}
+
+[Timer]
+OnCalendar={l['schedule']}
+Persistent=true
+RandomizedDelaySec=60
+Unit=cos-loop@{l['id']}.service
+
+[Install]
+WantedBy=timers.target
+"""
+        (unit_dir / f"cos-loop-{l['id']}.timer").write_text(t)
+        names.append(f"cos-loop-{l['id']}.timer")
+    print("Wrote:", "cos-loop@.service", *names, sep="\n  ")
+    print(f"\nNow run:\n  systemctl daemon-reload && systemctl enable --now {' '.join(names)}")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="cos", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--json", action="store_true")
+    sp = p.add_subparsers(dest="cmd", required=True)
+    sp.add_parser("status").set_defaults(f=cmd_status)
+    sp.add_parser("loops").set_defaults(f=cmd_loops)
+    s = sp.add_parser("run"); s.add_argument("loop"); s.add_argument("--trigger", default="manual"); s.add_argument("--note"); s.set_defaults(f=cmd_run)
+    s = sp.add_parser("rerun"); s.add_argument("loop"); s.add_argument("--note", required=True); s.add_argument("--trigger", default="chat"); s.set_defaults(f=cmd_rerun)
+    s = sp.add_parser("revise"); s.add_argument("id"); s.add_argument("--body-file", required=True); s.add_argument("--summary"); s.add_argument("--by", default=os.environ.get("COS_ACTOR", "chat")); s.set_defaults(f=cmd_revise)
+    s = sp.add_parser("propose"); s.add_argument("--loop", required=True); s.add_argument("--title", required=True); s.add_argument("--body-file", required=True)
+    s.add_argument("--type", default="other"); s.add_argument("--risk", default="medium"); s.add_argument("--by", default=os.environ.get("COS_ACTOR", "chat")); s.set_defaults(f=cmd_propose)
+    s = sp.add_parser("runs"); s.add_argument("--loop"); s.add_argument("-n", type=int, default=20); s.set_defaults(f=cmd_runs)
+    s = sp.add_parser("show"); s.add_argument("run_id"); s.set_defaults(f=cmd_show)
+    s = sp.add_parser("approvals"); s.add_argument("--status", default="pending"); s.set_defaults(f=cmd_approvals)
+    s = sp.add_parser("approval"); s.add_argument("id"); s.set_defaults(f=cmd_approval)
+    for name, dec in (("approve", "approved"), ("reject", "rejected")):
+        s = sp.add_parser(name); s.add_argument("id"); s.add_argument("--note"); s.add_argument("--by", default=os.environ.get("COS_ACTOR", "founder"))
+        s.set_defaults(f=lambda a, d=dec: cmd_decide(a, d))
+    for name, en in (("enable", True), ("disable", False)):
+        s = sp.add_parser(name); s.add_argument("loop"); s.set_defaults(f=lambda a, e=en: cmd_toggle(a, e))
+    sp.add_parser("pause").set_defaults(f=lambda a: (C.set_paused(True), print("paused")))
+    sp.add_parser("resume").set_defaults(f=lambda a: (C.set_paused(False), print("resumed")))
+    sp.add_parser("accounts").set_defaults(f=cmd_accounts)
+    s = sp.add_parser("digest"); s.add_argument("--hours", type=float, default=24); s.set_defaults(f=cmd_digest)
+    s = sp.add_parser("install-timers"); s.add_argument("--user", default="agent"); s.add_argument("--unit-dir", default="/etc/systemd/system"); s.set_defaults(f=cmd_install_timers)
+    argv = sys.argv[1:]
+    as_json = "--json" in argv
+    a = p.parse_args([x for x in argv if x != "--json"])
+    a.json = as_json
+    a.f(a)
+
+
+if __name__ == "__main__":
+    main()

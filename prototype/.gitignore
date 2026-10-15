@@ -1,0 +1,15 @@
+accounts/
+state/runs/
+state/locks/
+state/accounts.json
+state/PAUSED
+state/overrides.json
+state/approvals/
+inbox/support/*
+!inbox/support/.gitkeep
+__pycache__/
+*.tmp*
+.demo/
+.demo-workspace/
+state/threads/
+state/chat-tmp/

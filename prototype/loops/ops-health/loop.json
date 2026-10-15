@@ -1,0 +1,26 @@
+{
+  "id": "ops-health",
+  "name": "Ops health check",
+  "function": "operations",
+  "schedule": "*-*-* *:05:00 Asia/Jakarta",
+  "description": "Hourly: Prometheus alerts + Swarm service status, flag incidents, propose fixes.",
+  "harness": "claude-code",
+  "max_turns": 25,
+  "timeout_min": 15,
+  "workdir": "ops",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "Bash(curl:*)",
+    "Bash(docker service ls:*)",
+    "Bash(docker service ps:*)",
+    "Bash(docker service logs:*)",
+    "Bash(df:*)",
+    "Bash(free:*)",
+    "Bash(uptime:*)"
+  ],
+  "enabled": true,
+  "model": null
+}

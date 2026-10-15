@@ -1,0 +1,10 @@
+{
+  "phase": "Months 3–6: prove someone will pay",
+  "targets": {
+    "mrr_idr":            {"label": "MRR", "target": 5000000, "unit": "idr", "better": "higher"},
+    "paying_communities": {"label": "Paying communities", "target": 10, "unit": "count", "better": "higher"},
+    "digital_share":      {"label": "Dues paid digitally", "target": 0.6, "unit": "pct", "better": "higher"},
+    "churn_monthly":      {"label": "Monthly churn", "target": 0.03, "unit": "pct", "better": "lower"},
+    "support_hours":      {"label": "Support hours / week", "target": 5, "unit": "hours", "better": "lower"}
+  }
+}

@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Company OS · Sahabat Warga</title>
+<style>
+/* Finity design system (from FDCC): warm paper board, navy accent, Barlow Condensed display + Inter body, square corners, hairlines. */
+@font-face{font-family:"Barlow Condensed";font-weight:500;font-display:swap;src:url(/fonts/barlow-condensed-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:600;font-display:swap;src:url(/fonts/barlow-condensed-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-display:swap;src:url(/fonts/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Inter Variable";font-weight:100 900;font-display:swap;src:url(/fonts/inter-latin-wght-normal.woff2) format("woff2")}
+:root{
+  --font-display:"Barlow Condensed","Arial Narrow",ui-sans-serif,system-ui,sans-serif;
+  --font-body:"Inter Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --tracking-label:.04em;
+  --board:#f4f2ec;--raised:#fdfcf8;--ink:#1b1c1e;--muted:#5d584c;--hair:#e2dccd;--hair-strong:#bdb4a0;
+  --accent:#1e3260;--accent-ink:#fdfcf8;--accent-tint:#e7ebf3;
+  --up:#3d6b2b;--up-tint:#e3ecd9;--review:#8a5a10;--review-tint:#f4e8d2;--stagnant:#a92a20;--stagnant-tint:#f6e0dc;
+  --row-hl:rgba(231,235,243,.6);
+}
+*{box-sizing:border-box}
+html{background:var(--board)}
+body{margin:0;background:var(--board);color:var(--ink);font:16px/1.5 var(--font-body);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border-radius:0}
+a{color:var(--accent);text-decoration:none;font-weight:500}
+a:hover{text-decoration:underline}
+.label,.th,th,.btn,.chip,.seg button,.tabs a,.eyebrow,.fn{font-family:var(--font-display);text-transform:uppercase;letter-spacing:var(--tracking-label);font-weight:600}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+
+/* header */
+header{background:var(--raised);border-bottom:1px solid var(--hair-strong);position:sticky;top:0;z-index:10}
+.top{max-width:1180px;margin:0 auto;padding:14px 32px 0;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{width:30px;height:30px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:0}
+.mark i:nth-child(1){background:#1e3260}.mark i:nth-child(2){background:#16B38C}.mark i:nth-child(3){background:#16B38C}.mark i:nth-child(4){background:transparent}.mark i:nth-child(5){background:#1e3260}.mark i:nth-child(6){background:transparent}
+.brand .sep{width:1px;height:30px;background:var(--hair-strong)}
+.brand b{display:block;white-space:nowrap;font:700 22px/1 var(--font-display);text-transform:uppercase;letter-spacing:.02em}
+.brand small{display:block;font-size:13px;color:var(--muted);margin-top:3px}
+.sp{flex:1}
+.sys{display:flex;align-items:center;gap:10px}
+.tabs{max-width:1180px;margin:10px auto 0;padding:0 32px;display:flex;gap:18px;overflow-x:auto}
+.tabs a{display:inline-flex;align-items:center;gap:6px;font-size:15px;padding:8px 8px 9px;color:var(--muted);border-top:3px solid transparent;border-bottom:3px solid transparent;white-space:nowrap;text-decoration:none}
+.tabs a.on{color:var(--accent);border-bottom-color:var(--accent)}
+.badge{display:inline-block;min-width:18px;padding:0 5px;background:var(--stagnant);color:#fff;font:600 12px/18px var(--font-display);text-align:center;letter-spacing:0}
+.badge[data-n="0"],.badge:empty{display:none}
+
+/* layout */
+main{max-width:1180px;margin:0 auto;padding:32px 32px 64px}
+.eyebrow{font-size:14px;color:var(--muted)}
+h1{font:700 44px/1 var(--font-display);text-transform:uppercase;margin:6px 0 10px}
+.sub{display:flex;flex-wrap:wrap;gap:6px 22px;color:var(--muted);font-size:14px;margin-bottom:28px}
+.sub span{display:inline-flex;align-items:center;gap:6px}
+h2{font:700 21px/1.5 var(--font-display);text-transform:uppercase;letter-spacing:.84px;margin:0;display:flex;align-items:center;gap:8px}
+.sec{margin-top:44px}
+.sechead{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.sechead .sp{flex:1}
+.note{font-size:13px;color:var(--muted);margin:10px 0 0}
+
+/* stat board (FDCC "this week" grid) */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink);border-bottom:1px solid var(--hair-strong)}
+.stats.four{grid-template-columns:repeat(3,1fr)}
+.stat{padding:18px 18px 18px 0;border-bottom:1px solid var(--hair-strong)}
+.stat:not(:nth-child(3n+1)){padding-left:18px;border-left:1px solid var(--hair-strong)}
+.stats .stat:nth-last-child(-n+3):nth-child(3n+1),.stats .stat:nth-last-child(-n+3):nth-child(3n+1)~.stat{border-bottom:0}
+.stat .label{font-size:14px;color:var(--muted);letter-spacing:.84px;display:flex;align-items:center;gap:6px}
+.stat .num{font:600 44px/1 var(--font-display);margin:10px 0 8px;font-variant-numeric:tabular-nums}
+.stat .num small{font-size:22px;color:var(--muted);font-weight:500;margin-left:4px}
+.pace{font:600 13px/1.3 var(--font-display);text-transform:uppercase;letter-spacing:.52px}
+.pace.up{color:var(--up)}.pace.down{color:var(--stagnant)}.pace.flat{color:var(--muted)}.pace.warn{color:var(--review)}
+.stat .meta{font-size:13px;color:var(--muted)}
+
+/* segmented control */
+.seg{max-width:100%;overflow-x:auto;display:inline-flex;border:1px solid var(--hair-strong);background:var(--raised);padding:3px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--muted);font-size:13px;padding:4px 12px;letter-spacing:.52px}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+
+/* buttons */
+.btn{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hair-strong);background:var(--raised);color:var(--ink);font-size:13px;padding:5px 12px;letter-spacing:.52px}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:#15244a}
+.btn.danger{color:var(--stagnant);border-color:var(--stagnant)}
+.btn.quiet{font-family:var(--font-body);text-transform:none;letter-spacing:0;font-weight:400}
+.btn:disabled{opacity:.45;cursor:default}
+
+/* chips (FDCC timeframe status) */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;letter-spacing:.48px;padding:1px 6px;border:1px solid transparent;white-space:nowrap;line-height:18px}
+.chip.up{background:var(--up-tint);color:var(--up)}
+.chip.down{background:var(--stagnant-tint);color:var(--stagnant);border-color:var(--stagnant)}
+.chip.warn{background:var(--review-tint);color:var(--review);border-color:var(--review)}
+.chip.idle{color:var(--muted);border:1px dashed var(--hair-strong)}
+.chip.run{background:var(--accent-tint);color:var(--accent);border-color:var(--accent)}
+.chip.outline{border-color:var(--accent);color:var(--accent)}
+.chip.tag{border-color:var(--hair-strong);color:var(--muted);background:var(--raised)}
+
+/* tables */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:13px;color:var(--muted);letter-spacing:.52px;text-align:left;padding:8px 10px 8px 0;border-bottom:1px solid var(--hair-strong);white-space:nowrap}
+td{padding:12px 10px 12px 0;border-bottom:1px solid var(--hair);vertical-align:top;font-size:15px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.big{font:600 24px/1 var(--font-display);color:var(--accent)}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--row-hl)}
+tr.off td{opacity:.55}
+.lname{font-weight:600}
+.fn{font-size:12px;color:var(--muted);letter-spacing:.48px}
+.hl{font-size:13px;color:var(--muted);margin-top:2px;max-width:420px}
+.ago{font-size:12px;color:var(--muted);margin-top:4px}
+.hist{display:flex;gap:2px;align-items:center}
+.hist span{width:9px;height:18px;display:inline-block;cursor:pointer}
+.hist span:hover{outline:2px solid var(--ink);outline-offset:1px}
+.sw{position:relative;width:34px;height:18px;background:var(--hair-strong);border:0;padding:0;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--raised);transition:transform .15s}
+.sw.on{background:var(--accent)}.sw.on::after{transform:translateX(16px)}
+
+/* activity-style cards (approvals) */
+.ap{border-top:1px solid var(--hair-strong)}
+.ap:last-child{border-bottom:1px solid var(--hair-strong)}
+.ap .h{padding:14px 0;display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex-wrap:wrap}
+.ap .h .t{flex:1;min-width:220px}
+.ap .h .t b{display:block;font-weight:600}
+.ap .h .t span{font-size:13px;color:var(--muted)}
+.ap .b{display:none;padding:4px 0 18px}
+.ap.open .b{display:block}
+.ap.open .h{background:var(--row-hl)}
+.paper{background:var(--raised);border:1px solid var(--hair);padding:16px 18px}
+textarea{width:100%;min-height:64px;margin:12px 0;font:14px/1.5 var(--font-body);color:var(--ink);background:var(--raised);border:1px solid var(--hair-strong);padding:8px 10px;border-radius:0}
+textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select{font:14px var(--font-body);color:var(--ink);background:var(--raised);border:1px solid var(--hair-strong);padding:5px 8px;border-radius:0}
+
+/* empty state */
+.empty{background:var(--raised);border:1px dashed var(--hair-strong);padding:40px 24px;text-align:center}
+.empty b{display:block;font:700 18px/1.4 var(--font-display);text-transform:uppercase;letter-spacing:.04em}
+.empty span{color:var(--muted);font-size:15px}
+
+/* markdown */
+.md{font-size:15px;line-height:1.6;overflow-wrap:anywhere}
+.md h1{font:700 24px/1.15 var(--font-display);text-transform:uppercase;margin:0 0 10px}
+.md h2{font-size:16px;margin:16px 0 4px;color:var(--muted)}
+.md h3{font:600 15px/1.4 var(--font-body);margin:12px 0 4px}
+.md pre{background:var(--board);border:1px solid var(--hair);padding:10px;overflow-x:auto;font-size:12px}
+.md code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--board);padding:1px 4px}
+.md pre code{background:none;padding:0}
+.md ul{padding-left:20px;margin:6px 0}
+.md table{font-size:13px;margin:8px 0}.md td,.md th{padding:6px 10px 6px 0}
+
+/* chart */
+.chartbox{position:relative;border-top:2px solid var(--ink);padding-top:12px}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-bottom:6px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sq{width:10px;height:10px;display:inline-block}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--raised);font-size:12px;padding:6px 9px;white-space:nowrap;opacity:0;transition:opacity .1s;z-index:3}
+
+/* drawer */
+.drawer{position:fixed;inset:0;z-index:20;display:none}
+.drawer.on{display:block}
+.drawer .scrim{position:absolute;inset:0;background:rgba(27,28,30,.35)}
+.drawer .panel{position:absolute;top:0;right:0;bottom:0;width:min(700px,100%);background:var(--raised);border-left:1px solid var(--hair-strong);overflow-y:auto;padding:24px 28px}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:14px;margin:14px 0 18px;border-top:2px solid var(--ink);padding-top:12px}
+.kv div:nth-child(odd){font:600 13px/1.6 var(--font-display);text-transform:uppercase;letter-spacing:.52px;color:var(--muted)}
+pre.log{background:var(--board);border:1px solid var(--hair);padding:10px;font-size:12px;max-height:240px;overflow:auto;white-space:pre-wrap}
+.chat{display:flex;flex-direction:column;border-top:2px solid var(--ink);background:transparent}
+.chat .msgs{display:flex;flex-direction:column;gap:10px;padding:14px 0;overflow-y:auto}
+.chat.full .msgs{min-height:42vh;max-height:62vh}
+.chat.mini .msgs{max-height:360px}
+.msg{max-width:88%;padding:10px 14px;font-size:15px;line-height:1.55}
+.msg .who{font:600 12px/1 var(--font-display);text-transform:uppercase;letter-spacing:.48px;color:var(--muted);margin-bottom:6px}
+.msg.user{align-self:flex-end;background:var(--accent-tint);border-left:3px solid var(--accent)}
+.msg.assistant{align-self:flex-start;background:var(--raised);border:1px solid var(--hair)}
+.msg.note{align-self:center;font-size:13px;color:var(--muted);padding:4px}
+.msg.err{border-color:var(--stagnant)}
+.msg .md p:first-child{margin-top:0}.msg .md p:last-child{margin-bottom:0}
+.typing{align-self:flex-start;font:600 13px var(--font-display);text-transform:uppercase;letter-spacing:.52px;color:var(--muted);padding:6px 2px}
+.typing i{display:inline-block;width:6px;height:6px;background:var(--accent);margin-left:4px;animation:blink 1s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+.sugs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.sugs button{border:1px solid var(--hair-strong);background:var(--raised);font-size:13px;padding:4px 10px;color:var(--ink)}
+.sugs button:hover{border-color:var(--accent);color:var(--accent)}
+.composer{display:flex;gap:8px;align-items:flex-end;border-top:1px solid var(--hair-strong);padding-top:10px}
+.composer textarea{margin:0;min-height:44px;max-height:180px;resize:vertical;flex:1}
+.composer .btn{height:44px}
+.chathead{display:flex;align-items:center;gap:8px;margin-top:22px}
+.chathead h2{font-size:17px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--raised);padding:9px 16px;font-size:14px;opacity:0;transition:opacity .2s;z-index:30}
+.toast.on{opacity:1}
+.hide{display:none!important}
+
+@media (max-width:760px){
+  .top,.tabs,main{padding-left:16px;padding-right:16px}
+  .brand small,.sys .upd{display:none}
+  h1{font-size:34px}
+  .stats,.stats.four{grid-template-columns:1fr 1fr}
+  .stat,.stat:not(:nth-child(3n+1)){padding:14px 12px 14px 0;border-left:0;border-bottom:1px solid var(--hair-strong)}
+  .stat:nth-child(2n){padding-left:12px;border-left:1px solid var(--hair-strong)}
+  .stat .num{font-size:34px}
+  .col-hide{display:none}
+  .top{gap:8px}.mark{width:24px;height:24px}.brand .sep{display:none}.brand b{font-size:19px}
+  #pauseBtn{padding:5px 8px}
+  .looptable thead{display:none}
+  .looptable tr{display:grid;grid-template-columns:1fr auto auto;gap:8px 12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--hair)}
+  .looptable td{border:0;padding:0}
+  .looptable .c-name{grid-column:1/-1}
+  .looptable .c-last{display:flex;align-items:center;gap:8px}.looptable .c-last .ago{margin:0}
+  .looptable .c-act{grid-column:1/-1}
+  .looptable tr.off td{opacity:.55}
+}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c2 .6 3.2 2.5 3.5 5.5"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9"/><path d="M20 4v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 15"/><path d="M4 20v-5h5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v2M12 16v2"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 4H4v16h5M16 8l4 4-4 4M20 12H9"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-7z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+</svg>
+
+<header>
+  <div class="top">
+    <div class="brand"><div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="sep"></span>
+      <div><b>Company OS</b><small>Sahabat Warga · Loop Control Center</small></div></div>
+    <span class="sp"></span>
+    <div class="sys"><span id="sys"></span><span class="upd" style="font-size:13px;color:var(--muted)" id="upd"></span>
+      <button class="btn" id="pauseBtn"></button>
+      <form method="post" action="/logout" style="margin:0"><button class="btn quiet" title="Sign out"><svg class="i"><use href="#i-out"/></svg><span class="col-hide">Log out</span></button></form></div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <a href="#overview" data-tab="overview" class="on"><svg class="i"><use href="#i-home"/></svg>Home</a>
+    <a href="#chat" data-tab="chat"><svg class="i"><use href="#i-chat"/></svg>Chat</a>
+    <a href="#approvals" data-tab="approvals"><svg class="i"><use href="#i-inbox"/></svg>Approvals<span class="badge" id="apBadge"></span></a>
+    <a href="#runs" data-tab="runs"><svg class="i"><use href="#i-list"/></svg>Runs</a>
+    <a href="#accounts" data-tab="accounts"><svg class="i"><use href="#i-key"/></svg>Accounts</a>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-overview">
+    <div class="eyebrow" id="today"></div>
+    <h1>The company this week</h1>
+    <div class="sub"><span><svg class="i"><use href="#i-target"/></svg><span id="phase">Goal phase</span></span><span><svg class="i"><use href="#i-sync"/></svg><span id="kpiAge">Scorecard never updated</span></span><span><svg class="i"><use href="#i-eye"/></svg>Agents draft, you approve. Nothing is sent without you.</span></div>
+    <div class="stats" id="kpis"></div>
+
+    <div class="sec">
+      <div class="sechead"><h2><svg class="i" style="width:20px;height:20px"><use href="#i-loop"/></svg>Loop machine</h2></div>
+      <div class="stats four" id="ops"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sechead"><h2><svg class="i" style="width:20px;height:20px"><use href="#i-pulse"/></svg>Loops</h2><span class="sp"></span>
+        <div class="seg" id="loopFilter"><button data-f="all" class="on">All</button><button data-f="problems">Problems</button><button data-f="off">Off</button></div></div>
+      <div class="tw"><table class="looptable"><thead><tr><th>Loop</th><th>Last run</th><th class="col-hide">Last 14 runs</th><th class="num">7d success</th><th class="num col-hide">Est. cost 7d</th><th class="col-hide">Next</th><th>Schedule</th><th></th></tr></thead><tbody id="loops"></tbody></table></div>
+      <p class="note">Success = runs that finished with a report, over the last 7 days. Skipped runs (paused, disabled, no free account) are not counted.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sechead"><h2><svg class="i" style="width:20px;height:20px"><use href="#i-alert"/></svg>Needs attention</h2><span class="sp"></span><a href="#approvals" data-goap>Approvals →</a></div>
+      <div id="attention"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sechead"><h2><svg class="i" style="width:20px;height:20px"><use href="#i-cal"/></svg>Runs per day</h2><span class="sp"></span><span class="fn">Last 14 days</span></div>
+      <div class="chartbox" id="chartbox">
+        <div class="legend"><span><i class="sq" style="background:var(--up)"></i>Succeeded</span><span><i class="sq" style="background:var(--stagnant)"></i>Failed, timed out or rate-limited</span></div>
+        <svg id="chart" width="100%" height="200" role="img" aria-label="Runs per day, last 14 days"></svg>
+        <div class="tip" id="tip"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-chat" class="hide">
+    <div class="eyebrow">Master entrypoint · connected to every loop, run and approval</div>
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><h1 style="flex:1">Chat</h1><button class="btn" id="chatReset">New conversation</button></div>
+    <div class="sub"><span><svg class="i"><use href="#i-eye"/></svg>It can read everything, rerun loops with your instructions, revise pending proposals and file new ones. Approving stays your button.</span></div>
+    <div id="masterChat"></div>
+  </section>
+
+  <section id="tab-approvals" class="hide">
+    <div class="eyebrow">Waiting for the founder</div>
+    <h1>Approvals</h1>
+    <div class="sub"><span>Approved items run on the loop's next run. Rejections need a note: the weekly retro learns from them.</span></div>
+    <div class="sechead"><div class="seg" id="apStatus">
+      <button data-s="pending" class="on">Pending</button><button data-s="approved">Approved</button><button data-s="executed">Executed</button><button data-s="rejected">Rejected</button><button data-s="all">All</button></div></div>
+    <div id="apList"></div>
+  </section>
+
+  <section id="tab-runs" class="hide">
+    <div class="eyebrow">Every loop run, newest first</div>
+    <h1>Runs</h1>
+    <div class="sechead" style="margin-top:22px">
+      <select id="fLoop" aria-label="Loop"><option value="">All loops</option></select>
+      <div class="seg" id="fStatus"><button data-s="" class="on">All</button><button data-s="success">Succeeded</button><button data-s="failed">Failed</button><button data-s="timeout">Timeout</button><button data-s="rate_limited">Rate-limited</button><button data-s="skipped">Skipped</button></div>
+    </div>
+    <div class="tw"><table><thead><tr><th>Status</th><th>Loop</th><th>Started</th><th>Headline</th><th class="col-hide">Account</th><th class="num col-hide">Turns</th><th class="num">Duration</th><th class="num col-hide">Est. cost</th></tr></thead><tbody id="runRows"></tbody></table></div>
+  </section>
+
+  <section id="tab-accounts" class="hide">
+    <div class="eyebrow">Harness account pool</div>
+    <h1>Accounts</h1>
+    <div class="sub"><span>The runner takes the least recently used free account. On a usage limit it rests that account and retries on the next one.</span></div>
+    <div class="stats four" id="acctStats" style="margin-bottom:28px"></div>
+    <div class="tw"><table><thead><tr><th>Harness</th><th>Account</th><th>Status</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Rate limits</th><th>Last used</th><th class="col-hide">Last error</th></tr></thead><tbody id="acctRows"></tbody></table></div>
+  </section>
+</main>
+
+<div class="drawer" id="drawer"><div class="scrim" data-close></div><div class="panel" id="panel"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ic=(n,st='')=>`<svg class="i" ${st}><use href="#i-${n}"/></svg>`;
+const STATUS={success:{k:'up',l:'Succeeded',i:'✓',c:'var(--up)'},failed:{k:'down',l:'Failed',i:'✕',c:'var(--stagnant)'},timeout:{k:'down',l:'Timed out',i:'⏱',c:'var(--stagnant)'},
+  rate_limited:{k:'warn',l:'Rate-limited',i:'!',c:'var(--review)'},skipped:{k:'idle',l:'Skipped',i:'–',c:'var(--hair-strong)'},running:{k:'run',l:'Running',i:'●',c:'var(--accent)'}};
+const chip=s=>{const x=STATUS[s]||{k:'idle',l:s||'Never',i:'○'};return `<span class="chip ${x.k}">${x.i} ${esc(x.l)}</span>`};
+const ago=iso=>{if(!iso)return'never';const s=(Date.now()-new Date(iso))/1000;if(s<0){const f=-s;return f<3600?`in ${Math.round(f/60)}m`:f<86400?`in ${Math.round(f/3600)}h`:`in ${Math.round(f/86400)}d`}
+  return s<60?'just now':s<3600?`${Math.round(s/60)}m ago`:s<86400?`${Math.round(s/3600)}h ago`:`${Math.round(s/86400)}d ago`};
+const fmtTime=iso=>iso?new Date(iso).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+const dur=s=>s==null?'':s<60?`${Math.round(s)}s`:s<3600?`${Math.round(s/60)}m`:`${(s/3600).toFixed(1)}h`;
+const usd=v=>v==null?'—':'$'+Number(v).toFixed(2);
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),2800)}
+async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json','X-COS':'1',...(opt.headers||{})}});
+  if(r.status===401){location.href='/login';throw new Error('auth')} const j=await r.json().catch(()=>({})); if(!r.ok)throw new Error(j.error||r.statusText); return j}
+
+// tiny markdown (input escaped first)
+function md(src){
+  const lines=esc(src||'').split('\n');let h='',inCode=false,inList=false,tbl=[];
+  const inline=s=>s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/(^|\W)\*([^*\n]+)\*(?=\W|$)/g,'$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>').replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  const flushT=()=>{if(!tbl.length)return;const rows=tbl.filter(r=>!/^\|?\s*:?-{2,}/.test(r)).map(r=>r.replace(/^\||\|$/g,'').split('|'));
+    h+='<div class="tw"><table>'+rows.map((r,i)=>'<tr>'+r.map(c=>i?`<td>${inline(c.trim())}</td>`:`<th>${inline(c.trim())}</th>`).join('')+'</tr>').join('')+'</table></div>';tbl=[]};
+  const closeL=()=>{if(inList){h+='</ul>';inList=false}};
+  for(const ln of lines){
+    if(ln.startsWith('```')){closeL();flushT();h+=inCode?'</code></pre>':'<pre><code>';inCode=!inCode;continue}
+    if(inCode){h+=ln+'\n';continue}
+    if(/^\s*\|/.test(ln)){closeL();tbl.push(ln.trim());continue} else flushT();
+    let m;
+    if(m=ln.match(/^(#{1,3})\s+(.*)/)){closeL();h+=`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`}
+    else if(m=ln.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/)){if(!inList){h+='<ul>';inList=true}h+=`<li>${inline(m[1])}</li>`}
+    else if(!ln.trim()){closeL()}
+    else{closeL();h+=`<p style="margin:6px 0">${inline(ln)}</p>`}
+  }
+  closeL();flushT();if(inCode)h+='</code></pre>';return h}
+
+const OPEN=new Set();
+let OV=null, TAB='overview', LOOPF='all', APS='pending', RUNS_S='';
+function setTab(t){TAB=t;$$('.tabs a').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));$$('section[id^=tab-]').forEach(s=>s.classList.toggle('hide',s.id!=='tab-'+t));refresh()}
+$$('.tabs a').forEach(a=>a.onclick=e=>{e.preventDefault();history.replaceState(null,'','#'+a.dataset.tab);setTab(a.dataset.tab)});
+function segInit(id,fn){$$(`#${id} button`).forEach(b=>b.onclick=()=>{$$(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));fn(b)})}
+segInit('loopFilter',b=>{LOOPF=b.dataset.f;renderLoops(OV)});
+segInit('apStatus',b=>{APS=b.dataset.s;renderApprovals()});
+segInit('fStatus',b=>{RUNS_S=b.dataset.s;renderRuns()});
+
+function renderHeader(o){
+  $('#sys').innerHTML=o.paused?`<span class="chip warn">${ic('pause','style="width:12px;height:12px"')} Paused</span>`:o.running?`<span class="chip run">● ${o.running} running</span>`:`<span class="chip up">✓ Live</span>`;
+  $('#pauseBtn').innerHTML=o.paused?`${ic('play')} Resume`:`${ic('pause')} Pause all`;
+  $('#pauseBtn').className='btn'+(o.paused?' primary':' danger');
+  const b=$('#apBadge');b.textContent=o.pending||'';b.dataset.n=o.pending;
+  $('#upd').textContent='Updated '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+}
+$('#pauseBtn').onclick=async()=>{const p=!OV.paused;if(p&&!confirm('Pause all scheduled loops?'))return;await api('/api/system',{method:'POST',body:JSON.stringify({paused:p})});toast(p?'Schedules paused':'Schedules resumed');refresh()};
+
+function fmtKpi(v,unit){if(v==null)return'—';if(unit==='idr'){return v>=1e6?`Rp ${(v/1e6).toLocaleString('id-ID',{maximumFractionDigits:1})}<small>jt</small>`:'Rp '+Math.round(v).toLocaleString('id-ID')}if(unit==='pct')return(v*100).toFixed(v<.1?1:0)+'<small>%</small>';return Number(v).toLocaleString('id-ID')}
+function fmtTarget(v,unit){if(unit==='idr')return v>=1e6?`Rp ${(v/1e6).toLocaleString('id-ID')} jt`:'Rp '+v;if(unit==='pct')return Math.round(v*100)+'%';return v}
+function renderKpis(o){
+  const g=o.goals||{targets:{}},k=o.kpis||{};
+  const d=new Date(),w=new Date(d-6*864e5);
+  $('#today').textContent=`${w.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`;
+  $('#phase').textContent=g.phase||'No goal phase set';
+  $('#kpiAge').textContent=k.updated_at?`Scorecard ${ago(k.updated_at)}${k.week?' · '+k.week:''}`:'Scorecard not updated yet';
+  $('#kpis').innerHTML=Object.entries(g.targets).map(([key,t])=>{
+    const v=k[key];let p='<span class="pace flat">— No data yet</span>';
+    if(v!=null){const ok=t.better==='lower'?v<=t.target:v>=t.target;p=ok?'<span class="pace up">▲ On target</span>':`<span class="pace down">▼ ${t.better==='lower'?'Above limit':'Below target'}</span>`}
+    return `<div class="stat"><div class="label">${esc(t.label)}</div><div class="num">${fmtKpi(v,t.unit)}</div>${p}<div class="meta">Target ${t.better==='lower'?'≤ ':''}${fmtTarget(t.target,t.unit)}</div></div>`}).join('')
+    +`<div class="stat"><div class="label">Loop cost this week</div><div class="num">${k.loop_cost_usd!=null?'$'+Number(k.loop_cost_usd).toFixed(0):'—'}</div><span class="pace flat">From scorecard</span><div class="meta">API-equivalent estimate</div></div>`;
+  const avail=o.accounts.filter(a=>a.status==='available').length,cool=o.accounts.filter(a=>a.status==='cooldown').length;
+  $('#ops').innerHTML=[
+    ['pulse','Runs · 24h',o.runs_24h,o.problems_24h?`<span class="pace down">▼ ${o.problems_24h} problem${o.problems_24h>1?'s':''}</span>`:'<span class="pace up">▲ No problems</span>','Failed, timed out or rate-limited'],
+    ['inbox','Waiting for you',o.pending,o.pending?`<span class="pace warn">● Needs a decision</span>`:'<span class="pace up">✓ Inbox zero</span>','Pending approvals'],
+    ['key','Accounts free',`${avail}<small>/ ${o.accounts.length}</small>`,cool?`<span class="pace warn">● ${cool} cooling down</span>`:'<span class="pace up">✓ All healthy</span>','Subscription pool'],
+    ['coin','Est. cost · 7d',usd(o.cost_7d),'<span class="pace flat">API-equivalent</span>','Subscription runs are prepaid'],
+    ['coin','API spend today',usd(o.api_cost_today),o.api_cost_today>=o.api_cap?'<span class="pace down">▼ Cap reached</span>':'<span class="pace up">▲ Under cap</span>',`Daily cap ${usd(o.api_cap)}`],
+    ['loop','Loops on',`${o.loops.filter(l=>l.enabled).length}<small>/ ${o.loops.length}</small>`,o.paused?'<span class="pace warn">● System paused</span>':'<span class="pace up">▲ Running</span>','Scheduled by systemd timers'],
+  ].map(([i,l,v,p,m])=>`<div class="stat"><div class="label">${ic(i)}${l}</div><div class="num">${v}</div>${p}<div class="meta">${m}</div></div>`).join('');
+}
+
+function renderLoops(o){
+  if(!o)return;
+  let ls=o.loops;
+  if(LOOPF==='problems')ls=ls.filter(l=>['failed','timeout','rate_limited'].includes(l.last?.status));
+  if(LOOPF==='off')ls=ls.filter(l=>!l.enabled);
+  $('#loops').innerHTML=ls.length?ls.map(l=>{
+    const last=l.last;const rate=l.runs_7d?Math.round(100*l.success_7d/l.runs_7d)+'%':'—';
+    return `<tr class="${l.enabled?'':'off'}">
+      <td class="c-name"><div class="fn">${esc(l.function)}</div><div class="lname">${esc(l.name)}</div><div class="hl">${esc(last?.headline||last?.error||l.description)}</div></td>
+      <td class="c-last">${chip(last?.status)}<div class="ago">${ago(last?.started_at)}</div></td>
+      <td class="col-hide"><div class="hist">${l.history.map(h=>`<span data-run="${h.id}" style="background:${(STATUS[h.status]||{}).c||'var(--hair-strong)'}" title="${esc((STATUS[h.status]||{}).l||h.status)} · ${fmtTime(h.at)}"></span>`).join('')||'<span style="width:auto;height:auto;font-size:13px;color:var(--muted)">No runs yet</span>'}</div></td>
+      <td class="num big c-rate">${rate}</td>
+      <td class="num col-hide">${usd(l.cost_7d)}</td>
+      <td class="col-hide" style="font-size:13px;color:var(--muted);white-space:nowrap">${l.enabled?(l.next?esc(l.next.replace(/^\w+ /,'').slice(0,16)):'Timer not installed'):'Off'}</td>
+      <td class="c-sw"><button class="sw ${l.enabled?'on':''}" aria-label="Schedule for ${esc(l.name)}: ${l.enabled?'on':'off'}" data-toggle="${l.id}" data-en="${l.enabled?1:0}"></button></td>
+      <td class="c-act" style="white-space:nowrap"><button class="btn primary" data-runnow="${l.id}">${ic('play','style="width:12px;height:12px"')} Run</button>${last?` <button class="btn" data-run="${last.id}">Report</button>`:''}</td>
+    </tr>`}).join(''):`<tr><td colspan="8"><div class="empty"><b>Nothing here</b><span>No loops match this filter.</span></div></td></tr>`;
+}
+
+function renderAttention(o){
+  const items=[];
+  o.loops.forEach(l=>{if(['failed','timeout','rate_limited'].includes(l.last?.status))items.push({k:'down',t:`${l.name}: ${(STATUS[l.last.status]||{}).l}`,s:l.last.error||l.last.headline||'',run:l.last.id})
+    else if(/^(DOWN|DEGRADED)/i.test(l.last?.headline||''))items.push({k:'warn',t:l.name,s:l.last.headline,run:l.last.id})});
+  if(o.pending)items.push({k:'warn',t:`${o.pending} proposal${o.pending>1?'s':''} waiting for approval`,s:'Open Approvals to decide',goap:1});
+  o.accounts.filter(a=>a.status==='cooldown').forEach(a=>items.push({k:'warn',t:`Account ${a.name} is cooling down`,s:`Usage limit hit, free again ${ago(a.cooldown_until)}`}));
+  $('#attention').innerHTML=items.length?`<div class="tw"><table><tbody>${items.map(x=>`<tr class="click" ${x.run?`data-run="${x.run}"`:''} ${x.goap?'data-goap':''}><td style="width:1%"><span class="chip ${x.k}">${x.k==='down'?'✕':'!'}</span></td><td><div class="lname">${esc(x.t)}</div><div class="hl">${esc(x.s)}</div></td></tr>`).join('')}</tbody></table></div>`
+    :`<div class="empty"><b>Nothing needs you</b><span>No failed loops, no pending approvals, every account is free.</span></div>`;
+}
+
+function renderChart(o){
+  const svg=$('#chart'),W=svg.clientWidth||800,H=200,pad={l:28,r:4,t:8,b:24};const d=o.daily;
+  const max=Math.max(4,...d.map(x=>x.ok+x.problems));const step=Math.pow(10,Math.floor(Math.log10(max)));const top=Math.ceil(max/step)*step;
+  const iw=W-pad.l-pad.r,ih=H-pad.t-pad.b,bw=Math.min(26,iw/d.length*.6),y=v=>pad.t+ih-(v/top)*ih;
+  let s='';for(const t of [0,top/2,top]){s+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${y(t)}" y2="${y(t)}" stroke="${t?'#e2dccd':'#bdb4a0'}" stroke-width="1"/><text x="${pad.l-6}" y="${y(t)+4}" text-anchor="end" font-size="11" fill="#5d584c" font-family="Inter Variable,sans-serif">${t}</text>`}
+  d.forEach((x,i)=>{const cx=pad.l+iw*(i+.5)/d.length,x0=cx-bw/2;const okH=(x.ok/top)*ih,prH=(x.problems/top)*ih;
+    if(x.ok)s+=`<rect x="${x0}" y="${y(x.ok)}" width="${bw}" height="${okH}" fill="#3d6b2b"/>`;
+    if(x.problems)s+=`<rect x="${x0}" y="${y(x.ok+x.problems)}" width="${bw}" height="${Math.max(0,prH-(x.ok?2:0))}" fill="#a92a20"/>`;
+    if((d.length-1-i)%2===0||d.length<8)s+=`<text x="${cx}" y="${H-6}" text-anchor="middle" font-size="12" fill="#5d584c" font-family="Barlow Condensed,sans-serif" font-weight="600" letter-spacing=".5">${x.date.slice(8)}/${x.date.slice(5,7)}</text>`;
+    s+=`<rect x="${pad.l+iw*i/d.length}" y="${pad.t}" width="${iw/d.length}" height="${ih}" fill="transparent" data-i="${i}"/>`});
+  svg.innerHTML=s;const tip=$('#tip');
+  svg.onmousemove=e=>{const i=e.target.dataset?.i;if(i==null){tip.style.opacity=0;return}const x=d[i];
+    tip.innerHTML=`<b>${new Date(x.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</b><br>✓ ${x.ok} succeeded · ✕ ${x.problems} problems<br>${x.skipped} skipped · est. ${usd(x.cost)}`;
+    const r=$('#chartbox').getBoundingClientRect();tip.style.left=Math.min(e.clientX-r.left+12,r.width-210)+'px';tip.style.top=(e.clientY-r.top-10)+'px';tip.style.opacity=1};
+  svg.onmouseleave=()=>tip.style.opacity=0;
+}
+
+async function renderApprovals(){
+  const items=await api('/api/approvals?status='+APS);
+  const riskK={high:'down',medium:'warn',low:'idle'};
+  $('#apList').innerHTML=items.length?items.map(a=>`<div class="ap" id="ap-${a.id}">
+    <div class="h" data-apopen="${a.id}"><span class="chip outline">${esc(a.type)}</span><span class="chip ${riskK[a.risk]||'idle'}">Risk ${esc(a.risk)}</span>
+      <div class="t"><b>${esc(a.title)}</b><span>${esc(a.loop)} · ${ago(a.created_at)} · ${esc(a.id)}${a.status!=='pending'?' · '+esc(a.status):''}</span></div></div>
+    <div class="b"><div class="paper md">${md(a.body)}</div>
+      ${a.revisions?.length?`<p style="font-size:13px;color:var(--muted);margin:8px 0 0">Revised ${a.revisions.length}× · last: ${esc(a.revisions[a.revisions.length-1].summary||'no summary')} (${ago(a.revisions[a.revisions.length-1].at)})</p>`:''}
+      ${a.note?`<p style="font-size:14px;color:var(--muted)"><b style="color:var(--ink)">Note:</b> ${esc(a.note)}</p>`:''}
+      ${a.status==='pending'?`<textarea placeholder="Note for the agent (required to reject; optional to approve, e.g. 'post on Tuesday')" id="note-${a.id}"></textarea>
+      <div class="acts"><button class="btn primary" data-decide="approve" data-id="${a.id}">${ic('check','style="width:13px;height:13px"')} Approve</button><button class="btn danger" data-decide="reject" data-id="${a.id}">Reject</button>
+      <span class="sp" style="flex:1"></span><a href="#" data-run="${a.run_id}">View source run →</a></div>`:`<div class="acts" style="margin-top:12px"><a href="#" data-run="${a.run_id}">Source run →</a>${a.executed_run?`<a href="#" data-run="${a.executed_run}">Execution run →</a>`:''}</div>`}
+      <div class="chathead"><h2>${ic('chat','style="width:18px;height:18px"')} Adjust with AI</h2></div><div class="apchat" data-ap="${a.id}"></div>
+    </div></div>`).join(''):`<div class="empty"><b>${APS==='pending'?'Nothing waiting':'No items'}</b><span>${APS==='pending'?'Every proposal has been decided.':'Nothing in this status yet.'}</span></div>`;
+  if(items.length===1)OPEN.add(items[0].id);
+  for(const id of OPEN){const el=$('#ap-'+id);if(el){el.classList.add('open');mountChat(el.querySelector('.apchat'),'approval:'+id)}}
+}
+
+async function renderRuns(){
+  if($('#fLoop').options.length<=1&&OV)OV.loops.forEach(l=>$('#fLoop').add(new Option(l.name,l.id)));
+  const q=new URLSearchParams({limit:150});if($('#fLoop').value)q.set('loop',$('#fLoop').value);if(RUNS_S)q.set('status',RUNS_S);
+  const rows=await api('/api/runs?'+q);
+  $('#runRows').innerHTML=rows.length?rows.map(r=>`<tr class="click" data-run="${r.id}"><td>${chip(r.status)}</td><td style="white-space:nowrap">${esc(r.loop)}</td><td style="white-space:nowrap;font-size:14px">${fmtTime(r.started_at)}</td>
+    <td>${esc(r.headline||r.error||'')}${r.proposals?.length?` <span class="chip outline">${r.proposals.length} proposal${r.proposals.length>1?'s':''}</span>`:''}</td><td class="col-hide">${esc(r.account||'')}</td><td class="num col-hide">${r.num_turns??''}</td><td class="num">${dur(r.duration_s)}</td><td class="num col-hide">${usd(r.cost_usd)}</td></tr>`).join('')
+    :`<tr><td colspan="8"><div class="empty"><b>No runs</b><span>Nothing matches these filters.</span></div></td></tr>`;
+}
+$('#fLoop').onchange=renderRuns;
+
+function renderAccounts(o){
+  const S={available:['up','✓ Available'],in_use:['run','● In use'],cooldown:['warn','! Cooling down'],disabled:['down','✕ Disabled']};
+  const n=k=>o.accounts.filter(a=>a.status===k).length;
+  $('#acctStats').innerHTML=[['Available',n('available'),'up'],['In use',n('in_use'),'flat'],['Cooling down',n('cooldown'),'warn']].map(([l,v,k])=>`<div class="stat"><div class="label">${l}</div><div class="num">${v}<small>/ ${o.accounts.length}</small></div></div>`).join('');
+  $('#acctRows').innerHTML=o.accounts.map(a=>`<tr><td>${esc(a.harness)}</td><td class="lname">${esc(a.name)}</td><td><span class="chip ${S[a.status]?.[0]||'idle'}">${S[a.status]?.[1]||esc(a.status)}</span>${a.cooldown_until?`<div class="ago">free ${ago(a.cooldown_until)}</div>`:''}</td>
+    <td class="num">${a.runs}</td><td class="num">${a.failures}</td><td class="num">${a.rate_limits}</td><td style="font-size:14px">${ago(a.last_used)}</td><td class="col-hide" style="font-size:13px;color:var(--muted)">${esc(a.last_error||'')}</td></tr>`).join('');
+}
+
+async function openRun(id){
+  const r=await api('/api/runs/'+encodeURIComponent(id));
+  $('#panel').innerHTML=`<button class="btn" style="float:right" data-close>Close</button>
+    <div class="eyebrow">${esc(r.loop)}</div>
+    <h1 style="font-size:30px;margin-right:80px">${esc(r.headline||r.error||'Run')}</h1>
+    <div class="kv"><div>Status</div><div>${chip(r.status)}${r.error?` <span style="color:var(--stagnant);font-size:13px">${esc(r.error)}</span>`:''}</div>
+      <div>Run</div><div style="font-size:13px">${esc(r.id)} · ${esc(r.trigger)}</div>
+      <div>Harness</div><div>${esc(r.harness)} · ${esc(r.billing||'')} · <b>${esc(r.account||'—')}</b>${r.attempts>1?` (attempt ${r.attempts})`:''}</div>
+      <div>Started</div><div>${fmtTime(r.started_at)} · ${dur(r.duration_s)}</div><div>Turns · cost</div><div>${r.num_turns??'—'} · ${usd(r.cost_usd)}</div>
+      <div>Proposals</div><div>${r.proposal_items.length?r.proposal_items.map(p=>`${esc(p.title)} <span class="chip ${p.status==='pending'?'warn':p.status==='rejected'?'down':'up'}">${esc(p.status)}</span>`).join('<br>'):'None'}</div>
+      <div>Executed</div><div>${r.executed?.length?esc(r.executed.join(', ')):'None'}</div></div>
+    <div class="paper md">${r.report?md(r.report):'<p style="color:var(--muted)">No report written.</p>'}</div>
+    ${r.note?`<p style="font-size:14px"><b>Founder instructions for this run:</b> ${esc(r.note)}</p>`:''}
+    ${r.stderr_tail?`<h2 style="font-size:16px;margin-top:22px">stderr</h2><pre class="log">${esc(r.stderr_tail)}</pre>`:''}
+    <div class="chathead"><h2>${ic('chat','style="width:18px;height:18px"')} Ask about this run</h2></div><div id="runChat"></div>`;
+  $('#drawer').classList.add('on');
+  mountChat($('#runChat'),'run:'+r.id);
+}
+
+document.addEventListener('click',async e=>{
+  const cs=e.target.closest('[data-send],[data-sug]');
+  if(cs){const box=cs.closest('.chat');if(cs.dataset.sug!==undefined){const ta=box.querySelector('textarea');ta.value=cs.dataset.sug;ta.focus();if(!cs.dataset.sug.endsWith(': '))sendChat(box)}else sendChat(box);return}
+  const t=e.target.closest('[data-run],[data-close],[data-runnow],[data-toggle],[data-apopen],[data-decide],[data-goap]');if(!t)return;
+  if(t.tagName==='A')e.preventDefault();
+  try{
+    if(t.dataset.close!==undefined){$('#drawer').classList.remove('on')}
+    else if(t.dataset.runnow){t.disabled=true;await api(`/api/loops/${t.dataset.runnow}/run`,{method:'POST',body:'{}'});toast('Started '+t.dataset.runnow);setTimeout(refresh,1500)}
+    else if(t.dataset.toggle){await api(`/api/loops/${t.dataset.toggle}/enabled`,{method:'POST',body:JSON.stringify({enabled:t.dataset.en!=='1'})});refresh()}
+    else if(t.dataset.apopen){const id=t.dataset.apopen,el=$('#ap-'+id);const on=el.classList.toggle('open');if(on){OPEN.add(id);mountChat(el.querySelector('.apchat'),'approval:'+id)}else OPEN.delete(id)}
+    else if(t.dataset.goap!==undefined){history.replaceState(null,'','#approvals');setTab('approvals')}
+    else if(t.dataset.decide){const id=t.dataset.id,note=$('#note-'+id).value.trim();
+      if(t.dataset.decide==='reject'&&!note){toast('Add a note: the retro loop learns from rejections');$('#note-'+id).focus();return}
+      await api('/api/approvals/'+id,{method:'POST',body:JSON.stringify({decision:t.dataset.decide,note})});toast(t.dataset.decide==='approve'?"Approved. It runs on the loop's next run.":'Rejected');refresh()}
+    else if(t.dataset.run){await openRun(t.dataset.run)}
+  }catch(err){toast(err.message)}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#drawer').classList.remove('on')});
+
+// ---------- chat ----------
+const CHATS={};  // scope -> {el, polling}
+const SUGS={
+  master:['What needs my attention today?','Summarise this week for me','Why did the last failed run fail?','Rerun content-weekly focusing on Barokah Residence launch'],
+  run:['Explain this run in 3 lines','Why did it fail and how do I fix it?','Rerun it with these changes: ','What did it propose?'],
+  approval:['Make it shorter and warmer','Rewrite in simpler Bahasa Indonesia','What are the risks of approving this?','Change it so that: ']};
+function chatHTML(scope,mode){return `<div class="chat ${mode}" data-scope="${esc(scope)}"><div class="msgs"></div>
+  <div class="sugs">${SUGS[scope.split(':')[0]].map(x=>`<button data-sug="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+  <div class="composer"><textarea placeholder="${scope==='master'?'Ask anything about the company OS…':scope.startsWith('run')?'Ask about this run, or tell it how to rerun…':'Ask the AI to adjust this proposal…'}" aria-label="Message"></textarea>
+  <button class="btn primary" data-send>${ic('send','style="width:13px;height:13px"')} Send</button></div></div>`}
+function renderMsgs(box,t){
+  const m=box.querySelector('.msgs');
+  m.innerHTML=t.messages.map(x=>x.role==='note'?`<div class="msg note">${esc(x.text)}</div>`:
+    `<div class="msg ${x.role}${x.error?' err':''}"><div class="who">${x.role==='user'?'You':'Company OS'} · ${fmtTime(x.at)}</div><div class="md">${md(x.text)}</div></div>`).join('')
+    +(t.busy?'<div class="typing">Working<i></i><i></i><i></i></div>':'')
+    +(!t.messages.length&&!t.busy?`<div class="msg note">${box.dataset.scope==='master'?'Ask about runs, approvals, goals, or tell a loop what to do differently.':'Start a conversation about this item.'}</div>`:'');
+  box.querySelector('.sugs').classList.toggle('hide',t.messages.length>0);
+  box.querySelector('[data-send]').disabled=t.busy;
+  m.scrollTop=m.scrollHeight;
+}
+async function mountChat(container,scope,mode='mini'){
+  container.innerHTML=chatHTML(scope,mode);const box=container.querySelector('.chat');
+  const t=await api('/api/chat?scope='+encodeURIComponent(scope));renderMsgs(box,t);if(t.busy)pollChat(box,scope);
+}
+async function pollChat(box,scope){
+  if(CHATS[scope])return;CHATS[scope]=1;
+  try{while(true){await new Promise(r=>setTimeout(r,1500));const t=await api('/api/chat?scope='+encodeURIComponent(scope));
+    const live=document.querySelector(`.chat[data-scope="${CSS.escape(scope)}"]`)||box;renderMsgs(live,t);if(!t.busy)break}}
+  finally{delete CHATS[scope]}
+  if(scope.startsWith('approval:'))await renderApprovals(); else refreshQuiet();
+}
+async function sendChat(box){
+  const ta=box.querySelector('textarea'),text=ta.value.trim();if(!text)return;const scope=box.dataset.scope;
+  ta.value='';
+  try{const t=await api('/api/chat',{method:'POST',body:JSON.stringify({scope,text})});renderMsgs(box,t);pollChat(box,scope)}
+  catch(e){ta.value=text;toast(e.message)}
+}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&e.target.matches('.composer textarea')){e.preventDefault();sendChat(e.target.closest('.chat'))}});
+$('#chatReset').onclick=async()=>{await api('/api/chat/reset',{method:'POST',body:JSON.stringify({scope:'master'})});mountChat($('#masterChat'),'master','full')};
+async function refreshQuiet(){try{OV=await api('/api/overview');renderHeader(OV)}catch(e){}}
+
+async function refresh(){
+  try{OV=await api('/api/overview');renderHeader(OV);
+    if(TAB==='overview'){renderKpis(OV);renderLoops(OV);renderAttention(OV);renderChart(OV)}
+    if(TAB==='approvals')await renderApprovals();
+    if(TAB==='runs')await renderRuns();
+    if(TAB==='accounts')renderAccounts(OV);
+    if(TAB==='chat'&&!$('#masterChat .chat'))await mountChat($('#masterChat'),'master','full');
+  }catch(e){if(e.message!=='auth')toast('Refresh failed: '+e.message)}
+}
+const start=(location.hash||'#overview').slice(1);setTab(['overview','chat','approvals','runs','accounts'].includes(start)?start:'overview');
+setInterval(()=>{if(!$('#drawer').classList.contains('on')&&!document.activeElement?.matches('textarea')&&!Object.keys(CHATS).length&&TAB!=='chat'&&!$$('.ap.open').length)refresh()},15000);
+addEventListener('resize',()=>OV&&TAB==='overview'&&renderChart(OV));
+</script>
+</body></html>

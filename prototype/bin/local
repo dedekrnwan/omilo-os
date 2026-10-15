@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Try Company OS on your Mac (or any laptop). No systemd needed.
+#
+#   bin/local demo            fake agent + fake data, opens the dashboard (no Claude usage)
+#   bin/local dashboard       dashboard on the REAL state of this folder
+#   bin/local run <loop>      run one loop for real with your own Claude Code login
+#   bin/local reset-demo      delete the demo data
+#
+# Dashboard: http://127.0.0.1:8787  token: local
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${COS_DASHBOARD_PORT:-8787}"
+export COS_DASHBOARD_TOKEN="${COS_DASHBOARD_TOKEN:-local}"
+export WORKSPACE_DIR="${WORKSPACE_DIR:-$(dirname "$ROOT")}"
+PY="$(command -v python3)"
+
+open_browser() { [ "$(uname)" = "Darwin" ] && (sleep 1; open "http://127.0.0.1:$PORT") & true; }
+
+serve() {  # $1 = COS_ROOT to serve
+  echo "Dashboard: http://127.0.0.1:$PORT   token: $COS_DASHBOARD_TOKEN   (Ctrl+C to stop)"
+  open_browser
+  COS_ROOT="$1" "$PY" "$ROOT/dashboard/server.py" --port "$PORT"
+}
+
+case "${1:-}" in
+  demo)
+    D="$ROOT/.demo"
+    MOCK_BIN="$("$PY" -c "import json;print(json.load(open('$D/config/settings.json'))['harnesses']['claude-code']['bin'])" 2>/dev/null || true)"
+    if [ ! -d "$D/state/runs" ] || [ ! -x "$MOCK_BIN" ]; then
+      rm -rf "$D" "$ROOT/.demo-workspace" 2>/dev/null || true
+      echo "Building demo data in .demo/ with a fake agent..."
+      mkdir -p "$D" "$ROOT/.demo-workspace/ops"
+      for x in CLAUDE.md company loops lib bin dashboard tests chat; do rm -rf "$D/$x" 2>/dev/null || true; cp -R "$ROOT/$x" "$D/$x"; done
+      mkdir -p "$D/config" "$D/state" "$D/accounts/claude-code/acc-01" "$D/accounts/claude-code/acc-02" "$D/accounts/claude-code/acc-03"
+      cp "$ROOT/state/goals.json" "$D/state/"
+      "$PY" - "$ROOT/config/settings.json" "$D/config/settings.json" "$ROOT/tests/mock_claude.py" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1])); s["harnesses"]["claude-code"]["bin"]=sys.argv[3]; json.dump(s,open(sys.argv[2],"w"),indent=2)
+PY
+      echo '{"updated_at":"2026-10-12T07:04:00+07:00","week":"2026-W41","mrr_idr":0,"paying_communities":0,"communities":1,"active_residents":0,"digital_share":null,"churn_monthly":null,"support_hours":1.5,"loop_cost_usd":3.2}' > "$D/state/kpis.json"
+      export COS_ROOT="$D" WORKSPACE_DIR="$ROOT/.demo-workspace"
+      for l in ops-health content-weekly sales-prospecting finance-scorecard dev-builder support-digest; do "$PY" "$D/bin/cos" run "$l" || true; done
+      MOCK_MODE=fail "$PY" "$D/bin/cos" run ops-health || true
+      MOCK_MODE=noreport "$PY" "$D/bin/cos" run retro-weekly || true
+      MOCK_MODE=ratelimit MOCK_LIMITED=acc-01 "$PY" "$D/bin/cos" run dev-builder || true
+    fi
+    # always refresh the code in the demo copy so it matches this folder (state is kept)
+    for x in lib bin chat loops company; do mkdir -p "$D/$x"; cp -R "$ROOT/$x/." "$D/$x/"; done; cp "$ROOT/CLAUDE.md" "$D/"
+    "$PY" - "$ROOT/config/settings.json" "$D/config/settings.json" "$ROOT/tests/mock_claude.py" <<'PY'
+import json,sys
+s=json.load(open(sys.argv[1])); s["harnesses"]["claude-code"]["bin"]=sys.argv[3]; json.dump(s,open(sys.argv[2],"w"),indent=2)
+PY
+    export WORKSPACE_DIR="$ROOT/.demo-workspace"
+    serve "$D" ;;
+  reset-demo)
+    rm -rf "$ROOT/.demo" "$ROOT/.demo-workspace" && echo "demo data removed" ;;
+  dashboard)
+    serve "$ROOT" ;;
+  run)
+    LOOP="${2:?usage: bin/local run <loop>   (try: content-weekly or sales-prospecting)}"
+    command -v claude >/dev/null || { echo "Claude Code CLI not found: npm i -g @anthropic-ai/claude-code, then run 'claude' once to log in"; exit 1; }
+    echo "Running '$LOOP' with your own Claude Code login. Workspace: $WORKSPACE_DIR"
+    COS_ROOT="$ROOT" "$PY" "$ROOT/bin/cos" run "$LOOP"
+    echo; echo "See it: bin/local dashboard   or   bin/cos runs" ;;
+  *)
+    sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

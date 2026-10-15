@@ -1,0 +1,20 @@
+{
+  "id": "retro-weekly",
+  "name": "Weekly retro",
+  "function": "meta",
+  "schedule": "Fri *-*-* 16:00:00 Asia/Jakarta",
+  "description": "Weekly: review all loop runs and rejected proposals, propose prompt improvements.",
+  "harness": "claude-code",
+  "max_turns": 40,
+  "timeout_min": 20,
+  "workdir": "company-os",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep"
+  ],
+  "enabled": true,
+  "model": null
+}

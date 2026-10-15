@@ -1,0 +1,51 @@
+{
+  "timezone": "Asia/Jakarta",
+  "workspace_dir": null,
+  "max_parallel_runs": 4,
+  "daily_api_cost_cap_usd": 25,
+  "harnesses": {
+    "claude-code": {
+      "type": "claude-code",
+      "billing": "subscription",
+      "bin": "claude",
+      "accounts_dir": "accounts/claude-code",
+      "cooldown_min": 60,
+      "max_account_attempts": 3,
+      "extra_args": []
+    },
+    "claude-api": {
+      "type": "claude-code",
+      "billing": "api",
+      "bin": "claude",
+      "extra_args": [],
+      "_note": "Same CLI, billed to ANTHROPIC_API_KEY from /etc/company-os.env. Set a loop's harness to 'claude-api' to use it."
+    },
+    "codex": {
+      "type": "command",
+      "billing": "subscription",
+      "argv": [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-"
+      ],
+      "stdin": true,
+      "accounts_dir": "accounts/codex",
+      "account_env": "CODEX_HOME",
+      "_note": "Example adapter. Check the flags of your installed Codex CLI version before enabling."
+    }
+  },
+  "chat": {
+    "brain": "claude-code",
+    "harness": "claude-code",
+    "timeout_s": 300,
+    "max_turns": 30,
+    "_hermes_example": {
+      "brain": "openai",
+      "base_url": "http://127.0.0.1:8642/v1",
+      "api_key_env": "HERMES_API_KEY",
+      "model": "hermes-agent",
+      "_note": "Point at Hermes' OpenAI-compatible API server. Check your Hermes version's docs for the exact URL/port."
+    }
+  }
+}

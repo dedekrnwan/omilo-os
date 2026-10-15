@@ -1,0 +1,21 @@
+{
+  "id": "content-weekly",
+  "name": "Content planner",
+  "function": "marketing",
+  "schedule": "Mon *-*-* 08:00:00 Asia/Jakarta",
+  "description": "Weekly: content calendar + drafts (IG, TikTok scripts, WA broadcast, blog) for approval.",
+  "harness": "claude-code",
+  "max_turns": 40,
+  "timeout_min": 30,
+  "workdir": "company-os",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch"
+  ],
+  "enabled": true,
+  "model": null
+}

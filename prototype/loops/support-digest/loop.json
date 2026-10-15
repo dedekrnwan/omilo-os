@@ -1,0 +1,22 @@
+{
+  "id": "support-digest",
+  "name": "Support digest",
+  "function": "support",
+  "schedule": "*-*-* 06:30:00 Asia/Jakarta",
+  "description": "Daily: group new support tickets, draft FAQ/help-center updates, propose bug issues.",
+  "harness": "claude-code",
+  "max_turns": 40,
+  "timeout_min": 20,
+  "workdir": "company-os",
+  "allowed_tools": [
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "Bash(psql:*)",
+    "Bash(gh issue create:*)",
+    "Bash(gh issue list:*)"
+  ],
+  "enabled": true,
+  "model": null
+}

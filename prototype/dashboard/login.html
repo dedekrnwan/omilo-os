@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Company OS · Sign in</title>
+<style>
+@font-face{font-family:"Barlow Condensed";font-weight:600;font-display:swap;src:url(/fonts/barlow-condensed-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-display:swap;src:url(/fonts/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Inter Variable";font-weight:100 900;font-display:swap;src:url(/fonts/inter-latin-wght-normal.woff2) format("woff2")}
+:root{--d:"Barlow Condensed","Arial Narrow",sans-serif;--b:"Inter Variable",ui-sans-serif,system-ui,sans-serif;--board:#f4f2ec;--raised:#fdfcf8;--ink:#1b1c1e;--muted:#5d584c;--hair:#bdb4a0;--accent:#1e3260;--bad:#a92a20}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--board);color:var(--ink);font:15px/1.5 var(--b);padding:16px}
+.w{width:100%;max-width:300px;text-align:center}
+.mark{width:40px;height:40px;margin:0 auto 14px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr}
+.mark i:nth-child(1),.mark i:nth-child(5){background:#1e3260}.mark i:nth-child(2),.mark i:nth-child(3){background:#16B38C}
+h1{font:700 32px/1 var(--d);text-transform:uppercase;margin:0}
+.s{color:var(--muted);font-size:14px;margin:6px 0 26px}
+form{background:var(--raised);border-top:2px solid var(--accent);padding:22px 20px;text-align:left}
+label{font:600 13px var(--d);text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+input{width:100%;margin-top:6px;padding:9px 10px;border:1px solid var(--hair);background:#fff;color:var(--ink);font:inherit;border-radius:0}
+input:focus{outline:2px solid var(--accent);outline-offset:1px}
+button{margin-top:14px;width:100%;padding:9px;border:0;background:var(--accent);color:var(--raised);font:600 16px var(--d);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;border-radius:0}
+.e{color:var(--bad);font-size:13px;margin-top:10px;display:none}
+.f{color:var(--muted);font-size:13px;margin-top:16px}
+</style></head><body>
+<div class="w">
+  <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <h1>Company OS</h1><div class="s">Sahabat Warga · Loop Control Center</div>
+  <form method="post" action="/login">
+    <label for="t">Dashboard token</label>
+    <input id="t" type="password" name="token" autofocus autocomplete="current-password">
+    <button type="submit">Sign in</button>
+    <div class="e" id="e">Wrong token.</div>
+  </form>
+  <div class="f">Agents draft. You approve.</div>
+</div>
+<script>if(location.search.includes('e=1'))document.getElementById('e').style.display='block'</script>
+</body></html>
