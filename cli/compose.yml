@@ -1,0 +1,15 @@
+# Laptop mode: one container (API + worker + web) on localhost. Written by `saga-os up`.
+services:
+  saga-os:
+    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SAGA_PORT:-7700}:7700"
+    environment:
+      SAGA_DATA_DIR: /data
+      SAGA_PUBLIC_URL: http://localhost:${SAGA_PORT:-7700}
+      SAGA_INTERNAL_URL: http://localhost:7700
+      SAGA_TIMEZONE: ${SAGA_TIMEZONE:-UTC}
+      SAGA_EMBEDDED_WORKER: "true"
+    volumes:
+      - ${SAGA_HOME:-~/.saga-os}/data:/data

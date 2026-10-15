@@ -1,0 +1,47 @@
+# Server mode: Postgres, the API (web app included) and a separate worker.
+#   cp deploy/.env.example deploy/.env && edit it
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+# Behind an existing Traefik (like the Sahabat Warga ops stack): set TRAEFIK_NETWORK and the labels below.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saga
+      POSTGRES_USER: saga
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U saga"], interval: 10s, retries: 10}
+
+  saga-api:
+    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    restart: unless-stopped
+    depends_on: {postgres: {condition: service_healthy}}
+    environment: &env
+      SAGA_DATABASE_URL: postgresql+psycopg://saga:${POSTGRES_PASSWORD}@postgres:5432/saga
+      SAGA_SECRET_KEY: ${SAGA_SECRET_KEY:?set SAGA_SECRET_KEY}
+      SAGA_PUBLIC_URL: ${SAGA_PUBLIC_URL:?e.g. https://os.example.com}
+      SAGA_INTERNAL_URL: http://saga-api:7700
+      SAGA_BASE_PATH: ${SAGA_BASE_PATH:-}
+      SAGA_TIMEZONE: ${SAGA_TIMEZONE:-UTC}
+      SAGA_COOKIE_SECURE: "true"
+      SAGA_EMBEDDED_WORKER: "false"
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+    volumes: [sagadata:/data]
+    ports: ["127.0.0.1:${SAGA_PORT:-7700}:7700"]
+    labels:
+      - traefik.enable=${TRAEFIK_ENABLE:-false}
+      - traefik.http.routers.saga.rule=${TRAEFIK_RULE:-Host(`os.example.com`)}
+      - traefik.http.routers.saga.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.saga.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.saga.loadbalancer.server.port=7700
+
+  saga-worker:
+    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    restart: unless-stopped
+    command: ["saga-worker"]
+    depends_on: {saga-api: {condition: service_started}}
+    environment: *env
+    volumes: [sagadata:/data]
+
+volumes: {pgdata: {}, sagadata: {}}

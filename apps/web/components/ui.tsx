@@ -1,0 +1,37 @@
+"use client";
+import { marked } from "marked";
+import { useMemo } from "react";
+
+marked.use({ gfm: true, breaks: false, renderer: { html: () => "" } }); // agents never inject raw HTML
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
+
+export function Markdown({ text }: { text: string }) {
+  const html = useMemo(() => {
+    const out = marked.parse(escapeHtml(text || ""), { async: false }) as string;
+    // links open in a new tab and never run script
+    return out.replace(/<a href="(?!https?:|mailto:|\/)[^"]*"/g, '<a href="#"').replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
+  }, [text]);
+  return <div className="md" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+const STATUS: Record<string, [string, string]> = {
+  done: ["up", "✓ Done"], running: ["run", "● Running"], queued: ["idle", "○ Queued"], failed: ["down", "✕ Failed"],
+  cancelled: ["idle", "– Cancelled"], pending: ["warn", "! Pending"], approved: ["run", "✓ Approved"], executing: ["run", "● Executing"],
+  rejected: ["down", "✕ Rejected"], changes_requested: ["warn", "↺ Changes asked"], active: ["up", "✓ Active"], paused: ["warn", "❚❚ Paused"],
+};
+
+export function StatusChip({ status }: { status: string }) {
+  const [k, l] = STATUS[status] || ["idle", status];
+  return <span className={`chip ${k}`}>{l}</span>;
+}
+
+export function Empty({ title, text }: { title: string; text: string }) {
+  return <div className="empty"><b>{title}</b><span>{text}</span></div>;
+}
+
+export function Err({ error }: { error: string | null }) {
+  return error ? <div className="error">{error}</div> : null;
+}
