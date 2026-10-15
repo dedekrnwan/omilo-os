@@ -6,7 +6,7 @@ import { ApiError, Overview, api } from "@/lib/api";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Chat", "ri-chat-3-line"], ["/work/", "Work", "ri-list-check-3"]] },
-  { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
+  { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
 ];
 const TITLES: Record<string, [string, string]> = Object.fromEntries(NAV.flatMap((g) => g.items.map(([h, l, i]) => [h, [l, i]])));
 

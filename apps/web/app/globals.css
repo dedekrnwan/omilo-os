@@ -221,6 +221,17 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
 .suggest button { min-height: 52px; text-align: left; border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; font-size: 13px; }
 .suggest button:hover { background: var(--soft); }
 
+/* talent library */
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.pick .dot { margin-right: 6px; }
+.pick.on .dot { box-shadow: 0 0 0 1.5px #fff; }
+.emoji { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; font-size: 17px; border-radius: var(--r); background: var(--soft); border: 1px solid var(--line); }
+.card.talent { cursor: pointer; min-height: 132px; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.scrim { position: fixed; inset: 0; background: rgba(12, 10, 9, .18); z-index: 40; }
+.drawer { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(560px, calc(100vw - 16px)); z-index: 41; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 24px 48px -16px rgba(0, 0, 0, .3); display: flex; flex-direction: column; overflow: hidden; }
+
 /* ------------------------------------------------------------------ auth pages */
 .centered { max-width: 400px; margin: 12vh auto; padding: 0 16px; }
 .centered .paper { padding: 20px; }

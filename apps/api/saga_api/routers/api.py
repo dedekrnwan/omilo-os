@@ -200,7 +200,8 @@ class StaffPatch(BaseModel):
 
 @router.get("/staff")
 def list_staff(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    return [X.staff(s) for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))]
+    awake = S.awake_staff(db)
+    return [{**X.staff(s), "awake": s.id in awake} for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))]
 
 
 @router.post("/staff")
@@ -686,8 +687,71 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
 @router.post("/ai")
 def ai_set(body: AiIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     changed = _apply_ai(db, user, body)
-    S.desired_gateways(db)  # write the Hermes profiles now; the worker starts the gateways within seconds
+    S.desired_gateways(db, write_all=True)  # write the Hermes profiles now; the worker starts them when needed
     return {**ai_state(db, user), "changed": changed}
+
+
+# ------------------------------------------------------------------ talent library (The Agency)
+@router.get("/talent")
+def talent_list(q: str = "", division: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .. import talent as T
+
+    idx = T.index()
+    if not idx["agents"] and T.syncer.state == "idle":
+        T.syncer.start()  # first visit: fetch the roster in the background
+    divs = T.divisions()
+    counts: dict[str, int] = {}
+    for a in idx["agents"]:
+        counts[a["division"]] = counts.get(a["division"], 0) + 1
+    hired = {st.role.split(":", 1)[1]: st.id for st in db.scalars(select(Staff)) if (st.role or "").startswith("agency:")}
+    agents = [{**a, "hired_as": hired.get(a["slug"])} for a in T.search(q, division)]
+    return {"source": {"repo": T.REPO_URL, "license": "MIT", "synced_at": idx["synced_at"], "count": len(idx["agents"]), "sync": T.syncer.snapshot()},
+            "divisions": [{"key": k, "label": v.get("label", k), "color": v.get("color", ""), "count": counts.get(k, 0)}
+                          for k, v in divs.items() if counts.get(k)],
+            "agents": agents}
+
+
+@router.post("/talent/sync")
+def talent_sync(user: User = Depends(current_user)):
+    from .. import talent as T
+
+    return T.syncer.start()
+
+
+@router.get("/talent/{slug}")
+def talent_get(slug: str, user: User = Depends(current_user)):
+    from .. import talent as T
+
+    return _404(T.get(slug), "unknown specialist")
+
+
+class HireIn(BaseModel):
+    id: str | None = None
+    name: str | None = None
+
+
+@router.post("/talent/{slug}/hire")
+def talent_hire(slug: str, body: HireIn | None = None, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Hire a specialist from The Agency as a helper. Hired specialists sleep until they get work."""
+    from .. import talent as T
+
+    a = _404(T.get(slug), "unknown specialist")
+    sid = (body and body.id) or slug
+    base, n = sid, 2
+    while db.get(Staff, sid):
+        sid, n = f"{base}-{n}", n + 1
+    template = S.default_engine(db)
+    engine = (S.managed_hermes_engine(db, template["provider"], template["claude_model"], None, S.managed_ports(db))
+              if template.get("managed") else template)
+    st = _run(S.create_staff, db, {
+        "id": sid, "name": (body and body.name) or a["name"], "role": f"agency:{slug}", "job": T.job_for(a), "engine": engine,
+        "permissions": {"actions": dict(T.DIVISION_PERMISSIONS.get(a["division"], {}))}, "shifts": []}, user.id)
+    S.rotate_mcp_token(db, st, user.id)
+    S.audit(db, user.id, "talent.hire", st.id, specialist=slug, division=a["division"])
+    db.commit()
+    if engine.get("managed"):
+        S.desired_gateways(db, write_all=True)
+    return X.staff(st)
 
 
 # ------------------------------------------------------------------ guided onboarding (for non-engineers)
@@ -800,7 +864,7 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
     created, tokens = _create_team(db, user, roles, engine)
     S.set_setting(db, "ai_provider", provider, actor=user.id)
     if provider == "claude":
-        S.desired_gateways(db)
+        S.desired_gateways(db, write_all=True)
     S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
     S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)

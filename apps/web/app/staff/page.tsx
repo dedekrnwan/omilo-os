@@ -7,7 +7,29 @@ import { Staff, ago, api } from "@/lib/api";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
 
+function FirstJob({ s }: { s: Staff }) {
+  const router = useRouter();
+  const [brief, setBrief] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const give = async () => {
+    try { const t = await api<{ id: string }>("/tasks", { body: { staff_id: s.id, brief } }); router.push(`/work/?id=${t.id}`); }
+    catch (e: any) { setErr(e.message); }
+  };
+  return (
+    <div className="callout ok" style={{ marginTop: 0 }}>
+      <b style={{ fontWeight: 500 }}><i className="ri-checkbox-circle-fill" style={{ color: "var(--ok)" }} /> {s.name} joined your team.</b>
+      <div className="small" style={{ margin: "4px 0 10px" }}>They sleep until they get work. Give them a first job now, or later from Chat or Work.</div>
+      <div className="acts" style={{ flexWrap: "nowrap" }}>
+        <input value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="e.g. Review our website and suggest 5 improvements" />
+        <button className="btn primary" disabled={!brief.trim()} onClick={give}>Give job</button>
+      </div>
+      <Err error={err} />
+    </div>
+  );
+}
+
 function StaffDetail({ id }: { id: string }) {
+  const hired = useSearchParams().get("hired") === "1";
   const [s, setS] = useState<Staff | null>(null);
   const [edit, setEdit] = useState<Partial<Staff>>({});
   const [shift, setShift] = useState({ name: "", cron: "", brief: "" });
@@ -42,8 +64,9 @@ function StaffDetail({ id }: { id: string }) {
 
   return (
     <div>
-      <div className="eyebrow"><Link href="/staff/">Team</Link> · {s.role || "custom"}</div>
+      <div className="eyebrow"><Link href="/staff/">Team</Link> · {s.role?.startsWith("agency:") ? "Specialist from The Agency" : s.role || "custom"}</div>
       <h1>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
+      {hired && <FirstJob s={s} />}
       <div className="acts" style={{ marginBottom: 20 }}>
         <StatusChip status={s.status} />
         <button className="btn" onClick={() => save({ status: s.status === "active" ? "paused" : "active" })}>{s.status === "active" ? "Pause" : "Activate"}</button>
@@ -142,13 +165,20 @@ function StaffList() {
       {staff.length === 0 ? <Empty title="No staff yet" text="Finish onboarding or hire from a template below." /> : (
         <div className="cards">{staff.map((s) => (
           <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}>
-            <span className="fn small">{s.is_chief ? "Chief of Staff" : s.role}</span><b>{s.name}</b>
-            <span className="acts"><StatusChip status={s.status} /><span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
+            <span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span><b>{s.name}</b>
+            <span className="acts"><StatusChip status={s.status} />{s.status === "active" && !(s as any).awake && <span className="chip idle"><i className="ri-moon-line" />Sleeping</span>}<span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>
       )}
       <div className="sec">
-        <h2>Hire from a template</h2>
+        <div className="soft acts" style={{ justifyContent: "space-between" }}>
+          <div><b style={{ fontWeight: 500 }}>Need a specialist?</b>
+            <div className="small">Browse about 280 specialists from The Agency: SEO, ads, sales, design, engineering, finance and more.</div></div>
+          <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a specialist</Link>
+        </div>
+      </div>
+      <div className="sec">
+        <h2>Add a basic helper</h2>
         <div className="acts" style={{ marginTop: 8 }}>
           <select style={{ width: 260 }} value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="">Choose a role</option>

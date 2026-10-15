@@ -22,6 +22,17 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): Chrome push notifications and nudges (M3), connectors hub with
 OAuth (M4), harness pool and switching between Claude Code / Codex (M5), Telegram, passkeys, package-manager installers.
 
+## Hire specialists from The Agency
+
+Team → **Hire a specialist** opens a library of about 280 specialists from
+[The Agency](https://github.com/msitarzewski/agency-agents) (MIT): marketing, sales, design, engineering, finance, support and more,
+each with its own personality, process and deliverables. Saga OS downloads the roster from GitHub (`git clone`, or the tarball;
+`SAGA_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
+the helper's job, with division-based permissions and the usual approvals on top.
+
+Helpers run by Saga OS sleep until they have work: only the Chief of Staff (and helpers marked `always_on`) keep a Hermes running;
+everyone else is started when a job or chat arrives and stopped after 10 idle minutes.
+
 ## Layout
 
 | Path | What |

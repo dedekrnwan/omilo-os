@@ -110,15 +110,33 @@ def managed_ports(db: Session) -> set[int]:
             if (st.engine or {}).get("managed") and (st.engine or {}).get("port")}
 
 
-def desired_gateways(db: Session) -> dict[str, dict]:
-    """Write each managed helper's Hermes profile; return staff_id -> {hash} for the supervisor."""
+IDLE_MINUTES = 10
+
+
+def awake_staff(db: Session) -> set[str]:
+    """Helpers whose Hermes should be running: always-on ones (the Chief), and anyone with work now or in the last minutes.
+    Everyone else sleeps, so hiring twenty specialists does not mean twenty running engines."""
+    since = now() - dt.timedelta(minutes=IDLE_MINUTES)
+    busy = set(db.scalars(select(Task.staff_id).where(Task.status.in_(["queued", "running"]))))
+    recent = set(db.scalars(select(Task.staff_id).where(Task.ended_at >= since)))
+    chatting = set(db.scalars(select(Thread.staff_id).where(Thread.awaiting_reply.is_(True))))
+    chatted = set(db.scalars(select(Thread.staff_id).where(Thread.updated_at >= since)))
+    always = {st.id for st in db.scalars(select(Staff)) if st.is_chief or (st.engine or {}).get("always_on")}
+    return busy | recent | chatting | chatted | always
+
+
+def desired_gateways(db: Session, write_all: bool = False) -> dict[str, dict]:
+    """Write managed helpers' Hermes profiles; return staff_id -> {hash} for the awake ones (the supervisor runs those)."""
     from . import hermes_manager as HM
 
     out: dict[str, dict] = {}
+    awake = awake_staff(db)
     claude_key = ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")
     for st in db.scalars(select(Staff)):
         e = st.engine or {}
         if not (e.get("type") == "hermes" and e.get("managed")) or st.status == "retired":
+            continue
+        if st.id not in awake and not write_all:
             continue
         token = decrypt(st.mcp_token_enc)
         key = decrypt(e.get("api_key_enc"))
@@ -127,8 +145,21 @@ def desired_gateways(db: Session) -> dict[str, dict]:
         h = HM.write_profile(st.id, port=int(e["port"]), api_key=key, mcp_url=get_settings().mcp_url(), mcp_token=token,
                              provider=e.get("provider") or "anthropic", model=e.get("claude_model") or "claude-sonnet-5-5",
                              provider_key=claude_key)
-        out[st.id] = {"hash": h}
+        if st.id in awake:
+            out[st.id] = {"hash": h}
     return out
+
+
+def default_engine(db: Session) -> dict:
+    """The engine a new hire gets: the same kind as the Chief of Staff's (without its secrets)."""
+    c = chief(db)
+    e = dict((c.engine if c else None) or {"type": "fake"})
+    if e.get("managed"):
+        return {"type": "hermes", "managed": True, "provider": e.get("provider") or "anthropic", "claude_model": e.get("claude_model") or ""}
+    e.pop("api_key_enc", None)
+    e.pop("port", None)
+    e.pop("always_on", None)
+    return e
 
 
 def max_concurrent(db: Session) -> int:

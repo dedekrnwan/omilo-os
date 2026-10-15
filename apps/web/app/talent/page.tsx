@@ -1,0 +1,146 @@
+"use client";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { Err, Markdown } from "@/components/ui";
+import { api } from "@/lib/api";
+
+/* The talent library: specialists from The Agency (github.com/msitarzewski/agency-agents, MIT).
+   Browse, read a specialist's playbook, hire them as a helper in one click. */
+
+type Agent = { slug: string; division: string; name: string; description: string; emoji: string; color: string; vibe: string; words: number; hired_as?: string | null };
+type Division = { key: string; label: string; color: string; count: number };
+type Library = { source: { repo: string; license: string; synced_at: number | null; count: number; sync: { state: string; message: string } };
+  divisions: Division[]; agents: Agent[] };
+
+export default function Talent() {
+  const router = useRouter();
+  const [lib, setLib] = useState<Library | null>(null);
+  const [q, setQ] = useState("");
+  const [div, setDiv] = useState("");
+  const [open, setOpen] = useState<(Agent & { body?: string }) | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const p = new URLSearchParams(); if (q) p.set("q", q); if (div) p.set("division", div);
+      setLib(await api<Library>(`/talent?${p}`));
+    } catch (e: any) { setErr(e.message); }
+  }, [q, div]);
+  useEffect(() => { const t = setTimeout(load, q ? 200 : 0); return () => clearTimeout(t); }, [load, q]);
+  useEffect(() => {  // first visit: the roster downloads in the background
+    if (lib?.source.sync.state !== "running") return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [lib?.source.sync.state, load]);
+
+  const show = async (a: Agent) => {
+    setOpen(a); setName(a.name); setErr(null);
+    try { const full = await api<Agent & { body: string }>(`/talent/${a.slug}`); setOpen(full); } catch (e: any) { setErr(e.message); }
+  };
+  const hire = async () => {
+    if (!open) return;
+    setBusy(true); setErr(null);
+    try {
+      const st = await api<{ id: string }>(`/talent/${open.slug}/hire`, { body: { name: name.trim() || undefined } });
+      router.push(`/staff/?id=${st.id}&hired=1`);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const update = async () => { await api("/talent/sync", { body: {} }); load(); };
+
+  const divLabel = (k: string) => lib?.divisions.find((d) => d.key === k)?.label || k;
+  const divColor = (k: string) => lib?.divisions.find((d) => d.key === k)?.color || "var(--faint)";
+  const syncing = lib?.source.sync.state === "running";
+
+  return (
+    <div>
+      <h1>Hire a specialist</h1>
+      <p className="sub">
+        {lib?.source.count ? `${lib.source.count} specialists` : "Specialists"} from The Agency, each with its own personality, process and deliverables.
+        Hired specialists sleep until they get work, so they cost nothing while idle.
+      </p>
+
+      <div className="acts" style={{ marginBottom: 12 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+          <i className="ri-search-line" style={{ position: "absolute", left: 10, top: 10 }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: content, SEO, sales, React, finance…" style={{ paddingLeft: 32 }} autoFocus />
+        </div>
+        <button className="btn" onClick={update} disabled={syncing} title="Download the latest roster from GitHub"><i className="ri-refresh-line" />{syncing ? "Updating…" : "Update roster"}</button>
+      </div>
+
+      {lib && lib.divisions.length > 0 && (
+        <div className="picks" style={{ marginBottom: 16 }}>
+          <button className={`pick ${div === "" ? "on" : ""}`} onClick={() => setDiv("")}>All</button>
+          {lib.divisions.map((d) => (
+            <button key={d.key} className={`pick ${div === d.key ? "on" : ""}`} onClick={() => setDiv(div === d.key ? "" : d.key)}>
+              <span className="dot" style={{ background: d.color }} />{d.label} <span className="mono" style={{ opacity: .6 }}>{d.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Err error={err && !open ? err : null} />
+      {!lib ? <p className="small">Loading…</p> : lib.source.count === 0 ? (
+        <div className="empty">
+          <b>{syncing ? "Getting the roster from GitHub…" : lib.source.sync.state === "failed" ? "Could not download the roster" : "The roster is not loaded yet"}</b>
+          <span>{syncing ? "This takes a few seconds the first time." : lib.source.sync.message}</span>
+          {!syncing && <div style={{ marginTop: 12 }}><button className="btn primary" onClick={update}>Download the roster</button></div>}
+        </div>
+      ) : lib.agents.length === 0 ? (
+        <div className="empty"><b>No specialist matches</b><span>Try another word or division.</span></div>
+      ) : (
+        <div className="cards">
+          {lib.agents.map((a) => (
+            <button key={a.slug} className="card talent" onClick={() => show(a)}>
+              <div className="acts" style={{ gap: 10, flexWrap: "nowrap" }}>
+                <span className="emoji">{a.emoji || "✦"}</span>
+                <div style={{ minWidth: 0 }}>
+                  <b style={{ fontWeight: 500, display: "block" }}>{a.name}</b>
+                  <span className="small"><span className="dot" style={{ background: divColor(a.division) }} />{divLabel(a.division)}</span>
+                </div>
+                {a.hired_as && <span className="chip up" style={{ marginLeft: "auto" }}>Hired</span>}
+              </div>
+              <span className="clamp small" style={{ color: "var(--ink-2)" }}>{a.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="small" style={{ marginTop: 24 }}>
+        Specialists from <a href={lib?.source.repo || "https://github.com/msitarzewski/agency-agents"} target="_blank" rel="noopener noreferrer">The Agency</a> by msitarzewski and contributors, MIT License.
+      </p>
+
+      {open && (
+        <>
+          <div className="scrim" onClick={() => setOpen(null)} />
+          <aside className="drawer" aria-label={open.name}>
+            <div className="topbar">
+              <span className="emoji">{open.emoji || "✦"}</span>
+              <span className="crumb">{open.name}</span>
+              <span className="sp" />
+              <button className="iconbtn" aria-label="Close" onClick={() => setOpen(null)}><i className="ri-close-line" /></button>
+            </div>
+            <div className="scroll" style={{ padding: "16px 20px" }}>
+              <p className="small" style={{ marginTop: 0 }}><span className="dot" style={{ background: divColor(open.division) }} />{divLabel(open.division)}</p>
+              <p style={{ margin: "0 0 6px" }}>{open.description}</p>
+              {open.vibe && <p className="small" style={{ fontStyle: "italic" }}>&ldquo;{open.vibe}&rdquo;</p>}
+              <div className="soft" style={{ margin: "14px 0" }}>
+                <div className="small"><i className="ri-shield-check-line" /> Hired specialists follow your Saga OS rules: anything that leaves the company waits for your approval.</div>
+              </div>
+              {open.body ? <div className="md"><Markdown text={open.body} /></div> : <p className="small">Loading the playbook…</p>}
+            </div>
+            <div style={{ borderTop: "1px solid var(--line)", padding: 12 }}>
+              {open.hired_as && <p className="small" style={{ margin: "0 0 8px" }}>Already on your team as <a href={`/staff/?id=${open.hired_as}`}>{open.hired_as}</a>. Hiring again adds another one.</p>}
+              <div className="acts" style={{ flexWrap: "nowrap" }}>
+                <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name on your team" placeholder="Name on your team" />
+                <button className="btn primary" onClick={hire} disabled={busy}><i className="ri-user-add-line" />{busy ? "Hiring…" : "Hire"}</button>
+              </div>
+              <Err error={err} />
+            </div>
+          </aside>
+        </>
+      )}
+    </div>
+  );
+}
