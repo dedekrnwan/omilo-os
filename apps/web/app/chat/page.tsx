@@ -85,6 +85,27 @@ function FileBlocks({ blocks }: { blocks?: Msg["blocks"] }) {
   );
 }
 
+/* Clickable options a helper offered (offer_choices). Open until the owner answers; the answer stays highlighted. */
+function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]; busy: boolean; onPick: (o: string) => void }) {
+  const [sent, setSent] = useState<string | null>(null);
+  const idx = messages.findIndex((x) => x.id === m.id);
+  const answer = messages.slice(idx + 1).find((x) => x.role === "owner");
+  const chosen = sent || answer?.text || null;
+  const open = !answer && !sent;
+  return (
+    <>
+      {m.blocks?.filter((b) => b.type === "choices").map((b, i) => (
+        <div key={i} className="choices">{(b.options || []).map((o) => (
+          <button key={o} type="button" className={`pick ${chosen === o ? "on" : ""}`} disabled={!open || busy}
+            title={open && busy ? "Wait until the helper finishes this turn" : undefined}
+            onClick={() => { setSent(o); onPick(o); }}>{o}</button>
+        ))}</div>
+      ))}
+      {open && busy && m.blocks?.some((b) => b.type === "choices") && <div className="small" style={{ marginTop: 4 }}>You can pick as soon as the helper finishes this turn.</div>}
+    </>
+  );
+}
+
 function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean }) {
   const runs = toRuns(events);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
@@ -97,7 +118,6 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
     rows.push({ kind: "msg", m });
   }
   while (ri < runs.length) rows.push({ kind: "run", r: runs[ri++] });
-  const lastChoices = [...th.messages].reverse().find((m) => m.role !== "system");
   return (
     <div className="conv">
       {th.messages.length === 0 && runs.length === 0 && (
@@ -112,11 +132,7 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
               <div className="body">
                 <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
                 <div className="md"><Markdown text={row.m.text} /></div>
-                {row.m.blocks?.filter((b) => b.type === "choices").map((b, i) => (
-                  <div key={i} className="choices">{(b.options || []).map((o) => (
-                    <button key={o} className="pick" disabled={busy || lastChoices?.id !== row.m.id} onClick={() => onSend(o)}>{o}</button>
-                  ))}</div>
-                ))}
+                <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
               </div>
             </div>
           )
@@ -134,8 +150,18 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
   const [t, setT] = useState<Task | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const events = useEvents({ task_id: id });
-  const load = useCallback(async () => { try { setT(await api<Task>(`/tasks/${id}`)); } catch (e: any) { setErr(e.message); } }, [id]);
+  const [th, setTh] = useState<FullThread | null>(null);
+  // a helper asked a question with options during this job: show it here so the owner can answer without leaving
+  const asked = events.some((e) => e.kind === "tool" && String(e.data?.name || "").endsWith("offer_choices"));
+  const load = useCallback(async () => {
+    try { setT(await api<Task>(`/tasks/${id}`)); } catch (e: any) { setErr(e.message); }
+    if (asked) { try { setTh(await api<FullThread>("/threads", { body: { scope: "task", ref_id: id } })); } catch { /* ignore */ } }
+  }, [id, asked]);
   useEffect(() => { load(); const i = setInterval(load, 2500); return () => clearInterval(i); }, [load]);
+  const answer = async (o: string) => {
+    if (!th) return;
+    try { setTh(await api<FullThread>(`/threads/${th.id}/messages`, { body: { text: o } })); } catch (e: any) { setErr(e.message); }
+  };
   if (!t) return <div className="ws-inner"><Err error={err} /></div>;
   const runs = toRuns(events);
   const who = staff.find((s) => s.id === t.staff_id)?.name || t.staff_id;
@@ -155,6 +181,11 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
           <Markdown text={t.brief + (t.founder_note ? `\n\n**Your note:** ${t.founder_note}` : "")} />
         </div>
         {runs.map((r) => <RunCard key={r.id} run={r} />)}
+        {th && (th.messages as Msg[]).filter((m) => m.blocks?.some((b) => b.type === "choices")).map((m) => (
+          <div key={m.id} className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body">
+            <div className="who">{who} asks · {when(m.at)}</div><div className="md"><Markdown text={m.text} /></div>
+            <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} /></div></div>
+        ))}
         {runs.length === 0 && t.status === "queued" && <div className="sysmsg">Waiting for a free spot…</div>}
         {t.report && (
           <div className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body"><div className="who">{who} · report</div><div className="md"><Markdown text={t.report.body_md} /></div></div></div>

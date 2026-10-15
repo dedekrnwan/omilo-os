@@ -430,3 +430,6 @@ details.tech summary { cursor: pointer; font-weight: 500; }
 .files a { max-width: 100%; min-width: 0; }
 .files a:has(img) { padding: 3px; }
 .files img { max-width: 100%; }
+.pick { cursor: pointer; color: var(--ink); }
+.pick:disabled:not(.on) { opacity: .45; cursor: not-allowed; }
+.pick:disabled:hover:not(.on) { background: var(--surface); }
