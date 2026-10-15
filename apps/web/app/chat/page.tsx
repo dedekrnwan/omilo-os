@@ -58,7 +58,6 @@ function ChatInner() {
 
   return (
     <div>
-      <div className="eyebrow">Master entrypoint · talk to your staff</div>
       <h1>Chat</h1>
       <div className="chatwrap">
         <div className="threads">

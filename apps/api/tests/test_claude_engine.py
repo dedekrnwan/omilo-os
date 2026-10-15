@@ -32,6 +32,13 @@ async def messages(request: Request):
     body = await request.json()
     SEEN["bodies"].append(body)
     names = {t["name"] for t in body.get("tools", [])}
+    if "update_answers" in names:
+        SEEN["assist"] = body
+        return {"content": [{"type": "text", "text": "Got it. Who are your customers?"},
+                            {"type": "tool_use", "id": "tu_a", "name": "update_answers",
+                             "input": {"company_name": "Warung X", "industry": "food", "tones": ["warm", "bogus"],
+                                       "offers": [{"name": "Nasi box", "price": "Rp 35.000"}], "hacker": "x"}}],
+                "stop_reason": "tool_use", "usage": {"input_tokens": 10, "output_tokens": 10}}
     if body["model"] == "claude-noweb" and "web_search" in names:
         from fastapi.responses import JSONResponse
 
@@ -124,3 +131,16 @@ def test_web_tools_fallback_and_pause(anthropic_url):
     assert r.error == "" and r.text.startswith("Claude here"), r  # retried without web tools
     r = asyncio.run(e._loop({"api_key": KEY, "model": "claude-pause"}, "sys", msgs(), None, None, 6, 10))
     assert r.text == "resumed after 2" and abs(r.cost_usd - 0.02) < 1e-9, r
+
+
+def test_onboarding_assist_fills_the_form(owner, anthropic_url):
+    owner.post("/api/ai/key", json={"api_key": KEY})
+    r = owner.post("/api/onboarding/assist", json={"answers": {"company_name": ""}, "step": "Your business",
+                                                    "messages": [{"role": "owner", "text": "We sell lunch boxes, see warungx.id"}]})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["reply"] == "Got it. Who are your customers?"
+    assert out["patch"] == {"company_name": "Warung X", "industry": "food", "tones": ["warm"],
+                            "offers": [{"name": "Nasi box", "price": "Rp 35.000", "note": ""}]}  # unknown keys and options dropped
+    b = SEEN["assist"]
+    assert {t["name"] for t in b["tools"]} == {"update_answers", "web_fetch"} and "Your business" in b["system"]

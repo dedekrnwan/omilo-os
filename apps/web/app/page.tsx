@@ -33,19 +33,18 @@ export default function Inbox() {
   const o = overview;
   return (
     <div>
-      <div className="eyebrow">What needs you</div>
       <h1>Inbox</h1>
-      <p className="sub">Agents propose, you decide. Approved items go back to the agent to execute exactly as written.</p>
+      <p className="sub">Your helpers propose, you decide. Whatever you approve is done exactly as written.</p>
       {o && (
         <div className="stats">
           <div className="stat"><div className="label">Waiting for you</div><div className="num">{o.inbox.open}</div>
-            <span className={`pace ${o.inbox.blocking ? "warn" : "flat"}`}>{o.inbox.blocking ? `● ${o.inbox.blocking} blocking an agent` : "nothing blocking"}</span></div>
+            <span className={`pace ${o.inbox.blocking ? "warn" : "flat"}`}>{o.inbox.blocking ? `${o.inbox.blocking} blocking a helper` : "nothing blocking"}</span></div>
           <div className="stat"><div className="label">Working now</div><div className="num">{o.tasks.running}</div>
             <span className="pace flat">{o.tasks.queued} queued · limit {o.max_concurrent_tasks}</span></div>
           <div className="stat"><div className="label">Done · 24h</div><div className="num">{o.tasks.done_24h}</div>
-            <span className="pace up">▲ finished tasks</span></div>
+            <span className="pace">finished jobs</span></div>
           <div className="stat"><div className="label">Failed · 24h</div><div className="num">{o.tasks.failed_24h}</div>
-            <span className={`pace ${o.tasks.failed_24h ? "down" : "up"}`}>{o.tasks.failed_24h ? "▼ look at Work" : "✓ none"}</span></div>
+            <span className={`pace ${o.tasks.failed_24h ? "down" : "up"}`}>{o.tasks.failed_24h ? "look at Work" : "none"}</span></div>
         </div>
       )}
 
@@ -54,7 +53,7 @@ export default function Inbox() {
           <div className="seg">{["open", "snoozed", "done", "all"].map((s) => <button key={s} className={filter === s ? "on" : ""} onClick={() => setFilter(s)}>{s}</button>)}</div>
         </div>
         <Err error={err} />
-        {items.length === 0 ? <Empty title={filter === "open" ? "Nothing waiting" : "No items"} text={filter === "open" ? "Your staff have nothing for you right now." : "Nothing here yet."} /> : items.map((i) => (
+        {items.length === 0 ? <Empty title={filter === "open" ? "Nothing waiting" : "No items"} text={filter === "open" ? "Your helpers have nothing for you right now." : "Nothing here yet."} /> : items.map((i) => (
           <div key={i.id} className={`item ${open === i.id ? "open" : ""}`}>
             <div className="h" onClick={() => { setOpen(open === i.id ? null : i.id); setNote(""); }}>
               <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{i.kind}</span>
@@ -71,13 +70,13 @@ export default function Inbox() {
                     <p className="small">Revision {i.proposal.current_revision}{i.task_id && <> · from <Link href={`/work/?id=${i.task_id}`}>task {i.task_id}</Link></>}</p>
                     {i.proposal.status === "pending" && (
                       <>
-                        <textarea placeholder="Note for the agent: required to reject or ask for changes; optional to approve" value={note} onChange={(e) => setNote(e.target.value)} />
+                        <textarea placeholder="Note for the helper: required to reject or ask for changes; optional to approve" value={note} onChange={(e) => setNote(e.target.value)} />
                         <div className="acts" style={{ marginTop: 8 }}>
-                          <button className="btn primary" onClick={() => decide(i.proposal!.id, "approve")}>✓ Approve</button>
-                          <button className="btn" onClick={() => decide(i.proposal!.id, "changes")} disabled={!note.trim()}>↺ Ask for changes</button>
+                          <button className="btn primary" onClick={() => decide(i.proposal!.id, "approve")}><i className="ri-check-line" />Approve</button>
+                          <button className="btn" onClick={() => decide(i.proposal!.id, "changes")} disabled={!note.trim()}><i className="ri-edit-2-line" />Ask for changes</button>
                           <button className="btn danger" onClick={() => decide(i.proposal!.id, "reject")} disabled={!note.trim()}>Reject</button>
                           <span className="sp" />
-                          <button className="btn quiet" onClick={() => discuss(i.proposal!.id)}>Discuss with the agent →</button>
+                          <button className="btn quiet" onClick={() => discuss(i.proposal!.id)}><i className="ri-chat-3-line" />Discuss with the helper</button>
                         </div>
                       </>
                     )}

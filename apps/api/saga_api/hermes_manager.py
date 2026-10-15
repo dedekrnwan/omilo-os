@@ -119,20 +119,37 @@ def find_hermes() -> str | None:
     return str(local) if local.exists() else None
 
 
+_version_cache: dict[str, str | None] = {}
+
+
 def version(binary: str | None = None) -> str | None:
     b = binary or find_hermes()
     if not b:
         return None
+    if b in _version_cache:
+        return _version_cache[b]
     try:
         out = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         return None
     first = (out or "").strip().splitlines()
-    return first[0] if first else None
+    _version_cache[b] = first[0] if first else None
+    return _version_cache[b]
+
+
+_python_cache: list[str | None] = []
 
 
 def _python_for_hermes() -> str | None:
-    """Hermes supports Python 3.11-3.13."""
+    """Hermes supports Python 3.11-3.13 (the answer is cached for the process)."""
+    if _python_cache:
+        return _python_cache[0]
+    found = _find_python()
+    _python_cache.append(found)
+    return found
+
+
+def _find_python() -> str | None:
     cands = [sys.executable, "python3.13", "python3.12", "python3.11", "python3"]
     for c in cands:
         exe = c if os.path.isabs(c) else shutil.which(c)
@@ -219,6 +236,7 @@ class _Install:
                     self._say(line)
             if p.wait() != 0:
                 raise RuntimeError("pip could not install Hermes (see the log above)")
+            _version_cache.clear()
             self._say(f"Installed: {version() or 'hermes'}")
             try:
                 self._browser()

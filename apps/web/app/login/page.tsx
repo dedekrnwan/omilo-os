@@ -21,13 +21,13 @@ export default function Login() {
   };
   return (
     <div className="centered">
-      <div className="mark" aria-hidden style={{ marginBottom: 14 }}><i /><i /><i /><i /><i /><i /></div>
-      <h1>Saga OS</h1>
-      <p className="sub">Sign in to your control center.</p>
+      <div className="mark" aria-hidden style={{ width: 32, height: 32, fontSize: 18, borderRadius: 8 }}>S</div>
+      <h1 className="display" style={{ fontSize: 32 }}>Welcome back</h1>
+      <p className="sub">Sign in to run your company with your AI helpers.</p>
       <form className="paper" onSubmit={submit}>
         <label>Email</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
         <label>Password</label><input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        <div className="acts" style={{ marginTop: 16 }}><button className="btn primary" type="submit">Sign in</button></div>
+        <button className="btn primary lg" type="submit" style={{ width: "100%", marginTop: 18 }}>Sign in</button>
         <Err error={err} />
       </form>
     </div>

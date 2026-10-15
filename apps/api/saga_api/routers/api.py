@@ -718,6 +718,43 @@ class AnswersIn(BaseModel):
     answers: dict
 
 
+class KeyIn(BaseModel):
+    api_key: str
+    model: str | None = None
+
+
+@router.post("/ai/key")
+def ai_save_key(body: KeyIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Save the Claude key (encrypted) before any helper exists, e.g. at the start of onboarding."""
+    if not body.api_key.strip():
+        raise HTTPException(400, "empty key")
+    S.set_ai_key(db, "claude", body.api_key, user.id)
+    if body.model:
+        S.set_setting(db, "claude_model", body.model, actor=user.id)
+    db.commit()
+    return {"claude_key_hint": S.ai_key_hint(db, "claude")}
+
+
+class AssistIn(BaseModel):
+    answers: dict
+    messages: list[dict]
+    step: str = ""
+
+
+@router.post("/onboarding/assist")
+async def onboarding_assist(body: AssistIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The chat half of the hybrid onboarding: fills the form from what the owner says or pastes."""
+    from .. import onboarding_assist as OA
+
+    key = S.ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise HTTPException(409, "Connect your Claude key first (step 1) so I can help fill this in.")
+    try:
+        return await OA.assist(key, S.get_setting(db, "claude_model", None), body.answers, body.messages, body.step)
+    except Exception as e:  # noqa: BLE001 - shown in the chat
+        raise HTTPException(502, f"The assistant could not answer: {e}") from e
+
+
 @router.post("/onboarding/preview")
 def onboarding_preview(body: AnswersIn, user: User = Depends(current_user)):
     return {"files": OB.render(body.answers), "completeness": OB.completeness(body.answers),

@@ -32,7 +32,6 @@ export default function Company() {
 
   return (
     <div>
-      <div className="eyebrow">What every agent knows</div>
       <h1>{overview?.company_name || "Company"}</h1>
       <div className="sec" style={{ marginTop: 16 }}>
         <h2>KPIs</h2>

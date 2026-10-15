@@ -22,7 +22,7 @@ function TaskDetail({ id }: { id: string }) {
       <div className="acts" style={{ marginBottom: 16 }}>
         <StatusChip status={t.status} /><span className="small">created {when(t.created_at)} · engine {t.engine_type || "-"} · attempts {t.attempts} · ${t.cost_usd.toFixed(2)}</span>
       </div>
-      {t.error && <div className="paper" style={{ borderColor: "var(--stagnant)" }}><b className="down">Error</b><pre className="code">{t.error}</pre></div>}
+      {t.error && <div className="paper" style={{ borderColor: "var(--bad-line)", background: "var(--bad-tint)" }}><b className="down">Error</b><pre className="code">{t.error}</pre></div>}
       <div className="grid2">
         <div>
           <h2>Brief</h2>
@@ -86,7 +86,6 @@ function WorkList() {
   };
   return (
     <div>
-      <div className="eyebrow">Everything your staff did</div>
       <h1>Work</h1>
       <div className="paper" style={{ marginBottom: 24 }}>
         <div className="grid2">

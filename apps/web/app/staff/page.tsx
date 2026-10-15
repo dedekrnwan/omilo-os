@@ -42,7 +42,7 @@ function StaffDetail({ id }: { id: string }) {
 
   return (
     <div>
-      <div className="eyebrow"><Link href="/staff/">Staff</Link> · {s.role || "custom"}</div>
+      <div className="eyebrow"><Link href="/staff/">Team</Link> · {s.role || "custom"}</div>
       <h1>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
       <div className="acts" style={{ marginBottom: 20 }}>
         <StatusChip status={s.status} />
@@ -137,13 +137,13 @@ function StaffList() {
   };
   return (
     <div>
-      <div className="eyebrow">Your team</div>
-      <h1>Staff</h1>
+      <h1>Your team</h1>
+      <p className="sub">Your AI helpers. Open one to change its job, schedule or what it may do without asking.</p>
       {staff.length === 0 ? <Empty title="No staff yet" text="Finish onboarding or hire from a template below." /> : (
         <div className="cards">{staff.map((s) => (
           <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}>
             <span className="fn small">{s.is_chief ? "Chief of Staff" : s.role}</span><b>{s.name}</b>
-            <span className="acts"><StatusChip status={s.status} /><span className="small">{s.engine?.type || "fake"} · {s.shifts.length} shift(s)</span></span>
+            <span className="acts"><StatusChip status={s.status} /><span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>
       )}

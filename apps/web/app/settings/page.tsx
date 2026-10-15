@@ -60,7 +60,6 @@ export default function Settings() {
   if (!overview) return null;
   return (
     <div>
-      <div className="eyebrow">How the office runs</div>
       <h1>Settings</h1>
       <div className="paper" style={{ marginBottom: 24 }}>
         <h2>AI</h2>

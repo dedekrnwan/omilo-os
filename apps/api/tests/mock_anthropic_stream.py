@@ -44,6 +44,17 @@ async def messages(request: Request):
 
 
 async def _messages(body):
+    names = [t.get("name") for t in body.get("tools", [])]
+    if "update_answers" in names:  # the onboarding assistant
+        last = body["messages"][-1]["content"]
+        last = last if isinstance(last, str) else json.dumps(last)
+        patch = {"company_name": "Warung Bu Sri", "one_liner": "Home-cooked Javanese lunch boxes for offices in South Jakarta.",
+                 "industry": "food", "location": "South Jakarta", "customers": "Office workers and HR teams ordering for meetings.",
+                 "offers": [{"name": "Nasi box", "price": "Rp 35.000", "note": "minimum 10"}], "languages": ["id", "en"], "tones": ["warm", "friendly"]}
+        return {"id": "msg_a", "type": "message", "role": "assistant", "model": body["model"],
+                "content": [{"type": "text", "text": "Thanks! I filled in your business, customers and prices. What are your goals for the next few months?"},
+                            {"type": "tool_use", "id": "tu_a", "name": "update_answers", "input": patch}],
+                "stop_reason": "tool_use", "stop_sequence": None, "usage": {"input_tokens": 50, "output_tokens": 10}}
     tools = body.get("tools", [])
     names = [t.get("name") for t in tools]
     msgs = body["messages"]
