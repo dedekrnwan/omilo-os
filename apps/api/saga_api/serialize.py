@@ -25,6 +25,7 @@ def iso(v: dt.datetime | None) -> str | None:
 def staff(s: Staff) -> dict:
     eng = dict(s.engine or {})
     eng.pop("api_key", None)
+    eng.pop("api_key_enc", None)  # secrets never leave the gateway
     return {"id": s.id, "name": s.name, "role": s.role, "is_chief": s.is_chief, "job": s.job, "engine": eng,
             "permissions": s.permissions or {}, "budget_usd_month": s.budget_usd_month, "max_task_minutes": s.max_task_minutes,
             "status": s.status, "has_mcp_token": bool(s.mcp_token_hash), "shifts": [shift(x) for x in s.shifts],

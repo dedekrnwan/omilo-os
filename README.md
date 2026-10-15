@@ -65,13 +65,20 @@ Under a path prefix (e.g. `/os`), set `SAGA_BASE_PATH=/os` and build the web app
 
 ## Connect the AI
 
-**Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
-console.anthropic.com, check it and pick a model (Sonnet is recommended). Saga OS runs the agent loop itself and gives the
-model the saga-os tools plus Anthropic's hosted web search and web fetch (internet research, no browser); nothing else to install.
-Web search costs $10 per 1,000 searches on your Anthropic bill; set `"web": false` in a helper's engine to turn it off. The key is stored encrypted (Fernet, from the secret key) and only its last
-4 characters are shown again. `ANTHROPIC_API_KEY` in the environment works too.
+**Easiest: your Claude API key, through Hermes run by Saga OS.** In onboarding (or Settings → AI) choose "Use my Claude
+API key", paste a key from console.anthropic.com, check it and pick a model (Sonnet is recommended). Saga OS then:
 
-**Advanced: Hermes.** For skills, a browser and other tools, run Hermes and point helpers at it:
+1. installs Hermes into a private environment (`<data dir>/hermes-venv`, `pip install hermes-agent[...]`, needs Python 3.11–3.13),
+   plus the browser helper `agent-browser` (needs Node.js) using the Chrome already on the computer, or a downloaded Chromium;
+2. writes one Hermes home per helper in `<data dir>/hermes/<helper>`: Claude as the model provider, the saga-os MCP server with
+   that helper's token, and the API server on its own local port (8650+) with a random 64-character key;
+3. runs and supervises one `hermes gateway run` per helper (restarted when it exits or its settings change).
+
+Helpers get every Hermes tool (browser, terminal, web, skills, memory) and still go through Saga OS approvals. The Claude key is
+stored encrypted in Saga OS and written only to each helper's Hermes `.env` (mode 600). Logs: Settings → AI → "<helper> log".
+Without Hermes there is a fallback, "Claude directly" (web search and fetch, no browser).
+
+**Advanced: your own Hermes server.** Point a helper at it under Staff:
 
 ### Connect Hermes
 

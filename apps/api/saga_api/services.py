@@ -3,6 +3,7 @@
 Every state change writes an audit event. Functions take an open Session and commit themselves.
 """
 import datetime as dt
+import os
 import re
 import secrets
 from pathlib import Path
@@ -90,6 +91,46 @@ def ai_key_hint(db: Session, provider: str) -> str | None:
     return k["hint"] if k else None
 
 
+def managed_hermes_engine(db: Session, provider: str, model: str, current: dict | None = None, taken: set[int] | None = None) -> dict:
+    """Engine config for a helper whose Hermes is run by Saga OS. Keeps its port and key when it already has them."""
+    from . import hermes_manager as HM
+
+    cur = current or {}
+    if cur.get("managed") and cur.get("port") and cur.get("api_key_enc"):
+        port, key_enc = int(cur["port"]), cur["api_key_enc"]
+    else:
+        port = HM.allocate_port(taken or set())
+        key_enc = encrypt(HM.new_api_key())
+    return {"type": "hermes", "managed": True, "provider": provider, "claude_model": model, "model": "hermes-agent",
+            "port": port, "base_url": f"http://127.0.0.1:{port}/v1", "api_key_enc": key_enc}
+
+
+def managed_ports(db: Session) -> set[int]:
+    return {int((st.engine or {}).get("port")) for st in db.scalars(select(Staff))
+            if (st.engine or {}).get("managed") and (st.engine or {}).get("port")}
+
+
+def desired_gateways(db: Session) -> dict[str, dict]:
+    """Write each managed helper's Hermes profile; return staff_id -> {hash} for the supervisor."""
+    from . import hermes_manager as HM
+
+    out: dict[str, dict] = {}
+    claude_key = ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")
+    for st in db.scalars(select(Staff)):
+        e = st.engine or {}
+        if not (e.get("type") == "hermes" and e.get("managed")) or st.status == "retired":
+            continue
+        token = decrypt(st.mcp_token_enc)
+        key = decrypt(e.get("api_key_enc"))
+        if not token or not key:
+            continue
+        h = HM.write_profile(st.id, port=int(e["port"]), api_key=key, mcp_url=get_settings().mcp_url(), mcp_token=token,
+                             provider=e.get("provider") or "anthropic", model=e.get("claude_model") or "claude-sonnet-5-5",
+                             provider_key=claude_key)
+        out[st.id] = {"hash": h}
+    return out
+
+
 def max_concurrent(db: Session) -> int:
     return int(get_setting(db, "max_concurrent_tasks", None) or get_settings().max_concurrent_tasks)
 
@@ -118,6 +159,12 @@ def create_staff(db: Session, data: dict, actor: str) -> Staff:
 
 
 def update_staff(db: Session, st: Staff, data: dict, actor: str) -> Staff:
+    eng = data.get("engine")
+    if eng is not None:  # the web app never sees api_key_enc: keep it when the helper stays managed
+        old = st.engine or {}
+        if eng.get("managed") and old.get("managed") and "api_key_enc" not in eng:
+            eng = {**eng, "api_key_enc": old.get("api_key_enc"), "port": old.get("port"), "base_url": old.get("base_url")}
+        data = {**data, "engine": eng}
     for k in ("name", "job", "engine", "permissions", "budget_usd_month", "max_task_minutes", "status", "role"):
         if k in data and data[k] is not None:
             setattr(st, k, data[k])

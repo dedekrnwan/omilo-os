@@ -14,6 +14,11 @@ WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/
 COPY apps/api/saga_api apps/api/saga_api
 RUN pip install --no-cache-dir ./apps/api
+# Hermes, the engine Saga OS runs for "Use my Claude API key" (WITH_HERMES=0 for a smaller image).
+ARG WITH_HERMES=1
+RUN if [ "$WITH_HERMES" = "1" ]; then python -m venv /opt/hermes && \
+      /opt/hermes/bin/pip install --no-cache-dir "hermes-agent[anthropic,mcp,messaging,cron,web]"; fi
+ENV SAGA_HERMES_BIN=/opt/hermes/bin/hermes
 COPY --from=web /web/out /app/web
 RUN useradd -r -u 10001 saga && mkdir -p /data && chown saga /data
 USER saga

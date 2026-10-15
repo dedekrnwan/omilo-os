@@ -84,7 +84,7 @@ def test_claude_key_check_and_switch(owner, anthropic_url):
     ok = owner.post("/api/ai/check", json={"api_key": KEY}).json()
     assert ok["ok"] and ok["recommended"] == "claude-sonnet-5-5"
 
-    st = owner.post("/api/ai", json={"provider": "claude", "api_key": KEY, "model": "claude-sonnet-5-5", "staff_ids": ["marketing"]}).json()
+    st = owner.post("/api/ai", json={"provider": "claude-direct", "api_key": KEY, "model": "claude-sonnet-5-5", "staff_ids": ["marketing"]}).json()
     assert st["changed"] == ["marketing"] and st["claude_key_hint"] == "1234"
     assert KEY not in str(owner.get("/api/ai").json()) and KEY not in str(owner.get("/api/staff/marketing").json())
     assert owner.get("/api/health/engines").json()["marketing"]["ok"] is True
@@ -110,7 +110,7 @@ def test_claude_key_check_and_switch(owner, anthropic_url):
 
 def test_claude_needs_a_key(base_url):
     c = httpx.Client(base_url=base_url)
-    assert c.post("/api/ai", json={"provider": "claude"}).status_code == 401
+    assert c.post("/api/ai", json={"provider": "claude-direct"}).status_code == 401
 
 
 def test_web_tools_fallback_and_pause(anthropic_url):

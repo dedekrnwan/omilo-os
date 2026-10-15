@@ -25,6 +25,10 @@ class Worker:
         self.running: dict[str, asyncio.Task] = {}
         self.chatting: dict[str, asyncio.Task] = {}
         self._stop = asyncio.Event()
+        from .hermes_manager import Supervisor
+
+        self.hermes = Supervisor()
+        self._hermes_checked = 0.0
 
     # ------------------------------------------------------------ lifecycle
     def recover(self):
@@ -53,11 +57,27 @@ class Worker:
 
     async def stop(self):
         self._stop.set()
+        await self.hermes.stop_all()
         for t in list(self.running.values()) + list(self.chatting.values()):
             t.cancel()
 
     # ------------------------------------------------------------ one tick
+    async def manage_hermes(self, force: bool = False):
+        """Every ~5 s: write managed Hermes profiles and keep their gateways running."""
+        import time
+
+        if not force and time.monotonic() - self._hermes_checked < 5:
+            return
+        self._hermes_checked = time.monotonic()
+        with session_scope() as db:
+            desired = S.desired_gateways(db)
+        await self.hermes.reconcile(desired)
+
     async def tick(self):
+        try:
+            await self.manage_hermes()
+        except Exception:
+            log.exception("managing hermes failed")
         self.schedule_shifts()
         self.dispatch_tasks()
         self.dispatch_chats()

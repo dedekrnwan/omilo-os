@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
+import HermesSetup from "@/components/HermesSetup";
 import { Err, Markdown } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -89,6 +90,9 @@ export default function Onboarding() {
   const [done, setDone] = useState<Finished | null>(null);
   const [copied, setCopied] = useState(false);
   const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });  // never saved in the draft
+  const [hermesReady, setHermesReady] = useState(false);
+  const [noHermes, setNoHermes] = useState(false);  // fallback: Claude without the Hermes tools
+  const claudeReady = claude.ok && !!claude.model && (hermesReady || noHermes);
   const [err, setErr] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
 
@@ -131,14 +135,14 @@ export default function Onboarding() {
   };
 
   const finish = async () => {
-    if (a.engine_type === "claude" && !(claude.ok && claude.model)) {  // e.g. the page was reloaded: keys are never kept in the draft
+    if (a.engine_type === "claude" && !claudeReady) {  // e.g. the page was reloaded: keys are never kept in the draft
       setStep(8); setErr("Please paste and check your Claude API key again.");
       return;
     }
     setBusy(true); setErr(null);
     try {
       const engine = a.engine_type === "hermes" ? { type: "hermes", base_url: a.engine_url, model: a.engine_model }
-        : a.engine_type === "claude" ? { type: "claude", model: claude.model } : { type: "fake" };
+        : a.engine_type === "claude" ? { type: noHermes ? "claude-direct" : "claude", model: claude.model } : { type: "fake" };
       const r = await api<Finished>("/onboarding/finish", { body: {
         answers: a, roles: a.roles || [], engine, approval_mode: a.approval_mode, timezone: tz, practice_task: a.practice !== false,
         api_key: a.engine_type === "claude" ? claude.key : undefined } });
@@ -175,7 +179,7 @@ export default function Onboarding() {
           </div>
         )}
         {a.engine_type === "claude" && (
-          <div className="callout">Your helpers use <b>Claude</b> with your own API key. You can change the model or key any time in Settings → AI.</div>
+          <div className="callout">Your helpers use <b>Claude</b> with your own API key{noHermes ? "" : ", running inside Hermes on this computer (browser, internet, tools)"}. Change the model or key any time in Settings → AI.</div>
         )}
         {a.engine_type === "fake" && (
           <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>
@@ -422,11 +426,18 @@ export default function Onboarding() {
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo; to do real work. You can start without one and connect it later.</p>
           <button type="button" className={`choice ${a.engine_type === "claude" ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
             <b>Use my Claude API key <span className="rec">Easiest real AI</span></b>
-            <span>Paste a key from Anthropic and your helpers start doing real work, including searching the internet and reading web pages. Nothing to install.</span>
+            <span>Paste a key from Anthropic. Saga OS sets up Hermes for you, so your helpers get a web browser, internet search, tools and memory.</span>
           </button>
           {a.engine_type === "claude" && (
             <div className="paper" style={{ marginTop: -4, marginBottom: 10 }}>
               <ClaudeSetup value={claude} onChange={setClaude} />
+              {claude.ok && !noHermes && <HermesSetup autoInstall onReady={setHermesReady} />}
+              {claude.ok && !hermesReady && (
+                <label className="check" style={{ marginTop: 8 }}>
+                  <input type="checkbox" checked={noHermes} onChange={(e) => setNoHermes(e.target.checked)} />
+                  <span>Skip Hermes for now: helpers use Claude directly with internet search but no browser or other tools. You can set up Hermes later in Settings.</span>
+                </label>
+              )}
             </div>
           )}
           <button type="button" className={`choice ${a.engine_type === "fake" ? "on" : ""}`} onClick={() => set({ engine_type: "fake" })}>
@@ -437,7 +448,7 @@ export default function Onboarding() {
             <summary>Advanced: I run my own Hermes AI server</summary>
             <button type="button" className={`choice ${a.engine_type === "hermes" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => set({ engine_type: "hermes" })}>
               <b>Use my Hermes server</b>
-              <span>For technical setups: Hermes adds a real browser (clicking, logging in, filling forms), a terminal, skills and more. Your Claude key then lives in Hermes.</span>
+              <span>Already running Hermes yourself? Point your helpers at it. The AI model is then chosen inside your Hermes.</span>
             </button>
             {a.engine_type === "hermes" && (
               <>
@@ -477,7 +488,7 @@ export default function Onboarding() {
               <div className="q">
                 <b>Your team</b>
                 <p style={{ margin: "4px 0" }}>{["chief-of-staff", ...(a.roles || []).filter((r) => r !== "chief-of-staff")].map((r) => roles[r]?.name).join(", ")}</p>
-                <p className="small" style={{ margin: 0 }}>{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : a.engine_type === "claude" ? "Claude" : "Hermes"} · {tz.replace(/_/g, " ")}</p>
+                <p className="small" style={{ margin: 0 }}>{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : a.engine_type === "claude" ? (noHermes ? "Claude (without Hermes)" : "Claude through Hermes") : "Your Hermes server"} · {tz.replace(/_/g, " ")}</p>
               </div>
               <details className="tech">
                 <summary>See exactly what your helpers will read</summary>
@@ -496,7 +507,7 @@ export default function Onboarding() {
           <span className="sp" />
           {step < 9 && step > 1 && step !== 7 && step !== 8 && <button className="btn quiet" onClick={() => go(step + 1)}>Skip for now</button>}
           {step < 9
-            ? <button className="btn primary" onClick={() => go(step + 1)} disabled={step === 8 && a.engine_type === "claude" && !(claude.ok && claude.model)}>Continue</button>
+            ? <button className="btn primary" onClick={() => go(step + 1)} disabled={step === 8 && a.engine_type === "claude" && !claudeReady}>Continue</button>
             : <button className="btn primary" onClick={finish} disabled={busy || !preview}>{busy ? "Creating your team…" : "Create my team"}</button>}
         </div>
       )}

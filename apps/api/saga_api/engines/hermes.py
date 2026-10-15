@@ -5,6 +5,7 @@ with the key in the environment variable named by `api_key_env` (default HERMES_
 The Hermes profile must have the saga-os MCP server configured with this staff's token
 (Staff screen -> "Connect engine" shows the exact snippet).
 """
+import asyncio
 import os
 
 import httpx
@@ -18,11 +19,28 @@ class HermesEngine(Engine):
 
     def _client(self, cfg: dict, timeout: float) -> tuple[httpx.AsyncClient, str]:
         base = (cfg.get("base_url") or "http://127.0.0.1:8642/v1").rstrip("/")
-        key = os.environ.get(cfg.get("api_key_env") or "HERMES_API_KEY", "")
+        key = ""
+        if cfg.get("api_key_enc"):
+            from ..security import decrypt
+
+            key = decrypt(cfg["api_key_enc"]) or ""
+        key = key or os.environ.get(cfg.get("api_key_env") or "HERMES_API_KEY", "")
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         return httpx.AsyncClient(base_url=base, headers=headers, timeout=timeout), cfg.get("model") or "hermes-agent"
 
+    async def _wait_ready(self, cfg: dict, seconds: float = 90) -> bool:
+        """A gateway Saga OS just started needs a few seconds before it answers."""
+        end = asyncio.get_event_loop().time() + seconds
+        while True:
+            if (await self.health(cfg))["ok"]:
+                return True
+            if asyncio.get_event_loop().time() > end:
+                return False
+            await asyncio.sleep(2)
+
     async def _complete(self, cfg: dict, messages: list[dict], timeout: float, session: str) -> EngineResult:
+        if cfg.get("managed") and not await self._wait_ready(cfg):
+            return EngineResult(error="Hermes did not start. See Settings → AI → Hermes log.")
         client, model = self._client(cfg, timeout)
         async with client:
             try:
@@ -35,7 +53,10 @@ class HermesEngine(Engine):
             data = r.json()
         text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
         usage = data.get("usage") or {}
-        return EngineResult(text=text, tokens=int(usage.get("total_tokens") or 0))
+        tokens = int(usage.get("total_tokens") or 0)
+        if text.startswith(("API call failed", "Error: ")) or "Provider returned an empty stream" in text[:200]:
+            return EngineResult(error=f"Hermes could not reach the AI: {text[:300]}", tokens=tokens)
+        return EngineResult(text=text, tokens=tokens)
 
     async def run_task(self, ctx: TaskContext) -> EngineResult:
         cfg = ctx.engine_config

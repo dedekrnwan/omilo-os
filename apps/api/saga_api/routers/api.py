@@ -147,7 +147,10 @@ def _create_team(db: Session, user: User, roles: list[str], engine: dict) -> tup
             raise HTTPException(400, f"unknown role {rid}")
         if db.get(Staff, rid):
             continue
-        data = _run(catalog.staff_from_role, rid, company, engine)
+        eng = engine
+        if engine.get("managed"):
+            eng = S.managed_hermes_engine(db, engine.get("provider") or "anthropic", engine.get("claude_model") or "", None, S.managed_ports(db))
+        data = _run(catalog.staff_from_role, rid, company, eng)
         if data["is_chief"] and S.chief(db):
             data["is_chief"] = False
         st = _run(S.create_staff, db, data, user.id)
@@ -541,27 +544,96 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 
 
 # ------------------------------------------------------------------ AI (the engine every helper uses)
-AI_PROVIDERS = ("fake", "claude", "hermes")
+AI_PROVIDERS = ("fake", "claude", "hermes", "claude-direct")
+# "claude"        = Claude through a Hermes that Saga OS installs and runs (all Hermes tools)
+# "claude-direct" = Saga OS calls the Claude API itself (no Hermes tools; fallback)
+# "hermes"        = the owner's own Hermes server
+
+
+def _claude_model(model: str | None) -> str:
+    from ..engines.claude import DEFAULT_MODEL
+
+    return model or DEFAULT_MODEL
 
 
 def _engine_for(provider: str, model: str | None, base_url: str | None) -> dict:
+    """An engine template; managed ones get their own port and key per helper in _assign_engine."""
     if provider == "claude":
-        from ..engines.claude import DEFAULT_MODEL
-
-        return {"type": "claude", "model": model or DEFAULT_MODEL}
+        return {"type": "hermes", "managed": True, "provider": "anthropic", "claude_model": _claude_model(model)}
+    if provider == "claude-direct":
+        return {"type": "claude", "model": _claude_model(model)}
     if provider == "hermes":
         return {"type": "hermes", "base_url": base_url or "http://127.0.0.1:8642/v1", "model": model or "hermes-agent"}
     return {"type": "fake"}
 
 
+def _assign_engine(db: Session, st: Staff, template: dict) -> None:
+    keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens", "web")}
+    if template.get("managed"):
+        taken = S.managed_ports(db) - {int((st.engine or {}).get("port") or 0)}
+        st.engine = {**S.managed_hermes_engine(db, template["provider"], template["claude_model"], st.engine, taken), **keep}
+    else:
+        st.engine = {**template, **keep}
+
+
+def _need_claude_key(db: Session) -> None:
+    if not S.ai_api_key(db, "claude") and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(400, "Add your Claude API key first, or choose practice mode for now.")
+
+
+def _need_hermes() -> None:
+    from .. import hermes_manager as HM
+
+    if not HM.find_hermes():
+        raise HTTPException(409, "Hermes is not installed yet. Install it first (Settings → AI → Install Hermes).")
+
+
+def _provider_of(e: dict) -> str:
+    if e.get("type") == "hermes":
+        return "claude" if e.get("managed") else "hermes"
+    if e.get("type") in ("claude", "anthropic"):
+        return "claude-direct"
+    return e.get("type", "fake")
+
+
 @router.get("/ai")
 def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import hermes_manager as HM
+
     staff = list(db.scalars(select(Staff)))
-    types = {(st.engine or {}).get("type", "fake") for st in staff}
-    current = next(iter(types)) if len(types) == 1 else ("mixed" if types else "fake")
-    models = {(st.engine or {}).get("model") for st in staff if (st.engine or {}).get("type") == "claude"}
-    return {"provider": "claude" if current == "anthropic" else current, "model": next(iter(models)) if len(models) == 1 else None,
-            "claude_key_hint": S.ai_key_hint(db, "claude"), "staff": {st.id: st.engine or {} for st in staff}}
+    providers = {_provider_of(st.engine or {}) for st in staff}
+    current = next(iter(providers)) if len(providers) == 1 else ("mixed" if providers else "fake")
+    models = {(st.engine or {}).get("claude_model") or (st.engine or {}).get("model") for st in staff
+              if _provider_of(st.engine or {}) in ("claude", "claude-direct")}
+    return {"provider": current, "model": next(iter(models)) if len(models) == 1 else None,
+            "claude_key_hint": S.ai_key_hint(db, "claude"), "hermes": HM.describe(),
+            "staff": {st.id: {"provider": _provider_of(st.engine or {}), "port": (st.engine or {}).get("port")} for st in staff}}
+
+
+@router.get("/hermes")
+def hermes_state(user: User = Depends(current_user)):
+    from .. import hermes_manager as HM
+
+    return HM.describe()
+
+
+class InstallIn(BaseModel):
+    browser_only: bool = False
+
+
+@router.post("/hermes/install")
+def hermes_install(body: InstallIn | None = None, user: User = Depends(current_user)):
+    from .. import hermes_manager as HM
+
+    return HM.installer.start(browser_only=bool(body and body.browser_only))
+
+
+@router.get("/hermes/log/{sid}")
+def hermes_log(sid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import hermes_manager as HM
+
+    _404(db.get(Staff, sid), "unknown helper")
+    return {"lines": HM.log_tail(sid, 60)}
 
 
 class AiCheckIn(BaseModel):
@@ -595,17 +667,18 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
         raise HTTPException(400, f"provider must be one of {', '.join(AI_PROVIDERS)}")
     if body.api_key and body.api_key.strip():
         S.set_ai_key(db, "claude", body.api_key, user.id)
-    if body.provider == "claude" and not S.ai_api_key(db, "claude") and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(400, "Add your Claude API key first.")
+    if body.provider in ("claude", "claude-direct"):
+        _need_claude_key(db)
+    if body.provider == "claude":
+        _need_hermes()
     engine = _engine_for(body.provider, body.model, body.base_url)
     changed = []
     for st in db.scalars(select(Staff)):
         if body.staff_ids is None or st.id in body.staff_ids:
-            keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens")}
-            st.engine = {**engine, **keep}
+            _assign_engine(db, st, engine)
             changed.append(st.id)
     S.set_setting(db, "ai_provider", body.provider, actor=user.id)
-    S.audit(db, user.id, "ai.set", body.provider, model=engine.get("model"), staff=changed)
+    S.audit(db, user.id, "ai.set", body.provider, model=engine.get("claude_model") or engine.get("model"), staff=changed)
     db.commit()
     return changed
 
@@ -613,6 +686,7 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
 @router.post("/ai")
 def ai_set(body: AiIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     changed = _apply_ai(db, user, body)
+    S.desired_gateways(db)  # write the Hermes profiles now; the worker starts the gateways within seconds
     return {**ai_state(db, user), "changed": changed}
 
 
@@ -678,14 +752,18 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         _run(S.write_knowledge, db, name, content, user.id)
     S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
     engine = dict(body.engine)
-    if engine.get("type") == "claude":
+    provider = {"claude": "claude", "claude-direct": "claude-direct", "hermes": "hermes"}.get(engine.get("type", ""), "fake")
+    if provider in ("claude", "claude-direct"):
         if body.api_key and body.api_key.strip():
             S.set_ai_key(db, "claude", body.api_key, user.id)
-        if not S.ai_api_key(db, "claude") and not os.environ.get("ANTHROPIC_API_KEY"):
-            raise HTTPException(400, "Add your Claude API key, or choose practice mode for now.")
-        engine = _engine_for("claude", engine.get("model"), None)
+        _need_claude_key(db)
+    if provider == "claude":
+        _need_hermes()
+    engine = _engine_for(provider, engine.get("model"), engine.get("base_url"))
     created, tokens = _create_team(db, user, roles, engine)
-    S.set_setting(db, "ai_provider", engine.get("type", "fake"), actor=user.id)
+    S.set_setting(db, "ai_provider", provider, actor=user.id)
+    if provider == "claude":
+        S.desired_gateways(db)
     S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
     S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)
@@ -696,8 +774,8 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         t = S.create_task(db, who, "manual", f"Practice task: draft a short post that introduces {company} to new customers, "
                           "in our voice, using only facts from the company files. Propose it for approval.", user.id)
         practice = {"task_id": t.id, "staff_id": who}
-    return {"created": created, "mcp_tokens": tokens if engine.get("type") == "hermes" else {},
-            "mcp_url": get_settings().mcp_url(), "practice": practice, "engine": engine.get("type")}
+    return {"created": created, "mcp_tokens": tokens if provider == "hermes" else {},
+            "mcp_url": get_settings().mcp_url(), "practice": practice, "engine": provider}
 
 
 @router.get("/kpis")

@@ -2,10 +2,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
+import HermesSetup from "@/components/HermesSetup";
 import { Err } from "@/components/ui";
 import { api, when } from "@/lib/api";
 
-type AiState = { provider: string; model: string | null; claude_key_hint: string | null };
+type AiState = { provider: string; model: string | null; claude_key_hint: string | null;
+  staff: Record<string, { provider: string; port?: number }> };
 type Audit = { id: number; at: string; actor: string; action: string; ref: string; detail: Record<string, unknown> };
 
 export default function Settings() {
@@ -18,6 +20,14 @@ export default function Settings() {
   const [editAi, setEditAi] = useState(false);
   const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });
   const [aiMsg, setAiMsg] = useState<string | null>(null);
+  const [hermesReady, setHermesReady] = useState(false);
+  const [noHermes, setNoHermes] = useState(false);
+  const [logFor, setLogFor] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const showLog = async (sid: string) => {
+    setLogFor(sid);
+    try { setLogLines((await api<{ lines: string[] }>(`/hermes/log/${sid}`)).lines); } catch (e: any) { setLogLines([e.message]); }
+  };
   const load = useCallback(async () => {
     try {
       setAi(await api<AiState>("/ai"));
@@ -26,6 +36,10 @@ export default function Settings() {
     } catch (e: any) { setErr(e.message); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {  // helpers' AI can come up a few seconds after a change
+    const t = setInterval(async () => { try { setHealth(await api("/health/engines")); } catch { /* next time */ } }, 8000);
+    return () => clearInterval(t);
+  }, []);
   useEffect(() => { if (overview) setConc(overview.max_concurrent_tasks); }, [overview]);
   const set = async (body: Record<string, unknown>) => {
     try { await api("/system", { body }); refresh(); } catch (e: any) { setErr(e.message); }
@@ -33,13 +47,16 @@ export default function Settings() {
   const saveAi = async (provider: string) => {
     setErr(null); setAiMsg(null);
     try {
-      await api("/ai", { body: provider === "claude" ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
+      const isClaude = provider === "claude" || provider === "claude-direct";
+      await api("/ai", { body: isClaude ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
       setEditAi(false); setClaude({ key: "", model: "", ok: false });
-      setAiMsg(provider === "claude" ? "Saved. All helpers now use Claude." : "Saved. All helpers are in practice mode.");
+      setAiMsg(provider === "claude" ? "Saved. Your helpers now run on Claude inside Hermes. It takes a few seconds to start."
+        : provider === "claude-direct" ? "Saved. Your helpers use Claude directly (no Hermes tools)." : "Saved. All helpers are in practice mode.");
       load();
     } catch (e: any) { setErr(e.message); }
   };
-  const aiLabel = (p?: string) => ({ claude: "Claude (your API key)", fake: "Practice mode (no AI)", hermes: "Hermes server", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
+  const aiLabel = (p?: string) => ({ claude: "Claude through Hermes (run by Saga OS)", "claude-direct": "Claude directly (no Hermes tools)",
+    fake: "Practice mode (no AI)", hermes: "Your own Hermes server", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
   if (!overview) return null;
   return (
     <div>
@@ -56,17 +73,31 @@ export default function Settings() {
         {aiMsg && <div className="callout ok">{aiMsg}</div>}
         {!editAi ? (
           <div className="acts">
-            <button className="btn primary" onClick={() => setEditAi(true)}>{ai?.provider === "claude" ? "Change key or model" : "Use my Claude API key"}</button>
+            <button className="btn primary" onClick={() => setEditAi(true)}>{ai?.provider === "claude" || ai?.provider === "claude-direct" ? "Change key or model" : "Use my Claude API key"}</button>
             {ai?.provider !== "fake" && <button className="btn" onClick={() => saveAi("fake")}>Switch to practice mode</button>}
           </div>
         ) : (
           <>
             <ClaudeSetup value={claude} onChange={setClaude} savedHint={ai?.claude_key_hint} />
+            {claude.ok && !noHermes && <HermesSetup autoInstall onReady={setHermesReady} />}
+            {claude.ok && !hermesReady && (
+              <label className="check"><input type="checkbox" checked={noHermes} onChange={(e) => setNoHermes(e.target.checked)} />
+                <span>Use Claude without Hermes for now (internet search, but no browser or other tools)</span></label>
+            )}
             <div className="acts" style={{ marginTop: 12 }}>
-              <button className="btn primary" disabled={!(claude.ok && claude.model)} onClick={() => saveAi("claude")}>Use Claude for all helpers</button>
+              <button className="btn primary" disabled={!(claude.ok && claude.model && (hermesReady || noHermes))}
+                onClick={() => saveAi(noHermes ? "claude-direct" : "claude")}>Use Claude for all helpers</button>
               <button className="btn" onClick={() => setEditAi(false)}>Cancel</button>
             </div>
           </>
+        )}
+        {ai && Object.values(ai.staff).some((x) => x.provider === "claude") && (
+          <div style={{ marginTop: 14 }}>
+            <HermesSetup />
+            <p className="small">Each helper has its own Hermes. {Object.entries(ai.staff).filter(([, x]) => x.provider === "claude").map(([sid]) => (
+              <button key={sid} className="btn quiet" onClick={() => showLog(sid)}>{sid} log</button>))}</p>
+            {logFor && <pre className="code" style={{ maxHeight: 260 }}>{`# ${logFor}\n` + (logLines.join("\n") || "(no output yet)")}</pre>}
+          </div>
         )}
         <p className="small" style={{ marginTop: 10 }}>Running your own Hermes server instead? Set it per helper under Staff.</p>
       </div>
