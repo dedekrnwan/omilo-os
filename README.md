@@ -19,7 +19,7 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 - **CLI** `saga-os`: `up`, `down`, `logs`, `login`, `doctor`, `status`, `inbox`, `show`, `approve`, `reject`, `changes`, `answer`, `staff`, `tasks`, `run`, `chat`, `pause`, `resume`, `import`.
 - **Import** of the v0 prototype (`legacy/prototype`): knowledge, loops → staff + shifts, runs, approvals.
 
-Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): Chrome push notifications and nudges (M3), connectors hub with
+Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): nudges and quiet hours (M3), connector
 OAuth (M4), Codex in the harness (M5), Telegram, passkeys, package-manager installers.
 
 ## Workspace: chat and work, live
