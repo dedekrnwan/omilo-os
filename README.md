@@ -67,7 +67,8 @@ Under a path prefix (e.g. `/os`), set `SAGA_BASE_PATH=/os` and build the web app
 
 **Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
 console.anthropic.com, check it and pick a model (Sonnet is recommended). Saga OS runs the agent loop itself and gives the
-model the saga-os tools; nothing else to install. The key is stored encrypted (Fernet, from the secret key) and only its last
+model the saga-os tools plus Anthropic's hosted web search and web fetch (internet research, no browser); nothing else to install.
+Web search costs $10 per 1,000 searches on your Anthropic bill; set `"web": false` in a helper's engine to turn it off. The key is stored encrypted (Fernet, from the secret key) and only its last
 4 characters are shown again. `ANTHROPIC_API_KEY` in the environment works too.
 
 **Advanced: Hermes.** For skills, a browser and other tools, run Hermes and point helpers at it:

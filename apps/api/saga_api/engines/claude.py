@@ -17,6 +17,12 @@ VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-5-5"
 MAX_TURNS_TASK = 40
 MAX_TURNS_CHAT = 8
+# Anthropic-hosted tools: the internet without installing anything. Read-only, so no approval needed.
+WEB_TOOLS = [
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
+    {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 10},
+]
+SEARCH_USD = 0.01  # $10 per 1,000 searches
 CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi"}
 
 
@@ -76,33 +82,41 @@ class ClaudeEngine(Engine):
         if mcp:
             tools = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t.get("inputSchema") or {"type": "object"}}
                      for t in await mcp.list_tools() if allowed is None or t["name"] in allowed]
-        tokens, text = 0, ""
+        web = cfg.get("web", True) is not False
+        tokens, text, cost = 0, "", 0.0
         async with httpx.AsyncClient(timeout=timeout) as c:
             for _ in range(max_turns):
                 body = {"model": model, "max_tokens": int(cfg.get("max_tokens") or 8192), "system": system, "messages": messages}
-                if tools:
-                    body["tools"] = tools
+                if tools or web:
+                    body["tools"] = tools + (WEB_TOOLS if web else [])
                 try:
                     r = await c.post(f"{base}/v1/messages", json=body, headers=headers(key))
                 except httpx.HTTPError as e:
-                    return EngineResult(error=f"Claude unreachable: {e}", tokens=tokens)
+                    return EngineResult(error=f"Claude unreachable: {e}", tokens=tokens, cost_usd=cost)
+                if r.status_code == 400 and web and ("web_search" in r.text or "web_fetch" in r.text):
+                    web = False  # web tools turned off for this Anthropic organization: carry on without them
+                    continue
                 if r.status_code >= 400:
-                    return EngineResult(error=f"Claude API {r.status_code}: {r.text[:300]}", tokens=tokens)
+                    return EngineResult(error=f"Claude API {r.status_code}: {r.text[:300]}", tokens=tokens, cost_usd=cost)
                 data = r.json()
                 u = data.get("usage") or {}
                 tokens += int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+                cost += SEARCH_USD * int((u.get("server_tool_use") or {}).get("web_search_requests") or 0)
                 content = data.get("content") or []
                 text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip() or text
+                if data.get("stop_reason") == "pause_turn":  # a long web search: send it back unchanged to continue
+                    messages.append({"role": "assistant", "content": content})
+                    continue
                 uses = [b for b in content if b.get("type") == "tool_use"]
                 if data.get("stop_reason") != "tool_use" or not uses or not mcp:
-                    return EngineResult(text=text, tokens=tokens)
+                    return EngineResult(text=text, tokens=tokens, cost_usd=cost)
                 messages.append({"role": "assistant", "content": content})
                 results = []
                 for b in uses:
                     out, err = await mcp.call_raw(b["name"], b.get("input") or {})
                     results.append({"type": "tool_result", "tool_use_id": b["id"], "content": out, **({"is_error": True} if err else {})})
                 messages.append({"role": "user", "content": results})
-        return EngineResult(text=text, tokens=tokens, error=f"stopped after {max_turns} steps without finishing")
+        return EngineResult(text=text, tokens=tokens, cost_usd=cost, error=f"stopped after {max_turns} steps without finishing")
 
     async def run_task(self, ctx: TaskContext) -> EngineResult:
         cfg = ctx.engine_config
@@ -128,7 +142,7 @@ class ClaudeEngine(Engine):
         if not msgs:
             return EngineResult(text="")
         if not ctx.mcp_token:
-            return await self._loop(cfg, system, msgs, None, None, 1, 120)
+            return await self._loop(cfg, system, msgs, None, None, 4, 120)
         async with MCPClient(ctx.mcp_url, ctx.mcp_token) as m:
             return await self._loop(cfg, system, msgs, m, CHAT_TOOLS, MAX_TURNS_CHAT, 120)
 

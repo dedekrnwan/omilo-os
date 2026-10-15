@@ -422,7 +422,7 @@ export default function Onboarding() {
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo; to do real work. You can start without one and connect it later.</p>
           <button type="button" className={`choice ${a.engine_type === "claude" ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
             <b>Use my Claude API key <span className="rec">Easiest real AI</span></b>
-            <span>Paste a key from Anthropic and your helpers start doing real work. Nothing to install.</span>
+            <span>Paste a key from Anthropic and your helpers start doing real work, including searching the internet and reading web pages. Nothing to install.</span>
           </button>
           {a.engine_type === "claude" && (
             <div className="paper" style={{ marginTop: -4, marginBottom: 10 }}>
@@ -437,7 +437,7 @@ export default function Onboarding() {
             <summary>Advanced: I run my own Hermes AI server</summary>
             <button type="button" className={`choice ${a.engine_type === "hermes" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => set({ engine_type: "hermes" })}>
               <b>Use my Hermes server</b>
-              <span>For technical setups: Hermes adds skills, a browser and other tools. Your Claude key then lives in Hermes.</span>
+              <span>For technical setups: Hermes adds a real browser (clicking, logging in, filling forms), a terminal, skills and more. Your Claude key then lives in Hermes.</span>
             </button>
             {a.engine_type === "hermes" && (
               <>

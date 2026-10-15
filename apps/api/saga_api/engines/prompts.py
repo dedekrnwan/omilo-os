@@ -17,6 +17,7 @@ How to work (tools from the `saga-os` MCP server):
 - Save progress with checkpoint() at least every 10 tool calls and before anything gated.
 - Before any side effect call request_action(); if it says needs_approval, stop that step.
 - Finish with report(task_id, headline, body). Body sections: Summary, Done, Needs founder, Handoffs.
+- If you have web_search / web_fetch, use them for facts from the internet and list the links you used in your report.
 - Keep it short: the founder reads on a phone.
 """
 

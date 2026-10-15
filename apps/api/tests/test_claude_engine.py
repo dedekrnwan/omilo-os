@@ -31,6 +31,17 @@ async def messages(request: Request):
     SEEN["keys"].add(request.headers.get("x-api-key"))
     body = await request.json()
     SEEN["bodies"].append(body)
+    names = {t["name"] for t in body.get("tools", [])}
+    if body["model"] == "claude-noweb" and "web_search" in names:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({"type": "error", "error": {"type": "invalid_request_error", "message": "web_search is not enabled"}}, status_code=400)
+    if body["model"] == "claude-pause":
+        paused = sum(1 for m in body["messages"] if m["role"] == "assistant")
+        if paused < 2:
+            return {"content": [{"type": "server_tool_use", "id": f"srv_{paused}", "name": "web_search", "input": {"query": "q"}}],
+                    "stop_reason": "pause_turn", "usage": {"input_tokens": 1, "output_tokens": 1, "server_tool_use": {"web_search_requests": 1}}}
+        return {"content": [{"type": "text", "text": f"resumed after {paused}"}], "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}
     msgs = body["messages"]
     first = msgs[0]["content"] if isinstance(msgs[0]["content"], str) else ""
     usage = {"input_tokens": 100, "output_tokens": 20}
@@ -86,7 +97,7 @@ def test_claude_key_check_and_switch(owner, anthropic_url):
     assert done["tokens"] >= 480
     assert SEEN["keys"] == {KEY}
     task_bodies = [b for b in SEEN["bodies"] if b.get("tools") and "Task tsk_" in str(b["messages"][0]["content"])]
-    assert {"report", "propose", "request_action"} <= {tl["name"] for tl in task_bodies[0]["tools"]}
+    assert {"report", "propose", "request_action", "web_search", "web_fetch"} <= {tl["name"] for tl in task_bodies[0]["tools"]}
 
     th = owner.post("/api/threads", json={"scope": "staff", "staff_id": "marketing"}).json()
     owner.post(f"/api/threads/{th['id']}/messages", json={"text": "hi"})
@@ -100,3 +111,16 @@ def test_claude_key_check_and_switch(owner, anthropic_url):
 def test_claude_needs_a_key(base_url):
     c = httpx.Client(base_url=base_url)
     assert c.post("/api/ai", json={"provider": "claude"}).status_code == 401
+
+
+def test_web_tools_fallback_and_pause(anthropic_url):
+    import asyncio
+
+    from saga_api.engines.claude import ClaudeEngine
+
+    e = ClaudeEngine()
+    msgs = lambda: [{"role": "user", "content": "hello"}]  # noqa: E731
+    r = asyncio.run(e._loop({"api_key": KEY, "model": "claude-noweb"}, "sys", msgs(), None, None, 4, 10))
+    assert r.error == "" and r.text.startswith("Claude here"), r  # retried without web tools
+    r = asyncio.run(e._loop({"api_key": KEY, "model": "claude-pause"}, "sys", msgs(), None, None, 6, 10))
+    assert r.text == "resumed after 2" and abs(r.cost_usd - 0.02) < 1e-9, r
