@@ -32,7 +32,7 @@ export type Staff = {
   permissions: Record<string, any>; status: string; has_mcp_token: boolean; max_task_minutes: number; budget_usd_month: number;
   shifts: Shift[]; effective_permissions?: Record<string, string>; recent_tasks?: Task[]; mcp?: { url: string };
 };
-export type Shift = { id: string; staff_id: string; name: string; cron: string; brief: string; enabled: boolean; next_at: string | null; last_at: string | null };
+export type Shift = { id: string; staff_id: string; name: string; cron: string; when?: string; brief: string; enabled: boolean; next_at: string | null; last_at: string | null };
 export type Report = { headline: string; body_md: string; kpis: Record<string, number>; at: string };
 export type Task = {
   id: string; staff_id: string; origin: string; brief: string; founder_note: string; status: string; parent_task_id: string | null;

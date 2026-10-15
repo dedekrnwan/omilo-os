@@ -61,6 +61,24 @@ export default function Shell({ children }: { children: ReactNode }) {
   };
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
 
+  if (path === "/onboarding/") {  // focused setup: no tabs, nothing to get lost in
+    return (
+      <OverviewCtx.Provider value={{ overview, refresh }}>
+        <header className="top">
+          <div className="focusbar">
+            <div className="brand">
+              <div className="mark" aria-hidden><i /><i /><i /><i /><i /><i /></div>
+              <div><b>Saga OS</b><small>Setting up your company</small></div>
+            </div>
+            <span className="sp" />
+            <button className="btn quiet" onClick={logout}>Log out</button>
+          </div>
+        </header>
+        <main className="page">{children}</main>
+      </OverviewCtx.Provider>
+    );
+  }
+
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
       <header className="top">

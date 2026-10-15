@@ -72,7 +72,7 @@ class Worker:
             for sh in due:
                 st = db.get(Staff, sh.staff_id)
                 sh.last_at = now()
-                sh.next_at = S.next_run(sh.cron)
+                sh.next_at = S.next_run(sh.cron, db=db)
                 if not st or st.status != "active":
                     continue
                 busy = db.scalar(select(func.count()).select_from(Task).where(

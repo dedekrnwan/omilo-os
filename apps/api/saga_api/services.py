@@ -118,22 +118,27 @@ def chief(db: Session) -> Staff | None:
 
 
 # ---------------------------------------------------------------- shifts
-def _tz() -> ZoneInfo:
+def timezone_name(db: Session | None = None) -> str:
+    """The owner's timezone: chosen in onboarding/Settings, else SAGA_TIMEZONE."""
+    return (get_setting(db, "timezone", None) if db is not None else None) or get_settings().timezone
+
+
+def _tz(db: Session | None = None) -> ZoneInfo:
     try:
-        return ZoneInfo(get_settings().timezone)
+        return ZoneInfo(timezone_name(db))
     except Exception:
         return ZoneInfo("UTC")
 
 
-def next_run(cron: str, after: dt.datetime | None = None) -> dt.datetime:
-    base = (after or now()).astimezone(_tz())
+def next_run(cron: str, after: dt.datetime | None = None, db: Session | None = None) -> dt.datetime:
+    base = (after or now()).astimezone(_tz(db))
     return croniter(cron, base).get_next(dt.datetime).astimezone(dt.UTC)
 
 
 def add_shift(db: Session, st: Staff, name: str, cron: str, brief: str, commit: bool = True) -> Shift:
     if not croniter.is_valid(cron):
         raise DomainError(f"invalid cron expression: {cron}")
-    sh = Shift(staff_id=st.id, name=name, cron=cron, brief=brief, next_at=next_run(cron))
+    sh = Shift(staff_id=st.id, name=name, cron=cron, brief=brief, next_at=next_run(cron, db=db))
     db.add(sh)
     if commit:
         db.commit()

@@ -4,6 +4,12 @@
 roles:
   chief-of-staff:
     name: Chief of Staff
+    tagline: 'Your right hand'
+    summary: 'Talks with you, keeps everyone moving and tells you what needs your attention.'
+    does:
+      - 'Writes you a short brief every morning'
+      - 'Passes your requests to the right helper'
+      - 'Reviews the week every Friday and suggests improvements'
     is_chief: true
     job: |
       You are the founder's single point of contact at {company}. Answer questions about the company and the team,
@@ -15,6 +21,12 @@ roles:
     permissions: {actions: {staff.delegate: 3}}
   marketing:
     name: Marketing
+    tagline: 'Content and promotion'
+    summary: 'Plans and drafts posts, articles and campaigns in your voice.'
+    does:
+      - "Plans the week's content every Monday"
+      - 'Drafts posts and articles for you to approve'
+      - 'Never publishes without your OK'
     job: |
       Plan and draft honest content for {company} that brings in the right customers. Use the voice and offer files.
       Never invent numbers or testimonials. Publishing always goes through approval.
@@ -23,6 +35,12 @@ roles:
     permissions: {actions: {content.draft: 2, content.publish: 1}}
   sales:
     name: Sales
+    tagline: 'Finds and follows up customers'
+    summary: 'Researches potential customers and drafts personal messages.'
+    does:
+      - 'Finds new potential customers twice a week'
+      - 'Drafts follow-up messages'
+      - 'Never sends anything without your OK'
     job: |
       Keep a short, high-quality pipeline for {company}: research prospects with sources, update the pipeline,
       draft personalised outreach. Sending always goes through approval.
@@ -31,6 +49,12 @@ roles:
     permissions: {actions: {outreach.draft: 2, outreach.send: 1}}
   support:
     name: Support
+    tagline: 'Customer care'
+    summary: 'Reads customer questions and complaints and turns them into better answers.'
+    does:
+      - 'Groups new questions every morning'
+      - 'Drafts answers for your FAQ'
+      - 'Spots repeated problems'
     job: |
       Turn support tickets into fixes and better self-serve answers for {company}. Group by root cause, draft FAQ
       answers, propose bug reports. Never reply to customers directly.
@@ -39,6 +63,12 @@ roles:
     permissions: {actions: {content.draft: 2}}
   ops:
     name: Ops
+    tagline: 'Keeps things running'
+    summary: 'Watches your app or website and warns you when something breaks.'
+    does:
+      - 'Checks your systems every hour'
+      - 'Tells you if something is down'
+      - 'Suggests fixes, never changes things alone'
     job: |
       Watch production health for {company}: alerts, services, disk, backups. Read-only. Any fix is a proposal
       with the exact command and its risk.
@@ -47,6 +77,12 @@ roles:
     permissions: {actions: {ops.command: 1}}
   dev:
     name: Dev
+    tagline: 'Improves your app'
+    summary: 'Makes small improvements to your app or website code for review.'
+    does:
+      - 'Picks one small improvement twice a day'
+      - 'Prepares the change for review'
+      - 'Never puts changes live by itself'
     job: |
       Ship small, reviewed improvements for {company}: take one agent-ready issue, implement it on a branch, run
       the tests, open a pull request. Never merge, never deploy.
@@ -55,6 +91,11 @@ roles:
     permissions: {actions: {code.pr: 2}}
   finance:
     name: Finance
+    tagline: 'Watches the numbers'
+    summary: 'Keeps one honest view of your numbers against your goals.'
+    does:
+      - 'Updates your key numbers every Monday'
+      - 'Writes a short memo with 3 suggestions'
     job: |
       Keep one honest view of {company}'s numbers against its goals: compute KPIs from real sources, record them
       with update_kpi, and write a weekly memo with 3 actions.
@@ -63,6 +104,12 @@ roles:
     permissions: {actions: {kpi.write: 3}}
   builder:
     name: Builder
+    tagline: 'App care, all-in-one'
+    summary: 'Keeps your app healthy and makes small improvements (for small teams).'
+    does:
+      - 'Checks your systems every night'
+      - 'Prepares one small improvement for review'
+      - 'Never puts changes live by itself'
     job: |
       Dev and Ops in one for a small team at {company}: keep production healthy and ship small PRs. Never merge or deploy.
     shifts:
@@ -70,6 +117,12 @@ roles:
     permissions: {actions: {code.pr: 2, ops.command: 1}}
   grower:
     name: Grower
+    tagline: 'Growth, all-in-one'
+    summary: 'Content, finding customers and customer care in one helper (for small teams).'
+    does:
+      - 'Plans content and drafts posts every Monday'
+      - 'Finds potential customers'
+      - 'Summarises customer questions'
     job: |
       Marketing, sales and support in one for a small team at {company}: content drafts, prospect research,
       support digest. Anything that leaves the company goes through approval.

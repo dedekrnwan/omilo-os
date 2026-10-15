@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import catalog, policy
+from .. import onboarding as OB
 from .. import serialize as X
 from .. import services as S
 from ..config import get_settings
@@ -56,6 +57,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "paused": S.is_paused(db),
         "strict_mode": S.strict_mode(db),
         "max_concurrent_tasks": S.max_concurrent(db),
+        "timezone": S.timezone_name(db),
         "inbox": {"open": len(open_items), "critical": sum(i.level == "critical" for i in open_items),
                   "blocking": sum(i.blocking for i in open_items)},
         "tasks": {"running": count(select(Task).where(Task.status == "running")),
@@ -77,12 +79,30 @@ class SystemIn(BaseModel):
     strict_mode: bool | None = None
     max_concurrent_tasks: int | None = Field(None, ge=1, le=100)
     company_name: str | None = None
+    timezone: str | None = None
+
+
+def _set_timezone(db: Session, tz: str, actor: str) -> None:
+    from zoneinfo import ZoneInfo
+
+    try:
+        ZoneInfo(tz)
+    except Exception as e:
+        raise HTTPException(400, f"unknown timezone {tz}") from e
+    S.set_setting(db, "timezone", tz, actor=actor)
+    for sh in db.scalars(select(Shift)):
+        sh.next_at = S.next_run(sh.cron, db=db)
+    db.commit()
 
 
 @router.post("/system")
 def update_system(body: SystemIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     for k, v in body.model_dump(exclude_none=True).items():
-        S.set_setting(db, k, v, actor=user.id)
+        if k == "timezone":
+            _set_timezone(db, v, user.id)
+        else:
+            S.set_setting(db, k, v, actor=user.id)
+    db.commit()
     return overview(db, user)
 
 
@@ -118,28 +138,34 @@ class TeamIn(BaseModel):
     max_concurrent_tasks: int | None = None
 
 
+def _create_team(db: Session, user: User, roles: list[str], engine: dict) -> tuple[list[str], dict]:
+    company = S.get_setting(db, "company_name", "") or "the company"
+    created, tokens = [], {}
+    for rid in roles:
+        if not catalog.role(rid):
+            raise HTTPException(400, f"unknown role {rid}")
+        if db.get(Staff, rid):
+            continue
+        data = _run(catalog.staff_from_role, rid, company, engine)
+        if data["is_chief"] and S.chief(db):
+            data["is_chief"] = False
+        st = _run(S.create_staff, db, data, user.id)
+        tokens[st.id] = S.rotate_mcp_token(db, st, user.id)
+        created.append(st.id)
+    return created, tokens
+
+
 @router.post("/team/apply")
 def apply_team(body: TeamIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     c = catalog.catalog()
     roles = body.roles or (c["presets"].get(body.preset or "", {}).get("roles"))
     if not roles:
         raise HTTPException(400, "give a preset (solo, small, growing) or a list of roles")
-    company = S.get_setting(db, "company_name", "") or "the company"
-    created, tokens = [], {}
-    for rid in roles:
-        if db.get(Staff, rid):
-            continue
-        data = _run(catalog.staff_from_role, rid, company, body.engine) if catalog.role(rid) else None
-        if data is None:
-            raise HTTPException(400, f"unknown role {rid}")
-        if data["is_chief"] and S.chief(db):
-            data["is_chief"] = False
-        st = _run(S.create_staff, db, data, user.id)
-        tokens[st.id] = S.rotate_mcp_token(db, st, user.id)
-        created.append(st.id)
+    created, tokens = _create_team(db, user, roles, body.engine)
     conc = body.max_concurrent_tasks or c["presets"].get(body.preset or "", {}).get("concurrent")
     if conc:
         S.set_setting(db, "max_concurrent_tasks", conc, actor=user.id)
+        db.commit()
     return {"created": created, "mcp_tokens": tokens,
             "note": "MCP tokens are shown once. Put each in its Hermes profile's MCP config (see Staff -> Connect engine)."}
 
@@ -247,7 +273,7 @@ def patch_shift(shid: str, body: ShiftPatch, db: Session = Depends(get_db), user
 
         if not croniter.is_valid(body.cron):
             raise HTTPException(400, "invalid cron")
-        sh.cron, sh.next_at = body.cron, S.next_run(body.cron)
+        sh.cron, sh.next_at = body.cron, S.next_run(body.cron, db=db)
     if body.brief is not None:
         sh.brief = body.brief
     if body.enabled is not None:
@@ -511,6 +537,80 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
             written.append(name)
     S.set_setting(db, "onboarded", True, actor=user.id)
     return {"written": written}
+
+
+# ------------------------------------------------------------------ guided onboarding (for non-engineers)
+@router.get("/onboarding")
+def onboarding_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    draft = S.get_setting(db, "onboarding_draft", None) or {}
+    answers = draft.get("answers") or OB.default_answers(S.get_setting(db, "company_name", ""))
+    return {"answers": answers, "step": draft.get("step", 0), "onboarded": bool(S.get_setting(db, "onboarded", False)),
+            "options": OB.options(), "roles": OB.roles_for_people(), "timezone": S.timezone_name(db),
+            "has_team": db.scalar(select(func.count()).select_from(Staff)) > 0}
+
+
+class DraftIn(BaseModel):
+    answers: dict
+    step: int = 0
+
+
+@router.put("/onboarding")
+def onboarding_save(body: DraftIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    S.set_setting(db, "onboarding_draft", {"answers": body.answers, "step": body.step}, actor=user.id)
+    if str(body.answers.get("company_name") or "").strip():
+        S.set_setting(db, "company_name", body.answers["company_name"].strip(), actor=user.id)
+    db.commit()
+    return {"ok": True}
+
+
+class AnswersIn(BaseModel):
+    answers: dict
+
+
+@router.post("/onboarding/preview")
+def onboarding_preview(body: AnswersIn, user: User = Depends(current_user)):
+    return {"files": OB.render(body.answers), "completeness": OB.completeness(body.answers),
+            "recommended": OB.recommend(body.answers)}
+
+
+class FinishIn(BaseModel):
+    answers: dict
+    roles: list[str]
+    engine: dict = Field(default_factory=lambda: {"type": "fake"})
+    approval_mode: str = "ask_all"
+    timezone: str | None = None
+    max_concurrent_tasks: int | None = Field(None, ge=1, le=100)
+    practice_task: bool = True
+
+
+@router.post("/onboarding/finish")
+def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    a = body.answers
+    company = str(a.get("company_name") or "").strip()
+    if not company:
+        raise HTTPException(400, "your business needs a name")
+    modes = OB.options()["approval_modes"]
+    if body.approval_mode not in modes:
+        raise HTTPException(400, "unknown approval mode")
+    roles = list(dict.fromkeys(["chief-of-staff", *body.roles]))
+    S.set_setting(db, "company_name", company, actor=user.id)
+    if body.timezone:
+        _set_timezone(db, body.timezone, user.id)
+    for name, content in OB.render(a).items():
+        _run(S.write_knowledge, db, name, content, user.id)
+    S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
+    created, tokens = _create_team(db, user, roles, body.engine)
+    S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
+    S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
+    S.set_setting(db, "onboarded", True, actor=user.id)
+    db.commit()
+    practice = None
+    if body.practice_task:
+        who = next((r for r in ("grower", "marketing") if db.get(Staff, r)), "chief-of-staff")
+        t = S.create_task(db, who, "manual", f"Practice task: draft a short post that introduces {company} to new customers, "
+                          "in our voice, using only facts from the company files. Propose it for approval.", user.id)
+        practice = {"task_id": t.id, "staff_id": who}
+    return {"created": created, "mcp_tokens": tokens, "mcp_url": get_settings().mcp_url(), "practice": practice}
 
 
 @router.get("/kpis")

@@ -32,7 +32,10 @@ def staff(s: Staff) -> dict:
 
 
 def shift(s: Shift) -> dict:
-    return {"id": s.id, "staff_id": s.staff_id, "name": s.name, "cron": s.cron, "brief": s.brief, "enabled": s.enabled,
+    from .onboarding import describe_cron
+
+    return {"id": s.id, "staff_id": s.staff_id, "name": s.name, "cron": s.cron, "when": describe_cron(s.cron),
+            "brief": s.brief, "enabled": s.enabled,
             "next_at": iso(s.next_at), "last_at": iso(s.last_at)}
 
 

@@ -91,19 +91,21 @@ function StaffDetail({ id }: { id: string }) {
         </div>
       </div>
       <div className="sec">
-        <h2>Shifts</h2>
-        <div className="tw"><table><thead><tr><th>Name</th><th>When (cron)</th><th>Brief</th><th>Next</th><th></th></tr></thead><tbody>
+        <h2>Schedule</h2>
+        <p className="sub">Regular jobs this helper does on its own, in your local time.</p>
+        <div className="tw"><table><thead><tr><th>Job</th><th>When</th><th>What to do</th><th>Next</th><th></th></tr></thead><tbody>
           {s.shifts.map((sh) => (
-            <tr key={sh.id}><td>{sh.name}</td><td><code>{sh.cron}</code></td><td className="small">{sh.brief}</td><td className="small">{sh.enabled ? ago(sh.next_at) : "off"}</td>
+            <tr key={sh.id}><td>{sh.name}</td><td>{sh.when || sh.cron}</td><td className="small">{sh.brief}</td><td className="small">{sh.enabled ? ago(sh.next_at) : "off"}</td>
               <td><button className="btn" onClick={() => toggleShift(sh.id, !sh.enabled)}>{sh.enabled ? "Turn off" : "Turn on"}</button></td></tr>
           ))}
         </tbody></table></div>
-        <div className="grid2" style={{ marginTop: 12 }}>
-          <div><label>New shift name</label><input value={shift.name} onChange={(e) => setShift({ ...shift, name: e.target.value })} /></div>
-          <div><label>Cron (e.g. 0 9 * * 1-5)</label><input value={shift.cron} onChange={(e) => setShift({ ...shift, cron: e.target.value })} /></div>
+        <div className="paper" style={{ marginTop: 12 }}>
+          <b>Add a regular job</b>
+          <label>Name</label><input value={shift.name} placeholder="e.g. weekly-promo" onChange={(e) => setShift({ ...shift, name: e.target.value })} />
+          <label>What should it do?</label><input value={shift.brief} placeholder="e.g. Draft 3 Instagram posts for next week's promo" onChange={(e) => setShift({ ...shift, brief: e.target.value })} />
+          <label>When</label><SchedulePicker value={shift.cron} onChange={(cron) => setShift({ ...shift, cron })} />
+          <div className="acts" style={{ marginTop: 10 }}><button className="btn primary" disabled={!shift.name || !shift.cron} onClick={addShift}>Add job</button></div>
         </div>
-        <label>Brief</label><input value={shift.brief} onChange={(e) => setShift({ ...shift, brief: e.target.value })} />
-        <div className="acts" style={{ marginTop: 8 }}><button className="btn" disabled={!shift.name || !shift.cron} onClick={addShift}>Add shift</button></div>
       </div>
       <div className="sec">
         <h2>Recent tasks</h2>
@@ -161,4 +163,40 @@ function StaffInner() {
 
 export default function StaffPage() {
   return <Suspense><StaffInner /></Suspense>;
+}
+
+/* Pick a schedule in words; writes the cron expression the server stores. */
+function SchedulePicker({ value, onChange }: { value: string; onChange: (cron: string) => void }) {
+  const [freq, setFreq] = useState("weekdays");
+  const [day, setDay] = useState("1");
+  const [time, setTime] = useState("09:00");
+  const [custom, setCustom] = useState(false);
+  useEffect(() => {
+    if (custom) return;
+    const [h, m] = time.split(":").map((x) => String(Number(x)));
+    const dow = freq === "daily" ? "*" : freq === "weekdays" ? "1-5" : day;
+    onChange(freq === "hourly" ? `${m} * * * *` : `${m} ${h} * * ${dow}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freq, day, time, custom]);
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return (
+    <div>
+      {!custom ? (
+        <div className="acts">
+          <select style={{ width: "auto" }} value={freq} onChange={(e) => setFreq(e.target.value)}>
+            <option value="daily">Every day</option><option value="weekdays">Every weekday</option>
+            <option value="weekly">Once a week</option><option value="hourly">Every hour</option>
+          </select>
+          {freq === "weekly" && <select style={{ width: "auto" }} value={day} onChange={(e) => setDay(e.target.value)}>{days.map((d, i) => <option key={d} value={String(i)}>on {d}</option>)}</select>}
+          {freq !== "hourly" && <input style={{ width: "auto" }} type="time" value={time} onChange={(e) => setTime(e.target.value || "09:00")} />}
+          <button type="button" className="btn quiet" onClick={() => setCustom(true)}>Advanced</button>
+        </div>
+      ) : (
+        <div className="acts">
+          <input style={{ width: 220 }} value={value} onChange={(e) => onChange(e.target.value)} placeholder="cron, e.g. 0 9 * * 1-5" />
+          <button type="button" className="btn quiet" onClick={() => setCustom(false)}>Simple</button>
+        </div>
+      )}
+    </div>
+  );
 }

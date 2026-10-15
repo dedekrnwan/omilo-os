@@ -18,14 +18,14 @@ export default function Setup() {
   return (
     <div className="centered">
       <div className="eyebrow">Welcome to Saga OS</div>
-      <h1>Create the owner</h1>
-      <p className="sub">You are the only one who approves what your staff agents propose.</p>
+      <h1>Create your account</h1>
+      <p className="sub">You are the boss here: your AI helpers suggest, you decide. This account is the only one that can approve their work.</p>
       <form className="paper" onSubmit={submit}>
-        <label>Company name</label><input required value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
+        <label>Business name</label><input required value={f.company_name} onChange={(e) => setF({ ...f, company_name: e.target.value })} />
         <label>Your name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
         <label>Email</label><input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-        <label>Password (10+ characters)</label><input type="password" minLength={10} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
-        <div className="acts" style={{ marginTop: 16 }}><button className="btn primary" type="submit">Create and continue</button></div>
+        <label>Password (at least 10 characters)</label><input type="password" minLength={10} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+        <div className="acts" style={{ marginTop: 16 }}><button className="btn primary" type="submit">Create my account</button></div>
         <Err error={err} />
       </form>
     </div>

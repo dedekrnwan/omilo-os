@@ -8,7 +8,7 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 
 ## What works today (milestones M1 + M2)
 
-- **Onboarding**: company name and 7 knowledge files (company, goals, customers, offer, voice, systems, rules), then a recommended team (solo / small / growing) sized by how many agents may work at once.
+- **Onboarding for non-engineers**: a guided 9-step wizard with plain questions, examples and tap-to-choose answers (business, customers, offer, goals, voice, tools and rules). Saga OS writes the knowledge files from the answers, suggests a team from the goals (no app-building helpers for businesses without their own app), uses the owner's time zone, starts in practice mode, and runs a first practice job so the owner sees an approval in the Inbox right away. Answers are saved as you go.
 - **Staff**: one card per agent: job, shifts (cron with timezone), engine, permission overrides, MCP token rotation.
 - **Work**: shifts become tasks, the worker dispatches them (concurrency limit, one task per agent, timeout), agents write checkpoints and a report.
 - **Inbox**: proposals, questions and alerts. Approve → an execution task runs exactly the approved text. Request changes → a revision task; every revision is kept. Reject needs a note.
