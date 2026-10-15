@@ -237,3 +237,34 @@ class ToolCall(Base):
     decision: Mapped[str] = mapped_column(String(16))  # allowed | proposal | refused | error
     detail: Mapped[str] = mapped_column(Text, default="")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RunEvent(Base):
+    """What an agent is doing right now, for the live view: status, reasoning, text, tool calls, sources, usage."""
+    __tablename__ = "run_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    staff_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    thread_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # status | thinking | text | tool | sources | usage | browser | session
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class HarnessAccount(Base):
+    """One Claude Code subscription in the harness pool (long-lived token from `claude setup-token`)."""
+    __tablename__ = "harness_account"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("hac"))
+    label: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(32), default="claude-code")
+    token_enc: Mapped[str] = mapped_column(Text)
+    token_hint: Mapped[str] = mapped_column(String(16), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default="new")  # new | ready | cooling | error
+    cooldown_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    runs: Mapped[int] = mapped_column(Integer, default=0)
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -1,0 +1,130 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { Err } from "@/components/ui";
+import { ago, api } from "@/lib/api";
+
+/* The harness pool: Claude Code subscriptions that helpers share, with automatic switching on usage limits. */
+
+type Account = { id: string; label: string; token_hint: string; enabled: boolean; state: string; cooldown_until: string | null;
+  last_used_at: string | null; last_error: string; runs: number; tokens: number; cost_usd: number; busy: number };
+type Pool = { accounts: Account[]; ready: number; total: number; parallel_per_account: number; helpers_on_pool: string[];
+  cli: { path: string | null; version: string | null; node: boolean; install: { state: string; log: string[] } } };
+
+const STATE: Record<string, [string, string]> = {
+  ready: ["up", "Ready"], new: ["idle", "Not tested"], cooling: ["warn", "Resting"], error: ["down", "Needs sign-in"], disabled: ["idle", "Off"],
+};
+
+export default function Harness() {
+  const [pool, setPool] = useState<Pool | null>(null);
+  const [label, setLabel] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => { try { setPool(await api<Pool>("/harness")); } catch (e: any) { setErr(e.message); } }, []);
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { if (pool?.cli.install.state !== "running") return; const t = setInterval(load, 2000); return () => clearInterval(t); }, [pool?.cli.install.state, load]);
+
+  const add = async () => {
+    setErr(null); setMsg(null);
+    try {
+      const a = await api<Account>("/harness/accounts", { body: { label, token } });
+      setLabel(""); setToken("");
+      await load();
+      if (pool?.cli.path) test(a.id);
+    } catch (e: any) { setErr(e.message); }
+  };
+  const test = async (id: string) => {
+    setBusy(id); setErr(null);
+    try { const r = await api<{ ok: boolean; detail: string }>(`/harness/accounts/${id}/test`, { body: {} }); setMsg(r.ok ? "The account works." : `Test failed: ${r.detail}`); load(); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  };
+  const patch = async (id: string, body: Record<string, unknown>) => { await api(`/harness/accounts/${id}`, { method: "PATCH", body }); load(); };
+  const remove = async (a: Account) => { if (!confirm(`Remove ${a.label} from the pool?`)) return; await api(`/harness/accounts/${a.id}`, { method: "DELETE" }); load(); };
+  const useForAll = async () => {
+    if (!confirm("Run every helper on the Claude Code pool?")) return;
+    try { await api("/ai", { body: { provider: "claude-code" } }); setMsg("All helpers now run on the Claude Code pool."); load(); } catch (e: any) { setErr(e.message); }
+  };
+
+  if (!pool) return <p className="small">Loading…</p>;
+  const cli = pool.cli;
+  return (
+    <div>
+      <h1>Harness</h1>
+      <p className="sub">Your Claude Code subscriptions, shared by your helpers. Saga OS picks a free account for each job; when one reaches its usage limit it rests, and the job continues on another account from where it stopped.</p>
+
+      <div className="stats" style={{ marginBottom: 20 }}>
+        <div className="stat"><div className="label">Accounts ready</div><div className="num">{pool.ready}<span className="small"> / {pool.total}</span></div></div>
+        <div className="stat"><div className="label">Working now</div><div className="num">{pool.accounts.reduce((n, a) => n + a.busy, 0)}</div><span className="pace">up to {pool.parallel_per_account} jobs per account</span></div>
+        <div className="stat"><div className="label">Resting</div><div className="num">{pool.accounts.filter((a) => a.state === "cooling").length}</div><span className="pace">hit a usage limit</span></div>
+        <div className="stat"><div className="label">Helpers on the pool</div><div className="num">{pool.helpers_on_pool.length}</div></div>
+      </div>
+
+      <div className="paper" style={{ marginBottom: 16 }}>
+        <div className="acts" style={{ justifyContent: "space-between" }}>
+          <div><b style={{ fontWeight: 500 }}>Claude Code</b>
+            <div className="small">{cli.path ? `${cli.version || "installed"} · ${cli.path}` : "Not installed on this computer yet."}</div></div>
+          {!cli.path && (cli.node
+            ? <button className="btn primary" disabled={cli.install.state === "running"} onClick={async () => { await api("/harness/install", { body: {} }); load(); }}>
+                {cli.install.state === "running" ? "Installing…" : "Install Claude Code"}</button>
+            : <span className="small">Needs Node.js first: nodejs.org</span>)}
+        </div>
+        {cli.install.state !== "idle" && !cli.path && <pre className="code" style={{ marginTop: 10 }}>{cli.install.log.join("\n")}</pre>}
+      </div>
+
+      <div className="sec" style={{ marginTop: 20 }}>
+        <div className="sechead"><h2>Accounts</h2><span className="sp" />
+          {pool.total > 0 && <button className="btn" onClick={useForAll}><i className="ri-team-line" />Use the pool for all helpers</button>}</div>
+        {pool.accounts.length === 0 ? <div className="empty"><b>No accounts yet</b><span>Add your first Claude Code subscription below.</span></div> : (
+          <div className="tw"><table>
+            <thead><tr><th>Account</th><th>Status</th><th className="hide-sm">Last used</th><th className="num-cell">Jobs</th><th className="num-cell hide-sm">Tokens</th><th></th></tr></thead>
+            <tbody>{pool.accounts.map((a) => {
+              const [cls, txt] = STATE[a.state] || ["idle", a.state];
+              return (
+                <tr key={a.id}>
+                  <td><b style={{ fontWeight: 500 }}>{a.label}</b><div className="small mono">…{a.token_hint}</div></td>
+                  <td><span className={`chip ${cls}`}>{a.busy ? `Working (${a.busy})` : txt}</span>
+                    {a.state === "cooling" && a.cooldown_until && <div className="small">until {new Date(a.cooldown_until).toLocaleString()}</div>}
+                    {a.last_error && a.state !== "ready" && <div className="small" style={{ maxWidth: 260 }}>{a.last_error.slice(0, 120)}</div>}</td>
+                  <td className="small hide-sm">{a.last_used_at ? ago(a.last_used_at) : "never"}</td>
+                  <td className="num-cell">{a.runs}</td>
+                  <td className="num-cell hide-sm">{a.tokens.toLocaleString()}</td>
+                  <td><div className="acts" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                    <button className="btn sm" disabled={busy === a.id || !cli.path} onClick={() => test(a.id)}>{busy === a.id ? "Testing…" : "Test"}</button>
+                    {a.state === "cooling" && <button className="btn sm" onClick={() => patch(a.id, { clear_cooldown: true })}>Use again</button>}
+                    <button className="btn sm" onClick={() => patch(a.id, { enabled: !a.enabled })}>{a.enabled ? "Turn off" : "Turn on"}</button>
+                    <button className="iconbtn" aria-label="Remove" onClick={() => remove(a)}><i className="ri-delete-bin-line" /></button>
+                  </div></td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div>
+        )}
+      </div>
+
+      <div className="sec" style={{ marginTop: 28 }}>
+        <h2>Add a subscription</h2>
+        <div className="grid2" style={{ marginTop: 8, alignItems: "start" }}>
+          <div className="soft">
+            <b style={{ fontWeight: 500 }}>Get the token (once per account)</b>
+            <ol style={{ paddingLeft: 18, margin: "8px 0 0", fontSize: 14, lineHeight: 1.7 }}>
+              <li>Open Terminal on this computer.</li>
+              <li>Type <code>claude setup-token</code> and press Enter.</li>
+              <li>A browser opens: sign in with the Claude account you want to add.</li>
+              <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it here.</li>
+            </ol>
+            <p className="small" style={{ marginBottom: 0 }}>Repeat for each account. Tokens last a year and are stored encrypted. Use accounts you own, within the terms of your Claude plan.</p>
+          </div>
+          <div>
+            <label>Name</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Max #1 (dede@…)" />
+            <label>Token</label><input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat01-…" />
+            <div className="acts" style={{ marginTop: 12 }}><button className="btn primary" disabled={!token.trim()} onClick={add}><i className="ri-add-line" />Add to pool</button></div>
+          </div>
+        </div>
+        {msg && <div className="callout ok">{msg}</div>}
+        <Err error={err} />
+      </div>
+    </div>
+  );
+}

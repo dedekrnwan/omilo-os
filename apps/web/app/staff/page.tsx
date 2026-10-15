@@ -12,7 +12,7 @@ function FirstJob({ s }: { s: Staff }) {
   const [brief, setBrief] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const give = async () => {
-    try { const t = await api<{ id: string }>("/tasks", { body: { staff_id: s.id, brief } }); router.push(`/work/?id=${t.id}`); }
+    try { const t = await api<{ id: string }>("/tasks", { body: { staff_id: s.id, brief } }); router.push(`/chat/?view=work&task=${t.id}`); }
     catch (e: any) { setErr(e.message); }
   };
   return (
@@ -89,7 +89,7 @@ function StaffDetail({ id }: { id: string }) {
           <div className="grid2">
             <div><label>AI</label>
               <select value={edit.engine?.type || "fake"} onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, type: e.target.value } })}>
-                <option value="fake">Practice mode (no AI)</option><option value="claude">Claude directly (no Hermes tools)</option><option value="hermes">{edit.engine?.managed ? "Claude through Hermes (run by Saga OS)" : "Hermes server"}</option>
+                <option value="fake">Practice mode (no AI)</option><option value="claude">Claude directly (no Hermes tools)</option><option value="claude-code">Claude Code pool (Harness)</option><option value="hermes">{edit.engine?.managed ? "Claude through Hermes (run by Saga OS)" : "Hermes server"}</option>
               </select></div>
             <div><label>Max minutes per task</label><input type="number" value={edit.max_task_minutes || 30} onChange={(e) => setEdit({ ...edit, max_task_minutes: Number(e.target.value) })} /></div>
           </div>
@@ -139,7 +139,7 @@ function StaffDetail({ id }: { id: string }) {
       <div className="sec">
         <h2>Recent tasks</h2>
         {s.recent_tasks?.length ? s.recent_tasks.map((t) => (
-          <div key={t.id} className="acts" style={{ margin: "6px 0" }}><StatusChip status={t.status} /><Link href={`/work/?id=${t.id}`}>{t.brief.slice(0, 90)}</Link><span className="small">{ago(t.created_at)}</span></div>
+          <div key={t.id} className="acts" style={{ margin: "6px 0" }}><StatusChip status={t.status} /><Link href={`/chat/?view=work&task=${t.id}`}>{t.brief.slice(0, 90)}</Link><span className="small">{ago(t.created_at)}</span></div>
         )) : <p className="small">No tasks yet.</p>}
       </div>
       <Err error={err} />
@@ -166,7 +166,7 @@ function StaffList() {
         <div className="cards">{staff.map((s) => (
           <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}>
             <span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span><b>{s.name}</b>
-            <span className="acts"><StatusChip status={s.status} />{s.status === "active" && !(s as any).awake && <span className="chip idle"><i className="ri-moon-line" />Sleeping</span>}<span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
+            <span className="acts"><StatusChip status={s.status} />{s.status === "active" && !(s as any).awake && <span className="chip idle"><i className="ri-moon-line" />Sleeping</span>}<span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : s.engine?.type === "claude-code" ? "Claude Code pool" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>
       )}

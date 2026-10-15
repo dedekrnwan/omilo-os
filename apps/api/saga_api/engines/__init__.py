@@ -1,4 +1,5 @@
 """Engines do the thinking. The gateway only needs two calls from them: run a task, answer a chat."""
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -17,6 +18,7 @@ class TaskContext:
     mcp_url: str
     mcp_token: str | None
     engine_config: dict = field(default_factory=dict)
+    emit: Callable[..., None] = field(default=lambda kind, **d: None)  # live progress (events.Emitter)
 
 
 @dataclass
@@ -32,6 +34,7 @@ class ChatContext:
     mcp_url: str
     mcp_token: str | None
     engine_config: dict = field(default_factory=dict)
+    emit: Callable[..., None] = field(default=lambda kind, **d: None)
 
 
 @dataclass
@@ -65,6 +68,10 @@ def get_engine(config: dict) -> Engine:
         from .claude import ClaudeEngine
 
         return ClaudeEngine()
+    if t == "claude-code":
+        from .claude_code import ClaudeCodeEngine
+
+        return ClaudeCodeEngine()
     if t == "fake":
         from .fake import FakeEngine
 

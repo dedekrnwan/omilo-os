@@ -67,7 +67,7 @@ export default function Inbox() {
                 {i.proposal && (
                   <>
                     <div className="paper"><Markdown text={i.proposal.body_md} /></div>
-                    <p className="small">Revision {i.proposal.current_revision}{i.task_id && <> · from <Link href={`/work/?id=${i.task_id}`}>task {i.task_id}</Link></>}</p>
+                    <p className="small">Revision {i.proposal.current_revision}{i.task_id && <> · from <Link href={`/chat/?view=work&task=${i.task_id}`}>task {i.task_id}</Link></>}</p>
                     {i.proposal.status === "pending" && (
                       <>
                         <textarea placeholder="Note for the helper: required to reject or ask for changes; optional to approve" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -100,7 +100,7 @@ export default function Inbox() {
                   <>
                     <div className="paper"><Markdown text={i.body} /></div>
                     <div className="acts" style={{ marginTop: 8 }}>
-                      {i.task_id && <Link className="btn" href={`/work/?id=${i.task_id}`}>Open task</Link>}
+                      {i.task_id && <Link className="btn" href={`/chat/?view=work&task=${i.task_id}`}>Open task</Link>}
                       {i.status === "open" && <button className="btn" onClick={() => act(() => api(`/inbox/${i.id}/dismiss`, { body: {} }))}>Dismiss</button>}
                     </div>
                   </>

@@ -3,6 +3,7 @@ and answers chat threads. Runs inside the API (laptop mode) or as its own proces
 """
 import asyncio
 import logging
+import time
 
 from sqlalchemy import func, select
 
@@ -10,6 +11,7 @@ from . import services as S
 from .config import get_settings
 from .db import init_db, session_scope
 from .engines import ChatContext, EngineResult, TaskContext, get_engine
+from .events import Emitter
 from .models import Proposal, Report, Shift, Staff, Task, Thread, now
 from .security import decrypt
 
@@ -147,11 +149,14 @@ class Worker:
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
+                emit=Emitter(st.id, task_id=t.id),
             )
             return ctx, dict(st.engine or {}), int(st.max_task_minutes or 30)
 
     async def run_task(self, task_id: str):
         ctx, engine_cfg, minutes = self._task_context(task_id)
+        t0 = time.monotonic()
+        ctx.emit("status", state="started", engine=_engine_label(engine_cfg), origin=ctx.origin)
         try:
             engine = get_engine(engine_cfg)
             res = await asyncio.wait_for(engine.run_task(ctx), timeout=min(minutes * 60, get_settings().task_timeout_s))
@@ -161,6 +166,8 @@ class Worker:
             res = EngineResult(error="cancelled")
         except Exception as e:  # engine bug or bad config
             res = EngineResult(error=f"{type(e).__name__}: {e}")
+        ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
+        ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         self.finish(task_id, res)
 
     def finish(self, task_id: str, res: EngineResult):
@@ -206,15 +213,31 @@ class Worker:
                 note += f"\nThis thread is about proposal {p.id} ({p.status}): {p.title}\nCurrent text:\n{S.current_body(p)}"
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
-                              mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {})
+                              mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
+                              emit=Emitter(st.id, thread_id=th.id))
+        t0 = time.monotonic()
+        ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
         try:
             res = await asyncio.wait_for(get_engine(ctx.engine_config).chat(ctx), timeout=600)
         except Exception as e:
             res = EngineResult(error=f"{type(e).__name__}: {e}")
+        ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
+        ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         with session_scope() as db:
             th = db.get(Thread, thread_id)
             text = res.text if not res.error else f"Sorry, I couldn't answer: {res.error}"
             S.post_message(db, th, "agent" if not res.error else "system", th.staff_id, text, awaiting_reply=False)
+
+
+def _engine_label(cfg: dict) -> str:
+    t = (cfg or {}).get("type", "fake")
+    if t == "hermes":
+        return f"Hermes · {cfg.get('claude_model')}" if cfg.get("managed") else "Hermes"
+    if t == "claude-code":
+        return "Claude Code pool" + (f" · {cfg['model']}" if cfg.get("model") else "")
+    if t == "claude":
+        return f"Claude · {cfg.get('model') or ''}".strip(" ·")
+    return "Practice mode"
 
 
 def main():  # `saga-worker`: the worker as its own process (server mode)

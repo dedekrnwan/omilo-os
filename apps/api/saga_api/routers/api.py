@@ -1,5 +1,6 @@
 """The owner's REST API (used by the web app and the CLI)."""
 import datetime as dt
+import json
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -115,7 +116,11 @@ def get_policy(user: User = Depends(current_user)):
 @router.get("/health/engines")
 async def engines_health(db: Session = Depends(get_db), user: User = Depends(current_user)):
     out = {}
+    awake = S.awake_staff(db)
     for st in db.scalars(select(Staff)):
+        if (st.engine or {}).get("managed") and st.id not in awake:
+            out[st.id] = {"ok": True, "sleeping": True, "detail": "sleeping (starts when it gets work)"}
+            continue
         try:
             out[st.id] = await get_engine(st.engine).health(st.engine or {})
         except Exception as e:
@@ -545,7 +550,7 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 
 
 # ------------------------------------------------------------------ AI (the engine every helper uses)
-AI_PROVIDERS = ("fake", "claude", "hermes", "claude-direct")
+AI_PROVIDERS = ("fake", "claude", "hermes", "claude-direct", "claude-code")
 # "claude"        = Claude through a Hermes that Saga OS installs and runs (all Hermes tools)
 # "claude-direct" = Saga OS calls the Claude API itself (no Hermes tools; fallback)
 # "hermes"        = the owner's own Hermes server
@@ -563,6 +568,8 @@ def _engine_for(provider: str, model: str | None, base_url: str | None) -> dict:
         return {"type": "hermes", "managed": True, "provider": "anthropic", "claude_model": _claude_model(model)}
     if provider == "claude-direct":
         return {"type": "claude", "model": _claude_model(model)}
+    if provider == "claude-code":
+        return {"type": "claude-code", **({"model": model} if model else {})}
     if provider == "hermes":
         return {"type": "hermes", "base_url": base_url or "http://127.0.0.1:8642/v1", "model": model or "hermes-agent"}
     return {"type": "fake"}
@@ -594,6 +601,8 @@ def _provider_of(e: dict) -> str:
         return "claude" if e.get("managed") else "hermes"
     if e.get("type") in ("claude", "anthropic"):
         return "claude-direct"
+    if e.get("type") == "claude-code":
+        return "claude-code"
     return e.get("type", "fake")
 
 
@@ -689,6 +698,126 @@ def ai_set(body: AiIn, db: Session = Depends(get_db), user: User = Depends(curre
     changed = _apply_ai(db, user, body)
     S.desired_gateways(db, write_all=True)  # write the Hermes profiles now; the worker starts them when needed
     return {**ai_state(db, user), "changed": changed}
+
+
+# ------------------------------------------------------------------ live run events (workspace view)
+@router.get("/events")
+def run_events(task_id: str | None = None, thread_id: str | None = None, after: int = 0, limit: int = 500,
+               db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import RunEvent
+
+    if not task_id and not thread_id:
+        raise HTTPException(400, "give task_id or thread_id")
+    q = select(RunEvent).where(RunEvent.id > after)
+    q = q.where(RunEvent.task_id == task_id) if task_id else q.where(RunEvent.thread_id == thread_id)
+    rows = db.scalars(q.order_by(RunEvent.id).limit(min(limit, 2000)))
+    return [{"id": e.id, "at": X.iso(e.at), "kind": e.kind, "staff_id": e.staff_id, "data": e.data} for e in rows]
+
+
+# ------------------------------------------------------------------ harness pool (Claude Code subscriptions)
+@router.get("/harness")
+def harness_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import harness as H
+
+    users = [st.id for st in db.scalars(select(Staff)) if (st.engine or {}).get("type") == "claude-code"]
+    return {**H.pool_summary(), "helpers_on_pool": users}
+
+
+class HarnessAccountIn(BaseModel):
+    label: str = ""
+    token: str
+
+
+@router.post("/harness/accounts")
+def harness_add(body: HarnessAccountIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import harness as H
+
+    try:
+        a = H.add_account(db, body.label, body.token)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    S.audit(db, user.id, "harness.account_add", a.id, label=a.label)
+    db.commit()
+    return H.serialize(a)
+
+
+class HarnessPatch(BaseModel):
+    label: str | None = None
+    enabled: bool | None = None
+    clear_cooldown: bool = False
+
+
+@router.patch("/harness/accounts/{aid}")
+def harness_patch(aid: str, body: HarnessPatch, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import harness as H
+    from ..models import HarnessAccount
+
+    a = _404(db.get(HarnessAccount, aid), "unknown account")
+    if body.label is not None:
+        a.label = body.label.strip() or a.label
+    if body.enabled is not None:
+        a.enabled = body.enabled
+    if body.clear_cooldown:
+        a.cooldown_until, a.status, a.last_error = None, "ready", ""
+    S.audit(db, user.id, "harness.account_update", a.id, enabled=a.enabled)
+    db.commit()
+    return H.serialize(a)
+
+
+@router.delete("/harness/accounts/{aid}")
+def harness_delete(aid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import HarnessAccount
+
+    a = _404(db.get(HarnessAccount, aid), "unknown account")
+    db.delete(a)
+    S.audit(db, user.id, "harness.account_remove", aid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/harness/accounts/{aid}/test")
+async def harness_test(aid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Ask Claude Code for a one-word reply with this account."""
+    import asyncio as _a
+
+    from .. import harness as H
+    from ..models import HarnessAccount
+    from ..security import decrypt
+
+    a = _404(db.get(HarnessAccount, aid), "unknown account")
+    cli = H.find_cli()
+    if not cli:
+        raise HTTPException(409, "Install Claude Code first.")
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    env.update({"CLAUDE_CODE_OAUTH_TOKEN": decrypt(a.token_enc) or "", "CLAUDE_CONFIG_DIR": str(get_settings().data_dir / "harness" / "config")})
+    (get_settings().data_dir / "harness" / "config").mkdir(parents=True, exist_ok=True)
+    proc = await _a.create_subprocess_exec(cli, "-p", "Reply with exactly: OK", "--output-format", "json", "--max-turns", "1",
+                                           env=env, stdout=_a.subprocess.PIPE, stderr=_a.subprocess.PIPE, stdin=_a.subprocess.DEVNULL)
+    try:
+        out, err = await _a.wait_for(proc.communicate(), timeout=120)
+    except TimeoutError:
+        proc.kill()
+        raise HTTPException(504, "Claude Code did not answer in 2 minutes") from None
+    text = out.decode(errors="replace")
+    try:
+        res = json.loads(text.strip().splitlines()[-1])
+        ok = not res.get("is_error") and "OK" in str(res.get("result", ""))
+        detail = str(res.get("result", ""))[:300]
+    except (ValueError, IndexError):
+        ok, detail = False, (err.decode(errors="replace") or text)[:300]
+    a.status = "ready" if ok else ("error" if H.AUTH_RE.search(detail) else a.status)
+    a.last_error = "" if ok else detail
+    if not ok and H.LIMIT_RE.search(detail):
+        a.cooldown_until = H.parse_reset(detail) or (now() + H.DEFAULT_COOLDOWN)
+    db.commit()
+    return {"ok": ok, "detail": detail, "account": H.serialize(a)}
+
+
+@router.post("/harness/install")
+def harness_install(user: User = Depends(current_user)):
+    from .. import harness as H
+
+    return H.installer.start()
 
 
 # ------------------------------------------------------------------ talent library (The Agency)

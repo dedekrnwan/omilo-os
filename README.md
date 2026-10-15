@@ -22,6 +22,23 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): Chrome push notifications and nudges (M3), connectors hub with
 OAuth (M4), harness pool and switching between Claude Code / Codex (M5), Telegram, passkeys, package-manager installers.
 
+## Workspace: chat and work, live
+
+The Workspace puts chat and work on one page (toggle top right) with a side panel for **Progress**, **Output** and the
+**Browser** trail. Agent turns render as they happen: a live "Working" card with reasoning, each tool call (expand for input and
+output), sources, account switches and a usage meter (tokens, cost, time). Helpers can offer clickable choices (`offer_choices`).
+Engines report through `/api/events` (`RunEvent`): Hermes streams its draft, Claude Code streams every step, and every saga-os tool
+call is recorded by the MCP server.
+
+## Harness: a pool of Claude Code subscriptions
+
+Settings live under **Harness**. Add each subscription with a token from `claude setup-token` (stored encrypted), install
+Claude Code with one click (npm), then put helpers on the pool. Each job leases the least recently used free account
+(`SAGA_HARNESS_PARALLEL` jobs per account, default 2). On a usage limit the account rests until its reset time and the job
+continues on another account with `--resume`, so no work is lost; sign-in problems mark the account and move on.
+Runs use `claude -p --output-format stream-json`, the saga-os MCP server, `--permission-mode dontAsk` and an allowlist
+(web, read, write in the helper's own workspace; `Bash` only when a helper has `allow_shell`).
+
 ## Hire specialists from The Agency
 
 Team → **Hire a specialist** opens a library of about 280 specialists from

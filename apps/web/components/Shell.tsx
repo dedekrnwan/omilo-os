@@ -5,8 +5,8 @@ import { ReactNode, createContext, useCallback, useContext, useEffect, useState 
 import { ApiError, Overview, api } from "@/lib/api";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
-  { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Chat", "ri-chat-3-line"], ["/work/", "Work", "ri-list-check-3"]] },
-  { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
+  { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"]] },
+  { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"], ["/harness/", "Harness", "ri-stack-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
 ];
 const TITLES: Record<string, [string, string]> = Object.fromEntries(NAV.flatMap((g) => g.items.map(([h, l, i]) => [h, [l, i]])));
 
@@ -140,12 +140,16 @@ export default function Shell({ children }: { children: ReactNode }) {
         </aside>
         <div className="workspace">
           <div className="inset">
-            <div className="topbar">
-              <span className="crumb"><i className={icon} />{title}</span>
-              <span className="sp" />
-              {overview?.paused && <span className="chip warn"><i className="ri-pause-line" />Paused</span>}
-            </div>
-            <div className="scroll"><main className="page">{children}</main></div>
+            {key === "/chat/" ? children : (
+              <>
+                <div className="topbar">
+                  <span className="crumb"><i className={icon} />{title}</span>
+                  <span className="sp" />
+                  {overview?.paused && <span className="chip warn"><i className="ri-pause-line" />Paused</span>}
+                </div>
+                <div className="scroll"><main className="page">{children}</main></div>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -23,7 +23,7 @@ WEB_TOOLS = [
     {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 10},
 ]
 SEARCH_USD = 0.01  # $10 per 1,000 searches
-CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi"}
+CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi", "offer_choices"}
 
 
 def api_key(cfg: dict) -> str:
@@ -68,11 +68,31 @@ def pick_default(models: list[dict]) -> str:
     return models[0]["id"] if models else DEFAULT_MODEL
 
 
+def emit_blocks(emit, content: list[dict]) -> None:
+    """Turn Anthropic content blocks into live events (reasoning, text, web tools and their sources)."""
+    for b in content:
+        t = b.get("type")
+        if t == "thinking" and b.get("thinking"):
+            emit("thinking", text=b["thinking"])
+        elif t == "text" and b.get("text", "").strip():
+            emit("text", text=b["text"])
+        elif t == "server_tool_use":
+            emit("tool", name=b.get("name", "tool"), input=b.get("input") or {}, ok=True)
+        elif t in ("web_search_tool_result", "web_fetch_tool_result"):
+            c = b.get("content")
+            items = c if isinstance(c, list) else [c] if isinstance(c, dict) else []
+            srcs = [{"url": i.get("url"), "title": i.get("title") or i.get("url")} for i in items if isinstance(i, dict) and i.get("url")]
+            if srcs:
+                emit("sources", items=srcs)
+                emit("browser", url=srcs[0]["url"], title=srcs[0]["title"])
+
+
 class ClaudeEngine(Engine):
     type = "claude"
 
     async def _loop(self, cfg: dict, system: str, messages: list[dict], mcp: MCPClient | None,
-                    allowed: set[str] | None, max_turns: int, timeout: float) -> EngineResult:
+                    allowed: set[str] | None, max_turns: int, timeout: float, emit=None) -> EngineResult:
+        emit = emit or (lambda kind, **d: None)
         key = api_key(cfg)
         if not key:
             return EngineResult(error="No Claude API key yet. Add one in Settings → AI.")
@@ -103,6 +123,7 @@ class ClaudeEngine(Engine):
                 tokens += int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
                 cost += SEARCH_USD * int((u.get("server_tool_use") or {}).get("web_search_requests") or 0)
                 content = data.get("content") or []
+                emit_blocks(emit, content)
                 text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip() or text
                 if data.get("stop_reason") == "pause_turn":  # a long web search: send it back unchanged to continue
                     messages.append({"role": "assistant", "content": content})
@@ -125,7 +146,7 @@ class ClaudeEngine(Engine):
         system = CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)")
         async with MCPClient(ctx.mcp_url, ctx.mcp_token) as m:
             return await self._loop(cfg, system, [{"role": "user", "content": task_message(ctx)}], m, None,
-                                    int(cfg.get("max_turns") or MAX_TURNS_TASK), float(cfg.get("request_timeout_s") or 300))
+                                    int(cfg.get("max_turns") or MAX_TURNS_TASK), float(cfg.get("request_timeout_s") or 300), ctx.emit)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
         cfg = ctx.engine_config
@@ -142,9 +163,9 @@ class ClaudeEngine(Engine):
         if not msgs:
             return EngineResult(text="")
         if not ctx.mcp_token:
-            return await self._loop(cfg, system, msgs, None, None, 4, 120)
+            return await self._loop(cfg, system, msgs, None, None, 4, 120, ctx.emit)
         async with MCPClient(ctx.mcp_url, ctx.mcp_token) as m:
-            return await self._loop(cfg, system, msgs, m, CHAT_TOOLS, MAX_TURNS_CHAT, 120)
+            return await self._loop(cfg, system, msgs, m, CHAT_TOOLS, MAX_TURNS_CHAT, 120, ctx.emit)
 
     async def health(self, cfg: dict) -> dict:
         key = api_key(cfg)

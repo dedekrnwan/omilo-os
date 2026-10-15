@@ -65,6 +65,9 @@ TOOLS: list[dict] = [
                      "blocking": _s("boolean", "work stops until answered")}, "required": ["question"]}},
     {"name": "post_message", "description": "Post a progress note into your task's thread (the founder can read it).",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id"), "text": _s("string", "markdown")}, "required": ["task_id", "text"]}},
+    {"name": "offer_choices", "description": "Show the founder clickable options in the current chat or task thread (e.g. pick a direction). Their pick comes back as their next message.",
+     "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id, if this is about a task"), "question": _s("string", "short question"),
+                     "options": _s("array", "2-6 short options", items={"type": "string"})}, "required": ["question", "options"]}},
     {"name": "update_kpi", "description": "Record a KPI value with its source (Finance only unless permitted).",
      "inputSchema": {"type": "object", "properties": {"name": _s("string", "kpi name"), "value": _s("number", "value"),
                      "period": _s("string", "e.g. 2026-W42"), "source": _s("string", "where the number comes from")}, "required": ["name", "value", "source"]}},
@@ -132,6 +135,22 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
         m = S.post_message(db, th, "agent", st.id, args["text"])
         return "allowed", {"message_id": m.id}
+    if name == "offer_choices":
+        from .events import current_run
+
+        opts = [str(o)[:120] for o in (args.get("options") or [])][:6]
+        if len(opts) < 2:
+            raise S.DomainError("give 2-6 options")
+        task_id, thread_id = current_run(db, st.id, args.get("task_id"))
+        if task_id:
+            t = S.task_for_staff(db, st, task_id)
+            th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
+        elif thread_id:
+            th = db.get(S.Thread, thread_id)
+        else:
+            raise S.DomainError("no open task or chat to show the options in")
+        m = S.post_message(db, th, "agent", st.id, str(args["question"]), blocks=[{"type": "choices", "options": opts}])
+        return "allowed", {"message_id": m.id, "thread_id": th.id}
     if name == "update_kpi":
         if policy.level_for("kpi.write", st.permissions) < policy.DO_AND_TELL:
             raise S.DomainError("you may not write KPIs; ask Finance or propose it", 403)
@@ -198,8 +217,17 @@ def _handle(db, st: Staff, msg: dict) -> dict | None:
         except KeyError as e:
             payload = {"error": f"missing argument {e}"}
             db.rollback()
+        ms = int((time.monotonic() - t0) * 1000)
         db.add(ToolCall(staff_id=st.id, task_id=str(args.get("task_id") or ""), tool=str(name), decision=decision,
-                        detail=json.dumps(payload)[:500], duration_ms=int((time.monotonic() - t0) * 1000)))
+                        detail=json.dumps(payload)[:500], duration_ms=ms))
+        try:
+            from .events import current_run, record
+
+            run_task, run_thread = current_run(db, st.id, args.get("task_id"))
+            record("tool", {"name": f"saga-os · {name}", "input": args, "output": payload, "ok": not is_error, "decision": decision, "ms": ms},
+                   staff_id=st.id, task_id=run_task, thread_id=run_thread, db=db)
+        except Exception:  # noqa: BLE001 - never fail a tool call over the live view
+            pass
         db.commit()
         return _rpc_result(id_, {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, default=str)}],
                                  "structuredContent": payload, "isError": is_error})

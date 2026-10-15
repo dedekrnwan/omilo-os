@@ -56,7 +56,7 @@ export default function Settings() {
     } catch (e: any) { setErr(e.message); }
   };
   const aiLabel = (p?: string) => ({ claude: "Claude through Hermes (run by Saga OS)", "claude-direct": "Claude directly (no Hermes tools)",
-    fake: "Practice mode (no AI)", hermes: "Your own Hermes server", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
+    fake: "Practice mode (no AI)", hermes: "Your own Hermes server", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
   if (!overview) return null;
   return (
     <div>
