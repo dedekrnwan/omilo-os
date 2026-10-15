@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import ComposerTools, { Attached } from "@/components/ComposerTools";
+import { Attachments } from "@/components/Markdown";
 import { Err, Markdown, StatusChip } from "@/components/ui";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
 
@@ -73,18 +74,6 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
 }
 
 /* ------------------------------------------------------------------ chat */
-function FileBlocks({ blocks }: { blocks?: Msg["blocks"] }) {
-  const files = (blocks || []).filter((b) => b.type === "file" && b.id);
-  if (!files.length) return null;
-  return (
-    <div className="files">{files.map((f) => (
-      <a key={f.id} href={`${BASE}/api/files/${f.id}`} target="_blank" rel="noreferrer" title={f.name}>
-        {f.mime?.startsWith("image/") ? <img src={`${BASE}/api/files/${f.id}`} alt={f.name} /> : <><i className="ri-file-3-line" />{f.name}</>}
-      </a>
-    ))}</div>
-  );
-}
-
 /* Clickable options a helper offered (offer_choices). Open until the owner answers; the answer stays highlighted. */
 function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]; busy: boolean; onPick: (o: string) => void }) {
   const [sent, setSent] = useState<string | null>(null);
@@ -124,14 +113,15 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
         <div className="sysmsg">Ask anything: what needs you, what someone did, or tell a helper what to do.</div>
       )}
       {rows.map((row) => row.kind === "run" ? <RunCard key={`r${row.r.id}`} run={row.r} /> : (
-        row.m.role === "owner" ? <div key={row.m.id} className="bubble"><Markdown text={row.m.text} /><FileBlocks blocks={row.m.blocks} /></div>
+        row.m.role === "owner" ? <div key={row.m.id} className="bubble"><Markdown text={row.m.text} /><Attachments blocks={row.m.blocks} /></div>
           : row.m.role === "system" ? <div key={row.m.id} className="sysmsg"><Markdown text={row.m.text} /></div>
           : (
             <div key={row.m.id} className="agentmsg">
               <span className="av">{name(row.m.author).slice(0, 1).toUpperCase()}</span>
               <div className="body">
                 <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
-                <div className="md"><Markdown text={row.m.text} /></div>
+                <Markdown text={row.m.text} />
+                <Attachments blocks={row.m.blocks} />
                 <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
               </div>
             </div>
@@ -152,7 +142,7 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
   const events = useEvents({ task_id: id });
   const [th, setTh] = useState<FullThread | null>(null);
   // a helper asked a question with options during this job: show it here so the owner can answer without leaving
-  const asked = events.some((e) => e.kind === "tool" && String(e.data?.name || "").endsWith("offer_choices"));
+  const asked = events.some((e) => e.kind === "tool" && /offer_choices|share_file/.test(String(e.data?.name || "")));
   const load = useCallback(async () => {
     try { setT(await api<Task>(`/tasks/${id}`)); } catch (e: any) { setErr(e.message); }
     if (asked) { try { setTh(await api<FullThread>("/threads", { body: { scope: "task", ref_id: id } })); } catch { /* ignore */ } }
@@ -181,14 +171,14 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
           <Markdown text={t.brief + (t.founder_note ? `\n\n**Your note:** ${t.founder_note}` : "")} />
         </div>
         {runs.map((r) => <RunCard key={r.id} run={r} />)}
-        {th && (th.messages as Msg[]).filter((m) => m.blocks?.some((b) => b.type === "choices")).map((m) => (
+        {th && (th.messages as Msg[]).filter((m) => m.role === "agent" && m.blocks?.some((b) => b.type === "choices" || b.type === "file")).map((m) => (
           <div key={m.id} className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body">
-            <div className="who">{who} asks · {when(m.at)}</div><div className="md"><Markdown text={m.text} /></div>
+            <div className="who">{who} · {when(m.at)}</div><Markdown text={m.text} /><Attachments blocks={m.blocks} />
             <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} /></div></div>
         ))}
         {runs.length === 0 && t.status === "queued" && <div className="sysmsg">Waiting for a free spot…</div>}
         {t.report && (
-          <div className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body"><div className="who">{who} · report</div><div className="md"><Markdown text={t.report.body_md} /></div></div></div>
+          <div className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body"><div className="who">{who} · report</div><Markdown text={t.report.body_md} /></div></div>
         )}
         {t.error && <div className="callout warn"><b>Error</b> {t.error}</div>}
         {!!t.proposals?.length && <div className="soft"><div className="small">Waiting on you</div>
@@ -286,7 +276,7 @@ function WorkspaceInner() {
   const selTask = tasks.find((t) => t.id === taskId);
 
   const output = view === "chat"
-    ? (lastAgentText ? <div className="md"><Markdown text={lastAgentText} /></div> : null)
+    ? (lastAgentText ? <Markdown text={lastAgentText} /> : null)
     : selTask?.report ? <div><div className="small" style={{ marginBottom: 6 }}>Report</div><div className="paper md"><Markdown text={selTask.report.body_md} /></div></div> : null;
 
   return (

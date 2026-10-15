@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -146,7 +147,10 @@ def files_dir() -> Path:
 
 
 def save_file(name: str, data_b64: str) -> dict:
-    raw = base64.b64decode(data_b64, validate=True)
+    return save_bytes(name, base64.b64decode(data_b64, validate=True))
+
+
+def save_bytes(name: str, raw: bytes) -> dict:
     if len(raw) > MAX_FILE:
         raise ValueError("file is larger than 25 MB")
     safe = re.sub(r"[^A-Za-z0-9._ -]", "_", Path(name).name)[:120] or "file"
@@ -164,6 +168,47 @@ def file_path(fid: str) -> Path | None:
     d = files_dir() / fid
     items = list(d.iterdir()) if d.exists() else []
     return items[0] if items else None
+
+
+# files a browser may display inline; anything that could run script (html, svg, xml) is shown as text
+INLINE_OK = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf", "audio/", "video/")
+TEXT_EXT = {".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv", ".log", ".yaml", ".yml", ".toml", ".ini", ".env.example",
+            ".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".go", ".dart", ".rs", ".java", ".kt", ".swift", ".rb", ".php", ".sh", ".sql",
+            ".html", ".htm", ".css", ".scss", ".xml", ".svg", ".diff", ".patch", ".c", ".h", ".cpp", ".cs", ".vue", ".svelte", ".gradle"}
+
+
+def serve_headers(p: Path, download: bool) -> tuple[str, str]:
+    """(media type, content-disposition type) for serving a file safely at the app's origin."""
+    mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    if download:
+        return mime, "attachment"
+    if mime.startswith(INLINE_OK):
+        return mime, "inline"
+    if p.suffix.lower() in TEXT_EXT or mime.startswith("text/"):
+        return "text/plain; charset=utf-8", "inline"
+    return mime, "attachment"
+
+
+def readable_roots(db, staff_id: str | None = None) -> list[Path]:
+    """Where files may be read from for previews and sharing: shared folders, helper workspaces and the upload store."""
+    roots = [Path(f.path) for f in db.scalars(select(Folder))]
+    ws = get_settings().data_dir / "workspaces"
+    roots.append(ws / staff_id if staff_id else ws)
+    roots.append(files_dir())
+    return roots
+
+
+def allowed_path(db, raw: str, staff_id: str | None = None) -> Path | None:
+    p = Path(os.path.expanduser(raw.removeprefix("file://"))).resolve()
+    if not p.is_file():
+        return None
+    for r in readable_roots(db, staff_id):
+        try:
+            if p.is_relative_to(r.resolve()):
+                return p
+        except OSError:
+            continue
+    return None
 
 
 # ------------------------------------------------------------------ resolve for a run

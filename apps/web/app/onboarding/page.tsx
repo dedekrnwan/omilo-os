@@ -154,7 +154,7 @@ function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }
         )}
         {msgs.map((m, i) => m.role === "note"
           ? <div key={i} className="msg system"><i className="ri-check-line" /> {m.text}</div>
-          : <div key={i} className={`msg ${m.role === "owner" ? "owner" : "agent"}`}>{m.role === "owner" ? m.text : <div className="md"><Markdown text={m.text} /></div>}</div>)}
+          : <div key={i} className={`msg ${m.role === "owner" ? "owner" : "agent"}`}>{m.role === "owner" ? m.text : <Markdown text={m.text} />}</div>)}
         {busy && <div className="typing">Thinking…</div>}
         <div ref={end} />
       </div>

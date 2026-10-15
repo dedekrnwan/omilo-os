@@ -128,7 +128,7 @@ export default function Talent() {
               <div className="soft" style={{ margin: "14px 0" }}>
                 <div className="small"><i className="ri-shield-check-line" /> Hired specialists follow your Saga OS rules: anything that leaves the company waits for your approval.</div>
               </div>
-              {open.body ? <div className="md"><Markdown text={open.body} /></div> : <p className="small">Loading the playbook…</p>}
+              {open.body ? <Markdown text={open.body} /> : <p className="small">Loading the playbook…</p>}
             </div>
             <div style={{ borderTop: "1px solid var(--line)", padding: 12 }}>
               {open.hired_as && <p className="small" style={{ margin: "0 0 8px" }}>Already on your team as <a href={`/staff/?id=${open.hired_as}`}>{open.hired_as}</a>. Hiring again adds another one.</p>}

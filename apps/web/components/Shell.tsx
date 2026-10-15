@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
 import { ApiError, Overview, api } from "@/lib/api";
+import { PreviewHost } from "./Markdown";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"]] },
@@ -84,6 +85,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                 <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
               </div>
               <div style={{ flex: 1, minHeight: 0, display: "flex" }}>{children}</div>
+              <PreviewHost />
             </div>
           </div>
         </div>
@@ -97,6 +99,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
       <div className="frame">
+        <PreviewHost />
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Saga OS"}</b>
           <span className="sp" />

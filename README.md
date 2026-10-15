@@ -55,7 +55,15 @@ skills on or off for that chat. They are managed under **Capabilities** in the s
   Secrets are stored encrypted. Default-on connectors are also written into each managed Hermes profile.
 - **Skills**: `SKILL.md` files in `<data dir>/skills/<id>/`. Write your own, or turn an Agency specialist's playbook into a skill.
   "Standard" skills apply everywhere; others are switched on per chat.
-- **Files**: uploaded into `<data dir>/files/` (25 MB each). Helpers get their paths (read-only on the pool).
+- **Files**: uploaded into `<data dir>/files/` (25 MB each). Helpers get their paths (read-only on the pool), and give files back with the
+  `share_file` tool: they appear as cards you can preview (images, PDF, video, CSV as a table, Markdown, code) and download. Files in a
+  shared folder or helper workspace are served by `/api/fs/file`; HTML and SVG are served as text, so nothing runs at the app's origin.
+
+The chat box stays quiet: switched-on folders, connectors and skills show as small count badges next to **+**. The connector badge has a
+health dot (green: all reachable, amber: a few are not, red: half or more are not), from a check every five minutes and the Test button.
+
+Replies render like Claude's: highlighted code with Copy (long blocks fold), JSON pretty-printed even without a fence, tables, images and
+file links (`file:///path`, or an absolute path in backticks) that open the preview.
 
 ## Hire specialists from The Agency
 
@@ -143,7 +151,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 33 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 34 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

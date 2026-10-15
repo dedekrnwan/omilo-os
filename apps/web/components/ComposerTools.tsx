@@ -6,7 +6,8 @@ import { BASE, api } from "@/lib/api";
 /* The "+" menu in the chat box: attach files or photos, and switch folders, connectors and skills on or off for this chat. */
 
 export type Attached = { id: string; name: string; mime: string; size: number };
-type Item = { id: string; label: string; path?: string; access?: string; commands?: boolean; approval?: string; description?: string };
+type Health = { ok: boolean | null; detail: string } | null;
+type Item = { id: string; label: string; path?: string; access?: string; commands?: boolean; approval?: string; description?: string; kind?: string; health?: Health };
 type Tools = Record<"folders" | "connectors" | "skills", { on: string[]; all: Item[] }>;
 
 const toB64 = (f: File) => new Promise<string>((res, rej) => {
@@ -23,11 +24,21 @@ export function useThreadTools(threadId: string | null) {
     try { setTools(await api<Tools>(`/threads/${threadId}/tools`)); } catch { /* ignore */ }
   }, [threadId]);
   useEffect(() => { setTools(null); load(); }, [load]);
+  const [health, setHealth] = useState<Record<string, Health>>({});
+  useEffect(() => {
+    if (!threadId) return;
+    let off = false;
+    const check = () => api<Record<string, Health>>("/connectors/check", { body: {} }).then((h) => { if (!off) setHealth(h); }).catch(() => {});
+    check();
+    const t = setInterval(check, 5 * 60_000);
+    return () => { off = true; clearInterval(t); };
+  }, [threadId]);
   const toggle = async (kind: keyof Tools, id: string) => {
     if (!tools || !threadId) return;
     const on = tools[kind].on.includes(id) ? tools[kind].on.filter((x) => x !== id) : [...tools[kind].on, id];
     setTools(await api<Tools>(`/threads/${threadId}/tools`, { method: "PUT", body: { [kind]: on } }));
   };
+  if (tools) for (const c of tools.connectors.all) c.health = health[c.id] ?? c.health ?? null;
   return { tools, toggle, reload: load };
 }
 
@@ -64,18 +75,27 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
     if (input.current) input.current.value = "";
   };
 
-  const active = tools ? [
-    ...tools.folders.all.filter((f) => tools.folders.on.includes(f.id)).map((f) => ({ k: "folders" as const, id: f.id, icon: "ri-folder-3-line", text: `${f.label}${f.access === "write" ? " · edit" : ""}${f.commands ? " · run" : ""}` })),
-    ...tools.connectors.all.filter((c) => tools.connectors.on.includes(c.id)).map((c) => ({ k: "connectors" as const, id: c.id, icon: "ri-plug-line", text: c.label })),
-    ...tools.skills.all.filter((s) => tools.skills.on.includes(s.id)).map((s) => ({ k: "skills" as const, id: s.id, icon: "ri-magic-line", text: s.label })),
-  ] : [];
+  const on = (k: "folders" | "connectors" | "skills") => (tools ? tools[k].all.filter((x) => tools[k].on.includes(x.id)) : []);
+  const conns = on("connectors");
+  const failing = conns.filter((c) => c.health && c.health.ok === false);
+  const dot = !conns.length || conns.every((c) => !c.health) ? "" : failing.length === 0 ? "ok" : failing.length * 2 >= conns.length ? "bad" : "warn";
+  const badges = [
+    { k: "folders" as const, icon: "ri-folder-3-line", items: on("folders"), dot: "" },
+    { k: "connectors" as const, icon: "ri-plug-line", items: conns, dot },
+    { k: "skills" as const, icon: "ri-magic-line", items: on("skills"), dot: "" },
+  ].filter((b) => b.items.length);
+  const what = { folders: "folder", connectors: "connector", skills: "skill" };
+  const tip = (b: (typeof badges)[number]) => `${b.items.length} ${what[b.k]}${b.items.length > 1 ? "s" : ""} on: ${b.items.map((x) => x.label).join(", ")}` +
+    (b.k === "connectors" && failing.length ? ` · not reachable: ${failing.map((x) => x.label).join(", ")}` : "");
+  const showSub = (k: "folders" | "connectors" | "skills") => { setOpen(true); setSub(k); };
 
   const menu = (kind: "folders" | "connectors" | "skills", empty: string, href: string, manage: string) => (
     <div className="menu sub">
       {(tools?.[kind].all || []).length === 0 && <div className="small" style={{ padding: "8px 12px" }}>{empty}</div>}
       {tools?.[kind].all.map((it) => (
         <button key={it.id} className="mi" onClick={() => toggle(kind, it.id)}>
-          <span className="t"><b>{it.label}</b>{(it.path || it.description || it.approval) && <span>{it.path || it.description || (it.approval === "auto" ? "Uses tools directly" : "Asks you before changes")}</span>}</span>
+          <span className="t"><b>{kind === "connectors" && it.health && <i className={`hdot ${it.health.ok ? "ok" : "bad"}`} />}{it.label}</b>
+            {(it.path || it.description || it.approval) && <span>{it.health?.ok === false ? it.health.detail : it.path || it.description || (it.approval === "auto" ? "Uses tools directly" : "Asks you before changes")}</span>}</span>
           <span className={`switch ${tools[kind].on.includes(it.id) ? "on" : ""}`} aria-checked={tools[kind].on.includes(it.id)} role="switch"><i /></span>
         </button>
       ))}
@@ -86,7 +106,7 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
 
   return (
     <div className="ctools" ref={box}>
-      {(files.length > 0 || active.length > 0 || uploading) && (
+      {(files.length > 0 || uploading) && (
         <div className="cchips">
           {files.map((f) => (
             <span key={f.id} className="cchip">
@@ -96,16 +116,17 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
             </span>
           ))}
           {uploading && <span className="cchip"><span className="spin" style={{ width: 12, height: 12 }} />Uploading…</span>}
-          {active.map((a) => (
-            <span key={`${a.k}${a.id}`} className="cchip soft"><i className={a.icon} /><span>{a.text}</span>
-              <button aria-label={`Turn off ${a.text}`} onClick={() => toggle(a.k, a.id)}><i className="ri-close-line" /></button></span>
-          ))}
         </div>
       )}
       <input ref={input} type="file" multiple hidden onChange={(e) => pick(e.target.files)} />
       <button type="button" className="iconbtn plus" aria-label="Add files, folders, connectors or skills" disabled={disabled} onClick={() => { setOpen(!open); setSub(null); }}>
         <i className="ri-add-line" />
       </button>
+      {badges.map((b) => (
+        <button key={b.k} type="button" className={`cbadge ${sub === b.k && open ? "on" : ""}`} title={tip(b)} aria-label={tip(b)} onClick={() => showSub(b.k)}>
+          <i className={b.icon} />{b.items.length}{b.dot && <i className={`hdot ${b.dot}`} />}
+        </button>
+      ))}
       {open && (
         <div className="menu">
           <button className="mi" onClick={() => input.current?.click()}><i className="ri-attachment-2" /><span className="t"><b>Add files or photos</b></span></button>

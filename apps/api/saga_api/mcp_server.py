@@ -68,6 +68,10 @@ TOOLS: list[dict] = [
     {"name": "offer_choices", "description": "Show the founder clickable options in the current chat or task thread (e.g. pick a direction). Their pick comes back as their next message.",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id, if this is about a task"), "question": _s("string", "short question"),
                      "options": _s("array", "2-6 short options", items={"type": "string"})}, "required": ["question", "options"]}},
+    {"name": "share_file", "description": "Show the founder a file you made or found (report, image, CSV, code, PDF) as a card they can preview and download, "
+                                           "in the current chat or task thread. The file must be in your workspace or a shared folder (25 MB max).",
+     "inputSchema": {"type": "object", "properties": {"path": _s("string", "absolute path, or relative to your workspace"), "note": _s("string", "one line about it"),
+                                                      "task_id": _s("string", "task id, if this is about a task")}, "required": ["path"]}},
     {"name": "update_kpi", "description": "Record a KPI value with its source (Finance only unless permitted).",
      "inputSchema": {"type": "object", "properties": {"name": _s("string", "kpi name"), "value": _s("number", "value"),
                      "period": _s("string", "e.g. 2026-W42"), "source": _s("string", "where the number comes from")}, "required": ["name", "value", "source"]}},
@@ -135,6 +139,34 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
         m = S.post_message(db, th, "agent", st.id, args["text"])
         return "allowed", {"message_id": m.id}
+    if name == "share_file":
+        from pathlib import Path as _P
+
+        from . import capabilities as C
+        from .config import get_settings
+        from .events import current_run
+
+        raw = str(args.get("path") or "")
+        if raw and not _P(raw.removeprefix("file://")).expanduser().is_absolute():
+            raw = str(get_settings().data_dir / "workspaces" / st.id / raw)
+        p = C.allowed_path(db, raw, st.id)
+        if not p:
+            raise S.DomainError("that file does not exist in your workspace or a shared folder")
+        if p.stat().st_size > C.MAX_FILE:
+            raise S.DomainError("the file is larger than 25 MB; share a smaller export")
+        f = C.save_bytes(p.name, p.read_bytes())
+        task_id, thread_id = current_run(db, st.id, args.get("task_id"))
+        if task_id:
+            t = S.task_for_staff(db, st, task_id)
+            th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
+        elif thread_id:
+            th = db.get(S.Thread, thread_id)
+        else:
+            raise S.DomainError("no open task or chat to share the file in")
+        note = str(args.get("note") or "").strip() or f"Shared **{f['name']}**"
+        m = S.post_message(db, th, "agent", st.id, note, blocks=[{"type": "text", "text": note}, {"type": "file", **f, "source": str(p)}])
+        return "allowed", {"message_id": m.id, "file_id": f["id"], "thread_id": th.id}
+
     if name == "offer_choices":
         from .events import current_run
 

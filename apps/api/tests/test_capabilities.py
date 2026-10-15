@@ -102,3 +102,51 @@ def test_pool_run_in_project_folder(owner, tmp_path):
         owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["dev"]})
         owner.delete(f"/api/folders/{f['id']}")
         owner.delete(f"/api/harness/accounts/{a['id']}")
+
+
+def test_share_file_previews_and_health(owner, base_url, tmp_path):
+    import httpx
+
+    proj = tmp_path / "share"
+    proj.mkdir()
+    (proj / "report.csv").write_text("a,b\n1,2\n")
+    (proj / "page.html").write_text("<script>alert(1)</script>")
+    (tmp_path / "secret.txt").write_text("nope")
+    fid = owner.post("/api/folders", json={"path": str(proj), "access": "read"}).json()["id"]
+
+    # files in a shared folder can be previewed; html is served as text; files outside are refused
+    r = owner.get("/api/fs/file", params={"path": str(proj / "report.csv")})
+    assert r.status_code == 200 and r.text.startswith("a,b") and r.headers["content-disposition"].startswith("inline")
+    r = owner.get("/api/fs/file", params={"path": str(proj / "page.html")})
+    assert r.headers["content-type"].startswith("text/plain") and r.headers["x-content-type-options"] == "nosniff"
+    assert owner.get("/api/fs/file", params={"path": str(proj / "report.csv"), "download": True}).headers["content-disposition"].startswith("attachment")
+    assert owner.get("/api/fs/file", params={"path": str(tmp_path / "secret.txt")}).status_code == 404
+    assert owner.get("/api/fs/file", params={"path": str(proj / ".." / "secret.txt")}).status_code == 404
+
+    # a helper shares a file from the folder into a task thread: it lands as a file block
+    tok = owner.mcp_tokens["support"]
+    t = owner.post("/api/tasks", json={"staff_id": "support", "brief": "Make the report"}).json()
+
+    def call(args):
+        return httpx.post(f"{base_url}/mcp", headers={"Authorization": f"Bearer {tok}"}, json={
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "share_file", "arguments": args}}).json()["result"]
+
+    r = call({"task_id": t["id"], "path": str(proj / "report.csv"), "note": "The report"})
+    assert not r["isError"], r
+    out = r["structuredContent"]
+    th = owner.get(f"/api/threads/{out['thread_id']}").json()
+    msg = [m for m in th["messages"] if m["id"] == out["message_id"]][0]
+    f = [b for b in msg["blocks"] if b["type"] == "file"][0]
+    assert f["name"] == "report.csv" and f["mime"] == "text/csv"
+    assert owner.get(f"/api/files/{f['id']}").text == "a,b\n1,2\n"
+    assert call({"task_id": t["id"], "path": str(tmp_path / "secret.txt")})["isError"]
+
+    # connector health: a command that is not installed is reported, and shows up in the chat box tools
+    owner.post("/api/connectors", json={"id": "nothere", "label": "Nothere", "kind": "stdio", "command": "definitely-not-installed-xyz"})
+    h = owner.post("/api/connectors/check").json()
+    assert h["nothere"]["ok"] is False and "not installed" in h["nothere"]["detail"]
+    master = owner.post("/api/threads", json={"scope": "master"}).json()
+    conns = owner.get(f"/api/threads/{master['id']}/tools").json()["connectors"]["all"]
+    assert [c for c in conns if c["id"] == "nothere"][0]["health"]["ok"] is False
+    owner.delete("/api/connectors/nothere")
+    owner.delete(f"/api/folders/{fid}")

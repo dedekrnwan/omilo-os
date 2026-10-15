@@ -899,40 +899,71 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
     return {"ok": True}
 
 
-@router.post("/connectors/{cid}/test")
-async def connector_test(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Connect to an http connector and list its tools."""
+# last health check per connector (in memory; refreshed by Test and by the chat box every few minutes)
+_conn_health: dict[str, dict] = {}
+
+
+async def _probe(rt: dict) -> dict:
+    """Connect to an http connector and list its tools. Command connectors are checked by looking for the program."""
+    import shutil as _sh
+    import time as _t
+
     import httpx as _h
 
-    from .. import capabilities as C
-    from ..models import Connector
-
-    c = _404(db.get(Connector, cid), "unknown connector")
-    if c.kind != "http":
-        return {"ok": None, "detail": "Command connectors start when a helper uses them."}
-    rt = C.connector_runtime(c)
+    if rt["kind"] != "http":
+        cmd = (rt["command"] or "").split()[0] if rt["command"] else ""
+        found = bool(cmd and (_sh.which(cmd) or os.path.exists(cmd)))
+        return {"ok": True if found else False, "detail": "starts when a helper uses it" if found else f"{cmd or 'the program'} is not installed on this computer",
+                "at": _t.time()}
     hdrs = {"Accept": "application/json, text/event-stream", **rt["headers"]}
     try:
-        async with _h.AsyncClient(timeout=20, headers=hdrs) as h:
-            r = await h.post(c.url, json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        async with _h.AsyncClient(timeout=12, headers=hdrs) as h:
+            r = await h.post(rt["url"], json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "saga-os", "version": "1"}}})
             sid = r.headers.get("mcp-session-id")
             extra = {"mcp-session-id": sid} if sid else {}
-            r2 = await h.post(c.url, headers=extra, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+            r2 = await h.post(rt["url"], headers=extra, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         for resp in (r, r2):
             if resp.status_code >= 400:
                 hint = " (check the secret headers)" if resp.status_code in (401, 403) else ""
-                return {"ok": False, "detail": f"the server answered {resp.status_code}{hint}"}
+                return {"ok": False, "detail": f"the server answered {resp.status_code}{hint}", "at": _t.time()}
         body = r2.text
         if "data:" in body and "{" in body:
             body = body[body.index("{"): body.rindex("}") + 1]
         data = json.loads(body)
         if "result" not in data:
-            return {"ok": False, "detail": str(data.get("error", {}).get("message") or "not an MCP server")[:300]}
+            return {"ok": False, "detail": str(data.get("error", {}).get("message") or "not an MCP server")[:300], "at": _t.time()}
         tools = [t["name"] for t in data["result"].get("tools", [])]
-        return {"ok": True, "detail": f"{len(tools)} tools", "tools": tools[:50]}
+        return {"ok": True, "detail": f"{len(tools)} tools", "tools": tools[:50], "at": _t.time()}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "detail": str(e)[:300]}
+        return {"ok": False, "detail": (str(e) or e.__class__.__name__)[:300], "at": _t.time()}
+
+
+@router.post("/connectors/{cid}/test")
+async def connector_test(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector
+
+    c = _404(db.get(Connector, cid), "unknown connector")
+    res = await _probe(C.connector_runtime(c))
+    _conn_health[cid] = res
+    return res
+
+
+@router.post("/connectors/check")
+async def connectors_check(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Check enabled connectors whose last check is older than 5 minutes (in parallel); return every known status."""
+    import asyncio as _a
+    import time as _t
+
+    from .. import capabilities as C
+    from ..models import Connector
+
+    rts = [C.connector_runtime(c) for c in db.scalars(select(Connector).where(Connector.enabled.is_(True)))]
+    stale = [rt for rt in rts if _t.time() - _conn_health.get(rt["id"], {}).get("at", 0) > 300]
+    for rt, res in zip(stale, await _a.gather(*(_probe(rt) for rt in stale)), strict=True):
+        _conn_health[rt["id"]] = res
+    return {rt["id"]: {k: v for k, v in _conn_health.get(rt["id"], {}).items() if k != "tools"} for rt in rts}
 
 
 class FolderIn(BaseModel):
@@ -1091,13 +1122,31 @@ def file_upload(body: FileIn, user: User = Depends(current_user)):
 
 
 @router.get("/files/{fid}")
-def file_download(fid: str, user: User = Depends(current_user)):
+def file_download(fid: str, download: bool = False, user: User = Depends(current_user)):
     from fastapi.responses import FileResponse
 
     from .. import capabilities as C
 
     p = _404(C.file_path(fid), "unknown file")
-    return FileResponse(p, filename=p.name)
+    mime, disp = C.serve_headers(p, download)
+    return FileResponse(p, media_type=mime, filename=p.name, content_disposition_type=disp, headers=_SAFE_FILE_HEADERS)
+
+
+_SAFE_FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300"}
+
+
+@router.get("/fs/file")
+def fs_file(path: str, download: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """A file inside a shared folder or a helper's workspace, for previews and downloads in chat."""
+    from fastapi.responses import FileResponse
+
+    from .. import capabilities as C
+
+    p = C.allowed_path(db, path)
+    if not p:
+        raise HTTPException(404, "this file is not in a shared folder or a helper workspace")
+    mime, disp = C.serve_headers(p, download)
+    return FileResponse(p, media_type=mime, filename=p.name, content_disposition_type=disp, headers=_SAFE_FILE_HEADERS)
 
 
 class ThreadToolsIn(BaseModel):
@@ -1121,7 +1170,8 @@ def thread_tools(thid: str, db: Session = Depends(get_db), user: User = Depends(
         "folders": {"on": on(tt.folders if tt else None, folders, lambda f: f.id, lambda f: f.default_on),
                     "all": [{"id": f.id, "label": f.label, "path": f.path, "access": f.access, "commands": f.commands} for f in folders]},
         "connectors": {"on": on(tt.connectors if tt else None, conns, lambda c: c.id, lambda c: c.default_on),
-                       "all": [{"id": c.id, "label": c.label, "approval": c.approval} for c in conns]},
+                       "all": [{"id": c.id, "label": c.label, "approval": c.approval, "kind": c.kind,
+                                "health": {k: v for k, v in _conn_health.get(c.id, {}).items() if k in ("ok", "detail")} or None} for c in conns]},
         "skills": {"on": on(tt.skills if tt else None, skills, lambda s: s["slug"], lambda s: s["default_on"]),
                    "all": [{"id": s["slug"], "label": s["name"], "description": s["description"]} for s in skills]},
     }
