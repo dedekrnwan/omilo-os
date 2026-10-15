@@ -63,7 +63,16 @@ docker compose up -d
 
 Under a path prefix (e.g. `/os`), set `SAGA_BASE_PATH=/os` and build the web app with `NEXT_PUBLIC_BASE_PATH=/os`.
 
-## Connect Hermes
+## Connect the AI
+
+**Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
+console.anthropic.com, check it and pick a model (Sonnet is recommended). Saga OS runs the agent loop itself and gives the
+model the saga-os tools; nothing else to install. The key is stored encrypted (Fernet, from the secret key) and only its last
+4 characters are shown again. `ANTHROPIC_API_KEY` in the environment works too.
+
+**Advanced: Hermes.** For skills, a browser and other tools, run Hermes and point helpers at it:
+
+### Connect Hermes
 
 1. Run each agent as a Hermes profile with its API server on (OpenAI-compatible, default `http://127.0.0.1:8642/v1`, key in `API_SERVER_KEY`).
 2. In Saga OS: Staff → agent → engine type `hermes`, base URL, model. Put the key in the gateway environment as `HERMES_API_KEY` (or name another env var in the engine's `api_key_env`).

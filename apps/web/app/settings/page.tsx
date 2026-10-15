@@ -1,9 +1,11 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
+import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import { Err } from "@/components/ui";
 import { api, when } from "@/lib/api";
 
+type AiState = { provider: string; model: string | null; claude_key_hint: string | null };
 type Audit = { id: number; at: string; actor: string; action: string; ref: string; detail: Record<string, unknown> };
 
 export default function Settings() {
@@ -12,8 +14,13 @@ export default function Settings() {
   const [audit, setAudit] = useState<Audit[]>([]);
   const [conc, setConc] = useState<number>(3);
   const [err, setErr] = useState<string | null>(null);
+  const [ai, setAi] = useState<AiState | null>(null);
+  const [editAi, setEditAi] = useState(false);
+  const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
+      setAi(await api<AiState>("/ai"));
       setHealth(await api("/health/engines"));
       setAudit(await api<Audit[]>("/audit?limit=100"));
     } catch (e: any) { setErr(e.message); }
@@ -23,11 +30,46 @@ export default function Settings() {
   const set = async (body: Record<string, unknown>) => {
     try { await api("/system", { body }); refresh(); } catch (e: any) { setErr(e.message); }
   };
+  const saveAi = async (provider: string) => {
+    setErr(null); setAiMsg(null);
+    try {
+      await api("/ai", { body: provider === "claude" ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
+      setEditAi(false); setClaude({ key: "", model: "", ok: false });
+      setAiMsg(provider === "claude" ? "Saved. All helpers now use Claude." : "Saved. All helpers are in practice mode.");
+      load();
+    } catch (e: any) { setErr(e.message); }
+  };
+  const aiLabel = (p?: string) => ({ claude: "Claude (your API key)", fake: "Practice mode (no AI)", hermes: "Hermes server", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
   if (!overview) return null;
   return (
     <div>
       <div className="eyebrow">How the office runs</div>
       <h1>Settings</h1>
+      <div className="paper" style={{ marginBottom: 24 }}>
+        <h2>AI</h2>
+        <p className="note">The AI your helpers think with.</p>
+        {ai && (
+          <p style={{ margin: "8px 0" }}><b>{aiLabel(ai.provider)}</b>
+            {ai.provider === "claude" && ai.model ? <span className="small"> · {ai.model}</span> : null}
+            {ai.claude_key_hint ? <span className="small"> · key ending in {ai.claude_key_hint}</span> : null}</p>
+        )}
+        {aiMsg && <div className="callout ok">{aiMsg}</div>}
+        {!editAi ? (
+          <div className="acts">
+            <button className="btn primary" onClick={() => setEditAi(true)}>{ai?.provider === "claude" ? "Change key or model" : "Use my Claude API key"}</button>
+            {ai?.provider !== "fake" && <button className="btn" onClick={() => saveAi("fake")}>Switch to practice mode</button>}
+          </div>
+        ) : (
+          <>
+            <ClaudeSetup value={claude} onChange={setClaude} savedHint={ai?.claude_key_hint} />
+            <div className="acts" style={{ marginTop: 12 }}>
+              <button className="btn primary" disabled={!(claude.ok && claude.model)} onClick={() => saveAi("claude")}>Use Claude for all helpers</button>
+              <button className="btn" onClick={() => setEditAi(false)}>Cancel</button>
+            </div>
+          </>
+        )}
+        <p className="small" style={{ marginTop: 10 }}>Running your own Hermes server instead? Set it per helper under Staff.</p>
+      </div>
       <div className="grid2">
         <div className="paper">
           <h2>Running</h2>
@@ -41,10 +83,10 @@ export default function Settings() {
             <button className="btn" onClick={() => set({ max_concurrent_tasks: conc })}>Save</button></div>
         </div>
         <div className="paper">
-          <h2>Engines</h2>
-          <p className="note">Can each staff agent's engine be reached?</p>
+          <h2>Connection check</h2>
+          <p className="note">Can each helper reach its AI right now?</p>
           <table><tbody>{Object.entries(health).map(([k, h]) => (
-            <tr key={k}><td>{k}</td><td><span className={`chip ${h.ok ? "up" : "down"}`}>{h.ok ? "✓ reachable" : "✕ down"}</span></td><td className="small">{h.detail}</td></tr>
+            <tr key={k}><td>{k}</td><td><span className={`chip ${h.ok ? "up" : "down"}`}>{h.ok ? "✓ working" : "✕ not working"}</span></td><td className="small">{h.detail}</td></tr>
           ))}</tbody></table>
         </div>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { ReactNode, useEffect, useRef, useState } from "react";
+import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import { Err, Markdown } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -87,6 +88,7 @@ export default function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Finished | null>(null);
   const [copied, setCopied] = useState(false);
+  const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });  // never saved in the draft
   const [err, setErr] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
 
@@ -129,11 +131,17 @@ export default function Onboarding() {
   };
 
   const finish = async () => {
+    if (a.engine_type === "claude" && !(claude.ok && claude.model)) {  // e.g. the page was reloaded: keys are never kept in the draft
+      setStep(8); setErr("Please paste and check your Claude API key again.");
+      return;
+    }
     setBusy(true); setErr(null);
     try {
-      const engine = a.engine_type === "hermes" ? { type: "hermes", base_url: a.engine_url, model: a.engine_model } : { type: "fake" };
+      const engine = a.engine_type === "hermes" ? { type: "hermes", base_url: a.engine_url, model: a.engine_model }
+        : a.engine_type === "claude" ? { type: "claude", model: claude.model } : { type: "fake" };
       const r = await api<Finished>("/onboarding/finish", { body: {
-        answers: a, roles: a.roles || [], engine, approval_mode: a.approval_mode, timezone: tz, practice_task: a.practice !== false } });
+        answers: a, roles: a.roles || [], engine, approval_mode: a.approval_mode, timezone: tz, practice_task: a.practice !== false,
+        api_key: a.engine_type === "claude" ? claude.key : undefined } });
       setDone(r);
       top.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
@@ -165,6 +173,9 @@ export default function Onboarding() {
           <div className="callout ok">
             We started a practice job: a short post introducing {a.company_name}. In a minute or two it will appear in your Inbox so you can try approving it.
           </div>
+        )}
+        {a.engine_type === "claude" && (
+          <div className="callout">Your helpers use <b>Claude</b> with your own API key. You can change the model or key any time in Settings → AI.</div>
         )}
         {a.engine_type === "fake" && (
           <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>
@@ -409,26 +420,36 @@ export default function Onboarding() {
         <>
           <h1>Your AI</h1>
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo; to do real work. You can start without one and connect it later.</p>
-          <button type="button" className={`choice ${a.engine_type === "fake" ? "on" : ""}`} onClick={() => set({ engine_type: "fake" })}>
-            <b>Practice mode first <span className="rec">Recommended</span></b>
-            <span>No setup and no cost. Helpers produce sample work so you can learn how approvals and chat work. Switch to real AI any time in Settings.</span>
+          <button type="button" className={`choice ${a.engine_type === "claude" ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
+            <b>Use my Claude API key <span className="rec">Easiest real AI</span></b>
+            <span>Paste a key from Anthropic and your helpers start doing real work. Nothing to install.</span>
           </button>
-          <button type="button" className={`choice ${a.engine_type === "hermes" ? "on" : ""}`} onClick={() => set({ engine_type: "hermes" })}>
-            <b>Connect my AI now</b>
-            <span>Choose this if you (or someone helping you) already set up a Hermes AI server.</span>
-          </button>
-          {a.engine_type === "hermes" && (
-            <div className="paper" style={{ marginTop: 6 }}>
-              <Q title="AI server address" hint="Ask the person who set up your AI server. It usually ends with /v1.">
-                <input value={a.engine_url || ""} onChange={(e) => set({ engine_url: e.target.value })} />
-              </Q>
-              <details className="tech">
-                <summary>Advanced</summary>
-                <Q title="Model name"><input value={a.engine_model || ""} onChange={(e) => set({ engine_model: e.target.value })} /></Q>
-              </details>
-              <p className="small">After you finish, you will get connection details to send to your technical helper.</p>
+          {a.engine_type === "claude" && (
+            <div className="paper" style={{ marginTop: -4, marginBottom: 10 }}>
+              <ClaudeSetup value={claude} onChange={setClaude} />
             </div>
           )}
+          <button type="button" className={`choice ${a.engine_type === "fake" ? "on" : ""}`} onClick={() => set({ engine_type: "fake" })}>
+            <b>Practice mode first</b>
+            <span>No key and no cost. Helpers produce sample work so you can learn how approvals and chat work. Switch to real AI any time in Settings.</span>
+          </button>
+          <details className="tech" open={a.engine_type === "hermes"}>
+            <summary>Advanced: I run my own Hermes AI server</summary>
+            <button type="button" className={`choice ${a.engine_type === "hermes" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => set({ engine_type: "hermes" })}>
+              <b>Use my Hermes server</b>
+              <span>For technical setups: Hermes adds skills, a browser and other tools. Your Claude key then lives in Hermes.</span>
+            </button>
+            {a.engine_type === "hermes" && (
+              <>
+                <Q title="Hermes address" hint="Usually http://127.0.0.1:8642/v1. Start Saga OS with HERMES_API_KEY set to Hermes's API_SERVER_KEY.">
+                  <input value={a.engine_url || ""} onChange={(e) => set({ engine_url: e.target.value })} />
+                </Q>
+                <Q title="Model name" hint="Leave as hermes-agent. The Claude model is chosen inside Hermes.">
+                  <input value={a.engine_model || ""} onChange={(e) => set({ engine_model: e.target.value })} />
+                </Q>
+              </>
+            )}
+          </details>
           <Q title="Try it right away?">
             <label className="check">
               <input type="checkbox" checked={a.practice !== false} onChange={(e) => set({ practice: e.target.checked })} />
@@ -456,7 +477,7 @@ export default function Onboarding() {
               <div className="q">
                 <b>Your team</b>
                 <p style={{ margin: "4px 0" }}>{["chief-of-staff", ...(a.roles || []).filter((r) => r !== "chief-of-staff")].map((r) => roles[r]?.name).join(", ")}</p>
-                <p className="small" style={{ margin: 0 }}>{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : "Real AI"} · {tz.replace(/_/g, " ")}</p>
+                <p className="small" style={{ margin: 0 }}>{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : a.engine_type === "claude" ? "Claude" : "Hermes"} · {tz.replace(/_/g, " ")}</p>
               </div>
               <details className="tech">
                 <summary>See exactly what your helpers will read</summary>
@@ -475,7 +496,7 @@ export default function Onboarding() {
           <span className="sp" />
           {step < 9 && step > 1 && step !== 7 && step !== 8 && <button className="btn quiet" onClick={() => go(step + 1)}>Skip for now</button>}
           {step < 9
-            ? <button className="btn primary" onClick={() => go(step + 1)}>Continue</button>
+            ? <button className="btn primary" onClick={() => go(step + 1)} disabled={step === 8 && a.engine_type === "claude" && !(claude.ok && claude.model)}>Continue</button>
             : <button className="btn primary" onClick={finish} disabled={busy || !preview}>{busy ? "Creating your team…" : "Create my team"}</button>}
         </div>
       )}

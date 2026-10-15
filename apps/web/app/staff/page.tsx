@@ -64,12 +64,15 @@ function StaffDetail({ id }: { id: string }) {
           <label>Job description (what the agent reads before every task)</label>
           <textarea rows={10} value={edit.job || ""} onChange={(e) => setEdit({ ...edit, job: e.target.value })} />
           <div className="grid2">
-            <div><label>Engine</label>
+            <div><label>AI</label>
               <select value={edit.engine?.type || "fake"} onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, type: e.target.value } })}>
-                <option value="fake">Demo engine</option><option value="hermes">Hermes</option>
+                <option value="fake">Practice mode (no AI)</option><option value="claude">Claude (key from Settings → AI)</option><option value="hermes">Hermes server</option>
               </select></div>
             <div><label>Max minutes per task</label><input type="number" value={edit.max_task_minutes || 30} onChange={(e) => setEdit({ ...edit, max_task_minutes: Number(e.target.value) })} /></div>
           </div>
+          {edit.engine?.type === "claude" && (
+            <div><label>Claude model</label><input value={edit.engine?.model || ""} placeholder="claude-sonnet-5-5" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, model: e.target.value } })} /></div>
+          )}
           {edit.engine?.type === "hermes" && (
             <div className="grid2">
               <div><label>Hermes API base URL</label><input value={edit.engine?.base_url || ""} placeholder="http://127.0.0.1:8642/v1" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, base_url: e.target.value } })} /></div>

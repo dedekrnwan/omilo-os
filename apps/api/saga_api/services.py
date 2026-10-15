@@ -30,7 +30,7 @@ from .models import (
     Thread,
     now,
 )
-from .security import encrypt, sha256
+from .security import decrypt, encrypt, sha256
 
 
 class DomainError(Exception):
@@ -66,6 +66,28 @@ def is_paused(db: Session) -> bool:
 def strict_mode(db: Session) -> bool:
     v = get_setting(db, "strict_mode", None)
     return get_settings().strict_mode if v is None else bool(v)
+
+
+def set_ai_key(db: Session, provider: str, key: str, actor: str) -> None:
+    """Store a provider API key encrypted; only the last 4 characters are ever shown again."""
+    keys = dict(get_setting(db, "ai_keys", None) or {})
+    keys[provider] = {"enc": encrypt(key.strip()), "hint": key.strip()[-4:], "set_at": now().isoformat()}
+    s = db.get(Setting, "ai_keys")
+    if s is None:
+        db.add(Setting(key="ai_keys", value=keys))
+    else:
+        s.value = keys
+    audit(db, actor, "ai.key_set", provider)
+
+
+def ai_api_key(db: Session, provider: str) -> str | None:
+    k = (get_setting(db, "ai_keys", None) or {}).get(provider)
+    return decrypt(k["enc"]) if k else None
+
+
+def ai_key_hint(db: Session, provider: str) -> str | None:
+    k = (get_setting(db, "ai_keys", None) or {}).get(provider)
+    return k["hint"] if k else None
 
 
 def max_concurrent(db: Session) -> int:

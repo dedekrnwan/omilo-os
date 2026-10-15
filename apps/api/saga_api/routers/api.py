@@ -1,5 +1,6 @@
 """The owner's REST API (used by the web app and the CLI)."""
 import datetime as dt
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -539,6 +540,82 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
     return {"written": written}
 
 
+# ------------------------------------------------------------------ AI (the engine every helper uses)
+AI_PROVIDERS = ("fake", "claude", "hermes")
+
+
+def _engine_for(provider: str, model: str | None, base_url: str | None) -> dict:
+    if provider == "claude":
+        from ..engines.claude import DEFAULT_MODEL
+
+        return {"type": "claude", "model": model or DEFAULT_MODEL}
+    if provider == "hermes":
+        return {"type": "hermes", "base_url": base_url or "http://127.0.0.1:8642/v1", "model": model or "hermes-agent"}
+    return {"type": "fake"}
+
+
+@router.get("/ai")
+def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    staff = list(db.scalars(select(Staff)))
+    types = {(st.engine or {}).get("type", "fake") for st in staff}
+    current = next(iter(types)) if len(types) == 1 else ("mixed" if types else "fake")
+    models = {(st.engine or {}).get("model") for st in staff if (st.engine or {}).get("type") == "claude"}
+    return {"provider": "claude" if current == "anthropic" else current, "model": next(iter(models)) if len(models) == 1 else None,
+            "claude_key_hint": S.ai_key_hint(db, "claude"), "staff": {st.id: st.engine or {} for st in staff}}
+
+
+class AiCheckIn(BaseModel):
+    api_key: str | None = None
+
+
+@router.post("/ai/check")
+async def ai_check(body: AiCheckIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Test a Claude key (the given one, or the saved one) and list the models it can use."""
+    from ..engines import claude
+
+    key = (body.api_key or "").strip() or S.ai_api_key(db, "claude") or ""
+    if not key:
+        return {"ok": False, "error": "Paste your Claude API key first."}
+    res = await claude.list_models(key)
+    if res["ok"]:
+        res["recommended"] = claude.pick_default(res["models"])
+    return res
+
+
+class AiIn(BaseModel):
+    provider: str
+    api_key: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    staff_ids: list[str] | None = None  # default: every helper
+
+
+def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
+    if body.provider not in AI_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {', '.join(AI_PROVIDERS)}")
+    if body.api_key and body.api_key.strip():
+        S.set_ai_key(db, "claude", body.api_key, user.id)
+    if body.provider == "claude" and not S.ai_api_key(db, "claude") and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(400, "Add your Claude API key first.")
+    engine = _engine_for(body.provider, body.model, body.base_url)
+    changed = []
+    for st in db.scalars(select(Staff)):
+        if body.staff_ids is None or st.id in body.staff_ids:
+            keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens")}
+            st.engine = {**engine, **keep}
+            changed.append(st.id)
+    S.set_setting(db, "ai_provider", body.provider, actor=user.id)
+    S.audit(db, user.id, "ai.set", body.provider, model=engine.get("model"), staff=changed)
+    db.commit()
+    return changed
+
+
+@router.post("/ai")
+def ai_set(body: AiIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    changed = _apply_ai(db, user, body)
+    return {**ai_state(db, user), "changed": changed}
+
+
 # ------------------------------------------------------------------ guided onboarding (for non-engineers)
 @router.get("/onboarding")
 def onboarding_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
@@ -581,6 +658,7 @@ class FinishIn(BaseModel):
     timezone: str | None = None
     max_concurrent_tasks: int | None = Field(None, ge=1, le=100)
     practice_task: bool = True
+    api_key: str | None = None  # Claude key, when engine.type == "claude"
 
 
 @router.post("/onboarding/finish")
@@ -599,7 +677,15 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
     for name, content in OB.render(a).items():
         _run(S.write_knowledge, db, name, content, user.id)
     S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
-    created, tokens = _create_team(db, user, roles, body.engine)
+    engine = dict(body.engine)
+    if engine.get("type") == "claude":
+        if body.api_key and body.api_key.strip():
+            S.set_ai_key(db, "claude", body.api_key, user.id)
+        if not S.ai_api_key(db, "claude") and not os.environ.get("ANTHROPIC_API_KEY"):
+            raise HTTPException(400, "Add your Claude API key, or choose practice mode for now.")
+        engine = _engine_for("claude", engine.get("model"), None)
+    created, tokens = _create_team(db, user, roles, engine)
+    S.set_setting(db, "ai_provider", engine.get("type", "fake"), actor=user.id)
     S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
     S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)
@@ -610,7 +696,8 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         t = S.create_task(db, who, "manual", f"Practice task: draft a short post that introduces {company} to new customers, "
                           "in our voice, using only facts from the company files. Propose it for approval.", user.id)
         practice = {"task_id": t.id, "staff_id": who}
-    return {"created": created, "mcp_tokens": tokens, "mcp_url": get_settings().mcp_url(), "practice": practice}
+    return {"created": created, "mcp_tokens": tokens if engine.get("type") == "hermes" else {},
+            "mcp_url": get_settings().mcp_url(), "practice": practice, "engine": engine.get("type")}
 
 
 @router.get("/kpis")

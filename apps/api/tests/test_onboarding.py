@@ -63,7 +63,7 @@ def test_guided_onboarding_end_to_end(owner):
                                                    "timezone": "Asia/Jakarta", "engine": {"type": "fake"}})
     assert r.status_code == 200, r.text
     out = r.json()
-    assert "grower" in out["created"] and "grower" in out["mcp_tokens"]
+    assert "grower" in out["created"] and out["mcp_tokens"] == {}  # practice mode: nothing to copy
     assert owner.get("/api/knowledge/company.md").json()["content"].startswith("# Warung Bu Sri")
     ov = owner.get("/api/overview").json()
     assert ov["timezone"] == "Asia/Jakarta" and ov["strict_mode"] is False

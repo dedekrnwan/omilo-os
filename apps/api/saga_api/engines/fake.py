@@ -34,6 +34,18 @@ class MCPClient:
             raise RuntimeError(data["error"]["message"])
         return data["result"]
 
+    async def list_tools(self) -> list[dict]:
+        return (await self._rpc("tools/list", {}))["tools"]
+
+    async def call_raw(self, name: str, args: dict) -> tuple[str, bool]:
+        """Call a tool and return (text, is_error) without raising, for model tool loops."""
+        try:
+            res = await self._rpc("tools/call", {"name": name, "arguments": args})
+        except Exception as e:  # noqa: BLE001 - surface any failure to the model
+            return json.dumps({"error": str(e)}), True
+        text = res["content"][0]["text"] if res.get("content") else json.dumps(res.get("structuredContent") or {})
+        return text, bool(res.get("isError"))
+
     async def call(self, name: str, **args) -> dict:
         res = await self._rpc("tools/call", {"name": name, "arguments": args})
         payload = res.get("structuredContent") or json.loads(res["content"][0]["text"])

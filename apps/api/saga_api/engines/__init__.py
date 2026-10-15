@@ -61,6 +61,10 @@ def get_engine(config: dict) -> Engine:
         from .hermes import HermesEngine
 
         return HermesEngine()
+    if t in ("claude", "anthropic"):
+        from .claude import ClaudeEngine
+
+        return ClaudeEngine()
     if t == "fake":
         from .fake import FakeEngine
 
