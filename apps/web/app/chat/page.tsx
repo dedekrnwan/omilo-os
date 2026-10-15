@@ -3,17 +3,22 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
+import ComposerTools, { Attached } from "@/components/ComposerTools";
 import { Err, Markdown, StatusChip } from "@/components/ui";
-import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
+import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
 
 /* The workspace: chat and work on one page (toggle top right), with a side panel for progress, output and the browser. */
 
-type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[] }[] };
+type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string }[] };
 type FullThread = Thread & { messages: Msg[] };
 
 function useLocal(key: string, init: boolean): [boolean, (v: boolean) => void] {
   const [v, setV] = useState(init);
-  useEffect(() => { try { const s = localStorage.getItem(key); if (s !== null) setV(s === "1"); } catch { /* private mode */ } }, [key]);
+  useEffect(() => {
+    // on phones and small windows the panel covers the chat, so it starts closed there
+    if (window.innerWidth <= 1100) { setV(false); return; }
+    try { const s = localStorage.getItem(key); if (s !== null) setV(s === "1"); } catch { /* private mode */ }
+  }, [key]);
   return [v, (x: boolean) => { setV(x); try { localStorage.setItem(key, x ? "1" : "0"); } catch { /* ignore */ } }];
 }
 
@@ -68,6 +73,18 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
 }
 
 /* ------------------------------------------------------------------ chat */
+function FileBlocks({ blocks }: { blocks?: Msg["blocks"] }) {
+  const files = (blocks || []).filter((b) => b.type === "file" && b.id);
+  if (!files.length) return null;
+  return (
+    <div className="files">{files.map((f) => (
+      <a key={f.id} href={`${BASE}/api/files/${f.id}`} target="_blank" rel="noreferrer" title={f.name}>
+        {f.mime?.startsWith("image/") ? <img src={`${BASE}/api/files/${f.id}`} alt={f.name} /> : <><i className="ri-file-3-line" />{f.name}</>}
+      </a>
+    ))}</div>
+  );
+}
+
 function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean }) {
   const runs = toRuns(events);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
@@ -87,7 +104,7 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
         <div className="sysmsg">Ask anything: what needs you, what someone did, or tell a helper what to do.</div>
       )}
       {rows.map((row) => row.kind === "run" ? <RunCard key={`r${row.r.id}`} run={row.r} /> : (
-        row.m.role === "owner" ? <div key={row.m.id} className="bubble"><Markdown text={row.m.text} /></div>
+        row.m.role === "owner" ? <div key={row.m.id} className="bubble"><Markdown text={row.m.text} /><FileBlocks blocks={row.m.blocks} /></div>
           : row.m.role === "system" ? <div key={row.m.id} className="sysmsg"><Markdown text={row.m.text} /></div>
           : (
             <div key={row.m.id} className="agentmsg">
@@ -188,6 +205,7 @@ function WorkspaceInner() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [current, setCurrent] = useState<FullThread | null>(null);
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<Attached[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -221,9 +239,12 @@ function WorkspaceInner() {
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
   const send = async (t: string) => {
-    if (!t.trim() || !tid) return;
-    setText("");
-    try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body: { text: t } })); } catch (e: any) { setErr(e.message); setText(t); }
+    if ((!t.trim() && !files.length) || !tid) return;
+    const att = files;
+    const body = { text: t.trim() || `(attached ${att.length} file${att.length > 1 ? "s" : ""})`,
+      blocks: att.length ? att.map((f) => ({ type: "file", ...f })) : undefined };
+    setText(""); setFiles([]);
+    try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body })); } catch (e: any) { setErr(e.message); setText(t); setFiles(att); }
   };
 
   const chief = staff.find((s) => s.is_chief);
@@ -294,9 +315,10 @@ function WorkspaceInner() {
                 <textarea value={text} placeholder={`Message ${threadLabel(current)}…`} onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
                 <div className="row">
-                  <span className="small">{current.awaiting_reply ? "Working on it…" : "Enter to send · Shift+Enter for a new line"}</span>
+                  <ComposerTools threadId={tid} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
+                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : "Enter to send · Shift+Enter for a new line"}</span>
                   <span className="sp" />
-                  <button className="btn primary sm" type="submit" disabled={!text.trim() || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
+                  <button className="btn primary sm" type="submit" disabled={(!text.trim() && !files.length) || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
                 </div>
               </form>
               <Err error={err} />

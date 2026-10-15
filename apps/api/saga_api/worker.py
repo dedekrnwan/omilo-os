@@ -8,6 +8,7 @@ import time
 from sqlalchemy import func, select
 
 from . import services as S
+from .capabilities import resolve
 from .config import get_settings
 from .db import init_db, session_scope
 from .engines import ChatContext, EngineResult, TaskContext, get_engine
@@ -143,13 +144,13 @@ class Worker:
             ck = S.latest_checkpoint(db, t.id)
             prop = None
             if t.proposal_id and (p := db.get(Proposal, t.proposal_id)):
-                prop = {"id": p.id, "title": p.title, "approved_text": S.current_body(p)}
+                prop = {"id": p.id, "title": p.title, "type": p.type, "approved_text": S.current_body(p)}
             ctx = TaskContext(
                 staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, task_id=t.id, origin=t.origin,
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                emit=Emitter(st.id, task_id=t.id),
+                emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop),
             )
             return ctx, dict(st.engine or {}), int(st.max_task_minutes or 30)
 
@@ -214,7 +215,7 @@ class Worker:
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
                               mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                              emit=Emitter(st.id, thread_id=th.id))
+                              emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id))
         t0 = time.monotonic()
         ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
         try:

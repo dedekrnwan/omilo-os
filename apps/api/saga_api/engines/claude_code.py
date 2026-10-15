@@ -16,9 +16,58 @@ from pathlib import Path
 from .. import harness as H
 from ..config import get_settings
 from . import ChatContext, Engine, EngineResult, TaskContext
-from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message
+from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 SAFE_TOOLS = ["mcp__saga-os", "WebSearch", "WebFetch", "Read", "Glob", "Grep", "TodoWrite", "Edit", "Write"]
+
+
+def plan(cfg: dict, resources) -> tuple[dict, list[str], list[str]]:
+    """MCP servers, allowed tools and extra flags for one run, from the helper's settings and what this run may use.
+
+    - folders: every folder is added with --add-dir; read-only ones also get Edit/Write denied; a folder that allows
+      terminal commands (or a helper with allow_shell) turns on Bash
+    - connectors: all are connected; tools of 'auto' connectors (or one approved for this execution task) are allowed,
+      'ask' connectors stay denied (dontAsk), so the helper must request_action and wait for the founder
+    - attached files: their folders are added read-only
+    """
+    servers: dict = {"saga-os": {"type": "http", "url": cfg["_mcp_url"], "headers": {"Authorization": f"Bearer {cfg['_mcp_token']}"}}}
+    tools = list(SAFE_TOOLS)
+    add_dirs: list[str] = []
+    deny: list[str] = []
+    shell = bool(cfg.get("allow_shell"))
+    if resources is not None:
+        for f in resources.folders:
+            add_dirs.append(f["path"])
+            if f["access"] != "write":
+                deny += [f"Edit(/{f['path']}/**)", f"Write(/{f['path']}/**)"]
+            shell = shell or bool(f.get("commands"))
+        for c in resources.connectors:
+            if c["kind"] == "stdio":
+                servers[c["id"]] = {"command": c["command"], "args": c["args"], "env": c["env"]}
+            else:
+                servers[c["id"]] = {"type": "http", "url": c["url"], "headers": c["headers"]}
+            if c["approval"] == "auto" or c["id"] in resources.allow_connectors:
+                tools.append(f"mcp__{c['id']}")
+        for f in resources.files:
+            d = str(Path(f["path"]).parent)
+            if d not in add_dirs:
+                add_dirs.append(d)
+                deny += [f"Edit(/{d}/**)", f"Write(/{d}/**)"]
+    if shell:
+        tools.append("Bash")
+        deny += SHELL_DENY
+    extra: list[str] = []
+    for d in add_dirs:
+        extra += ["--add-dir", d]
+    if deny:
+        extra += ["--disallowedTools", *deny]
+    return servers, tools, extra
+# commands that change the world outside the folder (or cannot be undone) stay blocked even when commands are allowed:
+# the helper asks the founder through request_action instead
+SHELL_DENY = [f"Bash({c}:*)" for c in (
+    "rm", "rmdir", "sudo", "git push", "git reset --hard", "git clean", "npm publish", "pnpm publish", "yarn publish", "twine upload",
+    "docker push", "kubectl", "terraform apply", "terraform destroy", "vercel", "netlify deploy", "fly deploy", "flyctl deploy", "gh pr merge",
+    "gh release", "ssh", "scp")]
 STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HERMES_API_KEY", "SAGA_SECRET_KEY", "SAGA_DATABASE_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
@@ -112,16 +161,19 @@ class ClaudeCodeEngine(Engine):
         return run, code, err
 
     async def _run(self, staff_id: str, cfg: dict, system: str, prompt: str, session: str | None, emit, timeout: float,
-                   remember) -> EngineResult:
+                   remember, resources=None) -> EngineResult:
         cli = H.find_cli()
         if not cli:
             return EngineResult(error="Claude Code is not installed. Settings → Harness → Install Claude Code.")
         config, runs, cwd = _dirs(staff_id)
+        servers, tools, extra = plan(cfg, resources)
+        if resources is not None and resources.folders:
+            first_rw = next((f for f in resources.folders if f["access"] == "write"), None)
+            if first_rw:
+                cwd = Path(first_rw["path"])  # develop in the owner's project folder
         mcp_file = runs / f"{secrets.token_hex(8)}.json"
-        mcp_file.write_text(json.dumps({"mcpServers": {"saga-os": {"type": "http", "url": cfg["_mcp_url"],
-                                                                     "headers": {"Authorization": f"Bearer {cfg['_mcp_token']}"}}}}))
+        mcp_file.write_text(json.dumps({"mcpServers": servers}))
         mcp_file.chmod(0o600)
-        tools = SAFE_TOOLS + (["Bash"] if cfg.get("allow_shell") else [])
         tried: set[str] = set()
         total = EngineResult()
         try:
@@ -136,7 +188,7 @@ class ClaudeCodeEngine(Engine):
                 args = ["-p", prompt if not session else (prompt if not tried - {acc_id} else "Continue exactly where you left off."),
                         "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
                         "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
-                        "--allowedTools", *tools, "--max-turns", str(int(cfg.get("max_turns") or 60))]
+                        "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
                 if cfg.get("model"):
                     args += ["--model", cfg["model"]]
                 if session:
@@ -174,22 +226,22 @@ class ClaudeCodeEngine(Engine):
         if not ctx.mcp_token:
             return EngineResult(error="no MCP token for this helper: rotate it in Team")
         cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token}
-        system = CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)").replace(
-            "(tools from the `saga-os` MCP server)", "(tools from the `saga-os` MCP server, named mcp__saga-os__*)")
+        system = with_resources(CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)").replace(
+            "(tools from the `saga-os` MCP server)", "(tools from the `saga-os` MCP server, named mcp__saga-os__*)"), ctx.resources)
         session = _task_session(ctx.task_id)
         return await self._run(ctx.staff_id, cfg, system, task_message(ctx), session, ctx.emit,
-                               float(cfg.get("timeout_s") or 1800), lambda s: ctx.emit("session", session_id=s))
+                               float(cfg.get("timeout_s") or 1800), lambda s: ctx.emit("session", session_id=s), ctx.resources)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
         cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or ""}
-        system = CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note)
+        system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
         session = _thread_session(ctx.thread_id)
         last = ctx.history[-1]["text"] if ctx.history else ""
         if not session and len(ctx.history) > 1:  # first harness turn in an older chat: give it the conversation so far
             past = "\n".join(f"{'Founder' if h['role'] == 'owner' else 'You'}: {h['text']}" for h in ctx.history[-20:-1])
             last = f"Conversation so far:\n{past}\n\nFounder: {last}"
         return await self._run(ctx.staff_id, cfg, system, last, session, ctx.emit, 600,
-                               lambda s: _save_thread_session(ctx.thread_id, s))
+                               lambda s: _save_thread_session(ctx.thread_id, s), ctx.resources)
 
     async def health(self, cfg: dict) -> dict:
         p = H.pool_summary()

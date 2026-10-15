@@ -820,6 +820,328 @@ def harness_install(user: User = Depends(current_user)):
     return H.installer.start()
 
 
+# ------------------------------------------------------------------ capabilities: connectors, folders, skills, files
+class ConnectorIn(BaseModel):
+    id: str
+    label: str = ""
+    kind: str = "http"
+    url: str = ""
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    headers: dict[str, str] | None = None
+    env: dict[str, str] | None = None
+    approval: str = "ask"
+    default_on: bool = True
+    enabled: bool = True
+
+
+def _connector_apply(c, body: ConnectorIn) -> None:
+    from .. import capabilities as C
+
+    if body.kind not in ("http", "stdio") or body.approval not in ("auto", "ask"):
+        raise HTTPException(400, "kind is http or stdio; approval is auto or ask")
+    if body.kind == "http" and not body.url.startswith(("http://", "https://")):
+        raise HTTPException(400, "an http connector needs a URL")
+    if body.kind == "stdio" and not body.command.strip():
+        raise HTTPException(400, "a stdio connector needs a command")
+    c.label, c.kind, c.url, c.command, c.args = body.label or body.id, body.kind, body.url, body.command, body.args
+    c.approval, c.default_on, c.enabled = body.approval, body.default_on, body.enabled
+    C.set_connector_secrets(c, body.headers, body.env)
+
+
+@router.get("/connectors")
+def connectors_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector
+
+    return [C.connector_public(c) for c in db.scalars(select(Connector).order_by(Connector.created_at))]
+
+
+@router.post("/connectors")
+def connector_add(body: ConnectorIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector
+
+    if not C.SLUG.match(body.id) or body.id == "saga-os":
+        raise HTTPException(400, "id: lowercase letters, digits and dashes (and not saga-os)")
+    if db.get(Connector, body.id):
+        raise HTTPException(409, "a connector with this id exists")
+    c = Connector(id=body.id)
+    _connector_apply(c, body)
+    db.add(c)
+    S.audit(db, user.id, "connector.add", c.id, kind=c.kind, approval=c.approval)
+    db.commit()
+    S.desired_gateways(db, write_all=True)
+    return C.connector_public(c)
+
+
+@router.put("/connectors/{cid}")
+def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector
+
+    c = _404(db.get(Connector, cid), "unknown connector")
+    _connector_apply(c, body)
+    S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
+    db.commit()
+    S.desired_gateways(db, write_all=True)
+    return C.connector_public(c)
+
+
+@router.delete("/connectors/{cid}")
+def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Connector
+
+    db.delete(_404(db.get(Connector, cid), "unknown connector"))
+    S.audit(db, user.id, "connector.remove", cid)
+    db.commit()
+    S.desired_gateways(db, write_all=True)
+    return {"ok": True}
+
+
+@router.post("/connectors/{cid}/test")
+async def connector_test(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Connect to an http connector and list its tools."""
+    import httpx as _h
+
+    from .. import capabilities as C
+    from ..models import Connector
+
+    c = _404(db.get(Connector, cid), "unknown connector")
+    if c.kind != "http":
+        return {"ok": None, "detail": "Command connectors start when a helper uses them."}
+    rt = C.connector_runtime(c)
+    hdrs = {"Accept": "application/json, text/event-stream", **rt["headers"]}
+    try:
+        async with _h.AsyncClient(timeout=20, headers=hdrs) as h:
+            r = await h.post(c.url, json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "saga-os", "version": "1"}}})
+            sid = r.headers.get("mcp-session-id")
+            extra = {"mcp-session-id": sid} if sid else {}
+            r2 = await h.post(c.url, headers=extra, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        for resp in (r, r2):
+            if resp.status_code >= 400:
+                hint = " (check the secret headers)" if resp.status_code in (401, 403) else ""
+                return {"ok": False, "detail": f"the server answered {resp.status_code}{hint}"}
+        body = r2.text
+        if "data:" in body and "{" in body:
+            body = body[body.index("{"): body.rindex("}") + 1]
+        data = json.loads(body)
+        if "result" not in data:
+            return {"ok": False, "detail": str(data.get("error", {}).get("message") or "not an MCP server")[:300]}
+        tools = [t["name"] for t in data["result"].get("tools", [])]
+        return {"ok": True, "detail": f"{len(tools)} tools", "tools": tools[:50]}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "detail": str(e)[:300]}
+
+
+class FolderIn(BaseModel):
+    path: str
+    label: str = ""
+    access: str = "read"
+    commands: bool = False
+    default_on: bool = False
+
+
+@router.get("/folders")
+def folders_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from pathlib import Path as _P
+
+    from ..models import Folder
+
+    return [{"id": f.id, "path": f.path, "label": f.label or _P(f.path).name, "access": f.access, "commands": f.commands,
+             "default_on": f.default_on, "exists": _P(f.path).is_dir()} for f in db.scalars(select(Folder).order_by(Folder.created_at))]
+
+
+def _folder_apply(f, body: FolderIn) -> None:
+    from pathlib import Path as _P
+
+    p = _P(os.path.expanduser(body.path)).resolve()
+    if not p.is_dir():
+        raise HTTPException(400, "that folder does not exist on this computer")
+    if p == _P("/") or p == _P.home():
+        raise HTTPException(400, "choose a specific folder, not the whole disk or home folder")
+    if body.access not in ("read", "write"):
+        raise HTTPException(400, "access is read or write")
+    f.path, f.label, f.access, f.commands, f.default_on = str(p), body.label or p.name, body.access, body.commands, body.default_on
+
+
+@router.post("/folders")
+def folder_add(body: FolderIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Folder
+
+    f = Folder()
+    _folder_apply(f, body)
+    db.add(f)
+    S.audit(db, user.id, "folder.add", f.path, access=f.access, commands=f.commands)
+    db.commit()
+    return {"id": f.id, "path": f.path}
+
+
+@router.put("/folders/{fid}")
+def folder_update(fid: str, body: FolderIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Folder
+
+    f = _404(db.get(Folder, fid), "unknown folder")
+    _folder_apply(f, body)
+    S.audit(db, user.id, "folder.update", f.path, access=f.access, commands=f.commands)
+    db.commit()
+    return {"id": f.id, "path": f.path}
+
+
+@router.delete("/folders/{fid}")
+def folder_delete(fid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Folder
+
+    f = _404(db.get(Folder, fid), "unknown folder")
+    db.delete(f)
+    S.audit(db, user.id, "folder.remove", f.path)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/fs")
+def fs_browse(path: str = "", user: User = Depends(current_user)):
+    """Folders on this computer, to pick one for the helpers (folders only, no file contents)."""
+    from pathlib import Path as _P
+
+    p = _P(os.path.expanduser(path or "~")).resolve()
+    if not p.is_dir():
+        raise HTTPException(404, "not a folder")
+    try:
+        dirs = sorted((d.name for d in p.iterdir() if d.is_dir() and not d.name.startswith(".")), key=str.lower)[:500]
+    except PermissionError as e:
+        raise HTTPException(403, "this folder cannot be read") from e
+    return {"path": str(p), "parent": str(p.parent) if p.parent != p else None, "home": str(_P.home()), "dirs": dirs}
+
+
+class SkillIn(BaseModel):
+    slug: str
+    name: str
+    description: str = ""
+    body: str
+    default_on: bool = False
+
+
+@router.get("/skills")
+def skills_list(user: User = Depends(current_user)):
+    from .. import capabilities as C
+
+    return [{k: v for k, v in s.items() if k != "body"} | {"chars": len(s["body"])} for s in C.list_skills()]
+
+
+@router.get("/skills/{slug}")
+def skill_get(slug: str, user: User = Depends(current_user)):
+    from .. import capabilities as C
+
+    return _404(C.get_skill(slug), "unknown skill")
+
+
+@router.post("/skills")
+def skill_save(body: SkillIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+
+    try:
+        sk = C.save_skill(body.slug, body.name, body.description, body.body, body.default_on)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    S.audit(db, user.id, "skill.save", body.slug)
+    db.commit()
+    return sk
+
+
+@router.delete("/skills/{slug}")
+def skill_delete(slug: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+
+    C.delete_skill(slug)
+    S.audit(db, user.id, "skill.remove", slug)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/skills/from-talent/{slug}")
+def skill_from_talent(slug: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Turn an Agency specialist's playbook into a skill any helper can use."""
+    from .. import capabilities as C
+    from .. import talent as T
+
+    a = _404(T.get(slug), "unknown specialist")
+    sk = C.save_skill(slug[:40].rstrip("-"), a["name"], a.get("description", ""), a["body"])
+    S.audit(db, user.id, "skill.save", sk["slug"], source="agency")
+    db.commit()
+    return sk
+
+
+class FileIn(BaseModel):
+    name: str
+    data: str  # base64
+
+
+@router.post("/files")
+def file_upload(body: FileIn, user: User = Depends(current_user)):
+    from .. import capabilities as C
+
+    try:
+        return C.save_file(body.name, body.data)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:  # bad base64
+        raise HTTPException(400, "could not read the file") from e
+
+
+@router.get("/files/{fid}")
+def file_download(fid: str, user: User = Depends(current_user)):
+    from fastapi.responses import FileResponse
+
+    from .. import capabilities as C
+
+    p = _404(C.file_path(fid), "unknown file")
+    return FileResponse(p, filename=p.name)
+
+
+class ThreadToolsIn(BaseModel):
+    folders: list[str] | None = None
+    connectors: list[str] | None = None
+    skills: list[str] | None = None
+
+
+@router.get("/threads/{thid}/tools")
+def thread_tools(thid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector, Folder, ThreadTools
+
+    _404(db.get(Thread, thid))
+    tt = db.get(ThreadTools, thid)
+    folders = list(db.scalars(select(Folder)))
+    conns = list(db.scalars(select(Connector).where(Connector.enabled.is_(True))))
+    skills = C.list_skills()
+    on = lambda chosen, items, key, default: chosen if chosen is not None else [key(i) for i in items if default(i)]  # noqa: E731
+    return {
+        "folders": {"on": on(tt.folders if tt else None, folders, lambda f: f.id, lambda f: f.default_on),
+                    "all": [{"id": f.id, "label": f.label, "path": f.path, "access": f.access, "commands": f.commands} for f in folders]},
+        "connectors": {"on": on(tt.connectors if tt else None, conns, lambda c: c.id, lambda c: c.default_on),
+                       "all": [{"id": c.id, "label": c.label, "approval": c.approval} for c in conns]},
+        "skills": {"on": on(tt.skills if tt else None, skills, lambda s: s["slug"], lambda s: s["default_on"]),
+                   "all": [{"id": s["slug"], "label": s["name"], "description": s["description"]} for s in skills]},
+    }
+
+
+@router.put("/threads/{thid}/tools")
+def thread_tools_set(thid: str, body: ThreadToolsIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import ThreadTools
+
+    _404(db.get(Thread, thid))
+    tt = db.get(ThreadTools, thid) or ThreadTools(thread_id=thid)
+    for k in ("folders", "connectors", "skills"):
+        v = getattr(body, k)
+        if v is not None:
+            setattr(tt, k, list(dict.fromkeys(v)))
+    db.add(tt)
+    db.commit()
+    return thread_tools(thid, db, user)
+
+
 # ------------------------------------------------------------------ talent library (The Agency)
 @router.get("/talent")
 def talent_list(q: str = "", division: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):

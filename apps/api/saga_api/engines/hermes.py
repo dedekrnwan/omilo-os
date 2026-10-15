@@ -12,7 +12,7 @@ import os
 import httpx
 
 from . import ChatContext, Engine, EngineResult, TaskContext
-from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message
+from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 
 class HermesEngine(Engine):
@@ -89,15 +89,15 @@ class HermesEngine(Engine):
     async def run_task(self, ctx: TaskContext) -> EngineResult:
         cfg = ctx.engine_config
         msgs = [
-            {"role": "system", "content": CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)")},
+            {"role": "system", "content": with_resources(CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)"), ctx.resources)},
             {"role": "user", "content": task_message(ctx)},
         ]
         return await self._complete(cfg, msgs, timeout=float(cfg.get("timeout_s") or 1800), session=f"task-{ctx.task_id}", emit=ctx.emit)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
         cfg = ctx.engine_config
-        msgs = [{"role": "system", "content": CHAT_SYSTEM.format(
-            name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note)}]
+        msgs = [{"role": "system", "content": with_resources(CHAT_SYSTEM.format(
+            name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)}]
         for m in ctx.history[-30:]:
             msgs.append({"role": "user" if m["role"] == "owner" else "assistant", "content": m["text"]})
         return await self._complete(cfg, msgs, timeout=float(cfg.get("chat_timeout_s") or 300), session=f"thread-{ctx.thread_id}", emit=ctx.emit)

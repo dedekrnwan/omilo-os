@@ -1,6 +1,7 @@
 """Engines do the thinking. The gateway only needs two calls from them: run a task, answer a chat."""
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -19,6 +20,7 @@ class TaskContext:
     mcp_token: str | None
     engine_config: dict = field(default_factory=dict)
     emit: Callable[..., None] = field(default=lambda kind, **d: None)  # live progress (events.Emitter)
+    resources: Any = None  # capabilities.Resources: folders, connectors, skills, files
 
 
 @dataclass
@@ -35,6 +37,7 @@ class ChatContext:
     mcp_token: str | None
     engine_config: dict = field(default_factory=dict)
     emit: Callable[..., None] = field(default=lambda kind, **d: None)
+    resources: Any = None
 
 
 @dataclass

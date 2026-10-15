@@ -283,7 +283,8 @@ def _read_env(path: Path) -> dict[str, str]:
 
 
 def write_profile(staff_id: str, *, port: int, api_key: str, mcp_url: str, mcp_token: str,
-                  provider: str, model: str, provider_key: str | None, extra_env: dict | None = None) -> str:
+                  provider: str, model: str, provider_key: str | None, extra_env: dict | None = None,
+                  connectors: list[dict] | None = None) -> str:
     """Write config.yaml and .env for one helper's Hermes. Keeps anything else the owner added. Returns a config hash."""
     home = home_for(staff_id)
     home.mkdir(parents=True, exist_ok=True)
@@ -295,7 +296,17 @@ def write_profile(staff_id: str, *, port: int, api_key: str, mcp_url: str, mcp_t
     cfg["model"]["default"] = model
     cfg.setdefault("mcp_servers", {})
     cfg["mcp_servers"][MCP_SERVER_NAME] = {"url": mcp_url, "headers": {"Authorization": "Bearer ${SAGA_MCP_TOKEN}"}, "timeout": 120}
+    managed = set(cfg.get("x_saga_connectors") or [])
+    for old in managed:  # connectors Saga OS added before and that are gone now
+        cfg["mcp_servers"].pop(old, None)
+    names = []
+    for c in connectors or []:
+        names.append(c["id"])
+        cfg["mcp_servers"][c["id"]] = ({"command": c["command"], "args": c["args"], "env": c["env"]} if c["kind"] == "stdio"
+                                       else {"url": c["url"], "headers": c["headers"], "timeout": 120})
+    cfg["x_saga_connectors"] = names
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    cfg_path.chmod(0o600)
 
     env = _read_env(env_path)
     env.update({"API_SERVER_ENABLED": "true", "API_SERVER_HOST": "127.0.0.1", "API_SERVER_PORT": str(port),

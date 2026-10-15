@@ -43,8 +43,10 @@ def test_managed_hermes_runs_tasks_and_chat(owner, stream_mock):
     assert f"ANTHROPIC_API_KEY={KEY}" in env and "API_SERVER_KEY=" in env and oct((home / ".env").stat().st_mode)[-3:] == "600"
     assert "saga-os" in (home / "config.yaml").read_text() and KEY not in (home / "config.yaml").read_text()
 
-    # the helper sleeps until it has work; a task wakes it up
-    assert "sleeping" in owner.get("/api/health/engines").json()["support"]["detail"]
+    # the helper sleeps until it has work (unless earlier tests in this session gave it work); a task wakes it up
+    awake = {s["id"]: s.get("awake") for s in owner.get("/api/staff").json()}
+    if not awake.get("support"):
+        assert "sleeping" in owner.get("/api/health/engines").json()["support"]["detail"]
 
     t = owner.post("/api/tasks", json={"staff_id": "support", "brief": "Group this week's tickets"}).json()
     done = wait_for(lambda: (x := owner.get(f"/api/tasks/{t['id']}").json())["status"] in ("done", "failed") and x, timeout=120, every=1)

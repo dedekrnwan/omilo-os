@@ -268,3 +268,40 @@ class HarnessAccount(Base):
     tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Connector(Base):
+    """An MCP server every helper can use (Gmail, Calendar, GitHub, your own systems…)."""
+    __tablename__ = "connector"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # slug, used in tool names: mcp__<id>__<tool>
+    label: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16), default="http")  # http | stdio
+    url: Mapped[str] = mapped_column(Text, default="")
+    command: Mapped[str] = mapped_column(Text, default="")
+    args: Mapped[list] = mapped_column(JSON, default=list)
+    secrets_enc: Mapped[str] = mapped_column(Text, default="")  # encrypted JSON {"headers": {...}, "env": {...}}
+    approval: Mapped[str] = mapped_column(String(8), default="ask")  # auto | ask
+    default_on: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Folder(Base):
+    """A folder on this computer that helpers may use."""
+    __tablename__ = "folder"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("fld"))
+    path: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    access: Mapped[str] = mapped_column(String(8), default="read")  # read | write
+    commands: Mapped[bool] = mapped_column(Boolean, default=False)  # may run terminal commands there (development)
+    default_on: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ThreadTools(Base):
+    """What a chat has switched on: folders, connectors, skills (overrides the defaults)."""
+    __tablename__ = "thread_tools"
+    thread_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    folders: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    connectors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    skills: Mapped[list | None] = mapped_column(JSON, nullable=True)

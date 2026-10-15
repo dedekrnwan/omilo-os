@@ -38,7 +38,9 @@ log = os.environ.get("FAKE_CLAUDE_LOG")
 if log:
     with open(log, "a") as f:
         f.write(json.dumps({"token": token[-6:], "resume": arg("--resume"), "prompt": prompt[:60], "tools": arg("--allowedTools"),
-                            "mode": arg("--permission-mode"), "cfgdir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
+                            "mode": arg("--permission-mode"), "cfgdir": os.environ.get("CLAUDE_CONFIG_DIR"),
+                            "argv": sys.argv[1:], "cwd": os.getcwd(), "system": arg("--append-system-prompt", "")[-3000:],
+                            "mcp": list(json.load(open(arg("--mcp-config")))["mcpServers"]) if arg("--mcp-config") else []}) + "\n")
 if "--output-format" in sys.argv and arg("--output-format") == "json":  # account test
     ok = "LIMITED" not in token and "BAD" not in token
     print(json.dumps({"type": "result", "is_error": not ok, "result": "OK" if ok else "Invalid API key · Please run /login"}))

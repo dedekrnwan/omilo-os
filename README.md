@@ -20,7 +20,7 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 - **Import** of the v0 prototype (`legacy/prototype`): knowledge, loops → staff + shifts, runs, approvals.
 
 Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): Chrome push notifications and nudges (M3), connectors hub with
-OAuth (M4), harness pool and switching between Claude Code / Codex (M5), Telegram, passkeys, package-manager installers.
+OAuth (M4), Codex in the harness (M5), Telegram, passkeys, package-manager installers.
 
 ## Workspace: chat and work, live
 
@@ -38,6 +38,24 @@ Claude Code with one click (npm), then put helpers on the pool. Each job leases 
 continues on another account with `--resume`, so no work is lost; sign-in problems mark the account and move on.
 Runs use `claude -p --output-format stream-json`, the saga-os MCP server, `--permission-mode dontAsk` and an allowlist
 (web, read, write in the helper's own workspace; `Bash` only when a helper has `allow_shell`).
+
+## Capabilities: files, folders, connectors and skills
+
+The **+** button in the Workspace chat box works like Claude's: attach files or photos, and switch folders, connectors and
+skills on or off for that chat. They are managed under **Capabilities** in the sidebar.
+
+- **Computer**: share folders on the machine running Saga OS (pick them with the built-in folder browser). Per folder: read, or read
+  and edit, and "run commands" for development work (install, build, test, git). On the Claude Code pool this is enforced by
+  Claude Code itself: each folder is passed with `--add-dir`, read-only folders get Edit/Write denied, `Bash` is only allowed when a
+  folder permits commands, and even then `rm`, `sudo`, `git push`, publishing, deploying and `ssh` stay denied (helpers ask in the
+  Inbox instead). Hermes helpers are told which folders to use, but Hermes has its own terminal, so use the pool for strict limits.
+  In Docker only mounted folders can be shared.
+- **Connectors**: any MCP server, by web address (with secret headers) or as a program on this computer (command, arguments, secret
+  environment). "Ask me first" connectors stay locked until you approve a `connector.<id>` request; "Use directly" ones are open.
+  Secrets are stored encrypted. Default-on connectors are also written into each managed Hermes profile.
+- **Skills**: `SKILL.md` files in `<data dir>/skills/<id>/`. Write your own, or turn an Agency specialist's playbook into a skill.
+  "Standard" skills apply everywhere; others are switched on per chat.
+- **Files**: uploaded into `<data dir>/files/` (25 MB each). Helpers get their paths (read-only on the pool).
 
 ## Hire specialists from The Agency
 
@@ -125,7 +143,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 16 API tests pass on SQLite and Postgres 16 (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 33 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

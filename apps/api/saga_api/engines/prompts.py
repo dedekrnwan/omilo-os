@@ -45,3 +45,9 @@ def task_message(ctx) -> str:
         prop = (f"\nApproved proposal {ctx.proposal['id']} to execute exactly as approved, then call mark_executed:\n"
                 f"---\n{ctx.proposal['approved_text']}\n---\n")
     return TASK_MESSAGE.format(task_id=ctx.task_id, origin=ctx.origin, brief=ctx.brief, note=note, checkpoint=ck, proposal=prop)
+
+
+def with_resources(system: str, resources) -> str:
+    """Append what the helper may use in this run (folders, connected tools, attached files, skills)."""
+    note = resources.note() if resources is not None else ""
+    return f"{system}\n\n{note}" if note else system

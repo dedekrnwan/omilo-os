@@ -128,9 +128,12 @@ def awake_staff(db: Session) -> set[str]:
 def desired_gateways(db: Session, write_all: bool = False) -> dict[str, dict]:
     """Write managed helpers' Hermes profiles; return staff_id -> {hash} for the awake ones (the supervisor runs those)."""
     from . import hermes_manager as HM
+    from .capabilities import connector_runtime
+    from .models import Connector
 
     out: dict[str, dict] = {}
     awake = awake_staff(db)
+    conns = [connector_runtime(c) for c in db.scalars(select(Connector).where(Connector.enabled.is_(True), Connector.default_on.is_(True)))]
     claude_key = ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")
     for st in db.scalars(select(Staff)):
         e = st.engine or {}
@@ -144,7 +147,7 @@ def desired_gateways(db: Session, write_all: bool = False) -> dict[str, dict]:
             continue
         h = HM.write_profile(st.id, port=int(e["port"]), api_key=key, mcp_url=get_settings().mcp_url(), mcp_token=token,
                              provider=e.get("provider") or "anthropic", model=e.get("claude_model") or "claude-sonnet-5-5",
-                             provider_key=claude_key)
+                             provider_key=claude_key, connectors=conns)
         if st.id in awake:
             out[st.id] = {"hash": h}
     return out

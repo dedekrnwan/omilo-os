@@ -10,7 +10,7 @@ import httpx
 
 from . import ChatContext, Engine, EngineResult, TaskContext
 from .fake import MCPClient
-from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message
+from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 API = "https://api.anthropic.com"
 VERSION = "2023-06-01"
@@ -143,14 +143,14 @@ class ClaudeEngine(Engine):
         cfg = ctx.engine_config
         if not ctx.mcp_token:
             return EngineResult(error="no MCP token for this helper: rotate it in Staff")
-        system = CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)")
+        system = with_resources(CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)"), ctx.resources)
         async with MCPClient(ctx.mcp_url, ctx.mcp_token) as m:
             return await self._loop(cfg, system, [{"role": "user", "content": task_message(ctx)}], m, None,
                                     int(cfg.get("max_turns") or MAX_TURNS_TASK), float(cfg.get("request_timeout_s") or 300), ctx.emit)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
         cfg = ctx.engine_config
-        system = CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note)
+        system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
         msgs: list[dict] = []
         for h in ctx.history[-30:]:
             role = "user" if h["role"] == "owner" else "assistant"
