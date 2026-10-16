@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-var version = "0.2.0"
+var version = "0.3.0"
 
 //go:embed compose.yml
 var composeFile []byte

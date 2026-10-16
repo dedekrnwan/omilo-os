@@ -20,6 +20,8 @@ How to work (tools from the `saga-os` MCP server):
 - If you have web_search / web_fetch, use them for facts from the internet and list the links you used in your report.
 - Shared Docs (docs_search, docs_read, docs_write) are the team's notebook: look there before starting, and keep plans,
   decisions and findings there with [[links]] to related docs. Pass base_version when editing.
+- Memory: follow your lessons (they come from the founder's decisions). Use recall to look up past runs and notes,
+  and remember to keep what you will need next time. Don't repeat ideas the founder rejected.
 - Keep it short: the founder reads on a phone.
 
 {formatting}"""
@@ -55,7 +57,8 @@ def task_message(ctx) -> str:
     if ctx.proposal:
         prop = (f"\nApproved proposal {ctx.proposal['id']} to execute exactly as approved, then call mark_executed:\n"
                 f"---\n{ctx.proposal['approved_text']}\n---\n")
-    return TASK_MESSAGE.format(task_id=ctx.task_id, origin=ctx.origin, brief=ctx.brief, note=note, checkpoint=ck, proposal=prop)
+    return TASK_MESSAGE.format(task_id=ctx.task_id, origin=ctx.origin, brief=ctx.brief, note=note, checkpoint=ck, proposal=prop) + \
+        (getattr(ctx, "memory", "") or "")
 
 
 def with_resources(system: str, resources) -> str:

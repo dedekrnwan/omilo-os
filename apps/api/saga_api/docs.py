@@ -94,6 +94,12 @@ def title_of(path: str) -> str:
     return Path(path).name[:-3] if path.endswith(".md") else Path(path).name
 
 
+def _iso(v) -> str:
+    from .serialize import iso
+
+    return iso(v) or ""
+
+
 def _hash(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
@@ -200,12 +206,13 @@ def read(db: Session, path: str) -> dict:
                 break
     names = _names(db)
     sugg = list(db.scalars(select(DocVersion).where(DocVersion.path == p, DocVersion.status == "suggested").order_by(DocVersion.at.desc())))
-    return {"path": p, "title": title_of(p), "content": text, "version": v.version, "updated_by": _who(v, names), "updated_at": v.at.isoformat(),
+    return {"path": p, "title": title_of(p), "content": text, "version": v.version, "updated_by": _who(v, names), "updated_at": _iso(v.at),
             "links": out_links, "backlinks": back, "company": p.startswith(COMPANY + "/"),
-            "suggestions": [{"id": s.id, "by": _who(s, names), "summary": s.summary, "proposal_id": s.proposal_id, "at": s.at.isoformat()} for s in sugg]}
+            "suggestions": [{"id": s.id, "by": _who(s, names), "summary": s.summary, "proposal_id": s.proposal_id, "at": _iso(s.at)} for s in sugg]}
 
 
-def write(db: Session, path: str, content: str, *, author: str, author_kind: str, base_version: int | None = None, summary: str = "") -> dict:
+def write(db: Session, path: str, content: str, *, author: str, author_kind: str, base_version: int | None = None, summary: str = "",
+          notify: bool = True) -> dict:
     p = norm(path)
     if len(content) > MAX_DOC:
         raise DocError("this doc is too large (2 MB max)")
@@ -224,7 +231,7 @@ def write(db: Session, path: str, content: str, *, author: str, author_kind: str
     v = DocVersion(path=p, version=(cur.version + 1) if cur else 1, content=content, author=author, author_kind=author_kind,
                    summary=(summary or ("Created" if cur_text is None else "Edited"))[:300])
     db.add(v)
-    if author_kind == "agent":
+    if author_kind == "agent" and notify:
         names = _names(db)
         db.add(Notice(kind="doc", title=f"{names.get(author, author)} {'created' if cur_text is None else 'edited'} {title_of(p)}",
                       body=(summary or "")[:180], url=f"/docs/?path={p}", tag=f"doc-{p}"[:80]))
@@ -268,7 +275,7 @@ def history(db: Session, path: str) -> list[dict]:
     p = norm(path)
     names = _names(db)
     rows = db.scalars(select(DocVersion).where(DocVersion.path == p, DocVersion.status == "saved").order_by(DocVersion.version.desc()).limit(200))
-    return [{"version": v.version, "by": _who(v, names), "summary": v.summary, "at": v.at.isoformat(), "chars": len(v.content)} for v in rows]
+    return [{"version": v.version, "by": _who(v, names), "summary": v.summary, "at": _iso(v.at), "chars": len(v.content)} for v in rows]
 
 
 def version_content(db: Session, path: str, version: int) -> str:
@@ -324,13 +331,23 @@ def _plain(s: str) -> str:
     return " ".join(s.split())
 
 
-def search(db: Session, q: str, limit: int = 20) -> list[dict]:
+def search(db: Session, q: str, limit: int = 20, folder: str | None = None) -> list[dict]:
+    """Ranked full-text search (SQLite FTS5); falls back to a plain scan if FTS5 is not available."""
+    if (q or "").strip():
+        try:
+            from . import search_index
+
+            return [{**r, "snippet": _plain(r["snippet"])} for r in search_index.search(q, limit, folder)]
+        except Exception:  # noqa: BLE001
+            pass
     words = [w for w in re.split(r"\s+", (q or "").lower().strip()) if w]
     out = []
     for p in all_paths():
         t = _read_file(p) or ""
         low, title = t.lower(), title_of(p).lower()
         if words and not all(w in low or w in title or w in p.lower() for w in words):
+            continue
+        if folder and not p.startswith(folder.rstrip("/") + "/"):
             continue
         score = sum(title.count(w) * 5 + low.count(w) for w in words) if words else 0
         i = low.find(words[0]) if words else 0
@@ -362,6 +379,12 @@ def graph(db: Session) -> dict:
     nodes = [{"id": p, "title": title_of(p), "folder": p.rsplit("/", 1)[0] if "/" in p else "", "degree": deg.get(p, 0),
               "by": _who(last[p], names)["kind"] if p in last else "owner"} for p in paths]
     nodes += [{**m, "folder": "", "degree": deg.get(m["id"], 0), "by": "missing"} for m in missing.values()]
+    seen: dict[str, int] = {}
+    for n in nodes:
+        seen[n["title"].lower()] = seen.get(n["title"].lower(), 0) + 1
+    for n in nodes:  # several notes called "Lessons": show whose ("marketing · Lessons")
+        if seen[n["title"].lower()] > 1 and n.get("folder"):
+            n["title"] = f"{n['folder'].rsplit('/', 1)[-1]} · {n['title']}"
     return {"nodes": nodes, "edges": edges}
 
 

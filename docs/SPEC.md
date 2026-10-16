@@ -2,6 +2,10 @@
 
 Draft · 15 Oct 2026 · Dede Kurniawan
 
+> **Update, 16 Oct 2026 (0.3):** Hermes was removed. Helpers run on Claude Code (with the owner's Claude API key or the
+> subscription pool) or on built-in Claude. Where this spec says Hermes, read "the engine". Memory and the learning loop are
+> described in the README (Loops, memory and self-improvement).
+
 ## Summary
 
 Saga OS becomes the **gateway between the founder and his staff agents**: every message, task, approval and report passes through it, and Hermes does the thinking and the work behind it. The current build (loops, runner, dashboard, chat) is the prototype; v1 turns it into a product that installs in one command, explains itself, and is safe to leave running.

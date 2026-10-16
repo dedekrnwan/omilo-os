@@ -68,7 +68,7 @@ SHELL_DENY = [f"Bash({c}:*)" for c in (
     "rm", "rmdir", "sudo", "git push", "git reset --hard", "git clean", "npm publish", "pnpm publish", "yarn publish", "twine upload",
     "docker push", "kubectl", "terraform apply", "terraform destroy", "vercel", "netlify deploy", "fly deploy", "flyctl deploy", "gh pr merge",
     "gh release", "ssh", "scp")]
-STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "HERMES_API_KEY", "SAGA_SECRET_KEY", "SAGA_DATABASE_URL", "CLAUDE_CODE_OAUTH_TOKEN")
+STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "SAGA_SECRET_KEY", "SAGA_DATABASE_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 
@@ -145,9 +145,12 @@ class _Run:
 class ClaudeCodeEngine(Engine):
     type = "claude-code"
 
-    async def _once(self, cli: str, token: str, args: list[str], cwd: Path, config: Path, emit, timeout: float) -> tuple[_Run, int, str]:
+    async def _once(self, cli: str, token: str, args: list[str], cwd: Path, config: Path, emit, timeout: float,
+                    token_env: str = "CLAUDE_CODE_OAUTH_TOKEN") -> tuple[_Run, int, str]:
         env = {k: v for k, v in os.environ.items() if k not in STRIP_ENV}
-        env.update({"CLAUDE_CODE_OAUTH_TOKEN": token, "CLAUDE_CONFIG_DIR": str(config)})
+        env.update({token_env: token, "CLAUDE_CONFIG_DIR": str(config)})
+        if token_env == "ANTHROPIC_API_KEY" and os.environ.get("SAGA_ANTHROPIC_BASE_URL"):  # tests and proxies
+            env["ANTHROPIC_BASE_URL"] = os.environ["SAGA_ANTHROPIC_BASE_URL"]
         proc = await asyncio.create_subprocess_exec(cli, *args, cwd=str(cwd), env=env, stdin=asyncio.subprocess.DEVNULL,
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, limit=8 * 1024 * 1024)
         run = _Run(emit)
@@ -181,6 +184,11 @@ class ClaudeCodeEngine(Engine):
         mcp_file.chmod(0o600)
         tried: set[str] = set()
         total = EngineResult()
+        if cfg.get("auth") == "api":  # your Claude API key instead of the subscription pool: one run, billed to the key
+            try:
+                return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
+            finally:
+                mcp_file.unlink(missing_ok=True)
         try:
             while True:
                 picked = H.lease(exclude=tried)
@@ -231,6 +239,29 @@ class ClaudeCodeEngine(Engine):
         finally:
             mcp_file.unlink(missing_ok=True)
 
+    async def _run_api(self, cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd) -> EngineResult:
+        key = api_key()
+        if not key:
+            return EngineResult(error="No Claude API key. Add it in Settings → AI.")
+        config = get_settings().company_dir / "harness" / "api-config"
+        config.mkdir(parents=True, exist_ok=True)
+        emit("status", state="harness", account="your API key")
+        args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
+        if cfg.get("model"):
+            args += ["--model", cfg["model"]]
+        if session:
+            args += ["--resume", session]
+        run, code, err = await self._once(cli, key, args, cwd, config, emit, timeout, token_env="ANTHROPIC_API_KEY")
+        if run.session and run.session != session:
+            remember(run.session)
+        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
+        if problem:
+            res.error = f"Claude Code: {problem[:400]}"
+        return res
+
     async def run_task(self, ctx: TaskContext) -> EngineResult:
         if not ctx.mcp_token:
             return EngineResult(error="no MCP token for this helper: rotate it in Team")
@@ -256,6 +287,8 @@ class ClaudeCodeEngine(Engine):
         p = H.pool_summary()
         if not p["cli"]["path"]:
             return {"ok": False, "detail": "Claude Code not installed (Settings → Harness)"}
+        if cfg.get("auth") == "api":
+            return {"ok": bool(api_key()), "detail": "Claude Code · your API key" if api_key() else "no Claude API key (Settings → AI)"}
         return {"ok": p["ready"] > 0, "detail": f"Claude Code pool · {p['ready']}/{p['total']} accounts ready"}
 
 
@@ -287,3 +320,12 @@ def _save_thread_session(thread_id: str, session: str) -> None:
         th = db.get(Thread, thread_id)
         if th:
             th.engine_session = f"cc:{session}"
+
+
+def api_key() -> str | None:
+    """The company's Claude API key (Settings → AI), else ANTHROPIC_API_KEY."""
+    from ..db import session_scope
+    from ..services import ai_api_key
+
+    with session_scope() as db:
+        return ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")

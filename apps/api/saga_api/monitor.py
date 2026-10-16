@@ -179,7 +179,6 @@ FAILURE_CAUSES = [  # (key, label, what to do, pattern)
     ("limit", "Usage limit", "Add pool accounts or spread jobs over the day", r"usage limit|limit reached|rate limit|429|quota|overloaded|no claude code account is free"),
     ("signin", "Sign-in problem", "Re-add the token on the Harness page or check the API key", r"invalid api key|unauthori[sz]ed|authentication|401|403|please run /login|oauth|expired|revoked"),
     ("timeout", "Took too long", "Raise the helper's time limit or split the job", r"timed? ?out|timeout|deadline"),
-    ("hermes", "Hermes error", "Open Settings → AI → the helper's Hermes log", r"hermes"),
     ("connection", "Could not connect", "Check the AI engine is running and reachable", r"connecterror|connection|unreachable|refused|dns|network"),
     ("interrupted", "Interrupted", "Saga OS restarted during the job", r"interrupted|requeued|cancelled"),
     ("budget", "Budget", "Raise the helper's monthly budget", r"budget"),
@@ -222,7 +221,7 @@ def insights(db: Session, t0: dt.datetime, staff: list[Staff]) -> dict:
                             "slowest": {"task_id": slowest[k].id, "brief": slowest[k].brief.splitlines()[0][:80],
                                         "seconds": round((_aware(slowest[k].ended_at) - _aware(slowest[k].started_at)).total_seconds())} if k in slowest else None}
                            for k, v in by_staff.items()), key=lambda x: -x["median_s"])
-    labels = {"claude-code": "Claude Code pool", "hermes": "Hermes", "claude": "Claude (direct)", "fake": "Practice mode"}
+    labels = {"claude-code": "Claude Code pool", "hermes": "Hermes (removed)", "claude": "Claude (direct)", "fake": "Practice mode"}
     timing_engine = sorted(({"engine": labels.get(k, k), "jobs": v["jobs"], "failed": v["failed"],
                              "fail_rate": round(v["failed"] * 100 / v["jobs"]) if v["jobs"] else 0,
                              "median_s": round(_pct(v["secs"], .5) or 0), "p90_s": round(_pct(v["secs"], .9) or 0)}

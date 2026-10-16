@@ -3,8 +3,9 @@
 **The office where a founder runs a company of AI staff agents.**
 
 Saga OS is an open-source gateway between a company owner and their AI staff agents. Every task, proposal, approval,
-question and report passes through it. [Hermes](https://hermes-agent.nousresearch.com/) profiles do the thinking and the
-work behind it. Agents propose, the owner decides, and the gateway enforces that in code, not in prompts.
+question and report passes through it. Claude Code (with your Claude API key or a pool of subscriptions) does the thinking
+and the work behind it. Agents propose, the owner decides, and the gateway enforces that in code, not in prompts. Every regular
+job is a loop that learns from your decisions and improves itself, with its memory kept as notes you can read in Docs.
 
 ## What works today (milestones M1 + M2)
 
@@ -14,7 +15,7 @@ work behind it. Agents propose, the owner decides, and the gateway enforces that
 - **Inbox**: proposals, questions and alerts. Approve → an execution task runs exactly the approved text. Request changes → a revision task; every revision is kept. Reject needs a note.
 - **Policy**: per action type `off / ask / do_and_tell / auto`; strict mode (default) caps every external action at *ask*. Agents cannot send, spend, merge, deploy or publish on their own.
 - **Chat**: master thread (Chief of Staff) and per-agent / per-task / per-proposal threads, markdown replies.
-- **Agent MCP server** at `/mcp` (Streamable HTTP, per-agent bearer token): `get_context`, `get_task`, `checkpoint`, `report`, `propose`, `revise_proposal`, `get_approved`, `mark_executed`, `request_action`, `ask_founder`, `post_message`, `update_kpi`, `create_task` (Chief only), `log_usage`. Every call is logged.
+- **Agent MCP server** at `/mcp` (Streamable HTTP, per-agent bearer token): `get_context`, `get_task`, `checkpoint`, `report`, `propose`, `revise_proposal`, `get_approved`, `mark_executed`, `request_action`, `ask_founder`, `post_message`, `offer_choices`, `docs_*`, `remember`, `recall`, `share_file`, `update_kpi`, `create_task` (Chief only), `review_week` and `improve` (Chief only, for the retro), `log_usage`. Every call is logged.
 - **Company**: KPIs and the knowledge editor. **Settings**: pause all, strict mode, concurrency, engine health, audit log.
 - **CLI** `saga-os`: `up`, `down`, `logs`, `login`, `doctor`, `status`, `inbox`, `show`, `approve`, `reject`, `changes`, `answer`, `staff`, `tasks`, `run`, `chat`, `pause`, `resume`, `import`.
 - **Import** of the v0 prototype (`legacy/prototype`): knowledge, loops → staff + shifts, runs, approvals.
@@ -27,8 +28,8 @@ OAuth (M4), Codex in the harness (M5), Telegram, passkeys, package-manager insta
 The Workspace puts chat and work on one page (toggle top right) with a side panel for **Progress**, **Output** and the
 **Browser** trail. Agent turns render as they happen: a live "Working" card with reasoning, each tool call (expand for input and
 output), sources, account switches and a usage meter (tokens, cost, time). Helpers can offer clickable choices (`offer_choices`).
-Engines report through `/api/events` (`RunEvent`): Hermes streams its draft, Claude Code streams every step, and every saga-os tool
-call is recorded by the MCP server.
+Engines report through `/api/events` (`RunEvent`): Claude Code streams every step, built-in Claude streams its turns, and every
+saga-os tool call is recorded by the MCP server.
 
 ## Harness: a pool of Claude Code subscriptions
 
@@ -52,11 +53,11 @@ skills on or off for that chat. They are managed under **Capabilities** in the s
   and edit, and "run commands" for development work (install, build, test, git). On the Claude Code pool this is enforced by
   Claude Code itself: each folder is passed with `--add-dir`, read-only folders get Edit/Write denied, `Bash` is only allowed when a
   folder permits commands, and even then `rm`, `sudo`, `git push`, publishing, deploying and `ssh` stay denied (helpers ask in the
-  Inbox instead). Hermes helpers are told which folders to use, but Hermes has its own terminal, so use the pool for strict limits.
+  Inbox instead). The same rules apply when Claude Code runs with your API key; built-in Claude has no file access at all.
   In Docker only mounted folders can be shared.
 - **Connectors**: any MCP server, by web address (with secret headers) or as a program on this computer (command, arguments, secret
   environment). "Ask me first" connectors stay locked until you approve a `connector.<id>` request; "Use directly" ones are open.
-  Secrets are stored encrypted. Default-on connectors are also written into each managed Hermes profile.
+  Secrets are stored encrypted. Add the Playwright connector to give helpers a real browser.
 - **Skills**: `SKILL.md` files in `<data dir>/skills/<id>/`. Write your own, or turn an Agency specialist's playbook into a skill.
   "Standard" skills apply everywhere; others are switched on per chat.
 - **Files**: uploaded into `<data dir>/files/` (25 MB each). Helpers get their paths (read-only on the pool), and give files back with the
@@ -93,7 +94,7 @@ It saves as you type; if a helper changed the note meanwhile you choose "keep mi
 - every helper: state (working, awake, sleeping, paused), the job it is on, jobs, tokens, spend, last activity
 - the pool per account, the Saga tools helpers called (with failures and blocked calls), and the latest notices
 
-Below that: **why jobs failed** (grouped by cause: usage limit, sign-in, took too long, Hermes, connection, interrupted,
+Below that: **why jobs failed** (grouped by cause: usage limit, sign-in, took too long, connection, interrupted,
 budget, with what to do and links to the jobs), **run time** per engine and per helper (median, slowest 10%, slowest job),
 **value per helper** (proposals, approval rate, cost per approved item), the **pool over the last 24 hours** (tokens per account
 per hour, red marks where a limit hit), and the **weekly digest**: every Monday at 08:00 the Chief of Staff posts last week's
@@ -121,7 +122,7 @@ the others), or **New company** to set one up from scratch. Each company is full
 inbox, Docs, knowledge, skills, budgets, connectors, shared folders and Claude Code pool. Only your login is shared.
 
 - The first company keeps the original layout in the data folder; every other company lives in `<data>/companies/<id>/`
-  with its own `saga.db`, `vault/`, `hermes/` and so on. The list is `<data>/companies.json`.
+  with its own `saga.db`, `vault/`, `harness/` and so on. The list is `<data>/companies.json`.
 - Requests pick the company from the `saga_co` cookie (the browser), the `X-Saga-Company` header (the CLI:
   `saga-os companies`, `saga-os use <id>`, or `SAGA_COMPANY`), or a `/co/<id>/` path prefix (helpers call their
   company's MCP endpoint at `/co/<id>/mcp`).
@@ -184,14 +185,14 @@ each with its own personality, process and deliverables. Saga OS downloads the r
 `SAGA_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
 the helper's job, with division-based permissions and the usual approvals on top.
 
-Helpers run by Saga OS sleep until they have work: only the Chief of Staff (and helpers marked `always_on`) keep a Hermes running;
-everyone else is started when a job or chat arrives and stopped after 10 idle minutes.
+Helpers show as sleeping when they have had no work for 10 minutes; nothing keeps running for them, and they wake the moment a job
+or chat arrives. Only the Chief of Staff (and helpers marked `always_on`) always show as awake.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `apps/api` | FastAPI gateway, worker, MCP server, engines (`hermes`, `fake`), tests |
+| `apps/api` | FastAPI gateway, worker, MCP server, engines (`claude_code`, `claude`, `fake`), loops and memory, tests |
 | `apps/web` | Next.js (static export) web app, Finity design tokens |
 | `cli` | Go CLI `saga-os` (stdlib only) |
 | `deploy` | Server compose: Postgres + API + worker + Traefik labels |
@@ -230,29 +231,44 @@ Under a path prefix (e.g. `/os`), set `SAGA_BASE_PATH=/os` and build the web app
 
 ## Connect the AI
 
-**Easiest: your Claude API key, through Hermes run by Saga OS.** In onboarding (or Settings → AI) choose "Use my Claude
-API key", paste a key from console.anthropic.com, check it and pick a model (Sonnet is recommended). Saga OS then:
+**Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
+console.anthropic.com, check it and pick a model. Saga OS installs Claude Code (`npm install @anthropic-ai/claude-code` in
+`<data dir>/harness-tools`, needs Node.js 18+) and runs every helper in it with your key: files and commands in the folders you share
+(with the same limits as the pool), web search and fetch, your connectors, and the Saga tools. The key is stored encrypted and passed
+only to the Claude Code process as `ANTHROPIC_API_KEY`; usage is billed to your key and shown as real spend.
 
-1. installs Hermes into a private environment (`<data dir>/hermes-venv`, `pip install hermes-agent[...]`, needs Python 3.11–3.13),
-   plus the browser helper `agent-browser` (needs Node.js) using the Chrome already on the computer, or a downloaded Chromium;
-2. writes one Hermes home per helper in `<data dir>/hermes/<helper>`: Claude as the model provider, the saga-os MCP server with
-   that helper's token, and the API server on its own local port (8650+) with a random 64-character key;
-3. runs and supervises one `hermes gateway run` per helper (restarted when it exits or its settings change).
+**Your Claude subscriptions:** add them on the Harness page (above) and choose "Claude Code · subscription pool" per helper under Team.
 
-Helpers get every Hermes tool (browser, terminal, web, skills, memory) and still go through Saga OS approvals. The Claude key is
-stored encrypted in Saga OS and written only to each helper's Hermes `.env` (mode 600). Logs: Settings → AI → "<helper> log".
-Without Hermes there is a fallback, "Claude directly" (web search and fetch, no browser).
+**Light, nothing to install:** "Built-in Claude" calls the Claude API from Saga OS itself: web search and fetch and the Saga tools,
+but no files, commands or browser.
 
-**Advanced: your own Hermes server.** Point a helper at it under Staff:
+Hermes was removed in 0.3: helpers that ran on Hermes move to Claude Code with your API key the first time Saga OS starts.
 
-### Connect Hermes
+## Loops, memory and self-improvement
 
-1. Run each agent as a Hermes profile with its API server on (OpenAI-compatible, default `http://127.0.0.1:8642/v1`, key in `API_SERVER_KEY`).
-2. In Saga OS: Staff → agent → engine type `hermes`, base URL, model. Put the key in the gateway environment as `HERMES_API_KEY` (or name another env var in the engine's `api_key_env`).
-3. Staff → agent → **Rotate MCP token**. Paste the returned `hermes_config` (or `claude_code_config`) into that profile so the agent can call back into Saga OS.
-4. Settings → Engine health should show the agent as reachable.
+Every regular job is a loop: **schedule → context → work → report and proposals → your decision → execution → retro**.
 
-Saga OS sends `X-Hermes-Session-Id: task-<id>` / `thread-<id>`, so a task or chat keeps its context across calls.
+- **Context** for each run: company knowledge and KPIs, the helper's **lessons**, the **last runs of this job** (so it builds on them
+  instead of repeating them), and how you decided on its recent proposals, with your notes.
+- **Your notes become lessons.** Rejecting or asking for changes needs a note; it is added to `Memory/<helper>/Lessons.md`, which the
+  helper reads before every run. Edit or delete a lesson in Docs and the helper follows your version.
+- **Memory is notes in Docs** (the `Memory/` folder, also in Obsidian): lessons, notes helpers keep with `remember`, a run log per
+  regular job (`Memory/Loops/…`), and the weekly retros (`Memory/Retros/…`), all linked from `Memory/Index` so the graph shows one
+  map (Docs → Graph → Memory). Helpers search everything with `recall` (ranked full-text search, SQLite FTS5).
+- **The weekly retro** (Chief of Staff, Fridays 16:00, or "Run the retro now" on Monitor) reads every loop's scorecard, the week's
+  jobs, your decisions and the lessons with `review_week`, then changes what isn't working with `improve`: a helper's instructions,
+  a job's brief or schedule, or its lessons (merged and cleaned). Up to 3 changes a week, applied at once.
+- **Measured and reversible.** Each change keeps the old version and the scores before it. After a week (and 3 runs) it is kept, or
+  rolled back automatically if the success or approval rate dropped. Monitor → Self-improvement shows every change with Undo.
+  The retro can never change permissions, budgets, the engine, approvals or the hard rules.
+- **Loops on Monitor**: per regular job, runs, success rate, approval rate, spend, the last useful result, and a flag when a loop has
+  stalled (three failed runs in a row, or nothing approved).
+- **Automatic retries**: a job that fails on a network problem or a timeout is tried again after 30 s and 60 s before it reaches
+  your Inbox (never for executions of approved work).
+
+Why no vector database: memory is a few hundred to a few thousand short notes. Ranked full-text search and the [[link]] graph
+find what matters at that size, stay readable for you, and need nothing to run. Embeddings (for example `sqlite-vec`) can be added
+later behind `recall` without changing the notes.
 
 ## Configuration
 
@@ -262,7 +278,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 43 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 46 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

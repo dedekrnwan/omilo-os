@@ -118,11 +118,7 @@ def get_policy(user: User = Depends(current_user)):
 @router.get("/health/engines")
 async def engines_health(db: Session = Depends(get_db), user: User = Depends(current_user)):
     out = {}
-    awake = S.awake_staff(db)
     for st in db.scalars(select(Staff)):
-        if (st.engine or {}).get("managed") and st.id not in awake:
-            out[st.id] = {"ok": True, "sleeping": True, "detail": "sleeping (starts when it gets work)"}
-            continue
         try:
             out[st.id] = await get_engine(st.engine).health(st.engine or {})
         except Exception as e:
@@ -154,10 +150,7 @@ def _create_team(db: Session, user: User, roles: list[str], engine: dict) -> tup
             raise HTTPException(400, f"unknown role {rid}")
         if db.get(Staff, rid):
             continue
-        eng = engine
-        if engine.get("managed"):
-            eng = S.managed_hermes_engine(db, engine.get("provider") or "anthropic", engine.get("claude_model") or "", None, S.managed_ports(db))
-        data = _run(catalog.staff_from_role, rid, company, eng)
+        data = _run(catalog.staff_from_role, rid, company, engine)
         if data["is_chief"] and S.chief(db):
             data["is_chief"] = False
         st = _run(S.create_staff, db, data, user.id)
@@ -178,7 +171,7 @@ def apply_team(body: TeamIn, db: Session = Depends(get_db), user: User = Depends
         S.set_setting(db, "max_concurrent_tasks", conc, actor=user.id)
         db.commit()
     return {"created": created, "mcp_tokens": tokens,
-            "note": "MCP tokens are shown once. Put each in its Hermes profile's MCP config (see Staff -> Connect engine)."}
+            "note": "MCP tokens are shown once. Use them only to connect an outside agent to this helper (see Team → Connect)."}
 
 
 class StaffIn(BaseModel):
@@ -260,7 +253,7 @@ def rotate_token(sid: str, db: Session = Depends(get_db), user: User = Depends(c
     token = S.rotate_mcp_token(db, st, user.id)
     url = get_settings().mcp_url()
     return {"mcp_token": token, "url": url,
-            "hermes_config": {"mcp_servers": {"saga-os": {"url": url, "headers": {"Authorization": f"Bearer {token}"}}}},
+            "mcp_config": {"mcpServers": {"saga-os": {"type": "http", "url": url, "headers": {"Authorization": f"Bearer {token}"}}}},
             "claude_code_config": {"mcpServers": {"saga-os": {"type": "http", "url": url, "headers": {"Authorization": f"Bearer {token}"}}}}}
 
 
@@ -577,10 +570,10 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 
 
 # ------------------------------------------------------------------ AI (the engine every helper uses)
-AI_PROVIDERS = ("fake", "claude", "hermes", "claude-direct", "claude-code")
-# "claude"        = Claude through a Hermes that Saga OS installs and runs (all Hermes tools)
-# "claude-direct" = Saga OS calls the Claude API itself (no Hermes tools; fallback)
-# "hermes"        = the owner's own Hermes server
+AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code")
+# "claude"        = Claude Code run with your Claude API key: files, commands in shared folders, web, connectors
+# "claude-code"   = Claude Code on the subscription pool (Harness)
+# "claude-direct" = Saga OS calls the Claude API itself: nothing to install, web + Saga's tools only
 
 
 def _claude_model(model: str | None) -> str:
@@ -589,26 +582,19 @@ def _claude_model(model: str | None) -> str:
     return model or DEFAULT_MODEL
 
 
-def _engine_for(provider: str, model: str | None, base_url: str | None) -> dict:
-    """An engine template; managed ones get their own port and key per helper in _assign_engine."""
+def _engine_for(provider: str, model: str | None, base_url: str | None = None) -> dict:
     if provider == "claude":
-        return {"type": "hermes", "managed": True, "provider": "anthropic", "claude_model": _claude_model(model)}
+        return {"type": "claude-code", "auth": "api", **({"model": model} if model else {})}
     if provider == "claude-direct":
         return {"type": "claude", "model": _claude_model(model)}
     if provider == "claude-code":
         return {"type": "claude-code", **({"model": model} if model else {})}
-    if provider == "hermes":
-        return {"type": "hermes", "base_url": base_url or "http://127.0.0.1:8642/v1", "model": model or "hermes-agent"}
     return {"type": "fake"}
 
 
 def _assign_engine(db: Session, st: Staff, template: dict) -> None:
     keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens", "web")}
-    if template.get("managed"):
-        taken = S.managed_ports(db) - {int((st.engine or {}).get("port") or 0)}
-        st.engine = {**S.managed_hermes_engine(db, template["provider"], template["claude_model"], st.engine, taken), **keep}
-    else:
-        st.engine = {**template, **keep}
+    st.engine = {**template, **keep}
 
 
 def _need_claude_key(db: Session) -> None:
@@ -616,61 +602,27 @@ def _need_claude_key(db: Session) -> None:
         raise HTTPException(400, "Add your Claude API key first, or choose practice mode for now.")
 
 
-def _need_hermes() -> None:
-    from .. import hermes_manager as HM
-
-    if not HM.find_hermes():
-        raise HTTPException(409, "Hermes is not installed yet. Install it first (Settings → AI → Install Hermes).")
-
-
 def _provider_of(e: dict) -> str:
-    if e.get("type") == "hermes":
-        return "claude" if e.get("managed") else "hermes"
     if e.get("type") in ("claude", "anthropic"):
         return "claude-direct"
     if e.get("type") == "claude-code":
-        return "claude-code"
+        return "claude" if e.get("auth") == "api" else "claude-code"
     return e.get("type", "fake")
 
 
 @router.get("/ai")
 def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    from .. import hermes_manager as HM
+    from .. import harness as H
 
     staff = list(db.scalars(select(Staff)))
     providers = {_provider_of(st.engine or {}) for st in staff}
     current = next(iter(providers)) if len(providers) == 1 else ("mixed" if providers else "fake")
-    models = {(st.engine or {}).get("claude_model") or (st.engine or {}).get("model") for st in staff
-              if _provider_of(st.engine or {}) in ("claude", "claude-direct")}
+    models = {(st.engine or {}).get("model") for st in staff if _provider_of(st.engine or {}) in ("claude", "claude-direct")}
+    cli = H.find_cli()
     return {"provider": current, "model": next(iter(models)) if len(models) == 1 else None,
-            "claude_key_hint": S.ai_key_hint(db, "claude"), "hermes": HM.describe(),
-            "staff": {st.id: {"provider": _provider_of(st.engine or {}), "port": (st.engine or {}).get("port")} for st in staff}}
-
-
-@router.get("/hermes")
-def hermes_state(user: User = Depends(current_user)):
-    from .. import hermes_manager as HM
-
-    return HM.describe()
-
-
-class InstallIn(BaseModel):
-    browser_only: bool = False
-
-
-@router.post("/hermes/install")
-def hermes_install(body: InstallIn | None = None, user: User = Depends(current_user)):
-    from .. import hermes_manager as HM
-
-    return HM.installer.start(browser_only=bool(body and body.browser_only))
-
-
-@router.get("/hermes/log/{sid}")
-def hermes_log(sid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    from .. import hermes_manager as HM
-
-    _404(db.get(Staff, sid), "unknown helper")
-    return {"lines": HM.log_tail(sid, 60)}
+            "claude_key_hint": S.ai_key_hint(db, "claude"),
+            "claude_code": {"installed": bool(cli), "path": cli, "install": H.installer.snapshot()},
+            "staff": {st.id: {"provider": _provider_of(st.engine or {})} for st in staff}}
 
 
 class AiCheckIn(BaseModel):
@@ -706,8 +658,6 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
         S.set_ai_key(db, "claude", body.api_key, user.id)
     if body.provider in ("claude", "claude-direct"):
         _need_claude_key(db)
-    if body.provider == "claude":
-        _need_hermes()
     engine = _engine_for(body.provider, body.model, body.base_url)
     changed = []
     for st in db.scalars(select(Staff)):
@@ -715,7 +665,7 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
             _assign_engine(db, st, engine)
             changed.append(st.id)
     S.set_setting(db, "ai_provider", body.provider, actor=user.id)
-    S.audit(db, user.id, "ai.set", body.provider, model=engine.get("claude_model") or engine.get("model"), staff=changed)
+    S.audit(db, user.id, "ai.set", body.provider, model=engine.get("model"), staff=changed)
     db.commit()
     return changed
 
@@ -723,7 +673,6 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
 @router.post("/ai")
 def ai_set(body: AiIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     changed = _apply_ai(db, user, body)
-    S.desired_gateways(db, write_all=True)  # write the Hermes profiles now; the worker starts them when needed
     return {**ai_state(db, user), "changed": changed}
 
 
@@ -906,7 +855,6 @@ def connector_add(body: ConnectorIn, db: Session = Depends(get_db), user: User =
     db.add(c)
     S.audit(db, user.id, "connector.add", c.id, kind=c.kind, approval=c.approval)
     db.commit()
-    S.desired_gateways(db, write_all=True)
     return C.connector_public(c)
 
 
@@ -919,7 +867,6 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
     _connector_apply(c, body)
     S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
     db.commit()
-    S.desired_gateways(db, write_all=True)
     return C.connector_public(c)
 
 
@@ -930,7 +877,6 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
     db.delete(_404(db.get(Connector, cid), "unknown connector"))
     S.audit(db, user.id, "connector.remove", cid)
     db.commit()
-    S.desired_gateways(db, write_all=True)
     return {"ok": True}
 
 
@@ -1294,17 +1240,13 @@ def talent_hire(slug: str, body: HireIn | None = None, db: Session = Depends(get
     base, n = sid, 2
     while db.get(Staff, sid):
         sid, n = f"{base}-{n}", n + 1
-    template = S.default_engine(db)
-    engine = (S.managed_hermes_engine(db, template["provider"], template["claude_model"], None, S.managed_ports(db))
-              if template.get("managed") else template)
+    engine = S.default_engine(db)
     st = _run(S.create_staff, db, {
         "id": sid, "name": (body and body.name) or a["name"], "role": f"agency:{slug}", "job": T.job_for(a), "engine": engine,
         "permissions": {"actions": dict(T.DIVISION_PERMISSIONS.get(a["division"], {}))}, "shifts": []}, user.id)
     S.rotate_mcp_token(db, st, user.id)
     S.audit(db, user.id, "talent.hire", st.id, specialist=slug, division=a["division"])
     db.commit()
-    if engine.get("managed"):
-        S.desired_gateways(db, write_all=True)
     return X.staff(st)
 
 
@@ -1407,19 +1349,16 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         _run(S.write_knowledge, db, name, content, user.id)
     S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
     engine = dict(body.engine)
-    provider = {"claude": "claude", "claude-direct": "claude-direct", "hermes": "hermes"}.get(engine.get("type", ""), "fake")
+    provider = {"claude": "claude", "claude-direct": "claude-direct", "claude-code": "claude-code"}.get(engine.get("type", ""), "fake")
     if provider in ("claude", "claude-direct"):
         if body.api_key and body.api_key.strip():
             S.set_ai_key(db, "claude", body.api_key, user.id)
         _need_claude_key(db)
-    if provider == "claude":
-        _need_hermes()
     engine = _engine_for(provider, engine.get("model"), engine.get("base_url"))
     created, tokens = _create_team(db, user, roles, engine)
     S.set_setting(db, "ai_provider", provider, actor=user.id)
-    if provider == "claude":
-        S.desired_gateways(db, write_all=True)
-    S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
+    if provider in ("claude", "claude-code"):
+        S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
     S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)
     db.commit()
@@ -1429,7 +1368,7 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         t = S.create_task(db, who, "manual", f"Practice task: draft a short post that introduces {company} to new customers, "
                           "in our voice, using only facts from the company files. Propose it for approval.", user.id)
         practice = {"task_id": t.id, "staff_id": who}
-    return {"created": created, "mcp_tokens": tokens if provider == "hermes" else {},
+    return {"created": created, "mcp_tokens": {},
             "mcp_url": get_settings().mcp_url(), "practice": practice, "engine": provider}
 
 
@@ -1738,3 +1677,54 @@ def docs_graph(db: Session = Depends(get_db), user: User = Depends(current_user)
     from .. import docs as D
 
     return D.graph(db)
+
+
+# ------------------------------------------------------------------ loops: scorecard, self-improvement, memory
+@router.get("/loops")
+def loops_scorecard(days: int = 30, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import loops as L
+
+    return {"days": days, "loops": L.scorecard(db, days=max(1, min(days, 365)))}
+
+
+@router.get("/improvements")
+def improvements(limit: int = 30, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import loops as L
+    from ..models import Improvement
+
+    rows = db.scalars(select(Improvement).order_by(Improvement.created_at.desc()).limit(min(limit, 200)))
+    names = {s.id: s.name for s in db.scalars(select(Staff))}
+    shifts = {sh.id: sh.name for sh in db.scalars(select(Shift))}
+    return [{**L.serialize(i), "staff": names.get(i.staff_id, i.staff_id), "by_name": names.get(i.by, "You" if i.by == "owner" else i.by),
+             "shift": shifts.get(i.ref)} for i in rows]
+
+
+@router.post("/improvements/{iid}/undo")
+def improvement_undo(iid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import loops as L
+    from ..models import Improvement
+
+    imp = _404(db.get(Improvement, iid), "unknown change")
+    try:
+        L.undo(db, imp, by=user.id)
+    except L.LoopError as e:
+        raise HTTPException(e.status, str(e)) from e
+    S.audit(db, user.id, "improvement.undo", iid)
+    db.commit()
+    return L.serialize(imp)
+
+
+@router.post("/loops/retro")
+def run_retro_now(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Start the weekly retro now (the Chief of Staff reviews every loop and improves what isn't working)."""
+    from .. import loops as L
+
+    L.ensure_retro(db)
+    c = S.chief(db)
+    if not c:
+        raise HTTPException(400, "there is no Chief of Staff to run the retro")
+    sh = next(s for s in c.shifts if s.name in ("weekly-retro", "Weekly retro"))
+    t = S.create_task(db, c.id, "shift", sh.brief, user.id)
+    t.shift_id = sh.id
+    db.commit()
+    return {"task_id": t.id}

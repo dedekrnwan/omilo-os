@@ -21,6 +21,7 @@ class TaskContext:
     engine_config: dict = field(default_factory=dict)
     emit: Callable[..., None] = field(default=lambda kind, **d: None)  # live progress (events.Emitter)
     resources: Any = None  # capabilities.Resources: folders, connectors, skills, files
+    memory: str = ""  # lessons, last runs of this job, recent decisions (memory.brief_for)
 
 
 @dataclass
@@ -63,10 +64,10 @@ class Engine:
 
 def get_engine(config: dict) -> Engine:
     t = (config or {}).get("type", "fake")
-    if t in ("hermes", "openai"):
-        from .hermes import HermesEngine
+    if t in ("hermes", "openai"):  # Hermes was removed: such helpers are moved to Claude Code on start-up
+        from .claude_code import ClaudeCodeEngine
 
-        return HermesEngine()
+        return ClaudeCodeEngine()
     if t in ("claude", "anthropic"):
         from .claude import ClaudeEngine
 

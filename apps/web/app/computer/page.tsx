@@ -92,8 +92,8 @@ export default function Computer() {
       <div className="soft" style={{ marginTop: 24 }}>
         <b style={{ fontWeight: 500 }}>Good to know</b>
         <ul style={{ paddingLeft: 18, margin: "8px 0 0", fontSize: 14, lineHeight: 1.7 }}>
-          <li>Helpers on the <b>Claude Code pool</b> get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.</li>
-          <li>Helpers on <b>Hermes</b> are told which folders to use, but Hermes has its own terminal, so it can reach more of this computer. Use the pool for strict limits.</li>
+          <li>Helpers on <b>Claude Code</b> (your API key or the pool) get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.</li>
+          <li>Helpers on <b>built-in Claude</b> can't open files at all; use Claude Code (your key or the pool) for folder work.</li>
           <li>Even with commands on, deleting files, pushing code, publishing and deploying are blocked: helpers ask you in the Inbox instead.</li>
           <li>Running Saga OS in Docker? Only folders mounted into the container can be shared.</li>
         </ul>

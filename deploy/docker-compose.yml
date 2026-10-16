@@ -26,7 +26,7 @@ services:
       SAGA_TIMEZONE: ${SAGA_TIMEZONE:-UTC}
       SAGA_COOKIE_SECURE: "true"
       SAGA_EMBEDDED_WORKER: "false"
-      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes: [sagadata:/data]
     ports: ["127.0.0.1:${SAGA_PORT:-7700}:7700"]
     labels:

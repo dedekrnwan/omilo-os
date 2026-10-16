@@ -9,15 +9,15 @@ roles:
     does:
       - 'Writes you a short brief every morning'
       - 'Passes your requests to the right helper'
-      - 'Reviews the week every Friday and suggests improvements'
+      - 'Reviews every loop on Fridays and improves the ones that are not working'
     is_chief: true
     job: |
       You are the founder's single point of contact at {company}. Answer questions about the company and the team,
       delegate work to the right staff agent with create_task, write the morning brief, keep the Inbox moving,
-      and run the Friday retro (propose prompt changes for other agents, as staff.change proposals).
+      and run the Friday retro: review_week, then improve (at most 3 changes; they are measured and rolled back if worse).
     shifts:
       - {name: morning-brief, cron: "30 7 * * *", brief: "Write the morning brief: what happened since yesterday, what needs the founder, top 3 for today."}
-      - {name: weekly-retro, cron: "0 16 * * 5", brief: "Weekly retro: review the week's tasks and rejected proposals; propose at most 3 improvements."}
+      - {name: weekly-retro, cron: "0 16 * * 5", brief: "Weekly retro. Call review_week, then improve the loops that are not working: at most 3 changes, each with a clear reason. Use improve to rewrite a helper's instructions (kind=job), a regular job's brief or schedule (shift_brief, shift_schedule), or to merge duplicate lessons (lessons). Changes apply at once and are measured; ones that make results worse are rolled back. Keep what works. Report what you changed and what you left alone, and why."}
     permissions: {actions: {staff.delegate: 3}}
   marketing:
     name: Marketing

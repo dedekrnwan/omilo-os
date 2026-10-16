@@ -19,7 +19,7 @@ from .security import staff_from_mcp_token
 
 router = APIRouter()
 SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
-SERVER_INFO = {"name": "saga-os", "title": "Saga OS gateway", "version": "0.2.0"}
+SERVER_INFO = {"name": "saga-os", "title": "Saga OS gateway", "version": "0.3.0"}
 INSTRUCTIONS = (
     "You are a staff agent of a company run on Saga OS. Use these tools to read company context, "
     "save checkpoints, report results and ask for approval. Agents propose, the founder decides: "
@@ -79,6 +79,24 @@ TOOLS: list[dict] = [
                                                       "base_version": _s("integer", "version you read (omit for a new doc)"),
                                                       "summary": _s("string", "one line: what you changed and why"),
                                                       "task_id": _s("string", "task id, if this is part of a task")}, "required": ["path", "content"]}},
+    {"name": "remember", "description": "Keep something for next time in your memory (Docs → Memory, which the founder can read and edit). "
+                                         "Use it for facts, preferences and what worked. Give a title to keep a topic note, e.g. 'Posting times'.",
+     "inputSchema": {"type": "object", "properties": {"text": _s("string", "what to remember, one or two sentences"),
+                                                      "title": _s("string", "optional topic note title")}, "required": ["text"]}},
+    {"name": "recall", "description": "Search memory and all Docs (ranked full-text). Use before you start: past runs, lessons, decisions, notes.",
+     "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for"),
+                                                      "memory_only": _s("boolean", "only search the Memory folder")}, "required": ["query"]}},
+    {"name": "review_week", "description": "Chief of Staff, for the weekly retro: every loop's scorecard, each helper's jobs, your decisions "
+                                            "and notes, their lessons and schedules, and recent improvements with their measured effect.",
+     "inputSchema": {"type": "object", "properties": {"days": _s("integer", "how many days back (default 7)")}, "required": []}},
+    {"name": "improve", "description": "Chief of Staff, in the retro: change how a helper works, right away. kind = job (new full instructions), "
+                                        "shift_brief / shift_schedule (needs shift_id; schedule is cron), or lessons (the cleaned-up list). "
+                                        "At most 3 a week. Each change is measured and rolled back automatically if results get worse. "
+                                        "Permissions, budgets, engines and approvals cannot be changed.",
+     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "the helper to improve"), "kind": _s("string", "job | shift_brief | shift_schedule | lessons"),
+                                                      "change": _s("string", "the new text (for lessons: one lesson per line)"), "shift_id": _s("string", "for shift_* kinds"),
+                                                      "reason": _s("string", "why, with the evidence from review_week"),
+                                                      "task_id": _s("string", "your retro task id")}, "required": ["staff_id", "kind", "change", "reason"]}},
     {"name": "share_file", "description": "Show the founder a file you made or found (report, image, CSV, code, PDF) as a card they can preview and download, "
                                            "in the current chat or task thread. The file must be in your workspace or a shared folder (25 MB max).",
      "inputSchema": {"type": "object", "properties": {"path": _s("string", "absolute path, or relative to your workspace"), "note": _s("string", "one line about it"),
@@ -178,6 +196,30 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
                                    "current_version": e.extra["current"]["version"]}
             raise S.DomainError(str(e), e.code) from e
 
+    if name in ("remember", "recall"):
+        from . import docs as D
+        from . import memory as M
+
+        try:
+            if name == "remember":
+                path = M.remember(db, st, str(args["text"]), (str(args["title"]).strip() or None) if args.get("title") else None)
+                return "allowed", {"saved_in": path}
+            return "allowed", {"results": D.search(db, str(args.get("query") or ""), 12, folder=M.ROOT if args.get("memory_only") else None)}
+        except D.DocError as e:
+            raise S.DomainError(str(e), e.code) from e
+    if name in ("review_week", "improve"):
+        from . import loops as L
+
+        if not st.is_chief:
+            raise S.DomainError("only the Chief of Staff runs the retro", 403)
+        if name == "review_week":
+            return "allowed", L.review(db, int(args.get("days") or 7))
+        try:
+            imp = L.improve(db, st, str(args["staff_id"]), str(args["kind"]), args["change"], str(args.get("reason") or ""),
+                            shift_id=args.get("shift_id"), task_id=args.get("task_id"))
+        except L.LoopError as e:
+            raise S.DomainError(str(e), e.status) from e
+        return "allowed", {"improvement_id": imp.id, "message": "Applied. It will be measured after a week and rolled back if results get worse."}
     if name == "share_file":
         from pathlib import Path as _P
 

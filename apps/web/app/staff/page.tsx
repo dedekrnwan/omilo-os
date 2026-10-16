@@ -84,8 +84,7 @@ function StaffDetail({ id }: { id: string }) {
       </div>
       {connect && (
         <div className="paper" style={{ marginBottom: 20 }}>
-          <b>Shown once.</b> <span className="small">Add this MCP server to the agent's Hermes profile (or a Claude Code config).</span>
-          <label>Hermes</label><pre className="code">{JSON.stringify(connect.hermes_config, null, 2)}</pre>
+          <b>Shown once.</b> <span className="small">Only needed to connect an agent that runs outside Saga OS to this helper: add this MCP server to its config.</span>
           <label>Claude Code (.mcp.json)</label><pre className="code">{JSON.stringify(connect.claude_code_config, null, 2)}</pre>
         </div>
       )}
@@ -97,22 +96,19 @@ function StaffDetail({ id }: { id: string }) {
           <textarea rows={10} value={edit.job || ""} onChange={(e) => setEdit({ ...edit, job: e.target.value })} />
           <div className="grid2">
             <div><label>AI</label>
-              <select value={edit.engine?.type || "fake"} onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, type: e.target.value } })}>
-                <option value="fake">Practice mode (no AI)</option><option value="claude">Claude directly (no Hermes tools)</option><option value="claude-code">Claude Code pool (Harness)</option><option value="hermes">{edit.engine?.managed ? "Claude through Hermes (run by Saga OS)" : "Hermes server"}</option>
+              <select value={edit.engine?.type === "claude-code" ? (edit.engine?.auth === "api" ? "cc-api" : "cc-pool") : edit.engine?.type || "fake"}
+                onChange={(e) => { const v = e.target.value; const keep = { ...(edit.engine || {}) }; delete keep.auth;
+                  setEdit({ ...edit, engine: v === "cc-api" ? { ...keep, type: "claude-code", auth: "api" } : v === "cc-pool" ? { ...keep, type: "claude-code" } : { ...keep, type: v } }); }}>
+                <option value="cc-api">Claude Code · your API key</option><option value="cc-pool">Claude Code · subscription pool</option>
+                <option value="claude">Built-in Claude (light)</option><option value="fake">Practice mode (no AI)</option>
               </select></div>
             <div><label>Max minutes per task</label><input type="number" value={edit.max_task_minutes || 30} onChange={(e) => setEdit({ ...edit, max_task_minutes: Number(e.target.value) })} /></div>
           </div>
           {edit.engine?.type === "claude" && (
             <div><label>Claude model</label><input value={edit.engine?.model || ""} placeholder="claude-sonnet-5-5" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, model: e.target.value } })} /></div>
           )}
-          {edit.engine?.type === "hermes" && edit.engine?.managed && (
-            <p className="small">Saga OS runs this helper&apos;s Hermes on port {edit.engine?.port} with {edit.engine?.claude_model}. Change the model for everyone in Settings → AI.</p>
-          )}
-          {edit.engine?.type === "hermes" && !edit.engine?.managed && (
-            <div className="grid2">
-              <div><label>Hermes API base URL</label><input value={edit.engine?.base_url || ""} placeholder="http://127.0.0.1:8642/v1" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, base_url: e.target.value } })} /></div>
-              <div><label>API key env var</label><input value={edit.engine?.api_key_env || ""} placeholder="HERMES_API_KEY" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, api_key_env: e.target.value } })} /></div>
-            </div>
+          {edit.engine?.type === "claude-code" && (
+            <div><label>Model (optional)</label><input value={edit.engine?.model || ""} placeholder="default" onChange={(e) => setEdit({ ...edit, engine: { ...edit.engine, model: e.target.value || undefined } })} /></div>
           )}
           <div className="acts" style={{ marginTop: 12 }}><button className="btn primary" onClick={() => save(edit)}>Save</button></div>
         </div>
@@ -126,6 +122,18 @@ function StaffDetail({ id }: { id: string }) {
                   {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td></tr>
             ))}
           </tbody></table></div>
+        </div>
+      </div>
+      <div className="sec" id="memory">
+        <h2>Memory</h2>
+        <p className="small" style={{ marginTop: 0 }}>What {s.name} has learned, as notes in Docs. {s.name} reads them before every run; edit them and it follows your version.</p>
+        <div className="acts">
+          <Link className="btn" href={`/docs/?path=${encodeURIComponent(`Memory/${s.id}/Lessons.md`)}`}><i className="ri-lightbulb-line" />Lessons</Link>
+          <Link className="btn" href={`/docs/?path=${encodeURIComponent(`Memory/${s.id}/Notes.md`)}`}><i className="ri-sticky-note-line" />Notes</Link>
+          {s.shifts.map((sh) => (
+            <Link key={sh.id} className="btn quiet" href={`/docs/?path=${encodeURIComponent(`Memory/Loops/${s.id} · ${sh.name}.md`)}`}><i className="ri-repeat-line" />{sh.name} log</Link>
+          ))}
+          <Link className="btn quiet" href="/docs/?graph=1"><i className="ri-share-circle-line" />Graph</Link>
         </div>
       </div>
       <BudgetSection s={s as any} onSave={save} />

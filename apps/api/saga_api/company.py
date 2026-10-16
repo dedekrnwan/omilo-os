@@ -1,6 +1,6 @@
 """Several companies in one Saga OS, fully separate.
 
-Each company has its own database, Docs vault, knowledge, skills, files, workspaces, Hermes homes and Claude Code
+Each company has its own database, Docs vault, knowledge, skills, files, workspaces and Claude Code
 pool. Only the owner's login is shared (it lives in the first company's database).
 
 - The first company ("main") keeps the original layout: everything directly in <data_dir>.
@@ -194,21 +194,6 @@ def each(include_archived: bool = False) -> Iterator[str]:
     for cid in ids(include_archived):
         with use(cid):
             yield cid
-
-
-def ports_everywhere() -> set[int]:
-    """Local ports any company's managed Hermes uses (so a new helper never takes another company's port)."""
-    from .db import session_scope
-    from .services import managed_ports
-
-    out: set[int] = set()
-    for cid in ids(include_archived=True):
-        try:
-            with session_scope(cid) as db:
-                out |= managed_ports(db)
-        except Exception:  # noqa: BLE001 - a broken company must not block hiring elsewhere
-            continue
-    return out
 
 
 def summary(cid: str) -> dict:

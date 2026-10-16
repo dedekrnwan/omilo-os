@@ -1,7 +1,7 @@
 """What a helper can use in a run: folders on this computer, connectors (MCP servers), skills and attached files.
 
 Defaults come from each item's "default for all helpers" switch; a chat can switch items on or off for itself.
-Engines turn this into their own configuration (Claude Code flags, Hermes mcp_servers, prompt notes).
+Engines turn this into their own configuration (Claude Code flags, prompt notes).
 """
 from __future__ import annotations
 

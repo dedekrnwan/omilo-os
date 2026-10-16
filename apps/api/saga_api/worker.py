@@ -27,12 +27,10 @@ def _mcp_url() -> str:
 class Worker:
     def __init__(self):
         self.running: dict[str, asyncio.Task] = {}
+        self.retry_at: dict[str, float] = {}  # task id -> monotonic time it may run again (after a transient failure)
+        self._daily: dict[str, float] = {}    # company -> last time the loop housekeeping ran
         self.chatting: dict[str, asyncio.Task] = {}
         self._stop = asyncio.Event()
-        from .hermes_manager import Supervisor
-
-        self.hermes = Supervisor()
-        self._hermes_checked = 0.0
 
     # ------------------------------------------------------------ lifecycle
     def recover(self):
@@ -105,34 +103,14 @@ class Worker:
 
     async def stop(self):
         self._stop.set()
-        await self.hermes.stop_all()
         for t in list(self.running.values()) + list(self.chatting.values()):
             t.cancel()
 
     # ------------------------------------------------------------ one tick
-    async def manage_hermes(self, force: bool = False):
-        """Every ~5 s: write managed Hermes profiles and keep their gateways running."""
-        import time
-
-        if not force and time.monotonic() - self._hermes_checked < 5:
-            return
-        self._hermes_checked = time.monotonic()
-        desired: dict[str, dict] = {}
-        for cid in C.each():
-            try:
-                with session_scope() as db:
-                    desired.update({f"{cid}/{sid}": d for sid, d in S.desired_gateways(db).items()})
-            except Exception:
-                log.exception("hermes profiles for %s failed", cid)
-        await self.hermes.reconcile(desired)
-
     async def tick(self):
-        try:
-            await self.manage_hermes()
-        except Exception:
-            log.exception("managing hermes failed")
         for cid in C.each():  # every company runs on its own: its pause switch, concurrency limit and schedule
             try:
+                self.loop_housekeeping(cid)
                 self.schedule_shifts()
                 self.weekly_digest()
                 self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
@@ -141,6 +119,20 @@ class Worker:
                 log.exception("worker tick failed for %s", cid)
         self.running = {k: v for k, v in self.running.items() if not v.done()}
         self.chatting = {k: v for k, v in self.chatting.items() if not v.done()}
+
+    def loop_housekeeping(self, cid: str):
+        """Every few hours per company: make sure the retro loop exists, and measure retro changes (keep or roll back)."""
+        from . import loops
+
+        if time.monotonic() - self._daily.get(cid, -1e9) < 3 * 3600:
+            return
+        self._daily[cid] = time.monotonic()
+        try:
+            with session_scope() as db:
+                loops.ensure_retro(db)
+                loops.evaluate(db)
+        except Exception:
+            log.exception("loop housekeeping failed for %s", cid)
 
     def schedule_shifts(self):
         with session_scope() as db:
@@ -173,6 +165,8 @@ class Worker:
             for t in queued:
                 if slots <= 0:
                     break
+                if self.retry_at.get(t.id, 0) > time.monotonic():
+                    continue  # waiting before another try
                 st = db.get(Staff, t.staff_id)
                 if not st or st.status != "active" or t.staff_id in busy_staff:
                     continue
@@ -205,7 +199,7 @@ class Worker:
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop),
+                emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop), memory=_memory(db, st, t),
             )
             return ctx, dict(st.engine or {}), int(st.max_task_minutes or 30)
 
@@ -228,6 +222,12 @@ class Worker:
         self.finish(task_id, res)
 
     def finish(self, task_id: str, res: EngineResult):
+        retry: dict = {}
+        self._finish(task_id, res, retry)
+        if retry:  # after the database session closed (the event is written with its own)
+            Emitter(retry["staff_id"], task_id=task_id)("status", state="retrying", error=retry["error"], wait_s=retry["wait_s"])
+
+    def _finish(self, task_id: str, res: EngineResult, retry: dict):
         with session_scope() as db:
             t = db.get(Task, task_id)
             if t is None or t.status == "cancelled":
@@ -235,6 +235,15 @@ class Worker:
             t.cost_usd += res.cost_usd
             t.tokens += res.tokens
             report = db.scalar(select(Report).where(Report.task_id == t.id))
+            from . import loops
+
+            if res.error and report is None and t.origin != "execution" and t.attempts < 3 and loops.transient(res.error):
+                delay = 30 * 2 ** (t.attempts - 1)  # 30 s, then 60 s
+                t.status, t.error = "queued", f"try {t.attempts} failed ({res.error[:200]}); trying again in {delay} s"
+                self.retry_at[t.id] = time.monotonic() + delay
+                retry.update(staff_id=t.staff_id, error=res.error[:300], wait_s=delay)
+                return
+            self.retry_at.pop(t.id, None)
             if res.error:
                 S.finish_task(db, t, "failed", error=res.error, result_text=res.text)
                 S.alert(db, f"Task failed: {t.brief[:80]}", res.error, t.staff_id, t.id)
@@ -253,6 +262,12 @@ class Worker:
             rep = db.scalar(select(Report).where(Report.task_id == t.id))
             summary = f"**{t.status.upper()}**: " + (rep.headline if rep else res.error or "")
             S.post_message(db, th, "system", "saga-os", summary)
+            try:  # the run log of a regular job, which its next run reads
+                from . import memory
+
+                memory.log_run(db, t)
+            except Exception:
+                log.exception("run log failed")
 
     # ------------------------------------------------------------ chats
     async def answer_thread(self, thread_id: str):
@@ -272,6 +287,7 @@ class Worker:
                 note += f"\nThis thread is about task {t.id} ({t.status}): {t.brief}\nReport: {rep.headline if rep else '-'}"
             if th.scope == "proposal" and (p := db.get(Proposal, th.ref_id)):
                 note += f"\nThis thread is about proposal {p.id} ({p.status}): {p.title}\nCurrent text:\n{S.current_body(p)}"
+            note += _memory(db, st, None)
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
                               mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
@@ -293,12 +309,20 @@ class Worker:
             S.post_message(db, th, "agent" if not res.error else "system", th.staff_id, text, awaiting_reply=False)
 
 
+def _memory(db, st, t) -> str:
+    try:
+        from . import memory
+
+        return memory.brief_for(db, st, t)
+    except Exception:  # noqa: BLE001 - a broken note must not stop the work
+        log.exception("memory brief failed")
+        return ""
+
+
 def _engine_label(cfg: dict) -> str:
     t = (cfg or {}).get("type", "fake")
-    if t == "hermes":
-        return f"Hermes · {cfg.get('claude_model')}" if cfg.get("managed") else "Hermes"
     if t == "claude-code":
-        return "Claude Code pool" + (f" · {cfg['model']}" if cfg.get("model") else "")
+        return ("Claude Code · your API key" if cfg.get("auth") == "api" else "Claude Code pool") + (f" · {cfg['model']}" if cfg.get("model") else "")
     if t == "claude":
         return f"Claude · {cfg.get('model') or ''}".strip(" ·")
     return "Practice mode"

@@ -37,7 +37,7 @@ session = arg("--resume") or f"sess-{int(time.time() * 1000)}"
 log = os.environ.get("FAKE_CLAUDE_LOG")
 if log:
     with open(log, "a") as f:
-        f.write(json.dumps({"token": token[-6:], "resume": arg("--resume"), "prompt": prompt[:60], "tools": arg("--allowedTools"),
+        f.write(json.dumps({"token": token[-6:], "api_key": os.environ.get("ANTHROPIC_API_KEY", "")[-6:], "resume": arg("--resume"), "prompt": prompt[:60], "tools": arg("--allowedTools"),
                             "mode": arg("--permission-mode"), "cfgdir": os.environ.get("CLAUDE_CONFIG_DIR"),
                             "argv": sys.argv[1:], "cwd": os.getcwd(), "system": arg("--append-system-prompt", "")[-3000:],
                             "mcp": list(json.load(open(arg("--mcp-config")))["mcpServers"]) if arg("--mcp-config") else []}) + "\n")

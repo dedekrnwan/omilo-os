@@ -3,13 +3,13 @@ import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
-import HermesSetup from "@/components/HermesSetup";
+import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
 import NotifySettings from "@/components/NotifySettings";
 import { Err } from "@/components/ui";
 import { api, when } from "@/lib/api";
 
 type AiState = { provider: string; model: string | null; claude_key_hint: string | null;
-  staff: Record<string, { provider: string; port?: number }> };
+  staff: Record<string, { provider: string }> };
 type Audit = { id: number; at: string; actor: string; action: string; ref: string; detail: Record<string, unknown> };
 
 export default function Settings() {
@@ -22,14 +22,8 @@ export default function Settings() {
   const [editAi, setEditAi] = useState(false);
   const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });
   const [aiMsg, setAiMsg] = useState<string | null>(null);
-  const [hermesReady, setHermesReady] = useState(false);
-  const [noHermes, setNoHermes] = useState(false);
-  const [logFor, setLogFor] = useState<string | null>(null);
-  const [logLines, setLogLines] = useState<string[]>([]);
-  const showLog = async (sid: string) => {
-    setLogFor(sid);
-    try { setLogLines((await api<{ lines: string[] }>(`/hermes/log/${sid}`)).lines); } catch (e: any) { setLogLines([e.message]); }
-  };
+  const [ccReady, setCcReady] = useState(false);
+  const [light, setLight] = useState(false);
   const load = useCallback(async () => {
     try {
       setAi(await api<AiState>("/ai"));
@@ -52,13 +46,13 @@ export default function Settings() {
       const isClaude = provider === "claude" || provider === "claude-direct";
       await api("/ai", { body: isClaude ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
       setEditAi(false); setClaude({ key: "", model: "", ok: false });
-      setAiMsg(provider === "claude" ? "Saved. Your helpers now run on Claude inside Hermes. It takes a few seconds to start."
-        : provider === "claude-direct" ? "Saved. Your helpers use Claude directly (no Hermes tools)." : "Saved. All helpers are in practice mode.");
+      setAiMsg(provider === "claude" ? "Saved. Your helpers now run in Claude Code with your API key."
+        : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Saga's tools)." : "Saved. All helpers are in practice mode.");
       load();
     } catch (e: any) { setErr(e.message); }
   };
-  const aiLabel = (p?: string) => ({ claude: "Claude through Hermes (run by Saga OS)", "claude-direct": "Claude directly (no Hermes tools)",
-    fake: "Practice mode (no AI)", hermes: "Your own Hermes server", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
+  const aiLabel = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Saga's tools)",
+    fake: "Practice mode (no AI)", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p;
   if (!overview) return null;
   return (
     <div>
@@ -81,27 +75,19 @@ export default function Settings() {
         ) : (
           <>
             <ClaudeSetup value={claude} onChange={setClaude} savedHint={ai?.claude_key_hint} />
-            {claude.ok && !noHermes && <HermesSetup autoInstall onReady={setHermesReady} />}
-            {claude.ok && !hermesReady && (
-              <label className="check"><input type="checkbox" checked={noHermes} onChange={(e) => setNoHermes(e.target.checked)} />
-                <span>Use Claude without Hermes for now (internet search, but no browser or other tools)</span></label>
+            {claude.ok && !light && <ClaudeCodeSetup autoInstall onReady={setCcReady} />}
+            {claude.ok && !ccReady && (
+              <label className="check"><input type="checkbox" checked={light} onChange={(e) => setLight(e.target.checked)} />
+                <span>Use built-in Claude for now (nothing to install: web search and Saga&apos;s tools, but no files, commands or browser)</span></label>
             )}
             <div className="acts" style={{ marginTop: 12 }}>
-              <button className="btn primary" disabled={!(claude.ok && claude.model && (hermesReady || noHermes))}
-                onClick={() => saveAi(noHermes ? "claude-direct" : "claude")}>Use Claude for all helpers</button>
+              <button className="btn primary" disabled={!(claude.ok && claude.model && (ccReady || light))}
+                onClick={() => saveAi(light ? "claude-direct" : "claude")}>Use Claude for all helpers</button>
               <button className="btn" onClick={() => setEditAi(false)}>Cancel</button>
             </div>
           </>
         )}
-        {ai && Object.values(ai.staff).some((x) => x.provider === "claude") && (
-          <div style={{ marginTop: 14 }}>
-            <HermesSetup />
-            <p className="small">Each helper has its own Hermes. {Object.entries(ai.staff).filter(([, x]) => x.provider === "claude").map(([sid]) => (
-              <button key={sid} className="btn quiet" onClick={() => showLog(sid)}>{sid} log</button>))}</p>
-            {logFor && <pre className="code" style={{ maxHeight: 260 }}>{`# ${logFor}\n` + (logLines.join("\n") || "(no output yet)")}</pre>}
-          </div>
-        )}
-        <p className="small" style={{ marginTop: 10 }}>Running your own Hermes server instead? Set it per helper under Staff.</p>
+        <p className="small" style={{ marginTop: 10 }}>Prefer your Claude subscriptions? Add them on the Harness page and choose the pool per helper under Team.</p>
       </div>
       <div className="grid2">
         <div className="paper">

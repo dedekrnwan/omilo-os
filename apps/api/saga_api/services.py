@@ -3,7 +3,6 @@
 Every state change writes an audit event. Functions take an open Session and commit themselves.
 """
 import datetime as dt
-import os
 import re
 import secrets
 from pathlib import Path
@@ -92,33 +91,12 @@ def ai_key_hint(db: Session, provider: str) -> str | None:
     return k["hint"] if k else None
 
 
-def managed_hermes_engine(db: Session, provider: str, model: str, current: dict | None = None, taken: set[int] | None = None) -> dict:
-    """Engine config for a helper whose Hermes is run by Saga OS. Keeps its port and key when it already has them."""
-    from . import hermes_manager as HM
-
-    cur = current or {}
-    if cur.get("managed") and cur.get("port") and cur.get("api_key_enc"):
-        port, key_enc = int(cur["port"]), cur["api_key_enc"]
-    else:
-        from .company import ports_everywhere
-
-        port = HM.allocate_port((taken or set()) | ports_everywhere())
-        key_enc = encrypt(HM.new_api_key())
-    return {"type": "hermes", "managed": True, "provider": provider, "claude_model": model, "model": "hermes-agent",
-            "port": port, "base_url": f"http://127.0.0.1:{port}/v1", "api_key_enc": key_enc}
-
-
-def managed_ports(db: Session) -> set[int]:
-    return {int((st.engine or {}).get("port")) for st in db.scalars(select(Staff))
-            if (st.engine or {}).get("managed") and (st.engine or {}).get("port")}
-
-
 IDLE_MINUTES = 10
 
 
 def awake_staff(db: Session) -> set[str]:
-    """Helpers whose Hermes should be running: always-on ones (the Chief), and anyone with work now or in the last minutes.
-    Everyone else sleeps, so hiring twenty specialists does not mean twenty running engines."""
+    """Helpers that are awake: always-on ones (the Chief), and anyone with work now or in the last minutes.
+    Everyone else shows as sleeping (idle); they wake the moment they get work."""
     since = now() - dt.timedelta(minutes=IDLE_MINUTES)
     busy = set(db.scalars(select(Task.staff_id).where(Task.status.in_(["queued", "running"]))))
     recent = set(db.scalars(select(Task.staff_id).where(Task.ended_at >= since)))
@@ -128,40 +106,10 @@ def awake_staff(db: Session) -> set[str]:
     return busy | recent | chatting | chatted | always
 
 
-def desired_gateways(db: Session, write_all: bool = False) -> dict[str, dict]:
-    """Write managed helpers' Hermes profiles; return staff_id -> {hash} for the awake ones (the supervisor runs those)."""
-    from . import hermes_manager as HM
-    from .capabilities import connector_runtime
-    from .models import Connector
-
-    out: dict[str, dict] = {}
-    awake = awake_staff(db)
-    conns = [connector_runtime(c) for c in db.scalars(select(Connector).where(Connector.enabled.is_(True), Connector.default_on.is_(True)))]
-    claude_key = ai_api_key(db, "claude") or os.environ.get("ANTHROPIC_API_KEY")
-    for st in db.scalars(select(Staff)):
-        e = st.engine or {}
-        if not (e.get("type") == "hermes" and e.get("managed")) or st.status == "retired":
-            continue
-        if st.id not in awake and not write_all:
-            continue
-        token = decrypt(st.mcp_token_enc)
-        key = decrypt(e.get("api_key_enc"))
-        if not token or not key:
-            continue
-        h = HM.write_profile(st.id, port=int(e["port"]), api_key=key, mcp_url=get_settings().mcp_url(), mcp_token=token,
-                             provider=e.get("provider") or "anthropic", model=e.get("claude_model") or "claude-sonnet-5-5",
-                             provider_key=claude_key, connectors=conns)
-        if st.id in awake:
-            out[st.id] = {"hash": h, "home": str(HM.home_for(st.id))}
-    return out
-
-
 def default_engine(db: Session) -> dict:
     """The engine a new hire gets: the same kind as the Chief of Staff's (without its secrets)."""
     c = chief(db)
     e = dict((c.engine if c else None) or {"type": "fake"})
-    if e.get("managed"):
-        return {"type": "hermes", "managed": True, "provider": e.get("provider") or "anthropic", "claude_model": e.get("claude_model") or ""}
     e.pop("api_key_enc", None)
     e.pop("port", None)
     e.pop("always_on", None)
@@ -196,12 +144,6 @@ def create_staff(db: Session, data: dict, actor: str) -> Staff:
 
 
 def update_staff(db: Session, st: Staff, data: dict, actor: str) -> Staff:
-    eng = data.get("engine")
-    if eng is not None:  # the web app never sees api_key_enc: keep it when the helper stays managed
-        old = st.engine or {}
-        if eng.get("managed") and old.get("managed") and "api_key_enc" not in eng:
-            eng = {**eng, "api_key_enc": old.get("api_key_enc"), "port": old.get("port"), "base_url": old.get("base_url")}
-        data = {**data, "engine": eng}
     for k in ("name", "job", "engine", "permissions", "budget_usd_month", "max_task_minutes", "status", "role"):
         if k in data and data[k] is not None:
             setattr(st, k, data[k])
@@ -418,6 +360,14 @@ def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str)
         raise DomainError("decision must be approve, reject or changes")
     audit(db, by, f"proposal.{decision}", p.id, note=note[:300])
     db.commit()
+    try:  # your note becomes a lesson the helper reads before every run
+        from . import memory
+
+        memory.lesson_from_decision(db, p, decision, note)
+    except Exception:  # noqa: BLE001 - learning must never block a decision
+        import logging
+
+        logging.getLogger("saga.memory").exception("could not record a lesson")
     return p
 
 
@@ -566,7 +516,7 @@ def latest_kpis(db: Session) -> dict:
     out = {}
     for k in db.scalars(select(KpiValue).order_by(KpiValue.at.desc()).limit(500)):
         if k.name not in out:
-            out[k.name] = {"value": k.value, "period": k.period, "source": k.source, "at": k.at.isoformat()}
+            out[k.name] = {"value": k.value, "period": k.period, "source": k.source, "at": (k.at if k.at.tzinfo else k.at.replace(tzinfo=dt.UTC)).isoformat()}
     return out
 
 

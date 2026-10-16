@@ -6,7 +6,7 @@ pasted website with Anthropic's hosted web fetch. The form stays the source of t
 change highlighted and can edit it.
 
 This runs before any helper exists, so it calls Claude with the owner's key directly; helpers themselves
-always run through Hermes.
+run on their own engine (Claude Code with the key, the pool, or built-in Claude).
 """
 from __future__ import annotations
 

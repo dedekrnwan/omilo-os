@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { SagaMascot } from "@/components/Logo";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
-import HermesSetup, { HermesInfo } from "@/components/HermesSetup";
+import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
@@ -190,7 +190,7 @@ export default function Onboarding() {
   const [copied, setCopied] = useState(false);
   const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });
   const [keyHint, setKeyHint] = useState<string | null>(null);
-  const [hermes, setHermes] = useState<HermesInfo | null>(null);
+  const [ccReady, setCcReady] = useState(false);
   const [flash, setFlash] = useState<Set<string>>(new Set());
   const [chatOpen, setChatOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -199,7 +199,7 @@ export default function Onboarding() {
   useEffect(() => {
     Promise.all([api<State>("/onboarding"), api<{ claude_key_hint: string | null }>("/ai").catch(() => ({ claude_key_hint: null }))]).then(([s, ai]) => {
       setSt(s);
-      setA({ engine_type: "fake", engine_url: "http://127.0.0.1:8642/v1", engine_model: "hermes-agent", practice: true, ...s.answers });
+      setA({ engine_type: "fake", practice: true, ...s.answers, ...(s.answers?.engine_type === "hermes" ? { engine_type: "claude" } : {}) });
       setStep(Math.min(s.step || 0, STEPS.length - 1));
       setTz(s.timezone && s.timezone !== "UTC" ? s.timezone : browserTimezone());
       setKeyHint(ai.claude_key_hint);
@@ -210,7 +210,6 @@ export default function Onboarding() {
   const stepId = STEPS[step]?.id || "welcome";
   const usingClaude = a?.engine_type === "claude";
   const aiReady = !!keyHint;  // the assistant can help once a Claude key is saved
-  const hermesReady = !!hermes?.installed && hermes.install.state !== "running";
 
   const recKey = a ? JSON.stringify([a.goals, a.has_software, a.team_style, a.industry]) : "";
   useEffect(() => {
@@ -221,18 +220,6 @@ export default function Onboarding() {
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recKey, step]);
-
-  // Hermes keeps installing in the background while the owner answers questions
-  useEffect(() => {
-    if (!usingClaude || a?.no_hermes) return;
-    let stop = false;
-    const tick = async () => {
-      try { const h = await api<HermesInfo>("/hermes"); if (!stop) setHermes(h); } catch { /* next time */ }
-    };
-    tick();
-    const t = setInterval(tick, 3000);
-    return () => { stop = true; clearInterval(t); };
-  }, [usingClaude, a?.no_hermes]);
 
   const save = useCallback(async (answers: Answers, n: number) => {
     try { await api("/onboarding", { method: "PUT", body: { answers, step: n } }); } catch { /* best effort */ }
@@ -270,19 +257,18 @@ export default function Onboarding() {
       try {
         if (c.key.trim()) { const r = await api<{ claude_key_hint: string }>("/ai/key", { body: { api_key: c.key, model: c.model } }); setKeyHint(r.claude_key_hint); }
         set({ claude_model: c.model });
-        if (!a.no_hermes) api("/hermes/install", { body: {} }).catch(() => {});  // start now: it takes a few minutes
+        if (!a.no_hermes) api("/harness/install", { body: {} }).catch(() => {});  // Claude Code installs while the owner keeps going
       } catch (e: any) { setErr(e.message); }
     }
   };
 
   const pickStyle = (style: string) => set({ team_style: style, roles: undefined });
 
-  const canFinish = !usingClaude || a.no_hermes || hermesReady;
+  const canFinish = !usingClaude || a.no_hermes || ccReady;
   const finish = async () => {
     setBusy(true); setErr(null);
     try {
-      const engine = a.engine_type === "hermes" ? { type: "hermes", base_url: a.engine_url, model: a.engine_model }
-        : usingClaude ? { type: a.no_hermes ? "claude-direct" : "claude", model: a.claude_model } : { type: "fake" };
+      const engine = usingClaude ? { type: a.no_hermes ? "claude-direct" : "claude", model: a.claude_model } : { type: "fake" };
       const r = await api<Finished>("/onboarding/finish", { body: {
         answers: a, roles: a.roles || [], engine, approval_mode: a.approval_mode, timezone: tz, practice_task: a.practice !== false } });
       setDone(r);
@@ -292,14 +278,7 @@ export default function Onboarding() {
   /* ------------------------------------------------------------------ done */
   if (done) {
     const chiefName = st.roles["chief-of-staff"]?.name || "Chief of Staff";
-    const techNote = [
-      `Saga OS setup for ${a.company_name}`, "",
-      "Each AI helper below runs as a Hermes profile and must connect back to Saga OS through MCP:",
-      `  URL: ${done.mcp_url}`, "",
-      ...Object.entries(done.mcp_tokens).map(([k, v]) => `  ${k}: Authorization: Bearer ${v}`), "",
-      "Put the Hermes API key on the Saga OS server as HERMES_API_KEY.",
-      "These tokens are shown once. New ones can be made in Saga OS: Team → helper → Rotate token.",
-    ].join("\n");
+
     return (
       <div className="ob-form" style={{ height: "100%" }}>
         <div className="inner">
@@ -313,20 +292,13 @@ export default function Onboarding() {
             <li><i className="ri-chat-3-line" /><span>Want something done? Just ask in <b>Chat</b>, in your own words.</span></li>
           </ul>
           {done.practice && <div className="callout ok">We started a practice job: a short post introducing {a.company_name}. In a minute or two it will be in your Inbox so you can try approving it.</div>}
-          {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? "" : ", running inside Hermes on this computer (browser, internet, tools)"}. Change it any time in Settings.</div>}
+          {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? " (built-in: web search and Saga's tools)" : ", working in Claude Code on this computer (files in the folders you share, web, connectors)"}. Change it any time in Settings.</div>}
           {a.engine_type === "fake" && <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>}
           <div className="wiz-nav">
             <button className="btn primary lg" onClick={() => router.replace("/")}>Open my Inbox</button>
             <button className="btn lg" onClick={() => router.replace("/chat/")}>Chat with my {chiefName}</button>
           </div>
-          {a.engine_type === "hermes" && Object.keys(done.mcp_tokens).length > 0 && (
-            <details className="tech" open>
-              <summary>For your technical helper (one-time connection details)</summary>
-              <p className="small">Send this to whoever set up your AI server. It contains passwords for your helpers, so share it privately. It is only shown now.</p>
-              <pre className="code">{techNote}</pre>
-              <button className="btn" onClick={async () => { await navigator.clipboard.writeText(techNote); setCopied(true); }}>{copied ? "Copied" : "Copy"}</button>
-            </details>
-          )}
+
         </div>
       </div>
     );
@@ -371,14 +343,14 @@ export default function Onboarding() {
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo;. Connect it now and the assistant can also help you fill in the rest of this setup.</p>
           <button type="button" className={`choice ${usingClaude ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
             <b>Use my Claude API key <span className="rec">Recommended</span></b>
-            <span>Paste a key from Anthropic. Saga OS sets up Hermes for you in the background, so your helpers get a web browser, internet search, tools and memory.</span>
+            <span>Paste a key from Anthropic. Saga OS installs Claude Code for you in the background, so your helpers can work with files, search the web and use your connectors.</span>
           </button>
           {usingClaude && (
             <div className="paper" style={{ marginTop: -2, marginBottom: 10 }}>
               <ClaudeSetup value={claude} onChange={saveKey} savedHint={keyHint} />
               {keyHint && !a.no_hermes && (
                 <p className="small" style={{ marginTop: 12 }}>
-                  <i className="ri-loader-4-line" /> {hermesReady ? "AI workspace (Hermes) is ready." : "Setting up the AI workspace (Hermes) in the background. Keep going, it will be ready by the end."}
+                  <i className="ri-loader-4-line" /> {ccReady ? "Claude Code is ready." : "Installing Claude Code in the background. Keep going, it will be ready by the end."}
                 </p>
               )}
             </div>
@@ -387,26 +359,12 @@ export default function Onboarding() {
             <b>Practice mode first</b>
             <span>No key and no cost. Helpers produce sample work so you can learn how approvals and chat work. Switch to real AI any time in Settings.</span>
           </button>
-          <details className="tech" open={a.engine_type === "hermes" || a.no_hermes}>
+          <details className="tech" open={!!a.no_hermes}>
             <summary>Advanced</summary>
-            <button type="button" className={`choice ${a.engine_type === "hermes" ? "on" : ""}`} style={{ marginTop: 10 }} onClick={() => set({ engine_type: "hermes" })}>
-              <b>Use my own Hermes server</b>
-              <span>Already running Hermes yourself? Point your helpers at it. The AI model is then chosen inside your Hermes.</span>
-            </button>
-            {a.engine_type === "hermes" && (
-              <>
-                <Q title="Hermes address" hint="Usually http://127.0.0.1:8642/v1. Start Saga OS with HERMES_API_KEY set to Hermes's API_SERVER_KEY.">
-                  <input value={a.engine_url || ""} onChange={(e) => set({ engine_url: e.target.value })} />
-                </Q>
-                <Q title="Model name" hint="Leave as hermes-agent. The Claude model is chosen inside Hermes.">
-                  <input value={a.engine_model || ""} onChange={(e) => set({ engine_model: e.target.value })} />
-                </Q>
-              </>
-            )}
             {usingClaude && (
               <label className="check" style={{ marginTop: 10 }}>
                 <input type="checkbox" checked={!!a.no_hermes} onChange={(e) => set({ no_hermes: e.target.checked })} />
-                <span>Use Claude without Hermes (internet search only, no browser or other tools)</span>
+                <span>Use built-in Claude instead (nothing to install: web search and Saga&apos;s tools, but no files, commands or browser)</span>
               </label>
             )}
           </details>
@@ -617,9 +575,9 @@ export default function Onboarding() {
               <div className="soft" style={{ marginTop: 16 }}>
                 <div className="small">Your team</div>
                 <p style={{ margin: "2px 0 6px", fontWeight: 500 }}>{["chief-of-staff", ...(a.roles || []).filter((r) => r !== "chief-of-staff")].map((r) => roles[r]?.name).join(", ")}</p>
-                <div className="small">{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : usingClaude ? (a.no_hermes ? "Claude (without Hermes)" : "Claude through Hermes") : "Your Hermes server"} · {tz.replace(/_/g, " ")}</div>
+                <div className="small">{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : usingClaude ? (a.no_hermes ? "Built-in Claude" : "Claude Code with your key") : "Practice mode"} · {tz.replace(/_/g, " ")}</div>
               </div>
-              {usingClaude && !a.no_hermes && <HermesSetup autoInstall />}
+              {usingClaude && !a.no_hermes && <ClaudeCodeSetup autoInstall onReady={setCcReady} />}
               <details className="tech">
                 <summary>See exactly what your helpers will read</summary>
                 {Object.entries(preview.files).map(([n, c]) => <div key={n} className="paper" style={{ marginTop: 10 }}><Markdown text={c} /></div>)}

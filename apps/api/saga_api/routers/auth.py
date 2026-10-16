@@ -8,6 +8,7 @@ from ..config import get_settings
 from ..db import get_auth_db, get_db
 from ..models import AuthToken, User
 from ..security import COOKIE, current_user, hash_password, issue_token, sha256, verify_password
+from ..serialize import iso
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -35,7 +36,7 @@ def _set_cookie(resp: Response, raw: str):
 def setup_status(db: Session = Depends(get_db), auth_db: Session = Depends(get_auth_db)):
     has_owner = bool(auth_db.scalar(select(func.count()).select_from(User)))
     return {"needs_owner": not has_owner, "company_name": S.get_setting(db, "company_name", ""),
-            "onboarded": bool(S.get_setting(db, "onboarded", False)), "version": "0.2.0"}
+            "onboarded": bool(S.get_setting(db, "onboarded", False)), "version": "0.3.0"}
 
 
 @router.post("/setup/owner")
@@ -86,7 +87,7 @@ def me(user: User = Depends(current_user)):
 @router.get("/auth/tokens")
 def list_tokens(db: Session = Depends(get_auth_db), user: User = Depends(current_user)):
     rows = db.scalars(select(AuthToken).where(AuthToken.user_id == user.id, AuthToken.kind == "api"))
-    return [{"id": t.id, "name": t.name, "created_at": t.created_at.isoformat(), "last_used_at": t.last_used_at and t.last_used_at.isoformat()} for t in rows]
+    return [{"id": t.id, "name": t.name, "created_at": iso(t.created_at), "last_used_at": iso(t.last_used_at)} for t in rows]
 
 
 @router.delete("/auth/tokens/{tid}")

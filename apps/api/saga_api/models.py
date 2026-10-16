@@ -55,7 +55,7 @@ class Staff(Base):
     role: Mapped[str] = mapped_column(String(64), default="")  # template it came from
     is_chief: Mapped[bool] = mapped_column(Boolean, default=False)
     job: Mapped[str] = mapped_column(Text, default="")
-    engine: Mapped[dict] = mapped_column(JSON, default=dict)  # {"type": "hermes"|"fake", "base_url", "model", "api_key_env"}
+    engine: Mapped[dict] = mapped_column(JSON, default=dict)  # {"type": "claude-code"|"claude"|"fake", "auth": "api"|None (pool), "model"}
     permissions: Mapped[dict] = mapped_column(JSON, default=dict)  # {"actions": {"content.publish": 1, ...}}
     budget_usd_month: Mapped[float] = mapped_column(Float, default=0)
     max_task_minutes: Mapped[int] = mapped_column(Integer, default=30)
@@ -376,3 +376,23 @@ class DocVersion(Base):
     status: Mapped[str] = mapped_column(String(16), default="saved")  # saved | suggested | rejected | deleted
     proposal_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class Improvement(Base):
+    """A change the weekly retro made to a helper (instructions, a schedule, its lessons), measured and reversible."""
+
+    __tablename__ = "improvement"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("imp"))
+    by: Mapped[str] = mapped_column(String(64))            # who made it: the Chief of Staff (or "owner")
+    staff_id: Mapped[str] = mapped_column(String(64), index=True)  # the helper that was changed
+    kind: Mapped[str] = mapped_column(String(24))          # job | shift_brief | shift_schedule | lessons
+    ref: Mapped[str] = mapped_column(String(64), default="")  # shift id for shift_* kinds
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    baseline: Mapped[dict] = mapped_column(JSON, default=dict)  # scores before the change
+    result: Mapped[dict] = mapped_column(JSON, default=dict)    # scores after it, when measured
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | kept | rolled_back | undone
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    evaluated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

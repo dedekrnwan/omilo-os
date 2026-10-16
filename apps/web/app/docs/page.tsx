@@ -64,8 +64,8 @@ function Tree({ docs, current, q, onOpen, noteMenu, folderMenu }: { docs: TreeDo
           {g.folder && (
             <button className="dt-f" onClick={() => toggle(g.folder)} onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))} style={{ paddingLeft: 8 + (g.folder.split("/").length - 1) * 12 }}>
               <i className={closed.has(g.folder) && !ql ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line"} />
-              <i className={g.folder === "Company" ? "ri-building-2-line" : "ri-folder-3-line"} />
-              <span>{g.folder === "Company" ? "Company knowledge" : g.folder.split("/").pop()}</span>
+              <i className={g.folder === "Company" ? "ri-building-2-line" : g.folder === "Memory" ? "ri-brain-line" : "ri-folder-3-line"} />
+              <span>{g.folder === "Company" ? "Company knowledge" : g.folder === "Memory" ? "Memory (what helpers learned)" : g.folder.split("/").pop()}</span>
             </button>
           )}
           {(!closed.has(g.folder) || ql) && g.docs.map((d) => (
@@ -113,6 +113,14 @@ function DocsInner() {
   const [hist, setHist] = useState<Version[] | null>(null);
   const [oldV, setOldV] = useState<{ version: number; content: string } | null>(null);
   const [graph, setGraph] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const [gview, setGview] = useState<"all" | "memory" | "notes">("all");
+  const shown = (() => {
+    if (!graph || gview === "all") return graph;
+    const keep = (id: string) => (gview === "memory" ? id.startsWith("Memory/") : !id.startsWith("Memory/"));
+    const nodes = graph.nodes.filter((n) => keep(n.id) || (n.missing && gview === "notes"));
+    const ids = new Set(nodes.map((n) => n.id));
+    return { nodes, edges: graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+  })();
   const [q, setQ] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [side, setSide] = useState(true);
@@ -347,7 +355,13 @@ function DocsInner() {
 
         <section className="ws-main docs-main">
           {graphMode ? (
-            <div className="docs-graph">{graph ? <DocGraph nodes={graph.nodes} edges={graph.edges} current={path} onOpen={(n) => go(n.missing ? { path: n.title, new: "1" } : { path: n.id })}
+            <div className="docs-graph">
+              <div className="seg dg-view" role="tablist" aria-label="Show">
+                {([["all", "Everything"], ["memory", "Memory"], ["notes", "Notes only"]] as const).map(([k, l]) => (
+                  <button key={k} role="tab" aria-selected={gview === k} className={gview === k ? "on" : ""} onClick={() => setGview(k)}>
+                    {k === "memory" && <i className="ri-brain-line" />}{l}</button>))}
+              </div>
+              {shown ? <DocGraph nodes={shown.nodes} edges={shown.edges} current={path} onOpen={(n) => go(n.missing ? { path: n.title, new: "1" } : { path: n.id })}
               onNodeMenu={(n) => (n.missing ? missingMenu(n.title) : noteMenu(n.id))} /> : <p className="small" style={{ padding: 20 }}>Loading…</p>}</div>
           ) : !doc ? (
             <div className="ws-inner"><div className="empty"><b>{path ? "This note does not exist" : "No note open"}</b><span>Pick one on the left, or start a new one.</span>

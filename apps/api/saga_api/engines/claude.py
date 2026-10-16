@@ -1,7 +1,7 @@
 """Claude (Anthropic API) as a built-in engine: the owner pastes an API key, nothing else to install.
 
 Runs the agent loop inside Saga OS: the model gets the saga-os MCP tools (fetched over the real MCP
-endpoint with the staff token, so policy and the tool log apply exactly as for Hermes), and every
+endpoint with the staff token, so policy and the tool log apply exactly as for Claude Code), and every
 tool_use is executed through MCP and returned as tool_result until the model stops.
 """
 import os
@@ -23,7 +23,8 @@ WEB_TOOLS = [
     {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 10},
 ]
 SEARCH_USD = 0.01  # $10 per 1,000 searches
-CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi", "offer_choices"}
+CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi", "offer_choices",
+              "remember", "recall", "docs_search", "docs_read"}
 
 
 def api_key(cfg: dict) -> str:

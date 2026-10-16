@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Markdown } from "@/components/Markdown";
 import Avatar from "@/components/Avatar";
 import { BarList, DataTable, Legend, OTHER, SERIES, STATUS, Series, StackedBars, fmtNum } from "@/components/charts";
+import { ImproveCard, LoopsCard } from "@/components/Loops";
 import { Segments } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
@@ -326,6 +327,9 @@ export default function Monitor() {
       </div>
 
       <DigestCard />
+
+      <LoopsCard days={range === "30d" || range === "90d" ? 30 : 14} />
+      <ImproveCard />
 
       <div className="mgrid three">
         <section className="paper mcard">

@@ -55,7 +55,7 @@ def build_app() -> FastAPI:
             await worker.stop()
             task.cancel()
 
-    inner = FastAPI(title="Saga OS", version="0.2.0", lifespan=lifespan,
+    inner = FastAPI(title="Saga OS", version="0.3.0", lifespan=lifespan,
                     docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     inner.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)  # event streams are left alone
     if cfg.cors_origins:
