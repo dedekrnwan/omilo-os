@@ -123,6 +123,11 @@ proposals you approved, and the regular jobs you linked to the goal. A new job f
 else its parent's, else its regular job's). Goals picked in onboarding become the first goals. Right-click a job to move it
 under another goal; the job drawer shows which goal it serves.
 
+**Inbox → Map** (and Plan → Map) draws the same hierarchy as a tree from left to right: your goals → the jobs handed out for
+them → what helpers passed on → what is waiting on you, with a count on every branch. "What needs me" shows only branches that
+end in an approval, question or alert; "All work" shows everything. Click a box to open it. The job drawer shows "Where it fits":
+goal, the jobs above, this job, and the jobs it handed on.
+
 Every card shows where it comes from: a small line on top with the goal (opens the Plan) and the job above it (opens that job),
 on the Inbox board and list, the Workspace job list, the job page and the job drawer.
 

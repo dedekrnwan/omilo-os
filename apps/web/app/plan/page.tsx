@@ -2,6 +2,7 @@
 import { useCallback, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
+import WorkMap from "@/components/WorkMap";
 import { Err, StatusChip } from "@/components/ui";
 import { ago, api } from "@/lib/api";
 import { taskItems } from "@/lib/actions";
@@ -60,6 +61,7 @@ export default function PlanPage() {
   const [days, setDays] = useState(30);
   const [form, setForm] = useState<Form | null>(null);
   const [showLoose, setShowLoose] = useState(false);
+  const [asMap, setAsMap] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => { try { setPlan(await api<Plan>(`/plan?days=${days}`)); setErr(null); } catch (e: any) { setErr(e.message); } }, [days]);
   usePoll(load, () => (plan?.goals.some((g) => (g.progress.running || 0) + (g.progress.queued || 0) > 0) ? 5000 : 30000), [load],
@@ -91,11 +93,13 @@ export default function PlanPage() {
         <div><h1 style={{ marginBottom: 4 }}>Plan</h1>
           <p className="sub" style={{ margin: 0 }}>Your goals at the top. Under each: what the Chief of Staff handed out for it, what helpers passed on, and what is being done with your approval.</p></div>
         <span className="sp" />
+        <div className="seg"><button className={!asMap ? "on" : ""} onClick={() => setAsMap(false)}><i className="ri-list-check-3" /> Tree</button>
+          <button className={asMap ? "on" : ""} onClick={() => setAsMap(true)}><i className="ri-node-tree" /> Map</button></div>
         <div className="seg">{[[7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d as number)}>{l}</button>)}</div>
         <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button>
       </div>
       <Err error={err} />
-      {!plan ? <p className="small">Loading…</p> : (
+      {asMap ? <div style={{ marginTop: 18 }}><WorkMap days={days} defaultOnlyNeeds={false} /></div> : !plan ? <p className="small">Loading…</p> : (
         <>
           {plan.goals.length === 0 && (
             <div className="empty"><b>No goals yet</b><span>Add what you want to reach. The Chief of Staff links the work it hands out to these goals.</span>

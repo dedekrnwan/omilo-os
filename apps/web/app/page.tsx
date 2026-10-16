@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
 import Lineage from "@/components/Lineage";
+import WorkMap from "@/components/WorkMap";
 import InboxItemDetail from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
@@ -200,9 +201,9 @@ function ListView({ onCount }: { onCount: () => void }) {
 
 export default function Inbox() {
   const { refresh } = useOverview();
-  const [view, setView] = useState<"board" | "list">("board");
-  useEffect(() => { try { const v = localStorage.getItem("saga.inbox.view"); if (v === "list" || v === "board") setView(v); } catch { /* ignore */ } }, []);
-  const pick = (v: "board" | "list") => { setView(v); try { localStorage.setItem("saga.inbox.view", v); } catch { /* ignore */ } };
+  const [view, setView] = useState<"board" | "list" | "map">("board");
+  useEffect(() => { try { const v = localStorage.getItem("saga.inbox.view"); if (v === "list" || v === "board" || v === "map") setView(v); } catch { /* ignore */ } }, []);
+  const pick = (v: "board" | "list" | "map") => { setView(v); try { localStorage.setItem("saga.inbox.view", v); } catch { /* ignore */ } };
   return (
     <div className="inbox-page">
       <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 16 }}>
@@ -212,9 +213,10 @@ export default function Inbox() {
         <div className="seg" role="tablist" aria-label="View">
           <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-layout-column-line" /> Board</button>
           <button role="tab" aria-selected={view === "list"} className={view === "list" ? "on" : ""} onClick={() => pick("list")}><i className="ri-list-unordered" /> List</button>
+          <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => pick("map")}><i className="ri-node-tree" /> Map</button>
         </div>
       </div>
-      {view === "board" ? <BoardView onCount={refresh} /> : <ListView onCount={refresh} />}
+      {view === "board" ? <BoardView onCount={refresh} /> : view === "list" ? <ListView onCount={refresh} /> : <WorkMap />}
     </div>
   );
 }

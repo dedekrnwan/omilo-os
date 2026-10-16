@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { BASE, api } from "@/lib/api";
 
 /* Each helper gets its own little character: an original mascot drawn in SVG, always the same for that helper
@@ -108,18 +108,20 @@ function Prop({ prop }: { prop: string }) {
     case "antenna": return <g><path d="M32 16 V8" stroke={INK} strokeWidth="2.2" strokeLinecap="round" /><circle cx="32" cy="7" r="3" fill="#f43f5e" stroke={INK} strokeWidth="1.4" /></g>;
     case "sprout": return <g stroke={INK} strokeWidth="1.5" strokeLinejoin="round"><path d="M32 17 V10" fill="none" strokeWidth="2" /><path d="M32 12 C26 12 23 8 23 5 C29 5 32 8 32 12 Z" fill="#4ade80" /><path d="M32 11 C37 11 40 7.5 40 5 C35 5 32 7.5 32 11 Z" fill="#22c55e" /></g>;
     case "beret": return <g><path d="M17 22 C17 13 47 11 49 20 C49 24 17 26 17 22 Z" fill="#1c1917" /><circle cx="33" cy="12.5" r="2" fill="#1c1917" /></g>;
+    case "spark": return <g><path d="M32 0.5 C33 6 34.3 7.4 39.5 8.3 C34.3 9.2 33 10.6 32 16 C31 10.6 29.7 9.2 24.5 8.3 C29.7 7.4 31 6 32 0.5 Z" fill="#f59e0b" stroke={INK} strokeWidth="1.4" strokeLinejoin="round" /><circle cx="44" cy="5" r="1.6" fill="#f59e0b" /></g>;
     case "magnifier": return <g stroke={INK} strokeLinecap="round"><circle cx="49" cy="49" r="6.5" fill="#fff" fillOpacity=".7" strokeWidth="2.2" /><path d="M53.5 53.5 L59 59" strokeWidth="3" /></g>;
     default: return null;
   }
 }
 
-export function Mascot({ look, size = 32, sleeping = false, title }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string }) {
+export function Mascot({ look, size = 32, sleeping = false, title, bare }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string; bare?: boolean }) {
+  const clip = `tile-${useId().replace(/:/g, "")}`;  // unique per drawing: a shared id breaks when the first copy is hidden
   if (look.image) return <img className="mascot img" src={look.image.startsWith("fil_") ? `${BASE}/api/files/${look.image}` : look.image} alt={title || ""} width={size} height={size} />;
   return (
     <svg className="mascot" width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}>
-      <defs><clipPath id="tile"><rect width="64" height="64" rx="18" /></clipPath></defs>
-      <g clipPath="url(#tile)">
-        <rect width="64" height="64" fill={look.color} opacity=".16" />
+      <defs><clipPath id={clip}><rect width="64" height="64" rx="18" /></clipPath></defs>
+      <g clipPath={bare ? undefined : `url(#${clip})`}>
+        {!bare && <rect width="64" height="64" fill={look.color} opacity=".16" />}
         <Body shape={look.shape} color={look.color} />
         <Face sleeping={sleeping} />
         <Prop prop={look.prop} />

@@ -8,7 +8,7 @@ import InboxItemDetail from "@/components/InboxItemDetail";
 import { Markdown } from "@/components/Markdown";
 import { RunCard, toRuns, useEvents } from "@/components/Run";
 import { Err, StatusChip } from "@/components/ui";
-import { InboxItem, Staff, Task, ago, api } from "@/lib/api";
+import { BASE, InboxItem, Staff, Task, ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { taskItems } from "@/lib/actions";
 import Lineage from "@/components/Lineage";
@@ -78,6 +78,17 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
             <div className="jd-list"><div className="small">Proposals</div>
               {t.proposals.map((p) => <div key={p.id} className="acts" style={{ margin: "4px 0" }}><StatusChip status={p.status} /><span>{p.title}</span></div>)}</div>
           )}
+          {((t as any).lineage?.goal || (t as any).lineage?.parents?.length || t.children?.length) ? (
+            <div className="jd-list"><div className="small">Where it fits</div>
+              <ul className="jd-tree">
+                {(t as any).lineage?.goal && <li className="g"><i className="ri-flag-2-line" /><a href={`${BASE}/plan/`}>{(t as any).lineage.goal.title}</a></li>}
+                {((t as any).lineage?.parents || []).filter((p: any) => p.id !== t.id).map((p: any, k: number) => (
+                  <li key={p.id} style={{ paddingLeft: (k + ((t as any).lineage?.goal ? 1 : 0)) * 14 }}><i className="ri-corner-down-right-line" /><button className="lnk" onClick={() => onOpenTask(p.id)}>{p.title}</button><span className="small">{p.staff}</span></li>))}
+                <li className="me" style={{ paddingLeft: (((t as any).lineage?.parents || []).filter((p: any) => p.id !== t.id).length + ((t as any).lineage?.goal ? 1 : 0)) * 14 }}><i className="ri-corner-down-right-line" /><b>{lines[0].slice(0, 90)}</b><span className="small">this job</span></li>
+                {(t.children || []).map((c) => (
+                  <li key={c.id} className="kid" style={{ paddingLeft: (((t as any).lineage?.parents || []).filter((p: any) => p.id !== t.id).length + ((t as any).lineage?.goal ? 2 : 1)) * 14 }}><i className="ri-corner-down-right-line" /><button className="lnk" onClick={() => onOpenTask(c.id)}>{c.brief.split("\n")[0].slice(0, 80)}</button><StatusChip status={c.status} /></li>))}
+              </ul></div>
+          ) : null}
           {!!t.children?.length && (
             <div className="jd-list"><div className="small">Handed off to</div>
               {t.children.map((c) => (
