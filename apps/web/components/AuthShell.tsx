@@ -2,10 +2,11 @@
 import { ReactNode } from "react";
 import { Mascot } from "@/components/Avatar";
 import { SagaMascot } from "@/components/Logo";
+import OfficeLobby from "@/components/OfficeLobby";
 
-/* The sign-in and account pages: on the left a soft, colourful room where helper mascots float (they look at your
-   cursor, smile when you hover them and hop when you click), with a short line on a glass card; on the right a calm
-   form. Mobile shows the form with a small row of mascots on top. */
+/* The sign-in and account pages: on the left a corner of the office where helpers walk, run, sit and type (click
+   the floor and one runs over), with a short line on a glass card; on the right a calm form. Mobile shows a strip of
+   the office above the form. MascotField (floating mascots) is still used by the setup cards. */
 
 type Look = { color: string; shape: string; prop: string; image: null };
 const L = (color: string, shape: string, prop: string): Look => ({ color, shape, prop, image: null });
@@ -37,21 +38,22 @@ export function MascotField({ tone = "warm", dense = false }: { tone?: "warm" | 
   );
 }
 
-export default function AuthShell({ headline, body, children, side }: { headline: ReactNode; body: ReactNode; children: ReactNode; side?: ReactNode }) {
+export default function AuthShell({ headline, body, children, side, you, sign }: { headline: ReactNode; body: ReactNode; children: ReactNode; side?: ReactNode; you?: string; sign?: string }) {
   return (
     <div className="au">
       <aside className="au-side">
-        <MascotField dense />
-        <div className="au-brand"><SagaMascot size={26} /><b>Saga OS</b></div>
+        <OfficeLobby you={you} sign={sign} />
         <div className="au-glass">
+          <div className="au-brand"><SagaMascot size={24} /><b>Saga OS</b></div>
           <h2>{headline}</h2>
           <p>{body}</p>
           {side}
+          <span className="au-hint"><i className="ri-cursor-line" />Click the floor: someone runs over.</span>
         </div>
       </aside>
       <main className="au-main">
         <div className="au-mobile-top" aria-hidden>
-          <MascotField />
+          <OfficeLobby you={you} sign={sign} />
         </div>
         <div className="au-form">{children}</div>
         <footer className="au-copy">© {new Date().getFullYear()} Saga OS · runs on your own computer</footer>

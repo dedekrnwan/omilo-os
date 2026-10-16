@@ -34,7 +34,7 @@ export default function Setup() {
   };
   const dots = <div className="au-steps" aria-label={`Step ${step + 1} of 2`}><i className={step >= 0 ? "on" : ""} /><i className={step >= 1 ? "on" : ""} /><span>Step {step + 1} of 2</span></div>;
   return (
-    <AuthShell
+    <AuthShell you={f.name} sign={f.company_name.trim() ? `${f.company_name.trim()} HQ` : undefined}
       headline={step === 0 ? <>Meet your<br />new team.</> : <>Hi {first || "there"},<br />what&apos;s it called?</>}
       body={step === 0 ? "A Chief of Staff and specialists that write, sell and answer customers. They suggest, you decide." : "Your helpers use the name in everything they write. You can run more companies later."}>
       <form onSubmit={submit} className="au-card" noValidate>

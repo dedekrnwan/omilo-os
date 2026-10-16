@@ -131,8 +131,9 @@ goal, the jobs above, this job, and the jobs it handed on.
 Every card shows where it comes from: a small line on top with the goal (opens the Plan) and the job above it (opens that job),
 on the Inbox board and list, the Workspace job list, the job page and the job drawer.
 
-**Sign-in and setup.** The sign-in and account pages show the helpers' mascots floating in a soft room (they react to the
-cursor) next to a calm form. Forgot the password? Saga OS sends no email, so run `make reset-password` on the computer
+**Sign-in and setup.** The sign-in and account pages show a corner of the office where the helpers walk, run, sit and
+type, and chat with each other (a picture of the product, not live data). Click the floor and the nearest one runs
+there; on the account page a mascot with your name walks in and takes a desk, and the room sign shows your business. Forgot the password? Saga OS sends no email, so run `make reset-password` on the computer
 that runs it (signs out every browser session of that account). **Onboarding** is guided by Saga, the house mascot:
 it comments on what you fill in, your team appears as you pick goals and helpers, a meter shows what your helpers will
 know (click a missing part to jump there), and with a Claude key Saga can fill the business step from your website.

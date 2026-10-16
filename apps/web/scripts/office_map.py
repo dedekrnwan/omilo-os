@@ -542,3 +542,14 @@ tmap = {
 }
 (OUT / "hq.json").write_text(json.dumps(tmap, separators=(",", ":")))
 print(f"{len(tiles)} tiles, {len(objects['seats'])} seats, {len(objects['interactive'])} interactive objects -> {OUT}")
+
+# ------------------------------------------------------------------ a rendered picture of the whole map (sign-in pages)
+render = Image.new("RGBA", (W * T, H * T), (235, 232, 243, 255))
+for name in ("floor", "rugs", "shadow", "walls", "decor", "furniture"):
+    for y in range(H):
+        for x in range(W):
+            g = layers[name][y][x]
+            if g:
+                render.alpha_composite(tiles[g - 1], (x * T, y * T))
+render.convert("RGB").save(OUT / "hq.png", optimize=True)
+print("rendered hq.png")
