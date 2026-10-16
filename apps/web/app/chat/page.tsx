@@ -7,6 +7,8 @@ import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "
 import ComposerTools, { Attached } from "@/components/ComposerTools";
 import PoolMeter from "@/components/PoolMeter";
 import Avatar from "@/components/Avatar";
+import BrowserView from "@/components/BrowserView";
+import Lineage from "@/components/Lineage";
 import { Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
 import { helperItems, taskItems } from "@/lib/actions";
@@ -56,22 +58,7 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
           </div>
         ) : <div className="empty"><b>Nothing running</b><span>Steps appear here while a helper works.</span></div>)}
         {tab === "output" && (output || <div className="empty"><b>No output yet</b><span>Reports and drafts show up here.</span></div>)}
-        {tab === "browser" && (
-          <div>
-            <div className="browser">
-              <div className="bar"><span className="dots"><i /><i /><i /></span><span className="url">{trail[0]?.url || "about:blank"}</span>
-                {trail[0] && <a className="iconbtn" href={trail[0].url} target="_blank" rel="noopener noreferrer" aria-label="Open"><i className="ri-external-link-line" /></a>}</div>
-              <div className="view">
-                {trail[0]?.image ? <img src={trail[0].image} alt={trail[0].title || trail[0].url} /> : trail[0]
-                  ? <div><i className="ri-global-line" style={{ fontSize: 28 }} /><div style={{ marginTop: 8, fontWeight: 500, color: "var(--ink)" }}>{trail[0].title || trail[0].url}</div>
-                      <div className="small">The helper opened this page. Screenshots appear here when its browser takes them.</div></div>
-                  : <div><i className="ri-window-line" style={{ fontSize: 28 }} /><div style={{ marginTop: 8 }}>No pages opened yet</div></div>}
-              </div>
-            </div>
-            {trail.length > 1 && <div className="sec" style={{ marginTop: 16 }}><div className="small" style={{ marginBottom: 6 }}>Earlier</div>
-              {trail.slice(1, 20).map((p, i) => <a key={i} className="ws-item" href={p.url} target="_blank" rel="noopener noreferrer"><i className="ri-history-line" /><span className="t"><b>{p.title || p.url}</b><span>{p.url}</span></span></a>)}</div>}
-          </div>
-        )}
+        {tab === "browser" && <BrowserView trail={trail} />}
       </div>
       {usage && <Meter u={usage} />}
     </aside>
@@ -104,6 +91,7 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
   const discuss = async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "task", ref_id: id } }); router.push(`/chat/?thread=${th.id}`); };
   return (
     <div className="ws-inner">
+      <Lineage l={(t as any).lineage} self={t.id} />
       <div className="small">{who} · {t.origin} · {when(t.created_at)}</div>
       <h1 style={{ margin: "4px 0 10px" }}>{t.report?.headline || t.brief.slice(0, 120)}</h1>
       <div className="acts" style={{ marginBottom: 16 }}>
@@ -295,7 +283,7 @@ function WorkspaceInner() {
               {tasks.map((t) => (
                 <button key={t.id} className={`ws-item ${taskId === t.id ? "on" : ""}`} onClick={() => go({ view: "work", task: t.id })}
                   onContextMenu={menu(() => taskItems(t, name(t.staff_id), loadLists, () => go({ view: "work", task: t.id })))}>
-                  <span className={`sdot ${t.status}`} /><span className="t"><b>{t.report?.headline || t.brief}</b><span>{name(t.staff_id)} · {ago(t.created_at)}</span></span></button>
+                  <span className={`sdot ${t.status}`} /><span className="t"><Lineage l={(t as any).lineage} plain /><b>{t.report?.headline || t.brief}</b><span>{name(t.staff_id)} · {ago(t.created_at)}</span></span></button>
               ))}
             </>
           )}

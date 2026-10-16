@@ -37,7 +37,7 @@ type Finished = { created: string[]; mcp_tokens: Record<string, string>; mcp_url
 type ChatMsg = { role: "owner" | "assistant" | "note"; text: string };
 
 const STEPS: { id: string; title: string; icon: string; tone: Tone; caption: string }[] = [
-  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "ink", caption: "Hi, I'm Saga. Let's set up your AI team together." },
+  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "violet", caption: "Hi, I'm Saga. Let's set up your AI team together." },
   { id: "ai", title: "Your AI", icon: "ri-cpu-line", tone: "violet", caption: "First, the brain your helpers think with." },
   { id: "business", title: "Your business", icon: "ri-building-line", tone: "orange", caption: "We need a few details about what you do." },
   { id: "customers", title: "Your customers", icon: "ri-user-heart-line", tone: "rose", caption: "Who you serve, and what keeps them up at night." },

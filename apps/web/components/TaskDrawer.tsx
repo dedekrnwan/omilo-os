@@ -11,6 +11,7 @@ import { Err, StatusChip } from "@/components/ui";
 import { InboxItem, Staff, Task, ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { taskItems } from "@/lib/actions";
+import Lineage from "@/components/Lineage";
 import { menu } from "@/lib/menu";
 
 /* A job, opened from anywhere (Inbox, Monitor, notifications, links in chats): live progress, what waits on you,
@@ -56,7 +57,8 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
       {tab === "progress" && (
         <div className="jd-body">
           <div className="jd-brief">
-            <div className="small">The job · {t.origin} · {ago(t.created_at)}{(t as any).goal ? <> · for <Link href="/plan/" onClick={() => {}}><i className="ri-flag-2-line" /> {(t as any).goal.title}</Link></> : null}</div>
+            <Lineage l={(t as any).lineage} self={t.id} />
+            <div className="small">The job · {t.origin} · {ago(t.created_at)}</div>
             <Markdown text={lines.slice(1).join("\n").trim() || lines[0]} />
             {t.founder_note && <div className="small"><b>Your note:</b> {t.founder_note}</div>}
           </div>

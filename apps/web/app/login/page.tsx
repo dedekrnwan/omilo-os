@@ -23,7 +23,7 @@ export default function Login() {
   return (
     <StepPage top={<><Mark /><b style={{ fontWeight: 600 }}>Saga OS</b></>}>
       <form onSubmit={submit} style={{ width: "100%", display: "grid", placeItems: "center" }}>
-        <StepCard icon="ri-login-circle-line" title="Sign in" tone="ink" seed={3} mascot next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "green" }}
+        <StepCard icon="ri-login-circle-line" title="Sign in" tone="violet" seed={3} mascot next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "green" }}
           caption="Welcome back. Your helpers kept working while you were away."
           footer={<button className="btn primary sc-next" type="submit" disabled={!email || !password || busy}>{busy ? "Signing in…" : "Sign in"}</button>}>
           <label>Email</label>

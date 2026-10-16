@@ -34,6 +34,15 @@ def test_goal_tree(base_url, owner):
     assert g["jobs"][0]["id"] == sh["id"] and g["progress"]["total"] >= 3
     assert all(n["id"] != t for n in plan["unlinked"])
 
+    # every job knows where it comes from: its goal and the jobs above it
+    ex = next(c for c in node["children"] if c["origin"] == "execution")
+    lin = owner.get(f"/api/tasks/{ex['id']}").json()["lineage"]
+    assert lin["goal"]["id"] == gid and lin["parents"][-1]["id"] == t
+    listed = next(x for x in owner.get("/api/tasks").json() if x["id"] == ex["id"])
+    assert listed["lineage"]["parents"][-1]["id"] == t
+    board = owner.get("/api/board").json()
+    assert all(c.get("lineage") is None or "parents" in c["lineage"] for c in board["running"] + board["done"])
+
     # move a job out of the goal, then delete the goal
     owner.put(f"/api/tasks/{run}/goal", json={"goal_id": None})
     plan = owner.get("/api/plan").json()

@@ -122,4 +122,16 @@ def build(db: Session, done_hours: int = 48) -> dict:
                            "ended_at": X.iso(t.ended_at), "seconds": round(took) if took is not None else None,
                            "searches": f["searches"], "tools": f["tools"], "engine": f["engine"], "steps": f["steps"]})
 
+    from .plan import lineage
+
+    lin = lineage(db, tids)
+    for c in needs:  # an approval or question belongs to its job: show the job itself as the last step up
+        tid = c.get("task_id")
+        if tid and tid in lin:
+            t = db.get(Task, tid)
+            me = {"id": tid, "title": _title(t.brief) if t else tid, "staff_id": t.staff_id if t else "", "staff": who(t.staff_id)["name"] if t else "",
+                  "status": t.status if t else ""}
+            c["lineage"] = {**lin[tid], "parents": lin[tid]["parents"] + [me]}
+    for c in run_cards + done_cards:
+        c["lineage"] = lin.get(c["id"])
     return {"needs": needs, "running": run_cards, "done": done_cards, "now": X.iso(t_now)}

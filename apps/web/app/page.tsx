@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
+import Lineage from "@/components/Lineage";
 import InboxItemDetail from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
@@ -46,6 +47,7 @@ function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
   return (
     <div className={`bcard ${open ? "open" : ""}`} role="button" tabIndex={0} aria-expanded={open} onContextMenu={items ? menu(items) : undefined}
       onClick={onToggle} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}>
+      <Lineage l={(c as any).lineage} self={c.id} />
       <div className="bc-t"><Avatar who={c.staff} size={18} /><b>{c.title}</b></div>
       {tag}
       <p className="bc-s">{c.summary}</p>
@@ -186,7 +188,7 @@ function ListView({ onCount }: { onCount: () => void }) {
           })}>
             <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{KIND[i.kind] || i.kind}</span>
             {i.blocking && <span className="chip warn">Blocking</span>}
-            <div className="t"><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>
+            <div className="t"><Lineage l={(i as any).lineage} /><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>
             {i.proposal && <StatusChip status={i.proposal.status} />}
           </div>
           {open === i.id && <div className="b"><InboxItemDetail item={i} onDone={() => { setOpen(null); load(); onCount(); }} /></div>}

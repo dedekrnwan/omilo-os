@@ -1102,3 +1102,31 @@ button.pg-head { border: 0; background: none; padding: 0; text-align: left; curs
 .pn-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pn-main .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .pg-num { display: none; } .pn-kids { margin-left: 16px; } }
+
+/* browser panel */
+.bv .browser .bar { gap: 4px; }
+.bv .browser .bar .url { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bv .browser .bar .iconbtn:disabled { opacity: .35; }
+.bv-mode button { padding: 2px 8px; font-size: 12px; }
+.bv-view { position: relative; padding: 0 !important; min-height: 300px; aspect-ratio: 16 / 10; display: block !important; background: var(--soft); overflow: hidden; }
+.bv-view img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.bv-view img.loading { opacity: 0; }
+.bv-view iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.bv-wait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.bv-wait .spin { display: inline-block; margin-right: 6px; vertical-align: -2px; }
+.bv-none { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 20px; }
+.bv-none i { font-size: 28px; color: var(--faint); }
+.bv-meta { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; }
+.bv-meta b { font-weight: 500; }
+
+/* lineage: goal › job above, on top of cards */
+.lin { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 11.5px; line-height: 1.2; color: var(--muted); margin: -2px 0 6px; }
+.lin button { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 60%; border: 0; background: var(--soft); border-radius: 999px;
+  padding: 2px 8px 2px 6px; font: inherit; color: var(--ink-2); cursor: pointer; }
+.lin button:hover { background: var(--hover); color: var(--ink); }
+.lin button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lin .lin-goal { color: #15803d; background: #f0fdf4; }
+.lin .lin-goal:hover { background: #dcfce7; color: #166534; }
+.lin .lin-goal + .lin-job, .lin .lin-sep + .lin-job { flex: 1 1 auto; }
+.lin-sep, .lin-more { flex-shrink: 0; color: var(--faint); }
+.lin.plain { display: flex; gap: 6px; margin: 0 0 2px; font-size: 11px; } .lin.plain > span { display: inline-flex; align-items: center; gap: 3px; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .lin.plain .lin-goal { color: #15803d; background: none; }

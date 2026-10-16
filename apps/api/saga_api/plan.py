@@ -110,3 +110,43 @@ def tree(db: Session, days: int = 30) -> dict:
     rest = [_node(t, names, reps, props, kids) for t in roots if t.id not in used]
     return {"days": days, "goals": out, "unlinked": list(reversed(rest)),
             "shifts": [{"id": sh.id, "name": sh.name, "staff": names.get(sh.staff_id, sh.staff_id), "goal_id": shift_goal.get(sh.id)} for sh in shifts]}
+
+
+def lineage(db: Session, task_ids: list[str]) -> dict[str, dict]:
+    """For each job: the goal it serves and the jobs above it (nearest last), so every card can show where it comes from."""
+    ids = [t for t in dict.fromkeys(task_ids) if t]
+    if not ids:
+        return {}
+    names = {s.id: s.name for s in db.scalars(select(Staff))}
+    cache: dict[str, Task | None] = {}
+
+    def get(tid: str | None) -> Task | None:
+        if not tid:
+            return None
+        if tid not in cache:
+            cache[tid] = db.get(Task, tid)
+        return cache[tid]
+
+    def parent_of(t: Task) -> Task | None:
+        if t.parent_task_id:
+            return get(t.parent_task_id)
+        if t.proposal_id and (p := db.get(Proposal, t.proposal_id)) and p.task_id and p.task_id != t.id:
+            return get(p.task_id)
+        return None
+
+    goals = {g.id: g for g in db.scalars(select(Goal))}
+    out = {}
+    for tid in ids:
+        t = get(tid)
+        if not t:
+            continue
+        chain, cur, seen = [], t, {t.id}
+        while (par := parent_of(cur)) and par.id not in seen and len(chain) < 6:
+            chain.append({"id": par.id, "title": ((par.brief or "").strip().splitlines() or [par.origin])[0][:120],
+                          "staff_id": par.staff_id, "staff": names.get(par.staff_id, par.staff_id), "status": par.status})
+            seen.add(par.id)
+            cur = par
+        tg = db.get(TaskGoal, t.id) or (db.get(TaskGoal, chain[-1]["id"]) if chain else None)
+        g = goals.get(tg.goal_id) if tg else None
+        out[tid] = {"goal": {"id": g.id, "title": g.title} if g else None, "parents": list(reversed(chain))}
+    return out

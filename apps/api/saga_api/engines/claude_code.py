@@ -89,6 +89,25 @@ class _Run:
         self.pending: dict[str, dict] = {}
         self.limits: list[dict] = []  # rate_limit_event infos: how much of each usage window this account has used
 
+    def _browser(self, use: dict, out, out_text: str) -> None:
+        """A real browser tool (the Playwright connector): follow the page it is on and its screenshots."""
+        inp = use["input"] or {}
+        url = inp.get("url") or ""
+        if not url:
+            m = re.search(r"Page URL: (\S+)", out_text) or re.search(r'"url":\s*"(https?://[^"]+)"', out_text)
+            url = m.group(1) if m else ""
+        title_m = re.search(r"Page Title: ([^\n\\]+)", out_text)
+        image = None
+        for blk in out if isinstance(out, list) else []:
+            if isinstance(blk, dict) and blk.get("type") == "image":
+                src = blk.get("source") or {}
+                data, mime = (src.get("data") or blk.get("data")), (src.get("media_type") or blk.get("mimeType") or "image/png")
+                if data:
+                    image = _save_shot(data, mime)
+        if url or image:
+            self.last_url = url or getattr(self, "last_url", "")
+            self.emit("browser", url=self.last_url, title=(title_m.group(1).strip() if title_m else self.last_url), image=image, via="browser")
+
     def line(self, raw: str) -> None:
         try:
             ev = json.loads(raw)
@@ -123,10 +142,13 @@ class _Run:
                 self.emit("tool", id=b.get("tool_use_id"), name=use["name"], input=use["input"], output=out_text[:4000],
                           ok=not b.get("is_error"), state="done")
                 if use["name"] in ("WebSearch", "WebFetch"):
-                    urls = list(dict.fromkeys(URL_RE.findall(out_text) + ([use["input"].get("url")] if use["input"].get("url") else [])))[:8]
+                    asked = [use["input"]["url"]] if use["input"].get("url") else []
+                    urls = list(dict.fromkeys(asked + URL_RE.findall(out_text)))[:8]
                     if urls:
                         self.emit("sources", items=[{"url": u, "title": u} for u in urls])
-                        self.emit("browser", url=urls[0], title=use["input"].get("query") or urls[0])
+                        self.emit("browser", url=urls[0], title=use["input"].get("query") or urls[0], via=use["name"])
+                elif "browser" in use["name"].lower() or "playwright" in use["name"].lower():
+                    self._browser(use, out, out_text)
         elif t == "rate_limit_event":
             info = ev.get("rate_limit_info") or {}
             if isinstance(info, dict) and info:
@@ -140,6 +162,20 @@ class _Run:
             self.result_text = str(ev.get("result") or "")
             if not self.is_error and self.result_text:
                 self.text = self.result_text
+
+
+def _save_shot(data_b64: str, mime: str) -> str | None:
+    """A screenshot from the helper's browser: keep it as a file so the Browser panel can show it."""
+    import base64
+
+    from ..capabilities import save_bytes
+
+    try:
+        raw = base64.b64decode(data_b64)
+        f = save_bytes("screenshot." + ("jpg" if "jpeg" in mime else "png"), raw)
+        return f"{get_settings().base_path.rstrip('/')}/api/files/{f['id']}"
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class ClaudeCodeEngine(Engine):

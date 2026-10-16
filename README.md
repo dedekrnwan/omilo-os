@@ -123,6 +123,17 @@ proposals you approved, and the regular jobs you linked to the goal. A new job f
 else its parent's, else its regular job's). Goals picked in onboarding become the first goals. Right-click a job to move it
 under another goal; the job drawer shows which goal it serves.
 
+Every card shows where it comes from: a small line on top with the goal (opens the Plan) and the job above it (opens that job),
+on the Inbox board and list, the Workspace job list, the job page and the job drawer.
+
+## Browser panel
+
+Workspace → Browser shows the pages a helper read, searched or opened, newest first, as a real picture of the page: the
+screenshot its own browser took (Playwright connector), or one Saga OS takes with the Chrome or Chromium on this computer
+(`SAGA_CHROME` to point at one). Below it: the page's title, description and site. **Live** shows the page itself (some sites
+refuse to be embedded; open them in a new tab). Back and forward step through the pages; refresh takes a new picture.
+Only public web addresses are previewed, never this computer or the local network.
+
 ## Social media and work apps
 
 Connectors → Add has templates for Instagram, Facebook Pages, WhatsApp Business, TikTok, LinkedIn, X and YouTube, and for

@@ -325,7 +325,10 @@ def list_tasks(staff_id: str | None = None, status: str | None = None, limit: in
         q = q.where(Task.status == status)
     tasks = list(db.scalars(q))
     reports = {r.task_id: r for r in db.scalars(select(Report).where(Report.task_id.in_([t.id for t in tasks])))}
-    return [X.task(t, reports.get(t.id)) for t in tasks]
+    from ..plan import lineage
+
+    lin = lineage(db, [t.id for t in tasks])
+    return [{**X.task(t, reports.get(t.id)), "lineage": lin.get(t.id)} for t in tasks]
 
 
 @router.post("/tasks")
@@ -342,12 +345,11 @@ def get_task(tid: str, db: Session = Depends(get_db), user: User = Depends(curre
     props = db.scalars(select(Proposal).where(Proposal.task_id == tid))
     children = db.scalars(select(Task).where(Task.parent_task_id == tid))
     calls = db.scalars(select(ToolCall).where(ToolCall.task_id == tid).order_by(ToolCall.at))
-    from ..models import Goal, TaskGoal
+    from ..plan import lineage
 
-    tg = db.get(TaskGoal, tid)
-    g = db.get(Goal, tg.goal_id) if tg else None
+    lin = lineage(db, [tid]).get(tid) or {"goal": None, "parents": []}
     return {**X.task(t, rep), "checkpoints": [X.checkpoint(c) for c in cks], "proposals": [X.proposal(p) for p in props],
-            "children": [X.task(c) for c in children], "goal": {"id": g.id, "title": g.title} if g else None,
+            "children": [X.task(c) for c in children], "goal": lin["goal"], "lineage": lin,
             "tool_calls": [{"at": X.iso(c.at), "tool": c.tool, "decision": c.decision, "ms": c.duration_ms} for c in calls]}
 
 
@@ -425,6 +427,14 @@ def list_inbox(status: str = "open", db: Session = Depends(get_db), user: User =
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             d["proposal"] = X.proposal(p)
         out.append(d)
+    from ..plan import lineage
+
+    lin = lineage(db, [i.task_id for i in items if i.task_id])
+    for d in out:
+        if d.get("task_id") and d["task_id"] in lin:
+            t = db.get(Task, d["task_id"])
+            me = {"id": t.id, "title": ((t.brief or "").strip().splitlines() or [t.origin])[0][:120], "staff_id": t.staff_id, "staff": t.staff_id, "status": t.status}
+            d["lineage"] = {**lin[d["task_id"]], "parents": lin[d["task_id"]]["parents"] + [me]}
     return out
 
 
@@ -1839,3 +1849,27 @@ def task_goal(tid: str, body: TaskGoalIn, db: Session = Depends(get_db), user: U
         db.delete(tg)
     db.commit()
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ previews of pages helpers visited (Browser panel)
+@router.get("/browser/preview")
+async def browser_preview(url: str, user: User = Depends(current_user)):
+    from .. import browser_preview as BP
+
+    try:
+        return await BP.meta(url)
+    except BP.PreviewError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@router.get("/browser/shot")
+async def browser_shot(url: str, fresh: bool = False, user: User = Depends(current_user)):
+    from fastapi.responses import FileResponse
+
+    from .. import browser_preview as BP
+
+    try:
+        f = await BP.screenshot(url, fresh=fresh)
+    except BP.PreviewError as e:
+        raise HTTPException(422, str(e)) from e
+    return FileResponse(f, media_type="image/png", headers={"Cache-Control": "private, max-age=600"})
