@@ -126,6 +126,7 @@ function StaffDetail({ id }: { id: string }) {
           </tbody></table></div>
         </div>
       </div>
+      <BudgetSection s={s as any} onSave={save} />
       <div className="sec">
         <h2>Look</h2>
         <p className="small" style={{ marginTop: 0 }}>How {s.name} appears in chats, the team list and notifications.</p>
@@ -165,6 +166,38 @@ function StaffDetail({ id }: { id: string }) {
         )) : <p className="small">No tasks yet.</p>}
       </div>
       <Err error={err} />
+    </div>
+  );
+}
+
+function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: number; budget_tokens: number; cost_usd: number; tokens: number; pct: number | null } }; onSave: (b: Record<string, unknown>) => Promise<void> | void }) {
+  const b = s.budget;
+  const [usd, setUsd] = useState(String(s.budget_usd_month || ""));
+  const [tok, setTok] = useState(String(b?.budget_tokens || ""));
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setUsd(String(s.budget_usd_month || "")); setTok(String(b?.budget_tokens || "")); }, [s.budget_usd_month, b?.budget_tokens]);
+  const pct = b?.pct;
+  const lv = pct == null ? "" : pct >= 100 ? "critical" : pct >= 80 ? "warning" : "good";
+  return (
+    <div className="sec" id="budget">
+      <h2>Budget</h2>
+      <p className="small" style={{ marginTop: 0 }}>A monthly limit. At 80% you get an alert in the Inbox; at 100% {s.name} pauses until you raise it or resume it. Leave empty for no limit.</p>
+      {b && (
+        <div className="paper" style={{ marginBottom: 12 }}>
+          <div className="acts" style={{ justifyContent: "space-between" }}>
+            <span className="small">This month: <b className="mono">${b.cost_usd.toFixed(2)}</b> and <b className="mono">{b.tokens.toLocaleString()}</b> tokens</span>
+            {pct != null && <span className={`small bud ${lv}`}>{Math.round(pct)}% of budget</span>}
+          </div>
+          {pct != null && <div className="inl-bar" style={{ marginTop: 8, height: 8 }}><i style={{ width: `${Math.min(100, pct)}%`, background: lv === "critical" ? "#d03b3b" : lv === "warning" ? "#fab219" : "#0ca30c" }} /></div>}
+        </div>
+      )}
+      <div className="grid2">
+        <div><label style={{ marginTop: 0 }}>Spend per month (USD, at API prices)</label><input inputMode="decimal" value={usd} onChange={(e) => setUsd(e.target.value)} placeholder="e.g. 20" /></div>
+        <div><label style={{ marginTop: 0 }}>Tokens per month</label><input inputMode="numeric" value={tok} onChange={(e) => setTok(e.target.value)} placeholder="e.g. 2000000" /></div>
+      </div>
+      <p className="small">For helpers on the Claude Code pool, spend is what the work would cost at API prices; a token limit fits them better.</p>
+      <div className="acts"><button className="btn" onClick={async () => { await onSave({ budget_usd_month: Number(usd) || 0, budget_tokens_month: Math.round(Number(tok)) || 0 }); setSaved(true); setTimeout(() => setSaved(false), 2000); }}>Save budget</button>
+        {saved && <span className="small">Saved</span>}</div>
     </div>
   );
 }

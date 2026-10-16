@@ -87,6 +87,8 @@ def test_pool_failover_resumes_session(owner, fake_cli):
     assert m["total"] == 2 and by["Limited"]["five_hour"]["pct"] == 100 and by["Limited"]["state"] == "cooling"
     assert by["Good"]["five_hour"] == {**by["Good"]["five_hour"], "pct": 37, "source": "claude", "status": "allowed"}
     assert by["Good"]["tokens_5h"] > 0 and m["avg_pct"] is not None
+    hist = {a["label"]: a for a in owner.get("/api/monitor", params={"range": "24h"}).json()["pool_history"]["accounts"]}
+    assert hist["Limited"]["hits"] and sum(hist["Good"]["tokens"]) > 0
 
     owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["sales"]})
     for a in (lim, good):

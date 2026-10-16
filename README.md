@@ -80,6 +80,19 @@ file links (`file:///path`, or an absolute path in backticks) that open the prev
 - every helper: state (working, awake, sleeping, paused), the job it is on, jobs, tokens, spend, last activity
 - the pool per account, the Saga tools helpers called (with failures and blocked calls), and the latest notices
 
+Below that: **why jobs failed** (grouped by cause: usage limit, sign-in, took too long, Hermes, connection, interrupted,
+budget, with what to do and links to the jobs), **run time** per engine and per helper (median, slowest 10%, slowest job),
+**value per helper** (proposals, approval rate, cost per approved item), the **pool over the last 24 hours** (tokens per account
+per hour, red marks where a limit hit), and the **weekly digest**: every Monday at 08:00 the Chief of Staff posts last week's
+numbers in the main chat (switch it off or send it now from the page).
+
+**Budgets.** Each helper can have a monthly spend limit (USD, at API prices) and a token limit (Team → helper → Budget). At 80%
+you get an Inbox alert, at 100% the helper pauses until you raise the budget or resume it; each level fires once a month.
+
+**Inbox board.** The Inbox is a board: Needs you, Running and Done (last 48 hours). Cards show how long it has been going, the
+sources read and tool calls; click one for the recent steps and Open. Approvals open in a drawer. List shows the classic view
+with history filters.
+
 It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
 items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
 
@@ -202,7 +215,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 40 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 42 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

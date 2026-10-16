@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from .config import get_settings
 from .db import session_scope
-from .models import HarnessAccount, HarnessQuota, HarnessUsage, Setting, now
+from .models import HarnessAccount, HarnessLimitHit, HarnessQuota, HarnessUsage, Setting, now
 from .security import decrypt, encrypt
 
 TOKEN_RE = re.compile(r"^sk-ant-[A-Za-z0-9_\-]{20,}$")
@@ -195,6 +195,7 @@ def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, er
             db.add(HarnessUsage(account_id=account_id, tokens=tokens, cost_usd=cost))
         record_limits(db, account_id, limits)
         if limit:
+            db.add(HarnessLimitHit(account_id=account_id, resets_at=resets_at))
             # learn this account's real capacity: what it had used in this window when the limit hit
             used = window_tokens(db, account_id) + tokens
             if used > 0:

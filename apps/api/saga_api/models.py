@@ -352,3 +352,12 @@ class HarnessQuota(Base):
     utilization: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0..1 when Claude reports it
     resets_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class HarnessLimitHit(Base):
+    """When a pool account reached its usage limit (for the pool history on the Monitor page)."""
+    __tablename__ = "harness_limit_hit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String(32), index=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    resets_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

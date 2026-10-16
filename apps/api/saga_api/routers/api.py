@@ -199,7 +199,8 @@ class StaffPatch(BaseModel):
     job: str | None = None
     engine: dict | None = None
     permissions: dict | None = None
-    budget_usd_month: float | None = None
+    budget_usd_month: float | None = Field(None, ge=0)
+    budget_tokens_month: int | None = Field(None, ge=0)
     max_task_minutes: int | None = None
     status: str | None = None
     role: str | None = None
@@ -223,8 +224,10 @@ def get_staff(sid: str, db: Session = Depends(get_db), user: User = Depends(curr
     st = _404(db.get(Staff, sid))
     levels = {a: policy.describe(policy.level_for(a, st.permissions, S.strict_mode(db))) for a in sorted(policy.DEFAULTS)}
     recent = db.scalars(select(Task).where(Task.staff_id == sid).order_by(Task.created_at.desc()).limit(20))
+    from .. import budgets
+
     return {**X.staff(st), "effective_permissions": levels, "recent_tasks": [X.task(t) for t in recent],
-            "mcp": {"url": get_settings().mcp_url(), "auth": "Bearer <staff MCP token>"}}
+            "mcp": {"url": get_settings().mcp_url(), "auth": "Bearer <staff MCP token>"}, "budget": budgets.status(db, st)}
 
 
 @router.patch("/staff/{sid}")
@@ -232,7 +235,14 @@ def patch_staff(sid: str, body: StaffPatch, db: Session = Depends(get_db), user:
     st = _404(db.get(Staff, sid))
     if body.status and body.status not in ("active", "paused"):
         raise HTTPException(400, "status must be active or paused")
-    return X.staff(S.update_staff(db, st, body.model_dump(), user.id))
+    data = body.model_dump()
+    if (tok := data.pop("budget_tokens_month", None)) is not None:
+        from .. import budgets
+
+        budgets.set_token_budget(db, sid, tok)
+        S.audit(db, user.id, "staff.budget_tokens", sid, tokens=tok)
+        db.commit()
+    return X.staff(S.update_staff(db, st, data, user.id))
 
 
 @router.delete("/staff/{sid}")
@@ -1593,3 +1603,33 @@ def monitor(range: str = "7d", db: Session = Depends(get_db), user: User = Depen
     from .. import monitor as M
 
     return M.build(db, range)
+
+
+@router.get("/board")
+def inbox_board(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The Inbox board: needs you, running, done (last 48 hours)."""
+    from .. import board as B
+
+    return B.build(db)
+
+
+@router.get("/digest")
+def digest_get(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import digest as D
+
+    return {"enabled": D.enabled(db), "last_sent": D.last_sent(db), "send_hour": D.SEND_HOUR, "preview": D.compose(db)}
+
+
+@router.put("/digest")
+def digest_set(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import digest as D
+
+    S.set_setting(db, "digest_enabled", bool(body.get("enabled")), actor=user.id)
+    return {"enabled": D.enabled(db)}
+
+
+@router.post("/digest/send")
+def digest_send(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import digest as D
+
+    return {"thread_id": _run(D.send, db)}

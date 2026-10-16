@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Markdown } from "@/components/Markdown";
 import Avatar from "@/components/Avatar";
 import { BarList, DataTable, Legend, OTHER, SERIES, STATUS, Series, StackedBars, fmtNum } from "@/components/charts";
 import { Segments } from "@/components/PoolMeter";
@@ -24,7 +25,59 @@ type Data = {
   tools: { name: string; calls: number; errors: number; blocked: number; avg_ms: number }[];
   pool: { accounts: Acc[]; ready: number; total: number; busy: number; avg_pct: number | null };
   activity: { id: number; at: string; kind: string; title: string; body: string; url: string; level: string }[];
+  timing: { helpers: { staff_id: string; name: string; jobs: number; median_s: number; p90_s: number; slowest: { task_id: string; brief: string; seconds: number } | null }[];
+    engines: { engine: string; jobs: number; failed: number; fail_rate: number; median_s: number; p90_s: number }[] };
+  failures: { key: string; label: string; fix: string; count: number; example: string; jobs: { task_id: string; brief: string; staff: string; at: string }[] }[];
+  value: { staff_id: string; name: string; proposals: number; approved: number; rejected: number; changes: number; pending: number; approval_rate: number | null; cost_usd: number; cost_per_approved: number | null }[];
+  pool_history: { hours: string[]; hits_7d: number; accounts: { id: string; label: string; tokens: number[]; hits: { hour: number; at: string; resets_at: string | null }[] }[] };
+  budgets: Record<string, { budget_usd: number; budget_tokens: number; cost_usd: number; tokens: number; pct: number | null; pct_usd: number | null; pct_tokens: number | null }>;
 };
+type Digest = { enabled: boolean; last_sent: string | null; send_hour: number; preview: string };
+
+const SEQ = ["#f0eeec", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95"]; // sequential blue, light → dark
+const durS = (s: number | null | undefined) => (s == null ? "–" : s < 1 ? "<1s" : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${(s / 3600).toFixed(1)}h` : `${(s / 86400).toFixed(1)}d`);
+
+function BudgetBar({ b }: { b?: Data["budgets"][string] }) {
+  if (!b || b.pct == null) return <span className="small">no budget</span>;
+  const lv = b.pct >= 100 ? "critical" : b.pct >= 80 ? "warning" : "good";
+  const icon = lv === "critical" ? "ri-pause-circle-line" : lv === "warning" ? "ri-error-warning-line" : "";
+  const label = b.pct_usd != null && (b.pct_tokens == null || b.pct_usd >= b.pct_tokens) ? `${money(b.cost_usd)} of ${money(b.budget_usd)}` : `${fmtNum(b.tokens)} of ${fmtNum(b.budget_tokens)}`;
+  return (
+    <div className="inl" title={`${Math.round(b.pct)}% of this month's budget`}>
+      <span className="inl-bar"><i style={{ width: `${Math.min(100, b.pct)}%`, background: STATUS[lv as keyof typeof STATUS] }} /></span>
+      <span className={`small bud ${lv}`}>{icon && <i className={icon} />}{label}</span>
+    </div>
+  );
+}
+
+function PoolHistory({ h }: { h: Data["pool_history"] }) {
+  const max = Math.max(1, ...h.accounts.flatMap((a) => a.tokens));
+  const step = (v: number) => (v <= 0 ? 0 : Math.min(SEQ.length - 1, 1 + Math.floor((v / max) * (SEQ.length - 1.001))));
+  const hl = (i: number) => new Date(h.hours[i]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="heat">
+      {h.accounts.map((a) => (
+        <div key={a.id} className="heat-row">
+          <span className="heat-l" title={a.label}>{a.label}</span>
+          <div className="heat-cells">
+            {a.tokens.map((v, i) => {
+              const hit = a.hits.find((x) => x.hour === i);
+              return (
+                <span key={i} className={`heat-c ${hit ? "hit" : ""}`} style={{ background: SEQ[step(v)] }} tabIndex={0}
+                  title={`${a.label} · ${hl(i)}: ${fmtNum(v)} tokens${hit ? ` · limit reached${hit.resets_at ? `, back ${new Date(hit.resets_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}` : ""}`} />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="heat-axis"><span>{hl(0)}</span><span>{hl(12)}</span><span>now</span></div>
+      <div className="lg" style={{ marginTop: 8 }}>
+        <span className="lg-i">less <span className="heat-scale">{SEQ.slice(1).map((c) => <i key={c} style={{ background: c }} />)}</span> more tokens</span>
+        <span className="lg-i"><i className="ri-error-warning-fill" style={{ color: STATUS.critical }} />limit reached</span>
+      </div>
+    </div>
+  );
+}
 
 const RANGES: [string, string][] = [["24h", "Last 24 hours"], ["7d", "Last 7 days"], ["30d", "Last 30 days"]];
 const STATE: Record<string, [string, string, string]> = {
@@ -53,6 +106,32 @@ function Tile({ label, value, sub, children, href }: { label: string; value: Rea
     </>
   );
   return href ? <Link href={href} className="stat mtile link">{body}</Link> : <div className="stat mtile">{body}</div>;
+}
+
+function DigestCard() {
+  const [d, setD] = useState<Digest | null>(null);
+  const [show, setShow] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = useCallback(async () => { try { setD(await api<Digest>("/digest")); } catch { /* ignore */ } }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!d) return null;
+  return (
+    <section className="paper mcard" style={{ marginTop: 16 }}>
+      <div className="mhead"><h2>Weekly digest</h2><span className="sp" />
+        <div className="togrow" style={{ padding: 0, border: 0 }} onClick={async () => { await api("/digest", { method: "PUT", body: { enabled: !d.enabled } }); load(); }}>
+          <span className="small">{d.enabled ? `Mondays at ${String(d.send_hour).padStart(2, "0")}:00` : "Off"}</span>
+          <span className={`switch ${d.enabled ? "on" : ""}`} role="switch" aria-checked={d.enabled}><i /></span>
+        </div>
+      </div>
+      <p className="small" style={{ marginTop: 0 }}>The Chief of Staff posts last week's numbers in your main chat, so it also arrives as a notification.{d.last_sent ? ` Last sent: ${d.last_sent}.` : ""}</p>
+      <div className="acts">
+        <button className="btn sm" onClick={() => setShow(!show)}><i className={show ? "ri-eye-off-line" : "ri-eye-line"} />{show ? "Hide preview" : "Preview"}</button>
+        <button className="btn sm" onClick={async () => { try { await api("/digest/send", { body: {} }); setMsg("Sent to your main chat."); load(); } catch (e: any) { setMsg(e.message); } }}><i className="ri-send-plane-line" />Send now</button>
+        {msg && <span className="small">{msg}</span>}
+      </div>
+      {show && <div className="digest-prev"><Markdown text={d.preview} /></div>}
+    </section>
+  );
 }
 
 export default function Monitor() {
@@ -153,7 +232,7 @@ export default function Monitor() {
       <section className="paper mcard" style={{ marginTop: 16 }}>
         <div className="mhead"><h2>Helpers</h2><span className="sp" /><Link className="small" href="/staff/">Manage team</Link></div>
         <div className="tw"><table className="mtable">
-          <thead><tr><th>Helper</th><th>Now</th><th className="hide-sm">Doing</th><th className="num-cell">Jobs</th><th>Tokens</th><th className="num-cell hide-sm">Spend</th><th className="hide-sm">Last active</th></tr></thead>
+          <thead><tr><th>Helper</th><th>Now</th><th className="hide-sm">Doing</th><th className="num-cell">Jobs</th><th>Tokens</th><th className="num-cell hide-sm">Spend</th><th className="hide-sm">Budget (month)</th><th className="hide-sm">Last active</th></tr></thead>
           <tbody>{data.helpers.map((h, i) => {
             const [cls, icon, txt] = STATE[h.state] || ["idle", "ri-question-line", h.state];
             return (
@@ -164,12 +243,87 @@ export default function Monitor() {
                 <td className="num-cell">{h.jobs_done}{h.jobs_failed ? <span className="crit"> · {h.jobs_failed}✕</span> : ""}</td>
                 <td style={{ minWidth: 140 }}><div className="inl"><span className="inl-bar"><i style={{ width: `${(h.tokens / maxTok) * 100}%`, background: i < SERIES.length ? SERIES[i] : OTHER }} /></span><span className="mono small">{fmtNum(h.tokens)}</span></div></td>
                 <td className="num-cell hide-sm mono small">{money(h.cost_usd)}</td>
+                <td className="hide-sm" style={{ minWidth: 150 }}><Link href={`/staff/?id=${h.id}#budget`} className="plain"><BudgetBar b={data.budgets[h.id]} /></Link></td>
                 <td className="hide-sm small">{h.last_active ? ago(h.last_active) : "never"}</td>
               </tr>
             );
           })}</tbody>
         </table></div>
       </section>
+
+      <div className="mgrid two">
+        <section className="paper mcard">
+          <div className="mhead"><h2>Why jobs failed</h2><span className="sp" /><span className="small">{data.failures.reduce((n, f) => n + f.count, 0)} failed</span></div>
+          {data.failures.length === 0 ? <p className="small">No failed jobs in this period.</p> : (
+            <div className="fails">{data.failures.map((f) => {
+              const max = data.failures[0].count;
+              return (
+                <details key={f.key} className="fail">
+                  <summary>
+                    <span className="fail-l"><i className="ri-close-circle-fill" style={{ color: STATUS.critical }} />{f.label}</span>
+                    <span className="bl-track"><span className="bl-bar" style={{ width: `${(f.count / max) * 100}%`, background: STATUS.critical }} /></span>
+                    <span className="bl-v">{f.count}</span>
+                  </summary>
+                  <div className="fail-b">
+                    <div className="small"><b>What to do:</b> {f.fix}.</div>
+                    {f.example && <div className="fail-ex mono">{f.example}</div>}
+                    {f.jobs.map((j) => <Link key={j.task_id} href={`/chat/?view=work&task=${j.task_id}`} className="fail-j"><span>{j.brief}</span><span className="small">{j.staff} · {ago(j.at)}</span></Link>)}
+                  </div>
+                </details>
+              );
+            })}</div>
+          )}
+        </section>
+        <section className="paper mcard">
+          <div className="mhead"><h2>Run time</h2><span className="sp" /><span className="small">median · slowest 10%</span></div>
+          {data.timing.engines.length === 0 ? <p className="small">No finished jobs in this period.</p> : (
+            <>
+              <div className="tw"><table className="mtable compact">
+                <thead><tr><th>Engine</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="num-cell">Failed</th></tr></thead>
+                <tbody>{data.timing.engines.map((e) => (
+                  <tr key={e.engine}><td>{e.engine}</td><td className="num-cell">{e.jobs}</td><td className="num-cell mono">{durS(e.median_s)}</td><td className="num-cell mono">{durS(e.p90_s)}</td>
+                    <td className={`num-cell ${e.fail_rate >= 20 ? "crit" : ""}`}>{e.fail_rate}%</td></tr>
+                ))}</tbody>
+              </table></div>
+              <div className="tw" style={{ marginTop: 10 }}><table className="mtable compact">
+                <thead><tr><th>Helper</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="hide-sm">Slowest</th></tr></thead>
+                <tbody>{data.timing.helpers.slice(0, 8).map((h) => (
+                  <tr key={h.staff_id}><td>{h.name}</td><td className="num-cell">{h.jobs}</td><td className="num-cell mono">{durS(h.median_s)}</td><td className="num-cell mono">{durS(h.p90_s)}</td>
+                    <td className="hide-sm small">{h.slowest ? <Link href={`/chat/?view=work&task=${h.slowest.task_id}`}>{durS(h.slowest.seconds)} · {h.slowest.brief}</Link> : "–"}</td></tr>
+                ))}</tbody>
+              </table></div>
+            </>
+          )}
+        </section>
+      </div>
+
+      <div className="mgrid two">
+        <section className="paper mcard">
+          <div className="mhead"><h2>Value per helper</h2><span className="sp" /><span className="small">proposals you decided, and what they cost</span></div>
+          {data.value.length === 0 ? <p className="small">No proposals or usage in this period.</p> : (
+            <div className="tw"><table className="mtable compact">
+              <thead><tr><th>Helper</th><th className="num-cell">Proposals</th><th>Approved</th><th className="num-cell hide-sm">Rejected</th><th className="num-cell">Spend</th><th className="num-cell">Per approved</th></tr></thead>
+              <tbody>{data.value.map((v) => (
+                <tr key={v.staff_id}>
+                  <td>{v.name}</td><td className="num-cell">{v.proposals}{v.pending ? <span className="small"> ({v.pending} open)</span> : ""}</td>
+                  <td style={{ minWidth: 120 }}>{v.approval_rate == null ? <span className="small">none decided</span> : (
+                    <div className="inl"><span className="inl-bar"><i style={{ width: `${v.approval_rate}%`, background: STATUS.good }} /></span><span className="small">{v.approved} · {v.approval_rate}%</span></div>)}</td>
+                  <td className="num-cell hide-sm">{v.rejected + v.changes || "–"}</td>
+                  <td className="num-cell mono small">{money(v.cost_usd)}</td>
+                  <td className="num-cell mono small">{v.cost_per_approved != null ? money(v.cost_per_approved) : "–"}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </section>
+        <section className="paper mcard">
+          <div className="mhead"><h2>Pool, last 24 hours</h2><span className="sp" /><span className="small">{data.pool_history.hits_7d} limit hit{data.pool_history.hits_7d === 1 ? "" : "s"} in 7 days</span></div>
+          {data.pool_history.accounts.length === 0 ? <p className="small">No pool accounts yet.</p> : <PoolHistory h={data.pool_history} />}
+          <p className="small" style={{ marginBottom: 0 }}>{data.pool_history.hits_7d >= 3 ? "Accounts hit their limits often: add a subscription, or move regular jobs to quieter hours." : "Each square is one hour. Dark squares are busy hours; a red mark means the account reached its limit then."}</p>
+        </section>
+      </div>
+
+      <DigestCard />
 
       <div className="mgrid three">
         <section className="paper mcard">

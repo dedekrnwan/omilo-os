@@ -45,6 +45,25 @@ class Worker:
             for _th in db.scalars(select(Thread).where(Thread.awaiting_reply.is_(True))):
                 pass  # still awaiting: will be picked up
 
+    def weekly_digest(self) -> None:
+        from . import digest
+
+        try:
+            with session_scope() as db:
+                digest.maybe_send(db)
+        except Exception:
+            log.exception("weekly digest failed")
+
+    def _budget(self, staff_id: str) -> None:
+        """Monthly budget: alert at 80%, pause the helper at 100%."""
+        from . import budgets
+
+        try:
+            with session_scope() as db:
+                budgets.check(db, staff_id)
+        except Exception:
+            log.exception("budget check failed")
+
     async def push_loop(self):
         """Web Push for notices while no tab is open (every 3 s)."""
         from . import notify
@@ -97,6 +116,7 @@ class Worker:
         except Exception:
             log.exception("managing hermes failed")
         self.schedule_shifts()
+        self.weekly_digest()
         self.dispatch_tasks()
         self.dispatch_chats()
         self.running = {k: v for k, v in self.running.items() if not v.done()}
@@ -183,6 +203,7 @@ class Worker:
         except Exception as e:  # engine bug or bad config
             res = EngineResult(error=f"{type(e).__name__}: {e}")
         ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
+        self._budget(ctx.staff_id)
         ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         self.finish(task_id, res)
 
@@ -218,6 +239,9 @@ class Worker:
         with session_scope() as db:
             th = db.get(Thread, thread_id)
             st = db.get(Staff, th.staff_id)
+            if st.status != "active":
+                S.post_message(db, th, "system", st.id, f"{st.name} is paused (Team → {st.name} to resume or raise its budget).", awaiting_reply=False)
+                return
             msgs = S.thread_messages(db, th, limit=40)
             # empty messages (an engine that answered nothing) would make the AI reject the whole history
             history = [{"role": "owner" if m.role == "owner" else "agent", "text": m.text} for m in msgs if m.role in ("owner", "agent") and (m.text or "").strip()]
@@ -241,6 +265,7 @@ class Worker:
         if not res.error and not (res.text or "").strip():
             res.error = "the AI finished without writing an answer"
         ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
+        self._budget(ctx.staff_id)
         ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         with session_scope() as db:
             th = db.get(Thread, thread_id)

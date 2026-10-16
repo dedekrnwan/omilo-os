@@ -1,117 +1,182 @@
 "use client";
-import { usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import Avatar from "@/components/Avatar";
+import Drawer from "@/components/Drawer";
+import InboxItemDetail from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
-import { Markdown } from "@/components/Markdown";
 import { InboxItem, ago, api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 
-export default function Inbox() {
-  const { overview, refresh } = useOverview();
+/* The Inbox: a board of what needs you, what is running and what just finished (or the classic list with history). */
+
+type Who = { id: string; name: string; role: string; is_chief: boolean };
+type Step = { at: string | null; text: string };
+type Base = { id: string; title: string; summary: string; staff: Who; searches: number; tools: number; engine: string; steps: Step[] };
+type NeedCard = Base & { kind: string; since: string; level: string; blocking: boolean; task_id: string | null; item: InboxItem };
+type RunCard = Base & { status: string; started_at: string | null; created_at: string; origin: string };
+type DoneCard = Base & { status: string; ended_at: string; seconds: number | null };
+type Board = { needs: NeedCard[]; running: RunCard[]; done: DoneCard[]; now: string };
+
+const dur = (s: number | null | undefined) => {
+  if (s == null || s < 0) return "–";
+  s = Math.round(s);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+};
+const since = (iso: string | null, now: number) => (iso ? (now - new Date(iso).getTime()) / 1000 : null);
+const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert" };
+
+function useNow(active: boolean) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (!active) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [active]);
+  return now;
+}
+
+function Card({ c, indicator, time, tag, open, onToggle, onOpen }: {
+  c: Base; indicator: React.ReactNode; time: string; tag?: React.ReactNode; open: boolean; onToggle: () => void; onOpen: () => void;
+}) {
+  return (
+    <div className={`bcard ${open ? "open" : ""}`} role="button" tabIndex={0} aria-expanded={open}
+      onClick={onToggle} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}>
+      <div className="bc-t"><Avatar who={c.staff} size={18} /><b>{c.title}</b></div>
+      {tag}
+      <p className="bc-s">{c.summary}</p>
+      <div className="bc-f">
+        {indicator}<span className="mono">{time}</span><span className="sp" />
+        <span className="bc-n" title={`${c.searches} sources read`}><i className="ri-search-line" />{c.searches}</span>
+        <span className="bc-sep" />
+        <span className="bc-n" title={`${c.tools} tool calls`}><i className="ri-hammer-line" />{c.tools}</span>
+      </div>
+      {open && (
+        <div className="bc-x" onClick={(e) => e.stopPropagation()}>
+          <div className="bc-who">{c.staff.name}{c.engine ? ` · ${c.engine}` : ""}</div>
+          {c.steps.length > 0 ? (
+            <ul className="tl">
+              {c.steps.map((s, i) => (
+                <li key={i} className={i === c.steps.length - 1 ? "last" : ""}><span>{s.text}</span><span className="tl-at">{s.at ? ago(s.at) : "now"}</span></li>
+              ))}
+            </ul>
+          ) : <p className="small" style={{ margin: "4px 0" }}>No steps recorded yet.</p>}
+          <div className="bc-open"><button className="btn sm" onClick={onOpen}>Open</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Column({ title, icon, count, children, empty }: { title: string; icon: React.ReactNode; count: number; children: React.ReactNode; empty: string }) {
+  return (
+    <section className="bcol" aria-label={title}>
+      <div className="bcol-h">{icon}<span>{title}</span><span className="bcol-n">{count}</span></div>
+      <div className="bcol-b">{count === 0 ? <div className="bcol-empty">{empty}</div> : children}</div>
+    </section>
+  );
+}
+
+function BoardView({ onCount }: { onCount: () => void }) {
   const router = useRouter();
+  const [b, setB] = useState<Board | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [detail, setDetail] = useState<NeedCard | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(async () => { try { setB(await api<Board>("/board")); setErr(null); } catch (e: any) { setErr(e.message); } }, []);
+  usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind?.startsWith("job") || n?.kind === "local");
+  const now = useNow(!!b?.running.length || !!b?.needs.length);
+  const toggle = (id: string) => setOpen((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
+  const closeDetail = useCallback(() => setDetail(null), []);
+
+  if (!b) return err ? <Err error={err} /> : <p className="small">Loading…</p>;
+  return (
+    <>
+      <Err error={err} />
+      <div className="board">
+        <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
+          {b.needs.map((c) => (
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => setDetail(c)}
+              indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
+              time={dur(since(c.since, now))}
+              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
+                {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
+          ))}
+        </Column>
+        <Column title="Running" count={b.running.length} icon={<span className="spin bcol-i" />} empty="No helper is working right now.">
+          {b.running.map((c) => (
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => router.push(`/chat/?view=work&task=${c.id}`)}
+              indicator={c.status === "queued" ? <i className="ri-hourglass-line bc-ind wait" title="Waiting for a free spot" /> : <span className="spin bc-ind" />}
+              time={c.status === "queued" ? "queued" : dur(since(c.started_at, now))} />
+          ))}
+        </Column>
+        <Column title="Done" count={b.done.length} icon={<i className="ri-checkbox-circle-line bcol-i done" />} empty="Finished jobs from the last two days show here.">
+          {b.done.map((c) => (
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => router.push(`/chat/?view=work&task=${c.id}`)}
+              indicator={<span className={`bc-dot ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "off"}`} title={c.status} />}
+              time={dur(c.seconds)} />
+          ))}
+        </Column>
+      </div>
+
+      <Drawer open={!!detail} onClose={closeDetail} wide
+        icon={detail ? <Avatar who={detail.staff} size={28} /> : null}
+        title={detail?.title || ""} sub={detail ? `${detail.staff.name} · ${KIND[detail.kind] || detail.kind} · waiting ${dur(since(detail.since, now))}` : ""}
+        footer={detail && <>{detail.task_id && <Link className="btn quiet" href={`/chat/?view=work&task=${detail.task_id}`}><i className="ri-external-link-line" />Open the job</Link>}<span className="sp" /><button className="btn" onClick={closeDetail}>Close</button></>}>
+        {detail && <div className="dw-sec"><InboxItemDetail item={detail.item} onDone={() => { setDetail(null); load(); onCount(); }} /></div>}
+      </Drawer>
+    </>
+  );
+}
+
+function ListView({ onCount }: { onCount: () => void }) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [filter, setFilter] = useState("open");
   const [open, setOpen] = useState<string | null>(null);
-  const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
-
   const load = useCallback(async () => {
     try { setItems(await api<InboxItem[]>(`/inbox?status=${filter}`)); } catch (e: any) { setErr(e.message); }
   }, [filter]);
   usePoll(load, 30000, [load], (n) => n?.kind === "inbox" || n?.kind?.startsWith("job"));
-
-  const act = async (fn: () => Promise<unknown>) => {
-    setErr(null);
-    try { await fn(); setNote(""); setOpen(null); await load(); refresh(); } catch (e: any) { setErr(e.message); }
-  };
-  const decide = (pid: string, decision: string) => act(() => api(`/proposals/${pid}/decide`, { body: { decision, note } }));
-  const discuss = async (pid: string) => {
-    const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } });
-    router.push(`/chat/?thread=${th.id}`);
-  };
-
-  const o = overview;
   return (
-    <div>
-      <h1>Inbox</h1>
-      <p className="sub">Your helpers propose, you decide. Whatever you approve is done exactly as written.</p>
-      {o && (
-        <div className="stats">
-          <div className="stat"><div className="label">Waiting for you</div><div className="num">{o.inbox.open}</div>
-            <span className={`pace ${o.inbox.blocking ? "warn" : "flat"}`}>{o.inbox.blocking ? `${o.inbox.blocking} blocking a helper` : "nothing blocking"}</span></div>
-          <div className="stat"><div className="label">Working now</div><div className="num">{o.tasks.running}</div>
-            <span className="pace flat">{o.tasks.queued} queued · limit {o.max_concurrent_tasks}</span></div>
-          <div className="stat"><div className="label">Done · 24h</div><div className="num">{o.tasks.done_24h}</div>
-            <span className="pace">finished jobs</span></div>
-          <div className="stat"><div className="label">Failed · 24h</div><div className="num">{o.tasks.failed_24h}</div>
-            <span className={`pace ${o.tasks.failed_24h ? "down" : "up"}`}>{o.tasks.failed_24h ? "look at Work" : "none"}</span></div>
-        </div>
-      )}
-
-      <div className="sec">
-        <div className="sechead">
-          <div className="seg">{["open", "snoozed", "done", "all"].map((s) => <button key={s} className={filter === s ? "on" : ""} onClick={() => setFilter(s)}>{s}</button>)}</div>
-        </div>
-        <Err error={err} />
-        {items.length === 0 ? <Empty title={filter === "open" ? "Nothing waiting" : "No items"} text={filter === "open" ? "Your helpers have nothing for you right now." : "Nothing here yet."} /> : items.map((i) => (
-          <div key={i.id} className={`item ${open === i.id ? "open" : ""}`}>
-            <div className="h" onClick={() => { setOpen(open === i.id ? null : i.id); setNote(""); }}>
-              <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{i.kind}</span>
-              {i.blocking && <span className="chip warn">blocking</span>}
-              {i.proposal && <span className={`chip ${i.proposal.risk === "high" ? "down" : i.proposal.risk === "medium" ? "warn" : "idle"}`}>risk {i.proposal.risk}</span>}
-              <div className="t"><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>
-              {i.proposal && <StatusChip status={i.proposal.status} />}
-            </div>
-            {open === i.id && (
-              <div className="b">
-                {i.proposal && (
-                  <>
-                    <div className="paper"><Markdown text={i.proposal.body_md} /></div>
-                    <p className="small">Revision {i.proposal.current_revision}{i.task_id && <> · from <Link href={`/chat/?view=work&task=${i.task_id}`}>task {i.task_id}</Link></>}</p>
-                    {i.proposal.status === "pending" && (
-                      <>
-                        <textarea placeholder="Note for the helper: required to reject or ask for changes; optional to approve" value={note} onChange={(e) => setNote(e.target.value)} />
-                        <div className="acts" style={{ marginTop: 8 }}>
-                          <button className="btn primary" onClick={() => decide(i.proposal!.id, "approve")}><i className="ri-check-line" />Approve</button>
-                          <button className="btn" onClick={() => decide(i.proposal!.id, "changes")} disabled={!note.trim()}><i className="ri-edit-2-line" />Ask for changes</button>
-                          <button className="btn danger" onClick={() => decide(i.proposal!.id, "reject")} disabled={!note.trim()}>Reject</button>
-                          <span className="sp" />
-                          <button className="btn quiet" onClick={() => discuss(i.proposal!.id)}><i className="ri-chat-3-line" />Discuss with the helper</button>
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
-                {i.kind === "question" && (
-                  <>
-                    <div className="paper"><Markdown text={i.body} /></div>
-                    {i.status === "open" && (
-                      <>
-                        <textarea placeholder="Your answer" value={note} onChange={(e) => setNote(e.target.value)} />
-                        <div className="acts" style={{ marginTop: 8 }}>
-                          <button className="btn primary" disabled={!note.trim()} onClick={() => act(() => api(`/inbox/${i.id}/answer`, { body: { answer: note } }))}>Answer</button>
-                          <button className="btn" onClick={() => act(() => api(`/inbox/${i.id}/snooze`, { body: { hours: 1 } }))}>Snooze 1h</button>
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
-                {i.kind === "alert" && (
-                  <>
-                    <div className="paper"><Markdown text={i.body} /></div>
-                    <div className="acts" style={{ marginTop: 8 }}>
-                      {i.task_id && <Link className="btn" href={`/chat/?view=work&task=${i.task_id}`}>Open task</Link>}
-                      {i.status === "open" && <button className="btn" onClick={() => act(() => api(`/inbox/${i.id}/dismiss`, { body: {} }))}>Dismiss</button>}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+    <div className="sec" style={{ marginTop: 0 }}>
+      <div className="sechead">
+        <div className="seg">{[["open", "Open"], ["snoozed", "Snoozed"], ["done", "Done"], ["all", "All"]].map(([s, l]) => <button key={s} className={filter === s ? "on" : ""} onClick={() => setFilter(s)}>{l}</button>)}</div>
       </div>
+      <Err error={err} />
+      {items.length === 0 ? <Empty title={filter === "open" ? "Nothing waiting" : "No items"} text={filter === "open" ? "Your helpers have nothing for you right now." : "Nothing here yet."} /> : items.map((i) => (
+        <div key={i.id} className={`item ${open === i.id ? "open" : ""}`}>
+          <div className="h" onClick={() => setOpen(open === i.id ? null : i.id)}>
+            <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{KIND[i.kind] || i.kind}</span>
+            {i.blocking && <span className="chip warn">Blocking</span>}
+            <div className="t"><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>
+            {i.proposal && <StatusChip status={i.proposal.status} />}
+          </div>
+          {open === i.id && <div className="b"><InboxItemDetail item={i} onDone={() => { setOpen(null); load(); onCount(); }} /></div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function Inbox() {
+  const { refresh } = useOverview();
+  const [view, setView] = useState<"board" | "list">("board");
+  useEffect(() => { try { const v = localStorage.getItem("saga.inbox.view"); if (v === "list" || v === "board") setView(v); } catch { /* ignore */ } }, []);
+  const pick = (v: "board" | "list") => { setView(v); try { localStorage.setItem("saga.inbox.view", v); } catch { /* ignore */ } };
+  return (
+    <div className="inbox-page">
+      <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 16 }}>
+        <div><h1 style={{ marginBottom: 4 }}>Inbox</h1>
+          <p className="sub" style={{ margin: 0 }}>Your helpers propose, you decide. Whatever you approve is done exactly as written.</p></div>
+        <span className="sp" />
+        <div className="seg" role="tablist" aria-label="View">
+          <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-layout-column-line" /> Board</button>
+          <button role="tab" aria-selected={view === "list"} className={view === "list" ? "on" : ""} onClick={() => pick("list")}><i className="ri-list-unordered" /> List</button>
+        </div>
+      </div>
+      {view === "board" ? <BoardView onCount={refresh} /> : <ListView onCount={refresh} />}
     </div>
   );
 }
