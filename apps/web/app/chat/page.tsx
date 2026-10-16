@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import ComposerTools, { Attached } from "@/components/ComposerTools";
+import PoolMeter from "@/components/PoolMeter";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
@@ -288,6 +289,7 @@ function WorkspaceInner() {
         <button className="iconbtn hide-lg" aria-label="Show list" onClick={() => setListOpen(!listOpen)}><i className="ri-menu-2-line" /></button>
         <span className="crumb"><i className={view === "chat" ? "ri-chat-3-line" : "ri-list-check-3"} />Workspace<span className="small" style={{ fontWeight: 400 }}>· {title}</span></span>
         <span className="sp" />
+        <PoolMeter />
         <div className="seg" role="tablist" aria-label="View">
           <button className={view === "chat" ? "on" : ""} onClick={() => go({})}><i className="ri-chat-3-line" /> Chat</button>
           <button className={view === "work" ? "on" : ""} onClick={() => go({ view: "work" })}><i className="ri-list-check-3" /> Work</button>

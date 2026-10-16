@@ -81,6 +81,13 @@ def test_pool_failover_resumes_session(owner, fake_cli):
     assert last["resume"], "second chat turn resumes the thread's session"
     assert owner.get("/api/events", params={"thread_id": th["id"]}).json()
 
+    # the meter: one entry per account, with what Claude Code reported (exact) or the rest state
+    m = owner.get("/api/harness/meter").json()
+    by = {a["label"]: a for a in m["accounts"]}
+    assert m["total"] == 2 and by["Limited"]["five_hour"]["pct"] == 100 and by["Limited"]["state"] == "cooling"
+    assert by["Good"]["five_hour"] == {**by["Good"]["five_hour"], "pct": 37, "source": "claude", "status": "allowed"}
+    assert by["Good"]["tokens_5h"] > 0 and m["avg_pct"] is not None
+
     owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["sales"]})
     for a in (lim, good):
         owner.delete(f"/api/harness/accounts/{a['id']}")

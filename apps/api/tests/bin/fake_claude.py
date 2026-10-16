@@ -54,6 +54,7 @@ if os.path.exists(path):
 open(path, "w").write(prompt)
 out({"type": "system", "subtype": "init", "session_id": session, "model": "claude-sonnet-5-5", "tools": ["WebSearch", "mcp__saga-os__report"]})
 if "LIMITED" in token:
+    out({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour", "resetsAt": 4102444800000}})
     out({"type": "result", "subtype": "success", "is_error": True, "session_id": session, "result": "Claude AI usage limit reached|4102444800",
          "usage": {"input_tokens": 5, "output_tokens": 1}, "total_cost_usd": 0.001})
     sys.exit(1)
@@ -74,6 +75,8 @@ if m:
     final = "finished"
 else:
     final = f"Claude Code here. You said: {prompt.splitlines()[-1][-80:]}"
+out({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed_warning" if "WARN" in token else "allowed", "rateLimitType": "five_hour",
+     "utilization": 0.82 if "WARN" in token else 0.37, "resetsAt": int(__import__("time").time() * 1000) + 3 * 3600 * 1000}})
 out({"type": "assistant", "session_id": session, "message": {"content": [{"type": "text", "text": final}]}})
 out({"type": "result", "subtype": "success", "is_error": False, "session_id": session, "result": final,
      "usage": {"input_tokens": 300, "output_tokens": 40}, "total_cost_usd": 0.0123, "num_turns": 3})

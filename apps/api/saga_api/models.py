@@ -331,3 +331,24 @@ class PushSub(Base):
     agent: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_ok_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class HarnessUsage(Base):
+    """Tokens one pool account spent on one run, to estimate its usage in the current 5-hour window."""
+    __tablename__ = "harness_usage"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[str] = mapped_column(String(32), index=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class HarnessQuota(Base):
+    """The latest limit Claude Code reported for an account (rate_limit_event): per window, how much is used and when it resets."""
+    __tablename__ = "harness_quota"
+    account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    window: Mapped[str] = mapped_column(String(24), primary_key=True)  # five_hour | seven_day | seven_day_opus | ...
+    status: Mapped[str] = mapped_column(String(24), default="allowed")  # allowed | allowed_warning | rejected
+    utilization: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0..1 when Claude reports it
+    resets_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)

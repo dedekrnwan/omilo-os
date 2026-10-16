@@ -744,6 +744,14 @@ class HarnessAccountIn(BaseModel):
     token: str
 
 
+@router.get("/harness/meter")
+def harness_meter(user: User = Depends(current_user)):
+    """Per-account usage of the Claude Code pool, for the bar in the Workspace (cheap: no CLI checks)."""
+    from .. import harness as H
+
+    return H.meter()
+
+
 @router.post("/harness/accounts")
 def harness_add(body: HarnessAccountIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import harness as H

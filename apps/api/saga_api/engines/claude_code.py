@@ -87,6 +87,7 @@ class _Run:
         self.emit, self.session, self.text, self.error = emit, None, "", ""
         self.tokens, self.cost, self.is_error, self.result_text = 0, 0.0, False, ""
         self.pending: dict[str, dict] = {}
+        self.limits: list[dict] = []  # rate_limit_event infos: how much of each usage window this account has used
 
     def line(self, raw: str) -> None:
         try:
@@ -126,6 +127,10 @@ class _Run:
                     if urls:
                         self.emit("sources", items=[{"url": u, "title": u} for u in urls])
                         self.emit("browser", url=urls[0], title=use["input"].get("query") or urls[0])
+        elif t == "rate_limit_event":
+            info = ev.get("rate_limit_info") or {}
+            if isinstance(info, dict) and info:
+                self.limits.append(info)
         elif t == "result":
             self.session = ev.get("session_id") or self.session
             u = ev.get("usage") or {}
@@ -204,15 +209,19 @@ class ClaudeCodeEngine(Engine):
                     session = run.session
                     remember(session)
                 problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+                rejected = H.rejected_reset(run.limits)
+                if problem and rejected is not None and not H.LIMIT_RE.search(problem):
+                    problem = f"usage limit reached ({problem[:200]})"
                 if not problem:
-                    H.release(acc_id, ok=True, tokens=run.tokens, cost=run.cost)
+                    H.release(acc_id, ok=True, tokens=run.tokens, cost=run.cost, limits=run.limits)
                     total.text = run.text
                     return total
                 if H.LIMIT_RE.search(problem):
-                    H.release(acc_id, ok=False, limit=True, error=problem, resets_at=H.parse_reset(problem), tokens=run.tokens, cost=run.cost)
+                    H.release(acc_id, ok=False, limit=True, error=problem, resets_at=rejected or H.parse_reset(problem), tokens=run.tokens, cost=run.cost,
+                              limits=run.limits)
                     emit("status", state="switching", account=label, reason="usage limit reached")
                     continue  # next account, same session: nothing is lost
-                H.release(acc_id, ok=False, error=problem, tokens=run.tokens, cost=run.cost)
+                H.release(acc_id, ok=False, error=problem, tokens=run.tokens, cost=run.cost, limits=run.limits)
                 if H.AUTH_RE.search(problem):
                     emit("status", state="switching", account=label, reason="account sign-in problem")
                     continue

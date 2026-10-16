@@ -36,6 +36,10 @@ Settings live under **Harness**. Add each subscription with a token from `claude
 Claude Code with one click (npm), then put helpers on the pool. Each job leases the least recently used free account
 (`SAGA_HARNESS_PARALLEL` jobs per account, default 2). On a usage limit the account rests until its reset time and the job
 continues on another account with `--resume`, so no work is lost; sign-in problems mark the account and move on.
+The Workspace header shows the pool at a glance: one short bar per account, side by side, filled by how much of its 5-hour
+limit it has used (green, amber from 70%, red from 90%, striped red while resting, outlined red when it needs signing in again;
+hover for details and reset times). The numbers come from Claude Code's `rate_limit_event` when it reports them; otherwise Saga OS
+estimates from tokens used against what the account handled before its last limit. The Harness page shows the same per account.
 Runs use `claude -p --output-format stream-json`, the saga-os MCP server, `--permission-mode dontAsk` and an allowlist
 (web, read, write in the helper's own workspace; `Bash` only when a helper has `allow_shell`).
 

@@ -1,6 +1,7 @@
 "use client";
 import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
+import { Segments, useMeter } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
 
@@ -21,6 +22,8 @@ export default function Harness() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const meter = useMeter();
+  const use = (id: string) => meter?.accounts.find((a) => a.id === id);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => { try { setPool(await api<Pool>("/harness")); } catch (e: any) { setErr(e.message); } }, []);
@@ -62,6 +65,16 @@ export default function Harness() {
         <div className="stat"><div className="label">Helpers on the pool</div><div className="num">{pool.helpers_on_pool.length}</div></div>
       </div>
 
+      {meter && meter.total > 0 && (
+        <div className="paper" style={{ marginBottom: 16 }}>
+          <div className="acts" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+            <b style={{ fontWeight: 500 }}>Usage this 5-hour window</b>
+            <span className="small">{meter.avg_pct != null ? `average ${meter.avg_pct}% · ` : ""}one bar per account</span>
+          </div>
+          <Segments m={meter} big />
+        </div>
+      )}
+
       <div className="paper" style={{ marginBottom: 16 }}>
         <div className="acts" style={{ justifyContent: "space-between" }}>
           <div><b style={{ fontWeight: 500 }}>Claude Code</b>
@@ -79,7 +92,7 @@ export default function Harness() {
           {pool.total > 0 && <button className="btn" onClick={useForAll}><i className="ri-team-line" />Use the pool for all helpers</button>}</div>
         {pool.accounts.length === 0 ? <div className="empty"><b>No accounts yet</b><span>Add your first Claude Code subscription below.</span></div> : (
           <div className="tw"><table>
-            <thead><tr><th>Account</th><th>Status</th><th className="hide-sm">Last used</th><th className="num-cell">Jobs</th><th className="num-cell hide-sm">Tokens</th><th></th></tr></thead>
+            <thead><tr><th>Account</th><th>Status</th><th>Used (5 h)</th><th className="hide-sm">Last used</th><th className="num-cell">Jobs</th><th className="num-cell hide-sm">Tokens</th><th></th></tr></thead>
             <tbody>{pool.accounts.map((a) => {
               const [cls, txt] = STATE[a.state] || ["idle", a.state];
               return (
@@ -88,6 +101,10 @@ export default function Harness() {
                   <td><span className={`chip ${cls}`}>{a.busy ? `Working (${a.busy})` : txt}</span>
                     {a.state === "cooling" && a.cooldown_until && <div className="small">until {new Date(a.cooldown_until).toLocaleString()}</div>}
                     {a.last_error && a.state !== "ready" && <div className="small" style={{ maxWidth: 260 }}>{a.last_error.slice(0, 120)}</div>}</td>
+                  <td style={{ minWidth: 110 }}>{(() => { const u = use(a.id); if (!u) return null;
+                    const p = u.state === "cooling" ? 100 : u.five_hour.pct;
+                    return <><span className={`pseg wide ${u.state === "cooling" ? "rest" : p == null ? "unknown" : p >= 90 ? "high" : p >= 70 ? "mid" : "low"}`}><i style={{ width: `${p ?? 0}%` }} /></span>
+                      <div className="small">{p == null ? `${u.tokens_5h.toLocaleString()} tokens` : `${p}%${u.five_hour.source === "estimate" ? " (est.)" : ""}`}</div></>; })()}</td>
                   <td className="small hide-sm">{a.last_used_at ? ago(a.last_used_at) : "never"}</td>
                   <td className="num-cell">{a.runs}</td>
                   <td className="num-cell hide-sm">{a.tokens.toLocaleString()}</td>

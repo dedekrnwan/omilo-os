@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from .config import get_settings
 from .db import session_scope
-from .models import HarnessAccount, now
+from .models import HarnessAccount, HarnessQuota, HarnessUsage, Setting, now
 from .security import decrypt, encrypt
 
 TOKEN_RE = re.compile(r"^sk-ant-[A-Za-z0-9_\-]{20,}$")
@@ -142,13 +142,68 @@ def lease(exclude: set[str] | None = None) -> tuple[str, str, str] | None:
         return a.id, a.label, decrypt(a.token_enc) or ""
 
 
+def _ts(v) -> dt.datetime | None:
+    """resetsAt arrives as epoch seconds or milliseconds."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return dt.datetime.fromtimestamp(f / 1000 if f > 1e11 else f, dt.UTC)
+
+
+def rejected_reset(limits: list[dict] | None) -> dt.datetime | None:
+    """When Claude Code said a window is exhausted (status rejected), when it resets (or in an hour if unknown)."""
+    for info in reversed(limits or []):
+        if str(info.get("status", "")).lower() in ("rejected", "rate_limited", "blocked"):
+            return _ts(info.get("resetsAt")) or (now() + DEFAULT_COOLDOWN)
+    return None
+
+
+def record_limits(db, account_id: str, limits: list[dict] | None) -> None:
+    for info in limits or []:
+        window = str(info.get("rateLimitType") or "five_hour")[:24]
+        q = db.get(HarnessQuota, (account_id, window)) or HarnessQuota(account_id=account_id, window=window)
+        q.status = str(info.get("status") or "allowed")[:24]
+        u = info.get("utilization")
+        if isinstance(u, (int, float)):
+            q.utilization = max(0.0, min(1.0, float(u) / 100 if u > 1.5 else float(u)))
+        elif q.status == "rejected":
+            q.utilization = 1.0
+        q.resets_at = _ts(info.get("resetsAt")) or q.resets_at
+        q.updated_at = now()
+        db.merge(q)
+
+
+WINDOW = dt.timedelta(hours=5)
+
+
+def window_tokens(db, account_id: str) -> int:
+    from sqlalchemy import func
+
+    return int(db.scalar(select(func.coalesce(func.sum(HarnessUsage.tokens), 0)).where(
+        HarnessUsage.account_id == account_id, HarnessUsage.at >= now() - WINDOW)) or 0)
+
+
 def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, error: str = "", limit: bool = False,
-            resets_at: dt.datetime | None = None) -> None:
+            resets_at: dt.datetime | None = None, limits: list[dict] | None = None) -> None:
     with session_scope() as db, _lock:
         _busy[account_id] = max(0, _busy.get(account_id, 1) - 1)
         a = db.get(HarnessAccount, account_id)
         if not a:
             return
+        if tokens or cost:
+            db.add(HarnessUsage(account_id=account_id, tokens=tokens, cost_usd=cost))
+        record_limits(db, account_id, limits)
+        if limit:
+            # learn this account's real capacity: what it had used in this window when the limit hit
+            used = window_tokens(db, account_id) + tokens
+            if used > 0:
+                key = f"harness_capacity:{account_id}"
+                s = db.get(Setting, key)
+                if s:
+                    s.value = used
+                else:
+                    db.add(Setting(key=key, value=used))
         a.runs += 1
         a.tokens += tokens
         a.cost_usd = (a.cost_usd or 0) + cost
@@ -161,6 +216,46 @@ def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, er
             a.last_error = error[:500]
             if AUTH_RE.search(error or ""):
                 a.status = "error"
+
+
+def _aware(d: dt.datetime | None) -> dt.datetime | None:
+    return d.replace(tzinfo=d.tzinfo or dt.UTC) if d else None
+
+
+def meter() -> dict:
+    """How much of its limits each pool account has used, for the bar in the Workspace.
+
+    Uses what Claude Code reports (exact) when it is recent; otherwise estimates the 5-hour window from tokens spent,
+    against the capacity learned the last time this account hit its limit."""
+    from .serialize import iso
+
+    out = []
+    with session_scope() as db:
+        rows = list(db.scalars(select(HarnessAccount).order_by(HarnessAccount.created_at)))
+        t = now()
+        for a in rows:
+            acc = serialize(a, _busy.get(a.id, 0))
+            quotas = {q.window: q for q in db.scalars(select(HarnessQuota).where(HarnessQuota.account_id == a.id))}
+            windows = {}
+            for name, q in quotas.items():
+                live = q.resets_at is None or _aware(q.resets_at) > t
+                if not live:
+                    continue  # that window has reset since Claude last told us
+                windows[name] = {"pct": None if q.utilization is None else round(q.utilization * 100), "status": q.status,
+                                 "resets_at": iso(q.resets_at), "source": "claude"}
+            used = window_tokens(db, a.id)
+            cap = (db.get(Setting, f"harness_capacity:{a.id}") or Setting(value=None)).value
+            five = windows.get("five_hour") or {"pct": None, "status": "allowed", "resets_at": None, "source": None}
+            if five["pct"] is None and cap:
+                five = {**five, "pct": min(99, round(used * 100 / cap)), "source": "estimate"}
+            if acc["state"] == "cooling":
+                five = {**five, "pct": 100, "status": "rejected", "resets_at": acc["cooldown_until"], "source": five["source"] or "limit"}
+            out.append({"id": a.id, "label": a.label, "state": acc["state"], "busy": acc["busy"], "tokens_5h": used,
+                        "five_hour": five, "weekly": windows.get("seven_day"), "last_error": acc["last_error"] if acc["state"] == "error" else ""})
+    ready = sum(1 for a in out if a["state"] in ("ready", "new"))
+    known = [a["five_hour"]["pct"] for a in out if a["state"] not in ("disabled", "error") and a["five_hour"]["pct"] is not None]
+    return {"accounts": out, "ready": ready, "total": len(out), "busy": sum(a["busy"] for a in out),
+            "avg_pct": round(sum(known) / len(known)) if known else None}
 
 
 def pool_summary() -> dict:
