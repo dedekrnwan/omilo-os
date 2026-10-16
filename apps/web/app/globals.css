@@ -350,14 +350,19 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
 .pick { height: 32px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r); padding: 0 12px; font-size: 13px; }
 .pick:hover { background: var(--soft); }
 .pick.on { background: var(--primary); border-color: var(--primary); color: #fff; }
-.choice { display: block; width: 100%; text-align: left; border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-lg);
-  padding: 14px 16px; margin-bottom: 8px; transition: border-color .15s, box-shadow .15s; }
-.choice:hover { border-color: var(--faint); }
-.choice.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-.choice b { display: block; font-size: 14px; font-weight: 500; }
-.choice span { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
-.rec { display: inline-block; font-size: 11px; font-weight: 500; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 5px; margin-left: 6px;
-  background: var(--ok-tint); color: var(--ok); border: 1px solid var(--ok-line); vertical-align: 1px; }
+.choice { position: relative; display: block; width: 100%; text-align: left; border: 1px solid var(--line-strong); background: var(--surface);
+  border-radius: 12px; padding: 14px 48px 14px 16px; margin-bottom: 8px; cursor: pointer; font: inherit; color: inherit;
+  transition: border-color .15s, box-shadow .15s, background .15s; }
+.choice::after { content: ""; position: absolute; top: 15px; right: 16px; width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--line-strong); background: var(--surface); box-sizing: border-box; transition: all .15s; }
+.choice:hover { border-color: var(--faint); background: var(--soft); }
+.choice.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); background: var(--surface); }
+.choice.on::after { border: 5px solid var(--ink); }
+.choice b { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; font-weight: 500; line-height: 20px; color: var(--ink); }
+.choice > span, .choice > b + span { display: block; font-size: 13px; line-height: 1.5; color: var(--muted); margin-top: 4px; }
+.choice .rec, .rec { display: inline-flex; align-items: center; gap: 4px; width: auto; flex: none; font-size: 11px; font-weight: 500; height: 20px;
+  padding: 0 8px; margin: 0; border-radius: 999px; background: var(--ok-tint); color: var(--ok); border: 1px solid var(--ok-line); line-height: 1; }
+.choice .rec::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .helper ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
 .helper .when { font-size: 12px; color: var(--muted); margin-top: 6px; font-family: var(--font-mono); }
 .check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 14px; cursor: pointer; font-weight: 400; color: var(--ink); margin: 0; }
