@@ -90,7 +90,7 @@ def connector_runtime(c: Connector) -> dict:
 
 # ------------------------------------------------------------------ skills (files in <data>/skills/<slug>/SKILL.md)
 def skills_dir() -> Path:
-    d = get_settings().data_dir / "skills"
+    d = get_settings().company_dir / "skills"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -141,7 +141,7 @@ def delete_skill(slug: str) -> None:
 
 # ------------------------------------------------------------------ files attached in chat
 def files_dir() -> Path:
-    d = get_settings().data_dir / "files"
+    d = get_settings().company_dir / "files"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -192,7 +192,7 @@ def serve_headers(p: Path, download: bool) -> tuple[str, str]:
 def readable_roots(db, staff_id: str | None = None) -> list[Path]:
     """Where files may be read from for previews and sharing: shared folders, helper workspaces and the upload store."""
     roots = [Path(f.path) for f in db.scalars(select(Folder))]
-    ws = get_settings().data_dir / "workspaces"
+    ws = get_settings().company_dir / "workspaces"
     roots.append(ws / staff_id if staff_id else ws)
     roots.append(files_dir())
     return roots

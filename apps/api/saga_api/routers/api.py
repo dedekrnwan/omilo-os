@@ -15,7 +15,7 @@ from .. import onboarding as OB
 from .. import serialize as X
 from .. import services as S
 from ..config import get_settings
-from ..db import get_db
+from ..db import get_auth_db, get_db
 from ..engines import get_engine
 from ..importer import import_prototype
 from ..models import (
@@ -824,8 +824,8 @@ async def harness_test(aid: str, db: Session = Depends(get_db), user: User = Dep
     if not cli:
         raise HTTPException(409, "Install Claude Code first.")
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"CLAUDE_CODE_OAUTH_TOKEN": decrypt(a.token_enc) or "", "CLAUDE_CONFIG_DIR": str(get_settings().data_dir / "harness" / "config")})
-    (get_settings().data_dir / "harness" / "config").mkdir(parents=True, exist_ok=True)
+    env.update({"CLAUDE_CODE_OAUTH_TOKEN": decrypt(a.token_enc) or "", "CLAUDE_CONFIG_DIR": str(get_settings().company_dir / "harness" / "config")})
+    (get_settings().company_dir / "harness" / "config").mkdir(parents=True, exist_ok=True)
     proc = await _a.create_subprocess_exec(cli, "-p", "Reply with exactly: OK", "--output-format", "json", "--max-turns", "1",
                                            env=env, stdout=_a.subprocess.PIPE, stderr=_a.subprocess.PIPE, stdin=_a.subprocess.DEVNULL)
     try:
@@ -935,7 +935,25 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
 
 
 # last health check per connector (in memory; refreshed by Test and by the chat box every few minutes)
-_conn_health: dict[str, dict] = {}
+_conn_health_all: dict[str, dict[str, dict]] = {}
+
+
+class _HealthView:
+    """Per-company view of the health cache (connector ids repeat across companies)."""
+
+    def _d(self) -> dict[str, dict]:
+        from .. import company as _C
+
+        return _conn_health_all.setdefault(_C.current(), {})
+
+    def get(self, k, default=None):
+        return self._d().get(k, default)
+
+    def __setitem__(self, k, v):
+        self._d()[k] = v
+
+
+_conn_health = _HealthView()
 
 
 async def _probe(rt: dict) -> dict:
@@ -1486,13 +1504,13 @@ def notices(after: int = 0, limit: int = 30, db: Session = Depends(get_db), user
 
 
 @router.get("/notify")
-def notify_config(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def notify_config(db: Session = Depends(get_db), adb: Session = Depends(get_auth_db), user: User = Depends(current_user)):
     from .. import notify as N
     from ..models import PushSub
 
     return {"kinds": N.KINDS, "prefs": N.prefs(db, user.id), "push": N.push_available(), "vapid_public_key": N.vapid_public_key(),
             "devices": [{"id": s.id, "agent": s.agent, "created_at": X.iso(s.created_at), "last_ok_at": X.iso(s.last_ok_at)}
-                        for s in db.scalars(select(PushSub).where(PushSub.user_id == user.id))]}
+                        for s in adb.scalars(select(PushSub).where(PushSub.user_id == user.id))]}
 
 
 @router.put("/notify/prefs")
@@ -1509,7 +1527,7 @@ class PushSubIn(BaseModel):
 
 
 @router.post("/notify/subscribe")
-def notify_subscribe(body: PushSubIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def notify_subscribe(body: PushSubIn, db: Session = Depends(get_auth_db), user: User = Depends(current_user)):
     from ..models import PushSub
 
     if not body.endpoint.startswith("https://") or not {"p256dh", "auth"} <= set(body.keys):
@@ -1524,7 +1542,7 @@ def notify_subscribe(body: PushSubIn, db: Session = Depends(get_db), user: User 
 
 
 @router.post("/notify/unsubscribe")
-def notify_unsubscribe(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def notify_unsubscribe(body: dict, db: Session = Depends(get_auth_db), user: User = Depends(current_user)):
     from ..models import PushSub
 
     for s in db.scalars(select(PushSub).where(PushSub.user_id == user.id, PushSub.endpoint == str(body.get("endpoint", "")))):

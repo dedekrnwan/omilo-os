@@ -10,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
+from .company import CompanyMiddleware
 from .config import get_settings
 from .db import init_db
 from .mcp_server import router as mcp_router
-from .routers import api, auth
+from .routers import api, auth, companies
 from .worker import Worker
 
 log = logging.getLogger("saga")
@@ -61,6 +62,7 @@ def build_app() -> FastAPI:
         inner.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in cfg.cors_origins.split(",")],
                              allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     inner.include_router(auth.router)
+    inner.include_router(companies.router)
     inner.include_router(api.router)
     inner.include_router(mcp_router)
 
@@ -83,6 +85,7 @@ def build_app() -> FastAPI:
                     return FileResponse(cand, headers=_cache_headers(path, cand))
         return FileResponse(web / "index.html", headers=_NO_CACHE)
 
+    inner.add_middleware(CompanyMiddleware)  # outermost: every request knows its company
     if cfg.base_path:
         outer = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
         outer.mount(cfg.base_path.rstrip("/"), inner)

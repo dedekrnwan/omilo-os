@@ -37,7 +37,7 @@ class DocError(Exception):
 
 
 def vault_dir() -> Path:
-    d = get_settings().data_dir / "vault"
+    d = get_settings().company_dir / "vault"
     if not d.exists():
         d.mkdir(parents=True, exist_ok=True)
         (d / "Welcome.md").write_text(WELCOME)

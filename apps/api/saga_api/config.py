@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     cors_origins: str = ""  # comma-separated, for a web app served from another origin
 
     def mcp_url(self) -> str:
-        return (self.internal_url or self.public_url).rstrip("/") + self.base_path.rstrip("/") + "/mcp"
+        """The MCP endpoint helpers of the current company call (other companies get a /co/<id> prefix)."""
+        from .company import prefix
+
+        return (self.internal_url or self.public_url).rstrip("/") + self.base_path.rstrip("/") + prefix() + "/mcp"
 
     def resolved_database_url(self) -> str:
         if self.database_url:
@@ -52,8 +55,15 @@ class Settings(BaseSettings):
         return f.read_text().strip()
 
     @property
+    def company_dir(self) -> Path:
+        """Where the current company keeps its files (the data dir itself for the first company)."""
+        from .company import dir_for
+
+        return dir_for()
+
+    @property
     def knowledge_dir(self) -> Path:
-        d = self.data_dir / "knowledge"
+        d = self.company_dir / "knowledge"
         d.mkdir(parents=True, exist_ok=True)
         return d
 

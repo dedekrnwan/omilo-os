@@ -9,6 +9,7 @@ import NotifyHost from "./Notify";
 import TaskDrawerLazy from "./TaskDrawerLazy";
 import ContextMenuHost from "./ContextMenu";
 import { copy, menu as ctxMenu } from "@/lib/menu";
+import CompanySwitcher from "./CompanySwitcher";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/docs/", "Docs", "ri-book-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
@@ -21,9 +22,8 @@ type Ctx = { overview: Overview | null; refresh: () => void };
 const OverviewCtx = createContext<Ctx>({ overview: null, refresh: () => {} });
 export const useOverview = () => useContext(OverviewCtx);
 
-export function Mark() {
-  return <div className="mark" aria-hidden>S</div>;
-}
+export { Mark } from "./Logo";
+import { Mark } from "./Logo";
 
 export default function Shell({ children }: { children: ReactNode }) {
   const path = usePathname() || "/";
@@ -58,7 +58,8 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const n = overview?.inbox.open || 0;
-    document.title = n ? `(${n}) Saga OS` : "Saga OS";
+    const base = overview?.company_name ? `${overview.company_name} · Saga OS` : "Saga OS";
+    document.title = n ? `(${n}) ${base}` : base;
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
 
@@ -83,6 +84,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               <div className="topbar">
                 <Mark /><span className="crumb">Saga OS<span className="small" style={{ fontWeight: 400 }}>· Setting up your company</span></span>
                 <span className="sp" />
+                <div className="cosw-top"><CompanySwitcher overview={overview} /></div>
                 <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
               </div>
               <div style={{ flex: 1, minHeight: 0, display: "flex" }}>{children}</div>
@@ -112,12 +114,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         </div>
         <aside className={`side ${menu ? "open" : ""}`}>
           <div className="head brand"><Mark /><div><b>Saga OS</b></div></div>
-          <div className="company">
-            <i className="ri-building-line" /><span className="grow">{overview?.company_name || "Your company"}</span>
-            {overview && (overview.paused
-              ? <span className="chip warn">Paused</span>
-              : <span className="chip up">{overview.tasks.running ? `${overview.tasks.running} working` : "Live"}</span>)}
-          </div>
+          <CompanySwitcher overview={overview} />
           <nav>
             {NAV.map((g) => (
               <div className="group" key={g.group}>

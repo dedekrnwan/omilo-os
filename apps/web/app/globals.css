@@ -52,8 +52,9 @@ input[type="checkbox"], input[type="radio"] { width: 16px; min-height: 16px; hei
 .frame { display: flex; height: 100dvh; overflow: hidden; }
 .side { width: 252px; flex-shrink: 0; display: flex; flex-direction: column; padding: 12px 0; }
 .side .head { padding: 2px 16px 12px; display: flex; align-items: center; gap: 10px; }
-.mark { width: 22px; height: 22px; border-radius: 5px; background: var(--primary); color: #fff; display: grid; place-items: center;
-  font: 600 13px/1 var(--font-display); letter-spacing: -.02em; flex-shrink: 0; }
+.mark { display: inline-grid; place-items: center; flex-shrink: 0; line-height: 0; }
+.saga-mark { display: block; }
+.mark .saga-mark { filter: drop-shadow(0 1px 1px rgba(28, 25, 23, .12)); }
 .brand b { display: block; font: 600 15px/1.2 var(--font-display); letter-spacing: -.01em; }
 .brand small { display: block; font-size: 12px; color: var(--muted); }
 .side .company { margin: 0 8px 4px; padding: 8px 12px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md);
@@ -945,3 +946,35 @@ a.plain { color: inherit; text-decoration: none; }
 .cm-sep { height: 1px; background: var(--line-strong); margin: 4px 6px; }
 .cm-h { padding: 6px 10px 2px; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* company switcher */
+.cosw { position: relative; margin: 0 8px 4px; }
+.side .cosw .company { margin: 0; width: 100%; cursor: pointer; text-align: left; color: inherit; font: inherit; font-size: 13px; }
+.cosw-btn:hover, .cosw-btn.on { border-color: var(--line-strong); background: var(--soft); }
+.cosw-chev { color: var(--faint); font-size: 14px; }
+.cosw-dot { width: 7px; height: 7px; border-radius: 50%; background: #eb6834; flex-shrink: 0; }
+.co-av { display: inline-grid; place-items: center; flex-shrink: 0; border-radius: 7px; color: #fff; font-weight: 600; letter-spacing: -.02em;
+  font-family: var(--font-display); line-height: 1; }
+.cosw-pop { position: absolute; z-index: 120; top: calc(100% + 6px); left: 0; right: 0; min-width: 240px; padding: 4px; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: 0 12px 32px rgba(28, 25, 23, .14), 0 2px 6px rgba(28, 25, 23, .06); }
+.cosw-h { padding: 8px 10px 4px; font-size: 11px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
+.cosw-i { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; background: transparent; border-radius: 8px;
+  cursor: pointer; text-align: left; color: var(--ink); font: inherit; font-size: 13px; }
+.cosw-i:hover, .cosw-i:focus-visible { background: var(--soft); outline: none; }
+.cosw-i .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cosw-i .t b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cosw-i .t .small { font-size: 12px; }
+.cosw-i .count { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: #fde8dc; color: #b4471a; }
+.cosw-i.act { color: var(--ink-2); }
+.cosw-i.act i { width: 26px; text-align: center; font-size: 16px; color: var(--muted); }
+.cosw-i > .ri-check-line { color: var(--ink); font-size: 16px; }
+.cosw-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.cosw-top .cosw { margin: 0; }
+.cosw-top .company { margin: 0; padding: 5px 10px; min-width: 200px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md);
+  display: flex; align-items: center; gap: 8px; cursor: pointer; font: inherit; font-size: 13px; color: inherit; }
+.cosw-top .company .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.cosw-top .cosw-pop { left: auto; right: 0; }
+.co-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.co-row:last-child { border-bottom: 0; }
+.co-row input { flex: 1; min-width: 0; }
+.hero-mascot { margin-bottom: 18px; line-height: 0; } .hero-mascot .saga-mark { filter: drop-shadow(0 6px 14px rgba(28, 25, 23, .14)); }

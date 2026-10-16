@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { Mark } from "@/components/Logo";
 import { useState } from "react";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -17,7 +18,7 @@ export default function Setup() {
   };
   return (
     <div className="centered">
-      <div className="mark" aria-hidden style={{ width: 32, height: 32, fontSize: 18, borderRadius: 8 }}>S</div>
+      <Mark size={44} />
       <h1 className="display" style={{ fontSize: 32 }}>Create your account</h1>
       <p className="sub">You are the boss here: your AI helpers suggest, you decide. This account is the only one that can approve their work.</p>
       <form className="paper" onSubmit={submit}>

@@ -7,6 +7,7 @@ import time
 
 from sqlalchemy import func, select
 
+from . import company as C
 from . import services as S
 from .capabilities import resolve
 from .config import get_settings
@@ -35,7 +36,14 @@ class Worker:
 
     # ------------------------------------------------------------ lifecycle
     def recover(self):
-        """Tasks left 'running' by a previous process: requeue once, then fail."""
+        """Tasks left 'running' by a previous process: requeue once, then fail (in every company)."""
+        for _cid in C.each():
+            try:
+                self._recover_one()
+            except Exception:
+                log.exception("recovering %s failed", _cid)
+
+    def _recover_one(self):
         with session_scope() as db:
             for t in db.scalars(select(Task).where(Task.status == "running")):
                 if t.attempts < 2:
@@ -69,10 +77,13 @@ class Worker:
         from . import notify
 
         while not self._stop.is_set():
-            try:
-                await notify.push_pending(session_scope)
-            except Exception:
-                log.exception("web push failed")
+            many = len(C.ids()) > 1
+            for cid in C.each():
+                try:
+                    label = C.summary(cid)["name"] if many else ""
+                    await notify.push_pending(session_scope, lambda: session_scope(C.MAIN), label, cid if many else "")
+                except Exception:
+                    log.exception("web push failed for %s", cid)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=3)
             except TimeoutError:
@@ -106,8 +117,13 @@ class Worker:
         if not force and time.monotonic() - self._hermes_checked < 5:
             return
         self._hermes_checked = time.monotonic()
-        with session_scope() as db:
-            desired = S.desired_gateways(db)
+        desired: dict[str, dict] = {}
+        for cid in C.each():
+            try:
+                with session_scope() as db:
+                    desired.update({f"{cid}/{sid}": d for sid, d in S.desired_gateways(db).items()})
+            except Exception:
+                log.exception("hermes profiles for %s failed", cid)
         await self.hermes.reconcile(desired)
 
     async def tick(self):
@@ -115,10 +131,14 @@ class Worker:
             await self.manage_hermes()
         except Exception:
             log.exception("managing hermes failed")
-        self.schedule_shifts()
-        self.weekly_digest()
-        self.dispatch_tasks()
-        self.dispatch_chats()
+        for cid in C.each():  # every company runs on its own: its pause switch, concurrency limit and schedule
+            try:
+                self.schedule_shifts()
+                self.weekly_digest()
+                self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
+                self.dispatch_chats()
+            except Exception:
+                log.exception("worker tick failed for %s", cid)
         self.running = {k: v for k, v in self.running.items() if not v.done()}
         self.chatting = {k: v for k, v in self.chatting.items() if not v.done()}
 

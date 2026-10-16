@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { SagaMascot } from "@/components/Logo";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import HermesSetup, { HermesInfo } from "@/components/HermesSetup";
@@ -102,9 +103,8 @@ function allTimezones(current: string): string[] {
   catch { return Array.from(new Set([current, "UTC", "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "Asia/Singapore", "Europe/London", "America/New_York"])); }
 }
 
-function Dots() {  // a small dot-matrix "S" for the welcome screen
-  const on = new Set(["1-2", "1-3", "1-4", "1-5", "1-6", "2-1", "3-1", "4-2", "4-3", "4-4", "4-5", "4-6", "5-7", "6-7", "7-1", "7-2", "7-3", "7-4", "7-5", "7-6", "2-7", "6-1"]);
-  return <div className="hero-dots" aria-hidden>{Array.from({ length: 81 }, (_, i) => <i key={i} className={on.has(`${Math.floor(i / 9)}-${i % 9}`) ? "on" : ""} />)}</div>;
+function Dots() {  // Saga, the house mascot, says hello on the welcome screen
+  return <div className="hero-mascot" aria-hidden><SagaMascot size={88} /></div>;
 }
 
 /* ------------------------------------------------------------------ the setup assistant (chat half) */

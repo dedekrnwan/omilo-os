@@ -114,6 +114,22 @@ with history filters.
 It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
 items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
 
+## Several companies
+
+Run more than one company from one Saga OS. Pick the company at the top of the sidebar (the badge shows what waits in
+the others), or **New company** to set one up from scratch. Each company is fully separate: its own helpers, jobs,
+inbox, Docs, knowledge, skills, budgets, connectors, shared folders and Claude Code pool. Only your login is shared.
+
+- The first company keeps the original layout in the data folder; every other company lives in `<data>/companies/<id>/`
+  with its own `saga.db`, `vault/`, `hermes/` and so on. The list is `<data>/companies.json`.
+- Requests pick the company from the `saga_co` cookie (the browser), the `X-Saga-Company` header (the CLI:
+  `saga-os companies`, `saga-os use <id>`, or `SAGA_COMPANY`), or a `/co/<id>/` path prefix (helpers call their
+  company's MCP endpoint at `/co/<id>/mcp`).
+- Switching company in one tab reloads every open tab on it. Web Push names the company and switches to it when opened.
+- Archive a company you no longer run (Manage companies): its helpers pause and it leaves the list; nothing is deleted.
+- With Postgres, put `{company}` in `SAGA_DATABASE_URL` (e.g. `postgresql://…/saga_{company}`) to give each company
+  its own database; otherwise new companies use SQLite in their folder.
+
 ## Right-click menus
 
 Everything you can see has a right-click menu with the actions that fit it, the same actions wherever the thing shows up:

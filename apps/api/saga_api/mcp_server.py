@@ -187,7 +187,7 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
 
         raw = str(args.get("path") or "")
         if raw and not _P(raw.removeprefix("file://")).expanduser().is_absolute():
-            raw = str(get_settings().data_dir / "workspaces" / st.id / raw)
+            raw = str(get_settings().company_dir / "workspaces" / st.id / raw)
         p = C.allowed_path(db, raw, st.id)
         if not p:
             raise S.DomainError("that file does not exist in your workspace or a shared folder")

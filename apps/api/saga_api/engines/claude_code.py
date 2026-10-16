@@ -73,8 +73,8 @@ URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 
 def _dirs(staff_id: str) -> tuple[Path, Path, Path]:
-    base = get_settings().data_dir / "harness"
-    config, runs, work = base / "config", base / "runs", get_settings().data_dir / "workspaces" / staff_id
+    base = get_settings().company_dir / "harness"
+    config, runs, work = base / "config", base / "runs", get_settings().company_dir / "workspaces" / staff_id
     for d in (config, runs, work):
         d.mkdir(parents=True, exist_ok=True)
     return config, runs, work

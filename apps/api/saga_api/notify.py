@@ -163,14 +163,17 @@ def _send(sub: PushSub, payload: dict, contact: str) -> str:
         return str(e)[:200]
 
 
-async def push_pending(db_factory) -> int:
-    """Send Web Push for notices nobody saw live (no open tab), honouring each user's preferences. Returns the number sent."""
+async def push_pending(db_factory, auth_factory=None, label: str = "", company: str = "") -> int:
+    """Send Web Push for the current company's notices nobody saw live (no tab open on that company), honouring the
+    owner's preferences for that company. Subscriptions belong to the login, so they live in the auth database.
+    `label` (the company name) is put before the title when the owner runs several companies. Returns the number sent."""
     from .models import User
 
     if not push_available():
         return 0
+    auth_factory = auth_factory or db_factory
     sent = 0
-    with db_factory() as db:
+    with db_factory() as db, auth_factory() as adb:
         cur = db.get(Setting, "push_cursor")
         last = int(cur.value) if cur and cur.value is not None else None
         if last is None:  # first run: start from now, never replay history
@@ -181,14 +184,20 @@ async def push_pending(db_factory) -> int:
         if not notices:
             return 0
         jobs = []
-        for sub in db.scalars(select(PushSub)):
-            u = db.get(User, sub.user_id)
+        for sub in adb.scalars(select(PushSub)):
+            u = adb.get(User, sub.user_id)
             if not u or is_present(db, sub.user_id):
                 continue
             pr = prefs(db, sub.user_id)
             for n in notices:
                 if n.kind == "test" or pr.get(n.kind):
-                    jobs.append((sub, {**serialize(n), "url": get_settings().base_path.rstrip("/") + n.url}, u.email))
+                    payload = {**serialize(n), "url": get_settings().base_path.rstrip("/") + n.url}
+                    if label:
+                        payload["title"] = f"{label} · {payload['title']}"
+                    if company:  # opening it switches to that company
+                        u, _, frag = payload["url"].partition("#")
+                        payload["url"] = u + ("&" if "?" in u else "?") + f"co={company}" + (f"#{frag}" if frag else "")
+                    jobs.append((sub, payload, u.email))
         cur.value = notices[-1].id
         db.commit()
         for sub, payload, contact in jobs:
@@ -196,8 +205,8 @@ async def push_pending(db_factory) -> int:
             if res == "ok":
                 sub.last_ok_at, sent = now(), sent + 1
             elif res == "gone":
-                db.delete(sub)
+                adb.delete(sub)
             else:
                 log.warning("web push failed: %s", res)
-        db.commit()
+        adb.commit()
     return sent

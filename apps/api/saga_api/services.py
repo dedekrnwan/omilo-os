@@ -100,7 +100,9 @@ def managed_hermes_engine(db: Session, provider: str, model: str, current: dict 
     if cur.get("managed") and cur.get("port") and cur.get("api_key_enc"):
         port, key_enc = int(cur["port"]), cur["api_key_enc"]
     else:
-        port = HM.allocate_port(taken or set())
+        from .company import ports_everywhere
+
+        port = HM.allocate_port((taken or set()) | ports_everywhere())
         key_enc = encrypt(HM.new_api_key())
     return {"type": "hermes", "managed": True, "provider": provider, "claude_model": model, "model": "hermes-agent",
             "port": port, "base_url": f"http://127.0.0.1:{port}/v1", "api_key_enc": key_enc}
@@ -150,7 +152,7 @@ def desired_gateways(db: Session, write_all: bool = False) -> dict[str, dict]:
                              provider=e.get("provider") or "anthropic", model=e.get("claude_model") or "claude-sonnet-5-5",
                              provider_key=claude_key, connectors=conns)
         if st.id in awake:
-            out[st.id] = {"hash": h}
+            out[st.id] = {"hash": h, "home": str(HM.home_for(st.id))}
     return out
 
 

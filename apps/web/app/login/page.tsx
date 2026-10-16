@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { Mark } from "@/components/Logo";
 import { useEffect, useState } from "react";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -21,7 +22,7 @@ export default function Login() {
   };
   return (
     <div className="centered">
-      <div className="mark" aria-hidden style={{ width: 32, height: 32, fontSize: 18, borderRadius: 8 }}>S</div>
+      <Mark size={44} />
       <h1 className="display" style={{ fontSize: 32 }}>Welcome back</h1>
       <p className="sub">Sign in to run your company with your AI helpers.</p>
       <form className="paper" onSubmit={submit}>

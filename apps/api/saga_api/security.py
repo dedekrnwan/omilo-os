@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .db import get_db
+from .db import get_auth_db
 from .models import AuthToken, Staff, User, now
 
 _ph = PasswordHasher()
@@ -50,7 +50,7 @@ def _bearer(request: Request) -> str | None:
     return auth[7:].strip() if auth.lower().startswith("bearer ") else None
 
 
-def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def current_user(request: Request, db: Session = Depends(get_auth_db)) -> User:
     raw = _bearer(request) or request.cookies.get(COOKIE)
     if not raw:
         raise HTTPException(401, "not signed in")

@@ -41,7 +41,7 @@ MCP_SERVER_NAME = "saga-os"
 
 # ------------------------------------------------------------------ paths & detection
 def root() -> Path:
-    d = get_settings().data_dir / "hermes"
+    d = get_settings().company_dir / "hermes"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -337,7 +337,7 @@ class Supervisor:
         return {sid: {"pid": p.pid, "running": p.returncode is None} for sid, p in self.procs.items()}
 
     async def reconcile(self, desired: dict[str, dict]):
-        """desired: staff_id -> {"hash": str}. Start missing, restart changed or dead, stop removed."""
+        """desired: key ("<company>/<staff_id>") -> {"hash": str, "home": path}. Start missing, restart changed or dead, stop removed."""
         binary = find_hermes()
         for sid in list(self.procs):
             if sid not in desired:
@@ -353,10 +353,9 @@ class Supervisor:
                 await self.stop(sid)
             if time.time() < self.backoff.get(sid, 0):
                 continue
-            await self.start(sid, binary, d["hash"])
+            await self.start(sid, binary, d["hash"], Path(d["home"]) if d.get("home") else home_for(sid))
 
-    async def start(self, sid: str, binary: str, cfg_hash: str):
-        home = home_for(sid)
+    async def start(self, sid: str, binary: str, cfg_hash: str, home: Path):
         logf = open(home / "saga-gateway.log", "ab")  # noqa: SIM115 - kept open for the child process
         env = {**os.environ, "HERMES_HOME": str(home)}
         bin_dir = tools_dir() / "node_modules" / ".bin"

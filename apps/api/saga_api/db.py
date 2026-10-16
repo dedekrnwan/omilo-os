@@ -1,9 +1,11 @@
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from . import company as C
 from .config import get_settings
 
 
@@ -11,21 +13,36 @@ class Base(DeclarativeBase):
     pass
 
 
-_engine = None
-_SessionLocal = None
+# one engine per company (each company has its own database); the login lives in the first company's
+_engines: dict[str, object] = {}
+_makers: dict[str, sessionmaker] = {}
+_lock = threading.RLock()
 
 
-def engine():
-    global _engine, _SessionLocal
-    if _engine is None:
-        url = get_settings().resolved_database_url()
+def _url(cid: str) -> str:
+    cfg = get_settings()
+    if cid == C.MAIN:
+        return cfg.resolved_database_url()
+    if cfg.database_url and "{company}" in cfg.database_url:  # e.g. postgresql://…/saga_{company}
+        return cfg.database_url.replace("{company}", cid.replace("-", "_"))
+    return f"sqlite:///{C.dir_for(cid) / 'saga.db'}"
+
+
+def engine(cid: str | None = None):
+    cid = cid or C.current()
+    if cid in _engines:
+        return _engines[cid]
+    with _lock:
+        if cid in _engines:
+            return _engines[cid]
+        url = _url(cid)
         kwargs = {"pool_pre_ping": True}
         if url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
-        _engine = create_engine(url, **kwargs)
+        eng = create_engine(url, **kwargs)
         if url.startswith("sqlite"):
 
-            @event.listens_for(_engine, "connect")
+            @event.listens_for(eng, "connect")
             def _sqlite_pragmas(conn, _):  # WAL: the API and the worker can work at the same time
                 cur = conn.cursor()
                 cur.execute("PRAGMA journal_mode=WAL")
@@ -36,28 +53,46 @@ def engine():
                 cur.execute("PRAGMA busy_timeout=30000")
                 cur.close()
 
-        _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
-    return _engine
+        from . import models  # noqa: F401  (register tables)
+
+        Base.metadata.create_all(eng)
+        _engines[cid] = eng
+        _makers[cid] = sessionmaker(bind=eng, expire_on_commit=False)
+    return _engines[cid]
+
+
+def _maker(cid: str | None = None) -> sessionmaker:
+    cid = cid or C.current()
+    engine(cid)
+    return _makers[cid]
 
 
 def reset_engine():
-    """Tests: forget the engine so a new database URL is picked up."""
-    global _engine, _SessionLocal
-    if _engine is not None:
-        _engine.dispose()
-    _engine = None
-    _SessionLocal = None
+    """Tests: forget the engines so a new database URL is picked up."""
+    for e in _engines.values():
+        e.dispose()
+    _engines.clear()
+    _makers.clear()
 
 
 def init_db():
-    from . import models  # noqa: F401  (register tables)
-
-    Base.metadata.create_all(engine())
+    engine(C.MAIN)
+    for cid in C.ids():
+        engine(cid)
 
 
 def get_db() -> Iterator[Session]:
-    engine()
-    db = _SessionLocal()
+    """The current company's database."""
+    db = _maker()()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_auth_db() -> Iterator[Session]:
+    """Where the owner's login lives (shared by every company)."""
+    db = _maker(C.MAIN)()
     try:
         yield db
     finally:
@@ -65,9 +100,8 @@ def get_db() -> Iterator[Session]:
 
 
 @contextmanager
-def session_scope() -> Iterator[Session]:
-    engine()
-    db = _SessionLocal()
+def session_scope(cid: str | None = None) -> Iterator[Session]:
+    db = _maker(cid)()
     try:
         yield db
         db.commit()

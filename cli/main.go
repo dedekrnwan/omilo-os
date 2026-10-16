@@ -28,8 +28,9 @@ var version = "0.2.0"
 var composeFile []byte
 
 type config struct {
-	URL   string `json:"url"`
-	Token string `json:"token"`
+	URL     string `json:"url"`
+	Token   string `json:"token"`
+	Company string `json:"company,omitempty"` // which company commands work on (empty = the first one)
 }
 
 func dataDir() string {
@@ -55,6 +56,9 @@ func loadConfig() config {
 	}
 	if t := os.Getenv("SAGA_TOKEN"); t != "" {
 		c.Token = t
+	}
+	if co := os.Getenv("SAGA_COMPANY"); co != "" {
+		c.Company = co
 	}
 	c.URL = strings.TrimRight(c.URL, "/")
 	return c
@@ -90,6 +94,9 @@ func call(method, path string, body any, out any) error {
 	req.Header.Set("Content-Type", "application/json")
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	if c.Company != "" {
+		req.Header.Set("X-Saga-Company", c.Company)
 	}
 	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
 	if err != nil {
@@ -353,6 +360,40 @@ func reorder(args []string) []string {
 	return append(flags, pos...)
 }
 
+func cmdCompanies() {
+	var res struct {
+		Current   string           `json:"current"`
+		Companies []map[string]any `json:"companies"`
+	}
+	must(call("GET", "/companies", nil, &res))
+	rows := [][]string{}
+	for _, c := range res.Companies {
+		mark := ""
+		if str(c, "id") == res.Current {
+			mark = "← using"
+		}
+		rows = append(rows, []string{str(c, "id"), str(c, "name"), fmt.Sprint(c["inbox"]), fmt.Sprint(c["running"]), mark})
+	}
+	table("ID\tNAME\tINBOX\tRUNNING\t\t", rows)
+}
+
+func cmdUse(args []string) {
+	if len(args) != 1 {
+		die(errors.New("usage: saga-os use <company id>   (see `saga-os companies`)"))
+	}
+	c := loadConfig()
+	c.Company = args[0]
+	if args[0] == "main" {
+		c.Company = ""
+	}
+	var co map[string]any
+	if err := call("POST", "/companies/switch", map[string]string{"id": args[0]}, &co); err != nil {
+		die(err)
+	}
+	must(saveConfig(c))
+	fmt.Println("now working on", str(co, "name"))
+}
+
 func cmdStaff() {
 	var staff []map[string]any
 	must(call("GET", "/staff", nil, &staff))
@@ -513,6 +554,7 @@ Run it
   doctor                 check Docker, the gateway, your login and the engines
 
 Work with it
+  companies              your companies        use <id>  switch company
   status                 one-line overview
   inbox                  what needs you
   show <id>              a proposal or a task in full
@@ -562,6 +604,10 @@ func main() {
 		}
 		must(call("POST", "/inbox/"+args[0]+"/answer", map[string]string{"answer": strings.Join(args[1:], " ")}, nil))
 		fmt.Println("answered; the agent gets a follow-up task")
+	case "companies":
+		cmdCompanies()
+	case "use":
+		cmdUse(args)
 	case "staff":
 		cmdStaff()
 	case "tasks":
