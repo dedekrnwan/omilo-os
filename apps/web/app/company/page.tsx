@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
+import KpiBoard from "@/components/KpiBoard";
 import { ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 
@@ -30,20 +31,11 @@ export default function Company() {
     const n = newName.endsWith(".md") ? newName : `${newName}.md`;
     try { await api(`/knowledge/${n}`, { method: "PUT", body: { content: `# ${newName}\n` } }); setNewName(""); await load(); open(n); } catch (e: any) { setErr(e.message); }
   };
-  const kpis = Object.entries(overview?.kpis || {});
 
   return (
     <div>
       <h1>{overview?.company_name || "Company"}</h1>
-      <div className="sec" style={{ marginTop: 16 }}>
-        <h2>KPIs</h2>
-        {kpis.length === 0 ? <p className="small">No KPIs yet. The Finance agent records them with their source.</p> : (
-          <div className="stats">{kpis.slice(0, 8).map(([k, v]) => (
-            <div className="stat" key={k}><div className="label">{k}</div><div className="num">{v.value.toLocaleString()}</div>
-              <span className="small">{v.period} · {v.source}</span></div>
-          ))}</div>
-        )}
-      </div>
+      <KpiBoard />
       <div className="sec">
         <h2>Knowledge</h2>
         <div className="grid2" style={{ gridTemplateColumns: "240px 1fr", marginTop: 12 }}>

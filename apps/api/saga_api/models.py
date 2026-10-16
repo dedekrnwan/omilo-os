@@ -424,3 +424,19 @@ class ShiftGoal(Base):
     __tablename__ = "shift_goal"
     shift_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     goal_id: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class KpiDef(Base):
+    """A number you track: what it means, its unit and target, and the goal it measures. Values live in kpi_value."""
+
+    __tablename__ = "kpi_def"
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)   # the key helpers write with update_kpi, e.g. "mrr"
+    label: Mapped[str] = mapped_column(String(120), default="")
+    unit: Mapped[str] = mapped_column(String(24), default="")          # "Rp", "%", "users"
+    target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    direction: Mapped[str] = mapped_column(String(8), default="up")    # up = higher is better, down = lower is better
+    goal_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    owner: Mapped[str] = mapped_column(String(64), default="")         # the helper who keeps it current (default: Finance)
+    note: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)

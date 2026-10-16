@@ -99,6 +99,9 @@ def tree(db: Session, days: int = 30) -> dict:
             count(n["children"], acc)
         return acc
 
+    from .kpis import board as kpi_board
+
+    kp = kpi_board(db, history=8)
     out, used = [], set()
     for g in goals:
         nodes = [_node(t, names, reps, props, kids) for t in roots if link.get(t.id) == g.id]
@@ -106,7 +109,8 @@ def tree(db: Session, days: int = 30) -> dict:
         out.append({"id": g.id, "title": g.title, "target": g.target, "due": g.due, "status": g.status, "position": g.position,
                     "jobs": [{"id": sh.id, "name": sh.name, "staff_id": sh.staff_id, "staff": names.get(sh.staff_id, sh.staff_id), "cron": sh.cron}
                              for sh in shifts if shift_goal.get(sh.id) == g.id],
-                    "work": list(reversed(nodes)), "progress": count(nodes, {"total": 0, "proposals": 0, "approved": 0})})
+                    "work": list(reversed(nodes)), "progress": count(nodes, {"total": 0, "proposals": 0, "approved": 0}),
+                    "kpis": [{k: r[k] for k in ("name", "label", "unit", "value", "target", "progress", "direction")} for r in kp if r["goal_id"] == g.id]})
     rest = [_node(t, names, reps, props, kids) for t in roots if t.id not in used]
     return {"days": days, "goals": out, "unlinked": list(reversed(rest)),
             "shifts": [{"id": sh.id, "name": sh.name, "staff": names.get(sh.staff_id, sh.staff_id), "goal_id": shift_goal.get(sh.id)} for sh in shifts]}

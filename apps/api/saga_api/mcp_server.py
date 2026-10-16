@@ -126,9 +126,10 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         levels = {a: policy.describe(policy.level_for(a, st.permissions, S.strict_mode(db))) for a in sorted(policy.DEFAULTS)}
         return "allowed", {"id": st.id, "name": st.name, "chief_of_staff": st.is_chief, "job": st.job, "permissions": levels}
     if name == "get_context":
+        from .kpis import for_prompt as kpis_for_prompt
         from .plan import goals_for_prompt
 
-        return "allowed", {"context": S.company_context(db, args.get("topics")), "goals": goals_for_prompt(db)}
+        return "allowed", {"context": S.company_context(db, args.get("topics")), "goals": goals_for_prompt(db), "kpis": kpis_for_prompt(db)}
     if name == "get_task":
         t = S.task_for_staff(db, st, args["task_id"])
         ck = S.latest_checkpoint(db, t.id)

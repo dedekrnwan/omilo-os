@@ -1172,3 +1172,48 @@ button.pg-head { border: 0; background: none; padding: 0; text-align: left; curs
 .jd-tree li i { color: var(--faint); flex-shrink: 0; }
 .jd-tree li.g i, .jd-tree li.g a { color: #15803d; }
 .jd-tree li.me b { font-weight: 600; }
+.ws-panel-close { display: none; } @media (max-width: 1100px) { .ws-panel-close { display: inline-grid; } }
+
+/* KPIs on the Company page */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kpi:hover { border-color: var(--line-strong); }
+.kpi-top { display: flex; align-items: center; gap: 6px; }
+.kpi-l { font-size: 13px; font-weight: 500; color: var(--ink-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iconbtn.sm { width: 24px; height: 24px; }
+.kpi-v { display: flex; align-items: flex-end; gap: 6px; }
+.kpi-v .num, .kpi-hist-top .num { font: 400 28px/32px var(--font-mono); font-variant-numeric: tabular-nums; }
+.kpi-v .unit, .kpi-hist-top .unit { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.kpi-spark path { stroke: var(--accent, #6366f1); }
+.kpi-spark circle { fill: var(--accent, #6366f1); }
+.kpi-spark.good path { stroke: #1baf7a; } .kpi-spark.good circle { fill: #1baf7a; }
+.kpi-spark.bad path { stroke: #d03b3b; } .kpi-spark.bad circle { fill: #d03b3b; }
+.kpi-meta { display: flex; gap: 8px; font-size: 12px; color: var(--muted); align-items: center; min-height: 18px; }
+.kpi-d { display: inline-flex; align-items: center; gap: 2px; font-weight: 500; }
+.kpi-d.up { color: #0f8a5f; } .kpi-d.down { color: #c03030; } .kpi-d.flat { color: var(--muted); }
+.kpi-t { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.kpi-t .bar { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
+.kpi-t .bar i { display: block; height: 100%; background: var(--accent, #6366f1); border-radius: 3px; transition: width .3s; }
+.kpi-t .bar i.done { background: #1baf7a; }
+.kpi-t.add { flex-direction: row; align-items: center; gap: 4px; border: 1px dashed var(--line-strong); background: transparent; border-radius: var(--r-sm); padding: 5px 8px; cursor: pointer; color: var(--muted); }
+.kpi-t.add:hover { color: var(--ink); background: var(--hover); }
+.kpi-src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-foot { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 2px; }
+
+.kpi-hist-top { display: flex; align-items: flex-end; gap: 6px; }
+.kpi-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kpi-tbl th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.kpi-tbl td { padding: 7px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.kpi-tbl td:last-child { width: 28px; }
+.pg-kpis { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pg-kpi { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px 8px; background: var(--surface); }
+.pg-kpi b { font-family: var(--font-mono); font-weight: 500; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent, #6366f1); cursor: pointer; font: inherit; }
+.kpi-goal { display: flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-goal .dot { margin: 0 2px; }
+a.pg-kpis { color: var(--ink-2); text-decoration: none; width: fit-content; }
+a.pg-kpis:hover .pg-kpi { border-color: var(--line-strong); }
+.pg-kpi b { font-size: 12px; color: var(--ink); }
+.pg-kpi i { color: var(--muted); }
+.kpi-gt { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.kpi-own { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: 6px; }

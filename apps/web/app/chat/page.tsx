@@ -49,7 +49,8 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
           <button className={tab === "browser" ? "on" : ""} onClick={() => setTab("browser")}><i className="ri-global-line" /> Browser{trail.length ? ` · ${trail.length}` : ""}</button>
         </div>
         <span className="sp" />
-        <button className="iconbtn" aria-label="Close panel" onClick={onClose}><i className="ri-side-bar-fill" /></button>
+        {/* hidden on wide screens (the top bar has the toggle); on phones the panel covers the chat, so it needs its own close */}
+        <button className="iconbtn ws-panel-close" aria-label="Close panel" onClick={onClose}><i className="ri-close-line" /></button>
       </div>
       <div className="pbody">
         {tab === "progress" && (runs.length ? (

@@ -1,6 +1,8 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import Avatar from "@/components/Avatar";
+import { fmt } from "@/components/KpiBoard";
 import Drawer from "@/components/Drawer";
 import WorkMap from "@/components/WorkMap";
 import { Err, StatusChip } from "@/components/ui";
@@ -17,7 +19,8 @@ type PNode = { id: string; title: string; staff_id: string; staff: string; statu
   proposals: { id: string; title: string; status: string }[]; children: PNode[] };
 type PGoal = { id: string; title: string; target: string; due: string; status: string; position: number;
   jobs: { id: string; name: string; staff_id: string; staff: string; cron: string }[]; work: PNode[];
-  progress: { total: number; done?: number; failed?: number; running?: number; queued?: number; proposals: number; approved: number } };
+  progress: { total: number; done?: number; failed?: number; running?: number; queued?: number; proposals: number; approved: number };
+  kpis?: { name: string; label: string; unit: string; value: number | null; target: number | null; progress: number | null }[] };
 type Plan = { days: number; goals: PGoal[]; unlinked: PNode[]; shifts: { id: string; name: string; staff: string; goal_id: string | null }[] };
 type Form = { id?: string; title: string; target: string; due: string; status: string; shift_ids: string[] };
 
@@ -116,6 +119,11 @@ export default function PlanPage() {
                       <span className="small pg-by">Set by you{g.due ? ` · by ${g.due}` : ""}{g.status === "done" ? " · reached" : g.status === "dropped" ? " · dropped" : ""}</span>
                       <b>{g.title}</b>
                       {g.target && <span className="small">{g.target}</span>}
+                      {!!g.kpis?.length && (
+                        <Link className="pg-kpis" href="/company/" title="KPIs that measure this goal (Company page)">{g.kpis.map((k) => (
+                          <span key={k.name} className="pg-kpi"><i className="ri-line-chart-line" />{k.label} <b>{fmt(k.value)}{k.unit ? ` ${k.unit}` : ""}</b>
+                            {k.target != null && <span className="small">/ {fmt(k.target)}{k.progress != null ? ` · ${k.progress}%` : ""}</span>}</span>))}</Link>
+                      )}
                     </div>
                     <div className="pg-num">
                       <span className="inl"><span className="inl-bar" style={{ width: 90 }}><i style={{ width: `${total ? (done * 100) / total : 0}%`, background: "#0ca30c" }} /></span>

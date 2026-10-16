@@ -131,6 +131,20 @@ goal, the jobs above, this job, and the jobs it handed on.
 Every card shows where it comes from: a small line on top with the goal (opens the Plan) and the job above it (opens that job),
 on the Inbox board and list, the Workspace job list, the job page and the job drawer.
 
+## KPIs
+
+The **Company** page has a card per KPI: the latest value and unit, the change since the last value (green when it moves the
+right way: up or down, you choose), a trend line, progress toward the target, where the number came from, the goal it
+measures and the helper who keeps it current. On each card (or by right-click):
+
+- **Value**: record a number with its period and source.
+- **Ask to update**: gives the helper who owns the KPI (else Finance, else the Chief) a job to find the current number from a real source and record it with `update_kpi`.
+- **History**: every value, newest first, each one deletable.
+- **Edit KPI**: name, key, unit, target, direction, linked goal, owner and what the number means. **New KPI** adds one.
+
+Helpers get every KPI with its target in `get_context`, and goals on the **Plan** page show the KPIs that measure them.
+API: `GET /api/kpis/board`, `PUT|DELETE /api/kpis/defs/{name}`, `POST /api/kpis/values`, `DELETE /api/kpis/values/{id}`, `POST /api/kpis/{name}/ask`.
+
 ## Browser panel
 
 Workspace → Browser shows the pages a helper read, searched or opened, newest first, as a real picture of the page: the

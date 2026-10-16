@@ -1873,3 +1873,131 @@ async def browser_shot(url: str, fresh: bool = False, user: User = Depends(curre
     except BP.PreviewError as e:
         raise HTTPException(422, str(e)) from e
     return FileResponse(f, media_type="image/png", headers={"Cache-Control": "private, max-age=600"})
+
+
+# ------------------------------------------------------------------ KPIs: definitions, values, asking for an update
+@router.get("/kpis/board")
+def kpi_board(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import kpis as K
+
+    return K.board(db)
+
+
+class KpiDefIn(BaseModel):
+    label: str | None = Field(default=None, max_length=120)
+    unit: str | None = Field(default=None, max_length=24)
+    target: float | None = None
+    clear_target: bool = False
+    direction: str | None = None
+    goal_id: str | None = None
+    owner: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    position: int | None = None
+
+
+@router.put("/kpis/defs/{name}")
+def kpi_define(name: str, body: KpiDefIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import kpis as K
+    from ..models import Goal, KpiDef
+
+    try:
+        k = K.key(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    d = db.get(KpiDef, k)
+    if not d:
+        d = KpiDef(name=k, position=(db.scalar(select(func.max(KpiDef.position))) or 0) + 1)
+        db.add(d)
+    for f in ("label", "unit", "note", "position"):
+        v = getattr(body, f)
+        if v is not None:
+            setattr(d, f, v.strip() if isinstance(v, str) else v)
+    if body.target is not None:
+        d.target = body.target
+    if body.clear_target:
+        d.target = None
+    if body.direction is not None:
+        if body.direction not in ("up", "down"):
+            raise HTTPException(400, "direction is up (higher is better) or down (lower is better)")
+        d.direction = body.direction
+    if body.goal_id is not None:
+        if body.goal_id and not db.get(Goal, body.goal_id):
+            raise HTTPException(400, "unknown goal")
+        d.goal_id = body.goal_id or None
+    if body.owner is not None:
+        if body.owner and not db.get(Staff, body.owner):
+            raise HTTPException(400, "unknown helper")
+        d.owner = body.owner
+    S.audit(db, user.id, "kpi.define", k)
+    db.commit()
+    return {"name": k}
+
+
+@router.delete("/kpis/defs/{name}")
+def kpi_undefine(name: str, values: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import KpiDef, KpiValue
+
+    d = db.get(KpiDef, name)
+    if d:
+        db.delete(d)
+    if values:
+        for v in db.scalars(select(KpiValue).where(KpiValue.name == name)):
+            db.delete(v)
+    S.audit(db, user.id, "kpi.delete", name, values=values)
+    db.commit()
+    return {"ok": True}
+
+
+class KpiValueIn(BaseModel):
+    name: str
+    value: float
+    period: str = Field(default="", max_length=32)
+    source: str = Field(default="", max_length=500)
+
+
+@router.post("/kpis/values")
+def kpi_record(body: KpiValueIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import kpis as K
+    from ..models import KpiValue
+
+    try:
+        k = K.key(body.name)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    v = KpiValue(name=k, value=body.value, period=body.period.strip(), source=body.source.strip() or "entered by you", staff_id="owner")
+    db.add(v)
+    S.audit(db, user.id, "kpi.write", k, value=body.value, period=body.period)
+    db.commit()
+    return {"id": v.id}
+
+
+@router.delete("/kpis/values/{vid}")
+def kpi_value_delete(vid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import KpiValue
+
+    v = _404(db.get(KpiValue, vid), "unknown value")
+    db.delete(v)
+    S.audit(db, user.id, "kpi.value.delete", vid, name=v.name)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/kpis/{name}/ask")
+def kpi_ask(name: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Ask the helper who keeps this KPI (else Finance, else the Chief) to find the current number, with its source."""
+    from .. import kpis as K
+    from ..models import KpiDef
+
+    d = db.get(KpiDef, name)
+    row = next((r for r in K.board(db, history=1) if r["name"] == name), None)
+    if not row:
+        raise HTTPException(404, "unknown KPI")
+    who = (d.owner if d and d.owner and db.get(Staff, d.owner) else None) or ("finance" if db.get(Staff, "finance") else None) or (S.chief(db).id if S.chief(db) else None)
+    if not who:
+        raise HTTPException(400, "no helper to ask")
+    tgt = f" Target: {row['target']:g}{(' ' + row['unit']) if row['unit'] else ''}." if row["target"] is not None else ""
+    brief = (f"Update the KPI “{row['label']}” (name: {name}). Find the current number from a real source, record it with "
+             f"update_kpi(name=\"{name}\", value=…, period=…, source=…), and say in your report what changed and why.{tgt}"
+             + (f"\nWhat it means: {row['note']}" if row["note"] else ""))
+    t = S.create_task(db, who, "manual", brief, user.id, goal_id=row["goal_id"])
+    return {"task_id": t.id, "staff_id": who}
