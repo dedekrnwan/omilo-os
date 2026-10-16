@@ -440,3 +440,16 @@ class KpiDef(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class OfficeEvent(Base):
+    """One verified thing that happened to a helper, for the live office: a job queued, started, finished or failed,
+    a tool used, an approval asked or decided, a question, a handoff, a chat. Written by a flush hook (office.py) from
+    the real records, never made up; the id is the cursor the office stream resumes from."""
+    __tablename__ = "office_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    staff_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)

@@ -11,6 +11,8 @@ import { ago, api } from "@/lib/api";
 import { kick, usePoll } from "@/lib/poll";
 import { helperItems, jobLinkItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
+import { useOffice } from "@/lib/office";
+import OfficeView, { Freshness, StatusChip } from "@/components/office/OfficeView";
 
 /* Monitor: how the company of helpers is doing. Tokens and spend, jobs, what waits on you, who is working,
    the Claude Code pool and Saga's tools, over one time range. */
@@ -138,7 +140,30 @@ function DigestCard() {
   );
 }
 
+type Mode = "simple" | "office";
+function ModeSwitch({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void }) {
+  return (
+    <div className="seg mode-seg" role="tablist" aria-label="View">
+      <button role="tab" aria-selected={mode === "simple"} className={mode === "simple" ? "on" : ""} onClick={() => setMode("simple")}><i className="ri-dashboard-line" />Simple</button>
+      <button role="tab" aria-selected={mode === "office"} className={mode === "office" ? "on" : ""} onClick={() => setMode("office")}><i className="ri-building-4-line" />Office</button>
+    </div>
+  );
+}
+
 export default function Monitor() {
+  const [mode, setModeS] = useState<Mode>("simple");
+  useEffect(() => {
+    let m = new URLSearchParams(location.search).get("mode");
+    if (!m) { try { m = localStorage.getItem("saga.monitor.mode"); } catch { /* private window */ } }
+    if (m === "office") setModeS("office");
+  }, []);
+  const setMode = (m: Mode) => {
+    setModeS(m);
+    try { localStorage.setItem("saga.monitor.mode", m); } catch { /* private window */ }
+    const u = new URL(location.href); u.searchParams.set("mode", m); history.replaceState(null, "", u);
+  };
+  const live = useOffice();
+  const liveBy = useMemo(() => new Map((live.state?.agents || []).map((a) => [a.id, a])), [live.state]);
   const [range, setRange] = useState("7d");
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(false);
@@ -147,9 +172,10 @@ export default function Monitor() {
   const [err, setErr] = useState<string | null>(null);
 
   usePoll(async () => {
+    if (mode === "office") return;
     setLoading(true);
     try { setData(await api<Data>(`/monitor?range=${range}`)); setUpdated(new Date()); setErr(null); } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
-  }, 30000, [range], (n) => n?.url === "/monitor" || n?.kind?.startsWith("job") || n?.kind === "inbox" || n?.kind === "reply");
+  }, 30000, [range, mode], (n) => n?.url === "/monitor" || n?.kind?.startsWith("job") || n?.kind === "inbox" || n?.kind === "reply");
 
   const labels = useMemo(() => (data?.buckets || []).map((b) => {
     const d = new Date(b);
@@ -182,6 +208,16 @@ export default function Monitor() {
     { key: "failed", label: "Failed", color: STATUS.critical, values: data.jobs.failed },
   ] : [];
 
+  if (mode === "office") return (
+    <div className="monitor office">
+      <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 12 }}>
+        <div><h1 style={{ marginBottom: 4 }}>Monitor</h1>
+          <p className="sub" style={{ margin: 0 }}>Your helpers at their desks, live. Only real events move them: jobs, tools, handoffs, approvals.</p></div>
+        <span className="sp" /><ModeSwitch mode={mode} setMode={setMode} />
+      </div>
+      <OfficeView />
+    </div>
+  );
   if (!data) return <div><h1>Monitor</h1>{err ? <Err error={err} /> : <p className="small">Loading…</p>}</div>;
   const k = data.kpi;
   const jobsTotal = k.jobs_done + k.jobs_failed;
@@ -193,6 +229,10 @@ export default function Monitor() {
       <div className="sechead" style={{ alignItems: "flex-end" }}>
         <div><h1 style={{ marginBottom: 4 }}>Monitor</h1>
           <p className="sub" style={{ margin: 0 }}>How your helpers are doing: usage, jobs, what waits on you, and the pool. Times in {data.timezone}.</p></div>
+        <span className="sp" />
+        <span className="ms-simple-live"><Freshness compact /><ModeSwitch mode={mode} setMode={setMode} /></span>
+      </div>
+      <div className="sechead" style={{ marginTop: -8 }}>
         <span className="sp" />
         <span className="small">{updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
       </div>
@@ -211,7 +251,7 @@ export default function Monitor() {
           sub={success == null ? <span className="delta flat">none yet</span> : <span className={`delta ${success >= 90 ? "good" : success >= 70 ? "flat" : "bad"}`}>{success}% succeeded</span>} href="/chat/?view=work" />
         <Tile label="Waiting on you" value={<>{k.waiting}{k.waiting_critical ? <span className="num-sub crit"> · {k.waiting_critical} urgent</span> : null}</>}
           sub={<span className="small">{k.oldest_waiting ? `oldest ${ago(k.oldest_waiting)}` : "all clear"}{k.avg_decision_minutes != null ? ` · you answer in ~${mins(k.avg_decision_minutes)}` : ""}</span>} href="/" />
-        <Tile label="Working now" value={<>{k.working}<span className="num-sub"> of {k.helpers}</span></>}
+        <Tile label="Working now" value={<>{live.state ? live.state.agents.filter((a) => a.status === "working").length : k.working}<span className="num-sub"> of {live.state ? live.state.agents.length : k.helpers}</span></>}
           sub={<span className="small">{k.awake} ready{k.queued ? ` · ${k.queued} queued` : ""} · {k.runs} runs{k.avg_run_seconds ? ` (${Math.round(k.avg_run_seconds)}s avg)` : ""}</span>} />
         <Tile label="Claude Code pool" value={data.pool.total ? <>{data.pool.ready}<span className="num-sub"> / {data.pool.total} ready</span></> : "–"} href="/harness/"
           sub={data.pool.total ? <span className="small">{data.pool.avg_pct != null ? `avg ${data.pool.avg_pct}% used (5 h)` : "use not reported yet"}</span> : <span className="small">No accounts yet</span>}>
@@ -239,12 +279,16 @@ export default function Monitor() {
           <thead><tr><th>Helper</th><th>Now</th><th className="hide-sm">Doing</th><th className="num-cell">Jobs</th><th>Tokens</th><th className="num-cell hide-sm">Spend</th><th className="hide-sm">Budget (month)</th><th className="hide-sm">Last active</th></tr></thead>
           <tbody>{data.helpers.map((h, i) => {
             const [cls, icon, txt] = STATE[h.state] || ["idle", "ri-question-line", h.state];
+            const la = liveBy.get(h.id);
+            const doing = la ? la.current : h.current;
             return (
               <tr key={h.id} onContextMenu={menu(() => [{ heading: h.name }, ...helperItems(h), ...(h.current ? [sep, ...jobLinkItems(h.current.task_id, h.current.brief)] : [])])}>
                 <td><Link href={`/staff/?id=${h.id}`} className="mh-name"><Avatar who={h} size={28} state={h.state === "working" ? "working" : null} /><b>{h.name}</b></Link></td>
-                <td><span className={`chip ${cls}`}><i className={icon} style={icon.includes("circle-fill") ? { fontSize: 8 } : undefined} />{txt}</span>
-                  {h.state === "ready" && (h as any).next_job && <div className="small">next {(h as any).next_job.name}</div>}</td>
-                <td className="hide-sm small" style={{ maxWidth: 280 }}>{h.current ? <Link href={`/chat/?view=work&task=${h.current.task_id}`}>{h.current.brief}</Link> : "–"}</td>
+                <td>{la ? <StatusChip s={la.status} /> : <span className={`chip ${cls}`}><i className={icon} style={icon.includes("circle-fill") ? { fontSize: 8 } : undefined} />{txt}</span>}
+                  {la?.status === "blocked" ? <div className="small">{la.waiting_count} waiting on you</div> : la?.status === "queued" ? <div className="small">{la.queued} queued</div>
+                    : la?.status === "failed" ? <div className="small">last job failed {ago(la.last_failure?.at)}</div>
+                    : (la ? la.status === "idle" : h.state === "ready") && (la?.next_job || (h as any).next_job) && <div className="small">next {(la?.next_job || (h as any).next_job).name}</div>}</td>
+                <td className="hide-sm small" style={{ maxWidth: 280 }}>{doing ? (doing.task_id ? <Link href={`/chat/?view=work&task=${doing.task_id}`}>{doing.brief}</Link> : doing.brief) : "–"}</td>
                 <td className="num-cell">{h.jobs_done}{h.jobs_failed ? <span className="crit"> · {h.jobs_failed}✕</span> : ""}</td>
                 <td style={{ minWidth: 140 }}><div className="inl"><span className="inl-bar"><i style={{ width: `${(h.tokens / maxTok) * 100}%`, background: i < SERIES.length ? SERIES[i] : OTHER }} /></span><span className="mono small">{fmtNum(h.tokens)}</span></div></td>
                 <td className="num-cell hide-sm mono small">{money(h.cost_usd)}</td>

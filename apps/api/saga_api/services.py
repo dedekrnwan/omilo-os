@@ -560,4 +560,5 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     return {"decision": "allowed", "level": policy.describe(level), "message": "Allowed. Go ahead, and mention it in your report."}
 
 
+from . import office as _office  # noqa: E402,F401  (registers the hook that writes the live office events)
 from . import plan as _plan  # noqa: E402,F401  (registers the hook that links new jobs to their goal)
