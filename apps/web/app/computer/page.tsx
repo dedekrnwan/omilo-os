@@ -5,6 +5,7 @@ import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* Computer: which folders on the machine running Saga OS your helpers may read, edit and run commands in.
    Sharing and changing a folder happen in a drawer on the right, with a folder browser. */
@@ -42,7 +43,7 @@ export default function Computer() {
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
   const remove = async () => {
-    if (!form?.id || !confirm(`Stop sharing ${form.path}? Nothing in the folder is deleted.`)) return;
+    if (!form?.id || !(await confirmDialog({ title: "Stop sharing this folder?", body: <><code>{form.path}</code><br />Helpers lose access. Nothing in the folder is deleted.</>, confirm: "Stop sharing", danger: true }))) return;
     await api(`/folders/${form.id}`, { method: "DELETE" }); close(); load();
   };
   const put = async (f: Folder, patch: Partial<Form>) => { try { await api(`/folders/${f.id}`, { method: "PUT", body: { path: f.path, label: f.label, access: f.access, commands: f.commands, default_on: f.default_on, ...patch } }); load(); } catch (e: any) { setErr(e.message); } };
@@ -55,7 +56,7 @@ export default function Computer() {
     sep,
     { label: "Copy the path", icon: "ri-file-copy-line", onSelect: () => copy(f.path) },
     sep,
-    { label: "Stop sharing", icon: "ri-forbid-line", danger: true, onSelect: async () => { if (!confirm(`Stop sharing ${f.path}? Nothing in the folder is deleted.`)) return; await api(`/folders/${f.id}`, { method: "DELETE" }); load(); } },
+    { label: "Stop sharing", icon: "ri-forbid-line", danger: true, onSelect: async () => { if (!(await confirmDialog({ title: "Stop sharing this folder?", body: <><code>{f.path}</code><br />Helpers lose access. Nothing in the folder is deleted.</>, confirm: "Stop sharing", danger: true }))) return; await api(`/folders/${f.id}`, { method: "DELETE" }); load(); } },
   ];
   const name = (p: string) => p.split("/").filter(Boolean).pop() || p;
 

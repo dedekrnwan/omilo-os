@@ -7,10 +7,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { Staff, ago, api } from "@/lib/api";
-import { helperItems, taskItems } from "@/lib/actions";
+import { hireBack, helperItems, letGo, taskItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
 import { usePoll } from "@/lib/poll";
 import HelperState from "@/components/HelperState";
+import { confirmDialog } from "@/lib/dialog";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
 
@@ -36,6 +37,7 @@ function FirstJob({ s }: { s: Staff }) {
 }
 
 function StaffDetail({ id }: { id: string }) {
+  const router = useRouter();
   const hired = useSearchParams().get("hired") === "1";
   const [s, setS] = useState<Staff | null>(null);
   const [edit, setEdit] = useState<Partial<Staff>>({});
@@ -72,7 +74,7 @@ function StaffDetail({ id }: { id: string }) {
   };
   const toggleShift = async (sid: string, enabled: boolean) => { await api(`/shifts/${sid}`, { method: "PATCH", body: { enabled } }); load(); };
   const rotate = async () => {
-    if (!confirm("Create a new MCP token? The old one stops working immediately.")) return;
+    if (!(await confirmDialog({ title: "Create a new MCP token?", body: "The old one stops working immediately. Anything set up with it needs the new token.", confirm: "Create new token", who: s, mood: "worried" }))) return;
     setConnect(await api(`/staff/${id}/mcp-token`, { body: {} }));
   };
 
@@ -84,12 +86,20 @@ function StaffDetail({ id }: { id: string }) {
         <h1 style={{ margin: 0 }}>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
       </div>
       {hired && <FirstJob s={s} />}
-      <div className="acts" style={{ marginBottom: 20 }}>
-        <StatusChip status={s.status} />
-        <button className="btn" onClick={() => save({ status: s.status === "active" ? "paused" : "active" })}>{s.status === "active" ? "Pause" : "Activate"}</button>
-        <button className="btn" onClick={rotate}>Connect engine (new MCP token)</button>
-        {msg && <span className="small">{msg}</span>}
-      </div>
+      {s.status === "retired" ? (
+        <div className="callout" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1 }}>You let {s.name} go. Its past work is still here; it does no new work.</span>
+          <button className="btn primary" onClick={() => hireBack(s, load)}><i className="ri-user-add-line" />Hire {s.name} back</button>
+        </div>
+      ) : (
+        <div className="acts" style={{ marginBottom: 20 }}>
+          <StatusChip status={s.status} />
+          <button className="btn" onClick={() => save({ status: s.status === "active" ? "paused" : "active" })}>{s.status === "active" ? "Pause" : "Activate"}</button>
+          <button className="btn" onClick={rotate}>Connect engine (new MCP token)</button>
+          {!s.is_chief && <button className="btn quiet danger-text" onClick={() => letGo(s, () => router.push("/staff/"))}><i className="ri-user-unfollow-line" />Let {s.name} go</button>}
+          {msg && <span className="small">{msg}</span>}
+        </div>
+      )}
       {connect && (
         <div className="paper" style={{ marginBottom: 20 }}>
           <b>Shown once.</b> <span className="small">Only needed to connect an agent that runs outside Saga OS to this helper: add this MCP server to its config.</span>
@@ -223,13 +233,19 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
 function StaffList() {
   const router = useRouter();
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [former, setFormer] = useState<Staff[]>([]);
   const [roles, setRoles] = useState<Record<string, { name: string }>>({});
   const [role, setRole] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const load = useCallback(async () => setStaff(await api<Staff[]>("/staff")), []);
+  const load = useCallback(async () => {
+    const [a, f] = await Promise.all([api<Staff[]>("/staff"), api<Staff[]>("/staff?former=true").catch(() => [] as Staff[])]);
+    setStaff(a); setFormer(f);
+  }, []);
   usePoll(load, 30000, [load]);
   useEffect(() => { api<{ roles: Record<string, { name: string }> }>("/templates").then((t) => setRoles(t.roles)); }, []);
   const hire = async () => {
+    const back = former.find((f) => f.id === role);
+    if (back) { if (await hireBack(back, load)) router.push(`/staff/?id=${role}`); return; }
     try { await api("/team/apply", { body: { roles: [role], engine: staff[0]?.engine || { type: "fake" } } }); router.push(`/staff/?id=${role}`); } catch (e: any) { setErr(e.message); }
   };
   return (
@@ -249,6 +265,21 @@ function StaffList() {
             <span className="acts"><HelperState h={s as any} /><span className="small">{s.engine?.type === "claude" ? "Built-in Claude" : s.engine?.type === "claude-code" ? (s.engine?.auth === "api" ? "Claude Code · API key" : "Claude Code pool") : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>
+      )}
+      {former.length > 0 && (
+        <div className="sec">
+          <h2>Former helpers</h2>
+          <p className="small" style={{ marginTop: 4 }}>You let them go. Their past work is kept; hire one back any time.</p>
+          <div className="cards">{former.map((s) => (
+            <div key={s.id} className="card former">
+              <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
+                <Avatar who={s} size={36} mood="sad" />
+                <span style={{ display: "flex", flexDirection: "column", flex: 1 }}><b>{s.name}</b><span className="small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>
+              </span>
+              <span className="acts"><Link className="btn sm quiet" href={`/staff/?id=${s.id}`}>History</Link><button className="btn sm" onClick={() => hireBack(s, load)}><i className="ri-user-add-line" />Hire back</button></span>
+            </div>
+          ))}</div>
+        </div>
       )}
       <div className="sec">
         <div className="soft acts" style={{ justifyContent: "space-between" }}>

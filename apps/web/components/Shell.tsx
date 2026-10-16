@@ -25,6 +25,7 @@ export const useOverview = () => useContext(OverviewCtx);
 
 export { Mark } from "./Logo";
 import { Mark } from "./Logo";
+import { confirmDialog } from "@/lib/dialog";
 
 export default function Shell({ children }: { children: ReactNode }) {
   const path = usePathname() || "/";
@@ -69,7 +70,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   const togglePause = async () => {
     if (!overview) return;
-    if (!overview.paused && !confirm("Pause all helpers? Running jobs finish; nothing new starts.")) return;
+    if (!overview.paused && !(await confirmDialog({ title: "Pause all helpers?", body: "Running jobs finish their current step; nothing new starts until you resume.", confirm: "Pause everyone", mood: "worried" }))) return;
     await api("/system", { body: { paused: !overview.paused } });
     refresh();
   };

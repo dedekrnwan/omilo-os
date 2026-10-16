@@ -5,6 +5,7 @@ import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* Connectors: MCP servers (apps and services) your helpers can use, like Claude's connectors.
    Adding and editing happen in a drawer on the right, starting from a ready-made template. */
@@ -117,7 +118,7 @@ export default function Connectors() {
     catch (e: any) { setTests((t) => ({ ...t, [id]: { ok: false, detail: e.message } })); }
   };
   const remove = async (id: string, label: string) => {
-    if (!confirm(`Remove ${label}? Helpers lose access to it.`)) return;
+    if (!(await confirmDialog({ title: `Remove ${label}?`, body: "Helpers lose access to it. You can connect it again later.", confirm: "Remove", danger: true }))) return;
     await api(`/connectors/${id}`, { method: "DELETE" }); setForm(null); load();
   };
   const toggle = async (c: Conn) => { await api(`/connectors/${c.id}`, { method: "PUT", body: { ...c, enabled: !c.enabled } }); load(); };

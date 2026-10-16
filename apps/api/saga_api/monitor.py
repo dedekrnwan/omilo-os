@@ -52,7 +52,7 @@ def build(db: Session, rng: str = "7d") -> dict:
     span = t_end - t0
     p0 = t0 - span  # the previous period of the same length, for deltas
 
-    staff = list(db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.created_at, Staff.name)))
+    staff = list(db.scalars(select(Staff).where(Staff.status != "retired").order_by(Staff.is_chief.desc(), Staff.created_at, Staff.name)))
     states = S.helper_states(db)
 
     # ---- tokens, cost and run time, from usage events (every engine reports one per run)

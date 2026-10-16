@@ -13,6 +13,7 @@ import { usePoll } from "@/lib/poll";
 import { taskItems } from "@/lib/actions";
 import Lineage from "@/components/Lineage";
 import { menu } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* A job, opened from anywhere (Inbox, Monitor, notifications, links in chats): live progress, what waits on you,
    and a chat with the helper about it, in one drawer. Chats open the same way. */
@@ -151,7 +152,7 @@ export default function TaskDrawerHost({ initial }: { initial: Open }) {
         footer={job && (
           <>
             {head && ["queued", "running"].includes(head.status) && (
-              <button className="btn quiet" onClick={async () => { if (!confirm("Stop this job?")) return; await api(`/tasks/${job.id}/cancel`, { body: {} }); setHead({ ...head, status: "cancelled" }); }}><i className="ri-stop-circle-line" />Stop</button>
+              <button className="btn quiet" onClick={async () => { if (!(await confirmDialog({ title: "Stop this job?", body: "The helper stops after its current step. What it already did stays.", confirm: "Stop the job", cancel: "Let it finish", danger: true, who: staff.find((s) => s.id === (head as any).staff_id) || null }))) return; await api(`/tasks/${job.id}/cancel`, { body: {} }); setHead({ ...head, status: "cancelled" }); }}><i className="ri-stop-circle-line" />Stop</button>
             )}
             <span className="sp" />
             <Link className="btn quiet" href={`/chat/?view=work&task=${job.id}`} data-full onClick={closeJob}><i className="ri-external-link-line" />Full view</Link>

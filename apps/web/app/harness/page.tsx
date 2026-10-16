@@ -6,6 +6,7 @@ import { Segments, useMeter } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
 import { copy, menu, sep } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* The harness pool: Claude Code subscriptions that helpers share, with automatic switching on usage limits. */
 
@@ -49,9 +50,9 @@ export default function Harness() {
     catch (e: any) { setErr(e.message); } finally { setBusy(null); }
   };
   const patch = async (id: string, body: Record<string, unknown>) => { await api(`/harness/accounts/${id}`, { method: "PATCH", body }); load(); };
-  const remove = async (a: Account) => { if (!confirm(`Remove ${a.label} from the pool?`)) return; await api(`/harness/accounts/${a.id}`, { method: "DELETE" }); load(); };
+  const remove = async (a: Account) => { if (!(await confirmDialog({ title: `Remove ${a.label} from the pool?`, body: "Helpers stop using this Claude subscription. You can add it again later.", confirm: "Remove", danger: true }))) return; await api(`/harness/accounts/${a.id}`, { method: "DELETE" }); load(); };
   const useForAll = async () => {
-    if (!confirm("Run every helper on the Claude Code pool?")) return;
+    if (!(await confirmDialog({ title: "Run every helper on the pool?", body: "All helpers switch to the Claude Code pool for their next jobs.", confirm: "Switch everyone", icon: "ri-stack-line" }))) return;
     try { await api("/ai", { body: { provider: "claude-code" } }); setMsg("All helpers now run on the Claude Code pool."); load(); } catch (e: any) { setErr(e.message); }
   };
 

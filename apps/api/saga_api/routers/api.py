@@ -70,7 +70,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
                   "failed_24h": count(select(Task).where(Task.status == "failed", Task.ended_at >= since))},
         "staff": [{"id": s.id, "name": s.name, "status": s.status, "is_chief": s.is_chief,
                    "running": count(select(Task).where(Task.staff_id == s.id, Task.status == "running"))}
-                  for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))],
+                  for s in S.team(db)],
         "kpis": S.latest_kpis(db),
         "cost_7d_usd": round(db.scalar(select(func.coalesce(func.sum(Task.cost_usd), 0)).where(
             Task.created_at >= now() - dt.timedelta(days=7))) or 0, 2),
@@ -200,9 +200,11 @@ class StaffPatch(BaseModel):
 
 
 @router.get("/staff")
-def list_staff(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def list_staff(former: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The team. `former=true` lists the helpers you let go instead (their history is kept; you can hire them back)."""
     states = S.helper_states(db)
-    return [{**X.staff(s), "awake": True, **states.get(s.id, {})} for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))]
+    rows = db.scalars(select(Staff).where(Staff.status == "retired").order_by(Staff.name)) if former else S.team(db)
+    return [{**X.staff(s), "awake": True, **states.get(s.id, {})} for s in rows]
 
 
 @router.post("/staff")
@@ -240,11 +242,26 @@ def patch_staff(sid: str, body: StaffPatch, db: Session = Depends(get_db), user:
 
 @router.delete("/staff/{sid}")
 def delete_staff(sid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Let a helper go. Its past work stays in your history (deleting the row would erase every job it did)."""
     st = _404(db.get(Staff, sid))
-    db.delete(st)
-    S.audit(db, user.id, "staff.delete", sid)
+    try:
+        r = S.retire_staff(db, st, user.id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True, **r}
+
+
+@router.post("/staff/{sid}/rehire")
+def rehire_staff(sid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Hire back a helper you let go: same name, look, job and history, a new MCP token."""
+    st = _404(db.get(Staff, sid))
+    if st.status != "retired":
+        raise HTTPException(409, "this helper is on the team")
+    st.status = "active"
+    token = S.rotate_mcp_token(db, st, user.id)
+    S.audit(db, user.id, "staff.rehire", sid)
     db.commit()
-    return {"ok": True}
+    return {**X.staff(st), "mcp_token": token}
 
 
 @router.post("/staff/{sid}/mcp-token")

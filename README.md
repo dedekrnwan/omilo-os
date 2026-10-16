@@ -238,6 +238,12 @@ shortcuts (`/inbox`, `/hire`, `/pool`, `/settings`, `/pause`). Under the chat bo
 
 ## Helper mascots
 
+**Letting a helper go.** Right-click a helper (or use the button on its page) and choose *Let … go*. Its queued and
+running jobs are cancelled, its regular jobs and MCP token removed, its open drafts and questions closed; its past
+work stays. It moves to *Former helpers* on the Team page, where you can hire it back. The Chief of Staff can't be let
+go (pause it instead). Every confirmation in the app is a dialog with the helper it concerns: sad when you are about
+to do something to it, happy when you point at *Keep*.
+
 Every mascot in the app is alive: its eyes follow the cursor when it comes near, it blinks now and then, hovering lifts
 it and makes it smile, a click makes it hop, and a helper that is working bobs at its desk with typing dots. Uploaded
 pictures lift and hop too. All of this is off when the system asks for reduced motion.

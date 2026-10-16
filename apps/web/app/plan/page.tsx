@@ -11,6 +11,7 @@ import { taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { openTask } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* The plan: the goals you set at the top, the work that serves each goal under it. The Chief of Staff hands work out
    for a goal, helpers hand off sub-jobs, approved proposals are executed: every step stays under its goal. */
@@ -82,7 +83,7 @@ export default function PlanPage() {
     } catch (e: any) { setErr(e.message); }
   };
   const remove = async () => {
-    if (!form?.id || !confirm("Delete this goal? Its work stays, just without a goal.")) return;
+    if (!form?.id || !(await confirmDialog({ title: "Delete this goal?", body: "Its work stays, just without a goal.", confirm: "Delete goal", danger: true }))) return;
     await api(`/goals/${form.id}`, { method: "DELETE" }); setForm(null);
   };
   const goalMenu = (g: PGoal): MenuItem[] => [{ heading: g.title }, { label: "Edit", icon: "ri-edit-line", onSelect: () => edit(g) },

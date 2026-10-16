@@ -9,6 +9,7 @@ import { Err } from "@/components/ui";
 import { ApiError, ago, api } from "@/lib/api";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* Docs: the shared notebook for you and your helpers, Obsidian-style. A tree of Markdown notes, [[links]] between them,
    backlinks, outline and history on the right, and a graph of how everything connects. Saves as you type. */
@@ -260,7 +261,7 @@ function DocsInner() {
     catch (e: any) { setErr(e.message); }
   };
   const remove = async () => {
-    if (!doc || !confirm(`Delete "${doc.title}"? It moves to the vault's .trash folder.`)) return;
+    if (!doc || !(await confirmDialog({ title: `Delete “${doc.title}”?`, body: "It moves to the vault’s .trash folder, so you can still get it back.", confirm: "Delete", danger: true }))) return;
     await api("/vault/delete", { body: { path: doc.path } }); setDoc(null); await loadTree(); router.push("/docs/");
   };
   const restore = async (v: { version: number; content: string }) => {
@@ -289,7 +290,7 @@ function DocsInner() {
     } catch (e: any) { setErr(e.message); }
   };
   const deleteNote = async (p: string) => {
-    if (!confirm(`Delete "${title(p)}"? It moves to the vault's .trash folder.`)) return;
+    if (!(await confirmDialog({ title: `Delete “${title(p)}”?`, body: "It moves to the vault’s .trash folder, so you can still get it back.", confirm: "Delete", danger: true }))) return;
     try { await api("/vault/delete", { body: { path: p } }); await loadTree(); if (doc?.path === p) { setDoc(null); router.push("/docs/"); } } catch (e: any) { setErr(e.message); }
   };
   const linkText = (p: string) => `[[${paths.filter((x) => title(x).toLowerCase() === title(p).toLowerCase()).length > 1 ? p.replace(/\.md$/, "") : title(p)}]]`;

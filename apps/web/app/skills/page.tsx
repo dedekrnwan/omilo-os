@@ -6,6 +6,7 @@ import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* Skills: reusable instructions (SKILL.md) a helper follows when you switch them on for a chat or job.
    Writing, editing and importing happen in a drawer on the right. */
@@ -53,7 +54,7 @@ export default function Skills() {
     } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
   };
   const remove = async () => {
-    if (!form || !confirm(`Delete the skill ${form.name}?`)) return;
+    if (!form || !(await confirmDialog({ title: `Delete the skill “${form.name}”?`, body: "Helpers stop using it. This can’t be undone.", confirm: "Delete skill", danger: true }))) return;
     await api(`/skills/${form.slug}`, { method: "DELETE" }); setForm(null); load();
   };
   const importTalent = async (t: Talent) => {
@@ -76,7 +77,7 @@ export default function Skills() {
     { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: async () => { const f = await api<Skill & { body: string }>(`/skills/${s.slug}`); copy(`# ${f.name}\n\n${f.description}\n\n${f.body}`); } },
     { label: "Duplicate", icon: "ri-file-copy-2-line", onSelect: async () => { const f = await api<Skill & { body: string }>(`/skills/${s.slug}`); setTab("write"); setForm({ ...f, slug: "", name: `${f.name} copy`, editing: false }); } },
     sep,
-    { label: "Delete", icon: "ri-delete-bin-line", danger: true, onSelect: async () => { if (!confirm(`Delete the skill ${s.name}?`)) return; await api(`/skills/${s.slug}`, { method: "DELETE" }); load(); } },
+    { label: "Delete", icon: "ri-delete-bin-line", danger: true, onSelect: async () => { if (!(await confirmDialog({ title: `Delete the skill “${s.name}”?`, body: "Helpers stop using it. This can’t be undone.", confirm: "Delete skill", danger: true }))) return; await api(`/skills/${s.slug}`, { method: "DELETE" }); load(); } },
   ];
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 

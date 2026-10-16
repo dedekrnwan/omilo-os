@@ -4,6 +4,7 @@ import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { BASE, Overview, api } from "@/lib/api";
 import { MenuItem, menu, sep } from "@/lib/menu";
+import { confirmDialog } from "@/lib/dialog";
 
 /* The company picker at the top of the sidebar. Every company is fully separate (its own helpers, jobs, inbox,
    docs and pool); only your login is shared. Switching reloads the app on the other company, in every open tab. */
@@ -165,7 +166,7 @@ function ManageList({ list, current, onPatch, onSwitch }: { list: Co[] | null; c
           : c.id === current ? <span className="chip up">Open now</span>
           : <button className="btn sm" onClick={() => onSwitch(c.id)}>Switch</button>}
         {!c.archived && c.id !== "main" && (
-          <button className="iconbtn" aria-label={`Archive ${c.name}`} title="Archive" onClick={() => { if (confirm(`Archive ${c.name}? Its helpers pause and it leaves the list. You can bring it back here.`)) onPatch(c.id, { archived: true }); }}>
+          <button className="iconbtn" aria-label={`Archive ${c.name}`} title="Archive" onClick={async () => { if (await confirmDialog({ title: `Archive ${c.name}?`, body: "Its helpers pause and it leaves the list. You can bring it back here.", confirm: "Archive", mood: "worried" })) onPatch(c.id, { archived: true }); }}>
             <i className="ri-archive-line" /></button>
         )}
       </div>

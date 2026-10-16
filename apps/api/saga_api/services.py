@@ -101,7 +101,7 @@ def helper_states(db: Session) -> dict[str, dict]:
     queued = set(db.scalars(select(Task.staff_id).where(Task.status == "queued")))
     chatting = set(db.scalars(select(Thread.staff_id).where(Thread.awaiting_reply.is_(True))))
     out = {}
-    for st in db.scalars(select(Staff)):
+    for st in db.scalars(select(Staff).where(Staff.status != "retired")):
         nxt = min((sh.next_at for sh in st.shifts if sh.enabled and sh.next_at), default=None)
         nsh = next((sh for sh in st.shifts if sh.enabled and sh.next_at == nxt), None) if nxt else None
         state = ("paused" if st.status != "active" else "working" if st.id in running or st.id in chatting
@@ -225,6 +225,8 @@ def create_task(
     st = db.get(Staff, staff_id)
     if not st:
         raise DomainError(f"unknown staff '{staff_id}'", 404)
+    if st.status == "retired":
+        raise DomainError(f"{st.name} is no longer on the team (hire them back first)", 409)
     t = Task(
         staff_id=staff_id,
         origin=origin,
@@ -562,3 +564,41 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
 
 from . import office as _office  # noqa: E402,F401  (registers the hook that writes the live office events)
 from . import plan as _plan  # noqa: E402,F401  (registers the hook that links new jobs to their goal)
+
+
+# ------------------------------------------------------------------ letting a helper go (history stays)
+def retire_staff(db: Session, st: Staff, actor: str) -> dict:
+    """Let a helper go: its queued and running jobs are cancelled, its regular jobs removed, its open drafts and
+    questions closed, and its MCP token revoked. Its past jobs, reports and documents stay in your history.
+    The Chief of Staff can't be let go (it leads the team); pause it instead."""
+    from .models import InboxItem, Proposal, Thread
+
+    if st.is_chief:
+        raise ValueError("The Chief of Staff leads your team and can't be let go. You can pause it instead.")
+    if st.status == "retired":
+        return {"cancelled": 0, "closed": 0, "shifts": 0}
+    cancelled = 0
+    for t in list(db.scalars(select(Task).where(Task.staff_id == st.id, Task.status.in_(["queued", "running"])))):
+        finish_task(db, t, "cancelled", error="the helper was let go")
+        cancelled += 1
+    closed = 0
+    for p in db.scalars(select(Proposal).where(Proposal.staff_id == st.id, Proposal.status.in_(["pending", "changes_requested"]))):
+        p.status, p.decision_note, p.decided_by, p.decided_at = "rejected", "The helper was let go.", actor, now()
+    for i in db.scalars(select(InboxItem).where(InboxItem.staff_id == st.id, InboxItem.status != "done")):
+        i.status, i.answer = "done", "The helper was let go."
+        closed += 1
+    for th in db.scalars(select(Thread).where(Thread.staff_id == st.id, Thread.awaiting_reply.is_(True))):
+        th.awaiting_reply = False
+    shifts = len(st.shifts)
+    for sh in list(st.shifts):
+        db.delete(sh)
+    st.status, st.mcp_token_hash, st.mcp_token_enc = "retired", None, None
+    audit(db, actor, "staff.retire", st.id, cancelled=cancelled, closed=closed, shifts=shifts)
+    db.commit()
+    return {"cancelled": cancelled, "closed": closed, "shifts": shifts}
+
+
+def team(db: Session):
+    """The current team: everyone except helpers you let go."""
+    return db.scalars(select(Staff).where(Staff.status != "retired").order_by(Staff.is_chief.desc(), Staff.name))
+

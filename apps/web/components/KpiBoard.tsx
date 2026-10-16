@@ -6,6 +6,7 @@ import { ago, api } from "@/lib/api";
 import { copy, menu, sep } from "@/lib/menu";
 import { openTask } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* KPIs on the Company page: the numbers you watch. Each card shows the latest value, the change since the last one,
    how far it is toward its target, a small trend line and where the number came from. You can add a value, edit the
@@ -71,8 +72,8 @@ export default function KpiBoard() {
     : { name: "", isNew: true, label: "", unit: "", target: "", direction: "up", goal_id: "", owner: "finance", note: "" });
   const addValue = (k: Kpi) => setVal({ name: k.name, value: "", period: thisMonth(), source: "" });
   const ask = (k: Kpi) => run(`ask-${k.name}`, async () => { const t = await api<{ task_id: string }>(`/kpis/${k.name}/ask`, { method: "POST" }); openTask(t.task_id); });
-  const remove = (k: Kpi) => {
-    if (!confirm(`Delete the KPI “${k.label}” and its ${k.history.length} recorded value(s)?`)) return;
+  const remove = async (k: Kpi) => {
+    if (!(await confirmDialog({ title: `Delete the KPI “${k.label}”?`, body: `Its ${k.history.length} recorded value${k.history.length === 1 ? "" : "s"} go too. This can’t be undone.`, confirm: "Delete KPI", danger: true }))) return;
     run(`del-${k.name}`, () => api(`/kpis/defs/${k.name}?values=true`, { method: "DELETE" })).then((ok) => { if (ok) { setForm(null); setHist(null); } });
   };
   const saveDef = async () => {

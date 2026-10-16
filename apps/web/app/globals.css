@@ -1473,3 +1473,37 @@ main.page:has(> .monitor.office) { max-width: none; }
   .sg-tile .mascot { width: 68px; height: 68px; }
   .sg-know { display: none; }
 }
+
+/* ---------------------------------------------------------------- confirmation dialogs */
+.dlg-scrim { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgba(28,25,23,.32);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: dlg-fade .15s ease-out; }
+@keyframes dlg-fade { from { opacity: 0; } }
+.dlg { width: min(420px, 100%); background: var(--surface); border-radius: 20px; padding: 26px 24px 20px; text-align: center; position: relative;
+  box-shadow: 0 30px 80px rgba(28,25,23,.28); animation: dlg-pop .26s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes dlg-pop { from { transform: translateY(10px) scale(.94); opacity: 0; } }
+.dlg-face { display: grid; place-items: center; width: 104px; height: 104px; margin: -2px auto 12px; border-radius: 36%;
+  background: radial-gradient(circle at 50% 35%, #eef0ff, #f6f5ff 60%, transparent 70%); transition: transform .3s cubic-bezier(.34, 1.56, .64, 1); }
+.dlg.danger .dlg-face { background: radial-gradient(circle at 50% 35%, #fff1f2, #fff7f7 60%, transparent 70%); }
+.dlg.lean-yes .dlg-face { transform: translateY(3px) scale(.96); }
+.dlg.lean-no .dlg-face { transform: translateY(-4px) scale(1.06); }
+.dlg.lean-no .dlg-face .m-mouth-happy { opacity: 1; } .dlg.lean-no .dlg-face .m-mouth { opacity: 0; }
+.dlg-icon { width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; background: #eef0ff; color: #4f46e5; font-size: 30px; }
+.dlg h2 { font: 500 22px/1.25 var(--font-serif); letter-spacing: -.01em; margin: 0 0 8px; color: var(--ink); }
+.dlg-body { color: var(--ink-2); font-size: 14px; line-height: 1.55; margin: 0 auto 4px; max-width: 340px; }
+.dlg-body ul { text-align: left; margin: 8px 0 0; padding-left: 18px; }
+.dlg-acts { display: flex; gap: 8px; margin-top: 20px; }
+.dlg-acts .btn { flex: 1; justify-content: center; height: 40px; border-radius: 12px; font-weight: 600; }
+.btn.danger-solid { background: #dc2626; border-color: #dc2626; color: #fff; }
+.btn.danger-solid:hover { background: #b91c1c; border-color: #b91c1c; }
+.dlg-more { display: block; margin-top: 10px; }
+/* moods */
+.mascot.mood-sad .m-char { transform: translateY(2px) scale(1, .97); }
+.mascot.mood-sad .m-tear { animation: m-tear 1.6s ease-in infinite; transform-box: view-box; }
+@keyframes m-tear { 0% { transform: translateY(-2px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+.mascot.mood-worried .m-char { animation: m-shiver .9s ease-in-out infinite; }
+@keyframes m-shiver { 50% { transform: translateX(.6px) rotate(.6deg); } }
+@media (prefers-reduced-motion: reduce) { .mascot .m-tear { animation: none !important; } }
+.btn.danger-text { color: #b91c1c; }
+.btn.danger-text:hover { background: #fef2f2; }
+.card.former { background: #fafaf9; }
+.card.former .mascot { filter: saturate(.7); }

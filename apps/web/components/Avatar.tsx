@@ -78,19 +78,30 @@ function Body({ shape, color }: { shape: string; color: string }) {
   return <path d="M10 70 C10 34 19 16 32 16 C45 16 54 34 54 70 Z" fill={color} />;
 }
 
-function Face({ sleeping }: { sleeping: boolean }) {
+export type Mood = "sad" | "worried" | null | undefined;
+
+function Face({ sleeping, mood }: { sleeping: boolean; mood?: Mood }) {
+  const sad = mood === "sad", worried = mood === "worried";
   return (
     <g>
       {sleeping ? (
         <g stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none"><path d="M22 35 Q25 37.5 28 35" /><path d="M36 35 Q39 37.5 42 35" /></g>
       ) : (
         <g className="m-eyes">
-          <circle cx="25" cy="34" r="3.6" fill="#1c1917" /><circle cx="39" cy="34" r="3.6" fill="#1c1917" />
-          <circle cx="26.2" cy="32.8" r="1.2" fill="#fff" /><circle cx="40.2" cy="32.8" r="1.2" fill="#fff" />
+          <circle cx="25" cy={sad ? 35 : 34} r="3.6" fill="#1c1917" /><circle cx="39" cy={sad ? 35 : 34} r="3.6" fill="#1c1917" />
+          <circle cx="26.2" cy={sad ? 33.8 : 32.8} r="1.2" fill="#fff" /><circle cx="40.2" cy={sad ? 33.8 : 32.8} r="1.2" fill="#fff" />
         </g>
       )}
-      <path className="m-mouth" d={sleeping ? "M29.5 44 Q32 45.5 34.5 44" : "M27.5 42.5 Q32 47 36.5 42.5"} stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+      {(sad || worried) && (
+        <g className="m-brows" stroke="#1c1917" strokeWidth="2" strokeLinecap="round" fill="none">
+          {sad ? <><path d="M20.5 29.5 L28 27.5" /><path d="M43.5 29.5 L36 27.5" /></> : <><path d="M21 27.5 Q24.5 25.5 28 27" /><path d="M43 27.5 Q39.5 25.5 36 27" /></>}
+        </g>
+      )}
+      {sad ? <path className="m-mouth" d="M27.5 46.5 Q32 41.5 36.5 46.5" stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+        : worried ? <ellipse className="m-mouth" cx="32" cy="44.5" rx="2.6" ry="3" fill="#1c1917" />
+        : <path className="m-mouth" d={sleeping ? "M29.5 44 Q32 45.5 34.5 44" : "M27.5 42.5 Q32 47 36.5 42.5"} stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none" />}
       {!sleeping && <path className="m-mouth-happy" d="M27 42 Q32 50 37 42 Z" fill="#1c1917" stroke="#1c1917" strokeWidth="1.6" strokeLinejoin="round" />}
+      {sad && <path className="m-tear" d="M41.5 38.5 C40 41.5 40 43.5 41.5 44 C43 43.5 43 41.5 41.5 38.5 Z" fill="#7dd3fc" stroke="#0284c7" strokeWidth=".8" />}
       <circle className="m-cheek" cx="20.5" cy="41" r="2.6" fill="#fff" opacity=".3" /><circle className="m-cheek" cx="43.5" cy="41" r="2.6" fill="#fff" opacity=".3" />
     </g>
   );
@@ -153,7 +164,7 @@ function Prop({ prop }: { prop: string }) {
   }
 }
 
-export function Mascot({ look, size = 32, sleeping = false, title, bare, still }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string; bare?: boolean; still?: boolean }) {
+export function Mascot({ look, size = 32, sleeping = false, title, bare, still, mood }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string; bare?: boolean; still?: boolean; mood?: Mood }) {
   const uid = useId().replace(/:/g, "");
   const clip = `tile-${uid}`;  // unique per drawing: a shared id breaks when the first copy is hidden
   const ref = useRef<SVGSVGElement>(null);
@@ -167,14 +178,14 @@ export function Mascot({ look, size = 32, sleeping = false, title, bare, still }
   // blink at a different moment for each helper
   let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) % 997;
   return (
-    <svg ref={ref} className={`mascot ${still ? "still" : ""} ${size < 22 ? "tiny" : ""}`} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}
+    <svg ref={ref} className={`mascot ${still ? "still" : ""} ${size < 22 ? "tiny" : ""} ${mood ? `mood-${mood}` : ""}`} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}
       style={{ ["--blink" as any]: `${(h % 40) / 10}s` }}>
       <defs><clipPath id={clip}><rect width="64" height="64" rx="18" /></clipPath></defs>
       <g clipPath={bare ? undefined : `url(#${clip})`}>
         {!bare && <rect className="m-tile" width="64" height="64" fill={look.color} opacity=".16" />}
         <g className="m-char">
           <Body shape={look.shape} color={look.color} />
-          <g className="m-face"><Face sleeping={sleeping} />{look.prop === "glasses" && <Prop prop="glasses" />}</g>
+          <g className="m-face"><Face sleeping={sleeping} mood={mood} />{look.prop === "glasses" && <Prop prop="glasses" />}</g>
           {look.prop !== "glasses" && <Prop prop={look.prop} />}
         </g>
       </g>
@@ -183,13 +194,13 @@ export function Mascot({ look, size = 32, sleeping = false, title, bare, still }
 }
 
 /** A helper's avatar. `state` adds a working glow or sleeping eyes. */
-export default function Avatar({ who, size = 32, state }: { who: Who | undefined | null; size?: number; state?: "working" | "sleeping" | null }) {
+export default function Avatar({ who, size = 32, state, mood }: { who: Who | undefined | null; size?: number; state?: "working" | "sleeping" | null; mood?: Mood }) {
   const looks = useLooks();
   if (!who) return <span className="av-wrap" style={{ width: size, height: size }} />;
   const look = lookFor(who, looks[who.id]);
   return (
     <span className={`av-wrap ${state || ""}`} style={{ width: size, height: size }} title={who.name}>
-      <Mascot look={look} size={size} sleeping={state === "sleeping"} title={who.name} />
+      <Mascot look={look} size={size} sleeping={state === "sleeping"} title={who.name} mood={mood} />
       {state === "sleeping" && <span className="av-z">z</span>}
       {state === "working" && size >= 20 && <span className="av-dots" aria-hidden><i /><i /><i /></span>}
     </span>

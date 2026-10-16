@@ -1,3 +1,4 @@
+import DialogHost from "@/components/DialogHost";
 import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-500.css";
 import "@fontsource/inter/latin-600.css";
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body><Shell>{children}</Shell></body>
+      <body><Shell>{children}</Shell><DialogHost /></body>
     </html>
   );
 }

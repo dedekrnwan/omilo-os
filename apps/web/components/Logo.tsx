@@ -6,8 +6,8 @@ import { Mascot } from "@/components/Avatar";
 
 export const SAGA_LOOK = { color: "#6366f1", shape: "blob", prop: "spark", image: null } as const;
 
-export function SagaMascot({ size = 24, tile = true, title = "Saga OS" }: { size?: number; tile?: boolean; title?: string }) {
-  return <Mascot look={SAGA_LOOK as any} size={size} title={title} bare={!tile} />;
+export function SagaMascot({ size = 24, tile = true, title = "Saga OS", mood }: { size?: number; tile?: boolean; title?: string; mood?: "sad" | "worried" | null }) {
+  return <Mascot look={SAGA_LOOK as any} size={size} title={title} bare={!tile} mood={mood} />;
 }
 
 /** The mark next to the product or company name. */

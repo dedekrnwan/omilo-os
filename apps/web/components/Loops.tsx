@@ -7,6 +7,7 @@ import { helperItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
 import { openTask } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* Loop engineering on the Monitor: one row per regular job (is it working?), and what the weekly retro changed,
    whether it helped, with undo. */
@@ -80,7 +81,7 @@ export function ImproveCard() {
   const load = useCallback(async () => { try { setRows(await api<Imp[]>("/improvements?limit=20")); } catch { /* next time */ } }, []);
   usePoll(load, 60000, [load], (n) => n?.kind === "doc");
   const undo = async (i: Imp) => {
-    if (!confirm(`Undo this change to ${i.staff}'s ${KIND[i.kind]}? The previous version comes back.`)) return;
+    if (!(await confirmDialog({ title: `Undo this change to ${i.staff}’s ${KIND[i.kind]}?`, body: "The previous version comes back.", confirm: "Undo change", who: { id: i.staff_id, name: i.staff }, mood: "worried" }))) return;
     try { await api(`/improvements/${i.id}/undo`, { body: {} }); load(); } catch (e: any) { setErr(e.message); }
   };
   if (!rows) return null;

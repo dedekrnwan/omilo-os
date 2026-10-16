@@ -4,6 +4,7 @@ import type { MenuItem } from "@/lib/menu";
 import { copy, sep } from "@/lib/menu";
 import { openTask, openThread } from "@/lib/open";
 import { kick } from "@/lib/poll";
+import { alertDialog, confirmDialog } from "@/lib/dialog";
 
 /* The same actions for the same things, wherever they are right-clicked. */
 
@@ -15,6 +16,38 @@ export async function chatWith(h: H) {
   openThread(th.id);
 }
 
+/** Let a helper go (asks first, with the helper looking sad). Its past work stays; you can hire it back. */
+export async function letGo(h: H, after?: () => void): Promise<boolean> {
+  const name = h.name || h.id;
+  if (h.is_chief) return false;
+  const ok = await confirmDialog({
+    title: `Let ${name} go?`, who: h, danger: true, confirm: `Let ${name} go`, cancel: `Keep ${name}`,
+    body: <>
+      {name} leaves your team:
+      <ul>
+        <li>Its queued and running jobs are cancelled, and its regular jobs stop.</li>
+        <li>Its open drafts and questions in your Inbox are closed.</li>
+        <li>Its past jobs, reports and docs stay in your history.</li>
+      </ul>
+      You can hire {name} back later from the Team page.
+    </>,
+  });
+  if (!ok) return false;
+  try { await api(`/staff/${h.id}`, { method: "DELETE" }); }
+  catch (e: any) { await alertDialog({ title: `Couldn't let ${name} go`, body: e.message, who: h, mood: "worried" }); return false; }
+  after?.();
+  return true;
+}
+
+/** Hire back a helper you let go. */
+export async function hireBack(h: H, after?: () => void): Promise<boolean> {
+  const name = h.name || h.id;
+  if (!(await confirmDialog({ title: `Hire ${name} back?`, body: `${name} rejoins with the same job, look and history. Its regular jobs need setting up again.`, confirm: `Hire ${name} back`, who: h, mood: "happy" }))) return false;
+  await api(`/staff/${h.id}/rehire`, { body: {} });
+  after?.();
+  return true;
+}
+
 export function helperItems(h: H, after?: () => void): MenuItem[] {
   const name = h.name || h.id;
   return [
@@ -24,7 +57,9 @@ export function helperItems(h: H, after?: () => void): MenuItem[] {
     { label: "Change look", icon: "ri-palette-line", href: `/staff/?id=${h.id}#look` },
     h.status && (h.status === "active"
       ? { label: `Pause ${name}`, icon: "ri-pause-circle-line", onSelect: async () => { await api(`/staff/${h.id}`, { method: "PATCH", body: { status: "paused" } }); after?.(); } }
-      : { label: `Resume ${name}`, icon: "ri-play-circle-line", onSelect: async () => { await api(`/staff/${h.id}`, { method: "PATCH", body: { status: "active" } }); after?.(); } }),
+      : h.status === "paused" ? { label: `Resume ${name}`, icon: "ri-play-circle-line", onSelect: async () => { await api(`/staff/${h.id}`, { method: "PATCH", body: { status: "active" } }); after?.(); } } : null),
+    !h.is_chief && h.status !== "retired" && sep,
+    !h.is_chief && h.status !== "retired" && { label: `Let ${name} go…`, icon: "ri-user-unfollow-line", danger: true, onSelect: () => letGo(h, after) },
   ].filter(Boolean) as MenuItem[];
 }
 
@@ -38,7 +73,7 @@ export function taskItems(t: T, staffName?: string, after?: () => void, open?: (
     { label: "Full view", icon: "ri-external-link-line", href: `/chat/?view=work&task=${t.id}&full=1` },
     sep,
     live
-      ? { label: "Stop the job", icon: "ri-stop-circle-line", danger: true, onSelect: async () => { if (!confirm("Stop this job?")) return; await api(`/tasks/${t.id}/cancel`, { body: {} }); after?.(); } }
+      ? { label: "Stop the job", icon: "ri-stop-circle-line", danger: true, onSelect: async () => { if (!(await confirmDialog({ title: "Stop this job?", body: "The helper stops after its current step. What it already did stays.", confirm: "Stop the job", cancel: "Let it finish", danger: true, who: { id: t.staff_id, name: staffName } }))) return; await api(`/tasks/${t.id}/cancel`, { body: {} }); after?.(); } }
       : { label: "Run it again", icon: "ri-restart-line", onSelect: async () => { const n = await api<{ id: string }>("/tasks", { body: { staff_id: t.staff_id, brief: t.brief } }); kick(n.id); openTask(n.id); after?.(); } },
     { label: "Copy the brief", icon: "ri-file-copy-line", onSelect: () => copy(t.brief) },
     sep,

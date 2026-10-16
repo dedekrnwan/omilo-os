@@ -16,6 +16,7 @@ import { copy, menu, sep } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
+import { confirmDialog } from "@/lib/dialog";
 
 /* The workspace: chat and work on one page (toggle top right), with a side panel for progress, output and the browser. */
 
@@ -214,7 +215,7 @@ function WorkspaceInner() {
     else if (a.kind === "job") { setText("/job "); focus(); }
     else if (a.kind === "talk") { setText(""); const st = staff.find((x) => x.id === a.staffId); openThread(st?.is_chief ? { scope: "master" } : { scope: "staff", staff_id: a.staffId }); }
     else if (a.kind === "go") { setText(""); router.push(a.href); }
-    else if (a.kind === "pause") { setText(""); if (confirm("Pause all helpers? Running jobs finish their current step; nothing new starts.")) api("/system", { body: { paused: true } }).catch((e) => setErr(e.message)); }
+    else if (a.kind === "pause") { setText(""); confirmDialog({ title: "Pause all helpers?", body: "Running jobs finish their current step; nothing new starts until you resume.", confirm: "Pause everyone", mood: "worried" }).then((ok) => { if (ok) api("/system", { body: { paused: true } }).catch((e) => setErr(e.message)); }); }
   };
   const slash = useSlash(text, staff, onSlash);
 

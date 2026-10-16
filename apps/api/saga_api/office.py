@@ -180,7 +180,7 @@ def state(db: Session) -> dict:
 
     _prune(db)
     t_now = now()
-    staff = list(db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.created_at)))
+    staff = list(db.scalars(select(Staff).where(Staff.status != "retired").order_by(Staff.is_chief.desc(), Staff.created_at)))
     running: dict[str, Task] = {}
     for t in db.scalars(select(Task).where(Task.status == "running").order_by(Task.started_at)):
         running[t.staff_id] = t
