@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { InboxItem, api } from "@/lib/api";
+import { openInDrawer } from "@/lib/open";
 
 /* What you can do with one inbox item: approve / ask for changes / reject a proposal, answer a question, dismiss an alert. */
 export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; onDone: () => void }) {
@@ -19,7 +20,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
   const decide = (pid: string, decision: string) => act(() => api(`/proposals/${pid}/decide`, { body: { decision, note } }));
   const discuss = async (pid: string) => {
     const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } });
-    router.push(`/chat/?thread=${th.id}`);
+    if (!openInDrawer(`/chat/?thread=${th.id}`)) router.push(`/chat/?thread=${th.id}`);
   };
   return (
     <div className="itemdetail">
@@ -60,6 +61,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
           <div className="paper"><Markdown text={i.body} /></div>
           <div className="acts" style={{ marginTop: 8 }}>
             {i.task_id && <Link className="btn" href={`/chat/?view=work&task=${i.task_id}`}>Open the job</Link>}
+            {i.staff_id && /budget/i.test(i.title) && <Link className="btn primary" href={`/staff/?id=${i.staff_id}#budget`}><i className="ri-wallet-3-line" />Open the budget</Link>}
             {i.status === "open" && <button className="btn" disabled={busy} onClick={() => act(() => api(`/inbox/${i.id}/dismiss`, { body: {} }))}>Dismiss</button>}
           </div>
         </>

@@ -900,3 +900,30 @@ a.plain { color: inherit; text-decoration: none; }
   .docs-body, .docs-body.panel { grid-template-columns: 1fr; }
   .dhead { padding: 14px 14px 6px; } .dwrite textarea, .dread { padding: 14px; }
 }
+
+/* ---------- job & chat drawers ---------- */
+.jd { display: flex; flex-direction: column; min-height: 100%; }
+.jd-tabs { margin: 14px 0 4px; align-self: flex-start; position: sticky; top: 0; z-index: 2; }
+.jd-tabs button i { font-size: 13px; color: inherit; }
+.jd-n { display: inline-block; min-width: 16px; height: 16px; margin-left: 4px; padding: 0 4px; border-radius: 4px; background: #d03b3b; color: #fff; font: 500 10.5px/16px var(--font-mono); text-align: center; }
+.jd-body { display: flex; flex-direction: column; gap: 12px; padding: 10px 0 20px; }
+.jd-brief { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--soft); }
+.jd-brief .md { margin-top: 4px; }
+.jd-wait { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; text-align: left; cursor: pointer; font-size: 13.5px; }
+.jd-wait i { color: #b45309; font-size: 16px; }
+.jd-wait .sp { flex: 1; }
+.jd-ck { font-size: 13px; padding: 10px 12px; border-left: 3px solid var(--line-strong); background: var(--surface); display: flex; flex-direction: column; gap: 2px; }
+.jd-report { padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-lg); }
+.jd-report > b { display: block; font-weight: 600; margin: 2px 0 6px; }
+.jd-list { display: flex; flex-direction: column; gap: 4px; }
+.jd-child { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; text-align: left; font-size: 13px; }
+.jd-child:hover { background: var(--soft); }
+.jd-child span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jd-item { padding: 14px 16px; }
+.cpane { display: flex; flex-direction: column; height: calc(100vh - 210px); min-height: 360px; }
+.drawer .cpane { margin: 0 -20px -20px; }
+.cpane-msgs { flex: 1; overflow-y: auto; padding: 12px 20px; min-height: 0; }
+.cpane-msgs .conv { gap: 14px; }
+.cpane-box { margin: 0 16px 12px; }
+.cpane-box textarea { min-height: 52px; }
+.drawer.dw .dw-body:has(.cpane) { padding-bottom: 0; }

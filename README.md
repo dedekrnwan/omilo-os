@@ -102,6 +102,11 @@ numbers in the main chat (switch it off or send it now from the page).
 **Budgets.** Each helper can have a monthly spend limit (USD, at API prices) and a token limit (Team → helper → Budget). At 80%
 you get an Inbox alert, at 100% the helper pauses until you raise the budget or resume it; each level fires once a month.
 
+**Jobs and chats open in a drawer, from anywhere.** Click a job in the Inbox, Monitor, a notification or any link, and it
+opens on the right: **Progress** (the brief, live run cards, checkpoint, report, what went wrong, handoffs), **Needs you**
+(approve, answer or dismiss right there) and **Chat** (talk to the helper about this job). "Discuss" on a proposal opens the
+chat the same way. **Full view** still opens it in the Workspace.
+
 **Inbox board.** The Inbox is a board: Needs you, Running and Done (last 48 hours). Cards show how long it has been going, the
 sources read and tool calls; click one for the recent steps and Open. Approvals open in a drawer. List shows the classic view
 with history filters.

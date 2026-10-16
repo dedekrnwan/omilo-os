@@ -6,6 +6,7 @@ import { ReactNode, createContext, useCallback, useContext, useEffect, useState 
 import { ApiError, Overview, api } from "@/lib/api";
 import PreviewHost from "./PreviewLazy";
 import NotifyHost from "./Notify";
+import TaskDrawerLazy from "./TaskDrawerLazy";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/docs/", "Docs", "ri-book-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
@@ -99,6 +100,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       <div className="frame">
         <PreviewHost />
         {ready && !bare && <NotifyHost onNotice={refresh} />}
+        {ready && !bare && <TaskDrawerLazy />}
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Saga OS"}</b>
           <span className="sp" />

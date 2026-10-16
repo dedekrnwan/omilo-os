@@ -8,6 +8,7 @@ import InboxItemDetail from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { InboxItem, ago, api } from "@/lib/api";
+import { openTask } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
 
 /* The Inbox: a board of what needs you, what is running and what just finished (or the classic list with history). */
@@ -97,7 +98,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
       <div className="board">
         <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
           {b.needs.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => setDetail(c)}
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c))}
               indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
               time={dur(since(c.since, now))}
               tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
@@ -106,14 +107,14 @@ function BoardView({ onCount }: { onCount: () => void }) {
         </Column>
         <Column title="Running" count={b.running.length} icon={<span className="spin bcol-i" />} empty="No helper is working right now.">
           {b.running.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => router.push(`/chat/?view=work&task=${c.id}`)}
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
               indicator={c.status === "queued" ? <i className="ri-hourglass-line bc-ind wait" title="Waiting for a free spot" /> : <span className="spin bc-ind" />}
               time={c.status === "queued" ? "queued" : dur(since(c.started_at, now))} />
           ))}
         </Column>
         <Column title="Done" count={b.done.length} icon={<i className="ri-checkbox-circle-line bcol-i done" />} empty="Finished jobs from the last two days show here.">
           {b.done.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => router.push(`/chat/?view=work&task=${c.id}`)}
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
               indicator={<span className={`bc-dot ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "off"}`} title={c.status} />}
               time={dur(c.seconds)} />
           ))}

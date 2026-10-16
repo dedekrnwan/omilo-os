@@ -2,6 +2,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BASE, api } from "@/lib/api";
+import { openInDrawer, visibleThreads } from "@/lib/open";
 
 /* Real-time notices: a live stream while Saga OS is open (toasts, and system notifications when the tab is in the
    background), and Web Push when no tab is open. The browser asks for permission only after the owner clicks. */
@@ -111,7 +112,7 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
       if (n.kind !== "test" && prefs.current[n.kind] === false) return;
       const here = location.pathname + location.search;
       const looking = !document.hidden && document.hasFocus();
-      if (looking && n.kind === "reply" && here.endsWith(n.url)) return; // already on screen
+      if (looking && n.kind === "reply" && (here.endsWith(n.url) || [...visibleThreads].some((t) => n.url.includes(t)))) return; // already on screen
       if (looking) {
         setToasts((t) => [...t.filter((x) => !(n.tag && x.tag === n.tag)), n].slice(-3));
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), n.level === "critical" ? 15000 : 7000);
@@ -145,8 +146,8 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.level}`} role="button" tabIndex={0}
-            onClick={() => { setToasts((x) => x.filter((y) => y.id !== t.id)); router.push(t.url); }}
-            onKeyDown={(e) => { if (e.key === "Enter") router.push(t.url); }}>
+            onClick={() => { setToasts((x) => x.filter((y) => y.id !== t.id)); if (!openInDrawer(t.url)) router.push(t.url); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !openInDrawer(t.url)) router.push(t.url); }}>
             <i className={ICON[t.kind] || "ri-notification-3-line"} />
             <div className="tx"><b>{t.title}</b>{t.body && <span>{t.body}</span>}</div>
             <button className="iconbtn" aria-label="Dismiss" onClick={(e) => { e.stopPropagation(); setToasts((x) => x.filter((y) => y.id !== t.id)); }}><i className="ri-close-line" /></button>
