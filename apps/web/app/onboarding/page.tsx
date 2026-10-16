@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { SagaMascot } from "@/components/Logo";
+import StepCard, { Tone } from "@/components/StepCard";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
@@ -36,11 +36,17 @@ type Preview = { files: Record<string, string>; completeness: { items: Record<st
 type Finished = { created: string[]; mcp_tokens: Record<string, string>; mcp_url: string; practice: { task_id: string; staff_id: string } | null };
 type ChatMsg = { role: "owner" | "assistant" | "note"; text: string };
 
-const STEPS: { id: string; title: string }[] = [
-  { id: "welcome", title: "Welcome" }, { id: "ai", title: "Your AI" }, { id: "business", title: "Your business" },
-  { id: "customers", title: "Your customers" }, { id: "offer", title: "What you sell" }, { id: "goals", title: "Your goals" },
-  { id: "voice", title: "How you talk" }, { id: "rules", title: "Tools and rules" }, { id: "team", title: "Your team" },
-  { id: "finish", title: "Check and finish" },
+const STEPS: { id: string; title: string; icon: string; tone: Tone; caption: string }[] = [
+  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "ink", caption: "Hi, I'm Saga. Let's set up your AI team together." },
+  { id: "ai", title: "Your AI", icon: "ri-cpu-line", tone: "violet", caption: "First, the brain your helpers think with." },
+  { id: "business", title: "Your business", icon: "ri-building-line", tone: "orange", caption: "We need a few details about what you do." },
+  { id: "customers", title: "Your customers", icon: "ri-user-heart-line", tone: "rose", caption: "Who you serve, and what keeps them up at night." },
+  { id: "offer", title: "What you sell", icon: "ri-price-tag-3-line", tone: "amber", caption: "Your products and prices, so nobody invents them." },
+  { id: "goals", title: "Your goals", icon: "ri-flag-2-line", tone: "green", caption: "What winning looks like for the next few months." },
+  { id: "voice", title: "How you talk", icon: "ri-chat-quote-line", tone: "blue", caption: "So every post and message sounds like you." },
+  { id: "rules", title: "Tools and rules", icon: "ri-shield-check-line", tone: "teal", caption: "What your helpers may use, and what they must never do." },
+  { id: "team", title: "Your team", icon: "ri-team-line", tone: "violet", caption: "Pick the helpers who join. You can hire more later." },
+  { id: "finish", title: "Check and finish", icon: "ri-checkbox-circle-line", tone: "green", caption: "One last look before your team gets to work." },
 ];
 const IDX = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
 const FIELD_LABELS: Record<string, string> = {
@@ -103,9 +109,6 @@ function allTimezones(current: string): string[] {
   catch { return Array.from(new Set([current, "UTC", "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "Asia/Singapore", "Europe/London", "America/New_York"])); }
 }
 
-function Dots() {  // Saga, the house mascot, says hello on the welcome screen
-  return <div className="hero-mascot" aria-hidden><SagaMascot size={88} /></div>;
-}
 
 /* ------------------------------------------------------------------ the setup assistant (chat half) */
 function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }: {
@@ -280,10 +283,14 @@ export default function Onboarding() {
     const chiefName = st.roles["chief-of-staff"]?.name || "Chief of Staff";
 
     return (
-      <div className="ob-form" style={{ height: "100%" }}>
-        <div className="inner">
-          <Dots />
-          <h1 className="display">Your team is ready</h1>
+      <div className="obx">
+        <StepCard wide icon="ri-rocket-2-line" title="Your team is ready" tone="green" seed={7} mascot caption={`${a.company_name} is up and running.`}
+          next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "orange" }}
+          footer={<>
+            <button className="btn primary sc-next" onClick={() => router.replace("/")}>Open my Inbox</button>
+            <div className="row" style={{ justifyContent: "center" }}><button className="sc-skip" onClick={() => router.replace("/chat/")}>Chat with my {chiefName}</button></div>
+          </>}>
+          <h1>Your team is ready</h1>
           <p className="lead">{done.created.length} AI helper{done.created.length === 1 ? "" : "s"} joined {a.company_name}. Here is what happens next.</p>
           <ul className="checklist">
             <li><i className="ri-time-line" /><span>Your helpers work on their own schedule. For example, your {chiefName} writes you a brief every morning.</span></li>
@@ -294,12 +301,7 @@ export default function Onboarding() {
           {done.practice && <div className="callout ok">We started a practice job: a short post introducing {a.company_name}. In a minute or two it will be in your Inbox so you can try approving it.</div>}
           {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? " (built-in: web search and Saga's tools)" : ", working in Claude Code on this computer (files in the folders you share, web, connectors)"}. Change it any time in Settings.</div>}
           {a.engine_type === "fake" && <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>}
-          <div className="wiz-nav">
-            <button className="btn primary lg" onClick={() => router.replace("/")}>Open my Inbox</button>
-            <button className="btn lg" onClick={() => router.replace("/chat/")}>Chat with my {chiefName}</button>
-          </div>
-
-        </div>
+        </StepCard>
       </div>
     );
   }
@@ -313,33 +315,50 @@ export default function Onboarding() {
   const toggleRole = (k: string) => set({ roles: chosen.has(k) ? (a.roles || []).filter((x) => x !== k) : [...(a.roles || []), k] });
   const isQuestionStep = step >= IDX.business && step <= IDX.rules;
 
+  const nextBtn = stepId === "welcome"
+    ? <button className="btn primary sc-next" onClick={() => go(1)}>Let&apos;s start</button>
+    : stepId !== "finish"
+      ? <button className="btn primary sc-next" onClick={() => go(step + 1)} disabled={stepId === "ai" && usingClaude && !keyHint}>Next</button>
+      : <button className="btn primary sc-next" onClick={finish} disabled={busy || !preview || !canFinish}>
+          {busy ? "Creating your team…" : canFinish ? "Create my team" : "Waiting for Claude Code…"}</button>;
+  const footer = (
+    <>
+      {nextBtn}
+      {step > 0 && (
+        <div className="row" style={{ justifyContent: "center" }}>
+          <button className="sc-skip" onClick={() => go(step - 1)} disabled={busy}><i className="ri-arrow-left-s-line" />Back</button>
+          {isQuestionStep && <button className="sc-skip" onClick={() => go(step + 1)}>Skip for now</button>}
+        </div>
+      )}
+    </>
+  );
+  const cur = STEPS[step];
+  const nxt = STEPS[step + 1];
+  const progress = step > 0 ? (
+    <span className="acts" style={{ gap: 8 }}>
+      <span className="sc-steps" aria-hidden>{STEPS.slice(1).map((_, i) => <i key={i} className={i + 1 < step ? "done" : i + 1 === step ? "now" : ""} />)}</span>
+      <span className="small">{step} of {STEPS.length - 1}</span>
+    </span>
+  ) : null;
+
   const form = (
     <div className="inner">
-      {step > 0 && (
-        <>
-          <div className="ob-steps" aria-hidden>{STEPS.slice(1).map((_, i) => <i key={i} className={i + 1 < step ? "done" : i + 1 === step ? "now" : ""} />)}</div>
-          <div className="eyebrow">Step {step} of {STEPS.length - 1}</div>
-        </>
-      )}
 
       {stepId === "welcome" && (
         <>
-          <Dots />
-          <h1 className="display">Set up your AI team</h1>
+          <h1>Set up your AI team</h1>
           <p className="lead">Saga OS gives {a.company_name || "your business"} a team of AI helpers that do real work: write content, find customers, look after customer questions, watch your numbers. You stay the boss.</p>
           <ul className="checklist">
             <li><i className="ri-time-line" /><span>About 10 minutes. No technical knowledge needed.</span></li>
-            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let the assistant on the right fill it from a description or your website.</span></li>
+            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let the assistant fill it from a description or your website.</span></li>
             <li><i className="ri-shield-check-line" /><span>Nothing is posted, sent or paid without your OK.</span></li>
             <li><i className="ri-save-3-line" /><span>Skip anything and change it later. Your answers are saved as you go.</span></li>
           </ul>
-          <div className="wiz-nav"><button className="btn primary lg" onClick={() => go(1)}>Let&apos;s start <i className="ri-arrow-right-line" /></button></div>
         </>
       )}
 
       {stepId === "ai" && (
         <>
-          <h1>Your AI</h1>
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo;. Connect it now and the assistant can also help you fill in the rest of this setup.</p>
           <button type="button" className={`choice ${usingClaude ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
             <b>Use my Claude API key <span className="rec">Recommended</span></b>
@@ -373,7 +392,6 @@ export default function Onboarding() {
 
       {stepId === "business" && (
         <>
-          <h1>Your business</h1>
           <p className="lead">The basics, the way you would explain it to a new employee on their first day.</p>
           <Q title="What is your business called?" f="company_name">
             <input value={a.company_name} onChange={(e) => set({ company_name: e.target.value })} placeholder="e.g. Warung Bu Sri" autoFocus />
@@ -404,7 +422,6 @@ export default function Onboarding() {
 
       {stepId === "customers" && (
         <>
-          <h1>Your customers</h1>
           <p className="lead">Your helpers write and search for the people described here, so be specific.</p>
           <Q title="Who are your customers?" hint="Describe your best customers. If you have different groups, list each one." f="customers">
             <textarea rows={4} value={a.customers || ""} onChange={(e) => set({ customers: e.target.value })} placeholder={"e.g.\n- Office workers who want a proper lunch\n- HR and admin staff ordering for meetings"} />
@@ -420,7 +437,6 @@ export default function Onboarding() {
 
       {stepId === "offer" && (
         <>
-          <h1>What you sell</h1>
           <p className="lead">Your helpers will only mention the products and prices you list here.</p>
           <Q title="Your products or services" hint="One per line. The price can be a range or 'on request'." f="offers">
             {a.offers.map((of, i) => (
@@ -441,7 +457,6 @@ export default function Onboarding() {
 
       {stepId === "goals" && (
         <>
-          <h1>Your goals</h1>
           <p className="lead">Pick what matters most right now. We use this to suggest the right helpers.</p>
           <Q title="What do you want help with?" hint="Pick as many as you like." f="goals">
             <Picks multi opts={o.goals} value={a.goals} onChange={(v) => set({ goals: v })} only={softwareOk} />
@@ -464,7 +479,6 @@ export default function Onboarding() {
 
       {stepId === "voice" && (
         <>
-          <h1>How you talk</h1>
           <p className="lead">So everything your helpers write sounds like you.</p>
           <Q title="Which languages do you use with customers?" f={["languages", "language_other"]}>
             <Picks multi opts={o.languages} value={a.languages} onChange={(v) => set({ languages: v })} />
@@ -482,7 +496,6 @@ export default function Onboarding() {
 
       {stepId === "rules" && (
         <>
-          <h1>Tools and rules</h1>
           <p className="lead">What you already use, and the lines your helpers must never cross.</p>
           <Q title="Which tools do you use today?" hint="Just so helpers know. Connecting tools comes later and always needs your OK." f={["tools", "tools_other"]}>
             <Picks multi opts={o.tools} value={a.tools} onChange={(v) => set({ tools: v })} />
@@ -504,7 +517,6 @@ export default function Onboarding() {
 
       {stepId === "team" && (
         <>
-          <h1>Your team</h1>
           <p className="lead">Based on your goals, here is the team we suggest. Each helper is an AI that works on its own schedule and reports to you.</p>
           <Q title="How big should your team be?">
             <button type="button" className={`choice ${a.team_style === "small" ? "on" : ""}`} onClick={() => pickStyle("small")}>
@@ -559,7 +571,6 @@ export default function Onboarding() {
 
       {stepId === "finish" && (
         <>
-          <h1>Check and finish</h1>
           <p className="lead">Here is what your helpers will know. Missing parts are fine: helpers will ask you when they need them.</p>
           {preview ? (
             <>
@@ -589,27 +600,19 @@ export default function Onboarding() {
       )}
 
       <Err error={err} />
-      {step > 0 && (
-        <div className="wiz-nav">
-          <button className="btn" onClick={() => go(step - 1)} disabled={busy}><i className="ri-arrow-left-line" />Back</button>
-          <span className="sp" />
-          {isQuestionStep && <button className="btn quiet" onClick={() => go(step + 1)}>Skip for now</button>}
-          {stepId !== "finish"
-            ? <button className="btn primary" onClick={() => go(step + 1)} disabled={stepId === "ai" && usingClaude && !keyHint}>Continue <i className="ri-arrow-right-line" /></button>
-            : <button className="btn primary" onClick={finish} disabled={busy || !preview || !canFinish}>
-                {busy ? "Creating your team…" : canFinish ? "Create my team" : "Waiting for the AI workspace…"}</button>}
-        </div>
-      )}
     </div>
   );
 
   return (
     <FlashCtx.Provider value={flash}>
-      <div className="ob">
-        <div className="ob-form" ref={top}>{form}</div>
-        <Assistant answers={a} stepTitle={STEPS[step].title} aiReady={aiReady} onPatch={applyPatch}
+      <div className="obx">
+        <StepCard ref={top} wide icon={cur.icon} title={cur.title} tone={cur.tone} seed={step} caption={cur.caption} mascot={stepId === "welcome"}
+          next={nxt ? { icon: nxt.icon, title: nxt.title, tone: nxt.tone } : null} meta={progress} footer={footer}>
+          {form}
+        </StepCard>
+        <Assistant answers={a} stepTitle={cur.title} aiReady={aiReady} onPatch={applyPatch}
           open={chatOpen} onClose={() => setChatOpen(false)} goAi={() => { setChatOpen(false); go(IDX.ai); }} />
-        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><i className="ri-sparkling-2-line" />Assistant</button>}
+        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><i className="ri-sparkling-2-line" />Setup assistant</button>}
       </div>
     </FlashCtx.Provider>
   );

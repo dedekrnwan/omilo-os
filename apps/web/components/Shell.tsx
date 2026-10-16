@@ -10,6 +10,7 @@ import TaskDrawerLazy from "./TaskDrawerLazy";
 import ContextMenuHost from "./ContextMenu";
 import { copy, menu as ctxMenu } from "@/lib/menu";
 import CompanySwitcher from "./CompanySwitcher";
+import { StepPage } from "./StepCard";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/docs/", "Docs", "ri-book-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
@@ -75,23 +76,18 @@ export default function Shell({ children }: { children: ReactNode }) {
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
   const who = (me?.name || me?.email || "Owner").trim();
 
-  if (path === "/onboarding/") {  // focused setup: the page draws its own workspace
+  if (path === "/onboarding/") {  // focused setup: a quiet page with the step card in the middle
     return (
       <OverviewCtx.Provider value={{ overview, refresh }}>
-        <div className="frame">
-          <div className="workspace" style={{ padding: 8 }}>
-            <div className="inset">
-              <div className="topbar">
-                <Mark /><span className="crumb">Saga OS<span className="small" style={{ fontWeight: 400 }}>· Setting up your company</span></span>
-                <span className="sp" />
-                <div className="cosw-top"><CompanySwitcher overview={overview} /></div>
-                <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
-              </div>
-              <div style={{ flex: 1, minHeight: 0, display: "flex" }}>{children}</div>
-              <PreviewHost />
-            </div>
-          </div>
-        </div>
+        <StepPage top={<>
+          <Mark /><span className="crumb">Saga OS<span className="small" style={{ fontWeight: 400 }}> · Setting up {overview?.company_name || "your company"}</span></span>
+          <span className="sp" style={{ flex: 1 }} />
+          <div className="cosw-top"><CompanySwitcher overview={overview} /></div>
+          <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
+        </>}>
+          {children}
+        </StepPage>
+        <PreviewHost />
       </OverviewCtx.Provider>
     );
   }
