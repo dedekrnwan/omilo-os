@@ -16,6 +16,8 @@
     "next": "15.5.28",
     "react": "19.1.1",
     "react-dom": "19.1.1",
+    "react-is": "19.1.1",
+    "recharts": "3.10.1",
     "remixicon": "^4.9.1"
   },
   "devDependencies": {

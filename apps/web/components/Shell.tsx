@@ -8,7 +8,7 @@ import PreviewHost from "./PreviewLazy";
 import NotifyHost from "./Notify";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
-  { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"]] },
+  { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
   { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
   { group: "Capabilities", items: [["/harness/", "Harness", "ri-stack-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"], ["/computer/", "Computer", "ri-computer-line"]] },
 ];

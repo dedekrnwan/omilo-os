@@ -1585,3 +1585,11 @@ def set_avatar(sid: str, body: dict, db: Session = Depends(get_db), user: User =
     S.audit(db, user.id, "staff.avatar", sid)
     db.commit()
     return _looks(db)
+
+
+@router.get("/monitor")
+def monitor(range: str = "7d", db: Session = Depends(get_db), user: User = Depends(current_user)):  # noqa: A002
+    """Everything for the Monitor page over one time range (24h, 7d or 30d)."""
+    from .. import monitor as M
+
+    return M.build(db, range)

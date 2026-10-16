@@ -69,6 +69,20 @@ health dot (green: all reachable, amber: a few are not, red: half or more are no
 Replies render like Claude's: highlighted code with Copy (long blocks fold), JSON pretty-printed even without a fence, tables, images and
 file links (`file:///path`, or an absolute path in backticks) that open the preview.
 
+## Monitor
+
+**Monitor** (under Work) shows how the company of helpers is doing over the last 24 hours, 7 days or 30 days, refreshed every
+30 seconds and at once when a job ends or something lands in the Inbox:
+
+- tiles: tokens and spend (with the change against the previous period), jobs finished and the success rate, what waits on you
+  (oldest item, your average time to decide), who is working now, and the Claude Code pool
+- tokens by helper over time (stacked bars, hover for the split, or switch to a table), and jobs done vs failed
+- every helper: state (working, awake, sleeping, paused), the job it is on, jobs, tokens, spend, last activity
+- the pool per account, the Saga tools helpers called (with failures and blocked calls), and the latest notices
+
+It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
+items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
+
 ## Chat box: slash commands and the pool meter
 
 Type `/` in the chat box for a menu that filters as you type (arrows to choose, Enter to use, Esc to close): quick prompts
@@ -188,7 +202,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 39 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 40 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.
