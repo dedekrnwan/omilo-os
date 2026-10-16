@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { ago, api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 import { NotifyConfig, disablePush, enableNotifications, permission } from "./Notify";
 
 /* Settings → Notifications: turn them on for this browser, choose what to hear about, send a test. */
@@ -9,7 +10,7 @@ export default function NotifySettings() {
   const [perm, setPerm] = useState<string>("default");
   const [msg, setMsg] = useState<string | null>(null);
   const load = useCallback(async () => { setPerm(permission()); try { setCfg(await api<NotifyConfig>("/notify")); } catch { /* ignore */ } }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load]);
   if (!cfg) return null;
 
   const state = perm === "granted" ? ["up", "On in this browser"] : perm === "denied" ? ["down", "Blocked in this browser"]

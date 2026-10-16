@@ -4,6 +4,7 @@ import Drawer from "@/components/Drawer";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
 
 /* Skills: reusable instructions (SKILL.md) a helper follows when you switch them on for a chat or job.
@@ -28,7 +29,7 @@ export default function Skills() {
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => { try { setList(await api<Skill[]>("/skills")); } catch (e: any) { setErr(e.message); } }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load]);
   useEffect(() => {
     if (!importing) return;
     const t = setTimeout(async () => {

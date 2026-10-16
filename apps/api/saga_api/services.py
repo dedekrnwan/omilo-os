@@ -94,6 +94,22 @@ def ai_key_hint(db: Session, provider: str) -> str | None:
 IDLE_MINUTES = 10
 
 
+def helper_states(db: Session) -> dict[str, dict]:
+    """What each helper is doing now: working (a job runs), waiting (a job is queued), ready (nothing to do until its
+    next regular job, which is given), or paused. Helpers no longer sleep: nothing runs between jobs, they start at once."""
+    running = set(db.scalars(select(Task.staff_id).where(Task.status == "running")))
+    queued = set(db.scalars(select(Task.staff_id).where(Task.status == "queued")))
+    chatting = set(db.scalars(select(Thread.staff_id).where(Thread.awaiting_reply.is_(True))))
+    out = {}
+    for st in db.scalars(select(Staff)):
+        nxt = min((sh.next_at for sh in st.shifts if sh.enabled and sh.next_at), default=None)
+        nsh = next((sh for sh in st.shifts if sh.enabled and sh.next_at == nxt), None) if nxt else None
+        state = ("paused" if st.status != "active" else "working" if st.id in running or st.id in chatting
+                 else "waiting" if st.id in queued else "ready")
+        out[st.id] = {"state": state, "next_job": {"name": nsh.name, "at": (nxt if nxt.tzinfo else nxt.replace(tzinfo=dt.UTC)).isoformat()} if nsh else None}
+    return out
+
+
 def awake_staff(db: Session) -> set[str]:
     """Helpers that are awake: always-on ones (the Chief), and anyone with work now or in the last minutes.
     Everyone else shows as sleeping (idle); they wake the moment they get work."""
@@ -204,6 +220,7 @@ def create_task(
     parent_task_id: str | None = None,
     proposal_id: str | None = None,
     shift_id: str | None = None,
+    goal_id: str | None = None,
 ) -> Task:
     st = db.get(Staff, staff_id)
     if not st:
@@ -218,6 +235,12 @@ def create_task(
         proposal_id=proposal_id,
         shift_id=shift_id,
     )
+    if goal_id:
+        from .models import Goal
+
+        if not db.get(Goal, goal_id):
+            raise DomainError(f"unknown goal '{goal_id}'", 404)
+        t._goal_id = goal_id  # linked by plan's before_flush hook
     db.add(t)
     db.flush()
     audit(db, created_by, "task.create", t.id, staff=staff_id, origin=origin)
@@ -535,3 +558,6 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])
     db.commit()
     return {"decision": "allowed", "level": policy.describe(level), "message": "Allowed. Go ahead, and mention it in your report."}
+
+
+from . import plan as _plan  # noqa: E402,F401  (registers the hook that links new jobs to their goal)

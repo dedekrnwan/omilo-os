@@ -4,6 +4,7 @@ import { useOverview } from "@/components/Shell";
 import { Empty, Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { ago, api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 
 type File = { name: string; bytes: number; updated_at: string };
 
@@ -17,7 +18,7 @@ export default function Company() {
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => setFiles(await api<File[]>("/knowledge")), []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load]);
   const open = async (name: string) => {
     setSel(name); setEditing(false);
     try { setContent((await api<{ content: string }>(`/knowledge/${name}`)).content); } catch (e: any) { setErr(e.message); }

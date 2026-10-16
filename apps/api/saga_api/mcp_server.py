@@ -106,7 +106,8 @@ TOOLS: list[dict] = [
                      "period": _s("string", "e.g. 2026-W42"), "source": _s("string", "where the number comes from")}, "required": ["name", "value", "source"]}},
     {"name": "create_task", "description": "Delegate a task to another staff agent (Chief of Staff only unless permitted).",
      "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "who should do it"), "brief": _s("string", "what to do and why"),
-                     "parent_task_id": _s("string", "your task id")}, "required": ["staff_id", "brief"]}},
+                     "parent_task_id": _s("string", "your task id"),
+                     "goal_id": _s("string", "the founder's goal this serves (ids from get_context → goals); sub-jobs inherit it")}, "required": ["staff_id", "brief"]}},
     {"name": "log_usage", "description": "Report tokens and cost spent on a task (for the budget meter).",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id"), "tokens": _s("integer", "tokens"),
                      "cost_usd": _s("number", "cost in USD")}, "required": ["task_id"]}},
@@ -125,7 +126,9 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         levels = {a: policy.describe(policy.level_for(a, st.permissions, S.strict_mode(db))) for a in sorted(policy.DEFAULTS)}
         return "allowed", {"id": st.id, "name": st.name, "chief_of_staff": st.is_chief, "job": st.job, "permissions": levels}
     if name == "get_context":
-        return "allowed", {"context": S.company_context(db, args.get("topics"))}
+        from .plan import goals_for_prompt
+
+        return "allowed", {"context": S.company_context(db, args.get("topics")), "goals": goals_for_prompt(db)}
     if name == "get_task":
         t = S.task_for_staff(db, st, args["task_id"])
         ck = S.latest_checkpoint(db, t.id)
@@ -282,7 +285,8 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             depth += 1
         if depth >= 2:
             raise S.DomainError("delegation is limited to 2 levels")
-        t = S.create_task(db, args["staff_id"], "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"))
+        t = S.create_task(db, args["staff_id"], "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
+                          goal_id=args.get("goal_id") or None)
         return "allowed", {"task_id": t.id}
     if name == "log_usage":
         t = S.task_for_staff(db, st, args["task_id"])

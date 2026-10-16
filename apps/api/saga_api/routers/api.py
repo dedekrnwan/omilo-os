@@ -201,8 +201,8 @@ class StaffPatch(BaseModel):
 
 @router.get("/staff")
 def list_staff(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    awake = S.awake_staff(db)
-    return [{**X.staff(s), "awake": s.id in awake} for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))]
+    states = S.helper_states(db)
+    return [{**X.staff(s), "awake": True, **states.get(s.id, {})} for s in db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.name))]
 
 
 @router.post("/staff")
@@ -312,6 +312,7 @@ class TaskIn(BaseModel):
     staff_id: str
     brief: str
     founder_note: str = ""
+    goal_id: str | None = None
 
 
 @router.get("/tasks")
@@ -329,7 +330,7 @@ def list_tasks(staff_id: str | None = None, status: str | None = None, limit: in
 
 @router.post("/tasks")
 def create_task(body: TaskIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    t = _run(S.create_task, db, body.staff_id, "manual", body.brief, user.id, founder_note=body.founder_note)
+    t = _run(S.create_task, db, body.staff_id, "manual", body.brief, user.id, founder_note=body.founder_note, goal_id=body.goal_id or None)
     return X.task(t)
 
 
@@ -341,8 +342,12 @@ def get_task(tid: str, db: Session = Depends(get_db), user: User = Depends(curre
     props = db.scalars(select(Proposal).where(Proposal.task_id == tid))
     children = db.scalars(select(Task).where(Task.parent_task_id == tid))
     calls = db.scalars(select(ToolCall).where(ToolCall.task_id == tid).order_by(ToolCall.at))
+    from ..models import Goal, TaskGoal
+
+    tg = db.get(TaskGoal, tid)
+    g = db.get(Goal, tg.goal_id) if tg else None
     return {**X.task(t, rep), "checkpoints": [X.checkpoint(c) for c in cks], "proposals": [X.proposal(p) for p in props],
-            "children": [X.task(c) for c in children],
+            "children": [X.task(c) for c in children], "goal": {"id": g.id, "title": g.title} if g else None,
             "tool_calls": [{"at": X.iso(c.at), "tool": c.tool, "decision": c.decision, "ms": c.duration_ms} for c in calls]}
 
 
@@ -1728,3 +1733,109 @@ def run_retro_now(db: Session = Depends(get_db), user: User = Depends(current_us
     t.shift_id = sh.id
     db.commit()
     return {"task_id": t.id}
+
+
+
+# ------------------------------------------------------------------ the plan: goals → work → sub-work
+@router.get("/plan")
+def plan_tree(days: int = 30, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import plan as P
+
+    return P.tree(db, days=max(1, min(days, 365)))
+
+
+class GoalIn(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    target: str | None = Field(default=None, max_length=2000)
+    due: str | None = Field(default=None, max_length=32)
+    status: str | None = None
+    position: int | None = None
+    shift_ids: list[str] | None = None  # regular jobs that serve this goal
+
+
+def _goal_apply(db: Session, g, body: GoalIn) -> None:
+    from ..models import ShiftGoal
+
+    for k in ("title", "target", "due", "position"):
+        v = getattr(body, k)
+        if v is not None:
+            setattr(g, k, v.strip() if isinstance(v, str) else v)
+    if body.status is not None:
+        if body.status not in ("active", "done", "dropped"):
+            raise HTTPException(400, "status is active, done or dropped")
+        g.status = body.status
+    if body.shift_ids is not None:
+        db.flush()
+        for sg in db.scalars(select(ShiftGoal).where(ShiftGoal.goal_id == g.id)):
+            if sg.shift_id not in body.shift_ids:
+                db.delete(sg)
+        for sid in body.shift_ids:
+            if not db.get(Shift, sid):
+                raise HTTPException(400, f"unknown regular job {sid}")
+            sg = db.get(ShiftGoal, sid)
+            if sg:
+                sg.goal_id = g.id
+            else:
+                db.add(ShiftGoal(shift_id=sid, goal_id=g.id))
+
+
+@router.post("/goals")
+def goal_create(body: GoalIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Goal
+
+    if not (body.title or "").strip():
+        raise HTTPException(400, "give the goal a title")
+    g = Goal(title=body.title.strip(), created_by=user.id,
+             position=(db.scalar(select(func.max(Goal.position))) or 0) + 1)
+    db.add(g)
+    _goal_apply(db, g, body)
+    S.audit(db, user.id, "goal.create", g.id, title=g.title)
+    db.commit()
+    return {"id": g.id}
+
+
+@router.patch("/goals/{gid}")
+def goal_update(gid: str, body: GoalIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Goal
+
+    g = _404(db.get(Goal, gid), "unknown goal")
+    _goal_apply(db, g, body)
+    S.audit(db, user.id, "goal.update", gid)
+    db.commit()
+    return {"id": g.id}
+
+
+@router.delete("/goals/{gid}")
+def goal_delete(gid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from ..models import Goal, ShiftGoal, TaskGoal
+
+    g = _404(db.get(Goal, gid), "unknown goal")
+    for o in list(db.scalars(select(TaskGoal).where(TaskGoal.goal_id == gid))) + list(db.scalars(select(ShiftGoal).where(ShiftGoal.goal_id == gid))):
+        db.delete(o)
+    db.delete(g)
+    S.audit(db, user.id, "goal.delete", gid)
+    db.commit()
+    return {"ok": True}
+
+
+class TaskGoalIn(BaseModel):
+    goal_id: str | None = None
+
+
+@router.put("/tasks/{tid}/goal")
+def task_goal(tid: str, body: TaskGoalIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Put a job (and so its sub-jobs) under a goal, or take it out."""
+    from ..models import Goal, TaskGoal
+
+    _404(db.get(Task, tid))
+    tg = db.get(TaskGoal, tid)
+    if body.goal_id:
+        _404(db.get(Goal, body.goal_id), "unknown goal")
+        if tg:
+            tg.goal_id = body.goal_id
+        else:
+            db.add(TaskGoal(task_id=tid, goal_id=body.goal_id))
+    elif tg:
+        db.delete(tg)
+    db.commit()
+    return {"ok": True}

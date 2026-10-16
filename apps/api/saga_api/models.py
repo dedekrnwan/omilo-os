@@ -396,3 +396,31 @@ class Improvement(Base):
     task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     evaluated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Goal(Base):
+    """A goal you set. The Chief of Staff links the work it hands out to a goal, so the Plan shows goal → jobs → sub-jobs."""
+
+    __tablename__ = "goal"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("gol"))
+    title: Mapped[str] = mapped_column(String(300))
+    target: Mapped[str] = mapped_column(Text, default="")   # what success looks like, with numbers
+    due: Mapped[str] = mapped_column(String(32), default="")  # e.g. 2026-12-31
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | done | dropped
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(64), default="owner")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class TaskGoal(Base):
+    __tablename__ = "task_goal"
+    task_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    goal_id: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class ShiftGoal(Base):
+    """A regular job that serves a goal: every run of it counts toward that goal."""
+
+    __tablename__ = "shift_goal"
+    shift_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    goal_id: Mapped[str] = mapped_column(String(32), index=True)

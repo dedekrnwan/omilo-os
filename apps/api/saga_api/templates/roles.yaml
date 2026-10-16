@@ -13,7 +13,8 @@ roles:
     is_chief: true
     job: |
       You are the founder's single point of contact at {company}. Answer questions about the company and the team,
-      delegate work to the right staff agent with create_task, write the morning brief, keep the Inbox moving,
+      delegate work to the right staff agent with create_task (always pass the goal_id of the founder's goal it serves,
+      from get_context → goals), write the morning brief, keep the Inbox moving,
       and run the Friday retro: review_week, then improve (at most 3 changes; they are measured and rolled back if worse).
     shifts:
       - {name: morning-brief, cron: "30 7 * * *", brief: "Write the morning brief: what happened since yesterday, what needs the founder, top 3 for today."}

@@ -1073,3 +1073,32 @@ a.plain { color: inherit; text-decoration: none; }
   .sc-top .cosw-top .company .chip { display: none; }
   .sc-top .crumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }
+.tpl-steps ol { margin: 8px 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.chip .chip-sub { font-weight: 400; opacity: .8; }
+
+/* plan: goals → work → sub-work */
+.plan-goals { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.pg { padding: 14px 16px; }
+.pg-off { opacity: .7; }
+.pg-head { display: flex; align-items: center; gap: 12px; width: 100%; }
+button.pg-head { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.pg-flag { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #f0fdf4; color: #15803d; font-size: 17px; flex-shrink: 0; }
+.pg-loose .pg-flag { background: var(--soft); color: var(--muted); }
+.pg-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pg-t b { font: 600 16px/1.3 var(--font-display); letter-spacing: -.01em; }
+.pg-by { text-transform: uppercase; letter-spacing: .6px; font-size: 11px; color: var(--faint); }
+.pg-num { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.pg-jobs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0 46px; }
+.pg-jobs .chip { gap: 5px; }
+.pn-root, .pn-kids { list-style: none; margin: 0; padding: 0; }
+.pn-root { margin: 10px 0 0 16px; border-left: 1px solid var(--line-strong); }
+.pn-kids { margin-left: 30px; border-left: 1px dashed var(--line-strong); }
+.pn { position: relative; }
+.pn-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 0; border-radius: 8px; position: relative; }
+.pn-row::before { content: ""; position: absolute; left: 0; top: 50%; width: 10px; border-top: 1px solid var(--line-strong); }
+.pn-row:hover { background: var(--soft); }
+.pn-tog { width: 22px; height: 22px; margin-left: 12px; flex-shrink: 0; border: 0; background: none; display: grid; place-items: center; color: var(--muted); cursor: pointer; padding: 0; }
+.pn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 0; background: none; text-align: left; cursor: pointer; padding: 0; font: inherit; color: inherit; }
+.pn-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-main .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .pg-num { display: none; } .pn-kids { margin-left: 16px; } }

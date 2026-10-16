@@ -31,7 +31,7 @@ export default function Settings() {
       setAudit(await api<Audit[]>("/audit?limit=100"));
     } catch (e: any) { setErr(e.message); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load]);
   useEffect(() => {  // helpers' AI can come up a few seconds after a change
     const t = setInterval(async () => { if (document.hidden) return; try { setHealth(await api("/health/engines")); } catch { /* next time */ } }, 30000);
     return () => clearInterval(t);

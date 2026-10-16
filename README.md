@@ -115,6 +115,23 @@ with history filters.
 It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
 items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
 
+## Plan: goals → work → sub-work
+
+**Plan** (under Work) shows the goals you set at the top and, under each, the work that serves it: what the Chief of Staff
+handed out (`create_task` with a `goal_id`; helpers see your goals in `get_context`), what helpers passed on, executions of
+proposals you approved, and the regular jobs you linked to the goal. A new job finds its goal by itself (the one it was given,
+else its parent's, else its regular job's). Goals picked in onboarding become the first goals. Right-click a job to move it
+under another goal; the job drawer shows which goal it serves.
+
+## Social media and work apps
+
+Connectors → Add has templates for Instagram, Facebook Pages, WhatsApp Business, TikTok, LinkedIn, X and YouTube, and for
+Gmail, Google Calendar, Sheets, Notion and Slack. They connect through [Composio](https://composio.dev), which holds the app
+login (you sign in on the app's own page) and gives one MCP address per app: paste the address and your Composio API key
+(`x-api-key`). Or connect many apps at once through [Zapier MCP](https://mcp.zapier.com) (`https://mcp.zapier.com/api/v1/connect`
+with `Authorization: Bearer <connection token>`). Social connectors default to "Ask me first": helpers read, plan and draft,
+and every post, reply or message comes to your Inbox. The apps you named in onboarding are suggested at the top.
+
 ## Several companies
 
 Run more than one company from one Saga OS. Pick the company at the top of the sidebar (the badge shows what waits in
@@ -185,8 +202,11 @@ each with its own personality, process and deliverables. Saga OS downloads the r
 `SAGA_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
 the helper's job, with division-based permissions and the usual approvals on top.
 
-Helpers show as sleeping when they have had no work for 10 minutes; nothing keeps running for them, and they wake the moment a job
-or chat arrives. Only the Chief of Staff (and helpers marked `always_on`) always show as awake.
+Helpers never sleep: nothing runs for them between jobs, and they start the moment work arrives. Team and Monitor show each one as
+**Working**, **Job queued**, **Ready** (with its next regular job) or **Paused**.
+
+Every page stays current without reloading: any change you make (in this tab or another) refreshes the views that show it, and
+changes made by helpers arrive over the live stream.
 
 ## Layout
 

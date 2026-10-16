@@ -56,7 +56,7 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
       {tab === "progress" && (
         <div className="jd-body">
           <div className="jd-brief">
-            <div className="small">The job · {t.origin} · {ago(t.created_at)}</div>
+            <div className="small">The job · {t.origin} · {ago(t.created_at)}{(t as any).goal ? <> · for <Link href="/plan/" onClick={() => {}}><i className="ri-flag-2-line" /> {(t as any).goal.title}</Link></> : null}</div>
             <Markdown text={lines.slice(1).join("\n").trim() || lines[0]} />
             {t.founder_note && <div className="small"><b>Your note:</b> {t.founder_note}</div>}
           </div>

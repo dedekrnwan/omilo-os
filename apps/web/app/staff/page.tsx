@@ -4,11 +4,13 @@ import LookEditor from "@/components/LookEditor";
 import Drawer from "@/components/Drawer";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { Staff, ago, api } from "@/lib/api";
 import { helperItems, taskItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
+import { usePoll } from "@/lib/poll";
+import HelperState from "@/components/HelperState";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
 
@@ -42,11 +44,17 @@ function StaffDetail({ id }: { id: string }) {
   const [connect, setConnect] = useState<any>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const loadedFor = useRef<string | null>(null);
   const load = useCallback(async () => {
-    try { const x = await api<Staff>(`/staff/${id}`); setS(x); setEdit({ name: x.name, job: x.job, engine: x.engine, max_task_minutes: x.max_task_minutes }); }
-    catch (e: any) { setErr(e.message); }
+    try {
+      const x = await api<Staff>(`/staff/${id}`); setS(x);
+      if (loadedFor.current !== id) {  // fill the form once; live refreshes never overwrite what you are typing
+        loadedFor.current = id;
+        setEdit({ name: x.name, job: x.job, engine: x.engine, max_task_minutes: x.max_task_minutes });
+      }
+    } catch (e: any) { setErr(e.message); }
   }, [id]);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 30000, [load]);
   if (!s) return <Err error={err} />;
   const overrides: Record<string, number> = s.permissions?.actions || {};
 
@@ -72,7 +80,7 @@ function StaffDetail({ id }: { id: string }) {
     <div>
       <div className="eyebrow"><Link href="/staff/">Team</Link> · {s.role?.startsWith("agency:") ? "Specialist from The Agency" : s.role || "custom"}</div>
       <div className="acts" style={{ gap: 14, flexWrap: "nowrap", margin: "4px 0 12px" }}>
-        <Avatar who={s} size={56} state={s.status === "active" && (s as any).awake === false ? "sleeping" : null} />
+        <Avatar who={s} size={56} />
         <h1 style={{ margin: 0 }}>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
       </div>
       {hired && <FirstJob s={s} />}
@@ -219,7 +227,8 @@ function StaffList() {
   const [role, setRole] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => setStaff(await api<Staff[]>("/staff")), []);
-  useEffect(() => { load(); api<{ roles: Record<string, { name: string }> }>("/templates").then((t) => setRoles(t.roles)); }, [load]);
+  usePoll(load, 30000, [load]);
+  useEffect(() => { api<{ roles: Record<string, { name: string }> }>("/templates").then((t) => setRoles(t.roles)); }, []);
   const hire = async () => {
     try { await api("/team/apply", { body: { roles: [role], engine: staff[0]?.engine || { type: "fake" } } }); router.push(`/staff/?id=${role}`); } catch (e: any) { setErr(e.message); }
   };
@@ -234,10 +243,10 @@ function StaffList() {
               { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
               { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}>
             <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
-              <Avatar who={s} size={40} state={s.status === "active" && !(s as any).awake ? "sleeping" : null} />
+              <Avatar who={s} size={40} state={(s as any).state === "working" ? "working" : null} />
               <span style={{ display: "flex", flexDirection: "column" }}><b>{s.name}</b><span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>
             </span>
-            <span className="acts"><StatusChip status={s.status} />{s.status === "active" && !(s as any).awake && <span className="chip idle"><i className="ri-moon-line" />Sleeping</span>}<span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : s.engine?.type === "claude-code" ? "Claude Code pool" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
+            <span className="acts"><HelperState h={s as any} /><span className="small">{s.engine?.type === "claude" ? "Built-in Claude" : s.engine?.type === "claude-code" ? (s.engine?.auth === "api" ? "Claude Code · API key" : "Claude Code pool") : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>
       )}

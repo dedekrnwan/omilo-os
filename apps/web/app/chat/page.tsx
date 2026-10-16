@@ -277,7 +277,7 @@ function WorkspaceInner() {
                 <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}
                   onContextMenu={menu(() => [{ heading: s.name }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "staff", staff_id: s.id }) },
                     { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", onSelect: () => go({ view: "work", task: "new", staff: s.id }) }, sep, ...helperItems(s, loadLists).slice(1)])}>
-                  <Avatar who={s} size={24} state={(s as any).awake === false && s.status === "active" ? "sleeping" : null} /><span className="t"><b>{s.name}</b></span></button>
+                  <Avatar who={s} size={24} state={(s as any).state === "working" ? "working" : null} /><span className="t"><b>{s.name}</b></span></button>
               ))}
               <div className="grp">About a job or approval</div>
               {threads.filter((t) => t.scope === "task" || t.scope === "proposal").slice(0, 15).map((t) => (

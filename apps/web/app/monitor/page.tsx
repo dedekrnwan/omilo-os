@@ -84,7 +84,8 @@ function PoolHistory({ h }: { h: Data["pool_history"] }) {
 
 const RANGES: [string, string][] = [["24h", "Last 24 hours"], ["7d", "Last 7 days"], ["30d", "Last 30 days"]];
 const STATE: Record<string, [string, string, string]> = {
-  working: ["run", "ri-loader-4-line", "Working"], awake: ["up", "ri-sun-line", "Awake"], sleeping: ["idle", "ri-moon-line", "Sleeping"], paused: ["warn", "ri-pause-line", "Paused"],
+  working: ["run", "ri-loader-4-line", "Working"], waiting: ["warn", "ri-hourglass-line", "Job queued"], ready: ["up", "ri-checkbox-blank-circle-fill", "Ready"],
+  awake: ["up", "ri-checkbox-blank-circle-fill", "Ready"], sleeping: ["up", "ri-checkbox-blank-circle-fill", "Ready"], paused: ["warn", "ri-pause-line", "Paused"],
 };
 const ICON: Record<string, string> = { inbox: "ri-inbox-2-line", reply: "ri-chat-3-line", job_done: "ri-checkbox-circle-line", job_failed: "ri-error-warning-line" };
 const money = (n: number) => (n >= 100 ? `$${Math.round(n)}` : n >= 1 ? `$${n.toFixed(2)}` : n > 0 ? `$${n.toFixed(3)}` : "$0");
@@ -116,7 +117,7 @@ function DigestCard() {
   const [show, setShow] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const load = useCallback(async () => { try { setD(await api<Digest>("/digest")); } catch { /* ignore */ } }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 120000, [load]);
   if (!d) return null;
   return (
     <section className="paper mcard" style={{ marginTop: 16 }}>
@@ -211,7 +212,7 @@ export default function Monitor() {
         <Tile label="Waiting on you" value={<>{k.waiting}{k.waiting_critical ? <span className="num-sub crit"> · {k.waiting_critical} urgent</span> : null}</>}
           sub={<span className="small">{k.oldest_waiting ? `oldest ${ago(k.oldest_waiting)}` : "all clear"}{k.avg_decision_minutes != null ? ` · you answer in ~${mins(k.avg_decision_minutes)}` : ""}</span>} href="/" />
         <Tile label="Working now" value={<>{k.working}<span className="num-sub"> of {k.helpers}</span></>}
-          sub={<span className="small">{k.awake} awake{k.queued ? ` · ${k.queued} queued` : ""} · {k.runs} runs{k.avg_run_seconds ? ` (${Math.round(k.avg_run_seconds)}s avg)` : ""}</span>} />
+          sub={<span className="small">{k.awake} ready{k.queued ? ` · ${k.queued} queued` : ""} · {k.runs} runs{k.avg_run_seconds ? ` (${Math.round(k.avg_run_seconds)}s avg)` : ""}</span>} />
         <Tile label="Claude Code pool" value={data.pool.total ? <>{data.pool.ready}<span className="num-sub"> / {data.pool.total} ready</span></> : "–"} href="/harness/"
           sub={data.pool.total ? <span className="small">{data.pool.avg_pct != null ? `avg ${data.pool.avg_pct}% used (5 h)` : "use not reported yet"}</span> : <span className="small">No accounts yet</span>}>
           {data.pool.total > 0 && <div style={{ marginTop: 8 }}><Segments m={data.pool as any} big /></div>}
@@ -240,8 +241,9 @@ export default function Monitor() {
             const [cls, icon, txt] = STATE[h.state] || ["idle", "ri-question-line", h.state];
             return (
               <tr key={h.id} onContextMenu={menu(() => [{ heading: h.name }, ...helperItems(h), ...(h.current ? [sep, ...jobLinkItems(h.current.task_id, h.current.brief)] : [])])}>
-                <td><Link href={`/staff/?id=${h.id}`} className="mh-name"><Avatar who={h} size={28} state={h.state === "working" ? "working" : h.state === "sleeping" ? "sleeping" : null} /><b>{h.name}</b></Link></td>
-                <td><span className={`chip ${cls}`}><i className={icon} />{txt}</span></td>
+                <td><Link href={`/staff/?id=${h.id}`} className="mh-name"><Avatar who={h} size={28} state={h.state === "working" ? "working" : null} /><b>{h.name}</b></Link></td>
+                <td><span className={`chip ${cls}`}><i className={icon} style={icon.includes("circle-fill") ? { fontSize: 8 } : undefined} />{txt}</span>
+                  {h.state === "ready" && (h as any).next_job && <div className="small">next {(h as any).next_job.name}</div>}</td>
                 <td className="hide-sm small" style={{ maxWidth: 280 }}>{h.current ? <Link href={`/chat/?view=work&task=${h.current.task_id}`}>{h.current.brief}</Link> : "–"}</td>
                 <td className="num-cell">{h.jobs_done}{h.jobs_failed ? <span className="crit"> · {h.jobs_failed}✕</span> : ""}</td>
                 <td style={{ minWidth: 140 }}><div className="inl"><span className="inl-bar"><i style={{ width: `${(h.tokens / maxTok) * 100}%`, background: i < SERIES.length ? SERIES[i] : OTHER }} /></span><span className="mono small">{fmtNum(h.tokens)}</span></div></td>

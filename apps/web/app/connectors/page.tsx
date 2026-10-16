@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
 
 /* Connectors: MCP servers (apps and services) your helpers can use, like Claude's connectors.
@@ -14,25 +15,66 @@ type Pair = { k: string; v: string };
 type Form = { id: string; label: string; kind: "http" | "stdio"; url: string; command: string; args: string; approval: "auto" | "ask";
   default_on: boolean; enabled: boolean; secrets: Pair[]; editing: boolean; tpl: string };
 type Test = { ok: boolean | null; detail: string; tools?: string[] };
-type Tpl = { key: string; name: string; icon: string; blurb: string; form: Partial<Form>; help?: string };
+type Tpl = { key: string; name: string; icon: string; blurb: string; form: Partial<Form>; help?: string; steps?: string[]; link?: [string, string];
+  urlHint?: string; group: "social" | "work" | "dev" | "any"; tools?: string[]; color?: string };
+
+const COMPOSIO_URL = "https://backend.composio.dev/v3/mcp/YOUR_SERVER_ID?user_id=YOUR_USER_ID";
+/* Social and work apps through Composio: it holds the app login (OAuth) and serves one MCP address per app. */
+const composio = (key: string, name: string, icon: string, blurb: string, account: string, tools: string[], color: string, group: Tpl["group"] = "social"): Tpl => ({
+  key, name, icon, blurb, group, tools, color, urlHint: COMPOSIO_URL, link: ["https://composio.dev", "Open Composio"],
+  steps: [
+    `Sign in at composio.dev and add the ${name} toolkit. Connect ${account} there (you log in on ${name}'s own page; Saga OS never sees your password).`,
+    "Create an MCP server with that toolkit and copy its address. It looks like the example in Address below, with your server id and user id.",
+    "Copy your Composio API key into the x-api-key header below, then Add and test.",
+  ],
+  help: group === "social" ? "Helpers can read, plan and draft freely. Posting, replying or sending always comes to your Inbox first." : undefined,
+  form: { label: name, kind: "http", approval: "ask", secrets: [{ k: "x-api-key", v: "" }] },
+});
 
 const TEMPLATES: Tpl[] = [
-  { key: "github", name: "GitHub", icon: "ri-github-line", blurb: "Issues, pull requests, code", help: "Create a personal access token on GitHub (Settings → Developer settings) and paste it after “Bearer ”.",
+  composio("instagram", "Instagram", "ri-instagram-line", "Posts, comments, insights", "your Instagram Business or Creator account", ["instagram"], "#e1306c"),
+  composio("facebook", "Facebook Pages", "ri-facebook-circle-line", "Page posts, comments, messages", "the Facebook Page you manage", ["facebook"], "#1877f2"),
+  composio("whatsapp", "WhatsApp Business", "ri-whatsapp-line", "Messages and templates", "your WhatsApp Business account (Meta Business)", ["whatsapp"], "#25d366"),
+  composio("tiktok", "TikTok", "ri-tiktok-line", "Videos and profile stats", "your TikTok account", ["tiktok"], "#111111"),
+  composio("linkedin", "LinkedIn", "ri-linkedin-box-line", "Posts on your profile or page", "your LinkedIn account", ["linkedin"], "#0a66c2"),
+  composio("x", "X (Twitter)", "ri-twitter-x-line", "Posts, replies, mentions", "your X account", [], "#111111"),
+  composio("youtube", "YouTube", "ri-youtube-line", "Channel videos, comments, stats", "your YouTube channel", [], "#ff0000"),
+  { key: "zapier", name: "Many apps via Zapier", icon: "ri-flashlight-line", blurb: "8,000+ apps through one connection", group: "social", link: ["https://mcp.zapier.com", "Open Zapier MCP"],
+    steps: ["At mcp.zapier.com create an MCP server and add the actions you want, for example Instagram for Business, Facebook Pages or WhatsApp.",
+      "Generate a connection token (it is shown once) and paste it after “Bearer ” below.",
+      "Every action runs through your Zapier account, with its own limits and pricing."],
+    help: "Posting and sending still need your OK in the Inbox.",
+    form: { label: "Zapier", kind: "http", url: "https://mcp.zapier.com/api/v1/connect", approval: "ask", secrets: [{ k: "Authorization", v: "Bearer " }] } },
+  composio("gmail", "Gmail", "ri-mail-line", "Read and draft email", "your Google account", ["gmail"], "#ea4335", "work"),
+  composio("calendar", "Google Calendar", "ri-calendar-line", "Events and free time", "your Google account", ["calendar"], "#1a73e8", "work"),
+  composio("sheets", "Google Sheets", "ri-file-excel-2-line", "Read and update sheets", "your Google account", ["sheets", "drive"], "#0f9d58", "work"),
+  composio("notion", "Notion", "ri-notion-line", "Pages and databases", "your Notion workspace", ["notion"], "#111111", "work"),
+  composio("slack", "Slack", "ri-slack-line", "Channels and messages", "your Slack workspace", ["slack"], "#4a154b", "work"),
+  { key: "github", name: "GitHub", icon: "ri-github-line", blurb: "Issues, pull requests, code", group: "dev", tools: ["github"], help: "Create a personal access token on GitHub (Settings → Developer settings) and paste it after “Bearer ”.",
     form: { label: "GitHub", kind: "http", url: "https://api.githubcopilot.com/mcp/", approval: "ask", secrets: [{ k: "Authorization", v: "Bearer " }] } },
-  { key: "playwright", name: "Browser (Playwright)", icon: "ri-global-line", blurb: "Open and use websites", help: "Needs Node.js on this computer. The first run downloads the browser.",
+  { key: "playwright", name: "Browser (Playwright)", icon: "ri-global-line", blurb: "Open and use websites", group: "dev", tools: ["website", "marketplace"], help: "Needs Node.js on this computer. The first run downloads the browser.",
     form: { label: "Browser", kind: "stdio", command: "npx", args: "-y @playwright/mcp@latest", approval: "ask" } },
-  { key: "context7", name: "Library docs (Context7)", icon: "ri-book-open-line", blurb: "Up-to-date docs for code libraries", help: "Read-only, so it can be used directly. Needs Node.js.",
+  { key: "context7", name: "Library docs (Context7)", icon: "ri-book-open-line", blurb: "Up-to-date docs for code libraries", group: "dev", help: "Read-only, so it can be used directly. Needs Node.js.",
     form: { label: "Library docs", kind: "stdio", command: "npx", args: "-y @upstash/context7-mcp", approval: "auto" } },
-  { key: "postgres", name: "Postgres database", icon: "ri-database-2-line", blurb: "Read your database", help: "Replace the address with your database's (a read-only user is safest). Needs Node.js.",
+  { key: "postgres", name: "Postgres database", icon: "ri-database-2-line", blurb: "Read your database", group: "dev", help: "Replace the address with your database's (a read-only user is safest). Needs Node.js.",
     form: { label: "Database", kind: "stdio", command: "npx", args: "-y @modelcontextprotocol/server-postgres postgresql://readonly:password@localhost:5432/app", approval: "ask" } },
-  { key: "web", name: "Any web address", icon: "ri-links-line", blurb: "An MCP server URL from its maker", form: { kind: "http" } },
-  { key: "program", name: "Any program", icon: "ri-terminal-box-line", blurb: "An MCP server you run here", form: { kind: "stdio" } },
+  { key: "web", name: "Any web address", icon: "ri-links-line", blurb: "An MCP server URL from its maker", group: "any", form: { kind: "http" } },
+  { key: "program", name: "Any program", icon: "ri-terminal-box-line", blurb: "An MCP server you run here", group: "any", form: { kind: "stdio" } },
 ];
+const GROUPS: [Tpl["group"], string][] = [["social", "Social media"], ["work", "Work apps"], ["dev", "For building"], ["any", "Anything else"]];
 
 const blank: Form = { id: "", label: "", kind: "http", url: "", command: "", args: "", approval: "ask", default_on: true, enabled: true,
   secrets: [{ k: "", v: "" }], editing: false, tpl: "" };
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 const withBlankRow = (p: Pair[]) => (p.length && !p[p.length - 1].k && !p[p.length - 1].v ? p : [...p, { k: "", v: "" }]);
+
+function TplButton({ t, onPick }: { t: Tpl; onPick: (t: Tpl) => void }) {
+  return (
+    <button type="button" className="tpl" onClick={() => onPick(t)}>
+      <i className={t.icon} style={t.color ? { color: t.color } : undefined} /><span style={{ display: "flex", flexDirection: "column" }}><b>{t.name}</b><span>{t.blurb}</span></span>
+    </button>
+  );
+}
 
 export default function Connectors() {
   const [list, setList] = useState<Conn[] | null>(null);
@@ -41,8 +83,12 @@ export default function Connectors() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [usesTools, setUsesTools] = useState<string[]>([]);
   const load = useCallback(async () => { try { setList(await api<Conn[]>("/connectors")); } catch (e: any) { setErr(e.message); } }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load], (n) => n?.url === "/connectors");
+  useEffect(() => { api<{ answers: { tools?: string[] } }>("/onboarding").then((o) => setUsesTools(o.answers?.tools || [])).catch(() => {}); }, []);
+  const have = new Set((list || []).map((c) => c.label.toLowerCase()));
+  const suggested = TEMPLATES.filter((t) => t.tools?.some((x) => usesTools.includes(x)) && !have.has((t.form.label || t.name).toLowerCase()));
   const close = useCallback(() => { setForm(null); setErr(null); }, []);
 
   const startNew = () => { setErr(null); setForm({ ...blank }); };
@@ -100,6 +146,15 @@ export default function Connectors() {
         <button className="btn primary" onClick={startNew}><i className="ri-add-line" />Add connector</button>
       </div>
 
+      {suggested.length > 0 && (
+        <div className="soft acts" style={{ marginTop: 20, justifyContent: "space-between" }}>
+          <div><b style={{ fontWeight: 500 }}>Connect the apps you told us about</b>
+            <div className="small">{suggested.map((t) => t.name).join(", ")}: your helpers can't use them until they are connected.</div></div>
+          <div className="acts">{suggested.slice(0, 4).map((t) => (
+            <button key={t.key} className="btn sm" onClick={() => { setErr(null); pick(t); }}><i className={t.icon} style={t.color ? { color: t.color } : undefined} />{t.name}</button>))}</div>
+        </div>
+      )}
+
       <div className="sec" style={{ marginTop: 20 }}>
         {list === null ? <p className="small">Loading…</p> : list.length === 0 ? (
           <div className="empty"><b>No connectors yet</b><span>Start from GitHub, a browser or your database, or add any MCP server.</span>
@@ -142,19 +197,31 @@ export default function Connectors() {
           </>
         ) : <><span className="sp" /><button className="btn" onClick={close}>Cancel</button></>)}>
         {form && !form.tpl && (
-          <div className="dw-sec">
-            <h3>Start from</h3>
-            <div className="tpl-grid">
-              {TEMPLATES.map((t) => (
-                <button key={t.key} type="button" className="tpl" onClick={() => pick(t)}>
-                  <i className={t.icon} /><span style={{ display: "flex", flexDirection: "column" }}><b>{t.name}</b><span>{t.blurb}</span></span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <>
+            {suggested.length > 0 && (
+              <div className="dw-sec">
+                <h3>From your setup</h3>
+                <p className="dw-help" style={{ marginTop: 0 }}>You said you use these. Connect them so helpers can work with them.</p>
+                <div className="tpl-grid">{suggested.map((t) => <TplButton key={t.key} t={t} onPick={pick} />)}</div>
+              </div>
+            )}
+            {GROUPS.map(([g, title]) => (
+              <div key={g} className="dw-sec">
+                <h3>{title}</h3>
+                <div className="tpl-grid">{TEMPLATES.filter((t) => t.group === g).map((t) => <TplButton key={t.key} t={t} onPick={pick} />)}</div>
+              </div>
+            ))}
+          </>
         )}
         {form && form.tpl && (
           <>
+            {tpl?.steps && (
+              <div className="dw-sec tpl-steps">
+                <h3>How to connect {tpl.name}</h3>
+                <ol>{tpl.steps.map((x, i) => <li key={i}>{x}</li>)}</ol>
+                {tpl.link && <a className="btn sm" href={tpl.link[0]} target="_blank" rel="noopener noreferrer"><i className="ri-external-link-line" />{tpl.link[1]}</a>}
+              </div>
+            )}
             {tpl?.help && <div className="callout" style={{ marginTop: 16 }}>{tpl.help}</div>}
             <div className="dw-sec">
               <label style={{ marginTop: 0 }}>Name</label>
@@ -169,7 +236,8 @@ export default function Connectors() {
                 </>
               )}
               {form.kind === "http" ? (
-                <><label>Address</label><input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder="https://example.com/mcp" inputMode="url" /></>
+                <><label>Address</label><input value={form.url} onChange={(e) => set({ url: e.target.value })} placeholder={tpl?.urlHint || "https://example.com/mcp"} inputMode="url" />
+                  {tpl?.urlHint && <p className="dw-help">Paste the address Composio gives you; it has your server id and user id in it.</p>}</>
               ) : (
                 <>
                   <label>Command</label><input className="mono" value={form.command} onChange={(e) => set({ command: e.target.value })} placeholder="npx" />

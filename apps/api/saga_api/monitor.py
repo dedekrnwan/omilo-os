@@ -53,7 +53,7 @@ def build(db: Session, rng: str = "7d") -> dict:
     p0 = t0 - span  # the previous period of the same length, for deltas
 
     staff = list(db.scalars(select(Staff).order_by(Staff.is_chief.desc(), Staff.created_at, Staff.name)))
-    awake = S.awake_staff(db)
+    states = S.helper_states(db)
 
     # ---- tokens, cost and run time, from usage events (every engine reports one per run)
     usage = list(db.scalars(select(RunEvent).where(RunEvent.kind == "usage", RunEvent.at >= p0)))
@@ -114,7 +114,8 @@ def build(db: Session, rng: str = "7d") -> dict:
     helpers = []
     for st in staff:
         t = running.get(st.id)
-        state = "paused" if st.status != "active" else "working" if t else "awake" if st.id in awake else "sleeping"
+        hs = states.get(st.id, {})
+        state = "paused" if st.status != "active" else "working" if t else hs.get("state", "ready")
         ps, js = per_staff.get(st.id, {}), jstaff.get(st.id, {})
         helpers.append({
             "id": st.id, "name": st.name, "role": st.role, "is_chief": st.is_chief, "state": state,
@@ -122,7 +123,7 @@ def build(db: Session, rng: str = "7d") -> dict:
             "current": {"task_id": t.id, "brief": t.brief[:140], "started_at": iso(t.started_at)} if t else None,
             "tokens": ps.get("tokens", 0), "cost_usd": round(ps.get("cost", 0.0), 4), "runs": ps.get("runs", 0),
             "jobs_done": js.get("done", 0), "jobs_failed": js.get("failed", 0),
-            "last_active": iso(last_seen.get(st.id)),
+            "last_active": iso(last_seen.get(st.id)), "next_job": hs.get("next_job"),
         })
 
     # ---- tools (Saga's MCP tools, every engine)
@@ -161,7 +162,7 @@ def build(db: Session, rng: str = "7d") -> dict:
             "jobs_done": jcur["done"], "jobs_failed": jcur["failed"], "jobs_done_prev": jprev["done"], "jobs_failed_prev": jprev["failed"],
             "waiting": len(open_items), "waiting_critical": sum(1 for i in open_items if i.level == "critical" or i.blocking),
             "oldest_waiting": iso(oldest), "avg_decision_minutes": round(sum(waits) / len(waits)) if waits else None, "decided": len(waits),
-            "working": sum(1 for h in helpers if h["state"] == "working"), "awake": sum(1 for h in helpers if h["state"] in ("working", "awake")),
+            "working": sum(1 for h in helpers if h["state"] == "working"), "awake": sum(1 for h in helpers if h["state"] in ("working", "waiting", "ready")),
             "helpers": len(helpers), "queued": queued, "paused": S.is_paused(db),
         },
         "tokens_by_helper": [{"staff_id": k, "values": v} for k, v in tok.items() if any(v)],

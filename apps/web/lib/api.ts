@@ -8,6 +8,9 @@ export class ApiError extends Error {
   }
 }
 
+// writes that change nothing anyone else shows (or that fire constantly) don't refresh every view
+const QUIET = ["/vault/write", "/onboarding/assist", "/ai/check", "/connectors/check", "/notify/test", "/fs", "/presence"];
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = opts.method || (opts.body !== undefined ? "POST" : "GET");
   const res = await fetch(`${BASE}/api${path}`, {
@@ -24,7 +27,11 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     } catch {}
     throw new ApiError(res.status, msg);
   }
-  return res.json();
+  const out = await res.json();
+  if (method !== "GET" && !QUIET.some((q) => path.startsWith(q))) {
+    import("./poll").then((m) => m.announceChange(path)).catch(() => {});
+  }
+  return out;
 }
 
 export type Staff = {

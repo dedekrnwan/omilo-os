@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
 
 /* Computer: which folders on the machine running Saga OS your helpers may read, edit and run commands in.
@@ -22,7 +23,7 @@ export default function Computer() {
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => { try { setList(await api<Folder[]>("/folders")); } catch (e: any) { setErr(e.message); } }, []);
-  useEffect(() => { load(); }, [load]);
+  usePoll(load, 60000, [load]);
   const browse = useCallback(async (p: string) => {
     try { const r = await api<Fs>(`/fs?path=${encodeURIComponent(p)}`); setFs(r); setForm((f) => (f && !f.id ? { ...f, path: r.path } : f)); setErr(null); }
     catch (e: any) { setErr(e.message); }

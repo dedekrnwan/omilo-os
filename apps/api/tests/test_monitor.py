@@ -14,7 +14,7 @@ def test_monitor_ranges_and_numbers(owner):
     assert k["jobs_done"] >= 1 and sum(m["jobs"]["done"]) == k["jobs_done"]
     assert k["runs"] >= 1 and k["helpers"] == len(m["helpers"])
     ops = [h for h in m["helpers"] if h["id"] == "ops"][0]
-    assert ops["jobs_done"] >= 1 and ops["state"] in ("awake", "sleeping", "working") and ops["last_active"]
+    assert ops["jobs_done"] >= 1 and ops["state"] in ("ready", "waiting", "working") and ops["last_active"]
     assert any(x["name"] in ("report", "checkpoint", "get_task") for x in m["tools"])
     assert {"accounts", "ready", "total"} <= set(m["pool"])
 
