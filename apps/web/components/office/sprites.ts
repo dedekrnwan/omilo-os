@@ -85,21 +85,21 @@ function frame(ctx: CanvasRenderingContext2D, x: number, y: number, look: Sprite
   ctx.save();
   ctx.translate(x, y);
   const sitting = kind === "work" || (kind === "idle" && dir === "up");
-  const bob = kind === "walk" ? [0, -2.5, 0, -2.5][i] : kind === "work" ? [0, -1][i] : 0;
+  const bob = kind === "walk" ? [0, -3, 0, -3][i] : kind === "work" ? [0, -2][i] : 0;
   const squash = kind === "idle" ? [1, 0.975][i] : 1;
   const step = kind === "walk" ? [4, 0, -4, 0][i] : 0;
   // shadow
-  ctx.fillStyle = "rgba(20,18,40,.22)";
-  ctx.beginPath(); ctx.ellipse(32, 74, 17, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(20,18,40,.32)";
+  ctx.beginPath(); ctx.ellipse(32, 74, 18, 5, 0, 0, Math.PI * 2); ctx.fill();
   // feet (hidden when sitting at a desk)
   if (!sitting) {
-    ctx.fillStyle = shade(look.color, 0.55);
+    ctx.fillStyle = shade(look.color, 0.5); ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     if (dir === "left" || dir === "right") {
-      ctx.beginPath(); ctx.ellipse(32 + step, 71, 6, 3.6, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(32 - step, 71.5, 6, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(32 + step, 71, 6, 3.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(32 - step, 71.5, 6, 3.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     } else {
-      ctx.beginPath(); ctx.ellipse(23, 71 - Math.max(0, step) * 0.6, 6, 3.8, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(41, 71 - Math.max(0, -step) * 0.6, 6, 3.8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(23, 71 - Math.max(0, step) * 0.6, 6, 3.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(41, 71 - Math.max(0, -step) * 0.6, 6, 3.8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
   }
   ctx.translate(0, bob + (sitting ? 3 : 0));
@@ -108,17 +108,19 @@ function frame(ctx: CanvasRenderingContext2D, x: number, y: number, look: Sprite
   const body = bodyPath(look.shape);
   const g = ctx.createLinearGradient(0, 16, 0, 70);
   g.addColorStop(0, shade(look.color, 1.12)); g.addColorStop(0.7, look.color); g.addColorStop(1, shade(look.color, 0.8));
+  // a white rim and a dark outline keep every helper readable on any floor
+  ctx.lineJoin = "round"; ctx.lineWidth = 7; ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.stroke(body);
   ctx.fillStyle = g; ctx.fill(body);
-  ctx.lineWidth = 1.6; ctx.strokeStyle = shade(look.color, 0.62); ctx.stroke(body);
+  ctx.lineWidth = 2.6; ctx.strokeStyle = INK; ctx.stroke(body);
   ctx.save(); ctx.clip(body);
   ctx.fillStyle = "rgba(255,255,255,.18)"; ctx.beginPath(); ctx.ellipse(dir === "right" ? 38 : 24, 26, 7, 5, -0.5, 0, Math.PI * 2); ctx.fill();
   if (dir === "up") { ctx.fillStyle = "rgba(0,0,0,.06)"; ctx.fillRect(10, 52, 44, 20); }
   ctx.restore();
   // hands on the keyboard while working (seen from behind)
   if (kind === "work") {
-    ctx.fillStyle = shade(look.color, 0.8);
-    ctx.beginPath(); ctx.arc(16, 44 + (i ? -2 : 1), 4.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(48, 44 + (i ? 1 : -2), 4.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = shade(look.color, 0.85); ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(13, 42 + (i ? -3 : 1), 4.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(51, 42 + (i ? 1 : -3), 4.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   face(ctx, dir, kind === "idle" && i === 1 && dir === "down");
   prop(ctx, look.prop, dir);

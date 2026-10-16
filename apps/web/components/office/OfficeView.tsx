@@ -163,6 +163,10 @@ export default function OfficeView() {
   const [hover, setHover] = useState<Hover>(null);
   const [dept, setDept] = useState<string | null>(null);
   const [ticker, setTicker] = useState<OfficeEvent[]>([]);
+  const [idleLife, setIdleLife] = useState(true);
+  const idleRef = useRef(true); idleRef.current = idleLife;
+  useEffect(() => { try { if (localStorage.getItem("saga.office.idle") === "0") setIdleLife(false); } catch { /* private window */ } }, []);
+  useEffect(() => { apiRef.current?.setIdleLife(idleLife); try { localStorage.setItem("saga.office.idle", idleLife ? "1" : "0"); } catch { /* private window */ } }, [idleLife]);
   useTick(10000);
   const agents = useMemo(() => o.state?.agents || [], [o.state]);
   const nameOf = useCallback((id: string) => agents.find((a) => a.id === id)?.name || id, [agents]);
@@ -185,7 +189,7 @@ export default function OfficeView() {
     onSelect: (id: string | null) => setSel(id),
     onOpen: (action: string) => router.push(action),
     onHover: (h: Hover) => setHover(h),
-    onReady: (api: OfficeApi) => { apiRef.current = api; },
+    onReady: (api: OfficeApi) => { apiRef.current = api; api.setIdleLife(idleRef.current); },
   }), [router]);
 
   const pick = (id: string) => { setSel(id); apiRef.current?.select(id); apiRef.current?.focusAgent(id); };
@@ -227,6 +231,8 @@ export default function OfficeView() {
         <div className="ov-hud tr">
           <button className="iconbtn" aria-label="Zoom in" title="Zoom in (+)" onClick={() => apiRef.current?.zoomBy(1.2)}><i className="ri-zoom-in-line" /></button>
           <button className="iconbtn" aria-label="Zoom out" title="Zoom out (−)" onClick={() => apiRef.current?.zoomBy(1 / 1.2)}><i className="ri-zoom-out-line" /></button>
+          <button className={`iconbtn ${idleLife ? "on" : ""}`} aria-pressed={idleLife} title={idleLife ? "Idle helpers take short breaks (only idle ones; working helpers stay at their desks)" : "Idle helpers stay seated"}
+            aria-label="Idle breaks" onClick={() => setIdleLife(!idleLife)}><i className="ri-cup-line" /></button>
           <button className="iconbtn" aria-label="Fit the office" title="Fit the office" onClick={() => { setDept(null); apiRef.current?.fit(); }}><i className="ri-fullscreen-exit-line" /></button>
         </div>
         <div className="ov-hud bl ov-legend">

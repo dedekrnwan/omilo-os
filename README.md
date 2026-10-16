@@ -148,6 +148,10 @@ Status is worked out on the server from the records, so both views always agree:
 (bubble, monitor flash), handoffs (walks to the other helper's desk), approval requests (walks to the approvals desk),
 approvals decided, done / failed bursts, chat replies, retries. A dashed moving line links helpers on linked jobs.
 With no new events nothing moves; the view shows the connection and how long ago the last event was.
+Helpers react to the cursor: those nearby turn towards it, hovering lifts one and shows its status, clicking selects
+it (the floor tile under the cursor is highlighted, a click on the floor ripples). Idle helpers (only idle ones) may
+stretch or take a short, labelled break at the coffee point or lounge; real work calls them straight back. The cup
+button turns those breaks off.
 
 How it works: a flush hook (`saga_api/office.py`) writes an `office_event` row from each real change (jobs, run
 events, proposals, questions, chats, pause/resume). `GET /api/office/state` is the authoritative state,

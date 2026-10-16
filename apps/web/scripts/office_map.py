@@ -24,17 +24,17 @@ rnd = random.Random(7)
 # ------------------------------------------------------------------ palette (original, warm studio look)
 P = {
     "ink": (38, 36, 52), "wall": (64, 68, 96), "wall_hi": (98, 104, 142), "wall_lo": (44, 46, 66),
-    "wood": (233, 214, 186), "wood_ln": (217, 193, 160), "wood_dk": (205, 178, 142),
-    "stone": (222, 224, 230), "stone_ln": (204, 207, 216),
+    "wood": (222, 208, 186), "wood_ln": (206, 190, 166), "wood_dk": (210, 194, 170),
+    "stone": (214, 214, 220), "stone_ln": (198, 199, 208),
     "desk": (190, 142, 98), "desk_hi": (214, 170, 124), "desk_lo": (146, 104, 68),
     "metal": (70, 74, 92), "metal_hi": (118, 124, 148), "screen": (34, 40, 62), "screen_hi": (84, 128, 210),
     "chair": (58, 62, 84), "chair_hi": (92, 98, 128),
     "leaf": (74, 160, 102), "leaf_hi": (124, 200, 132), "leaf_lo": (46, 112, 74), "pot": (214, 120, 84), "pot_lo": (170, 88, 62),
     "white": (250, 250, 252), "glass": (186, 214, 236),
 }
-CARPET = {
-    "leadership": (238, 226, 206), "marketing": (250, 226, 214), "sales": (224, 236, 214), "support": (214, 234, 236),
-    "engineering": (222, 226, 240), "finance": (238, 230, 246), "meeting": (214, 226, 246), "studio": (240, 236, 224),
+CARPET = {  # muted on purpose: the helpers carry the colour, the rooms stay calm
+    "leadership": (222, 216, 206), "marketing": (224, 214, 210), "sales": (212, 220, 210), "support": (208, 219, 222),
+    "engineering": (212, 214, 224), "finance": (220, 214, 226), "meeting": (210, 218, 230), "studio": (224, 220, 210),
 }
 
 tiles: list[Image.Image] = []
@@ -472,6 +472,10 @@ for rid, items in DRESS.items():
 for (x, y) in [(12 - 1, 6), (13, 6), (35, 6), (25, 6), (1, 24), (23, 24), (13, 24), (35, 24), (25, 24)]:
     if not layers["furniture"][y][x] and not layers["walls"][y][x]:
         put("furniture", x, y, "lamp")
+
+# lounge spots (rugs in front of the sofas): where idle helpers take a short break
+for (lx, ly) in [(6, 8), (7, 9), (8, 8), (39, 26), (40, 27), (41, 26)]:
+    obj("spots", f"lounge-{lx}-{ly}", lx * T + T / 2, ly * T + T / 2, point=True, kind="lounge")
 
 # leadership: a corner sofa and a whiteboard
 put_multi("rugs", 6, 8, "rug", 3, 2)

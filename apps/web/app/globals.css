@@ -1315,3 +1315,4 @@ main.page:has(> .monitor.office) { max-width: none; }
   .ov-ticker .ov-tk:nth-child(n+3) { display: none; }
 }
 .ov.with-insp .ov-legend { display: none; }
+.ov-hud .iconbtn.on { background: rgba(99,102,241,.12); color: #4338ca; }
