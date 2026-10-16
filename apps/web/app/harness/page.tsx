@@ -1,6 +1,7 @@
 "use client";
 import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
+import Drawer from "@/components/Drawer";
 import { Segments, useMeter } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
@@ -23,6 +24,8 @@ export default function Harness() {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const meter = useMeter();
+  const [adding, setAdding] = useState(false);
+  const closeAdd = useCallback(() => { setAdding(false); setErr(null); }, []);
   const use = (id: string) => meter?.accounts.find((a) => a.id === id);
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,7 +37,7 @@ export default function Harness() {
     setErr(null); setMsg(null);
     try {
       const a = await api<Account>("/harness/accounts", { body: { label, token } });
-      setLabel(""); setToken("");
+      setLabel(""); setToken(""); setAdding(false);
       await load();
       if (pool?.cli.path) test(a.id);
     } catch (e: any) { setErr(e.message); }
@@ -89,8 +92,10 @@ export default function Harness() {
 
       <div className="sec" style={{ marginTop: 20 }}>
         <div className="sechead"><h2>Accounts</h2><span className="sp" />
+          <button className="btn primary" onClick={() => { setErr(null); setAdding(true); }}><i className="ri-add-line" />Add account</button>
           {pool.total > 0 && <button className="btn" onClick={useForAll}><i className="ri-team-line" />Use the pool for all helpers</button>}</div>
-        {pool.accounts.length === 0 ? <div className="empty"><b>No accounts yet</b><span>Add your first Claude Code subscription below.</span></div> : (
+        {pool.accounts.length === 0 ? <div className="empty"><b>No accounts yet</b><span>Add your first Claude Code subscription.</span>
+          <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => setAdding(true)}><i className="ri-add-line" />Add account</button></div></div> : (
           <div className="tw"><table>
             <thead><tr><th>Account</th><th>Status</th><th>Used (5 h)</th><th className="hide-sm">Last used</th><th className="num-cell">Jobs</th><th className="num-cell hide-sm">Tokens</th><th></th></tr></thead>
             <tbody>{pool.accounts.map((a) => {
@@ -121,28 +126,33 @@ export default function Harness() {
         )}
       </div>
 
-      <div className="sec" style={{ marginTop: 28 }}>
-        <h2>Add a subscription</h2>
-        <div className="grid2" style={{ marginTop: 8, alignItems: "start" }}>
-          <div className="soft">
-            <b style={{ fontWeight: 500 }}>Get the token (once per account)</b>
-            <ol style={{ paddingLeft: 18, margin: "8px 0 0", fontSize: 14, lineHeight: 1.7 }}>
-              <li>Open Terminal on this computer.</li>
-              <li>Type <code>claude setup-token</code> and press Enter.</li>
-              <li>A browser opens: sign in with the Claude account you want to add.</li>
-              <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it here.</li>
-            </ol>
-            <p className="small" style={{ marginBottom: 0 }}>Repeat for each account. Tokens last a year and are stored encrypted. Use accounts you own, within the terms of your Claude plan.</p>
-          </div>
-          <div>
-            <label>Name</label><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Max #1 (dede@…)" />
-            <label>Token</label><input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat01-…" />
-            <div className="acts" style={{ marginTop: 12 }}><button className="btn primary" disabled={!token.trim()} onClick={add}><i className="ri-add-line" />Add to pool</button></div>
-          </div>
+      {msg && <div className="callout ok" style={{ marginTop: 16 }}>{msg}</div>}
+      {!adding && <Err error={err} />}
+
+      <Drawer open={adding} onClose={closeAdd} icon={<i className="ri-stack-line" />} title="Add a Claude Code account"
+        sub="One subscription you own. Helpers share the pool."
+        footer={<><span className="sp" /><button className="btn" onClick={closeAdd}>Cancel</button>
+          <button className="btn primary" disabled={!token.trim()} onClick={add}><i className="ri-add-line" />Add to pool</button></>}>
+        <div className="dw-sec">
+          <label style={{ marginTop: 0 }}>Name</label>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Max #1 (dede@…)" />
+          <label>Token</label>
+          <input className="mono" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat01-…"
+            onKeyDown={(e) => { if (e.key === "Enter" && token.trim()) add(); }} />
+          <p className="dw-help">Stored encrypted. Tokens last a year.</p>
         </div>
-        {msg && <div className="callout ok">{msg}</div>}
+        <div className="dw-sec">
+          <h3>Get the token (once per account)</h3>
+          <ol className="steps">
+            <li>Open Terminal on this computer.</li>
+            <li>Type <code>claude setup-token</code> and press Enter.</li>
+            <li>A browser opens: sign in with the Claude account you want to add.</li>
+            <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it above.</li>
+          </ol>
+          <p className="dw-help">Use accounts you own, within the terms of your Claude plan. Saga OS tests the account right after adding it.</p>
+        </div>
         <Err error={err} />
-      </div>
+      </Drawer>
     </div>
   );
 }

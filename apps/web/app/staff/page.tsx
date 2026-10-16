@@ -1,6 +1,7 @@
 "use client";
 import Avatar from "@/components/Avatar";
 import LookEditor from "@/components/LookEditor";
+import Drawer from "@/components/Drawer";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -35,6 +36,7 @@ function StaffDetail({ id }: { id: string }) {
   const [s, setS] = useState<Staff | null>(null);
   const [edit, setEdit] = useState<Partial<Staff>>({});
   const [shift, setShift] = useState({ name: "", cron: "", brief: "" });
+  const [addingShift, setAddingShift] = useState(false);
   const [connect, setConnect] = useState<any>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -56,7 +58,7 @@ function StaffDetail({ id }: { id: string }) {
     save({ permissions: { ...s.permissions, actions } });
   };
   const addShift = async () => {
-    try { await api(`/staff/${id}/shifts`, { body: shift }); setShift({ name: "", cron: "", brief: "" }); load(); } catch (e: any) { setErr(e.message); }
+    try { await api(`/staff/${id}/shifts`, { body: shift }); setShift({ name: "", cron: "", brief: "" }); setAddingShift(false); load(); } catch (e: any) { setErr(e.message); }
   };
   const toggleShift = async (sid: string, enabled: boolean) => { await api(`/shifts/${sid}`, { method: "PATCH", body: { enabled } }); load(); };
   const rotate = async () => {
@@ -130,7 +132,8 @@ function StaffDetail({ id }: { id: string }) {
         <LookEditor who={s} />
       </div>
       <div className="sec">
-        <h2>Schedule</h2>
+        <div className="sechead"><h2>Schedule</h2><span className="sp" />
+          <button className="btn" onClick={() => setAddingShift(true)}><i className="ri-add-line" />Add a regular job</button></div>
         <p className="sub">Regular jobs this helper does on its own, in your local time.</p>
         <div className="tw"><table><thead><tr><th>Job</th><th>When</th><th>What to do</th><th>Next</th><th></th></tr></thead><tbody>
           {s.shifts.map((sh) => (
@@ -138,13 +141,22 @@ function StaffDetail({ id }: { id: string }) {
               <td><button className="btn" onClick={() => toggleShift(sh.id, !sh.enabled)}>{sh.enabled ? "Turn off" : "Turn on"}</button></td></tr>
           ))}
         </tbody></table></div>
-        <div className="paper" style={{ marginTop: 12 }}>
-          <b>Add a regular job</b>
-          <label>Name</label><input value={shift.name} placeholder="e.g. weekly-promo" onChange={(e) => setShift({ ...shift, name: e.target.value })} />
-          <label>What should it do?</label><input value={shift.brief} placeholder="e.g. Draft 3 Instagram posts for next week's promo" onChange={(e) => setShift({ ...shift, brief: e.target.value })} />
-          <label>When</label><SchedulePicker value={shift.cron} onChange={(cron) => setShift({ ...shift, cron })} />
-          <div className="acts" style={{ marginTop: 10 }}><button className="btn primary" disabled={!shift.name || !shift.cron} onClick={addShift}>Add job</button></div>
-        </div>
+        <Drawer open={addingShift} onClose={() => setAddingShift(false)} icon={<i className="ri-calendar-schedule-line" />} title="Add a regular job"
+          sub={`Something ${s.name} does on its own, on a schedule.`}
+          footer={<><span className="sp" /><button className="btn" onClick={() => setAddingShift(false)}>Cancel</button>
+            <button className="btn primary" disabled={!shift.name || !shift.cron || !shift.brief.trim()} onClick={addShift}>Add job</button></>}>
+          <div className="dw-sec">
+            <label style={{ marginTop: 0 }}>What should it do?</label>
+            <textarea value={shift.brief} placeholder="e.g. Draft 3 Instagram posts for next week's promo" onChange={(e) => setShift({ ...shift, brief: e.target.value, name: shift.name || "" })} />
+            <label>Short name</label>
+            <input value={shift.name} placeholder="e.g. weekly-promo" onChange={(e) => setShift({ ...shift, name: e.target.value })} />
+          </div>
+          <div className="dw-sec">
+            <h3>When</h3>
+            <div style={{ marginTop: 8 }}><SchedulePicker value={shift.cron} onChange={(cron) => setShift({ ...shift, cron })} /></div>
+          </div>
+          <Err error={err} />
+        </Drawer>
       </div>
       <div className="sec">
         <h2>Recent tasks</h2>
