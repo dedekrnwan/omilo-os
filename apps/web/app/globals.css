@@ -1316,3 +1316,35 @@ main.page:has(> .monitor.office) { max-width: none; }
 }
 .ov.with-insp .ov-legend { display: none; }
 .ov-hud .iconbtn.on { background: rgba(99,102,241,.12); color: #4338ca; }
+
+/* ---------- mascot life: hover lift and smile, eyes follow the cursor, blink, hop on click, typing while working */
+.mascot { overflow: visible; }
+.mascot .m-char { transform-box: view-box; transform-origin: 32px 64px; transition: transform .28s cubic-bezier(.34, 1.56, .64, 1); }
+.mascot .m-face { transform: translate(var(--ex, 0px), var(--ey, 0px)); transition: transform .18s ease-out; }
+.mascot .m-eyes { transform-box: view-box; transform-origin: 32px 34px; animation: m-blink 5.2s infinite; animation-delay: var(--blink, 0s); }
+.mascot .m-mouth-happy { opacity: 0; transition: opacity .15s; }
+.mascot .m-mouth { transition: opacity .15s; }
+@keyframes m-blink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(.1); } }
+.av-wrap:hover .m-char, svg.mascot:hover .m-char { transform: translateY(-3px) scale(1.07); }
+.av-wrap:hover .m-mouth-happy, svg.mascot:hover .m-mouth-happy { opacity: 1; }
+.av-wrap:hover .m-mouth, svg.mascot:hover .m-mouth { opacity: 0; }
+.av-wrap:hover .m-cheek, svg.mascot:hover .m-cheek { fill: #fb7185; opacity: .55; }
+:is(a, button, [role="button"], tr, label):hover > .av-wrap .m-char,
+:is(a, button, [role="button"], tr, label):hover > * > .av-wrap .m-char { transform: translateY(-1.5px) scale(1.03); }
+.av-wrap, img.mascot { transition: transform .25s cubic-bezier(.34, 1.56, .64, 1); }
+.av-wrap:has(> img.mascot):hover, img.mascot:hover { transform: translateY(-2px) scale(1.05); }
+.hop .m-char, svg.mascot.hop .m-char { animation: m-hop .5s cubic-bezier(.3, 1.4, .5, 1); }
+.av-wrap:has(> img.mascot).hop, img.mascot.hop { animation: m-hop-img .5s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes m-hop { 0% { transform: scale(1.08, .9); } 35% { transform: translateY(-9px) scale(.95, 1.07); } 65% { transform: translateY(0) scale(1.06, .94); } 100% { transform: none; } }
+@keyframes m-hop-img { 35% { transform: translateY(-6px); } 100% { transform: none; } }
+.av-wrap.working .m-char { animation: m-work 1.1s ease-in-out infinite; }
+@keyframes m-work { 50% { transform: translateY(-1.2px) scale(1.01, .985); } }
+.av-dots { position: absolute; right: -6px; top: -6px; display: inline-flex; gap: 2px; align-items: center; padding: 3px 4px; border-radius: 999px;
+  background: #2a78d6; box-shadow: 0 0 0 2px var(--surface, #fff); pointer-events: none; }
+.av-dots i { width: 3px; height: 3px; border-radius: 50%; background: #fff; animation: av-dot 1s ease-in-out infinite; }
+.av-dots i:nth-child(2) { animation-delay: .15s; } .av-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes av-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .7; } 30% { transform: translateY(-2px); opacity: 1; } }
+.mascot.still .m-eyes, .mascot.tiny .m-eyes { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .mascot .m-char, .mascot .m-face, .mascot .m-eyes, .av-dots i, .av-wrap { animation: none !important; transition: none !important; }
+}

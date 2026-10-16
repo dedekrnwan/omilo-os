@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { BASE, api } from "@/lib/api";
 
 /* Each helper gets its own little character: an original mascot drawn in SVG, always the same for that helper
@@ -84,15 +84,54 @@ function Face({ sleeping }: { sleeping: boolean }) {
       {sleeping ? (
         <g stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none"><path d="M22 35 Q25 37.5 28 35" /><path d="M36 35 Q39 37.5 42 35" /></g>
       ) : (
-        <g>
+        <g className="m-eyes">
           <circle cx="25" cy="34" r="3.6" fill="#1c1917" /><circle cx="39" cy="34" r="3.6" fill="#1c1917" />
           <circle cx="26.2" cy="32.8" r="1.2" fill="#fff" /><circle cx="40.2" cy="32.8" r="1.2" fill="#fff" />
         </g>
       )}
-      <path d={sleeping ? "M29.5 44 Q32 45.5 34.5 44" : "M27.5 42.5 Q32 47 36.5 42.5"} stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none" />
-      <circle cx="20.5" cy="41" r="2.6" fill="#fff" opacity=".3" /><circle cx="43.5" cy="41" r="2.6" fill="#fff" opacity=".3" />
+      <path className="m-mouth" d={sleeping ? "M29.5 44 Q32 45.5 34.5 44" : "M27.5 42.5 Q32 47 36.5 42.5"} stroke="#1c1917" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+      {!sleeping && <path className="m-mouth-happy" d="M27 42 Q32 50 37 42 Z" fill="#1c1917" stroke="#1c1917" strokeWidth="1.6" strokeLinejoin="round" />}
+      <circle className="m-cheek" cx="20.5" cy="41" r="2.6" fill="#fff" opacity=".3" /><circle className="m-cheek" cx="43.5" cy="41" r="2.6" fill="#fff" opacity=".3" />
     </g>
   );
+}
+
+/* ---------------------------------------------------------- life: eyes follow the cursor, hop on click
+   One shared listener for every mascot on the page; each mascot only moves its face a few units, and only when the
+   cursor is near. Turned off when the system asks for reduced motion. */
+const alive = new Set<SVGSVGElement>();
+let listening = false, frame = 0, px = -1e4, py = -1e4;
+function track() {
+  frame = 0;
+  for (const el of alive) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth || !r.width) continue;
+    const cx = r.left + r.width / 2, cy = r.top + r.height * 0.5;
+    const dx = px - cx, dy = py - cy, d = Math.hypot(dx, dy);
+    const reach = Math.max(220, r.width * 5);
+    const k = d > reach || d < 1 ? 0 : Math.min(1, d / (r.width * 0.9 + 1)) * (1 - Math.max(0, d - reach * 0.6) / (reach * 0.4));
+    const ex = d ? (dx / d) * 4 * k : 0, ey = d ? (dy / d) * 3 * k : 0;
+    const prev = el.dataset.look || "";
+    const next = `${ex.toFixed(1)},${ey.toFixed(1)}`;
+    if (prev !== next) { el.dataset.look = next; el.style.setProperty("--ex", `${ex.toFixed(2)}px`); el.style.setProperty("--ey", `${ey.toFixed(2)}px`); }
+  }
+}
+function listen() {
+  if (listening || typeof window === "undefined") return;
+  listening = true;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  const move = (e: PointerEvent) => { px = e.clientX; py = e.clientY; if (!frame) frame = requestAnimationFrame(track); };
+  window.addEventListener("pointermove", move, { passive: true });
+  window.addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(track); }, { passive: true, capture: true });
+  document.addEventListener("pointerleave", () => { px = py = -1e4; if (!frame) frame = requestAnimationFrame(track); });
+  // a click (or tap) on any mascot makes it hop
+  document.addEventListener("pointerdown", (e) => {
+    const host = (e.target as Element | null)?.closest?.(".av-wrap, svg.mascot, img.mascot");
+    const el = host;
+    if (!el) return;
+    el.classList.remove("hop"); void (el as HTMLElement).getBoundingClientRect(); el.classList.add("hop");
+    setTimeout(() => el.classList.remove("hop"), 520);
+  }, { passive: true });
 }
 
 const INK = "#1c1917";
@@ -114,17 +153,30 @@ function Prop({ prop }: { prop: string }) {
   }
 }
 
-export function Mascot({ look, size = 32, sleeping = false, title, bare }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string; bare?: boolean }) {
-  const clip = `tile-${useId().replace(/:/g, "")}`;  // unique per drawing: a shared id breaks when the first copy is hidden
+export function Mascot({ look, size = 32, sleeping = false, title, bare, still }: { look: ReturnType<typeof lookFor>; size?: number; sleeping?: boolean; title?: string; bare?: boolean; still?: boolean }) {
+  const uid = useId().replace(/:/g, "");
+  const clip = `tile-${uid}`;  // unique per drawing: a shared id breaks when the first copy is hidden
+  const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || still) return;
+    listen(); alive.add(el);
+    return () => { alive.delete(el); };
+  }, [still]);
   if (look.image) return <img className="mascot img" src={look.image.startsWith("fil_") ? `${BASE}/api/files/${look.image}` : look.image} alt={title || ""} width={size} height={size} />;
+  // blink at a different moment for each helper
+  let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) % 997;
   return (
-    <svg className="mascot" width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}>
+    <svg ref={ref} className={`mascot ${still ? "still" : ""} ${size < 22 ? "tiny" : ""}`} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}
+      style={{ ["--blink" as any]: `${(h % 40) / 10}s` }}>
       <defs><clipPath id={clip}><rect width="64" height="64" rx="18" /></clipPath></defs>
       <g clipPath={bare ? undefined : `url(#${clip})`}>
-        {!bare && <rect width="64" height="64" fill={look.color} opacity=".16" />}
-        <Body shape={look.shape} color={look.color} />
-        <Face sleeping={sleeping} />
-        <Prop prop={look.prop} />
+        {!bare && <rect className="m-tile" width="64" height="64" fill={look.color} opacity=".16" />}
+        <g className="m-char">
+          <Body shape={look.shape} color={look.color} />
+          <g className="m-face"><Face sleeping={sleeping} />{look.prop === "glasses" && <Prop prop="glasses" />}</g>
+          {look.prop !== "glasses" && <Prop prop={look.prop} />}
+        </g>
       </g>
     </svg>
   );
@@ -139,6 +191,7 @@ export default function Avatar({ who, size = 32, state }: { who: Who | undefined
     <span className={`av-wrap ${state || ""}`} style={{ width: size, height: size }} title={who.name}>
       <Mascot look={look} size={size} sleeping={state === "sleeping"} title={who.name} />
       {state === "sleeping" && <span className="av-z">z</span>}
+      {state === "working" && size >= 20 && <span className="av-dots" aria-hidden><i /><i /><i /></span>}
     </span>
   );
 }

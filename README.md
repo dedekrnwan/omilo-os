@@ -231,6 +231,10 @@ shortcuts (`/inbox`, `/hire`, `/pool`, `/settings`, `/pause`). Under the chat bo
 
 ## Helper mascots
 
+Every mascot in the app is alive: its eyes follow the cursor when it comes near, it blinks now and then, hovering lifts
+it and makes it smile, a click makes it hop, and a helper that is working bobs at its desk with typing dots. Uploaded
+pictures lift and hop too. All of this is off when the system asks for reduced motion.
+
 Every helper has its own little character, drawn in SVG by the web app: colour and shape come from its id, and a prop hints at the
 job (crown for the Chief, headset for Support, glasses for Dev, megaphone for Marketing, tie for Sales, coin for Finance, gear for
 Ops…). Sleeping helpers close their eyes; a helper that is starting work glows. Change colour, shape and prop, or upload a picture,
