@@ -361,3 +361,18 @@ class HarnessLimitHit(Base):
     account_id: Mapped[str] = mapped_column(String(32), index=True)
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     resets_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DocVersion(Base):
+    """One saved version of a doc in the vault (or a helper's suggested change waiting for approval)."""
+    __tablename__ = "doc_version"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    path: Mapped[str] = mapped_column(String(400), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)  # 0 for suggestions
+    content: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String(64), default="")  # user id, staff id, or "outside"
+    author_kind: Mapped[str] = mapped_column(String(16), default="owner")  # owner | agent | outside
+    summary: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(16), default="saved")  # saved | suggested | rejected | deleted
+    proposal_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

@@ -69,6 +69,19 @@ health dot (green: all reachable, amber: a few are not, red: half or more are no
 Replies render like Claude's: highlighted code with Copy (long blocks fold), JSON pretty-printed even without a fence, tables, images and
 file links (`file:///path`, or an absolute path in backticks) that open the preview.
 
+## Docs: the shared notebook
+
+**Docs** (under Work) is an Obsidian-style notebook for you and every helper: folders of Markdown notes, `[[wiki links]]`
+(type `[[` for suggestions), backlinks, an outline, full version history with who changed what (you, a helper, or "outside" when
+the file was edited in Obsidian or on disk), restore, rename that keeps links working, and a **graph view** of how notes connect.
+It saves as you type; if a helper changed the note meanwhile you choose "keep mine" or "use theirs".
+
+- The vault is a plain folder, `<data dir>/vault`: open it in Obsidian as well. Company knowledge is its `Company/` folder.
+- Helpers use `docs_search`, `docs_read` and `docs_write` (with `base_version`, so nobody overwrites anyone). Shared notes:
+  helpers edit directly and you get a notice (`docs.write`, do and tell). Company knowledge: a helper's change is a suggestion
+  you approve in the Inbox (`knowledge.write`, ask). Change either per helper under Permissions.
+- Deleted notes go to the vault's `.trash` folder.
+
 ## Monitor
 
 **Monitor** (under Work) shows how the company of helpers is doing over the last 24 hours, 7 days or 30 days, refreshed every
@@ -215,7 +228,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 42 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
+- 43 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, a mock Hermes server).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

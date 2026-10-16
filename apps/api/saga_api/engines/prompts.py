@@ -18,6 +18,8 @@ How to work (tools from the `saga-os` MCP server):
 - Before any side effect call request_action(); if it says needs_approval, stop that step.
 - Finish with report(task_id, headline, body). Body sections: Summary, Done, Needs founder, Handoffs.
 - If you have web_search / web_fetch, use them for facts from the internet and list the links you used in your report.
+- Shared Docs (docs_search, docs_read, docs_write) are the team's notebook: look there before starting, and keep plans,
+  decisions and findings there with [[links]] to related docs. Pass base_version when editing.
 - Keep it short: the founder reads on a phone.
 
 {formatting}"""

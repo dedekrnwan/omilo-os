@@ -388,7 +388,11 @@ def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str)
         raise DomainError("a note is required: the agent learns from it")
     p.decision_note, p.decided_by, p.decided_at = note, by, now()
     _close_inbox(db, "proposal", p.id)
-    if decision == "approve":
+    if decision == "approve" and p.type == "docs.write":
+        from . import docs as D  # a helper's suggested doc change: approving saves it, no execution job needed
+
+        p.status = "done" if D.apply_suggestion(db, p.id, by) else "approved"
+    elif decision == "approve":
         p.status = "approved"
         t = create_task(
             db, p.staff_id, "execution", f"Execute approved proposal {p.id}: {p.title}", created_by=by,
@@ -397,6 +401,10 @@ def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str)
         p.execution_task_id = t.id
     elif decision == "reject":
         p.status = "rejected"
+        if p.type == "docs.write":
+            from . import docs as D
+
+            D.reject_suggestion(db, p.id)
     elif decision == "changes":
         p.status = "changes_requested"
         create_task(
@@ -503,7 +511,9 @@ KNOWLEDGE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.(md|yaml|yml)$")
 
 
 def knowledge_files() -> list[Path]:
-    return sorted(p for p in get_settings().knowledge_dir.iterdir() if p.is_file() and KNOWLEDGE_NAME.match(p.name))
+    # every Markdown/YAML note in the Company folder (Docs can add notes with any name there)
+    return sorted(p for p in get_settings().knowledge_dir.iterdir()
+                  if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in (".md", ".yaml", ".yml"))
 
 
 def read_knowledge(name: str) -> str:

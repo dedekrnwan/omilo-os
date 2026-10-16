@@ -68,6 +68,17 @@ TOOLS: list[dict] = [
     {"name": "offer_choices", "description": "Show the founder clickable options in the current chat or task thread (e.g. pick a direction). Their pick comes back as their next message.",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id, if this is about a task"), "question": _s("string", "short question"),
                      "options": _s("array", "2-6 short options", items={"type": "string"})}, "required": ["question", "options"]}},
+    {"name": "docs_search", "description": "Search the shared Docs (notes for the owner and all helpers) by words. Returns paths, titles and snippets.",
+     "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for; empty lists recent docs")}, "required": []}},
+    {"name": "docs_read", "description": "Read one doc from the shared Docs, with its version, [[links]] and backlinks.",
+     "inputSchema": {"type": "object", "properties": {"path": _s("string", "e.g. 'Projects/Launch plan' or 'Company/company'")}, "required": ["path"]}},
+    {"name": "docs_write", "description": "Create or update a doc in the shared Docs (Markdown, [[wiki links]] to other docs). Pass base_version "
+                                          "from docs_read when editing, so you do not overwrite someone else's change. Company/ docs become a "
+                                          "suggestion the owner approves.",
+     "inputSchema": {"type": "object", "properties": {"path": _s("string", "doc path, folders with /"), "content": _s("string", "the full new Markdown"),
+                                                      "base_version": _s("integer", "version you read (omit for a new doc)"),
+                                                      "summary": _s("string", "one line: what you changed and why"),
+                                                      "task_id": _s("string", "task id, if this is part of a task")}, "required": ["path", "content"]}},
     {"name": "share_file", "description": "Show the founder a file you made or found (report, image, CSV, code, PDF) as a card they can preview and download, "
                                            "in the current chat or task thread. The file must be in your workspace or a shared folder (25 MB max).",
      "inputSchema": {"type": "object", "properties": {"path": _s("string", "absolute path, or relative to your workspace"), "note": _s("string", "one line about it"),
@@ -139,6 +150,34 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
         m = S.post_message(db, th, "agent", st.id, args["text"])
         return "allowed", {"message_id": m.id}
+    if name in ("docs_search", "docs_read", "docs_write"):
+        from . import docs as D
+        from . import policy as P
+
+        try:
+            if name == "docs_search":
+                return "allowed", {"results": D.search(db, str(args.get("query") or ""), 15)}
+            if name == "docs_read":
+                d = D.read(db, str(args["path"]))
+                return "allowed", {k: d[k] for k in ("path", "title", "content", "version", "links", "backlinks")}
+            path = str(args["path"])
+            action = "knowledge.write" if D.is_company(path) else "docs.write"
+            level = P.level_for(action, st.permissions, S.strict_mode(db))
+            if level == P.OFF:
+                return "refused", {"message": f"{st.name} may not change docs here ({action} is off)."}
+            if level == P.ASK:
+                res = D.suggest(db, st, args.get("task_id"), path, str(args["content"]), str(args.get("summary") or ""))
+                return "proposal", {**res, "message": "Saved as a suggestion; the owner approves it in the Inbox."}
+            base = args.get("base_version")
+            res = D.write(db, path, str(args["content"]), author=st.id, author_kind="agent",
+                          base_version=int(base) if base is not None else None, summary=str(args.get("summary") or ""))
+            return "allowed", res
+        except D.DocError as e:
+            if e.code == 409:
+                return "allowed", {"conflict": True, "message": str(e) + ": read it again, merge your change, and write with the new base_version.",
+                                   "current_version": e.extra["current"]["version"]}
+            raise S.DomainError(str(e), e.code) from e
+
     if name == "share_file":
         from pathlib import Path as _P
 

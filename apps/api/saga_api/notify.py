@@ -20,8 +20,8 @@ from .models import InboxItem, Message, Notice, PushSub, Setting, Staff, Task, T
 log = logging.getLogger("saga.notify")
 
 KINDS = {"inbox": "Inbox: approvals, questions and alerts", "reply": "Replies from helpers in chat",
-         "job_failed": "A job failed", "job_done": "A job finished"}
-DEFAULT_PREFS = {"inbox": True, "reply": True, "job_failed": True, "job_done": False}
+         "job_failed": "A job failed", "job_done": "A job finished", "doc": "A helper changed a doc"}
+DEFAULT_PREFS = {"inbox": True, "reply": True, "job_failed": True, "job_done": False, "doc": True}
 PRESENCE_S = 45  # a tab that streamed within this many seconds counts as open
 
 

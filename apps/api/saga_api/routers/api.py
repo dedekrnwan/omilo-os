@@ -1633,3 +1633,90 @@ def digest_send(db: Session = Depends(get_db), user: User = Depends(current_user
     from .. import digest as D
 
     return {"thread_id": _run(D.send, db)}
+
+
+# ------------------------------------------------------------------ Docs: the shared notebook (Obsidian-style vault)
+def _docs(fn, *a, **kw):
+    from .. import docs as D
+
+    try:
+        return fn(*a, **kw)
+    except D.DocError as e:
+        if e.code == 409 and e.extra.get("current"):
+            raise HTTPException(409, {"message": str(e), "current": e.extra["current"]}) from e
+        raise HTTPException(e.code, str(e)) from e
+
+
+class DocWrite(BaseModel):
+    path: str = Field(min_length=1, max_length=400)
+    content: str = Field(max_length=2_000_000)
+    base_version: int | None = None
+    summary: str = ""
+
+
+class DocMove(BaseModel):
+    path: str
+    to: str
+
+
+@router.get("/vault")
+def docs_tree(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return {"docs": D.tree(db), "vault": str(D.vault_dir()), **D.stats(db)}
+
+
+@router.get("/vault/read")
+def docs_read(path: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return _docs(D.read, db, path)
+
+
+@router.put("/vault/write")
+def docs_write(body: DocWrite, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return _docs(D.write, db, body.path, body.content, author=user.id, author_kind="owner", base_version=body.base_version, summary=body.summary)
+
+
+@router.post("/vault/move")
+def docs_move(body: DocMove, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return _docs(D.move, db, body.path, body.to, author=user.id, author_kind="owner")
+
+
+@router.post("/vault/delete")
+def docs_delete(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return _docs(D.delete, db, str(body.get("path") or ""), author=user.id)
+
+
+@router.get("/vault/history")
+def docs_history(path: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return _docs(D.history, db, path)
+
+
+@router.get("/vault/version")
+def docs_version(path: str, version: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return {"content": _docs(D.version_content, db, path, version)}
+
+
+@router.get("/vault/search")
+def docs_search(q: str = "", db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return D.search(db, q, 30)
+
+
+@router.get("/vault/graph")
+def docs_graph(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import docs as D
+
+    return D.graph(db)
