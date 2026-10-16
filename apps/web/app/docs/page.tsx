@@ -7,6 +7,7 @@ import Drawer from "@/components/Drawer";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { ApiError, ago, api } from "@/lib/api";
+import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { usePoll } from "@/lib/poll";
 
 /* Docs: the shared notebook for you and your helpers, Obsidian-style. A tree of Markdown notes, [[links]] between them,
@@ -44,7 +45,8 @@ function WhoBadge({ w }: { w?: Who | null }) {
 }
 
 /* ---------------------------------------------------------------- the tree */
-function Tree({ docs, current, q, onOpen }: { docs: TreeDoc[]; current: string | null; q: string; onOpen: (p: string) => void }) {
+function Tree({ docs, current, q, onOpen, noteMenu, folderMenu }: { docs: TreeDoc[]; current: string | null; q: string; onOpen: (p: string) => void;
+  noteMenu: (d: TreeDoc) => MenuItem[]; folderMenu: (folder: string, collapsed: boolean, toggle: () => void) => MenuItem[] }) {
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const ql = q.trim().toLowerCase();
   const shown = ql ? docs.filter((d) => d.path.toLowerCase().includes(ql)) : docs;
@@ -60,14 +62,14 @@ function Tree({ docs, current, q, onOpen }: { docs: TreeDoc[]; current: string |
       {groups.map((g) => (
         <div key={g.folder || "(root)"}>
           {g.folder && (
-            <button className="dt-f" onClick={() => toggle(g.folder)} style={{ paddingLeft: 8 + (g.folder.split("/").length - 1) * 12 }}>
+            <button className="dt-f" onClick={() => toggle(g.folder)} onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))} style={{ paddingLeft: 8 + (g.folder.split("/").length - 1) * 12 }}>
               <i className={closed.has(g.folder) && !ql ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line"} />
               <i className={g.folder === "Company" ? "ri-building-2-line" : "ri-folder-3-line"} />
               <span>{g.folder === "Company" ? "Company knowledge" : g.folder.split("/").pop()}</span>
             </button>
           )}
           {(!closed.has(g.folder) || ql) && g.docs.map((d) => (
-            <button key={d.path} className={`dt-d ${d.path === current ? "on" : ""}`} onClick={() => onOpen(d.path)}
+            <button key={d.path} className={`dt-d ${d.path === current ? "on" : ""}`} onClick={() => onOpen(d.path)} onContextMenu={menu(() => noteMenu(d))}
               style={{ paddingLeft: (g.folder ? 30 + (g.folder.split("/").length - 1) * 12 : 12) }} title={d.path}>
               <i className="ri-file-text-line" /><span>{d.title}</span>
               {d.updated_by?.kind === "agent" && <span className="dt-by" title={`Last changed by ${d.updated_by.name}`}><Avatar who={{ id: d.updated_by.id, name: d.updated_by.name }} size={14} /></span>}
@@ -116,6 +118,7 @@ function DocsInner() {
   const [side, setSide] = useState(true);
   const [creating, setCreating] = useState<{ name: string; folder: string } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [moving, setMoving] = useState<{ path: string; name: string; folder: string } | null>(null);
   const [caret, setCaret] = useState(0);
   const [sIdx, setSIdx] = useState(0);
   const [err, setErr] = useState<string | null>(null);
@@ -260,6 +263,57 @@ function DocsInner() {
     } catch (e: any) { setErr(e.message); }
   };
 
+  // ---- actions on any note (right-click menus)
+  const folderOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+  const moveNote = async () => {
+    if (!moving || !moving.name.trim()) return;
+    const to = (moving.folder.trim() ? `${moving.folder.trim().replace(/\/$/, "")}/` : "") + moving.name.trim();
+    try {
+      const r = await api<{ path: string }>("/vault/move", { body: { path: moving.path, to } });
+      setMoving(null); await loadTree(); if (doc?.path === moving.path) go({ path: r.path });
+    } catch (e: any) { setErr(e.message); }
+  };
+  const duplicate = async (p: string) => {
+    try {
+      const d = await api<Doc>(`/vault/read?path=${encodeURIComponent(p)}`);
+      const r = await api<{ path: string }>("/vault/write", { method: "PUT", body: { path: `${folderOf(p) ? folderOf(p) + "/" : ""}${title(p)} copy`, content: d.content, summary: `Copy of ${title(p)}` } });
+      await loadTree(); go({ path: r.path });
+    } catch (e: any) { setErr(e.message); }
+  };
+  const deleteNote = async (p: string) => {
+    if (!confirm(`Delete "${title(p)}"? It moves to the vault's .trash folder.`)) return;
+    try { await api("/vault/delete", { body: { path: p } }); await loadTree(); if (doc?.path === p) { setDoc(null); router.push("/docs/"); } } catch (e: any) { setErr(e.message); }
+  };
+  const linkText = (p: string) => `[[${paths.filter((x) => title(x).toLowerCase() === title(p).toLowerCase()).length > 1 ? p.replace(/\.md$/, "") : title(p)}]]`;
+  const noteMenu = (p: string, company = p.startsWith("Company/")): MenuItem[] => [
+    { heading: title(p) },
+    { label: "Open", icon: "ri-file-text-line", onSelect: () => go({ path: p }) },
+    { label: "Open in a new tab", icon: "ri-external-link-line", onSelect: () => window.open(docHref(p), "_blank") },
+    sep,
+    { label: "Rename…", icon: "ri-edit-line", disabled: company, onSelect: () => setMoving({ path: p, name: title(p), folder: folderOf(p) }) },
+    { label: "Move to folder…", icon: "ri-folder-transfer-line", disabled: company, onSelect: () => setMoving({ path: p, name: title(p), folder: folderOf(p) }) },
+    { label: "Duplicate", icon: "ri-file-copy-2-line", onSelect: () => duplicate(p) },
+    sep,
+    { label: "Copy link", icon: "ri-links-line", hint: "[[ ]]", onSelect: () => copy(linkText(p)) },
+    { label: "Copy path", icon: "ri-file-copy-line", onSelect: () => copy(p) },
+    { label: "Show history", icon: "ri-history-line", onSelect: () => { go({ path: p }); setTab("history"); setSide(true); } },
+    { label: "Show links", icon: "ri-arrow-left-right-line", onSelect: () => { go({ path: p }); setTab("links"); setSide(true); } },
+    { label: "Show in graph", icon: "ri-share-circle-line", onSelect: () => router.push(`/docs/?graph=1&path=${encodeURIComponent(p)}`) },
+    sep,
+    { label: "Delete", icon: "ri-delete-bin-line", danger: true, disabled: company, onSelect: () => deleteNote(p) },
+  ];
+  const folderMenu = (f: string, collapsed: boolean, toggle: () => void): MenuItem[] => [
+    { heading: f === "Company" ? "Company knowledge" : f },
+    { label: "New note here", icon: "ri-file-add-line", onSelect: () => setCreating({ name: "", folder: f }) },
+    { label: collapsed ? "Expand" : "Collapse", icon: collapsed ? "ri-arrow-down-s-line" : "ri-arrow-right-s-line", onSelect: toggle },
+    { label: "Copy folder path", icon: "ri-file-copy-line", onSelect: () => copy(f) },
+  ];
+  const missingMenu = (t: string): MenuItem[] => [
+    { heading: t },
+    { label: "Create this note", icon: "ri-file-add-line", onSelect: () => go({ path: t, new: "1" }) },
+    { label: "Copy link", icon: "ri-links-line", onSelect: () => copy(`[[${t}]]`) },
+  ];
+
   const saveLabel = { saved: base ? `Saved · v${base}` : "Saved", dirty: "Editing…", saving: "Saving…", conflict: "Changed by someone else", error: "Not saved" }[save];
 
   return (
@@ -281,18 +335,20 @@ function DocsInner() {
       </div>
 
       <div className={`ws-body docs-body ${side && !graphMode && doc ? "panel" : ""}`}>
-        <nav className={`ws-list ${listOpen ? "open" : ""}`}>
+        <nav className={`ws-list ${listOpen ? "open" : ""}`} onContextMenu={menu(() => [{ label: "New note", icon: "ri-file-add-line", onSelect: () => setCreating({ name: "", folder: "" }) },
+          { label: "Graph", icon: "ri-share-circle-line", onSelect: () => go({ graph: "1" }) }])}>
           <div className="dt-top">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a note…" aria-label="Find a note" />
             <button className="iconbtn" aria-label="New note" title="New note" onClick={() => setCreating({ name: "", folder: doc?.path.includes("/") && !doc.company ? doc.path.slice(0, doc.path.lastIndexOf("/")) : "" })}><i className="ri-file-add-line" /></button>
           </div>
-          {tree ? <Tree docs={tree.docs} current={doc?.path || null} q={q} onOpen={(p) => go({ path: p })} /> : <p className="small" style={{ padding: 12 }}>Loading…</p>}
+          {tree ? <Tree docs={tree.docs} current={doc?.path || null} q={q} onOpen={(p) => go({ path: p })} noteMenu={(d) => noteMenu(d.path, d.company)} folderMenu={folderMenu} /> : <p className="small" style={{ padding: 12 }}>Loading…</p>}
           {tree && <div className="dt-foot small" title={tree.vault}><i className="ri-folder-open-line" />Vault folder: <span className="mono">{tree.vault.split("/").slice(-2).join("/")}</span> · open it in Obsidian too</div>}
         </nav>
 
         <section className="ws-main docs-main">
           {graphMode ? (
-            <div className="docs-graph">{graph ? <DocGraph nodes={graph.nodes} edges={graph.edges} current={path} onOpen={(n) => go(n.missing ? { path: n.title, new: "1" } : { path: n.id })} /> : <p className="small" style={{ padding: 20 }}>Loading…</p>}</div>
+            <div className="docs-graph">{graph ? <DocGraph nodes={graph.nodes} edges={graph.edges} current={path} onOpen={(n) => go(n.missing ? { path: n.title, new: "1" } : { path: n.id })}
+              onNodeMenu={(n) => (n.missing ? missingMenu(n.title) : noteMenu(n.id))} /> : <p className="small" style={{ padding: 20 }}>Loading…</p>}</div>
           ) : !doc ? (
             <div className="ws-inner"><div className="empty"><b>{path ? "This note does not exist" : "No note open"}</b><span>Pick one on the left, or start a new one.</span>
               <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => setCreating({ name: path ? title(path) : "", folder: "" })}><i className="ri-file-add-line" />New note</button></div></div></div>
@@ -302,7 +358,7 @@ function DocsInner() {
                 {renaming !== null ? (
                   <input className="dtitle-in" autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => rename(renaming)}
                     onKeyDown={(e) => { if (e.key === "Enter") rename(renaming); if (e.key === "Escape") setRenaming(null); }} />
-                ) : <h1 className="dtitle" title="Click to rename" onClick={() => !doc.company && setRenaming(doc.title)}>{doc.title}</h1>}
+                ) : <h1 className="dtitle" title="Click to rename" onClick={() => !doc.company && setRenaming(doc.title)} onContextMenu={menu(() => noteMenu(doc.path, doc.company))}>{doc.title}</h1>}
                 <div className="dmeta small">
                   <WhoBadge w={doc.updated_by} /><span>· {ago(doc.updated_at)}</span>
                   {doc.company && <span className="chip" style={{ marginLeft: 6 }}><i className="ri-building-2-line" />Company knowledge · every helper reads it</span>}
@@ -343,7 +399,12 @@ function DocsInner() {
                     )}
                   </div>
                 )}
-                {mode !== "edit" && <div className="dread" onClickCapture={onPreviewClick}><Markdown text={previewText} /></div>}
+                {mode !== "edit" && <div className="dread" onClickCapture={onPreviewClick} onContextMenuCapture={(e) => {
+                  const a = (e.target as HTMLElement).closest("a"); const href = a?.getAttribute("href") || "";
+                  if (!href.startsWith("/docs/?")) return;
+                  const p = new URLSearchParams(href.split("?")[1]).get("path") || "";
+                  menu(() => (href.includes("new=1") ? missingMenu(p) : noteMenu(p)))(e);
+                }}><Markdown text={previewText} /></div>}
               </div>
             </div>
           )}
@@ -364,11 +425,12 @@ function DocsInner() {
                 <>
                   <div className="ds-h">Linked here <span className="bcol-n" style={{ position: "static" }}>{doc.backlinks.length}</span></div>
                   {doc.backlinks.length === 0 ? <p className="small">No other note links here yet. Link to it with [[{doc.title}]].</p> : doc.backlinks.map((b) => (
-                    <button key={b.path} className="ds-link" onClick={() => go({ path: b.path })}><b><i className="ri-file-text-line" />{b.title}</b><span>{b.snippet}</span></button>
+                    <button key={b.path} className="ds-link" onClick={() => go({ path: b.path })} onContextMenu={menu(() => noteMenu(b.path))}><b><i className="ri-file-text-line" />{b.title}</b><span>{b.snippet}</span></button>
                   ))}
                   <div className="ds-h" style={{ marginTop: 16 }}>Links from here <span className="bcol-n" style={{ position: "static" }}>{doc.links.length}</span></div>
                   {doc.links.length === 0 ? <p className="small">No links yet. Type [[ in the note.</p> : doc.links.map((l) => (
-                    <button key={l.target} className={`ds-link ${l.path ? "" : "missing"}`} onClick={() => go(l.path ? { path: l.path } : { path: l.target, new: "1" })}>
+                    <button key={l.target} className={`ds-link ${l.path ? "" : "missing"}`} onClick={() => go(l.path ? { path: l.path } : { path: l.target, new: "1" })}
+                      onContextMenu={menu(() => (l.path ? noteMenu(l.path) : missingMenu(l.target)))}>
                       <b><i className={l.path ? "ri-file-text-line" : "ri-file-add-line"} />{l.path ? title(l.path) : l.target}</b>{!l.path && <span>Not written yet: click to create it</span>}
                     </button>
                   ))}
@@ -400,6 +462,19 @@ function DocsInner() {
           </aside>
         )}
       </div>
+
+      <Drawer open={!!moving} onClose={() => setMoving(null)} icon={<i className="ri-folder-transfer-line" />} title={moving ? `Rename or move "${title(moving.path)}"` : ""}
+        sub="Links to it in other notes update automatically."
+        footer={<><span className="sp" /><button className="btn" onClick={() => setMoving(null)}>Cancel</button><button className="btn primary" disabled={!moving?.name.trim()} onClick={moveNote}>Save</button></>}>
+        {moving && (
+          <div className="dw-sec">
+            <label style={{ marginTop: 0 }}>Name</label>
+            <input value={moving.name} onChange={(e) => setMoving({ ...moving, name: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") moveNote(); }} />
+            <label>Folder</label>
+            <input list="doc-folders" value={moving.folder} onChange={(e) => setMoving({ ...moving, folder: e.target.value })} placeholder="(top level)" />
+          </div>
+        )}
+      </Drawer>
 
       <Drawer open={!!creating} onClose={() => setCreating(null)} icon={<i className="ri-file-add-line" />} title="New note"
         footer={<><span className="sp" /><button className="btn" onClick={() => setCreating(null)}>Cancel</button><button className="btn primary" disabled={!creating?.name.trim()} onClick={create}>Create note</button></>}>

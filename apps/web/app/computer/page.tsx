@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* Computer: which folders on the machine running Saga OS your helpers may read, edit and run commands in.
    Sharing and changing a folder happen in a drawer on the right, with a folder browser. */
@@ -43,6 +44,18 @@ export default function Computer() {
     if (!form?.id || !confirm(`Stop sharing ${form.path}? Nothing in the folder is deleted.`)) return;
     await api(`/folders/${form.id}`, { method: "DELETE" }); close(); load();
   };
+  const put = async (f: Folder, patch: Partial<Form>) => { try { await api(`/folders/${f.id}`, { method: "PUT", body: { path: f.path, label: f.label, access: f.access, commands: f.commands, default_on: f.default_on, ...patch } }); load(); } catch (e: any) { setErr(e.message); } };
+  const items = (f: Folder) => [
+    { heading: f.label },
+    { label: "Edit", icon: "ri-edit-line", onSelect: () => edit(f) },
+    { label: "Helpers may edit files", icon: "ri-edit-box-line", checked: f.access === "write", onSelect: () => put(f, { access: f.access === "write" ? "read" : "write" }) },
+    { label: "Helpers may run commands", icon: "ri-terminal-box-line", checked: f.commands, onSelect: () => put(f, { commands: !f.commands }) },
+    { label: "On in every chat", icon: "ri-chat-check-line", checked: f.default_on, onSelect: () => put(f, { default_on: !f.default_on }) },
+    sep,
+    { label: "Copy the path", icon: "ri-file-copy-line", onSelect: () => copy(f.path) },
+    sep,
+    { label: "Stop sharing", icon: "ri-forbid-line", danger: true, onSelect: async () => { if (!confirm(`Stop sharing ${f.path}? Nothing in the folder is deleted.`)) return; await api(`/folders/${f.id}`, { method: "DELETE" }); load(); } },
+  ];
   const name = (p: string) => p.split("/").filter(Boolean).pop() || p;
 
   return (
@@ -61,7 +74,7 @@ export default function Computer() {
         ) : (
           <div className="grid2">
             {list.map((f) => (
-              <div key={f.id} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }}>
+              <div key={f.id} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }} onContextMenu={menu(() => items(f))}>
                 <b style={{ fontWeight: 500 }}><i className="ri-folder-3-line" /> {f.label}</b>
                 <div className="small mono" style={{ wordBreak: "break-all" }}>{f.path}</div>
                 <div className="acts" style={{ gap: 6 }}>
@@ -117,7 +130,8 @@ export default function Computer() {
                     </div>
                     {fs.dirs.length === 0 && <div className="fsrow small">No folders inside.</div>}
                     {fs.dirs.map((d) => (
-                      <div key={d} className="fsrow"><i className="ri-folder-3-line" />
+                      <div key={d} className="fsrow" onContextMenu={menu(() => [{ heading: d }, { label: "Open", icon: "ri-folder-open-line", onSelect: () => browse(`${fs.path.replace(/\/$/, "")}/${d}`) },
+                        { label: "Copy the path", icon: "ri-file-copy-line", onSelect: () => copy(`${fs.path.replace(/\/$/, "")}/${d}`) }])}><i className="ri-folder-3-line" />
                         <button className="link" onClick={() => browse(`${fs.path.replace(/\/$/, "")}/${d}`)}>{d}</button></div>
                     ))}
                   </div>

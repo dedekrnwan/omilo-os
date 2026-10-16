@@ -7,7 +7,9 @@ import { BarList, DataTable, Legend, OTHER, SERIES, STATUS, Series, StackedBars,
 import { Segments } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
-import { usePoll } from "@/lib/poll";
+import { kick, usePoll } from "@/lib/poll";
+import { helperItems, jobLinkItems } from "@/lib/actions";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* Monitor: how the company of helpers is doing. Tokens and spend, jobs, what waits on you, who is working,
    the Claude Code pool and Saga's tools, over one time range. */
@@ -145,7 +147,7 @@ export default function Monitor() {
   usePoll(async () => {
     setLoading(true);
     try { setData(await api<Data>(`/monitor?range=${range}`)); setUpdated(new Date()); setErr(null); } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
-  }, 30000, [range], (n) => n?.kind?.startsWith("job") || n?.kind === "inbox" || n?.kind === "reply");
+  }, 30000, [range], (n) => n?.url === "/monitor" || n?.kind?.startsWith("job") || n?.kind === "inbox" || n?.kind === "reply");
 
   const labels = useMemo(() => (data?.buckets || []).map((b) => {
     const d = new Date(b);
@@ -236,7 +238,7 @@ export default function Monitor() {
           <tbody>{data.helpers.map((h, i) => {
             const [cls, icon, txt] = STATE[h.state] || ["idle", "ri-question-line", h.state];
             return (
-              <tr key={h.id}>
+              <tr key={h.id} onContextMenu={menu(() => [{ heading: h.name }, ...helperItems(h), ...(h.current ? [sep, ...jobLinkItems(h.current.task_id, h.current.brief)] : [])])}>
                 <td><Link href={`/staff/?id=${h.id}`} className="mh-name"><Avatar who={h} size={28} state={h.state === "working" ? "working" : h.state === "sleeping" ? "sleeping" : null} /><b>{h.name}</b></Link></td>
                 <td><span className={`chip ${cls}`}><i className={icon} />{txt}</span></td>
                 <td className="hide-sm small" style={{ maxWidth: 280 }}>{h.current ? <Link href={`/chat/?view=work&task=${h.current.task_id}`}>{h.current.brief}</Link> : "–"}</td>
@@ -267,7 +269,7 @@ export default function Monitor() {
                   <div className="fail-b">
                     <div className="small"><b>What to do:</b> {f.fix}.</div>
                     {f.example && <div className="fail-ex mono">{f.example}</div>}
-                    {f.jobs.map((j) => <Link key={j.task_id} href={`/chat/?view=work&task=${j.task_id}`} className="fail-j"><span>{j.brief}</span><span className="small">{j.staff} · {ago(j.at)}</span></Link>)}
+                    {f.jobs.map((j) => <Link key={j.task_id} href={`/chat/?view=work&task=${j.task_id}`} className="fail-j" onContextMenu={menu(() => jobLinkItems(j.task_id, j.brief))}><span>{j.brief}</span><span className="small">{j.staff} · {ago(j.at)}</span></Link>)}
                   </div>
                 </details>
               );
@@ -289,7 +291,7 @@ export default function Monitor() {
                 <thead><tr><th>Helper</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="hide-sm">Slowest</th></tr></thead>
                 <tbody>{data.timing.helpers.slice(0, 8).map((h) => (
                   <tr key={h.staff_id}><td>{h.name}</td><td className="num-cell">{h.jobs}</td><td className="num-cell mono">{durS(h.median_s)}</td><td className="num-cell mono">{durS(h.p90_s)}</td>
-                    <td className="hide-sm small">{h.slowest ? <Link href={`/chat/?view=work&task=${h.slowest.task_id}`}>{durS(h.slowest.seconds)} · {h.slowest.brief}</Link> : "–"}</td></tr>
+                    <td className="hide-sm small">{h.slowest ? <Link href={`/chat/?view=work&task=${h.slowest.task_id}`} onContextMenu={menu(() => jobLinkItems(h.slowest!.task_id, h.slowest!.brief))}>{durS(h.slowest.seconds)} · {h.slowest.brief}</Link> : "–"}</td></tr>
                 ))}</tbody>
               </table></div>
             </>
@@ -316,7 +318,7 @@ export default function Monitor() {
             </table></div>
           )}
         </section>
-        <section className="paper mcard">
+        <section className="paper mcard" id="pool">
           <div className="mhead"><h2>Pool, last 24 hours</h2><span className="sp" /><span className="small">{data.pool_history.hits_7d} limit hit{data.pool_history.hits_7d === 1 ? "" : "s"} in 7 days</span></div>
           {data.pool_history.accounts.length === 0 ? <p className="small">No pool accounts yet.</p> : <PoolHistory h={data.pool_history} />}
           <p className="small" style={{ marginBottom: 0 }}>{data.pool_history.hits_7d >= 3 ? "Accounts hit their limits often: add a subscription, or move regular jobs to quieter hours." : "Each square is one hour. Dark squares are busy hours; a red mark means the account reached its limit then."}</p>
@@ -333,7 +335,8 @@ export default function Monitor() {
               const p = a.state === "cooling" ? 100 : a.five_hour.pct;
               const lv = a.state === "cooling" ? "rest" : a.state === "error" ? "err" : a.state === "disabled" ? "off" : p == null ? "unknown" : p >= 90 ? "high" : p >= 70 ? "mid" : "low";
               return (
-                <div key={a.id} className="pm-row">
+                <div key={a.id} className="pm-row" onContextMenu={menu(() => [{ heading: a.label }, { label: "Manage on the Harness page", icon: "ri-stack-line", href: "/harness/" },
+                  a.state === "cooling" && { label: "Use it again now", icon: "ri-restart-line", onSelect: async () => { await api(`/harness/accounts/${a.id}`, { method: "PATCH", body: { clear_cooldown: true } }); kick("/monitor"); } }])}>
                   <span className="pm-name">{a.label}{a.busy ? <span className="chip run" style={{ marginLeft: 6 }}>{a.busy} working</span> : null}</span>
                   <span className={`pseg wide ${lv}`}><i style={{ width: `${p ?? 0}%` }} /></span>
                   <span className="small">{a.state === "cooling" ? "Resting until its limit resets" : a.state === "error" ? "Needs sign-in" : p == null ? "5-hour use not reported" : `${p}% of 5-hour limit`} · {fmtNum(a.tokens_range)} tokens this period</span>
@@ -354,7 +357,7 @@ export default function Monitor() {
           <div className="mhead"><h2>Latest</h2></div>
           {data.activity.length === 0 ? <p className="small">Nothing yet.</p> : (
             <div className="feed">{data.activity.map((n) => (
-              <Link key={n.id} href={n.url} className="feed-i">
+              <Link key={n.id} href={n.url} className="feed-i" onContextMenu={menu(() => [{ label: "Open", icon: "ri-arrow-right-up-line", href: n.url }, { label: "Copy link", icon: "ri-link", onSelect: () => copy(location.origin + n.url) }])}>
                 <i className={ICON[n.kind] || "ri-notification-3-line"} style={n.kind === "job_failed" ? { color: STATUS.critical } : undefined} />
                 <span className="t"><b>{n.title}</b>{n.body && <span>{n.body}</span>}</span>
                 <span className="small">{ago(n.at)}</span>

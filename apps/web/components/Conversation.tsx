@@ -5,6 +5,8 @@ import { Attachments, Markdown } from "@/components/Markdown";
 import { Run, RunCard, RunEvent, toRuns, useEvents } from "@/components/Run";
 import { Err } from "@/components/ui";
 import { Staff, Thread, api, when } from "@/lib/api";
+import { helperItems } from "@/lib/actions";
+import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { visibleThreads } from "@/lib/open";
 import { kick, usePoll } from "@/lib/poll";
 
@@ -34,6 +36,37 @@ export function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]
   );
 }
 
+const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/```\w*\n?/g, "")).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+  .replace(/[*_`~]+/g, "").replace(/^#+\s*/gm, "").replace(/^>\s?/gm, "").trim();
+
+/** Put a quote of a message into the reply box of the chat that shows it. */
+export const quote = (threadId: string, text: string) =>
+  window.dispatchEvent(new CustomEvent("saga:quote", { detail: { threadId, text: text.trim().split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" } }));
+
+/** Let a composer receive quotes for its thread. */
+export function useQuote(threadId: string | undefined | null, setText: (f: (t: string) => string) => void, focus?: () => void) {
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent).detail; if (d.threadId !== threadId) return; setText((t) => (t.trim() ? t.trimEnd() + "\n\n" : "") + d.text); focus?.(); };
+    window.addEventListener("saga:quote", on);
+    return () => window.removeEventListener("saga:quote", on);
+  }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+function msgItems(th: FullThread, m: Msg, who: string, staff: Staff[]): MenuItem[] {
+  const h = staff.find((s) => s.id === m.author);
+  return [
+    { heading: m.role === "owner" ? "Your message" : m.role === "system" ? "Note" : who },
+    { label: "Quote in reply", icon: "ri-double-quotes-l", onSelect: () => quote(th.id, m.text) },
+    { label: "Copy text", icon: "ri-file-copy-line", onSelect: () => copy(plain(m.text)) },
+    { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: () => copy(m.text) },
+    m.role === "agent" && { label: "Ask again", icon: "ri-restart-line", hint: "puts your question back in the box", onSelect: () => {
+      const last = th.messages.slice(0, th.messages.findIndex((x) => x.id === m.id)).reverse().find((x) => x.role === "owner");
+      if (last) window.dispatchEvent(new CustomEvent("saga:quote", { detail: { threadId: th.id, text: last.text } }));
+    } },
+    ...(h ? [sep, ...helperItems(h)] : []),
+  ].filter(Boolean) as MenuItem[];
+}
+
 export function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean }) {
   const runs = toRuns(events);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
@@ -52,10 +85,10 @@ export function Conversation({ th, staff, events, onSend, busy }: { th: FullThre
         <div className="sysmsg">Ask anything: what needs you, what someone did, or tell a helper what to do.</div>
       )}
       {rows.map((row) => row.kind === "run" ? <RunCard key={`r${row.r.id}`} run={row.r} /> : (
-        row.m.role === "owner" ? <div key={row.m.id} className="bubble"><Markdown text={row.m.text} /><Attachments blocks={row.m.blocks} /></div>
-          : row.m.role === "system" ? <div key={row.m.id} className="sysmsg"><Markdown text={row.m.text} /></div>
+        row.m.role === "owner" ? <div key={row.m.id} className="bubble" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} /><Attachments blocks={row.m.blocks} /></div>
+          : row.m.role === "system" ? <div key={row.m.id} className="sysmsg" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} /></div>
           : (
-            <div key={row.m.id} className="agentmsg">
+            <div key={row.m.id} className="agentmsg" onContextMenu={menu(() => msgItems(th, row.m, name(row.m.author), staff))}>
               <Avatar who={staff.find((x) => x.id === row.m.author) || { id: row.m.author, name: name(row.m.author) }} size={30} />
               <div className="body">
                 <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
@@ -82,6 +115,8 @@ export function ChatPane({ threadId, staff, placeholder }: { threadId: string; s
   const awaiting = useRef(false);
   awaiting.current = !!th?.awaiting_reply;
   const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLTextAreaElement>(null);
+  useQuote(threadId, setText, () => box.current?.focus());
   useEffect(() => { visibleThreads.add(threadId); return () => { visibleThreads.delete(threadId); }; }, [threadId]);
   const load = useCallback(async () => { try { setTh(await api<FullThread>(`/threads/${threadId}`)); } catch (e: any) { setErr(e.message); } }, [threadId]);
   usePoll(load, () => (awaiting.current ? 1500 : 10000), [load], (n) => n?.url?.includes(threadId));
@@ -98,7 +133,7 @@ export function ChatPane({ threadId, staff, placeholder }: { threadId: string; s
     <div className="cpane">
       <div className="cpane-msgs"><Conversation th={th} staff={staff} events={events} onSend={send} busy={th.awaiting_reply} /><div ref={end} /></div>
       <form className="composer cpane-box" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder || "Message the helper…"} rows={2}
+        <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder || "Message the helper…"} rows={2}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
         <div className="row"><span className="small">{th.awaiting_reply ? "Working on it…" : "Enter to send"}</span><span className="sp" />
           <button className="btn primary sm" type="submit" disabled={!text.trim() || th.awaiting_reply}><i className="ri-arrow-up-line" />Send</button></div>

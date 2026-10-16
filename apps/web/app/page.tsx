@@ -8,7 +8,9 @@ import InboxItemDetail from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { InboxItem, ago, api } from "@/lib/api";
-import { openTask } from "@/lib/open";
+import { chatWith, helperItems, taskItems } from "@/lib/actions";
+import { MenuItem, copy, menu, sep } from "@/lib/menu";
+import { openTask, openThread } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
 
 /* The Inbox: a board of what needs you, what is running and what just finished (or the classic list with history). */
@@ -38,11 +40,11 @@ function useNow(active: boolean) {
   return now;
 }
 
-function Card({ c, indicator, time, tag, open, onToggle, onOpen }: {
-  c: Base; indicator: React.ReactNode; time: string; tag?: React.ReactNode; open: boolean; onToggle: () => void; onOpen: () => void;
+function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
+  c: Base; indicator: React.ReactNode; time: string; tag?: React.ReactNode; open: boolean; onToggle: () => void; onOpen: () => void; items?: () => MenuItem[];
 }) {
   return (
-    <div className={`bcard ${open ? "open" : ""}`} role="button" tabIndex={0} aria-expanded={open}
+    <div className={`bcard ${open ? "open" : ""}`} role="button" tabIndex={0} aria-expanded={open} onContextMenu={items ? menu(items) : undefined}
       onClick={onToggle} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}>
       <div className="bc-t"><Avatar who={c.staff} size={18} /><b>{c.title}</b></div>
       {tag}
@@ -91,6 +93,25 @@ function BoardView({ onCount }: { onCount: () => void }) {
   const toggle = (id: string) => setOpen((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
   const closeDetail = useCallback(() => setDetail(null), []);
 
+  const quick = async (fn: () => Promise<unknown>) => { try { await fn(); await load(); onCount(); } catch (e: any) { setErr(e.message); } };
+  const needItems = (c: NeedCard): MenuItem[] => {
+    const p = c.item.proposal;
+    return [
+      { heading: c.title },
+      { label: "Open", icon: "ri-file-list-3-line", onSelect: () => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c)) },
+      p && p.status === "pending" && { label: "Approve", icon: "ri-check-line", onSelect: () => quick(() => api(`/proposals/${p.id}/decide`, { body: { decision: "approve", note: "" } })) },
+      p && { label: "Discuss with the helper", icon: "ri-chat-3-line", onSelect: async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: p.id } }); openThread(th.id); } },
+      c.kind === "question" && { label: "Answer…", icon: "ri-question-answer-line", onSelect: () => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c)) },
+      c.kind === "question" && { label: "Snooze for an hour", icon: "ri-time-line", onSelect: () => quick(() => api(`/inbox/${c.id}/snooze`, { body: { hours: 1 } })) },
+      c.kind === "alert" && { label: "Dismiss", icon: "ri-close-circle-line", onSelect: () => quick(() => api(`/inbox/${c.id}/dismiss`, { body: {} })) },
+      c.task_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => openTask(c.task_id!) },
+      { label: "Copy the text", icon: "ri-file-copy-line", onSelect: () => copy(`${c.title}\n\n${c.summary}`) },
+      sep,
+      { heading: c.staff.name },
+      ...helperItems(c.staff),
+    ].filter(Boolean) as MenuItem[];
+  };
+
   if (!b) return err ? <Err error={err} /> : <p className="small">Loading…</p>;
   return (
     <>
@@ -99,6 +120,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
         <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
           {b.needs.map((c) => (
             <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c))}
+              items={() => needItems(c)}
               indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
               time={dur(since(c.since, now))}
               tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
@@ -108,6 +130,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
         <Column title="Running" count={b.running.length} icon={<span className="spin bcol-i" />} empty="No helper is working right now.">
           {b.running.map((c) => (
             <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
+              items={() => taskItems({ id: c.id, staff_id: c.staff.id, brief: `${c.title}\n${c.summary}`, status: c.status }, c.staff.name, load)}
               indicator={c.status === "queued" ? <i className="ri-hourglass-line bc-ind wait" title="Waiting for a free spot" /> : <span className="spin bc-ind" />}
               time={c.status === "queued" ? "queued" : dur(since(c.started_at, now))} />
           ))}
@@ -115,6 +138,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
         <Column title="Done" count={b.done.length} icon={<i className="ri-checkbox-circle-line bcol-i done" />} empty="Finished jobs from the last two days show here.">
           {b.done.map((c) => (
             <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
+              items={() => taskItems({ id: c.id, staff_id: c.staff.id, brief: c.title, status: c.status }, c.staff.name, load)}
               indicator={<span className={`bc-dot ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "off"}`} title={c.status} />}
               time={dur(c.seconds)} />
           ))}
@@ -148,7 +172,18 @@ function ListView({ onCount }: { onCount: () => void }) {
       <Err error={err} />
       {items.length === 0 ? <Empty title={filter === "open" ? "Nothing waiting" : "No items"} text={filter === "open" ? "Your helpers have nothing for you right now." : "Nothing here yet."} /> : items.map((i) => (
         <div key={i.id} className={`item ${open === i.id ? "open" : ""}`}>
-          <div className="h" onClick={() => setOpen(open === i.id ? null : i.id)}>
+          <div className="h" onClick={() => setOpen(open === i.id ? null : i.id)} onContextMenu={menu(() => {
+            const p = i.proposal; const act = (f: () => Promise<unknown>) => f().then(() => { load(); onCount(); }).catch((e) => setErr(e.message));
+            return [{ heading: i.title },
+              { label: open === i.id ? "Close" : "Open", icon: "ri-file-list-3-line", onSelect: () => setOpen(open === i.id ? null : i.id) },
+              p && p.status === "pending" && { label: "Approve", icon: "ri-check-line", onSelect: () => act(() => api(`/proposals/${p.id}/decide`, { body: { decision: "approve", note: "" } })) },
+              p && { label: "Discuss with the helper", icon: "ri-chat-3-line", onSelect: async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: p.id } }); openThread(th.id); } },
+              i.kind === "question" && i.status === "open" && { label: "Snooze for an hour", icon: "ri-time-line", onSelect: () => act(() => api(`/inbox/${i.id}/snooze`, { body: { hours: 1 } })) },
+              i.kind === "alert" && i.status === "open" && { label: "Dismiss", icon: "ri-close-circle-line", onSelect: () => act(() => api(`/inbox/${i.id}/dismiss`, { body: {} })) },
+              !!i.task_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => openTask(i.task_id!) },
+              { label: "Copy the text", icon: "ri-file-copy-line", onSelect: () => copy(`${i.title}\n\n${i.body}`) },
+              ...(i.staff_id ? [sep, ...helperItems({ id: i.staff_id })] : [])];
+          })}>
             <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{KIND[i.kind] || i.kind}</span>
             {i.blocking && <span className="chip warn">Blocking</span>}
             <div className="t"><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>

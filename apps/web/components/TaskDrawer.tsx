@@ -10,6 +10,8 @@ import { RunCard, toRuns, useEvents } from "@/components/Run";
 import { Err, StatusChip } from "@/components/ui";
 import { InboxItem, Staff, Task, ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
+import { taskItems } from "@/lib/actions";
+import { menu } from "@/lib/menu";
 
 /* A job, opened from anywhere (Inbox, Monitor, notifications, links in chats): live progress, what waits on you,
    and a chat with the helper about it, in one drawer. Chats open the same way. */
@@ -77,7 +79,7 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
           {!!t.children?.length && (
             <div className="jd-list"><div className="small">Handed off to</div>
               {t.children.map((c) => (
-                <button key={c.id} className="jd-child" onClick={() => onOpenTask(c.id)}>
+                <button key={c.id} className="jd-child" onClick={() => onOpenTask(c.id)} onContextMenu={menu(() => taskItems(c, staff.find((s) => s.id === c.staff_id)?.name, undefined, () => onOpenTask(c.id)))}>
                   <Avatar who={staff.find((s) => s.id === c.staff_id) || { id: c.staff_id }} size={18} /><span>{c.brief.split("\n")[0].slice(0, 80)}</span><StatusChip status={c.status} />
                 </button>
               ))}</div>

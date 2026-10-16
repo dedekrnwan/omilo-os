@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* The talent library: specialists from The Agency (github.com/msitarzewski/agency-agents, MIT).
    Browse, read a specialist's playbook, hire them as a helper in one click. */
@@ -48,6 +49,16 @@ export default function Talent() {
       router.push(`/staff/?id=${st.id}&hired=1`);
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
+  const items = (a: Agent) => [
+    { heading: a.name },
+    { label: "Read the profile", icon: "ri-file-user-line", onSelect: () => show(a) },
+    a.hired_as ? { label: "Open the helper", icon: "ri-user-3-line", href: `/staff/?id=${a.hired_as}` }
+      : { label: `Hire ${a.name}`, icon: "ri-user-add-line", onSelect: async () => { try { const st = await api<{ id: string }>(`/talent/${a.slug}/hire`, { body: {} }); router.push(`/staff/?id=${st.id}&hired=1`); } catch (e: any) { setErr(e.message); } } },
+    { label: "Make it a skill", icon: "ri-magic-line", hint: "a playbook any helper can follow", onSelect: async () => { try { await api(`/skills/from-talent/${a.slug}`, { body: {} }); router.push("/skills/"); } catch (e: any) { setErr(e.message); } } },
+    sep,
+    { label: `More in ${divLabel(a.division)}`, icon: "ri-filter-3-line", onSelect: () => setDiv(a.division) },
+    { label: "Copy the description", icon: "ri-file-copy-line", onSelect: () => copy(`${a.name}: ${a.description || ""}`) },
+  ];
   const update = async () => { await api("/talent/sync", { body: {} }); load(); };
 
   const divLabel = (k: string) => lib?.divisions.find((d) => d.key === k)?.label || k;
@@ -93,7 +104,7 @@ export default function Talent() {
       ) : (
         <div className="cards">
           {lib.agents.map((a) => (
-            <button key={a.slug} className="card talent" onClick={() => show(a)}>
+            <button key={a.slug} className="card talent" onClick={() => show(a)} onContextMenu={menu(() => items(a))}>
               <div className="acts" style={{ gap: 10, flexWrap: "nowrap" }}>
                 <span className="emoji">{a.emoji || "✦"}</span>
                 <div style={{ minWidth: 0 }}>

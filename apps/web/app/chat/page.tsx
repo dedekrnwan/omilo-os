@@ -7,8 +7,10 @@ import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "
 import ComposerTools, { Attached } from "@/components/ComposerTools";
 import PoolMeter from "@/components/PoolMeter";
 import Avatar from "@/components/Avatar";
-import { Choices, Conversation, FullThread, Msg } from "@/components/Conversation";
+import { Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
+import { helperItems, taskItems } from "@/lib/actions";
+import { copy, menu, sep } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
@@ -134,8 +136,8 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
   );
 }
 
-function NewTask({ staff, onDone }: { staff: Staff[]; onDone: (id: string) => void }) {
-  const [form, setForm] = useState({ staff_id: "", brief: "" });
+function NewTask({ staff, onDone, who }: { staff: Staff[]; onDone: (id: string) => void; who?: string }) {
+  const [form, setForm] = useState({ staff_id: who || "", brief: "" });
   const [err, setErr] = useState<string | null>(null);
   const create = async () => {
     try { const t = await api<Task>("/tasks", { body: form }); onDone(t.id); } catch (e: any) { setErr(e.message); }
@@ -206,6 +208,7 @@ function WorkspaceInner() {
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
   const box = useRef<HTMLTextAreaElement>(null);
+  useQuote(current?.id, setText, () => box.current?.focus());
   const startJob = async (brief: string) => {
     const who = staff.find((x) => x.is_chief) || staff[0];
     if (!who || !brief.trim()) return;
@@ -265,16 +268,23 @@ function WorkspaceInner() {
         <nav className={`ws-list ${listOpen ? "open" : ""}`}>
           {view === "chat" ? (
             <>
-              {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}>
+              {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}
+                onContextMenu={menu(() => [{ heading: "Chief of Staff" }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "master" }) },
+                  { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setText("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
                 <Avatar who={chief} size={24} /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
               <div className="grp">Helpers</div>
               {staff.filter((s) => !s.is_chief).map((s) => (
-                <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}>
+                <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}
+                  onContextMenu={menu(() => [{ heading: s.name }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "staff", staff_id: s.id }) },
+                    { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", onSelect: () => go({ view: "work", task: "new", staff: s.id }) }, sep, ...helperItems(s, loadLists).slice(1)])}>
                   <Avatar who={s} size={24} state={(s as any).awake === false && s.status === "active" ? "sleeping" : null} /><span className="t"><b>{s.name}</b></span></button>
               ))}
               <div className="grp">About a job or approval</div>
               {threads.filter((t) => t.scope === "task" || t.scope === "proposal").slice(0, 15).map((t) => (
-                <button key={t.id} className={`ws-item ${current?.id === t.id ? "on" : ""}`} onClick={() => go({ thread: t.id })}>
+                <button key={t.id} className={`ws-item ${current?.id === t.id ? "on" : ""}`} onClick={() => go({ thread: t.id })}
+                  onContextMenu={menu(() => [{ heading: t.title || t.scope }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => go({ thread: t.id }) },
+                    t.scope === "task" && !!t.ref_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => go({ view: "work", task: t.ref_id! }) },
+                    { label: "Copy the title", icon: "ri-file-copy-line", onSelect: () => copy(t.title) }, sep, ...helperItems({ id: t.staff_id, name: name(t.staff_id) })])}>
                   <i className={t.scope === "task" ? "ri-task-line" : "ri-inbox-archive-line"} /><span className="t"><b>{t.title || t.scope}</b><span>{name(t.staff_id)}</span></span></button>
               ))}
             </>
@@ -283,7 +293,8 @@ function WorkspaceInner() {
               <button className="btn primary" style={{ margin: "2px 2px 8px" }} onClick={() => go({ view: "work", task: "new" })}><i className="ri-add-line" />New job</button>
               {tasks.length === 0 && <p className="small" style={{ padding: 10 }}>No jobs yet.</p>}
               {tasks.map((t) => (
-                <button key={t.id} className={`ws-item ${taskId === t.id ? "on" : ""}`} onClick={() => go({ view: "work", task: t.id })}>
+                <button key={t.id} className={`ws-item ${taskId === t.id ? "on" : ""}`} onClick={() => go({ view: "work", task: t.id })}
+                  onContextMenu={menu(() => taskItems(t, name(t.staff_id), loadLists, () => go({ view: "work", task: t.id })))}>
                   <span className={`sdot ${t.status}`} /><span className="t"><b>{t.report?.headline || t.brief}</b><span>{name(t.staff_id)} · {ago(t.created_at)}</span></span></button>
               ))}
             </>
@@ -293,7 +304,7 @@ function WorkspaceInner() {
           <div className="ws-scroll" ref={scroller}>
             {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} /></div>
               : <div className="ws-inner"><p className="small">Loading…</p></div>)
-              : taskId === "new" ? <NewTask staff={staff} onDone={(id) => go({ view: "work", task: id })} />
+              : taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
               : taskId ? <TaskView id={taskId} staff={staff} />
               : <div className="ws-inner"><div className="empty"><b>Pick a job on the left</b><span>Or start a new one. Every step shows up live.</span>
                   <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => go({ view: "work", task: "new" })}>New job</button></div></div></div>}

@@ -14,6 +14,7 @@ export function openInDrawer(url: string): boolean {
   if (typeof window !== "undefined" && window.location.pathname.startsWith(`${BASE}/chat/`)) return false; // the Workspace shows them itself
   let u = url.replace(/^https?:\/\/[^/]+/, "");
   if (BASE && u.startsWith(BASE)) u = u.slice(BASE.length);
+  if (/[?&]full=1/.test(u)) return false; // explicitly asked for the full page
   const t = TASK_URL.exec(u);
   if (t) { openTask(t[1] || t[2]); return true; }
   const th = THREAD_URL.exec(u);

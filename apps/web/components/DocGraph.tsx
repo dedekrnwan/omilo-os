@@ -1,6 +1,7 @@
 "use client";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type SimulationNodeDatum } from "d3-force";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MenuItem, openMenu } from "@/lib/menu";
 
 /* The graph view: every doc is a dot, every [[link]] a line. Colour shows who changed the doc last (you, a helper,
    or outside Saga OS); hollow dots are links to docs that do not exist yet. Drag to move, scroll to zoom, click to open. */
@@ -14,7 +15,8 @@ type L = { source: N; target: N };
 export const BY_COLOR: Record<string, string> = { owner: "#2a78d6", agent: "#eb6834", outside: "#1baf7a", missing: "#a8a29e" };
 export const BY_LABEL: Record<string, string> = { owner: "You", agent: "A helper", outside: "Outside Saga OS", missing: "Not written yet" };
 
-export default function DocGraph({ nodes, edges, current, onOpen }: { nodes: GNode[]; edges: GEdge[]; current?: string | null; onOpen: (n: GNode) => void }) {
+export default function DocGraph({ nodes, edges, current, onOpen, onNodeMenu }: { nodes: GNode[]; edges: GEdge[]; current?: string | null; onOpen: (n: GNode) => void;
+  onNodeMenu?: (n: GNode) => MenuItem[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 560 });
   const [, setTick] = useState(0);
@@ -107,7 +109,8 @@ export default function DocGraph({ nodes, edges, current, onOpen }: { nodes: GNo
 
   return (
     <div className="dgraph" ref={box} onWheel={onWheel}>
-      <svg width={size.w} height={size.h} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={() => { setHover(null); if (drag.current?.pan) drag.current = null; }}
+      <svg width={size.w} height={size.h} onContextMenu={(e) => { const n = hit(e.clientX, e.clientY); if (n && onNodeMenu) { e.preventDefault(); drag.current = null; openMenu(e.clientX, e.clientY, onNodeMenu(n)); } }}
+        onPointerDown={(e) => { if (e.button === 2) return; onDown(e); }} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={() => { setHover(null); if (drag.current?.pan) drag.current = null; }}
         role="img" aria-label={`Graph of ${data.ns.length} docs and ${data.ls.length} links`} style={{ cursor: hover ? "pointer" : drag.current?.pan ? "grabbing" : "grab" }}>
         <g transform={`translate(${size.w / 2 + view.x},${size.h / 2 + view.y}) scale(${view.k})`}>
           {data.ls.map((l, i) => (

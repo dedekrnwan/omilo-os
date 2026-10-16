@@ -927,3 +927,21 @@ a.plain { color: inherit; text-decoration: none; }
 .cpane-box { margin: 0 16px 12px; }
 .cpane-box textarea { min-height: 52px; }
 .drawer.dw .dw-body:has(.cpane) { padding-bottom: 0; }
+
+/* ---------- right-click menus ---------- */
+.cmenu { position: fixed; z-index: 200; min-width: 200px; max-width: 300px; padding: 4px; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); box-shadow: 0 12px 32px -10px rgba(12, 10, 9, .3), 0 2px 4px rgba(12, 10, 9, .06); outline: none; animation: cm-in .08s ease-out; }
+@keyframes cm-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+.cm-i { display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 10px 0 8px; border: 0; background: transparent; border-radius: var(--r-sm);
+  text-align: left; cursor: pointer; font-size: 13px; color: var(--ink); }
+.cm-i i { font-size: 15px; color: var(--muted); width: 16px; }
+.cm-i .cm-blank { visibility: hidden; }
+.cm-i.on, .cm-i:hover:not(:disabled) { background: var(--hover); }
+.cm-i:disabled { color: var(--faint); cursor: default; }
+.cm-i.danger { color: #b91c1c; } .cm-i.danger i { color: #b91c1c; }
+.cm-i.danger.on, .cm-i.danger:hover { background: #fef2f2; }
+.cm-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-hint { font: 11px var(--font-mono); color: var(--faint); }
+.cm-sep { height: 1px; background: var(--line-strong); margin: 4px 6px; }
+.cm-h { padding: 6px 10px 2px; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

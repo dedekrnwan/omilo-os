@@ -4,6 +4,7 @@ import Drawer from "@/components/Drawer";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* Skills: reusable instructions (SKILL.md) a helper follows when you switch them on for a chat or job.
    Writing, editing and importing happen in a drawer on the right. */
@@ -64,6 +65,18 @@ export default function Skills() {
     await api("/skills", { body: { ...full, default_on: !s.default_on } });
     load();
   };
+  const items = (s: Skill) => [
+    { heading: s.name },
+    { label: "Open and edit", icon: "ri-edit-line", onSelect: () => open(s.slug) },
+    { label: "Standard for everyone", icon: "ri-star-line", checked: s.default_on, onSelect: () => toggleDefault(s) },
+    { label: "Use it in a chat", icon: "ri-chat-3-line", href: "/chat/", hint: `type /${s.slug}` },
+    sep,
+    { label: "Copy the command", icon: "ri-slash-commands-2", hint: `/${s.slug}`, onSelect: () => copy(`/${s.slug}`) },
+    { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: async () => { const f = await api<Skill & { body: string }>(`/skills/${s.slug}`); copy(`# ${f.name}\n\n${f.description}\n\n${f.body}`); } },
+    { label: "Duplicate", icon: "ri-file-copy-2-line", onSelect: async () => { const f = await api<Skill & { body: string }>(`/skills/${s.slug}`); setTab("write"); setForm({ ...f, slug: "", name: `${f.name} copy`, editing: false }); } },
+    sep,
+    { label: "Delete", icon: "ri-delete-bin-line", danger: true, onSelect: async () => { if (!confirm(`Delete the skill ${s.name}?`)) return; await api(`/skills/${s.slug}`, { method: "DELETE" }); load(); } },
+  ];
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
   return (
@@ -84,7 +97,7 @@ export default function Skills() {
         ) : (
           <div className="grid2">
             {list.map((s) => (
-              <div key={s.slug} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }}>
+              <div key={s.slug} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }} onContextMenu={menu(() => items(s))}>
                 <div className="acts" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
                   <b style={{ fontWeight: 500 }}><i className="ri-magic-line" /> {s.name}</b>
                   {s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}

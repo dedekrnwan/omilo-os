@@ -2,6 +2,7 @@
 import { Marked, type Tokens } from "marked";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BASE } from "@/lib/api";
+import { MenuItem, copy, menu, openMenu, sep } from "@/lib/menu";
 
 /* Rich rendering for helper replies: highlighted code with copy, pretty JSON, tables, image and file previews, downloads. */
 
@@ -150,12 +151,57 @@ function onRichClick(e: React.MouseEvent | React.KeyboardEvent) {
   }
 }
 
+const absUrl = (u: string) => (u.startsWith("http") ? u : location.origin + u);
+
+/** What you can do with a file or image shown anywhere in Saga OS. */
+export function fileItems(f: FileRef & { kind?: string; path?: string }): MenuItem[] {
+  return [
+    { heading: f.name },
+    { label: "Preview", icon: "ri-eye-line", onSelect: () => openPreview(f) },
+    { label: "Open in a new tab", icon: "ri-external-link-line", onSelect: () => window.open(f.url, "_blank", "noopener") },
+    { label: "Download", icon: "ri-download-2-line", onSelect: () => { const a = document.createElement("a"); a.href = dlUrl(f.url); a.download = f.name; a.click(); } },
+    sep,
+    { label: "Copy link", icon: "ri-link", onSelect: () => copy(absUrl(f.url)) },
+    !!f.path && { label: "Copy path", icon: "ri-folder-3-line", onSelect: () => copy(f.path!) },
+    { label: "Copy file name", icon: "ri-file-copy-line", onSelect: () => copy(f.name) },
+  ].filter(Boolean) as MenuItem[];
+}
+
+function onRichMenu(e: React.MouseEvent) {
+  const t = e.target as HTMLElement;
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.toString().trim()) return; // keep the browser menu for selected text
+  const f = t.closest<HTMLElement>("[data-act=preview]");
+  let items: MenuItem[] | null = null;
+  if (f) items = fileItems({ url: f.dataset.url!, name: f.dataset.name || "file", kind: f.dataset.kind, path: f.classList.contains("fpath") ? f.title : undefined });
+  else if (t.closest(".codeblock")) {
+    const b = t.closest(".codeblock")!; const code = b.querySelector("code")?.textContent || "";
+    const lang = b.querySelector(".cb-head span")?.textContent || "";
+    items = [{ heading: lang ? `${lang} code` : "Code" }, { label: "Copy code", icon: "ri-file-copy-line", onSelect: () => copy(code) },
+      { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: () => copy("```\n" + code + "\n```") },
+      b.classList.contains("long") && { label: b.classList.contains("open") ? "Show less" : "Show all lines", icon: "ri-expand-up-down-line",
+        onSelect: () => (b.querySelector("[data-act=expand]") as HTMLElement | null)?.click() }].filter(Boolean) as MenuItem[];
+  } else if (t.closest("a[href]")) {
+    const a = t.closest<HTMLAnchorElement>("a[href]")!;
+    items = [{ heading: a.textContent?.slice(0, 50) || "Link" }, { label: "Open link", icon: "ri-external-link-line", onSelect: () => window.open(a.href, "_blank", "noopener") },
+      { label: "Copy link", icon: "ri-link", onSelect: () => copy(a.href) }, { label: "Copy link text", icon: "ri-file-copy-line", onSelect: () => copy(a.textContent || "") }];
+  } else if (t.closest("table")) {
+    const tb = t.closest("table")!;
+    const rows = [...tb.querySelectorAll("tr")].map((r) => [...r.querySelectorAll("th,td")].map((c) => (c.textContent || "").trim()));
+    items = [{ heading: "Table" }, { label: "Copy as CSV", icon: "ri-file-excel-2-line", onSelect: () => copy(rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n")) },
+      { label: "Copy for a spreadsheet", icon: "ri-table-line", hint: "tab separated", onSelect: () => copy(rows.map((r) => r.join("\t")).join("\n")) }];
+  }
+  if (!items) return; // let the message menu (if any) handle it
+  e.preventDefault(); e.stopPropagation();
+  openMenu(e.clientX, e.clientY, items);
+}
+
 const NEEDS_HL = /```|^\s*[[{]/;
 export function Markdown({ text }: { text: string }) {
   const [ready, setReady] = useState(!!hljs);
   useEffect(() => { if (!hljs && NEEDS_HL.test(text || "")) loadHighlighter().then(() => setReady(true)); }, [text]);
   const html = useMemo(() => renderMarkdown(text), [text, ready]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="md" onClick={onRichClick} onKeyDown={onRichClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div className="md" onClick={onRichClick} onKeyDown={onRichClick} onContextMenu={onRichMenu} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /* files attached to a message (uploads, or shared by a helper) */
@@ -168,7 +214,8 @@ export function Attachments({ blocks }: { blocks?: Block[] }) {
   return (
     <div className="atts">
       {imgs.length > 0 && <div className="atts-img">{imgs.map((f) => (
-        <button key={f.id} type="button" className="mdimg" onClick={() => openPreview({ url: fileUrl(f.id!), name: f.name!, mime: f.mime, size: f.size, kind: "image" })}>
+        <button key={f.id} type="button" className="mdimg" onClick={() => openPreview({ url: fileUrl(f.id!), name: f.name!, mime: f.mime, size: f.size, kind: "image" })}
+          onContextMenu={menu(() => fileItems({ url: fileUrl(f.id!), name: f.name || "image", mime: f.mime, kind: "image" }))}>
           <img src={fileUrl(f.id!)} alt={f.name} loading="lazy" /></button>
       ))}</div>}
       {rest.map((f) => <FileCard key={f.id} f={{ url: fileUrl(f.id!), name: f.name || "file", mime: f.mime, size: f.size }} />)}
@@ -178,7 +225,7 @@ export function Attachments({ blocks }: { blocks?: Block[] }) {
 
 export function FileCard({ f }: { f: FileRef }) {
   return (
-    <span className="fcard" role="button" tabIndex={0} onClick={(e) => { if (!(e.target as HTMLElement).closest(".fdl")) openPreview(f); }}
+    <span className="fcard" role="button" tabIndex={0} onClick={(e) => { if (!(e.target as HTMLElement).closest(".fdl")) openPreview(f); }} onContextMenu={menu(() => fileItems(f))}
       onKeyDown={(e) => { if (e.key === "Enter") openPreview(f); }}>
       <i className={fileIcon(f.name, f.mime)} />
       <span className="fn-t"><b>{f.name}</b><small>{[(f.name.split(".").pop() || "").toUpperCase(), fmtSize(f.size)].filter(Boolean).join(" · ")}</small></span>

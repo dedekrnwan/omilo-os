@@ -114,6 +114,19 @@ with history filters.
 It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
 items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
 
+## Right-click menus
+
+Everything you can see has a right-click menu with the actions that fit it, the same actions wherever the thing shows up:
+
+- **Helpers** (Team, Workspace list, Inbox cards, Monitor, chat messages): chat, open their page, budget, change look, pause or resume, give them a job.
+- **Jobs** (Inbox board, Workspace, Team page, Monitor, the job drawer): open, chat about it, what needs you, full view, stop or run again, copy the brief.
+- **Inbox items**: open, approve, discuss, snooze, dismiss, open the job, copy.
+- **Messages**: quote in reply, copy text or Markdown, ask again. Inside a message: copy code, copy a table as CSV or for a spreadsheet, and preview, download or copy the link of files and images.
+- **Docs**: notes, folders, links, backlinks and graph dots (open, rename, move, duplicate, copy link, history, delete).
+- **Connectors, skills, shared folders, pool accounts and specialists**: edit, test, switch on or off, copy, remove, hire.
+
+Text fields and selected text keep the browser's own menu. Use the arrow keys and Enter to pick, Esc to close.
+
 ## Chat box: slash commands and the pool meter
 
 Type `/` in the chat box for a menu that filters as you type (arrows to choose, Enter to use, Esc to close): quick prompts

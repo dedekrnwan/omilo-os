@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* Connectors: MCP servers (apps and services) your helpers can use, like Claude's connectors.
    Adding and editing happen in a drawer on the right, starting from a ready-made template. */
@@ -74,6 +75,18 @@ export default function Connectors() {
     await api(`/connectors/${id}`, { method: "DELETE" }); setForm(null); load();
   };
   const toggle = async (c: Conn) => { await api(`/connectors/${c.id}`, { method: "PUT", body: { ...c, enabled: !c.enabled } }); load(); };
+  const items = (c: Conn) => [
+    { heading: c.label },
+    { label: "Edit", icon: "ri-edit-line", onSelect: () => edit(c) },
+    { label: "Test the connection", icon: "ri-pulse-line", onSelect: () => test(c.id) },
+    { label: c.enabled ? "Turn off" : "Turn on", icon: c.enabled ? "ri-toggle-line" : "ri-toggle-fill", onSelect: () => toggle(c) },
+    { label: "On in every chat", icon: "ri-chat-check-line", checked: c.default_on, onSelect: async () => { await api(`/connectors/${c.id}`, { method: "PUT", body: { ...c, default_on: !c.default_on } }); load(); } },
+    { label: "Asks you before using a tool", icon: "ri-hand", checked: c.approval === "ask", onSelect: async () => { await api(`/connectors/${c.id}`, { method: "PUT", body: { ...c, approval: c.approval === "ask" ? "auto" : "ask" } }); load(); } },
+    sep,
+    { label: c.kind === "http" ? "Copy the address" : "Copy the command", icon: "ri-file-copy-line", onSelect: () => copy(c.kind === "http" ? c.url : `${c.command} ${c.args.join(" ")}`) },
+    sep,
+    { label: "Remove", icon: "ri-delete-bin-line", danger: true, onSelect: () => remove(c.id, c.label) },
+  ];
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
   const tpl = TEMPLATES.find((t) => t.key === form?.tpl);
   const ready = !!form && !!form.label.trim() && (form.kind === "http" ? /^https?:\/\//.test(form.url.trim()) : !!form.command.trim());
@@ -96,7 +109,7 @@ export default function Connectors() {
             {list.map((c) => {
               const t = tests[c.id];
               return (
-                <div key={c.id} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => edit(c)} onKeyDown={(e) => { if (e.key === "Enter") edit(c); }}>
+                <div key={c.id} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => edit(c)} onKeyDown={(e) => { if (e.key === "Enter") edit(c); }} onContextMenu={menu(() => items(c))}>
                   <div className="acts" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
                     <b style={{ fontWeight: 500 }}><i className="ri-plug-line" /> {c.label}</b>
                     <span className={`chip ${!c.enabled ? "idle" : t?.ok === false ? "down" : "up"}`}>{!c.enabled ? "Off" : t?.ok === false ? "Not reachable" : "On"}</span>

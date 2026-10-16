@@ -7,6 +7,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { Staff, ago, api } from "@/lib/api";
+import { helperItems, taskItems } from "@/lib/actions";
+import { copy, menu, sep } from "@/lib/menu";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
 
@@ -127,7 +129,7 @@ function StaffDetail({ id }: { id: string }) {
         </div>
       </div>
       <BudgetSection s={s as any} onSave={save} />
-      <div className="sec">
+      <div className="sec" id="look">
         <h2>Look</h2>
         <p className="small" style={{ marginTop: 0 }}>How {s.name} appears in chats, the team list and notifications.</p>
         <LookEditor who={s} />
@@ -162,7 +164,7 @@ function StaffDetail({ id }: { id: string }) {
       <div className="sec">
         <h2>Recent tasks</h2>
         {s.recent_tasks?.length ? s.recent_tasks.map((t) => (
-          <div key={t.id} className="acts" style={{ margin: "6px 0" }}><StatusChip status={t.status} /><Link href={`/chat/?view=work&task=${t.id}`}>{t.brief.slice(0, 90)}</Link><span className="small">{ago(t.created_at)}</span></div>
+          <div key={t.id} className="acts" style={{ margin: "6px 0" }} onContextMenu={menu(() => taskItems({ ...t, staff_id: s.id }, s.name))}><StatusChip status={t.status} /><Link href={`/chat/?view=work&task=${t.id}`}>{t.brief.slice(0, 90)}</Link><span className="small">{ago(t.created_at)}</span></div>
         )) : <p className="small">No tasks yet.</p>}
       </div>
       <Err error={err} />
@@ -219,7 +221,10 @@ function StaffList() {
       <p className="sub">Your AI helpers. Open one to change its job, schedule or what it may do without asking.</p>
       {staff.length === 0 ? <Empty title="No staff yet" text="Finish onboarding or hire from a template below." /> : (
         <div className="cards">{staff.map((s) => (
-          <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}>
+          <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}
+            onContextMenu={menu(() => [{ heading: s.name }, ...helperItems(s, load), sep,
+              { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
+              { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}>
             <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
               <Avatar who={s} size={40} state={s.status === "active" && !(s as any).awake ? "sleeping" : null} />
               <span style={{ display: "flex", flexDirection: "column" }}><b>{s.name}</b><span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>

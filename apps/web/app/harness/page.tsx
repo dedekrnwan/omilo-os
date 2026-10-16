@@ -5,6 +5,7 @@ import Drawer from "@/components/Drawer";
 import { Segments, useMeter } from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
 import { ago, api } from "@/lib/api";
+import { copy, menu, sep } from "@/lib/menu";
 
 /* The harness pool: Claude Code subscriptions that helpers share, with automatic switching on usage limits. */
 
@@ -101,7 +102,14 @@ export default function Harness() {
             <tbody>{pool.accounts.map((a) => {
               const [cls, txt] = STATE[a.state] || ["idle", a.state];
               return (
-                <tr key={a.id}>
+                <tr key={a.id} onContextMenu={menu(() => [{ heading: a.label },
+                  { label: "Test the account", icon: "ri-pulse-line", disabled: !cli.path, onSelect: () => test(a.id) },
+                  a.state === "cooling" && { label: "Use it again now", icon: "ri-restart-line", hint: "clears the cool-down", onSelect: () => patch(a.id, { clear_cooldown: true }) },
+                  { label: a.enabled ? "Turn off" : "Turn on", icon: a.enabled ? "ri-toggle-line" : "ri-toggle-fill", onSelect: () => patch(a.id, { enabled: !a.enabled }) },
+                  !!a.last_error && { label: "Copy the last error", icon: "ri-error-warning-line", onSelect: () => copy(a.last_error) },
+                  { label: "History in Monitor", icon: "ri-line-chart-line", href: "/monitor/#pool" },
+                  sep,
+                  { label: "Remove from the pool", icon: "ri-delete-bin-line", danger: true, onSelect: () => remove(a) }])}>
                   <td><b style={{ fontWeight: 500 }}>{a.label}</b><div className="small mono">…{a.token_hint}</div></td>
                   <td><span className={`chip ${cls}`}>{a.busy ? `Working (${a.busy})` : txt}</span>
                     {a.state === "cooling" && a.cooldown_until && <div className="small">until {new Date(a.cooldown_until).toLocaleString()}</div>}
