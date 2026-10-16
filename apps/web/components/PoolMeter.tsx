@@ -77,9 +77,10 @@ export default function PoolMeter() {
   return (
     <div className="pmeter" ref={box} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button type="button" className="pm-btn" aria-label={`Claude Code pool: ${m.ready} of ${m.total} accounts ready`} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="pm-l">Pool</span>
+        <span className="pm-l">Claude Code pool</span>
         <Segments m={m} />
-        <span className="pm-n">{m.ready}/{m.total}</span>
+        <span className="pm-n">{m.ready}/{m.total} ready</span>
+        <span className="pm-r">{m.busy ? `${m.busy} working · ` : ""}{resting ? `${resting} resting · ` : ""}{m.avg_pct != null ? `avg ${m.avg_pct}% used` : "usage not reported yet"}</span>
       </button>
       {open && (
         <div className="pm-pop" role="dialog" aria-label="Claude Code pool usage">

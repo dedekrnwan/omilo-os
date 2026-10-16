@@ -2,6 +2,7 @@
 import datetime as dt
 import json
 import os
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -1529,3 +1530,58 @@ def notify_test(db: Session = Depends(get_db), user: User = Depends(current_user
     db.add(Notice(kind="test", title="Notifications work", body="This is how Saga OS will tell you when a helper needs you.", url="/settings/", tag="test"))
     db.commit()
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ helper avatars (their look; drawn by the web app)
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_PROPS = {"crown", "glasses", "headset", "megaphone", "tie", "coin", "gear", "antenna", "sprout", "beret", "magnifier", "none"}
+
+
+def _looks(db) -> dict:
+    from ..models import Setting
+
+    return {s.key.split(":", 1)[1]: s.value for s in db.scalars(select(Setting).where(Setting.key.like("avatar:%"))) if s.value}
+
+
+@router.get("/avatars")
+def avatars(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return _looks(db)
+
+
+@router.put("/staff/{sid}/avatar")
+def set_avatar(sid: str, body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Change a helper's look: colour (#rrggbb), shape (blob, box, bean), prop, or an uploaded picture (file id). {} resets."""
+    from .. import capabilities as C
+    from ..models import Setting
+
+    _404(db.get(Staff, sid), "unknown staff")
+    look: dict = {}
+    if body.get("color"):
+        if not _HEX.match(str(body["color"])):
+            raise HTTPException(400, "color must look like #4f46e5")
+        look["color"] = body["color"]
+    if body.get("shape"):
+        if body["shape"] not in ("blob", "box", "bean"):
+            raise HTTPException(400, "shape is blob, box or bean")
+        look["shape"] = body["shape"]
+    if body.get("prop"):
+        if body["prop"] not in _PROPS:
+            raise HTTPException(400, "unknown prop")
+        look["prop"] = body["prop"]
+    if body.get("image"):
+        p = C.file_path(str(body["image"]))
+        if not p or not (C.mimetypes.guess_type(p.name)[0] or "").startswith("image/") or p.suffix.lower() == ".svg":
+            raise HTTPException(400, "the picture must be an uploaded PNG, JPEG, GIF or WebP")
+        look["image"] = body["image"]
+    key = f"avatar:{sid}"
+    s = db.get(Setting, key)
+    if look:
+        if s:
+            s.value = look
+        else:
+            db.add(Setting(key=key, value=look))
+    elif s:
+        db.delete(s)
+    S.audit(db, user.id, "staff.avatar", sid)
+    db.commit()
+    return _looks(db)

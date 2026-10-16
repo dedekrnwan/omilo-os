@@ -1,4 +1,6 @@
 "use client";
+import Avatar from "@/components/Avatar";
+import LookEditor from "@/components/LookEditor";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -65,7 +67,10 @@ function StaffDetail({ id }: { id: string }) {
   return (
     <div>
       <div className="eyebrow"><Link href="/staff/">Team</Link> · {s.role?.startsWith("agency:") ? "Specialist from The Agency" : s.role || "custom"}</div>
-      <h1>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
+      <div className="acts" style={{ gap: 14, flexWrap: "nowrap", margin: "4px 0 12px" }}>
+        <Avatar who={s} size={56} state={s.status === "active" && (s as any).awake === false ? "sleeping" : null} />
+        <h1 style={{ margin: 0 }}>{s.name}{s.is_chief ? " · Chief of Staff" : ""}</h1>
+      </div>
       {hired && <FirstJob s={s} />}
       <div className="acts" style={{ marginBottom: 20 }}>
         <StatusChip status={s.status} />
@@ -120,6 +125,11 @@ function StaffDetail({ id }: { id: string }) {
         </div>
       </div>
       <div className="sec">
+        <h2>Look</h2>
+        <p className="small" style={{ marginTop: 0 }}>How {s.name} appears in chats, the team list and notifications.</p>
+        <LookEditor who={s} />
+      </div>
+      <div className="sec">
         <h2>Schedule</h2>
         <p className="sub">Regular jobs this helper does on its own, in your local time.</p>
         <div className="tw"><table><thead><tr><th>Job</th><th>When</th><th>What to do</th><th>Next</th><th></th></tr></thead><tbody>
@@ -165,7 +175,10 @@ function StaffList() {
       {staff.length === 0 ? <Empty title="No staff yet" text="Finish onboarding or hire from a template below." /> : (
         <div className="cards">{staff.map((s) => (
           <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}>
-            <span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span><b>{s.name}</b>
+            <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
+              <Avatar who={s} size={40} state={s.status === "active" && !(s as any).awake ? "sleeping" : null} />
+              <span style={{ display: "flex", flexDirection: "column" }}><b>{s.name}</b><span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>
+            </span>
             <span className="acts"><StatusChip status={s.status} />{s.status === "active" && !(s as any).awake && <span className="chip idle"><i className="ri-moon-line" />Sleeping</span>}<span className="small">{s.engine?.managed ? "Claude via Hermes" : s.engine?.type === "hermes" ? "Hermes" : s.engine?.type === "claude" ? "Claude" : s.engine?.type === "claude-code" ? "Claude Code pool" : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
           </Link>
         ))}</div>

@@ -6,6 +6,8 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import ComposerTools, { Attached } from "@/components/ComposerTools";
 import PoolMeter from "@/components/PoolMeter";
+import Avatar from "@/components/Avatar";
+import { SlashAction, useSlash } from "@/components/SlashMenu";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
@@ -119,7 +121,7 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
           : row.m.role === "system" ? <div key={row.m.id} className="sysmsg"><Markdown text={row.m.text} /></div>
           : (
             <div key={row.m.id} className="agentmsg">
-              <span className="av">{name(row.m.author).slice(0, 1).toUpperCase()}</span>
+              <Avatar who={staff.find((x) => x.id === row.m.author) || { id: row.m.author, name: name(row.m.author) }} size={30} />
               <div className="body">
                 <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
                 <Markdown text={row.m.text} />
@@ -130,7 +132,7 @@ function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; sta
           )
       ))}
       {th.awaiting_reply && !runs.some((r) => r.state === "running") && (
-        <div className="agentmsg"><span className="av">{name(th.staff_id).slice(0, 1)}</span><div className="body"><span className="shimmer" style={{ fontWeight: 500 }}>Starting…</span></div></div>
+        <div className="agentmsg"><Avatar who={staff.find((x) => x.id === th.staff_id)} size={30} state="working" /><div className="body"><span className="shimmer" style={{ fontWeight: 500 }}>Starting…</span></div></div>
       )}
     </div>
   );
@@ -174,13 +176,13 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
         </div>
         {runs.map((r) => <RunCard key={r.id} run={r} />)}
         {th && (th.messages as Msg[]).filter((m) => m.role === "agent" && m.blocks?.some((b) => b.type === "choices" || b.type === "file")).map((m) => (
-          <div key={m.id} className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body">
+          <div key={m.id} className="agentmsg"><Avatar who={staff.find((x) => x.id === t.staff_id)} size={30} /><div className="body">
             <div className="who">{who} · {when(m.at)}</div><Markdown text={m.text} /><Attachments blocks={m.blocks} />
             <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} /></div></div>
         ))}
         {runs.length === 0 && t.status === "queued" && <div className="sysmsg">Waiting for a free spot…</div>}
         {t.report && (
-          <div className="agentmsg"><span className="av">{who.slice(0, 1)}</span><div className="body"><div className="who">{who} · report</div><Markdown text={t.report.body_md} /></div></div>
+          <div className="agentmsg"><Avatar who={staff.find((x) => x.id === t.staff_id)} size={30} /><div className="body"><div className="who">{who} · report</div><Markdown text={t.report.body_md} /></div></div>
         )}
         {t.error && <div className="callout warn"><b>Error</b> {t.error}</div>}
         {!!t.proposals?.length && <div className="soft"><div className="small">Waiting on you</div>
@@ -263,7 +265,29 @@ function WorkspaceInner() {
   const nMsgs = current?.messages.length || 0;
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
+  const box = useRef<HTMLTextAreaElement>(null);
+  const startJob = async (brief: string) => {
+    const who = staff.find((x) => x.is_chief) || staff[0];
+    if (!who || !brief.trim()) return;
+    try {
+      const t = await api<Task>("/tasks", { body: { staff_id: who.id, brief: brief.trim() } });
+      setText(""); go({ view: "work", task: t.id });
+    } catch (e: any) { setErr(e.message); }
+  };
+  const onSlash = (a: SlashAction, rest: string) => {
+    const focus = () => setTimeout(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } }, 0);
+    if (a.kind === "insert") { setText(a.text + rest); focus(); }
+    else if (a.kind === "send") { setText(""); send(rest.trim() ? `${a.text}\n\n${rest}` : a.text); }
+    else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("saga:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
+    else if (a.kind === "job") { setText("/job "); focus(); }
+    else if (a.kind === "talk") { setText(""); const st = staff.find((x) => x.id === a.staffId); openThread(st?.is_chief ? { scope: "master" } : { scope: "staff", staff_id: a.staffId }); }
+    else if (a.kind === "go") { setText(""); router.push(a.href); }
+    else if (a.kind === "pause") { setText(""); if (confirm("Pause all helpers? Running jobs finish their current step; nothing new starts.")) api("/system", { body: { paused: true } }).catch((e) => setErr(e.message)); }
+  };
+  const slash = useSlash(text, staff, onSlash);
+
   const send = async (t: string) => {
+    if (slash.jobBrief !== null && t.startsWith("/job")) { startJob(slash.jobBrief); return; }
     if ((!t.trim() && !files.length) || !tid) return;
     const att = files;
     const body = { text: t.trim() || `(attached ${att.length} file${att.length > 1 ? "s" : ""})`,
@@ -289,7 +313,6 @@ function WorkspaceInner() {
         <button className="iconbtn hide-lg" aria-label="Show list" onClick={() => setListOpen(!listOpen)}><i className="ri-menu-2-line" /></button>
         <span className="crumb"><i className={view === "chat" ? "ri-chat-3-line" : "ri-list-check-3"} />Workspace<span className="small" style={{ fontWeight: 400 }}>· {title}</span></span>
         <span className="sp" />
-        <PoolMeter />
         <div className="seg" role="tablist" aria-label="View">
           <button className={view === "chat" ? "on" : ""} onClick={() => go({})}><i className="ri-chat-3-line" /> Chat</button>
           <button className={view === "work" ? "on" : ""} onClick={() => go({ view: "work" })}><i className="ri-list-check-3" /> Work</button>
@@ -303,11 +326,11 @@ function WorkspaceInner() {
           {view === "chat" ? (
             <>
               {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}>
-                <i className="ri-star-smile-line" /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
+                <Avatar who={chief} size={24} /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
               <div className="grp">Helpers</div>
               {staff.filter((s) => !s.is_chief).map((s) => (
                 <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}>
-                  <i className="ri-user-3-line" /><span className="t"><b>{s.name}</b></span></button>
+                  <Avatar who={s} size={24} state={(s as any).awake === false && s.status === "active" ? "sleeping" : null} /><span className="t"><b>{s.name}</b></span></button>
               ))}
               <div className="grp">About a job or approval</div>
               {threads.filter((t) => t.scope === "task" || t.scope === "proposal").slice(0, 15).map((t) => (
@@ -338,15 +361,18 @@ function WorkspaceInner() {
           {view === "chat" && current && (
             <div className="ws-composer">
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-                <textarea value={text} placeholder={`Message ${threadLabel(current)}…`} onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
+                {slash.menu}
+                <textarea ref={box} value={text} placeholder={`Message ${threadLabel(current)}… (type / for commands)`} onChange={(e) => setText(e.target.value)}
+                  aria-expanded={slash.open} aria-haspopup="listbox"
+                  onKeyDown={(e) => { if (slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
                 <div className="row">
                   <ComposerTools threadId={tid} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
-                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : "Enter to send · Shift+Enter for a new line"}</span>
+                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff" : "/ for commands · Enter to send"}</span>
                   <span className="sp" />
                   <button className="btn primary sm" type="submit" disabled={(!text.trim() && !files.length) || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
                 </div>
               </form>
+              <PoolMeter />
               <Err error={err} />
             </div>
           )}

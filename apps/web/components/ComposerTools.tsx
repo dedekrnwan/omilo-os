@@ -89,6 +89,18 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
     (b.k === "connectors" && failing.length ? ` · not reachable: ${failing.map((x) => x.label).join(", ")}` : "");
   const showSub = (k: "folders" | "connectors" | "skills") => { setOpen(true); setSub(k); };
 
+  // slash commands drive the same menu: attach, open a list, or switch a skill/connector/folder on for this chat
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent).detail as { action: string; kind?: "folders" | "connectors" | "skills"; id?: string };
+      if (d.action === "attach") input.current?.click();
+      else if (d.action === "open" && d.kind) showSub(d.kind);
+      else if (d.action === "enable" && d.kind && d.id && tools && !tools[d.kind].on.includes(d.id)) toggle(d.kind, d.id);
+    };
+    window.addEventListener("saga:composer", on);
+    return () => window.removeEventListener("saga:composer", on);
+  });
+
   const menu = (kind: "folders" | "connectors" | "skills", empty: string, href: string, manage: string) => (
     <div className="menu sub">
       {(tools?.[kind].all || []).length === 0 && <div className="small" style={{ padding: "8px 12px" }}>{empty}</div>}

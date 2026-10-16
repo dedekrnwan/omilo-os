@@ -45,7 +45,8 @@ class HermesEngine(Engine):
         if cfg.get("managed") and not await self._wait_ready(cfg):
             return EngineResult(error="Hermes did not start. See Settings → AI → Hermes log.")
         client, model = self._client(cfg, timeout)
-        text, reasoning, tokens = "", "", 0
+        text, reasoning, tokens, failed = "", "", 0, ""
+        tools_seen: dict[str, dict] = {}
         last_emit = 0.0
         loop = asyncio.get_event_loop()
         async with client:
@@ -57,11 +58,20 @@ class HermesEngine(Engine):
                         return EngineResult(error=f"engine HTTP {r.status_code}: {body[:300]}")
                     if "text/event-stream" not in r.headers.get("content-type", ""):
                         data = json.loads(await r.aread())
+                        if data.get("error"):
+                            e0 = data["error"]
+                            failed = (e0.get("message") if isinstance(e0, dict) else str(e0)) or "error"
                         text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
                         tokens = int((data.get("usage") or {}).get("total_tokens") or 0)
                     else:
+                        event = ""
                         async for line in r.aiter_lines():
+                            if line.startswith("event:"):
+                                event = line[6:].strip()
+                                continue
                             if not line.startswith("data:"):
+                                if not line.strip():
+                                    event = ""
                                 continue
                             payload = line[5:].strip()
                             if payload == "[DONE]":
@@ -70,8 +80,23 @@ class HermesEngine(Engine):
                                 chunk = json.loads(payload)
                             except ValueError:
                                 continue
+                            if event == "hermes.tool.progress":  # Hermes' own tools (browser, terminal, web…) as they run
+                                tid = str(chunk.get("toolCallId") or chunk.get("tool") or "")
+                                if chunk.get("status") == "running":
+                                    tools_seen[tid] = {"name": chunk.get("tool") or "tool", "label": chunk.get("label") or ""}
+                                    emit("tool", id=tid, name=tools_seen[tid]["name"], input={"preview": tools_seen[tid]["label"]}, state="running")
+                                else:
+                                    t0 = tools_seen.pop(tid, {"name": chunk.get("tool") or "tool", "label": ""})
+                                    emit("tool", id=tid, name=t0["name"], input={"preview": t0["label"]}, state="done", ok=chunk.get("status") != "failed")
+                                continue
                             if chunk.get("usage"):
                                 tokens = int(chunk["usage"].get("total_tokens") or tokens)
+                            ch0 = (chunk.get("choices") or [{}])[0]
+                            if ch0.get("finish_reason") in ("error", "length") or chunk.get("error"):
+                                err = chunk.get("error") or {}
+                                failed = (err.get("message") if isinstance(err, dict) else str(err)) or (chunk.get("hermes") or {}).get("error") or ""
+                                if ch0.get("finish_reason") == "length":
+                                    failed = failed or "the answer was cut off (too long)"
                             delta = ((chunk.get("choices") or [{}])[0].get("delta") or {})
                             text += delta.get("content") or ""
                             reasoning += delta.get("reasoning_content") or delta.get("reasoning") or ""
@@ -84,6 +109,11 @@ class HermesEngine(Engine):
             emit("thinking", text=reasoning)
         if text.startswith(("API call failed", "Error: ")) or "Provider returned an empty stream" in text[:200]:
             return EngineResult(error=f"Hermes could not reach the AI: {text[:300]}", tokens=tokens)
+        if failed:
+            return EngineResult(error=f"Hermes stopped: {failed[:400]}", text=text, tokens=tokens)
+        if not text.strip():
+            hint = " See Settings → AI → the helper's Hermes log." if cfg.get("managed") else ""
+            return EngineResult(error=f"Hermes finished without an answer (no text, {tokens} tokens).{hint}", tokens=tokens)
         return EngineResult(text=text, tokens=tokens)
 
     async def run_task(self, ctx: TaskContext) -> EngineResult:

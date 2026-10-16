@@ -219,7 +219,8 @@ class Worker:
             th = db.get(Thread, thread_id)
             st = db.get(Staff, th.staff_id)
             msgs = S.thread_messages(db, th, limit=40)
-            history = [{"role": "owner" if m.role == "owner" else "agent", "text": m.text} for m in msgs if m.role in ("owner", "agent")]
+            # empty messages (an engine that answered nothing) would make the AI reject the whole history
+            history = [{"role": "owner" if m.role == "owner" else "agent", "text": m.text} for m in msgs if m.role in ("owner", "agent") and (m.text or "").strip()]
             open_items = db.scalar(select(func.count()).select_from(S.InboxItem).where(S.InboxItem.status == "open"))
             note = f"Inbox: {open_items} open item(s)."
             if th.scope == "task" and (t := db.get(Task, th.ref_id)):
@@ -237,6 +238,8 @@ class Worker:
             res = await asyncio.wait_for(get_engine(ctx.engine_config).chat(ctx), timeout=600)
         except Exception as e:
             res = EngineResult(error=f"{type(e).__name__}: {e}")
+        if not res.error and not (res.text or "").strip():
+            res.error = "the AI finished without writing an answer"
         ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
         ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         with session_scope() as db:

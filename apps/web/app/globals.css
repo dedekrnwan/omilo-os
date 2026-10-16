@@ -571,3 +571,56 @@ code.fpath:hover { background: var(--hover); }
   .ws .topbar .crumb .small { display: none; }
   .pm-pop { position: fixed; left: 12px; right: 12px; top: 56px; width: auto; }
 }
+
+/* pool meter under the chat box */
+.ws-composer .pmeter { margin-top: 6px; }
+.ws-composer .pm-btn { width: 100%; height: 26px; padding: 0 6px; border: 0; background: transparent; gap: 10px; }
+.ws-composer .pm-btn:hover { background: var(--hover); }
+.ws-composer .pm-l { font-size: 11px; white-space: nowrap; }
+.ws-composer .pm-n { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ws-composer .pm-r { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-composer .pm-pop { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
+.ws-composer .pm-pop::before { top: auto; bottom: -8px; }
+.pm-r { display: none; } .ws-composer .pm-r { display: inline; }
+@media (max-width: 760px) {
+  .ws-composer .pm-l, .ws-composer .pm-n { display: inline; }
+  .ws-composer .pm-r { display: none; }
+  .ws-composer .pm-pop { position: absolute; left: 0; right: 0; top: auto; width: auto; }
+}
+
+/* ---------- slash commands ---------- */
+.slash { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 45; max-height: 340px; overflow-y: auto; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: var(--r-lg); padding: 6px; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .3); }
+.sl-group { font-size: 11px; font-weight: 500; color: var(--muted); padding: 8px 10px 4px; text-transform: uppercase; letter-spacing: .04em; }
+.sl-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 4px 10px; border: 0; background: transparent; border-radius: var(--r);
+  text-align: left; cursor: pointer; color: var(--ink); }
+.sl-item.on { background: var(--hover); }
+.sl-item > i { font-size: 16px; color: var(--ink-2); }
+.sl-key { font: 500 12.5px/1 var(--font-mono); color: var(--ink); white-space: nowrap; }
+.sl-label { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.sl-hint { font-size: 12px; color: var(--muted); margin-left: auto; padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sl-foot { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 6px 12px; background: var(--soft); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+.sl-foot kbd, .slash kbd { font: 10.5px var(--font-mono); padding: 1px 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); margin-right: 2px; }
+@media (max-width: 760px) { .sl-hint, .sl-foot { display: none; } }
+
+/* ---------- helper mascots ---------- */
+.av-wrap { position: relative; display: inline-flex; flex-shrink: 0; border-radius: 30%; }
+.mascot { display: block; border-radius: 28%; }
+.mascot.img { object-fit: cover; }
+.av-wrap.working::after { content: ""; position: absolute; inset: -3px; border-radius: 34%; box-shadow: 0 0 0 2px rgba(37, 99, 235, .55);
+  animation: av-pulse 1.4s ease-in-out infinite; }
+@keyframes av-pulse { 50% { box-shadow: 0 0 0 2px rgba(37, 99, 235, .12); } }
+.av-wrap.sleeping .mascot { filter: saturate(.55); opacity: .85; }
+.av-z { position: absolute; right: -3px; top: -6px; font: 600 10px/1 var(--font-sans); color: var(--muted); }
+.agentmsg > .av-wrap { margin-top: 2px; }
+.ws-item .av-wrap { margin-right: 2px; }
+.look { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.look-preview { padding: 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--soft); }
+.look-opts { flex: 1; min-width: 260px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line-strong); cursor: pointer; padding: 0; }
+.swatch.on { box-shadow: 0 0 0 2px var(--ink); }
+.look-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.look-pick { padding: 3px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); cursor: pointer; }
+.look-pick:hover { background: var(--soft); }
+.look-pick.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
