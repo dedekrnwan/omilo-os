@@ -1,5 +1,5 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image reset
+.PHONY: dev api venv web test cli image reset reset-password
 
 dev: web api
 
@@ -29,6 +29,10 @@ cli:
 
 image:
 	docker build -t ghcr.io/super-saga/saga-os:dev .
+
+# Forgot your password? Sets a new one for the owner (run it on the computer that runs Saga OS).
+reset-password: venv
+	cd apps/api && .venv/bin/python -m saga_api.reset_password
 
 # Start over: moves your Saga OS data (account, helpers, tasks, keys) aside. Stop the server first.
 reset:

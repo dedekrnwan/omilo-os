@@ -1,5 +1,6 @@
 "use client";
 import { ReactNode, forwardRef } from "react";
+import { MascotField } from "@/components/AuthShell";
 import { SagaMascot } from "@/components/Logo";
 
 /* The setup card: the current step as a card with a small tab (icon + name), the next step peeking out behind it,
@@ -19,35 +20,14 @@ const TONES: Record<Tone, { deep: string; mid: string; light: string; icon: stri
   ink: { deep: "#0c0a09", mid: "#44403c", light: "#d6d3d1", icon: "#44403c" },
 };
 
-/** Flowing shapes in one colour family with a fine halftone over them. `seed` varies the composition per step. */
-export function StepArt({ tone = "green", seed = 0, caption, mascot }: { tone?: Tone; seed?: number; caption?: ReactNode; mascot?: boolean }) {
-  const c = TONES[tone];
-  const s = (seed % 5) * 9;
-  const id = `art-${tone}-${seed}`;
+const MOOD: Record<Tone, "warm" | "cool" | "fresh"> = { green: "fresh", orange: "warm", blue: "cool", violet: "cool", rose: "warm", teal: "fresh", amber: "warm", ink: "cool" };
+
+/** The artwork panel: a soft room in the step's colour with Saga's helpers floating in it (they react to the cursor). */
+export function StepArt({ tone = "green", caption, mascot }: { tone?: Tone; seed?: number; caption?: ReactNode; mascot?: boolean }) {
   return (
-    <div className="sc-art" style={{ background: c.deep }} aria-hidden={!caption}>
-      <svg viewBox="0 0 300 420" preserveAspectRatio="xMidYMid slice" className="sc-art-svg">
-        <defs>
-          <linearGradient id={`${id}-a`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor={c.mid} /><stop offset=".55" stopColor={c.light} /><stop offset="1" stopColor={c.mid} />
-          </linearGradient>
-          <radialGradient id={`${id}-b`} cx=".7" cy=".25" r=".8">
-            <stop offset="0" stopColor={c.light} stopOpacity=".9" /><stop offset=".45" stopColor={c.mid} stopOpacity=".8" /><stop offset="1" stopColor={c.deep} stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id={`${id}-c`} x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0" stopColor={c.deep} /><stop offset="1" stopColor={c.deep} stopOpacity="0" />
-          </linearGradient>
-          <filter id={`${id}-blur`}><feGaussianBlur stdDeviation="6" /></filter>
-        </defs>
-        <rect width="300" height="420" fill={`url(#${id}-b)`} />
-        <path d={`M-40 ${150 + s} C 60 ${90 + s}, 170 ${120 - s}, 340 ${40 + s} L 340 ${110 + s} C 200 ${170 - s}, 120 ${160 + s}, -40 ${260 + s} Z`} fill={`url(#${id}-a)`} opacity=".95" />
-        <path d={`M-30 ${330 - s} C 40 ${200 + s}, 150 ${170}, 240 ${210 - s} C 300 ${235}, 320 ${320 - s}, 340 ${300} L 340 440 L -30 440 Z`} fill={c.deep} opacity=".92" />
-        <path d={`M150 ${235 - s} C 210 ${200}, 280 ${210 + s}, 330 ${250} C 270 ${240 + s}, 210 ${250}, 150 ${235 - s} Z`} fill={c.light} opacity=".55" filter={`url(#${id}-blur)`} />
-        <path d={`M-20 ${380 - s} C 80 ${330}, 200 ${360 + s}, 330 ${330} L 330 440 L -20 440 Z`} fill={c.mid} opacity=".35" />
-        <rect width="300" height="420" fill={`url(#${id}-c)`} opacity=".55" />
-      </svg>
-      <div className="sc-dots" />
-      {mascot && <div className="sc-mascot"><SagaMascot size={96} tile={false} /></div>}
+    <div className="sc-art sc-art-soft" aria-hidden={!caption}>
+      <MascotField tone={MOOD[tone]} />
+      {mascot && <div className="sc-mascot"><span className="sg-tile"><SagaMascot size={96} tile={false} /></span></div>}
       {caption && <div className="sc-cap">{caption}</div>}
     </div>
   );
@@ -56,10 +36,11 @@ export function StepArt({ tone = "green", seed = 0, caption, mascot }: { tone?: 
 type Props = {
   icon: string; title: string; tone?: Tone; seed?: number; caption?: ReactNode; mascot?: boolean;
   next?: { icon: string; title: string; tone?: Tone } | null; meta?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean;
+  art?: ReactNode;  // replaces the artwork panel (onboarding puts Saga's guide there)
 };
 
 /** One step as a card. `children` is the scrolling form; `footer` sits at the bottom of the form column (the Next button). */
-const StepCard = forwardRef<HTMLDivElement, Props>(function StepCard({ icon, title, tone = "green", seed = 0, caption, mascot, next, meta, children, footer, wide }, ref) {
+const StepCard = forwardRef<HTMLDivElement, Props>(function StepCard({ icon, title, tone = "green", seed = 0, caption, mascot, next, meta, children, footer, wide, art }, ref) {
   return (
     <div className={`sc-stack ${wide ? "wide" : ""}`}>
       {next && (
@@ -70,7 +51,7 @@ const StepCard = forwardRef<HTMLDivElement, Props>(function StepCard({ icon, tit
       <section className="sc-card" aria-label={title}>
         <div className="sc-tab"><i className={icon} style={{ color: TONES[tone].icon }} /><span>{title}</span><span className="sp" />{meta}</div>
         <div className="sc-body">
-          <StepArt tone={tone} seed={seed} caption={caption} mascot={mascot} />
+          {art ?? <StepArt tone={tone} seed={seed} caption={caption} mascot={mascot} />}
           <div className="sc-form">
             <div className="sc-scroll" ref={ref}>{children}</div>
             {footer && <div className="sc-foot">{footer}</div>}

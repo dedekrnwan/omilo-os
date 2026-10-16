@@ -7,6 +7,8 @@ import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
+import SagaGuide, { GuideMember } from "@/components/SagaGuide";
+import { SagaMascot } from "@/components/Logo";
 
 /* Hybrid onboarding: a guided form (left) and a setup assistant (right) that fills the form from what the
    owner says or pastes. The form is the source of truth; every change the assistant makes is highlighted. */
@@ -92,7 +94,7 @@ function Picks({ opts, value, onChange, multi, max, only }: {
   };
   return (
     <div className="picks" role={multi ? "group" : "radiogroup"}>
-      {Object.entries(opts).filter(([k]) => !only || only(k)).map(([k, v]) => (
+      {Object.entries(opts).filter(([k]) => !only || only(k) || sel.includes(k)).map(([k, v]) => (
         <button type="button" key={k} className={`pick ${sel.includes(k) ? "on" : ""}`} aria-pressed={sel.includes(k)} onClick={() => toggle(k)}>
           {label(v)}
         </button>
@@ -109,6 +111,78 @@ function allTimezones(current: string): string[] {
   catch { return Array.from(new Set([current, "UTC", "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "Asia/Singapore", "Europe/London", "America/New_York"])); }
 }
 
+
+/* ------------------------------------------------------------------ fill the form from a website (Saga reads it) */
+function SiteFill({ aiReady, answers, onPatch, goAi }: { aiReady: boolean; answers: Answers; onPatch: (p: Partial<Answers>) => void; goAi: () => void }) {
+  const [url, setUrl] = useState(answers.website || "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const run = async () => {
+    const u = url.trim();
+    if (!u) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api<{ reply: string; patch: Partial<Answers> }>("/onboarding/assist", { body: { answers, step: "Your business",
+        messages: [{ role: "owner", text: `Here is our website: ${u}. Read it and fill in what you can (only what it says).` }] } });
+      const keys = Object.keys(r.patch || {});
+      if (keys.length) onPatch({ website: u, ...r.patch });
+      setMsg(keys.length ? `Filled in: ${Array.from(new Set(keys.map((k) => FIELD_LABELS[k]).filter(Boolean))).join(", ")}. Check it below.` : r.reply);
+    } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="sitefill">
+      <div className="sitefill-h"><SagaMascot size={22} tile={false} /><b>Have a website or Instagram?</b><span className="small">Saga reads it and fills in this form.</span></div>
+      {aiReady ? (
+        <form className="sitefill-row" onSubmit={(e) => { e.preventDefault(); run(); }}>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-business.com" inputMode="url" />
+          <button className="btn primary" type="submit" disabled={busy || !url.trim()}>{busy ? "Reading…" : <><i className="ri-magic-line" />Fill it in</>}</button>
+        </form>
+      ) : <p className="small" style={{ margin: 0 }}>This needs your Claude key. <button type="button" className="linkbtn" onClick={goAi}>Connect it</button>, or just type below.</p>}
+      {msg && <p className="small" style={{ margin: "6px 0 0" }}>{msg}</p>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ what Saga says (from your answers, never invented) */
+const MOODS: Record<string, "warm" | "cool" | "fresh"> = { violet: "cool", orange: "warm", rose: "warm", amber: "warm", green: "fresh", blue: "cool", teal: "fresh" };
+const listWords = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+function sagaLine(stepId: string, a: Answers, o: Options, teamCount: number, score: number | null, keyOk: boolean): string {
+  const name = a.company_name.trim();
+  switch (stepId) {
+    case "welcome": return name ? `Hi, I'm Saga! Let's set up the AI team for ${name}. About 10 minutes, and you can skip anything.` : "Hi, I'm Saga! Let's set up your AI team together. About 10 minutes.";
+    case "ai":
+      if (a.engine_type === "fake") return "Practice mode is a safe start: your helpers show sample work and you learn how approving works.";
+      return keyOk ? "Your Claude key works. Your helpers can think for real now." : "Paste your Claude key and I'll check it. Or start in practice mode.";
+    case "business": {
+      if (!name) return "First things first: what's your business called?";
+      const ind = a.industry && a.industry !== "other" ? label(o.industries[a.industry] || a.industry).toLowerCase() : a.industry_other?.trim();
+      if (!a.one_liner?.trim()) return `Nice to meet you, ${name}! Now tell me what you do, in a sentence or two.`;
+      return ind ? `${name}, ${ind}. Got it! Anything that makes you different?` : `Lovely. ${name} it is. What kind of business is it?`;
+    }
+    case "customers":
+      return a.customers?.trim() ? (a.customer_problem?.trim() ? "Great. Your helpers will write for those people and their problem." : "Got your customers. What problem do you solve for them?")
+        : "Who buys from you? One sentence is enough.";
+    case "offer": {
+      const n = (a.offers || []).filter((x) => x.name.trim()).length;
+      return n ? `${n} ${n === 1 ? "product" : "products"} noted. Nobody on the team will invent a price.` : "What do you sell? Add prices if you have them, so nobody invents them.";
+    }
+    case "goals": {
+      const n = a.goals.length;
+      return n ? `${n} ${n === 1 ? "goal" : "goals"}. I'll suggest the right helpers for ${n === 1 ? "it" : "them"}, and they show up on your Plan.` : "What should your team help with first? Pick as many as you like.";
+    }
+    case "voice": {
+      const t = a.tones.map((k) => label(o.tones[k] || k).toLowerCase());
+      return t.length ? `So we sound ${listWords(t)}. I'll keep everyone on that tone.` : "How should you sound? Pick a tone, and words to avoid.";
+    }
+    case "rules": {
+      const n = a.rules.length;
+      return n ? `${n} ${n === 1 ? "rule" : "rules"} your helpers will never break. And nothing goes out without your OK.` : "Any rules? Your helpers follow them always.";
+    }
+    case "team": return teamCount ? `Your team: your Chief of Staff and ${teamCount} ${teamCount === 1 ? "helper" : "helpers"}. You can hire more any time.` : "Your Chief of Staff leads the team. Pick who joins.";
+    case "finish": return score == null ? "Putting it all together…" : score >= 80 ? `Your helpers know ${score}% of what they need. Ready when you are!` : `Your helpers know ${score}% so far. Fine to start: they'll ask you for the rest.`;
+    default: return "";
+  }
+}
 
 /* ------------------------------------------------------------------ the setup assistant (chat half) */
 function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }: {
@@ -141,8 +215,8 @@ function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }
   return (
     <aside className={`ob-chat ${open ? "open" : ""}`} aria-label="Setup assistant">
       <div className="head">
-        <i className="ri-sparkling-2-line" style={{ color: "var(--ink)" }} />
-        <b style={{ fontWeight: 500 }}>Setup assistant</b>
+        <SagaMascot size={22} />
+        <b style={{ fontWeight: 600 }}>Ask Saga</b>
         <span className="sp" />
         <button className="iconbtn chatclose" aria-label="Close assistant" onClick={onClose}><i className="ri-close-line" /></button>
       </div>
@@ -214,13 +288,16 @@ export default function Onboarding() {
   const usingClaude = a?.engine_type === "claude";
   const aiReady = !!keyHint;  // the assistant can help once a Claude key is saved
 
-  const recKey = a ? JSON.stringify([a.goals, a.has_software, a.team_style, a.industry]) : "";
+  const recKey = a ? JSON.stringify(a) : "";
   useEffect(() => {
-    if (!a || step < IDX.team) return;
-    api<Preview>("/onboarding/preview", { body: { answers: a } }).then((p) => {
-      setPreview(p);
-      setA((x) => (x && x.roles === undefined ? { ...x, roles: p.recommended.roles } : x));
-    }).catch(() => {});
+    if (!a || step < IDX.business) return;
+    const t = setTimeout(() => {
+      api<Preview>("/onboarding/preview", { body: { answers: a } }).then((p) => {
+        setPreview(p);
+        if (step >= IDX.team) setA((x) => (x && x.roles === undefined ? { ...x, roles: p.recommended.roles } : x));
+      }).catch(() => {});
+    }, 450);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recKey, step]);
 
@@ -285,6 +362,8 @@ export default function Onboarding() {
     return (
       <div className="obx">
         <StepCard wide icon="ri-rocket-2-line" title="Your team is ready" tone="green" seed={7} mascot caption={`${a.company_name} is up and running.`}
+          art={<SagaGuide tone="fresh" line={`${a.company_name} has a team! ${done.created.length} ${done.created.length === 1 ? "helper" : "helpers"} just joined. Let's go see your Inbox.`}
+            team={done.created.map((id) => ({ id, name: st.roles[id]?.name || id, role: id, is_chief: id === "chief-of-staff" }))} known={null} />}
           next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "orange" }}
           footer={<>
             <button className="btn primary sc-next" onClick={() => router.replace("/")}>Open my Inbox</button>
@@ -314,6 +393,8 @@ export default function Onboarding() {
     !r.is_chief && (showAll || chosen.has(k) || (preview?.recommended.roles || []).includes(k)) && (!r.software || a.has_software || a.industry === "software" || showAll));
   const toggleRole = (k: string) => set({ roles: chosen.has(k) ? (a.roles || []).filter((x) => x !== k) : [...(a.roles || []), k] });
   const isQuestionStep = step >= IDX.business && step <= IDX.rules;
+  const teamIds = ["chief-of-staff", ...((a.roles ?? preview?.recommended.roles) || []).filter((r) => r !== "chief-of-staff")];
+  const team: GuideMember[] = teamIds.filter((r) => roles[r]).map((r) => ({ id: r, name: roles[r].name, role: r, is_chief: r === "chief-of-staff" }));
 
   const nextBtn = stepId === "welcome"
     ? <button className="btn primary sc-next" onClick={() => go(1)}>Let&apos;s start</button>
@@ -350,7 +431,7 @@ export default function Onboarding() {
           <p className="lead">Saga OS gives {a.company_name || "your business"} a team of AI helpers that do real work: write content, find customers, look after customer questions, watch your numbers. You stay the boss.</p>
           <ul className="checklist">
             <li><i className="ri-time-line" /><span>About 10 minutes. No technical knowledge needed.</span></li>
-            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let the assistant fill it from a description or your website.</span></li>
+            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let Saga fill it from a description or your website.</span></li>
             <li><i className="ri-shield-check-line" /><span>Nothing is posted, sent or paid without your OK.</span></li>
             <li><i className="ri-save-3-line" /><span>Skip anything and change it later. Your answers are saved as you go.</span></li>
           </ul>
@@ -393,6 +474,7 @@ export default function Onboarding() {
       {stepId === "business" && (
         <>
           <p className="lead">The basics, the way you would explain it to a new employee on their first day.</p>
+          <SiteFill aiReady={aiReady} answers={a} onPatch={applyPatch} goAi={() => go(IDX.ai)} />
           <Q title="What is your business called?" f="company_name">
             <input value={a.company_name} onChange={(e) => set({ company_name: e.target.value })} placeholder="e.g. Warung Bu Sri" autoFocus />
           </Q>
@@ -607,12 +689,15 @@ export default function Onboarding() {
     <FlashCtx.Provider value={flash}>
       <div className="obx">
         <StepCard ref={top} wide icon={cur.icon} title={cur.title} tone={cur.tone} seed={step} caption={cur.caption} mascot={stepId === "welcome"}
-          next={nxt ? { icon: nxt.icon, title: nxt.title, tone: nxt.tone } : null} meta={progress} footer={footer}>
+          next={nxt ? { icon: nxt.icon, title: nxt.title, tone: nxt.tone } : null} meta={progress} footer={footer}
+          art={<SagaGuide tone={MOODS[cur.tone] || "warm"} line={sagaLine(stepId, a, o, team.length - 1, preview?.completeness.score ?? null, !!keyHint)}
+            team={step >= IDX.goals ? team : []} known={step >= IDX.business && preview ? preview.completeness : null}
+            onKnown={(i) => go([IDX.business, IDX.customers, IDX.offer, IDX.goals, IDX.voice, IDX.rules][i] ?? step)} />}>
           {form}
         </StepCard>
         <Assistant answers={a} stepTitle={cur.title} aiReady={aiReady} onPatch={applyPatch}
           open={chatOpen} onClose={() => setChatOpen(false)} goAi={() => { setChatOpen(false); go(IDX.ai); }} />
-        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><i className="ri-sparkling-2-line" />Setup assistant</button>}
+        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><SagaMascot size={20} tile={false} />Ask Saga</button>}
       </div>
     </FlashCtx.Provider>
   );

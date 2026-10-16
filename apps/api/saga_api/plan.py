@@ -41,11 +41,17 @@ def goals_for_prompt(db: Session) -> list[dict]:
 
 
 def seed_from_onboarding(db: Session) -> None:
-    """The first time the plan is opened: turn the goals picked in onboarding into goals."""
-    if db.scalar(select(Goal.id).limit(1)):
-        return
+    """Once, the first time the plan is opened: turn the goals picked in onboarding into goals. After that the goals
+    are yours: deleting them all leaves the plan empty (it used to bring them back)."""
     from . import onboarding as OB
-    from .services import get_setting
+    from .services import get_setting, set_setting
+
+    if get_setting(db, "plan_seeded", False):
+        return
+    set_setting(db, "plan_seeded", True)
+    if db.scalar(select(Goal.id).limit(1)):
+        db.commit()
+        return
 
     a = (get_setting(db, "onboarding_draft", None) or {}).get("answers") or {}
     opts = OB.options().get("goals", {})

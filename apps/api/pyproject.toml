@@ -26,6 +26,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 [project.scripts]
 saga-api = "saga_api.main:run"
 saga-worker = "saga_api.worker:main"
+saga-reset-password = "saga_api.reset_password:main"
 
 [build-system]
 requires = ["setuptools>=68"]

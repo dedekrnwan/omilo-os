@@ -48,3 +48,10 @@ def test_goal_tree(base_url, owner):
     plan = owner.get("/api/plan").json()
     assert any(n["id"] == run for n in plan["unlinked"])
     assert owner.delete(f"/api/goals/{gid}").json()["ok"]
+
+
+def test_deleted_goals_stay_deleted(owner):
+    owner.put("/api/onboarding", json={"answers": {"goals": ["first_customers"]}, "step": 5})
+    for g in owner.get("/api/plan").json()["goals"]:
+        assert owner.delete(f"/api/goals/{g['id']}").status_code == 200
+    assert owner.get("/api/plan").json()["goals"] == [], "goals picked in onboarding must not come back once deleted"
