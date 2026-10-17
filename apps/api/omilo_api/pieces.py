@@ -561,57 +561,94 @@ def _has_template(value: str) -> bool:
     return bool(_TMPL_RE.search(value))
 
 
+# ---------------------------------------------------------------------------
+# Out-of-band provider domain registry (security boundary — never derive from manifest).
+#
+# Each provider maps to the set of apex domains it is authorised to call.
+# A request host passes iff it equals one of these domains OR is a dotted-left-subdomain
+# of one of them (e.g. "gmail.googleapis.com" passes "googleapis.com" because it ends
+# with ".googleapis.com"; but "googleapis.com.evil.com" is REJECTED).
+#
+# IMPORTANT: Adding a new provider here is a deliberate security decision — do not add
+# entries without review. Any connector whose provider is absent from this registry will
+# have provider_hosts() return an empty set, which blocks every outbound request.
+# ---------------------------------------------------------------------------
+PROVIDER_DOMAINS: dict[str, set[str]] = {
+    "google": {"googleapis.com", "google.com"},
+    "meta": {"facebook.com", "instagram.com", "whatsapp.com"},
+    "slack": {"slack.com"},
+    "github": {"github.com", "api.github.com"},
+    "microsoft": {"microsoft.com", "microsoftonline.com", "graph.microsoft.com"},
+    "stripe": {"stripe.com"},
+    "twilio": {"twilio.com"},
+    "shopify": {"shopify.com", "myshopify.com"},
+    "hubspot": {"hubspot.com", "hubapi.com"},
+    "notion": {"notion.so", "notion.com"},
+    "discord": {"discord.com", "discordapp.com"},
+    "twitter": {"twitter.com", "x.com", "api.twitter.com"},
+    "linkedin": {"linkedin.com"},
+    "dropbox": {"dropbox.com", "dropboxapi.com"},
+    "box": {"box.com", "boxcloud.com"},
+    "salesforce": {"salesforce.com", "force.com"},
+    "zendesk": {"zendesk.com"},
+    "jira": {"atlassian.com", "atlassian.net"},
+    "asana": {"asana.com"},
+    "airtable": {"airtable.com"},
+    "mailchimp": {"mailchimp.com", "mandrillapp.com"},
+    "sendgrid": {"sendgrid.com", "api.sendgrid.com"},
+    "zoom": {"zoom.us"},
+    "calendly": {"calendly.com"},
+    "typeform": {"typeform.com", "api.typeform.com"},
+}
+
+
 def provider_hosts(manifest: dict) -> set[str]:
-    """Return the set of allowed hostnames derived from the manifest's action http.url values.
+    """Return the set of allowed apex domains for the manifest's declared auth.provider.
 
-    Only static (non-templated) hosts are included, AND the hostname must belong to the
-    declared ``auth.provider`` — i.e. the provider name must appear as a component of the
-    hostname (e.g. provider ``"google"`` allows ``gmail.googleapis.com`` because the
-    hostname contains ``"google"``).
+    Uses an OUT-OF-BAND hardcoded registry (PROVIDER_DOMAINS) — never derives the
+    allowlist from the manifest itself, so an attacker-controlled manifest cannot
+    inject an off-provider host into the allowlist.
 
-    This two-stage filter prevents a tampered manifest from sneaking an off-provider host
-    into the allowlist merely by listing it as an action URL.
-
-    An action whose http.url contains a {{ ... }} placeholder in the *host* component is
-    silently excluded — templated hosts cannot be safely allowlisted.
-
-    All returned hostnames are lowercase; only HTTPS URLs are considered
-    (validated manifests guarantee this, but we guard anyway).
+    Returns an empty set for any provider not present in the registry, which causes
+    _check_host to block every outbound request (fail-closed).
     """
     provider = (manifest.get("auth") or {}).get("provider", "").lower()
-    hosts: set[str] = set()
-    for action in manifest.get("actions", []):
-        url = action.get("http", {}).get("url", "")
-        if not url or not url.startswith("https://"):
-            continue
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        hostname = hostname.lower()
-        # Reject templated hostnames
-        if _has_template(hostname):
-            continue
-        # Host must belong to the declared provider: the provider name must appear in the
-        # hostname (e.g. "google" in "gmail.googleapis.com").
-        if provider and provider not in hostname:
-            continue
-        if hostname:
-            hosts.add(hostname)
-    return hosts
+    return set(PROVIDER_DOMAINS.get(provider, set()))
 
 
 def _check_host(url: str, manifest: dict) -> None:
-    """Raise ValueError if the resolved request URL's host is not in provider_hosts(manifest).
+    """Raise ValueError if the resolved request URL's host is not permitted by the registry.
 
-    This is the SSRF guard: no call may leave the provider's declared domain(s).
+    A host H is permitted for a provider iff, for some domain D in PROVIDER_DOMAINS[provider]:
+      - H == D  (exact match), OR
+      - H.endswith('.' + D)  (dotted-left-subdomain, e.g. 'gmail.googleapis.com' → 'googleapis.com')
+
+    This dotted-suffix check means 'googleapis.com.evil.com' is REJECTED even though
+    it ends with 'com' and contains 'googleapis.com' as a substring.
+
+    All comparisons are case-insensitive.
+
+    This is the SSRF guard: no call may leave the provider's registered domain(s).
     """
-    allowed = provider_hosts(manifest)
+    allowed_domains = provider_hosts(manifest)
     parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower()
-    if not hostname or hostname not in allowed:
+    hostname = (parsed.hostname or "").lower().strip()
+
+    if not hostname:
         raise ValueError(
-            f"Request host '{hostname}' is not in the manifest's allowed hosts {allowed!r}. "
-            "Possible SSRF attempt — action aborted."
+            "Request URL has no resolvable host. Action aborted (SSRF prevention)."
         )
+
+    for domain in allowed_domains:
+        d = domain.lower()
+        if hostname == d or hostname.endswith("." + d):
+            return  # PASS
+
+    raise ValueError(
+        f"Request host '{hostname}' is not permitted for this provider. "
+        f"Allowed domains: {sorted(allowed_domains)!r}. "
+        "Possible SSRF attempt — action aborted."
+    )
 
 
 def action_tools(manifest: dict) -> list[dict]:
@@ -714,20 +751,34 @@ def run_action(
     body_template = http_cfg.get("body")
     rendered_body: dict | None = None
     if body_template is not None:
-        rendered_body = _render_obj(body_template, args)  # type: ignore[assignment]
+        rendered_raw = _render_obj(body_template, args)
+        if not isinstance(rendered_raw, dict):
+            raise ValueError(
+                f"Action '{action}' body must render to a dict, "
+                f"got {type(rendered_raw).__name__!r}. Check the manifest's http.body."
+            )
+        rendered_body = rendered_raw
 
     # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF)
     headers = {"Authorization": f"Bearer {token}"}
-    with httpx.Client(follow_redirects=False) as client:
-        request = client.build_request(
-            method,
-            rendered_url,
-            json=rendered_body,
-            headers=headers,
+    try:
+        with httpx.Client(follow_redirects=False) as client:
+            request = client.build_request(
+                method,
+                rendered_url,
+                json=rendered_body,
+                headers=headers,
+            )
+            # Second host check after request construction guards url-with-userinfo tricks
+            _check_host(str(request.url), manifest)
+            response = client.send(request)
+    except httpx.RequestError as exc:
+        # Transport-level failure (DNS, timeout, connection refused, etc.).
+        # Return a structured result so callers don't need to handle the httpx exception.
+        return (
+            f"Action '{action}' failed: {exc}",
+            {"status": None, "needs_reconnect": False},
         )
-        # Second host check after request construction guards url-with-userinfo tricks
-        _check_host(str(request.url), manifest)
-        response = client.send(request)
 
     # 6. Map 401/403 → needs_reconnect
     status = response.status_code

