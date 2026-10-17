@@ -98,6 +98,10 @@ def build(db: Session, done_hours: int = 48) -> dict:
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             card["item"]["proposal"] = X.proposal(p)
             card["summary"] = _clip(X.proposal(p).get("body_md") or i.title)
+        elif i.kind == "workflow":
+            from . import workflows as W
+
+            card["item"]["workflow"] = W.inbox_info(db, i)
         needs.append(card)
 
     run_cards = []

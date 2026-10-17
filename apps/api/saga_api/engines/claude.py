@@ -24,7 +24,8 @@ WEB_TOOLS = [
 ]
 SEARCH_USD = 0.01  # $10 per 1,000 searches
 CHAT_TOOLS = {"whoami", "get_context", "get_approved", "ask_founder", "post_message", "create_task", "update_kpi", "offer_choices",
-              "remember", "recall", "docs_search", "docs_read"}
+              "remember", "recall", "docs_search", "docs_read", "list_workflows", "workflow_blocks", "propose_workflow", "run_workflow",
+              "get_workflow_run"}
 
 
 def api_key(cfg: dict) -> str:

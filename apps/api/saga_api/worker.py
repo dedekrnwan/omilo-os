@@ -30,6 +30,7 @@ class Worker:
         self.retry_at: dict[str, float] = {}  # task id -> monotonic time it may run again (after a transient failure)
         self._daily: dict[str, float] = {}    # company -> last time the loop housekeeping ran
         self.chatting: dict[str, asyncio.Task] = {}
+        self.flowing: dict[str, asyncio.Task] = {}  # workflow runs in progress
         self._stop = asyncio.Event()
 
     # ------------------------------------------------------------ lifecycle
@@ -50,6 +51,10 @@ class Worker:
                     t.status, t.ended_at, t.error = "failed", now(), "interrupted twice"
             for _th in db.scalars(select(Thread).where(Thread.awaiting_reply.is_(True))):
                 pass  # still awaiting: will be picked up
+            from .models import WorkflowRun
+
+            for r in db.scalars(select(WorkflowRun).where(WorkflowRun.status == "running")):
+                r.status = "queued"  # goes on from the step it was on
 
     def weekly_digest(self) -> None:
         from . import digest
@@ -103,7 +108,7 @@ class Worker:
 
     async def stop(self):
         self._stop.set()
-        for t in list(self.running.values()) + list(self.chatting.values()):
+        for t in list(self.running.values()) + list(self.chatting.values()) + list(self.flowing.values()):
             t.cancel()
 
     # ------------------------------------------------------------ one tick
@@ -115,10 +120,12 @@ class Worker:
                 self.weekly_digest()
                 self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
                 self.dispatch_chats()
+                self.dispatch_workflows()
             except Exception:
                 log.exception("worker tick failed for %s", cid)
         self.running = {k: v for k, v in self.running.items() if not v.done()}
         self.chatting = {k: v for k, v in self.chatting.items() if not v.done()}
+        self.flowing = {k: v for k, v in self.flowing.items() if not v.done()}
 
     def loop_housekeeping(self, cid: str):
         """Every few hours per company: make sure the retro loop exists, and measure retro changes (keep or roll back)."""
@@ -184,6 +191,31 @@ class Worker:
             for th in db.scalars(select(Thread).where(Thread.awaiting_reply.is_(True))):
                 if th.id not in self.chatting:
                     self.chatting[th.id] = asyncio.create_task(self.answer_thread(th.id))
+
+    def dispatch_workflows(self, limit: int = 8):
+        """Start due workflow runs (schedules, events, webhooks, by hand) and go on with runs whose wait is over."""
+        from . import workflows as W
+
+        with session_scope() as db:
+            if S.is_paused(db):
+                return
+            ready = [r.id for r in W.due_runs(db)]
+        for rid in ready:
+            if rid in self.flowing or len(self.flowing) >= limit:
+                continue
+            self.flowing[rid] = asyncio.create_task(self.run_workflow(rid))
+
+    async def run_workflow(self, run_id: str):
+        from . import workflows as W
+        from .models import WorkflowRun
+
+        try:
+            with session_scope() as db:
+                r = db.get(WorkflowRun, run_id)
+                if r and r.status == "queued":
+                    await W.execute(db, r)
+        except Exception:
+            log.exception("workflow run %s failed", run_id)
 
     # ------------------------------------------------------------ run one task
     def _task_context(self, task_id: str) -> tuple[TaskContext, dict, int]:

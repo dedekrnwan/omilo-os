@@ -6,6 +6,33 @@ import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { InboxItem, api } from "@/lib/api";
 import { openInDrawer } from "@/lib/open";
+import { useBlocks } from "@/components/workflows/blocks";
+import Canvas from "@/components/workflows/Canvas";
+
+function WorkflowItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
+  const blocks = useBlocks();
+  const w = i.workflow;
+  const wf = w?.workflow as any;
+  const decide = (decision: "approved" | "rejected") => act(() => api(`/inbox/${i.id}/decide`, { body: { decision, note: "" } }));
+  const href = wf ? `/workflows/?id=${wf.id}${w?.run_id ? `&run=${w.run_id}` : ""}` : null;
+  return (
+    <>
+      <div className="paper"><Markdown text={i.body} /></div>
+      {w?.type === "proposal" && wf?.graph && (
+        <div className="wf-mini"><Canvas graph={wf.graph} blocks={blocks} readOnly height={300} fitKey={wf.id} /></div>
+      )}
+      {w?.type === "proposal" && wf && <p className="small">{wf.uses_ai ? "Some steps use AI." : "No AI steps: free to run."} Approving switches it on{wf.trigger?.label ? ` (${wf.trigger.label.toLowerCase()})` : ""}.</p>}
+      {i.status === "open" ? (
+        <div className="acts" style={{ marginTop: 8 }}>
+          <button className="btn primary" disabled={busy} onClick={() => decide("approved")}><i className="ri-check-line" />{w?.type === "proposal" ? "Approve and switch on" : "Approve"}</button>
+          <button className="btn danger" disabled={busy} onClick={() => decide("rejected")}>{w?.type === "proposal" ? "Turn down" : "Reject"}</button>
+          <span className="sp" />
+          {href && <Link className="btn quiet" href={href}><i className="ri-flow-chart" />{w?.type === "proposal" ? "Open to change it" : "Open the run"}</Link>}
+        </div>
+      ) : <p className="small">Decided: {i.answer || "done"}</p>}
+    </>
+  );
+}
 
 /* What you can do with one inbox item: approve / ask for changes / reject a proposal, answer a question, dismiss an alert. */
 export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; onDone: () => void }) {
@@ -56,6 +83,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
           )}
         </>
       )}
+      {i.kind === "workflow" && <WorkflowItem i={i} busy={busy} act={act} />}
       {i.kind === "alert" && (
         <>
           <div className="paper"><Markdown text={i.body} /></div>

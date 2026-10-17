@@ -76,6 +76,22 @@ class FakeEngine(Engine):
                 await m.call("report", task_id=ctx.task_id, headline=f"Revised proposal: {p.get('title', '')}",
                              body="## Summary\n- Applied the founder's note and resubmitted.\n\n## Needs founder\nreview the new version")
                 return EngineResult(text="revised")
+            if "propose_workflow" in ctx.brief:  # "build me a workflow": a small demo one (a real engine designs it)
+                what = (ctx.brief.split("\n\n")[1] if "\n\n" in ctx.brief else ctx.brief)[:100]
+                graph = {"nodes": [
+                    {"id": "start", "type": "trigger.schedule", "label": "Weekdays 9:00", "config": {"cron": "0 9 * * 1-5"}, "x": 0, "y": 0},
+                    {"id": "job", "type": "ai.helper", "label": "Do the thinking part", "config": {"staff_id": ctx.staff_id, "brief": what}, "x": 0, "y": 150},
+                    {"id": "ok", "type": "logic.approval", "label": "Ask me", "config": {"title": "Use this result?", "body": "{{ steps.job.output.result }}"}, "x": 0, "y": 300},
+                    {"id": "save", "type": "saga.doc", "label": "Save to Docs", "config": {"path": "Workflows/Results", "content": "- {{ now }}: {{ steps.job.output.result }}"}, "x": 0, "y": 450}],
+                    "edges": [{"from": "start", "to": "job"}, {"from": "job", "to": "ok"}, {"from": "ok", "port": "approved", "to": "save"}]}
+                text, err = await m.call_raw("propose_workflow", {"task_id": ctx.task_id, "name": what[:60] or "New workflow", "description": what,
+                                                                  "reason": "(demo engine) You asked for this workflow.", "graph": graph})
+                if err:
+                    return EngineResult(error=text[:300])
+                wf = json.loads(text)
+                await m.call("report", task_id=ctx.task_id, headline=f"Proposed a workflow ({wf.get('workflow_id')})",
+                             body="## Summary\n- Designed a workflow and put it in your Inbox.\n\n## Needs founder\napprove or open it to change it")
+                return EngineResult(text="ok")
             context = await m.call("get_context")
             await m.call("checkpoint", task_id=ctx.task_id, plan=["read context", "draft", "propose", "report"],
                          done="read context", next="draft and propose")

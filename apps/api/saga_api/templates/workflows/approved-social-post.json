@@ -1,0 +1,80 @@
+{
+  "name": "Social post with your OK",
+  "category": "Marketing",
+  "icon": "ri-megaphone-line",
+  "description": "Give a topic; Marketing writes a post, you approve it, and it is saved as ready to publish.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "trigger.manual",
+        "label": "Give a topic",
+        "note": "",
+        "config": {
+          "sample": {
+            "topic": "Why we built this"
+          }
+        },
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "write",
+        "type": "ai.helper",
+        "label": "Marketing writes it",
+        "note": "",
+        "config": {
+          "staff_id": "@role:marketing content social",
+          "brief": "Write one short social post (under 60 words) about: {{ trigger.topic }}. Report only the post text.",
+          "wait": true
+        },
+        "x": 0,
+        "y": 150
+      },
+      {
+        "id": "ok",
+        "type": "logic.approval",
+        "label": "Post this?",
+        "note": "",
+        "config": {
+          "title": "Post this?",
+          "body": "{{ steps.write.output.result }}\n\n{{ steps.write.output.report }}"
+        },
+        "x": 0,
+        "y": 300
+      },
+      {
+        "id": "save",
+        "type": "saga.doc",
+        "label": "Save as ready",
+        "note": "",
+        "config": {
+          "path": "Marketing/Ready to post",
+          "content": "- {{ now }}: {{ steps.write.output.result }}",
+          "mode": "append"
+        },
+        "x": 0,
+        "y": 450
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "port": "out",
+        "to": "write"
+      },
+      {
+        "from": "write",
+        "port": "out",
+        "to": "ok"
+      },
+      {
+        "from": "ok",
+        "port": "approved",
+        "to": "save"
+      }
+    ]
+  },
+  "needs": [],
+  "by": "Saga OS"
+}

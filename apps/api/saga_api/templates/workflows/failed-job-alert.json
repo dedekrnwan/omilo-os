@@ -1,0 +1,42 @@
+{
+  "name": "When a job fails, tell me",
+  "category": "Operations",
+  "icon": "ri-alarm-warning-line",
+  "description": "As soon as any helper's job fails, put a note in your Inbox with what went wrong.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "ev",
+        "type": "trigger.event",
+        "label": "A job failed",
+        "note": "",
+        "config": {
+          "event": "job.failed"
+        },
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "tell",
+        "type": "saga.inbox",
+        "label": "Tell me",
+        "note": "",
+        "config": {
+          "title": "A job failed",
+          "body": "Helper: {{ trigger.staff_id }}\nJob: {{ trigger.task_id }}\n{{ trigger.error | default:'' }}"
+        },
+        "x": 0,
+        "y": 150
+      }
+    ],
+    "edges": [
+      {
+        "from": "ev",
+        "port": "out",
+        "to": "tell"
+      }
+    ]
+  },
+  "needs": [],
+  "by": "Saga OS"
+}

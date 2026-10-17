@@ -443,6 +443,10 @@ def list_inbox(status: str = "open", db: Session = Depends(get_db), user: User =
         d = X.inbox(i)
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             d["proposal"] = X.proposal(p)
+        elif i.kind == "workflow":
+            from .. import workflows as W
+
+            d["workflow"] = W.inbox_info(db, i)
         out.append(d)
     from ..plan import lineage
 
@@ -483,6 +487,8 @@ def dismiss(iid: str, db: Session = Depends(get_db), user: User = Depends(curren
     item = _404(db.get(InboxItem, iid))
     if item.kind == "proposal":
         raise HTTPException(409, "decide the proposal instead")
+    if item.kind == "workflow":
+        raise HTTPException(409, "approve or reject it instead")
     item.status, item.closed_at = "done", now()
     S.audit(db, user.id, "inbox.dismiss", iid)
     db.commit()

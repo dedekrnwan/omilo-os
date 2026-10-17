@@ -188,6 +188,25 @@ measures and the helper who keeps it current. On each card (or by right-click):
 Helpers get every KPI with its target in `get_context`, and goals on the **Plan** page show the KPIs that measure them.
 API: `GET /api/kpis/board`, `PUT|DELETE /api/kpis/defs/{name}`, `POST /api/kpis/values`, `DELETE /api/kpis/values/{id}`, `POST /api/kpis/{name}/ask`.
 
+## Workflows: repeated work without the AI bill
+
+**Workflows** turn work that repeats into a trigger and steps that run on their own. Most steps need no AI (connectors,
+web requests, picking and reshaping data, decisions), so they cost nothing; AI is only used in the steps that think
+("Give a helper a job", "AI extract"). The builder is a canvas: drag blocks in, drag from a dot to connect, click a card to
+set it up, press **Test run** and watch each card get a badge (Triggered, Completed, Waiting, Failed) with its output.
+
+- **Triggers**: by hand, a schedule, a webhook (a private address another app posts JSON to), or something in Saga OS (a job finished or failed, an approval, a question, a handoff).
+- **Steps**: use a connector tool (its tools and arguments are listed for you), web request, pick fields, compose text, parse JSON/CSV/lines, find with a pattern, filter a list, If (true/false), **Ask me** (approve/reject in the Inbox), tell me, write a doc, record a KPI, give a helper a job, AI extract.
+- **Templates** pass values along: `{{ trigger.email }}`, `{{ steps.score.output.total | number }}`, `{{ last | length }}`; filters `json lower upper trim length first default number join`.
+- **Safety**: a web request that changes something, or a connector set to "ask first", waits for your OK on every run unless you turn on "Run risky steps without asking". Runs can't loop and stop after 200 steps.
+- **Helpers build workflows**: they get `list_workflows`, `workflow_blocks`, `propose_workflow`, `run_workflow` and `get_workflow_run`, and are told to check for a workflow before repeating work by hand. A workflow a helper proposes lands in your **Inbox** with a preview; nothing runs until you approve it. **Ask a helper to build one** gives a helper that job from a description.
+- **What helpers repeat** lists jobs done three or more times in 30 days (with what they cost) and turns any of them into a workflow request.
+- **Marketplace**: ready-made workflows (lead intake, morning brief, uptime check, failed-job alert, weekly KPI from an API, invoice numbers, GitHub issues digest, social post with your OK) you add with one click and adjust. Share your own with **Copy as JSON** and **Import JSON**; templates live in `apps/api/saga_api/templates/workflows/`.
+
+API: `GET|POST /api/workflows`, `GET|PUT|DELETE /api/workflows/{id}`, `POST /api/workflows/{id}/activate|pause|reject|run`, `GET /api/workflows/{id}/runs|export`,
+`GET /api/workflow-runs[/{id}]`, `POST /api/workflow-runs/{id}/cancel`, `GET /api/workflows/blocks|market|patterns`, `GET /api/workflows/connector-tools/{cid}`,
+`POST /api/workflows/market/{slug}/install`, `POST /api/workflows/build|import`, `POST /api/inbox/{id}/decide`, `POST /api/hooks/{token}` (no sign-in; the address is the key).
+
 ## Browser panel
 
 Workspace → Browser shows the pages a helper read, searched or opened, newest first, as a real picture of the page: the
@@ -381,7 +400,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 46 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
+- 62 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

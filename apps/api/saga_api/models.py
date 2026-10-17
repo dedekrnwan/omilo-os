@@ -453,3 +453,41 @@ class OfficeEvent(Base):
     kind: Mapped[str] = mapped_column(String(32))
     task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Workflow(Base):
+    """A workflow automation: a trigger and steps (apps, data, AI, logic) drawn as a graph. Most steps need no AI, so
+    repeated work runs cheaply; helpers can propose workflows (they wait for your approval) and run active ones."""
+    __tablename__ = "workflow"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("wf"))
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft | pending | active | paused | rejected
+    graph: Mapped[dict] = mapped_column(JSON, default=dict)  # {"nodes": [{id, type, label, config, x, y}], "edges": [{from, port, to}]}
+    autonomy: Mapped[str] = mapped_column(String(8), default="ask")  # ask: risky steps wait for your OK | auto
+    created_by: Mapped[str] = mapped_column(String(64), default="owner")  # owner | staff:<id>
+    source: Mapped[str] = mapped_column(String(80), default="")  # marketplace slug, import, …
+    reason: Mapped[str] = mapped_column(Text, default="")  # why a helper proposed it
+    hook_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    next_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    event_cursor: Mapped[int] = mapped_column(Integer, default=0)
+    runs_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_run"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("wfr"))
+    workflow_id: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued | running | waiting | done | failed | cancelled
+    trigger: Mapped[str] = mapped_column(String(24), default="manual")  # manual | schedule | webhook | event | helper | test
+    started_by: Mapped[str] = mapped_column(String(64), default="owner")
+    input: Mapped[dict] = mapped_column(JSON, default=dict)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)  # {"queue": [...], "steps": {node: {...}}, "waiting": {...}, "approved": [...]}
+    error: Mapped[str] = mapped_column(Text, default="")
+    ai_steps: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

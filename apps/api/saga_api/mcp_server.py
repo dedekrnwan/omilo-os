@@ -23,7 +23,9 @@ SERVER_INFO = {"name": "saga-os", "title": "Saga OS gateway", "version": "0.3.0"
 INSTRUCTIONS = (
     "You are a staff agent of a company run on Saga OS. Use these tools to read company context, "
     "save checkpoints, report results and ask for approval. Agents propose, the founder decides: "
-    "anything with a side effect outside the company goes through request_action or propose."
+    "anything with a side effect outside the company goes through request_action or propose. "
+    "Work you repeat (same steps every day or week) should become a workflow: check list_workflows and run one if it fits; "
+    "otherwise suggest one with propose_workflow (the founder approves it)."
 )
 
 
@@ -111,6 +113,25 @@ TOOLS: list[dict] = [
     {"name": "log_usage", "description": "Report tokens and cost spent on a task (for the budget meter).",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id"), "tokens": _s("integer", "tokens"),
                      "cost_usd": _s("number", "cost in USD")}, "required": ["task_id"]}},
+    {"name": "list_workflows", "description": "The company's workflow automations (active, paused, waiting for approval): what they do and how to start them. "
+                                              "Before doing repeated work by hand, check if a workflow already does it and run it instead (cheaper, no AI).",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "workflow_blocks", "description": "The blocks a workflow can use (triggers, apps, data, logic, AI) with their config fields. Read before propose_workflow.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "propose_workflow", "description": "Suggest a workflow automation for work you do again and again. It waits in the owner's Inbox; nothing runs until "
+                                                "they approve. Graph: {nodes:[{id,type,label,note,config,x,y}], edges:[{from,port,to}]}; exactly one trigger; "
+                                                "ports: 'out', If → 'true'/'false', Ask me → 'approved'/'rejected'. Templates in config: {{ trigger.x }}, "
+                                                "{{ steps.<id>.output.y }}, {{ last }}. Prefer app/data steps; use AI steps only for thinking. Put 'Ask me' before "
+                                                "sending, publishing or spending.",
+     "inputSchema": {"type": "object", "properties": {"name": _s("string", "short name"), "description": _s("string", "what it does, in one or two lines"),
+                                                      "reason": _s("string", "why: what repeated work it replaces, how often, what it saves"),
+                                                      "graph": _s("object", "the workflow graph"), "task_id": _s("string", "your task id")},
+                     "required": ["name", "description", "reason", "graph"]}},
+    {"name": "run_workflow", "description": "Start an active workflow with an input (it runs in the background; risky steps still wait for the owner).",
+     "inputSchema": {"type": "object", "properties": {"workflow_id": _s("string", "workflow id"), "input": _s("object", "the trigger input"),
+                                                      "task_id": _s("string", "your task id")}, "required": ["workflow_id"]}},
+    {"name": "get_workflow_run", "description": "Status and step outputs of a workflow run.",
+     "inputSchema": {"type": "object", "properties": {"run_id": _s("string", "run id")}, "required": ["run_id"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -295,7 +316,50 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         t.cost_usd += float(args.get("cost_usd") or 0)
         db.commit()
         return "allowed", {"ok": True}
+    if name in ("list_workflows", "workflow_blocks", "propose_workflow", "run_workflow", "get_workflow_run"):
+        return _workflow_tool(db, st, name, args)
     raise S.DomainError(f"unknown tool {name}", 404)
+
+
+def _workflow_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
+    from . import workflows as W
+    from .models import Workflow, WorkflowRun, now
+
+    if name == "list_workflows":
+        rows = db.scalars(select(Workflow).where(Workflow.status.in_(["active", "paused", "pending"])).order_by(Workflow.name))
+        return "allowed", {"workflows": [{k: v for k, v in W.view(db, w).items() if k in ("id", "name", "description", "status", "trigger", "steps", "uses_ai", "runs")}
+                                         for w in rows]}
+    if name == "workflow_blocks":
+        return "allowed", {"blocks": [{k: b[k] for k in ("type", "label", "group", "desc", "fields", "ports", "ai", "trigger")} for b in W.blocks_public()]}
+    if name == "propose_workflow":
+        if not isinstance(args.get("graph"), dict):
+            raise S.DomainError("graph must be an object with nodes and edges")
+        try:
+            wf = W.propose(db, st, str(args["name"]), str(args.get("description") or ""), args["graph"], str(args.get("reason") or ""), args.get("task_id"))
+        except W.Invalid as e:
+            raise S.DomainError(f"the workflow is not valid: {e}") from e
+        return "proposal", {"workflow_id": wf.id, "status": "pending", "note": "It waits in the owner's Inbox; nothing runs until they approve."}
+    if name == "run_workflow":
+        wf = db.get(Workflow, str(args.get("workflow_id") or ""))
+        if not wf:
+            raise S.DomainError("no such workflow", 404)
+        if wf.status != "active":
+            raise S.DomainError(f"the workflow is {wf.status}; only active workflows can be started", 409)
+        tid = args.get("task_id")
+        if tid and (t := db.get(Task, tid)) and t.created_by == f"workflow:{wf.id}":
+            raise S.DomainError("this job was started by that workflow; it can't start itself again", 409)
+        import datetime as _dt
+
+        recent = db.scalars(select(WorkflowRun).where(WorkflowRun.workflow_id == wf.id, WorkflowRun.started_by == f"staff:{st.id}",
+                                                      WorkflowRun.created_at >= now() - _dt.timedelta(hours=1))).all()
+        if len(recent) >= 30:
+            raise S.DomainError("too many runs of this workflow in the last hour", 429)
+        r = W.start_run(db, wf, "helper", args.get("input") if isinstance(args.get("input"), dict) else {}, f"staff:{st.id}")
+        return "allowed", {"run_id": r.id, "status": r.status}
+    r = db.get(WorkflowRun, str(args.get("run_id") or ""))
+    if not r:
+        raise S.DomainError("no such run", 404)
+    return "allowed", W.run_view(r, full=True)
 
 
 def _rpc_result(id_, result):

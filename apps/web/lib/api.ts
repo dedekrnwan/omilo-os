@@ -54,9 +54,31 @@ export type Proposal = {
   created_at: string; revisions?: { n: number; body_md: string; author: string; summary: string; at: string }[];
 };
 export type InboxItem = {
-  id: string; kind: "proposal" | "question" | "alert"; ref_id: string | null; staff_id: string | null; task_id: string | null;
-  title: string; body: string; level: string; blocking: boolean; status: string; created_at: string; proposal?: Proposal;
+  id: string; kind: "proposal" | "question" | "alert" | "workflow"; ref_id: string | null; staff_id: string | null; task_id: string | null;
+  title: string; body: string; level: string; blocking: boolean; status: string; created_at: string; proposal?: Proposal; answer?: string;
+  workflow?: { type: "proposal" | "approval" | "gate"; workflow: (Workflow & { graph?: WfGraph }) | { id: string; name: string } | null; run_id?: string; node?: WfNode | null } | null;
 };
+
+// ------------------------------------------------------------------ workflow automations
+export type WfField = { key: string; label: string; kind: string; default?: any; options?: [string, string][]; optional?: boolean;
+  placeholder?: string; help?: string; rows?: number };
+export type WfBlock = { type: string; label: string; group: string; icon: string; color: string; desc: string; fields: WfField[];
+  ports: string[]; ai: boolean; trigger: boolean };
+export type WfNode = { id: string; type: string; label: string; note?: string; config: Record<string, any>; x: number; y: number };
+export type WfEdge = { from: string; port: string; to: string };
+export type WfGraph = { nodes: WfNode[]; edges: WfEdge[] };
+export type WfStep = { status: string; label?: string; port?: string; error?: string; output?: any; waiting_for?: string; started_at?: string; ended_at?: string; ref?: string };
+export type WfRun = { id: string; workflow_id: string; workflow_name?: string; status: string; trigger: string; started_by: string; error: string;
+  ai_steps: number; created_at: string; started_at: string | null; ended_at: string | null; waiting: { node: string; kind: string; ref: string } | null;
+  nodes: Record<string, WfStep>; steps?: Record<string, WfStep>; input?: any };
+export type Workflow = { id: string; name: string; description: string; status: string; autonomy: "ask" | "auto";
+  trigger: { type: string; label: string; config: Record<string, any> }; steps: number; uses_ai: boolean;
+  created_by: { kind: "you" | "helper"; id: string | null; name: string }; source: string; reason: string; runs: number;
+  last_run: WfRun | null; next_at: string | null; created_at: string; updated_at: string; graph?: WfGraph; hook_path?: string | null };
+export type WfTemplate = { slug: string; name: string; description: string; category: string; icon: string; needs: string[]; uses_ai: boolean;
+  trigger: string; steps: number; by: string; graph: WfGraph };
+export type WfPattern = { staff: { id: string; name: string }; title: string; count: number; cost_usd: number; tokens: number; example: string;
+  last_at: string; task_ids: string[]; per_week: number };
 export type Message = { id: string; role: string; author: string; text: string; at: string };
 export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[] };
 export type Overview = {

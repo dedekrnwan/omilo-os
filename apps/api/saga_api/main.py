@@ -16,6 +16,7 @@ from .db import init_db
 from .mcp_server import router as mcp_router
 from .routers import api, auth, companies
 from .routers import office as office_router
+from .routers import workflows as workflows_router
 from .worker import Worker
 
 log = logging.getLogger("saga")
@@ -66,6 +67,7 @@ def build_app() -> FastAPI:
     inner.include_router(companies.router)
     inner.include_router(api.router)
     inner.include_router(office_router.router)
+    inner.include_router(workflows_router.router)
     inner.include_router(mcp_router)
 
     @inner.get("/healthz")

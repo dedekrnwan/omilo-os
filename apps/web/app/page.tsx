@@ -34,7 +34,7 @@ const dur = (s: number | null | undefined) => {
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
 };
 const since = (iso: string | null, now: number) => (iso ? (now - new Date(iso).getTime()) / 1000 : null);
-const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert" };
+const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow" };
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now());
@@ -101,10 +101,12 @@ function BoardView({ onCount }: { onCount: () => void }) {
     const p = c.item.proposal;
     return [
       { heading: c.title },
-      { label: "Open", icon: "ri-file-list-3-line", onSelect: () => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c)) },
+      { label: "Open", icon: "ri-file-list-3-line", onSelect: () => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c)) },
       p && p.status === "pending" && { label: "Approve", icon: "ri-check-line", onSelect: () => quick(() => api(`/proposals/${p.id}/decide`, { body: { decision: "approve", note: "" } })) },
       p && { label: "Discuss with the helper", icon: "ri-chat-3-line", onSelect: async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: p.id } }); openThread(th.id); } },
-      c.kind === "question" && { label: "Answer…", icon: "ri-question-answer-line", onSelect: () => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c)) },
+      c.kind === "workflow" && c.item.status === "open" && { label: c.item.workflow?.type === "proposal" ? "Approve and switch on" : "Approve", icon: "ri-check-line", onSelect: () => quick(() => api(`/inbox/${c.id}/decide`, { body: { decision: "approved" } })) },
+      c.kind === "workflow" && c.item.workflow?.workflow && { label: "Open the workflow", icon: "ri-flow-chart", onSelect: () => router.push(`/workflows/?id=${(c.item.workflow!.workflow as any).id}`) },
+      c.kind === "question" && { label: "Answer…", icon: "ri-question-answer-line", onSelect: () => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c)) },
       c.kind === "question" && { label: "Snooze for an hour", icon: "ri-time-line", onSelect: () => quick(() => api(`/inbox/${c.id}/snooze`, { body: { hours: 1 } })) },
       c.kind === "alert" && { label: "Dismiss", icon: "ri-close-circle-line", onSelect: () => quick(() => api(`/inbox/${c.id}/dismiss`, { body: {} })) },
       c.task_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => openTask(c.task_id!) },
@@ -122,11 +124,11 @@ function BoardView({ onCount }: { onCount: () => void }) {
       <div className="board">
         <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
           {b.needs.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c))}
+            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
               items={() => needItems(c)}
               indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
               time={dur(since(c.since, now))}
-              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
+              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
                 {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
           ))}
         </Column>

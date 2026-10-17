@@ -1,0 +1,112 @@
+{
+  "name": "New lead: extract, score, follow up",
+  "category": "Sales",
+  "icon": "ri-user-star-line",
+  "description": "A form or email tool posts a new lead. AI pulls out the details, big budgets go to Sales after you OK it, the rest are logged.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "hook",
+        "type": "trigger.webhook",
+        "label": "Lead posted",
+        "note": "",
+        "config": {},
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "extract",
+        "type": "ai.extract",
+        "label": "Pull out the details",
+        "note": "",
+        "config": {
+          "text": "{{ trigger | json }}",
+          "fields": "name, email, company, budget, need",
+          "instruction": "Budget as a number in USD."
+        },
+        "x": 0,
+        "y": 150
+      },
+      {
+        "id": "big",
+        "type": "logic.if",
+        "label": "Budget over $1,000?",
+        "note": "",
+        "config": {
+          "left": "{{ steps.extract.output.budget }}",
+          "op": "gt",
+          "right": "1000"
+        },
+        "x": 0,
+        "y": 300
+      },
+      {
+        "id": "ok",
+        "type": "logic.approval",
+        "label": "Follow up now?",
+        "note": "",
+        "config": {
+          "title": "Follow up with {{ steps.extract.output.name }} ({{ steps.extract.output.company }})?",
+          "body": "Budget: {{ steps.extract.output.budget }}\nNeed: {{ steps.extract.output.need }}"
+        },
+        "x": -190,
+        "y": 450
+      },
+      {
+        "id": "sales",
+        "type": "ai.helper",
+        "label": "Sales drafts the reply",
+        "note": "",
+        "config": {
+          "staff_id": "@role:sales outreach",
+          "brief": "Draft a short, warm first reply to this lead and propose it for approval (do not send):\n{{ steps.extract.output | json }}",
+          "wait": false
+        },
+        "x": -190,
+        "y": 600
+      },
+      {
+        "id": "log",
+        "type": "saga.doc",
+        "label": "Log the lead",
+        "note": "",
+        "config": {
+          "path": "Sales/Leads",
+          "content": "- {{ now }} · {{ steps.extract.output.name }} · {{ steps.extract.output.company }} · {{ steps.extract.output.budget }}",
+          "mode": "append"
+        },
+        "x": 190,
+        "y": 450
+      }
+    ],
+    "edges": [
+      {
+        "from": "hook",
+        "port": "out",
+        "to": "extract"
+      },
+      {
+        "from": "extract",
+        "port": "out",
+        "to": "big"
+      },
+      {
+        "from": "big",
+        "port": "true",
+        "to": "ok"
+      },
+      {
+        "from": "ok",
+        "port": "approved",
+        "to": "sales"
+      },
+      {
+        "from": "big",
+        "port": "false",
+        "to": "log"
+      }
+    ]
+  },
+  "needs": [],
+  "by": "Saga OS"
+}
