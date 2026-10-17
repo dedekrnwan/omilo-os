@@ -23,6 +23,7 @@ dependencies = [
   "fastembed>=0.4",
   "pypdf>=4.0",
   "pywebpush>=2.0",
+  "litellm>=1.81",
 ]
 
 [project.optional-dependencies]
