@@ -44,6 +44,7 @@ The thinking runs on Claude Code (with your own Claude API key or a pool of subs
 - **Knowledge base.** Everything helpers can know (docs, memory, finished jobs, chats, files, web pages) is indexed in Postgres with hybrid search (pgvector meaning + full text). Embeddings run locally by default, or via Voyage/OpenAI.
 - **Docs.** An Obsidian-style shared notebook for the owner and helpers: Markdown notes, wiki links, backlinks, version history, and a graph view. The vault is a plain folder you can open in Obsidian.
 - **Monitor, Simple and Office.** A dashboard of usage, jobs, helpers, and the Claude Code pool; plus a top-down virtual office (Phaser 3) where each helper sits at a desk and only verified events animate.
+- **Notifications and nudges.** Anything waiting on you gets louder until you decide, snooze, or hand it to the Chief of Staff: a push at once, again after 2 hours, a call-out from the Chief of Staff after 6, then the top of the 07:30 brief (faster for blocking items; Critical repeats every 15 minutes until seen). Quiet hours and a focus switch hold everything but Critical, at most 6 pushes an hour (the rest merge into one), snooze until tomorrow or Monday, and one-tap Approve on low-risk proposals.
 - **Multi-company.** Run several companies from one Omilo, each fully separate (its own helpers, data, connectors), with only the login shared. Each company is its own Postgres schema.
 
 For the full behavior of each area, read [`docs/SPEC.md`](docs/SPEC.md).
