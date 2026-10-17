@@ -450,3 +450,41 @@ def test_run_task_requires_mcp_token():
     r = asyncio.run(engine.run_task(ctx))
     assert r.error != "", "Expected an error when mcp_token is None"
     assert r.text == ""
+
+
+# ---------------------------------------------------------------------------
+# Test: Bedrock _loop passes aws_secret_access_key and aws_region_name to acompletion
+# ---------------------------------------------------------------------------
+
+def test_bedrock_loop_passes_aws_credentials(monkeypatch):
+    """When provider is bedrock, _loop must spread aws_secret_access_key and
+    aws_region_name into litellm.acompletion kwargs so Bedrock is actually callable.
+
+    Finding #2 fix: without these kwargs, Bedrock passes the key guard then
+    fails at the LiteLLM/boto3 layer.
+    """
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+
+    captured = {}
+
+    async def fake_acompletion(**kwargs):
+        captured.update(kwargs)
+        return _resp("done")
+
+    engine = LiteLLMEngine()
+    cfg = {"provider": "bedrock", "api_key": "AKIAIOSFODNN7EXAMPLE"}
+
+    with patch("litellm.acompletion", side_effect=fake_acompletion):
+        with patch("litellm.completion_cost", return_value=0.0):
+            asyncio.run(engine._loop(
+                cfg, "sys",
+                [{"role": "user", "content": "hello"}],
+                None, None, 1, 10,
+            ))
+
+    assert "aws_secret_access_key" in captured, "aws_secret_access_key must be forwarded to acompletion"
+    assert captured["aws_secret_access_key"] == "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    assert "aws_region_name" in captured, "aws_region_name must be forwarded to acompletion"
+    assert captured["aws_region_name"] == "eu-west-1"

@@ -27,7 +27,9 @@ _PROVIDER_ENV: dict[str, str] = {
     "xai": "XAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "mistral": "MISTRAL_API_KEY",
-    # TODO(task-3): Bedrock also needs AWS_SECRET_ACCESS_KEY + AWS_DEFAULT_REGION passed as litellm kwargs
+    # Bedrock: AWS_ACCESS_KEY_ID is the primary key checked here; aws_secret_access_key
+    # and aws_region_name are passed directly to litellm.acompletion so a Bedrock selection
+    # does not pass the key guard only to fail at runtime.
     "bedrock": "AWS_ACCESS_KEY_ID",
     "groq": "GROQ_API_KEY",
 }
@@ -107,6 +109,9 @@ def _sum_tokens(usage) -> int:
     # Nested under prompt_tokens_details (some versions).
     # Assumption: a provider surfaces cached tokens either directly OR nested, not both — so this
     # won't double-count as long as a provider only populates one path.
+    # Note: if a provider already folds cache-read tokens into prompt_tokens, summing
+    # cache_read_input_tokens above can overcount the METER (not cost, which always comes
+    # from litellm.completion_cost).  This intentionally mirrors claude.py's token accounting.
     details = getattr(usage, "prompt_tokens_details", None) or {}
     if hasattr(details, "__getitem__") or hasattr(details, "__dict__"):
         total += _g(details, "cached_tokens", "cache_read_input_tokens")
@@ -163,6 +168,18 @@ class LiteLLMEngine(Engine):
         tokens, text, cost = 0, "", 0.0
         msgs = [{"role": "system", "content": system_payload}] + list(messages)
 
+        # Bedrock needs AWS credentials passed as explicit kwargs; build them once
+        # outside the turn loop.  For all other providers this is an empty dict.
+        bedrock_kwargs: dict = {}
+        if pid == "bedrock":
+            bedrock_kwargs = {
+                "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", key),
+                "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+                "aws_region_name": (
+                    os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+                ),
+            }
+
         for _ in range(max_turns):
             call_kwargs: dict = {
                 "model": model,
@@ -170,6 +187,7 @@ class LiteLLMEngine(Engine):
                 "max_tokens": int(cfg.get("max_tokens") or 8192),
                 "api_key": key,
                 "timeout": timeout,
+                **bedrock_kwargs,
             }
             if oai_tools:
                 call_kwargs["tools"] = oai_tools

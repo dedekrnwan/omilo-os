@@ -134,7 +134,9 @@ PROVIDERS: dict[str, Provider] = {
         tiers={
             "fast": "llama-3.1-8b-instant",
             "balanced": "llama-3.3-70b-versatile",
-            "deep": "llama3-groq-70b-8192-tool-use-preview",
+            # llama3-groq-70b-8192-tool-use-preview was decommissioned by Groq; replaced
+            # with qwen-qwq-32b which is current, large, and supports tool use on Groq.
+            "deep": "qwen-qwq-32b",
         },
         supports_cache=False,
         supports_web=False,
