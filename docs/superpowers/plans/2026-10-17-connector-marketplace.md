@@ -17,7 +17,8 @@
 - Every action request host MUST be restricted to the manifest's `auth.provider` domain(s); templated/variable hosts are rejected.
 - Community `logo.svg` is served sanitized via `<img>` from a proxied endpoint, never inlined.
 - The word "MCP" (and URLs/keys/commands) never appears in the marketplace UI.
-- New tables arrive via `Base.metadata.create_all` (`db.py:59`); any column change to an existing table needs a `_migrate()` step (`db.py:74`). `CatalogPiece` is a new table → no ALTER needed. `Connector.kind` already exists; `"piece"` is a new value, no schema change.
+- The catalog is a **file-based index** (built in Task 2), mirroring `talent.py`: `pieces.root()=data_dir/"pieces"`, `index_path()=root()/"index.json"`; readers `pieces.catalog()` / `pieces.get_piece(slug)`. No new DB table, no migration. `Connector.kind` already exists; `"piece"` is a new value, no schema change. Connected connectors are per-company `Connector` rows.
+- Tests: the suite has only `base_url` and `owner` (an authenticated API client) fixtures — there is **no `db`/`client` fixture**. Endpoint tests use `owner` (e.g. `owner.get("/api/...")`, pattern in `tests/test_kb.py`); API routes are mounted under `/api`. Pure/file-based units run with no fixture.
 - MVP catalog ships these six slugs: `whatsapp, instagram, gmail, google-calendar, google-sheets, facebook`.
 - Token storage reuses `Connector.secrets_enc` (encrypted JSON); pieces store `{"token": {...}}` there.
 - The API venv lacks `pgvector` locally and DB-bound tests need Postgres; tests are authored TDD-style and run in CI/a provisioned env. Non-DB units (validation, templating, host-allowlist, tool compilation) must be tested without a DB.
@@ -28,7 +29,7 @@
 - **Upstream token expired/revoked mid-use** → action surfaces a `needs_reconnect` signal; UI shows "Needs reconnect"; nothing crashes. *(Task 3 runtime signal, Task 6 UI)*
 - **GitHub pieces repo unreachable during reindex** → the last good catalog is retained; marketplace keeps working. *(Task 2)*
 - **An `ask` piece action is never auto-callable** → it stays denied in `plan()` until approved for the execution task. *(Task 4)*
-- **A connected piece is removed from the repo on reindex** → its `CatalogPiece` is marked missing; its connected `Connector` degrades to `needs_reconnect` rather than vanishing or erroring. *(Task 2 + Task 5)*
+- **A connected piece is removed from the repo on reindex** → its index entry is marked `missing`; its connected `Connector` degrades to `needs_reconnect` rather than vanishing or erroring. *(Task 2 + Task 5)*
 
 ---
 
@@ -156,7 +157,7 @@ def test_run_action_flags_needs_reconnect_on_401(respx_mock):
 - Test: `apps/api/tests/test_pieces_plan.py`
 
 **Interfaces:**
-- Consumes: `action_tools`, `run_action` (Task 3); `CatalogPiece` (Task 2); `connector_secrets` (`capabilities.py:61`).
+- Consumes: `action_tools`, `run_action` (Task 3); `pieces.get_piece(slug)` (Task 2, file-based); `connector_secrets` (`capabilities.py:61`).
 - Produces: `piece_mcp_url(slug: str) -> str` (e.g. `{mcp_url_base}/piece/{slug}`).
 - Produces: `connector_runtime(c)` returns, for `c.kind=="piece"`, `{"id","label","kind":"piece","url": piece_mcp_url(c.id),"headers": {...bearer at run time},"approval": c.approval}` (url/headers populated by `plan()` like the http case).
 - Produces (unchanged contract): `plan()` adds `servers[c["id"]] = {"type":"http","url": piece_mcp_url(c["id"]),"headers":{"Authorization": f"Bearer {cfg['_mcp_token']}"}}` and applies the same `auto`/`allow_connectors` tool-allow logic (`claude_code.py:49`).
@@ -177,7 +178,7 @@ def test_ask_piece_tools_not_allowed_until_approved():
 (The `POST /mcp/piece/{slug}` JSON-RPC list/call test is DB-bound → authored here, gated on the conftest DB fixture; it asserts `tools/list` returns the piece's `action_tools` and `tools/call` routes to `run_action` with the decrypted token.)
 
 - [ ] **Step 2: Run tests, verify fail.**
-- [ ] **Step 3: Implement** `piece_mcp_url` in config; the `POST /mcp/piece/{slug}` route (authenticate the staff MCP token as `POST /mcp` does; load the `CatalogPiece.manifest`; `tools/list` → `action_tools`; `tools/call` → decrypt the connected `Connector.secrets_enc["token"]`, call `run_action`, and on `needs_reconnect` mark the `Connector`); the `connector_runtime` `piece` branch; the `plan()` `kind=="piece"` branch.
+- [ ] **Step 3: Implement** `piece_mcp_url` in config; the `POST /mcp/piece/{slug}` route (authenticate the staff MCP token as `POST /mcp` does; load the manifest via `pieces.get_piece(slug)`; `tools/list` → `action_tools`; `tools/call` → decrypt the connected `Connector.secrets_enc["token"]`, call `run_action`, and on `needs_reconnect` mark the `Connector`); the `connector_runtime` `piece` branch; the `plan()` `kind=="piece"` branch.
 - [ ] **Step 4: Run tests, verify pass.**
 - [ ] **Step 5: Commit** — `feat(pieces): MCP endpoint and engine wiring for piece connectors`.
 
@@ -191,24 +192,24 @@ def test_ask_piece_tools_not_allowed_until_approved():
 - Test: `apps/api/tests/test_pieces_connect.py`
 
 **Interfaces:**
-- Consumes: `CatalogPiece` (Task 2); `set_connector_secrets`/`connector_secrets` (`capabilities.py:69/61`); `security.encrypt`.
+- Consumes: `pieces.get_piece(slug)` (Task 2, file-based); `set_connector_secrets`/`connector_secrets` (`capabilities.py:69/61`); `security.encrypt`; existing connector routes near `routers/api.py:873` (routes are under the `/api` prefix).
 - Produces: `class BrokerClient(Protocol)` — `start_connect(manifest: dict) -> dict` (`{"auth_url": str, "state": str}`), `poll(state: str) -> dict | None` (`{"token": {...}}` when ready). `DevBroker` implements both for testing (returns a fixture token immediately; `auth_url` is a local stub page). The real `HttpBroker` is deferred to the broker plan.
-- Produces: routes `POST /connectors/pieces/{slug}/connect` → `{auth_url, state}`; `GET /connectors/pieces/connect/{state}` → `{status: "pending"|"connected"}` (on connected, upserts a `Connector(id=slug, kind="piece", label, approval from manifest default)` with the encrypted token); `DELETE /connectors/{id}` → local token clear (+ best-effort `broker.revoke`).
+- Produces: routes `POST /connectors/pieces/{slug}/connect` → `{auth_url, state}`; `GET /connectors/pieces/connect/{state}` → `{status: "pending"|"connected"}` (on connected, upserts a per-company `Connector(id=slug, kind="piece", label, approval from manifest default)` with the token stored encrypted via `set_connector_secrets`/`secrets_enc`); `DELETE /connectors/{id}` → local token clear (+ best-effort `broker.revoke`).
 
 - [ ] **Step 1: Write failing tests** (DB-bound, gated on conftest fixture):
 
 ```python
-def test_connect_creates_piece_connector_with_encrypted_token(db, client):
-    client.post("/connectors/pieces/gmail/connect")
-    state = ...  # from response
-    r = client.get(f"/connectors/pieces/connect/{state}")
-    assert r.json()["status"] == "connected"
-    c = db.get(Connector, "gmail")
-    assert c.kind == "piece" and c.secrets_enc and "token" not in c.secrets_enc  # encrypted, not plaintext
+def test_connect_creates_piece_connector(owner):
+    # seed a "gmail" piece into the catalog index (write a source + pieces.reindex()) first
+    state = owner.post("/api/connectors/pieces/gmail/connect").json()["state"]
+    assert owner.get(f"/api/connectors/pieces/connect/{state}").json()["status"] == "connected"
+    c = next(c for c in owner.get("/api/connectors").json() if c["id"] == "gmail")
+    assert c["kind"] == "piece"                       # token stored encrypted server-side, never returned
 
-def test_disconnect_clears_token(db, client):
-    ...  # after connect, DELETE /connectors/gmail -> row gone or token cleared
+def test_disconnect_removes_connector(owner):
+    ...  # after connect, DELETE /api/connectors/gmail -> gmail no longer in /api/connectors
 ```
+(The token-is-encrypted property is asserted at the storage layer via `connector_secrets`; the public connector view never returns the token.)
 
 - [ ] **Step 2: Run tests, verify fail.**
 - [ ] **Step 3: Implement** `BrokerClient`/`DevBroker`, and the three routes using `DevBroker` as the injected default. Approval default comes from the manifest's action defaults (connector-level `approval` = most-restrictive of its actions, or `ask` if any action is `ask`).
@@ -225,16 +226,16 @@ def test_disconnect_clears_token(db, client):
 - Test: `apps/api/tests/test_catalog_route.py` (route); `tsc --noEmit` (web)
 
 **Interfaces:**
-- Consumes: `CatalogPiece` (Task 2); connect routes (Task 5); `connector_public` for connected status.
-- Produces: `GET /catalog` → `[{slug, label, category, logo_url, connected: bool, needs_reconnect: bool}]` (only `status=="ok"` pieces; `connected` by joining `Connector` rows).
+- Consumes: `pieces.catalog()` (Task 2, file-based); connect routes (Task 5); `connector_public` for connected status.
+- Produces: `GET /catalog` → `[{slug, label, category, logo_url, connected: bool, needs_reconnect: bool}]` (from `pieces.catalog()`; `connected`/`needs_reconnect` by joining the current company's `Connector` rows by id==slug).
 - Produces: UI states per card — `Connect` / `Connected ✓ (Disconnect)` / `Needs reconnect (Reconnect)`.
 
 - [ ] **Step 1: Write failing test**
 
 ```python
-def test_catalog_lists_only_valid_pieces_with_connected_flag(db, client):
-    # one ok piece (connected), one ok (not), one invalid (hidden)
-    rows = client.get("/catalog").json()
+def test_catalog_lists_only_valid_pieces_with_connected_flag(owner):
+    # seed the catalog index with one ok "gmail" + one invalid "bad" (source + pieces.reindex()), connect gmail
+    rows = owner.get("/api/catalog").json()
     slugs = {r["slug"]: r for r in rows}
     assert "bad" not in slugs and slugs["gmail"]["connected"] is True
 ```
