@@ -84,6 +84,16 @@ class Shift(Base):
     staff: Mapped[Staff] = relationship(back_populates="shifts")
 
 
+class ShiftSkip(Base):
+    """One run of a regular job the owner chose to skip (from the calendar); the schedule itself stays."""
+    __tablename__ = "shift_skip"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    shift_id: Mapped[str] = mapped_column(String(32), index=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    by: Mapped[str] = mapped_column(String(64), default="owner")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Task(Base):
     __tablename__ = "task"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tsk"))

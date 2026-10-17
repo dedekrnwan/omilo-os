@@ -772,10 +772,12 @@ def check_waiting(db: Session, run: WorkflowRun) -> bool:
 
 # ------------------------------------------------------------------ triggers and the worker
 def set_next(wf: Workflow) -> None:
+    from sqlalchemy.orm import object_session
+
     from . import services as S
 
-    t = trigger_of(wf)
-    wf.next_at = S.next_run(t["config"].get("cron") or "0 9 * * 1-5") if wf.status == "active" and t["type"] == "trigger.schedule" else None
+    t = trigger_of(wf)  # in the company's time zone, like shifts (and the calendar)
+    wf.next_at = S.next_run(t["config"].get("cron") or "0 9 * * 1-5", db=object_session(wf)) if wf.status == "active" and t["type"] == "trigger.schedule" else None
 
 
 def activate(db: Session, wf: Workflow) -> None:

@@ -175,8 +175,14 @@ class Worker:
             due = db.scalars(select(Shift).where(Shift.enabled.is_(True), Shift.next_at <= now()))
             for sh in due:
                 st = db.get(Staff, sh.staff_id)
+                from . import agenda
+
+                skipped = agenda.is_skipped(db, sh, sh.next_at)  # the owner skipped this one run in the calendar
                 sh.last_at = now()
                 sh.next_at = S.next_run(sh.cron, db=db)
+                if skipped:
+                    S.audit(db, "system", "shift.skipped", sh.id)
+                    continue
                 if not st or st.status != "active":
                     continue
                 busy = db.scalar(select(func.count()).select_from(Task).where(

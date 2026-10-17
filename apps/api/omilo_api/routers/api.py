@@ -324,6 +324,65 @@ def delete_shift(shid: str, db: Session = Depends(get_db), user: User = Depends(
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ calendar: what the helpers will do and did
+def _when(v: str, name: str) -> dt.datetime:
+    try:
+        d = dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise HTTPException(400, f"{name} must be an ISO date-time") from e
+    return d if d.tzinfo else d.replace(tzinfo=dt.UTC)
+
+
+@router.get("/calendar")
+def calendar(start: str, end: str, staff_id: str | None = None, kinds: str | None = None,
+             db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Shift runs (from their schedules), jobs, scheduled workflows and workflow runs between start and end (at most 62 days)."""
+    from .. import agenda
+
+    a, b = _when(start, "start"), _when(end, "end")
+    if b <= a or b - a > dt.timedelta(days=62):
+        raise HTTPException(400, "end must be after start, at most 62 days later")
+    return {"events": agenda.events(db, a, b, staff_id, set(kinds.split(",")) if kinds else None),
+            "timezone": S.timezone_name(db), "now": agenda.iso(now())}
+
+
+@router.get("/calendar/upcoming")
+def calendar_upcoming(after: str | None = None, after_id: str = "", limit: int = 20, staff_id: str | None = None,
+                      db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """What comes next, oldest first: jobs queued or running now, then every scheduled run. Page with `next`."""
+    from .. import agenda
+
+    return agenda.upcoming(db, _when(after, "after") if after else None, after_id, max(1, min(limit, 100)), staff_id)
+
+
+@router.post("/shifts/{shid}/run")
+def run_shift_now(shid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import agenda
+
+    return X.task(_run(agenda.run_now, db, _404(db.get(Shift, shid)), user.id))
+
+
+class SkipIn(BaseModel):
+    at: str
+
+
+@router.post("/shifts/{shid}/skip")
+def skip_shift_run(shid: str, body: SkipIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Skip one run of a regular job (the schedule stays)."""
+    from .. import agenda
+
+    s = _run(agenda.skip, db, _404(db.get(Shift, shid)), _when(body.at, "at"), user.id)
+    return {"shift_id": s.shift_id, "at": agenda.iso(s.at)}
+
+
+@router.delete("/shifts/{shid}/skip")
+def unskip_shift_run(shid: str, at: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import agenda
+
+    agenda.unskip(db, _404(db.get(Shift, shid)), _when(at, "at"), user.id)
+    return {"ok": True}
+
+
 # ------------------------------------------------------------------ tasks
 class TaskIn(BaseModel):
     staff_id: str
