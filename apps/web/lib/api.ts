@@ -81,7 +81,8 @@ export type WfTemplate = { slug: string; name: string; description: string; cate
 export type WfPattern = { staff: { id: string; name: string }; title: string; count: number; cost_usd: number; tokens: number; example: string;
   last_at: string; task_ids: string[]; per_week: number };
 export type Message = { id: string; role: string; author: string; text: string; at: string };
-export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[] };
+export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[];
+  pending?: string[]; updated_at?: string };
 export type Overview = {
   company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
   inbox: { open: number; critical: number; blocking: number };

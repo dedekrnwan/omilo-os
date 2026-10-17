@@ -107,6 +107,8 @@ class FakeEngine(Engine):
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
         last = ctx.history[-1]["text"] if ctx.history else ""
+        if "[The founder wrote]\n" in last:  # a team chat: echo what the founder said, not the whole room
+            last = last.rsplit("[The founder wrote]\n", 1)[1].split("\n\n[", 1)[0]
         return EngineResult(text=f"_{ctx.staff_name}, demo engine (no AI connected)._ You said: **{last[:200]}**\n\n{ctx.context_note[:400]}")
 
     async def health(self, cfg: dict) -> dict:

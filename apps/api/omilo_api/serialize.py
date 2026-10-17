@@ -72,7 +72,7 @@ def inbox(i: InboxItem) -> dict:
 
 def thread(t: Thread) -> dict:
     return {"id": t.id, "scope": t.scope, "ref_id": t.ref_id, "staff_id": t.staff_id, "title": t.title,
-            "awaiting_reply": t.awaiting_reply, "updated_at": iso(t.updated_at)}
+            "awaiting_reply": t.awaiting_reply, "pending": list(t.pending or []) if t.awaiting_reply else [], "updated_at": iso(t.updated_at)}
 
 
 def message(m: Message) -> dict:

@@ -196,12 +196,13 @@ class InboxItem(Base):
 class Thread(Base):
     __tablename__ = "thread"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("thr"))
-    scope: Mapped[str] = mapped_column(String(16))  # master | staff | task | proposal
+    scope: Mapped[str] = mapped_column(String(16))  # master | staff | task | proposal | group (a team chat)
     ref_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     staff_id: Mapped[str] = mapped_column(String(64))  # who answers in this thread
     title: Mapped[str] = mapped_column(String(300), default="")
     awaiting_reply: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     engine_session: Mapped[str] = mapped_column(String(255), default="")
+    pending: Mapped[list | None] = mapped_column(JSON, nullable=True)  # helpers still to answer the last message (mentions)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 

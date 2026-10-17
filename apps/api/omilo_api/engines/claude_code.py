@@ -315,13 +315,19 @@ class ClaudeCodeEngine(Engine):
     async def chat(self, ctx: ChatContext) -> EngineResult:
         cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or ""}
         system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
-        session = _thread_session(ctx.thread_id)
+        # a chat with several helpers: each turn starts fresh with the conversation so far (one helper's session would
+        # not have seen the others' replies, and must not be resumed by another helper)
+        session = None if ctx.shared else _thread_session(ctx.thread_id)
         last = ctx.history[-1]["text"] if ctx.history else ""
         if not session and len(ctx.history) > 1:  # first harness turn in an older chat: give it the conversation so far
-            past = "\n".join(f"{'Founder' if h['role'] == 'owner' else 'You'}: {h['text']}" for h in ctx.history[-20:-1])
-            last = f"Conversation so far:\n{past}\n\nFounder: {last}"
-        return await self._run(ctx.staff_id, cfg, system, last, session, ctx.emit, 600,
-                               lambda s: _save_thread_session(ctx.thread_id, s), ctx.resources)
+            if ctx.shared:  # the other side's turns already say who wrote them
+                past = "\n\n".join(h["text"] if h["role"] == "owner" else f"[You wrote]\n{h['text']}" for h in ctx.history[-20:-1])
+                last = f"Conversation so far:\n{past}\n\n{last}"
+            else:
+                past = "\n".join(f"{'Founder' if h['role'] == 'owner' else 'You'}: {h['text']}" for h in ctx.history[-20:-1])
+                last = f"Conversation so far:\n{past}\n\nFounder: {last}"
+        save = (lambda s: None) if ctx.shared else (lambda s: _save_thread_session(ctx.thread_id, s))
+        return await self._run(ctx.staff_id, cfg, system, last, session, ctx.emit, 600, save, ctx.resources)
 
     async def health(self, cfg: dict) -> dict:
         p = H.pool_summary()

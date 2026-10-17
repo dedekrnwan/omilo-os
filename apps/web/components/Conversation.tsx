@@ -69,6 +69,8 @@ function msgItems(th: FullThread, m: Msg, who: string, staff: Staff[]): MenuItem
 
 export function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean }) {
   const runs = toRuns(events);
+  const people = staff; // @Name of these is highlighted
+  const next = (th.pending && th.pending[0]) || th.staff_id; // who is answering now
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
   // place each run before the first agent/system message that came after it started
   type Row = { kind: "msg"; m: Msg } | { kind: "run"; r: Run };
@@ -85,14 +87,14 @@ export function Conversation({ th, staff, events, onSend, busy }: { th: FullThre
         <div className="sysmsg">Ask anything: what needs you, what someone did, or tell a helper what to do.</div>
       )}
       {rows.map((row) => row.kind === "run" ? <RunCard key={`r${row.r.id}`} run={row.r} /> : (
-        row.m.role === "owner" ? <div key={row.m.id} className="bubble" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} /><Attachments blocks={row.m.blocks} /></div>
+        row.m.role === "owner" ? <div key={row.m.id} className="bubble" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} people={people} /><Attachments blocks={row.m.blocks} /></div>
           : row.m.role === "system" ? <div key={row.m.id} className="sysmsg" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} /></div>
           : (
             <div key={row.m.id} className="agentmsg" onContextMenu={menu(() => msgItems(th, row.m, name(row.m.author), staff))}>
               <Avatar who={staff.find((x) => x.id === row.m.author) || { id: row.m.author, name: name(row.m.author) }} size={30} />
               <div className="body">
                 <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
-                <Markdown text={row.m.text} />
+                <Markdown text={row.m.text} people={people} />
                 <Attachments blocks={row.m.blocks} />
                 <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
               </div>
@@ -100,7 +102,14 @@ export function Conversation({ th, staff, events, onSend, busy }: { th: FullThre
           )
       ))}
       {th.awaiting_reply && !runs.some((r) => r.state === "running") && (
-        <div className="agentmsg"><Avatar who={staff.find((x) => x.id === th.staff_id)} size={30} state="working" /><div className="body"><span className="shimmer" style={{ fontWeight: 500 }}>Starting…</span></div></div>
+        <div className="agentmsg"><Avatar who={staff.find((x) => x.id === next) || { id: next, name: name(next) }} size={30} state="working" />
+          <div className="body"><span className="shimmer" style={{ fontWeight: 500 }}>{name(next)} is starting…</span></div></div>
+      )}
+      {th.awaiting_reply && (th.pending?.length || 0) > 1 && (
+        <div className="queue-note">
+          {th.pending!.slice(1).map((id) => <Avatar key={id} who={staff.find((x) => x.id === id) || { id, name: name(id) }} size={18} />)}
+          <span>{th.pending!.slice(1).map(name).join(", ")} will answer next</span>
+        </div>
       )}
     </div>
   );

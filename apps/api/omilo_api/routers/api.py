@@ -617,9 +617,10 @@ def dismiss(iid: str, db: Session = Depends(get_db), user: User = Depends(curren
 
 # ------------------------------------------------------------------ threads (chat)
 class ThreadIn(BaseModel):
-    scope: str = "master"  # master | staff | task | proposal
+    scope: str = "master"  # master | staff | task | proposal | group (a team chat: ref_id "general", or a new one with a title)
     ref_id: str | None = None
     staff_id: str | None = None
+    title: str | None = None
 
 
 @router.get("/threads")
@@ -643,8 +644,19 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
     elif body.scope == "proposal":
         p = _404(db.get(Proposal, body.ref_id or ""), "unknown proposal")
         th = S.get_or_create_thread(db, "proposal", p.id, p.staff_id, p.title)
+    elif body.scope == "group":
+        from .. import teamchat as TC
+
+        if body.ref_id and body.ref_id != TC.GENERAL:
+            th = _404(db.scalar(select(Thread).where(Thread.scope == "group", Thread.ref_id == body.ref_id)), "unknown chat")
+        elif body.title and not body.ref_id:
+            th = _run(TC.create, db, body.title)
+            S.audit(db, user.id, "chat.create", th.id, title=th.title)
+            db.commit()
+        else:
+            th = _run(TC.general, db)
     else:
-        raise HTTPException(400, "scope must be master, staff, task or proposal")
+        raise HTTPException(400, "scope must be master, staff, task, proposal or group")
     return thread_detail(th.id, db, user)
 
 
@@ -672,13 +684,47 @@ def thread_detail(thid: str, db: Session, user: User) -> dict:
 class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     blocks: list[dict] | None = None
+    mentions: list[str] | None = None  # helper ids the composer picked with @ (names in the text work too)
 
 
 @router.post("/threads/{thid}/messages")
 def send_message(thid: str, body: MessageIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import teamchat as TC
+
     th = _404(db.get(Thread, thid))
-    S.post_message(db, th, "owner", user.id, body.text, body.blocks, awaiting_reply=True)
+    TC.post(db, th, user.id, body.text, body.blocks, body.mentions)
     return thread_detail(thid, db, user)
+
+
+class ThreadPatch(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+
+@router.patch("/threads/{thid}")
+def rename_thread(thid: str, body: ThreadPatch, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    th = _404(db.get(Thread, thid))
+    if th.scope != "group":
+        raise HTTPException(409, "only team chats can be renamed")
+    th.title = " ".join(body.title.split())[:80]
+    S.audit(db, user.id, "chat.rename", th.id, title=th.title)
+    db.commit()
+    return X.thread(th)
+
+
+@router.delete("/threads/{thid}")
+def delete_thread(thid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import teamchat as TC
+
+    th = _404(db.get(Thread, thid))
+    if th.scope != "group" or th.ref_id == TC.GENERAL:
+        raise HTTPException(409, "only team chats you made can be deleted (General stays)")
+    from ..models import ThreadTools
+
+    S.audit(db, user.id, "chat.delete", th.id, title=th.title)
+    db.query(ThreadTools).filter(ThreadTools.thread_id == th.id).delete()
+    db.delete(th)
+    db.commit()
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ company knowledge & KPIs

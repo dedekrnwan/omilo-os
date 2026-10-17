@@ -1,4 +1,5 @@
 "use client";
+import { markMentions } from "./Mentions";
 import { Marked, type Tokens } from "marked";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BASE } from "@/lib/api";
@@ -197,10 +198,10 @@ function onRichMenu(e: React.MouseEvent) {
 }
 
 const NEEDS_HL = /```|^\s*[[{]/;
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, people }: { text: string; people?: { id: string; name: string }[] }) {
   const [ready, setReady] = useState(!!hljs);
   useEffect(() => { if (!hljs && NEEDS_HL.test(text || "")) loadHighlighter().then(() => setReady(true)); }, [text]);
-  const html = useMemo(() => renderMarkdown(text), [text, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  const html = useMemo(() => (people ? markMentions(renderMarkdown(text), people) : renderMarkdown(text)), [text, ready, people]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="md" onClick={onRichClick} onKeyDown={onRichClick} onContextMenu={onRichMenu} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

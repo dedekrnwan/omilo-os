@@ -76,6 +76,7 @@ def _after_create(eng) -> None:
 _COLUMNS = [
     ("notice", "item_id", "VARCHAR(32)"),
     ("notice", "who", "VARCHAR(120) NOT NULL DEFAULT ''"),
+    ("thread", "pending", "JSON"),
 ]
 
 

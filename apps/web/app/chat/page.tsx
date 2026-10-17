@@ -11,8 +11,9 @@ import BrowserView from "@/components/BrowserView";
 import Lineage from "@/components/Lineage";
 import { Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
+import { useMentions } from "@/components/Mentions";
 import { helperItems, taskItems } from "@/lib/actions";
-import { copy, menu, sep } from "@/lib/menu";
+import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
@@ -148,6 +149,17 @@ function NewTask({ staff, onDone, who }: { staff: Staff[]; onDone: (id: string) 
   );
 }
 
+/* naming a team chat, in place in the list */
+function NameBox({ value, onChange, onDone, onCancel }: { value: string; onChange: (v: string) => void; onDone: () => void; onCancel: () => void }) {
+  return (
+    <form className="ws-item ws-name" onSubmit={(e) => { e.preventDefault(); onDone(); }}>
+      <span className="hash">#</span>
+      <input autoFocus value={value} maxLength={80} placeholder="Name, e.g. Launch week" aria-label="Chat name" onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} onBlur={() => (value.trim() ? onDone() : onCancel())} />
+    </form>
+  );
+}
+
 /* ------------------------------------------------------------------ page */
 function WorkspaceInner() {
   const params = useSearchParams();
@@ -178,7 +190,7 @@ function WorkspaceInner() {
   const openThread = useCallback(async (body: Record<string, string>) => {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
-  useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "master" }); }, [view, tid, openThread]);
+  useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "group" }); }, [view, tid, openThread]); // the team's General chat
 
   // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
   // unchanged threads cost a 304 thanks to the server's ETag
@@ -218,20 +230,37 @@ function WorkspaceInner() {
     else if (a.kind === "pause") { setText(""); confirmDialog({ title: "Pause all helpers?", body: "Running jobs finish their current step; nothing new starts until you resume.", confirm: "Pause everyone", mood: "worried" }).then((ok) => { if (ok) api("/system", { body: { paused: true } }).catch((e) => setErr(e.message)); }); }
   };
   const slash = useSlash(text, staff, onSlash);
+  const mention = useMentions(text, setText, staff, box);
+  const [naming, setNaming] = useState<{ id: string | null; title: string } | null>(null); // new team chat / rename
+  const saveName = async () => {
+    const n = naming;
+    setNaming(null);
+    if (!n || !n.title.trim()) return;
+    try {
+      if (n.id) { await api(`/threads/${n.id}`, { method: "PATCH", body: { title: n.title } }); loadLists(); }
+      else { const th = await api<Thread>("/threads", { body: { scope: "group", title: n.title } }); await loadLists(); go({ thread: th.id }); }
+    } catch (e: any) { setErr(e.message); }
+  };
+  const removeGroup = async (t: Thread) => {
+    if (!(await confirmDialog({ title: `Delete “${t.title}”?`, body: "The chat and its messages go away. Helpers keep what they learned.", confirm: "Delete", danger: true }))) return;
+    try { await api(`/threads/${t.id}`, { method: "DELETE" }); await loadLists(); if (current?.id === t.id) go({}); } catch (e: any) { setErr(e.message); }
+  };
 
   const send = async (t: string) => {
     if (slash.jobBrief !== null && t.startsWith("/job")) { startJob(slash.jobBrief); return; }
     if ((!t.trim() && !files.length) || !tid) return;
     const att = files;
     const body = { text: t.trim() || `(attached ${att.length} file${att.length > 1 ? "s" : ""})`,
-      blocks: att.length ? att.map((f) => ({ type: "file", ...f })) : undefined };
+      blocks: att.length ? att.map((f) => ({ type: "file", ...f })) : undefined, mentions: mention.mentioned(t) };
     setText(""); setFiles([]);
     try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body })); awaiting.current = true; kick(tid); } catch (e: any) { setErr(e.message); setText(t); setFiles(att); }
   };
 
   const chief = staff.find((s) => s.is_chief);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
-  const threadLabel = (th: Thread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.title;
+  const threadLabel = (th: Thread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.scope === "group" ? `# ${th.title}` : th.title;
+  const groups = threads.filter((t) => t.scope === "group").sort((a, b) => (a.ref_id === "general" ? -1 : b.ref_id === "general" ? 1 : a.title.localeCompare(b.title)));
+  const isGroup = current?.scope === "group";
   const title = view === "chat" ? (current ? threadLabel(current) : "Chat") : taskId === "new" ? "New job" : tasks.find((t) => t.id === taskId)?.brief.slice(0, 60) || "Work";
   const lastAgentText = useMemo(() => [...(current?.messages || [])].reverse().find((m) => m.role === "agent")?.text, [current]);
   const selTask = tasks.find((t) => t.id === taskId);
@@ -258,24 +287,32 @@ function WorkspaceInner() {
         <nav className={`ws-list ${listOpen ? "open" : ""}`}>
           {view === "chat" ? (
             <>
+              <div className="grp grp-act"><span>Team chats</span>
+                <button className="iconbtn" aria-label="New team chat" title="New team chat" onClick={() => setNaming({ id: null, title: "" })}><i className="ri-add-line" /></button></div>
+              {groups.length === 0 && !naming && <button className="ws-item" onClick={() => openThread({ scope: "group" })}><span className="hash">#</span><span className="t"><b>General</b><span>The whole team</span></span></button>}
+              {groups.map((t) => naming?.id === t.id ? (
+                <NameBox key={t.id} value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />
+              ) : (
+                <button key={t.id} className={`ws-item ${current?.id === t.id ? "on" : ""}`} onClick={() => go({ thread: t.id })}
+                  onContextMenu={menu(() => [{ heading: `# ${t.title}` }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => go({ thread: t.id }) },
+                    { label: "Rename", icon: "ri-edit-line", onSelect: () => setNaming({ id: t.id, title: t.title }) },
+                    t.ref_id !== "general" && { label: "Delete chat", icon: "ri-delete-bin-line", danger: true, onSelect: () => removeGroup(t) }].filter(Boolean) as MenuItem[])}>
+                  <span className="hash">#</span><span className="t"><b>{t.title}</b><span>{t.ref_id === "general" ? "The whole team · @ to mention" : "Team chat"}</span></span>
+                  {t.awaiting_reply && <span className="spin" style={{ width: 10, height: 10 }} />}
+                </button>
+              ))}
+              {naming && !naming.id && <NameBox value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />}
+              <div className="grp">Direct</div>
               {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}
                 onContextMenu={menu(() => [{ heading: "Chief of Staff" }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "master" }) },
                   { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setText("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
                 <Avatar who={chief} size={24} /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
-              <div className="grp">Helpers</div>
               {staff.filter((s) => !s.is_chief).map((s) => (
                 <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}
                   onContextMenu={menu(() => [{ heading: s.name }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "staff", staff_id: s.id }) },
+                    { label: `Mention ${s.name} in General`, icon: "ri-at-line", onSelect: async () => { await openThread({ scope: "group" }); setText(`@${s.name} `); } },
                     { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", onSelect: () => go({ view: "work", task: "new", staff: s.id }) }, sep, ...helperItems(s, loadLists).slice(1)])}>
                   <Avatar who={s} size={24} state={(s as any).state === "working" ? "working" : null} /><span className="t"><b>{s.name}</b></span></button>
-              ))}
-              <div className="grp">About a job or approval</div>
-              {threads.filter((t) => t.scope === "task" || t.scope === "proposal").slice(0, 15).map((t) => (
-                <button key={t.id} className={`ws-item ${current?.id === t.id ? "on" : ""}`} onClick={() => go({ thread: t.id })}
-                  onContextMenu={menu(() => [{ heading: t.title || t.scope }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => go({ thread: t.id }) },
-                    t.scope === "task" && !!t.ref_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => go({ view: "work", task: t.ref_id! }) },
-                    { label: "Copy the title", icon: "ri-file-copy-line", onSelect: () => copy(t.title) }, sep, ...helperItems({ id: t.staff_id, name: name(t.staff_id) })])}>
-                  <i className={t.scope === "task" ? "ri-task-line" : "ri-inbox-archive-line"} /><span className="t"><b>{t.title || t.scope}</b><span>{name(t.staff_id)}</span></span></button>
               ))}
             </>
           ) : (
@@ -303,12 +340,15 @@ function WorkspaceInner() {
             <div className="ws-composer">
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
                 {slash.menu}
-                <textarea ref={box} value={text} placeholder={`Message ${threadLabel(current)}… (type / for commands)`} onChange={(e) => setText(e.target.value)}
-                  aria-expanded={slash.open} aria-haspopup="listbox"
-                  onKeyDown={(e) => { if (slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
+                {mention.menu}
+                <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)}
+                  placeholder={isGroup ? `Message ${threadLabel(current)}… (@ to mention a helper, / for commands)` : `Message ${threadLabel(current)}… (@ to bring someone in, / for commands)`}
+                  aria-expanded={slash.open || mention.open} aria-haspopup="listbox"
+                  onKeyDown={(e) => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
                 <div className="row">
                   <ComposerTools threadId={tid} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
-                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff" : "/ for commands · Enter to send"}</span>
+                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff"
+                    : isGroup ? "No @mention: the Chief of Staff answers · Enter to send" : "@ to mention · / for commands · Enter to send"}</span>
                   <span className="sp" />
                   <button className="btn primary sm" type="submit" disabled={(!text.trim() && !files.length) || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
                 </div>

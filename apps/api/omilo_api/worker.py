@@ -394,15 +394,58 @@ class Worker:
 
     # ------------------------------------------------------------ chats
     async def answer_thread(self, thread_id: str):
+        """Answer the owner's last message: the helper of a one-to-one chat, or everyone it named (@Marketing), one by
+        one, in order; a helper that names a teammate in its reply hands over to them (see teamchat.py)."""
+        from . import teamchat as TC
+        from .models import Message
+
+        answered: list[str] = []
+        turn = None  # the owner message being answered; a new one while answering starts the round again
+        while True:
+            with session_scope() as db:
+                th = db.get(Thread, thread_id)
+                if not th or not th.awaiting_reply:
+                    return
+                last = db.scalar(select(Message.id).where(Message.thread_id == th.id, Message.role == "owner").order_by(Message.at.desc()).limit(1))
+                if last != turn:
+                    turn, answered = last, []
+                queue = [s for s in TC.responders(th) if s not in answered]
+                if not queue or len(answered) >= TC.MAX_REPLIES:
+                    th.pending, th.awaiting_reply = None, False
+                    return
+                sid = queue[0]
+            text = await self._answer_as(thread_id, sid, answered)
+            answered.append(sid)
+            with session_scope() as db:
+                th = db.get(Thread, thread_id)
+                if not th:
+                    return
+                rest = [s for s in (th.pending or []) if s not in answered]
+                rest += [s for s in TC.handover(db, th, sid, text or "", answered) if s not in rest]
+                if rest and len(answered) < TC.MAX_REPLIES:
+                    th.pending = rest
+                else:
+                    th.pending, th.awaiting_reply = None, False
+                    return
+
+    async def _answer_as(self, thread_id: str, staff_id: str, answered: list[str]) -> str:
+        """One helper's reply in the thread. Returns what it wrote ("" when it could not answer)."""
+        from . import teamchat as TC
+
         with session_scope() as db:
             th = db.get(Thread, thread_id)
-            st = db.get(Staff, th.staff_id)
+            st = db.get(Staff, staff_id)
+            if not st or st.status == "retired":
+                return ""
             if st.status != "active":
-                S.post_message(db, th, "system", st.id, f"{st.name} is paused (Team → {st.name} to resume or raise its budget).", awaiting_reply=False)
-                return
+                S.post_message(db, th, "system", st.id, f"{st.name} is paused (Team → {st.name} to resume or raise its budget).")
+                return ""
             msgs = S.thread_messages(db, th, limit=40)
-            # empty messages (an engine that answered nothing) would make the AI reject the whole history
-            history = [{"role": "owner" if m.role == "owner" else "agent", "text": m.text} for m in msgs if m.role in ("owner", "agent") and (m.text or "").strip()]
+            shared = TC.shared(th, st.id)
+            if shared:
+                history = TC.history(db, th, st, msgs)
+            else:  # empty messages (an engine that answered nothing) would make the AI reject the whole history
+                history = [{"role": "owner" if m.role == "owner" else "agent", "text": m.text} for m in msgs if m.role in ("owner", "agent") and (m.text or "").strip()]
             open_items = db.scalar(select(func.count()).select_from(S.InboxItem).where(S.InboxItem.status == "open"))
             note = f"Inbox: {open_items} open item(s)."
             if th.scope == "task" and (t := db.get(Task, th.ref_id)):
@@ -410,11 +453,13 @@ class Worker:
                 note += f"\nThis thread is about task {t.id} ({t.status}): {t.brief}\nReport: {rep.headline if rep else '-'}"
             if th.scope == "proposal" and (p := db.get(Proposal, th.ref_id)):
                 note += f"\nThis thread is about proposal {p.id} ({p.status}): {p.title}\nCurrent text:\n{S.current_body(p)}"
+            if room := TC.note(db, th, st, answered):
+                note += "\n" + room
             note += _memory(db, st, None)
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
                               mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                              emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id))
+                              emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id), shared=shared)
         t0 = time.monotonic()
         ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
         try:
@@ -429,7 +474,8 @@ class Worker:
         with session_scope() as db:
             th = db.get(Thread, thread_id)
             text = res.text if not res.error else f"Sorry, I couldn't answer: {res.error}"
-            S.post_message(db, th, "agent" if not res.error else "system", th.staff_id, text, awaiting_reply=False)
+            S.post_message(db, th, "agent" if not res.error else "system", staff_id, text)
+        return "" if res.error else res.text
 
 
 def _memory(db, st, t) -> str:

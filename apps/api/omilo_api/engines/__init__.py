@@ -39,6 +39,7 @@ class ChatContext:
     engine_config: dict = field(default_factory=dict)
     emit: Callable[..., None] = field(default=lambda kind, **d: None)
     resources: Any = None
+    shared: bool = False  # several helpers talk in this thread: start fresh each turn, don't resume a private session
 
 
 @dataclass

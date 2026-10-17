@@ -2064,3 +2064,18 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .ch-out i { color: inherit; font-size: 14px; margin-top: 1px; }
 .ch-foot { margin-top: 10px; font-size: 11px; color: var(--muted); }
 @media (hover: none) { .cal-hover { display: none; } }
+
+/* team chats and @mentions */
+.ws-list .grp-act { display: flex; align-items: center; justify-content: space-between; padding-right: 2px; }
+.ws-list .grp-act .iconbtn { width: 22px; height: 22px; }
+.ws-list .grp-act .iconbtn i { font-size: 15px; }
+.ws-item .hash { width: 24px; height: 24px; flex-shrink: 0; display: inline-grid; place-items: center; border-radius: 30%; background: var(--soft);
+  border: 1px solid var(--line); font-weight: 700; color: var(--ink-2); font-size: 13px; }
+.ws-item.on .hash { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.ws-name { cursor: text; }
+.ws-name input { flex: 1; min-width: 0; min-height: 28px; padding: 2px 8px; font-size: 13px; }
+.md .mention, .mention { display: inline-block; padding: 0 5px; border-radius: 5px; font-weight: 600; background: color-mix(in srgb, #6366f1 13%, transparent); color: #4338ca; }
+.queue-note { display: flex; align-items: center; gap: 4px; margin: -4px 0 8px 42px; font-size: 12px; color: var(--muted); }
+.queue-note span { margin-left: 4px; }
+.mention-menu .sl-item { display: flex; align-items: center; gap: 8px; }
+.mention-menu .sl-label b { font-weight: 600; }
