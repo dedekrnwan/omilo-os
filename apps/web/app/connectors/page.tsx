@@ -24,7 +24,7 @@ const COMPOSIO_URL = "https://backend.composio.dev/v3/mcp/YOUR_SERVER_ID?user_id
 const composio = (key: string, name: string, icon: string, blurb: string, account: string, tools: string[], color: string, group: Tpl["group"] = "social"): Tpl => ({
   key, name, icon, blurb, group, tools, color, urlHint: COMPOSIO_URL, link: ["https://composio.dev", "Open Composio"],
   steps: [
-    `Sign in at composio.dev and add the ${name} toolkit. Connect ${account} there (you log in on ${name}'s own page; Saga OS never sees your password).`,
+    `Sign in at composio.dev and add the ${name} toolkit. Connect ${account} there (you log in on ${name}'s own page; Omilo never sees your password).`,
     "Create an MCP server with that toolkit and copy its address. It looks like the example in Address below, with your server id and user id.",
     "Copy your Composio API key into the x-api-key header below, then Add and test.",
   ],
@@ -94,7 +94,7 @@ export default function Connectors() {
   useEffect(() => {
     api<Old[]>("/connectors/restorable").then((r) => {
       let hidden: string[] = [];
-      try { hidden = JSON.parse(localStorage.getItem("saga.restore.hidden") || "[]"); } catch { /* private window */ }
+      try { hidden = JSON.parse(localStorage.getItem("omilo.restore.hidden") || "[]"); } catch { /* private window */ }
       setOld(r.find((x) => x.connectors.some((c) => !c.here) && !hidden.includes(x.dir)) || null);
     }).catch(() => {});
   }, []);
@@ -108,7 +108,7 @@ export default function Connectors() {
       r.restored.forEach((id) => test(id));
     } catch (e: any) { setErr(e.message); } finally { setRestoring(false); }
   };
-  const hideOld = () => { if (!old) return; try { const h = JSON.parse(localStorage.getItem("saga.restore.hidden") || "[]"); localStorage.setItem("saga.restore.hidden", JSON.stringify([...h, old.dir])); } catch { /* private window */ } setOld(null); };
+  const hideOld = () => { if (!old) return; try { const h = JSON.parse(localStorage.getItem("omilo.restore.hidden") || "[]"); localStorage.setItem("omilo.restore.hidden", JSON.stringify([...h, old.dir])); } catch { /* private window */ } setOld(null); };
   usePoll(load, 60000, [load], (n) => n?.url === "/connectors");
   useEffect(() => { api<{ answers: { tools?: string[] } }>("/onboarding").then((o) => setUsesTools(o.answers?.tools || [])).catch(() => {}); }, []);
   const have = new Set((list || []).map((c) => c.label.toLowerCase()));
@@ -175,7 +175,7 @@ export default function Connectors() {
           <i className="ri-history-line" />
           <div>
             <b>Your earlier connectors are still saved</b>
-            <div className="small">A reset{old.moved_at ? ` on ${new Date(old.moved_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""} moved your old Saga OS data aside, with
+            <div className="small">A reset{old.moved_at ? ` on ${new Date(old.moved_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""} moved your old Omilo data aside, with
               {" "}{old.connectors.filter((c) => !c.here).map((c) => c.label).join(", ")}. Their secrets are kept too.</div>
           </div>
           <span className="sp" />

@@ -17,11 +17,11 @@ def fake_cli(tmp_path):
     wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {FAKE} \"$@\"\n")
     wrapper.chmod(0o755)
     log = tmp_path / "calls.jsonl"
-    os.environ["SAGA_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
-    from saga_api import harness as H
+    os.environ["OMILO_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
+    from omilo_api import harness as H
     H._version.clear()
     yield log
-    os.environ.pop("SAGA_CLAUDE_BIN", None)
+    os.environ.pop("OMILO_CLAUDE_BIN", None)
     os.environ.pop("FAKE_CLAUDE_LOG", None)
 
 
@@ -55,7 +55,7 @@ def test_pool_failover_resumes_session(owner, fake_cli):
     assert calls[0]["token"] == OK1[-6:] and calls[1]["token"] == LIMITED[-6:]
     assert calls[1]["resume"], "the second account resumes the first account's session"
     assert calls[1]["prompt"].startswith("Continue")
-    assert calls[0]["mode"] == "dontAsk" and "mcp__saga-os" in (calls[0]["tools"] or "")
+    assert calls[0]["mode"] == "dontAsk" and "mcp__omilo" in (calls[0]["tools"] or "")
 
     accts = {a["label"]: a for a in owner.get("/api/harness").json()["accounts"]}
     assert accts["Limited"]["state"] == "cooling" and accts["Limited"]["cooldown_until"].startswith("2100")
@@ -67,8 +67,8 @@ def test_pool_failover_resumes_session(owner, fake_cli):
         assert k in kinds, (k, kinds)
     switching = [e for e in ev if e["kind"] == "status" and e["data"].get("state") == "switching"]
     assert switching and switching[0]["data"]["account"] == "Limited"
-    saga_tools = [e for e in ev if e["kind"] == "tool" and e["data"]["name"].startswith("saga-os")]
-    assert {e["data"]["name"] for e in saga_tools} >= {"saga-os · checkpoint", "saga-os · report"}
+    omilo_tools = [e for e in ev if e["kind"] == "tool" and e["data"]["name"].startswith("omilo")]
+    assert {e["data"]["name"] for e in omilo_tools} >= {"omilo · checkpoint", "omilo · report"}
 
     # chat on the pool keeps one Claude Code session per thread
     th = owner.post("/api/threads", json={"scope": "staff", "staff_id": "sales"}).json()
@@ -108,5 +108,5 @@ def test_offer_choices_and_tool_events(owner, base_url):
     msg = [m for m in th["messages"] if m["text"] == "Which tone?"][0]
     assert msg["blocks"] == [{"type": "choices", "options": ["Warm", "Formal"]}]
     ev = owner.get("/api/events", params={"task_id": t["id"]}).json()
-    assert any(e["kind"] == "tool" and e["data"]["name"] == "saga-os · offer_choices" for e in ev)
+    assert any(e["kind"] == "tool" and e["data"]["name"] == "omilo · offer_choices" for e in ev)
     assert owner.get("/api/events").status_code == 400

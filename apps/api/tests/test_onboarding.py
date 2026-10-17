@@ -1,7 +1,7 @@
 """Guided onboarding: plain answers -> knowledge files, recommended team, schedules in words."""
 from conftest import wait_for
 
-from saga_api import onboarding as OB
+from omilo_api import onboarding as OB
 
 ANSWERS = {
     "company_name": "Warung Bu Sri",

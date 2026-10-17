@@ -7,8 +7,8 @@ import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
-import SagaGuide, { GuideMember } from "@/components/SagaGuide";
-import { SagaMascot } from "@/components/Logo";
+import OmiloGuide, { GuideMember } from "@/components/OmiloGuide";
+import { OmiloMascot } from "@/components/Logo";
 
 /* Hybrid onboarding: a guided form (left) and a setup assistant (right) that fills the form from what the
    owner says or pastes. The form is the source of truth; every change the assistant makes is highlighted. */
@@ -39,7 +39,7 @@ type Finished = { created: string[]; mcp_tokens: Record<string, string>; mcp_url
 type ChatMsg = { role: "owner" | "assistant" | "note"; text: string };
 
 const STEPS: { id: string; title: string; icon: string; tone: Tone; caption: string }[] = [
-  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "violet", caption: "Hi, I'm Saga. Let's set up your AI team together." },
+  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "violet", caption: "Hi, I'm Omilo. Let's set up your AI team together." },
   { id: "ai", title: "Your AI", icon: "ri-cpu-line", tone: "violet", caption: "First, the brain your helpers think with." },
   { id: "business", title: "Your business", icon: "ri-building-line", tone: "orange", caption: "We need a few details about what you do." },
   { id: "customers", title: "Your customers", icon: "ri-user-heart-line", tone: "rose", caption: "Who you serve, and what keeps them up at night." },
@@ -112,7 +112,7 @@ function allTimezones(current: string): string[] {
 }
 
 
-/* ------------------------------------------------------------------ fill the form from a website (Saga reads it) */
+/* ------------------------------------------------------------------ fill the form from a website (Omilo reads it) */
 function SiteFill({ aiReady, answers, onPatch, goAi }: { aiReady: boolean; answers: Answers; onPatch: (p: Partial<Answers>) => void; goAi: () => void }) {
   const [url, setUrl] = useState(answers.website || "");
   const [busy, setBusy] = useState(false);
@@ -131,7 +131,7 @@ function SiteFill({ aiReady, answers, onPatch, goAi }: { aiReady: boolean; answe
   };
   return (
     <div className="sitefill">
-      <div className="sitefill-h"><SagaMascot size={22} tile={false} /><b>Have a website or Instagram?</b><span className="small">Saga reads it and fills in this form.</span></div>
+      <div className="sitefill-h"><OmiloMascot size={22} tile={false} /><b>Have a website or Instagram?</b><span className="small">Omilo reads it and fills in this form.</span></div>
       {aiReady ? (
         <form className="sitefill-row" onSubmit={(e) => { e.preventDefault(); run(); }}>
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-business.com" inputMode="url" />
@@ -143,13 +143,13 @@ function SiteFill({ aiReady, answers, onPatch, goAi }: { aiReady: boolean; answe
   );
 }
 
-/* ------------------------------------------------------------------ what Saga says (from your answers, never invented) */
+/* ------------------------------------------------------------------ what Omilo says (from your answers, never invented) */
 const MOODS: Record<string, "warm" | "cool" | "fresh"> = { violet: "cool", orange: "warm", rose: "warm", amber: "warm", green: "fresh", blue: "cool", teal: "fresh" };
 const listWords = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
-function sagaLine(stepId: string, a: Answers, o: Options, teamCount: number, score: number | null, keyOk: boolean): string {
+function omiloLine(stepId: string, a: Answers, o: Options, teamCount: number, score: number | null, keyOk: boolean): string {
   const name = a.company_name.trim();
   switch (stepId) {
-    case "welcome": return name ? `Hi, I'm Saga! Let's set up the AI team for ${name}. About 10 minutes, and you can skip anything.` : "Hi, I'm Saga! Let's set up your AI team together. About 10 minutes.";
+    case "welcome": return name ? `Hi, I'm Omilo! Let's set up the AI team for ${name}. About 10 minutes, and you can skip anything.` : "Hi, I'm Omilo! Let's set up your AI team together. About 10 minutes.";
     case "ai":
       if (a.engine_type === "fake") return "Practice mode is a safe start: your helpers show sample work and you learn how approving works.";
       return keyOk ? "Your Claude key works. Your helpers can think for real now." : "Paste your Claude key and I'll check it. Or start in practice mode.";
@@ -215,8 +215,8 @@ function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }
   return (
     <aside className={`ob-chat ${open ? "open" : ""}`} aria-label="Setup assistant">
       <div className="head">
-        <SagaMascot size={22} />
-        <b style={{ fontWeight: 600 }}>Ask Saga</b>
+        <OmiloMascot size={22} />
+        <b style={{ fontWeight: 600 }}>Ask Omilo</b>
         <span className="sp" />
         <button className="iconbtn chatclose" aria-label="Close assistant" onClick={onClose}><i className="ri-close-line" /></button>
       </div>
@@ -362,7 +362,7 @@ export default function Onboarding() {
     return (
       <div className="obx">
         <StepCard wide icon="ri-rocket-2-line" title="Your team is ready" tone="green" seed={7} mascot caption={`${a.company_name} is up and running.`}
-          art={<SagaGuide tone="fresh" line={`${a.company_name} has a team! ${done.created.length} ${done.created.length === 1 ? "helper" : "helpers"} just joined. Let's go see your Inbox.`}
+          art={<OmiloGuide tone="fresh" line={`${a.company_name} has a team! ${done.created.length} ${done.created.length === 1 ? "helper" : "helpers"} just joined. Let's go see your Inbox.`}
             team={done.created.map((id) => ({ id, name: st.roles[id]?.name || id, role: id, is_chief: id === "chief-of-staff" }))} known={null} />}
           next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "orange" }}
           footer={<>
@@ -378,7 +378,7 @@ export default function Onboarding() {
             <li><i className="ri-chat-3-line" /><span>Want something done? Just ask in <b>Chat</b>, in your own words.</span></li>
           </ul>
           {done.practice && <div className="callout ok">We started a practice job: a short post introducing {a.company_name}. In a minute or two it will be in your Inbox so you can try approving it.</div>}
-          {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? " (built-in: web search and Saga's tools)" : ", working in Claude Code on this computer (files in the folders you share, web, connectors)"}. Change it any time in Settings.</div>}
+          {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? " (built-in: web search and Omilo's tools)" : ", working in Claude Code on this computer (files in the folders you share, web, connectors)"}. Change it any time in Settings.</div>}
           {a.engine_type === "fake" && <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>}
         </StepCard>
       </div>
@@ -428,10 +428,10 @@ export default function Onboarding() {
       {stepId === "welcome" && (
         <>
           <h1>Set up your AI team</h1>
-          <p className="lead">Saga OS gives {a.company_name || "your business"} a team of AI helpers that do real work: write content, find customers, look after customer questions, watch your numbers. You stay the boss.</p>
+          <p className="lead">Omilo gives {a.company_name || "your business"} a team of AI helpers that do real work: write content, find customers, look after customer questions, watch your numbers. You stay the boss.</p>
           <ul className="checklist">
             <li><i className="ri-time-line" /><span>About 10 minutes. No technical knowledge needed.</span></li>
-            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let Saga fill it from a description or your website.</span></li>
+            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let Omilo fill it from a description or your website.</span></li>
             <li><i className="ri-shield-check-line" /><span>Nothing is posted, sent or paid without your OK.</span></li>
             <li><i className="ri-save-3-line" /><span>Skip anything and change it later. Your answers are saved as you go.</span></li>
           </ul>
@@ -443,7 +443,7 @@ export default function Onboarding() {
           <p className="lead">Your helpers need an AI &ldquo;brain&rdquo;. Connect it now and the assistant can also help you fill in the rest of this setup.</p>
           <button type="button" className={`choice ${usingClaude ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
             <b>Use my Claude API key <span className="rec">Recommended</span></b>
-            <span>Paste a key from Anthropic. Saga OS installs Claude Code for you in the background, so your helpers can work with files, search the web and use your connectors.</span>
+            <span>Paste a key from Anthropic. Omilo installs Claude Code for you in the background, so your helpers can work with files, search the web and use your connectors.</span>
           </button>
           {usingClaude && (
             <div className="paper" style={{ marginTop: -2, marginBottom: 10 }}>
@@ -464,7 +464,7 @@ export default function Onboarding() {
             {usingClaude && (
               <label className="check" style={{ marginTop: 10 }}>
                 <input type="checkbox" checked={!!a.no_hermes} onChange={(e) => set({ no_hermes: e.target.checked })} />
-                <span>Use built-in Claude instead (nothing to install: web search and Saga&apos;s tools, but no files, commands or browser)</span>
+                <span>Use built-in Claude instead (nothing to install: web search and Omilo&apos;s tools, but no files, commands or browser)</span>
               </label>
             )}
           </details>
@@ -690,14 +690,14 @@ export default function Onboarding() {
       <div className="obx">
         <StepCard ref={top} wide icon={cur.icon} title={cur.title} tone={cur.tone} seed={step} caption={cur.caption} mascot={stepId === "welcome"}
           next={nxt ? { icon: nxt.icon, title: nxt.title, tone: nxt.tone } : null} meta={progress} footer={footer}
-          art={<SagaGuide tone={MOODS[cur.tone] || "warm"} line={sagaLine(stepId, a, o, team.length - 1, preview?.completeness.score ?? null, !!keyHint)}
+          art={<OmiloGuide tone={MOODS[cur.tone] || "warm"} line={omiloLine(stepId, a, o, team.length - 1, preview?.completeness.score ?? null, !!keyHint)}
             team={step >= IDX.goals ? team : []} known={step >= IDX.business && preview ? preview.completeness : null}
             onKnown={(i) => go([IDX.business, IDX.customers, IDX.offer, IDX.goals, IDX.voice, IDX.rules][i] ?? step)} />}>
           {form}
         </StepCard>
         <Assistant answers={a} stepTitle={cur.title} aiReady={aiReady} onPatch={applyPatch}
           open={chatOpen} onClose={() => setChatOpen(false)} goAi={() => { setChatOpen(false); go(IDX.ai); }} />
-        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><SagaMascot size={20} tile={false} />Ask Saga</button>}
+        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><OmiloMascot size={20} tile={false} />Ask Omilo</button>}
       </div>
     </FlashCtx.Provider>
   );

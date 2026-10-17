@@ -102,7 +102,7 @@ function StaffDetail({ id }: { id: string }) {
       )}
       {connect && (
         <div className="paper" style={{ marginBottom: 20 }}>
-          <b>Shown once.</b> <span className="small">Only needed to connect an agent that runs outside Saga OS to this helper: add this MCP server to its config.</span>
+          <b>Shown once.</b> <span className="small">Only needed to connect an agent that runs outside Omilo to this helper: add this MCP server to its config.</span>
           <label>Claude Code (.mcp.json)</label><pre className="code">{JSON.stringify(connect.claude_code_config, null, 2)}</pre>
         </div>
       )}

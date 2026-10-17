@@ -380,7 +380,7 @@ class OfficeScene extends Phaser.Scene {
     this.textures.get("tiles").setFilter(Phaser.Textures.FilterMode.NEAREST);
     const map = (this.map = this.make.tilemap({ key: "hq" }));
     const tsd = (this.cache.tilemap.get("hq")?.data?.tilesets || [])[0] || {};
-    const ts = map.addTilesetImage("saga-office", "tiles", T, T, tsd.margin || 0, tsd.spacing || 0)!;
+    const ts = map.addTilesetImage("omilo-office", "tiles", T, T, tsd.margin || 0, tsd.spacing || 0)!;
     ["floor", "rugs", "shadow", "walls", "decor", "furniture"].forEach((n, i) => map.createLayer(n, ts, 0, 0)?.setDepth(i));
     // walkable grid: anything with a solid tile in walls or furniture blocks
     const solid = (l: string, x: number, y: number) => !!map.getTileAt(x, y, false, l)?.properties?.collides;
@@ -710,11 +710,11 @@ export function startOffice(parent: HTMLElement, bridge: Bridge): () => void {
     fps: { target: 60, smoothStep: true },
   });
   // where each helper is on screen (used by end-to-end tests and handy in the browser console)
-  (window as any).__sagaOffice = {
+  (window as any).__omiloOffice = {
     agents: () => [...scene.views.values()].map((v) => {
       const cam = scene.cameras.main, p = cam.getWorldPoint(0, 0);
       return { id: v.agent.id, status: v.status, x: (v.x - p.x) * cam.zoom, y: (v.y - 18 - p.y) * cam.zoom, away: v.away };
     }),
   };
-  return () => { delete (window as any).__sagaOffice; game.destroy(true); };
+  return () => { delete (window as any).__omiloOffice; game.destroy(true); };
 }

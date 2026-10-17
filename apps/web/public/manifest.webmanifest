@@ -1,6 +1,6 @@
 {
-  "name": "Saga OS",
-  "short_name": "Saga OS",
+  "name": "Omilo",
+  "short_name": "Omilo",
   "description": "Run your company with a team of AI helpers",
   "start_url": "./",
   "scope": "./",

@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, useEffect, useRef } from "react";
 
-/* The right-side panel used for every "add" and "edit" in Saga OS (same look as Hire a specialist):
+/* The right-side panel used for every "add" and "edit" in Omilo (same look as Hire a specialist):
    a header with a title, a scrolling body, and a footer that stays in view with the main buttons. */
 export default function Drawer({ open, title, sub, icon, onClose, footer, children, wide = false }: {
   open: boolean; title: ReactNode; sub?: ReactNode; icon?: ReactNode; onClose: () => void; footer?: ReactNode; children: ReactNode; wide?: boolean;

@@ -1,0 +1,101 @@
+{
+  "name": "GitHub issues digest",
+  "category": "Engineering",
+  "icon": "ri-github-line",
+  "needs": [
+    "github"
+  ],
+  "description": "Every weekday, list open issues from your GitHub connector, keep the important ones, and write a digest doc.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "cron",
+        "type": "trigger.schedule",
+        "label": "Weekdays 9:00",
+        "note": "",
+        "config": {
+          "cron": "0 9 * * 1-5"
+        },
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "list",
+        "type": "app.connector",
+        "label": "List open issues",
+        "note": "Set owner and repo.",
+        "config": {
+          "connector": "@github",
+          "tool": "list_issues",
+          "args": {
+            "owner": "your-org",
+            "repo": "your-repo",
+            "state": "open"
+          }
+        },
+        "x": 0,
+        "y": 150
+      },
+      {
+        "id": "keep",
+        "type": "data.list",
+        "label": "Keep the latest 10",
+        "note": "",
+        "config": {
+          "list": "{{ last }}",
+          "fields": "number, title, html_url",
+          "limit": 10
+        },
+        "x": 0,
+        "y": 300
+      },
+      {
+        "id": "text",
+        "type": "data.text",
+        "label": "Write the digest",
+        "note": "",
+        "config": {
+          "template": "Open issues ({{ steps.keep.output.count }}):\n{{ steps.keep.output.items | json }}"
+        },
+        "x": 0,
+        "y": 450
+      },
+      {
+        "id": "doc",
+        "type": "omilo.doc",
+        "label": "Save to Docs",
+        "note": "",
+        "config": {
+          "path": "Engineering/Issues digest",
+          "content": "{{ steps.text.output.text }}",
+          "mode": "replace"
+        },
+        "x": 0,
+        "y": 600
+      }
+    ],
+    "edges": [
+      {
+        "from": "cron",
+        "port": "out",
+        "to": "list"
+      },
+      {
+        "from": "list",
+        "port": "out",
+        "to": "keep"
+      },
+      {
+        "from": "keep",
+        "port": "out",
+        "to": "text"
+      },
+      {
+        "from": "text",
+        "port": "out",
+        "to": "doc"
+      }
+    ]
+  },
+  "by": "Omilo"
+}

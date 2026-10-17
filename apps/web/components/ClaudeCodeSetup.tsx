@@ -4,7 +4,7 @@ import { api } from "@/lib/api";
 
 /* Claude Code is the engine helpers run on: with your Claude API key, or on the subscription pool.
    It gives them files and commands in the folders you share, the web, and every connector (a browser too).
-   Saga OS installs it with one click; this shows its state. */
+   Omilo installs it with one click; this shows its state. */
 
 export type CliInfo = { path: string | null; version: string | null; node: boolean; install: { state: "idle" | "running" | "done" | "failed"; log: string[] } };
 
@@ -36,7 +36,7 @@ export default function ClaudeCodeSetup({ autoInstall, onReady }: { autoInstall?
     <div className="q">
       <b>Claude Code</b>
       <span className="hint">The engine your helpers work in: it reads and edits files in the folders you share, runs safe commands, searches the web
-        and uses your connectors (add the Browser connector for websites). Saga OS installs it for you.</span>
+        and uses your connectors (add the Browser connector for websites). Omilo installs it for you.</span>
       {c.path && !running ? (
         <div className="callout ok" style={{ margin: "6px 0 0" }}>✓ Ready{c.version ? ` · ${c.version}` : ""}</div>
       ) : running ? (

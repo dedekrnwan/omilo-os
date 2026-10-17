@@ -52,7 +52,7 @@ function applyEvents(evs: OfficeEvent[], replay = false) {
 }
 
 function wsUrl() {
-  const override = process.env.NEXT_PUBLIC_SAGA_WS;
+  const override = process.env.NEXT_PUBLIC_OMILO_WS;
   if (override) return override;
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${BASE}/api/office/ws`;
 }
@@ -126,7 +126,7 @@ export function resync() {
 }
 
 if (typeof window !== "undefined") {
-  window.addEventListener("saga:changed", () => { if (users > 0) setTimeout(resync, 200); });
+  window.addEventListener("omilo:changed", () => { if (users > 0) setTimeout(resync, 200); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && users > 0 && !ws) connect(); });
 }
 

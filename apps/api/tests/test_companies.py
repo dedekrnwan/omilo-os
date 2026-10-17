@@ -15,10 +15,10 @@ def test_companies_are_separate(base_url, owner):
 
     new = owner.post("/api/companies", json={"name": "Warung Kopi"}).json()
     cid = new["id"]
-    assert owner.cookies.get("saga_co") == cid, "creating a company switches to it"
+    assert owner.cookies.get("omilo_co") == cid, "creating a company switches to it"
     owner.cookies.clear()  # this client stays on Acme; `co` works on the new company
     assert cid.startswith("warung-kopi") and not new["onboarded"]
-    co = httpx.Client(base_url=base_url, timeout=20, headers={**owner.headers, "X-Saga-Company": cid})
+    co = httpx.Client(base_url=base_url, timeout=20, headers={**owner.headers, "X-Omilo-Company": cid})
 
     # same login, nothing from Acme
     assert co.get("/api/auth/me").json()["email"] == "owner@example.com"
@@ -46,7 +46,7 @@ def test_companies_are_separate(base_url, owner):
 
     # the cookie picks the company for browsers
     r = owner.post("/api/companies/switch", json={"id": cid})
-    assert r.status_code == 200 and "saga_co=" + cid in r.headers["set-cookie"]
+    assert r.status_code == 200 and "omilo_co=" + cid in r.headers["set-cookie"]
     assert owner.get("/api/setup").json()["company_name"] == "Warung Kopi"
     owner.cookies.clear()
 

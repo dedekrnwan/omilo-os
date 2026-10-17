@@ -25,7 +25,7 @@ export default function Login() {
     <AuthShell headline={<>Your team<br />kept working.</>} body="Sign in and see what your helpers did while you were away.">
       <form onSubmit={submit} className="au-card" noValidate>
         <h1>Welcome back</h1>
-        <p className="au-sub">Sign in to your Saga OS.</p>
+        <p className="au-sub">Sign in to your Omilo.</p>
         <Field icon="ri-mail-line" type="email" autoComplete="email" autoFocus value={email} placeholder="Email" aria-label="Email" onChange={(e) => setEmail(e.target.value)} />
         <Field icon="ri-lock-2-line" type={show ? "text" : "password"} autoComplete="current-password" value={password} placeholder="Password" aria-label="Password"
           onChange={(e) => setPassword(e.target.value)}
@@ -33,13 +33,13 @@ export default function Login() {
         <div className="au-row"><button type="button" className="au-link" onClick={() => setForgot(!forgot)}>Forgot your password?</button></div>
         {forgot && (
           <div className="au-note">
-            Saga OS runs on your own computer and sends no email, so the reset happens there. In the Saga OS folder run
+            Omilo runs on your own computer and sends no email, so the reset happens there. In the Omilo folder run
             <code>make reset-password</code> and choose a new one.
           </div>
         )}
         {err && <div className="au-err" role="alert"><i className="ri-error-warning-line" />{err}</div>}
         <button className="au-btn" type="submit" disabled={!email || !password || busy}>{busy ? "Signing in…" : <>Sign in <i className="ri-arrow-right-line" /></>}</button>
-        <p className="au-alt">One account per Saga OS: the owner&apos;s. Your helpers never sign in here.</p>
+        <p className="au-alt">One account per Omilo: the owner&apos;s. Your helpers never sign in here.</p>
       </form>
     </AuthShell>
   );

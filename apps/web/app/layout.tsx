@@ -15,9 +15,9 @@ import Shell from "@/components/Shell";
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 export const metadata: Metadata = {
-  title: "Saga OS", description: "Run your company with a team of AI helpers",
-  manifest: `${base}/manifest.webmanifest`, icons: { icon: [{ url: `${base}/saga.svg`, type: "image/svg+xml" }, { url: `${base}/icon-192.png`, sizes: "192x192" }], apple: `${base}/icon-192.png` },
-  appleWebApp: { capable: true, title: "Saga OS", statusBarStyle: "default" },
+  title: "Omilo", description: "Run your company with a team of AI helpers",
+  manifest: `${base}/manifest.webmanifest`, icons: { icon: [{ url: `${base}/omilo.svg`, type: "image/svg+xml" }, { url: `${base}/icon-192.png`, sizes: "192x192" }], apple: `${base}/icon-192.png` },
+  appleWebApp: { capable: true, title: "Omilo", statusBarStyle: "default" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -8,14 +8,14 @@ from cryptography.fernet import Fernet
 
 
 def test_restore_connectors_from_old_folder(owner):
-    from saga_api.config import get_settings
+    from omilo_api.config import get_settings
 
     data = get_settings().data_dir.resolve()
     old = data.parent / f"{data.name}-old-20260101-120000"
     old.mkdir(exist_ok=True)
     (old / "secret.key").write_text("old-install-key")
-    fer = Fernet(base64.urlsafe_b64encode(hashlib.sha256(b"saga-vault:old-install-key").digest()))
-    con = sqlite3.connect(old / "saga.db")
+    fer = Fernet(base64.urlsafe_b64encode(hashlib.sha256(b"omilo-vault:old-install-key").digest()))
+    con = sqlite3.connect(old / "omilo.db")
     con.execute("create table connector (id text primary key, label text, kind text, url text, command text, args text, secrets_enc text,"
                 " approval text, default_on int, enabled int, created_at text)")
     sec = fer.encrypt(json.dumps({"headers": {"Authorization": "Bearer abc"}}).encode()).decode()

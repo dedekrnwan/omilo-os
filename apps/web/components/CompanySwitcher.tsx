@@ -20,7 +20,7 @@ export function CoBadge({ co, size = 22 }: { co: { id: string; name: string }; s
 }
 
 let chan: BroadcastChannel | null = null;
-const channel = () => { try { return (chan ||= new BroadcastChannel("saga-company")); } catch { return null; } };
+const channel = () => { try { return (chan ||= new BroadcastChannel("omilo-company")); } catch { return null; } };
 
 /** Go to another company: remembered by the server (cookie), every open tab follows. */
 export async function switchTo(id: string, to = "/") {

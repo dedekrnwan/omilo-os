@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the Saga OS office: an original pixel-art tileset (public/office/tiles.png) and a Tiled-compatible map
+"""Generates the Omilo office: an original pixel-art tileset (public/office/tiles.png) and a Tiled-compatible map
 (public/office/hq.json, orthogonal, 32 px tiles, embedded tileset). Open hq.json in Tiled to edit the layout.
 
 Layers: floor, shadow, walls, decor (rugs, chairs: walkable), furniture (desks, tables: solid), and object layers
@@ -527,14 +527,14 @@ def obj_layer(i, name):
 
 
 tileset = {
-    "firstgid": 1, "name": "saga-office", "image": "tiles.png", "imagewidth": sheet.width, "imageheight": sheet.height,
+    "firstgid": 1, "name": "omilo-office", "image": "tiles.png", "imagewidth": sheet.width, "imageheight": sheet.height,
     "tilewidth": T, "tileheight": T, "tilecount": len(tiles), "columns": COLS, "margin": M, "spacing": SP,
     "tiles": [{"id": i, "properties": [{"name": k, "type": "bool", "value": v} for k, v in p.items()]} for i, p in sorted(props.items())],
 }
 tmap = {
     "type": "map", "version": "1.10", "tiledversion": "1.10.2", "orientation": "orthogonal", "renderorder": "right-down",
     "width": W, "height": H, "tilewidth": T, "tileheight": T, "infinite": False, "nextlayerid": 12, "nextobjectid": oid[0],
-    "properties": [{"name": "title", "type": "string", "value": "Saga HQ"}],
+    "properties": [{"name": "title", "type": "string", "value": "Omilo HQ"}],
     "layers": [tile_layer(1, "floor", layers["floor"]), tile_layer(11, "rugs", layers["rugs"]), tile_layer(2, "shadow", layers["shadow"]),
                tile_layer(3, "walls", layers["walls"]), tile_layer(4, "decor", layers["decor"]), tile_layer(5, "furniture", layers["furniture"]),
                obj_layer(6, "zones"), obj_layer(7, "seats"), obj_layer(8, "spots"), obj_layer(9, "interactive"), obj_layer(10, "labels")],

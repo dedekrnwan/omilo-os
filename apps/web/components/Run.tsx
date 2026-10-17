@@ -75,7 +75,7 @@ function toolLabel(name: string, input: Record<string, any>): { icon: string; te
   if (n.includes("websearch") || n.includes("web_search")) return { icon: "ri-search-line", text: `Searched the web${input.query ? `: ${input.query}` : ""}` };
   if (n.includes("webfetch") || n.includes("web_fetch") || n.includes("browser_navigate")) return { icon: "ri-global-line", text: `Opened ${input.url ? host(input.url) : "a page"}` };
   if (n.includes("browser")) return { icon: "ri-window-line", text: `Browser: ${name.split(/__|_/).slice(-1)[0]}` };
-  if (n.startsWith("saga-os")) {
+  if (n.startsWith("omilo")) {
     const t = name.split("·").pop()!.trim();
     const map: Record<string, [string, string]> = {
       get_context: ["ri-book-open-line", "Read the company files"], get_task: ["ri-task-line", "Read the task"],

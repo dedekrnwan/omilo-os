@@ -21,7 +21,7 @@ export type DialogReq = DialogOpts & { id: number; resolve: (ok: boolean) => voi
 let n = 0;
 export function confirmDialog(o: DialogOpts): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
-  return new Promise((resolve) => window.dispatchEvent(new CustomEvent<DialogReq>("saga:dialog", { detail: { ...o, id: ++n, resolve } })));
+  return new Promise((resolve) => window.dispatchEvent(new CustomEvent<DialogReq>("omilo:dialog", { detail: { ...o, id: ++n, resolve } })));
 }
 export function alertDialog(o: Omit<DialogOpts, "alert" | "danger" | "cancel">): Promise<void> {
   return confirmDialog({ confirm: "OK", ...o, alert: true }).then(() => undefined);

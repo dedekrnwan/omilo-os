@@ -15,7 +15,7 @@ import { useOffice } from "@/lib/office";
 import OfficeView, { Freshness, StatusChip } from "@/components/office/OfficeView";
 
 /* Monitor: how the company of helpers is doing. Tokens and spend, jobs, what waits on you, who is working,
-   the Claude Code pool and Saga's tools, over one time range. */
+   the Claude Code pool and Omilo's tools, over one time range. */
 
 type Helper = { id: string; name: string; role: string; is_chief: boolean; state: string; engine: string; current: { task_id: string; brief: string; started_at: string } | null;
   tokens: number; cost_usd: number; runs: number; jobs_done: number; jobs_failed: number; last_active: string | null };
@@ -154,12 +154,12 @@ export default function Monitor() {
   const [mode, setModeS] = useState<Mode>("simple");
   useEffect(() => {
     let m = new URLSearchParams(location.search).get("mode");
-    if (!m) { try { m = localStorage.getItem("saga.monitor.mode"); } catch { /* private window */ } }
+    if (!m) { try { m = localStorage.getItem("omilo.monitor.mode"); } catch { /* private window */ } }
     if (m === "office") setModeS("office");
   }, []);
   const setMode = (m: Mode) => {
     setModeS(m);
-    try { localStorage.setItem("saga.monitor.mode", m); } catch { /* private window */ }
+    try { localStorage.setItem("omilo.monitor.mode", m); } catch { /* private window */ }
     const u = new URL(location.href); u.searchParams.set("mode", m); history.replaceState(null, "", u);
   };
   const live = useOffice();
@@ -396,12 +396,12 @@ export default function Monitor() {
           )}
         </section>
         <section className="paper mcard">
-          <div className="mhead"><h2>Saga tools used</h2></div>
+          <div className="mhead"><h2>Omilo tools used</h2></div>
           {data.tools.length === 0 ? <p className="small">No tool calls in this period.</p> : (
             <BarList rows={data.tools.map((t) => ({ label: t.name.replace(/_/g, " "), value: t.calls,
               note: t.errors ? `${t.errors} failed` : t.blocked ? `${t.blocked} blocked` : `${t.avg_ms} ms`, warn: !!(t.errors || t.blocked) }))} />
           )}
-          <p className="small" style={{ marginBottom: 0 }}>Calls helpers made to Saga OS (reports, proposals, questions). Blocked means a rule stopped it.</p>
+          <p className="small" style={{ marginBottom: 0 }}>Calls helpers made to Omilo (reports, proposals, questions). Blocked means a rule stopped it.</p>
         </section>
         <section className="paper mcard">
           <div className="mhead"><h2>Latest</h2></div>

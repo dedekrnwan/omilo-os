@@ -97,8 +97,8 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
       else if (d.action === "open" && d.kind) showSub(d.kind);
       else if (d.action === "enable" && d.kind && d.id && tools && !tools[d.kind].on.includes(d.id)) toggle(d.kind, d.id);
     };
-    window.addEventListener("saga:composer", on);
-    return () => window.removeEventListener("saga:composer", on);
+    window.addEventListener("omilo:composer", on);
+    return () => window.removeEventListener("omilo:composer", on);
   });
 
   const menu = (kind: "folders" | "connectors" | "skills", empty: string, href: string, manage: string) => (

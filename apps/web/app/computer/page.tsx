@@ -7,7 +7,7 @@ import { usePoll } from "@/lib/poll";
 import { copy, menu, sep } from "@/lib/menu";
 import { confirmDialog } from "@/lib/dialog";
 
-/* Computer: which folders on the machine running Saga OS your helpers may read, edit and run commands in.
+/* Computer: which folders on the machine running Omilo your helpers may read, edit and run commands in.
    Sharing and changing a folder happen in a drawer on the right, with a folder browser. */
 
 type Folder = { id: string; path: string; label: string; access: "read" | "write"; commands: boolean; default_on: boolean; exists: boolean };
@@ -97,7 +97,7 @@ export default function Computer() {
           <li>Helpers on <b>Claude Code</b> (your API key or the pool) get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.</li>
           <li>Helpers on <b>built-in Claude</b> can't open files at all; use Claude Code (your key or the pool) for folder work.</li>
           <li>Even with commands on, deleting files, pushing code, publishing and deploying are blocked: helpers ask you in the Inbox instead.</li>
-          <li>Running Saga OS in Docker? Only folders mounted into the container can be shared.</li>
+          <li>Running Omilo in Docker? Only folders mounted into the container can be shared.</li>
         </ul>
       </div>
       {!form && <Err error={err} />}

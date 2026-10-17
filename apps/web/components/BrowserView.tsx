@@ -4,7 +4,7 @@ import { BASE, api } from "@/lib/api";
 import { copy, menu } from "@/lib/menu";
 
 /* The Browser panel: the pages a helper opened, as a real picture of the page. A screenshot the helper's own browser
-   took comes first; otherwise Saga OS takes one with the Chrome on this computer. "Live" shows the page itself
+   took comes first; otherwise Omilo takes one with the Chrome on this computer. "Live" shows the page itself
    (some sites refuse to be shown inside another app; open them in a new tab then). */
 
 export type Visit = { url: string; title?: string; image?: string; via?: string };

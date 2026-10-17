@@ -3,7 +3,7 @@ from pathlib import Path
 
 from conftest import wait_for
 
-from saga_api.importer import oncalendar_to_cron
+from omilo_api.importer import oncalendar_to_cron
 
 PROTO = Path(__file__).resolve().parents[3] / "legacy" / "prototype"
 
@@ -30,8 +30,8 @@ def test_import_prototype(owner):
 def test_shift_fires(owner):
     sh = owner.post("/api/staff/ops/shifts", json={"name": "every-minute", "cron": "* * * * *", "brief": "tick"}).json()
     # make it due now
-    from saga_api.db import session_scope
-    from saga_api.models import Shift
+    from omilo_api.db import session_scope
+    from omilo_api.models import Shift
 
     with session_scope() as db:
         db.get(Shift, sh["id"]).next_at = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1)

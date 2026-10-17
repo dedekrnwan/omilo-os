@@ -7,11 +7,11 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: saga
-      POSTGRES_USER: saga
+      POSTGRES_DB: omilo
+      POSTGRES_USER: omilo
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck: {test: ["CMD-SHELL", "pg_isready -U saga"], interval: 10s, retries: 10}
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U omilo"], interval: 10s, retries: 10}
 
   redis:
     image: redis:7-alpine
@@ -20,37 +20,37 @@ services:
     volumes: [redisdata:/data]
     healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 10}
 
-  saga-api:
-    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+  omilo-api:
+    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
     restart: unless-stopped
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
     environment: &env
-      SAGA_DATABASE_URL: postgresql+psycopg://saga:${POSTGRES_PASSWORD}@postgres:5432/saga
-      SAGA_REDIS_URL: redis://redis:6379/0
-      SAGA_EMBED_PROVIDER: ${SAGA_EMBED_PROVIDER:-local}
-      SAGA_SECRET_KEY: ${SAGA_SECRET_KEY:?set SAGA_SECRET_KEY}
-      SAGA_PUBLIC_URL: ${SAGA_PUBLIC_URL:?e.g. https://os.example.com}
-      SAGA_INTERNAL_URL: http://saga-api:7700
-      SAGA_BASE_PATH: ${SAGA_BASE_PATH:-}
-      SAGA_TIMEZONE: ${SAGA_TIMEZONE:-UTC}
-      SAGA_COOKIE_SECURE: "true"
-      SAGA_EMBEDDED_WORKER: "false"
+      OMILO_DATABASE_URL: postgresql+psycopg://omilo:${POSTGRES_PASSWORD}@postgres:5432/omilo
+      OMILO_REDIS_URL: redis://redis:6379/0
+      OMILO_EMBED_PROVIDER: ${OMILO_EMBED_PROVIDER:-local}
+      OMILO_SECRET_KEY: ${OMILO_SECRET_KEY:?set OMILO_SECRET_KEY}
+      OMILO_PUBLIC_URL: ${OMILO_PUBLIC_URL:?e.g. https://os.example.com}
+      OMILO_INTERNAL_URL: http://omilo-api:7700
+      OMILO_BASE_PATH: ${OMILO_BASE_PATH:-}
+      OMILO_TIMEZONE: ${OMILO_TIMEZONE:-UTC}
+      OMILO_COOKIE_SECURE: "true"
+      OMILO_EMBEDDED_WORKER: "false"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    volumes: [sagadata:/data]
-    ports: ["127.0.0.1:${SAGA_PORT:-7700}:7700"]
+    volumes: [omilodata:/data]
+    ports: ["127.0.0.1:${OMILO_PORT:-7700}:7700"]
     labels:
       - traefik.enable=${TRAEFIK_ENABLE:-false}
-      - traefik.http.routers.saga.rule=${TRAEFIK_RULE:-Host(`os.example.com`)}
-      - traefik.http.routers.saga.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
-      - traefik.http.routers.saga.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
-      - traefik.http.services.saga.loadbalancer.server.port=7700
+      - traefik.http.routers.omilo.rule=${TRAEFIK_RULE:-Host(`os.example.com`)}
+      - traefik.http.routers.omilo.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.omilo.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.omilo.loadbalancer.server.port=7700
 
-  saga-worker:
-    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+  omilo-worker:
+    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
     restart: unless-stopped
-    command: ["saga-worker"]
-    depends_on: {saga-api: {condition: service_started}}
+    command: ["omilo-worker"]
+    depends_on: {omilo-api: {condition: service_started}}
     environment: *env
-    volumes: [sagadata:/data]
+    volumes: [omilodata:/data]
 
-volumes: {pgdata: {}, redisdata: {}, sagadata: {}}
+volumes: {pgdata: {}, redisdata: {}, omilodata: {}}

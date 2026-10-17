@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BASE, api } from "@/lib/api";
 import { openInDrawer, visibleThreads } from "@/lib/open";
 
-/* Real-time notices: a live stream while Saga OS is open (toasts, and system notifications when the tab is in the
+/* Real-time notices: a live stream while Omilo is open (toasts, and system notifications when the tab is in the
    background), and Web Push when no tab is open. The browser asks for permission only after the owner clicks. */
 
 export type Notice = { id: number; at: string; kind: string; title: string; body: string; url: string; tag: string; level: string };
@@ -28,14 +28,14 @@ const b64ToBytes = (s: string) => {
 
 /** Ask the browser for permission (must run from a click), then subscribe this browser to Web Push. */
 export async function enableNotifications(): Promise<{ ok: boolean; detail: string }> {
-  if (permission() === "insecure") return { ok: false, detail: "Browsers only allow notifications on https or localhost. Open Saga OS at http://localhost:7700 or behind https." };
-  if (!supported()) return { ok: false, detail: "This browser does not support notifications. On iPhone, add Saga OS to the Home Screen first." };
+  if (permission() === "insecure") return { ok: false, detail: "Browsers only allow notifications on https or localhost. Open Omilo at http://localhost:7700 or behind https." };
+  if (!supported()) return { ok: false, detail: "This browser does not support notifications. On iPhone, add Omilo to the Home Screen first." };
   const p = await Notification.requestPermission();
   if (p !== "granted") return { ok: false, detail: p === "denied" ? "Notifications are blocked for this site. Allow them in the browser's site settings (the icon left of the address)." : "Not turned on." };
   const reg = await registration();
   const cfg = await api<NotifyConfig>("/notify");
   if (!reg || !cfg.push || !cfg.vapid_public_key || !("pushManager" in reg)) {
-    return { ok: true, detail: "On. You will get notifications while Saga OS is open in a tab." };
+    return { ok: true, detail: "On. You will get notifications while Omilo is open in a tab." };
   }
   try {
     await navigator.serviceWorker.ready;
@@ -48,9 +48,9 @@ export async function enableNotifications(): Promise<{ ok: boolean; detail: stri
     sub = sub || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
     const j = sub.toJSON();
     await api("/notify/subscribe", { body: { endpoint: j.endpoint, keys: j.keys, agent: navigator.userAgent.slice(0, 200) } });
-    return { ok: true, detail: "On. You will get notifications even when Saga OS is closed (while the browser runs)." };
+    return { ok: true, detail: "On. You will get notifications even when Omilo is closed (while the browser runs)." };
   } catch (e: any) {
-    return { ok: true, detail: `On while Saga OS is open. Background push failed: ${e?.message || e}` };
+    return { ok: true, detail: `On while Omilo is open. Background push failed: ${e?.message || e}` };
   }
 }
 
@@ -89,11 +89,11 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
     loadPrefs();
     const p = permission();
     let dismissed = false;
-    try { dismissed = localStorage.getItem("saga.notify.ask") === "no"; } catch { /* ignore */ }
+    try { dismissed = localStorage.getItem("omilo.notify.ask") === "no"; } catch { /* ignore */ }
     setAsk(p === "default" && !dismissed);
     if (p === "granted") registration(); // keep the worker fresh
-    window.addEventListener("saga:notify-prefs", loadPrefs);
-    return () => window.removeEventListener("saga:notify-prefs", loadPrefs);
+    window.addEventListener("omilo:notify-prefs", loadPrefs);
+    return () => window.removeEventListener("omilo:notify-prefs", loadPrefs);
   }, [loadPrefs]);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
       let n: Notice;
       try { n = JSON.parse((ev as MessageEvent).data); } catch { return; }
       cb.current?.(n);
-      window.dispatchEvent(new CustomEvent("saga:notice", { detail: n }));
+      window.dispatchEvent(new CustomEvent("omilo:notice", { detail: n }));
       if (n.kind !== "test" && prefs.current[n.kind] === false) return;
       const here = location.pathname + location.search;
       const looking = !document.hidden && document.hasFocus();
@@ -131,7 +131,7 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
     setAskMsg(r.detail);
     if (r.ok) setTimeout(() => setAsk(false), 2500);
   };
-  const later = () => { setAsk(false); try { localStorage.setItem("saga.notify.ask", "no"); } catch { /* ignore */ } };
+  const later = () => { setAsk(false); try { localStorage.setItem("omilo.notify.ask", "no"); } catch { /* ignore */ } };
 
   return (
     <>

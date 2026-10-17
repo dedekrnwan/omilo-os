@@ -1,0 +1,79 @@
+{
+  "name": "Website uptime check",
+  "category": "Engineering",
+  "icon": "ri-pulse-line",
+  "description": "Every hour, check your website. If it doesn't answer 200, tell you right away. No AI, costs nothing.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "cron",
+        "type": "trigger.schedule",
+        "label": "Every hour",
+        "note": "",
+        "config": {
+          "cron": "0 * * * *",
+          "sample": {}
+        },
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "get",
+        "type": "app.http",
+        "label": "Open the site",
+        "note": "Change the address to your site.",
+        "config": {
+          "method": "GET",
+          "url": "https://example.com",
+          "fail": false
+        },
+        "x": 0,
+        "y": 150
+      },
+      {
+        "id": "up",
+        "type": "logic.if",
+        "label": "Answered 200?",
+        "note": "",
+        "config": {
+          "left": "{{ steps.get.output.status }}",
+          "op": "equals",
+          "right": "200"
+        },
+        "x": 0,
+        "y": 300
+      },
+      {
+        "id": "alert",
+        "type": "omilo.inbox",
+        "label": "Tell me it's down",
+        "note": "",
+        "config": {
+          "title": "Your site is down",
+          "body": "It answered {{ steps.get.output.status }} at {{ now }}."
+        },
+        "x": 190,
+        "y": 450
+      }
+    ],
+    "edges": [
+      {
+        "from": "cron",
+        "port": "out",
+        "to": "get"
+      },
+      {
+        "from": "get",
+        "port": "out",
+        "to": "up"
+      },
+      {
+        "from": "up",
+        "port": "false",
+        "to": "alert"
+      }
+    ]
+  },
+  "needs": [],
+  "by": "Omilo"
+}

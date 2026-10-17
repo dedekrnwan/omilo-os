@@ -1,5 +1,5 @@
-/* Office sprites: each helper is drawn as its own Saga mascot (same body, face, colour and prop as everywhere else
-   in Saga OS), as a small sprite sheet: 4 directions × (4 walk frames, 2 idle frames, 2 working frames). */
+/* Office sprites: each helper is drawn as its own Omilo mascot (same body, face, colour and prop as everywhere else
+   in Omilo), as a small sprite sheet: 4 directions × (4 walk frames, 2 idle frames, 2 working frames). */
 
 export const FW = 64, FH = 80;           // frame size on the canvas (drawn at 2×, shown at half size)
 export const DIRS = ["down", "left", "right", "up"] as const;

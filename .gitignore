@@ -11,7 +11,7 @@ apps/web/.next/
 apps/web/out/
 apps/web/next-env.d.ts
 apps/web/tsconfig.tsbuildinfo
-cli/saga-os
+cli/omilo
 dist/
 .env
 .env.*
@@ -20,4 +20,4 @@ deploy/.env
 
 dump.rdb
 cli/cli
-cli/saga-os
+cli/omilo

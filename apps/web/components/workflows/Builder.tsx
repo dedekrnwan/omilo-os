@@ -344,7 +344,7 @@ export default function Builder({ id, runId }: { id: string; runId?: string | nu
               <div key={g} className="wfb-grp">
                 <div className="wfb-gh">{g}{g === "AI" && <span className="small"> · uses tokens</span>}</div>
                 {shown.map((b) => (
-                  <button key={b.type} className={`wfb-blk c-${b.color}`} draggable onDragStart={(e) => { e.dataTransfer.setData("application/x-saga-block", b.type); e.dataTransfer.effectAllowed = "copy"; }}
+                  <button key={b.type} className={`wfb-blk c-${b.color}`} draggable onDragStart={(e) => { e.dataTransfer.setData("application/x-omilo-block", b.type); e.dataTransfer.effectAllowed = "copy"; }}
                     onClick={() => add(b.type)} title={b.desc}>
                     <span className="wfn-ic"><i className={b.icon} /></span><span className="t"><b>{b.label}</b><span>{b.desc}</span></span>
                   </button>

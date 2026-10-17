@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
-import { SagaMascot } from "@/components/Logo";
+import { OmiloMascot } from "@/components/Logo";
 import type { DialogReq } from "@/lib/dialog";
 
 /* One dialog at a time (others wait in line). The helper it is about looks sad when you are about to do something
@@ -15,8 +15,8 @@ export default function DialogHost() {
 
   useEffect(() => {
     const on = (e: Event) => setQueue((q) => [...q, (e as CustomEvent<DialogReq>).detail]);
-    window.addEventListener("saga:dialog", on);
-    return () => window.removeEventListener("saga:dialog", on);
+    window.addEventListener("omilo:dialog", on);
+    return () => window.removeEventListener("omilo:dialog", on);
   }, []);
   const close = useCallback((ok: boolean) => {
     if (!cur) return;
@@ -45,7 +45,7 @@ export default function DialogHost() {
   const base = cur.mood || (cur.danger ? "sad" : cur.who ? "worried" : "worried");
   const mood = lean === "no" ? null : lean === "yes" && cur.danger ? "sad" : base === "happy" ? null : base;
   const face = cur.who ? <Avatar who={cur.who} size={76} mood={mood as any} /> : cur.icon && !cur.danger && base === "happy"
-    ? <span className="dlg-icon"><i className={cur.icon} /></span> : <SagaMascot size={76} mood={mood as any} />;
+    ? <span className="dlg-icon"><i className={cur.icon} /></span> : <OmiloMascot size={76} mood={mood as any} />;
   return (
     <div className="dlg-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) close(false); }}>
       <div className={`dlg ${cur.danger ? "danger" : ""} ${lean === "yes" ? "lean-yes" : lean === "no" ? "lean-no" : ""}`} role="alertdialog" aria-modal="true"

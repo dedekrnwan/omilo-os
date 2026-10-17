@@ -3,7 +3,7 @@ import httpx
 import pytest
 from conftest import wait_for
 
-from saga_api import policy
+from omilo_api import policy
 
 
 def mcp(base_url, token, method, params=None, id_=1):
@@ -41,7 +41,7 @@ def test_cookie_requests_need_csrf_header(base_url, owner):
     assert c.post("/api/auth/login", json={"email": "owner@example.com", "password": "correct-horse-1"}).status_code == 200
     assert c.get("/api/overview").status_code == 200
     assert c.post("/api/system", json={"paused": False}).status_code == 403
-    assert c.post("/api/system", json={"paused": False}, headers={"X-Saga": "1"}).status_code == 200
+    assert c.post("/api/system", json={"paused": False}, headers={"X-Omilo": "1"}).status_code == 200
 
 
 # ------------------------------------------------------------------ the M2 gate

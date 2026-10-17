@@ -131,9 +131,9 @@ export default function TaskDrawerHost({ initial }: { initial: Open }) {
   useEffect(() => {
     const onTask = (e: Event) => { const d = (e as CustomEvent).detail; setChat(null); setJob({ id: d.id, tab: d.tab || "progress" }); };
     const onThread = (e: Event) => { const d = (e as CustomEvent).detail; setJob(null); setChat({ id: d.id, title: d.title }); };
-    window.addEventListener("saga:task", onTask);
-    window.addEventListener("saga:thread", onThread);
-    return () => { window.removeEventListener("saga:task", onTask); window.removeEventListener("saga:thread", onThread); };
+    window.addEventListener("omilo:task", onTask);
+    window.addEventListener("omilo:thread", onThread);
+    return () => { window.removeEventListener("omilo:task", onTask); window.removeEventListener("omilo:thread", onThread); };
   }, []);
   useEffect(() => { if ((job || chat) && !staff.length) api<Staff[]>("/staff").then(setStaff).catch(() => {}); }, [job, chat, staff.length]);
   useEffect(() => { setHead(null); if (job) api<Task>(`/tasks/${job.id}`).then(setHead).catch(() => {}); }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps

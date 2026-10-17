@@ -155,7 +155,7 @@ function WorkspaceInner() {
   const view = params.get("view") === "work" ? "work" : "chat";
   const tid = params.get("thread");
   const taskId = params.get("task");
-  const [panel, setPanel] = useLocal("saga.panel", true);
+  const [panel, setPanel] = useLocal("omilo.panel", true);
   const [listOpen, setListOpen] = useState(false);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -211,7 +211,7 @@ function WorkspaceInner() {
     const focus = () => setTimeout(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } }, 0);
     if (a.kind === "insert") { setText(a.text + rest); focus(); }
     else if (a.kind === "send") { setText(""); send(rest.trim() ? `${a.text}\n\n${rest}` : a.text); }
-    else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("saga:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
+    else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("omilo:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
     else if (a.kind === "job") { setText("/job "); focus(); }
     else if (a.kind === "talk") { setText(""); const st = staff.find((x) => x.id === a.staffId); openThread(st?.is_chief ? { scope: "master" } : { scope: "staff", staff_id: a.staffId }); }
     else if (a.kind === "go") { setText(""); router.push(a.href); }

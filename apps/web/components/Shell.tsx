@@ -60,7 +60,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const n = overview?.inbox.open || 0;
-    const base = overview?.company_name ? `${overview.company_name} · Saga OS` : "Saga OS";
+    const base = overview?.company_name ? `${overview.company_name} · Omilo` : "Omilo";
     document.title = n ? `(${n}) ${base}` : base;
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
@@ -81,7 +81,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     return (
       <OverviewCtx.Provider value={{ overview, refresh }}>
         <StepPage top={<>
-          <Mark /><span className="crumb">Saga OS<span className="small" style={{ fontWeight: 400 }}> · Setting up {overview?.company_name || "your company"}</span></span>
+          <Mark /><span className="crumb">Omilo<span className="small" style={{ fontWeight: 400 }}> · Setting up {overview?.company_name || "your company"}</span></span>
           <span className="sp" style={{ flex: 1 }} />
           <div className="cosw-top"><CompanySwitcher overview={overview} /></div>
           <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
@@ -94,7 +94,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   }
 
   const key = Object.keys(TITLES).filter((h) => (h === "/" ? path === "/" : path.startsWith(h))).sort((a, b) => b.length - a.length)[0] || "/";
-  const [title, icon] = TITLES[key] || ["Saga OS", "ri-apps-line"];
+  const [title, icon] = TITLES[key] || ["Omilo", "ri-apps-line"];
 
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
@@ -104,13 +104,13 @@ export default function Shell({ children }: { children: ReactNode }) {
         {ready && !bare && <TaskDrawerLazy />}
         {ready && !bare && <ContextMenuHost />}
         <div className="mobilebar">
-          <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Saga OS"}</b>
+          <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Omilo"}</b>
           <span className="sp" />
           {overview?.inbox.open ? <Link href="/" className="chip down">{overview.inbox.open} waiting</Link> : null}
           <button className="iconbtn" aria-label="Menu" onClick={() => setMenu(!menu)}><i className={menu ? "ri-close-line" : "ri-menu-line"} /></button>
         </div>
         <aside className={`side ${menu ? "open" : ""}`}>
-          <div className="head brand"><Mark /><div><b>Saga OS</b></div></div>
+          <div className="head brand"><Mark /><div><b>Omilo</b></div></div>
           <CompanySwitcher overview={overview} />
           <nav>
             {NAV.map((g) => (

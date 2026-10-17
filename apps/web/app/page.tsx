@@ -204,8 +204,8 @@ function ListView({ onCount }: { onCount: () => void }) {
 export default function Inbox() {
   const { refresh } = useOverview();
   const [view, setView] = useState<"board" | "list" | "map">("board");
-  useEffect(() => { try { const v = localStorage.getItem("saga.inbox.view"); if (v === "list" || v === "board" || v === "map") setView(v); } catch { /* ignore */ } }, []);
-  const pick = (v: "board" | "list" | "map") => { setView(v); try { localStorage.setItem("saga.inbox.view", v); } catch { /* ignore */ } };
+  useEffect(() => { try { const v = localStorage.getItem("omilo.inbox.view"); if (v === "list" || v === "board" || v === "map") setView(v); } catch { /* ignore */ } }, []);
+  const pick = (v: "board" | "list" | "map") => { setView(v); try { localStorage.setItem("omilo.inbox.view", v); } catch { /* ignore */ } };
   return (
     <div className="inbox-page">
       <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 16 }}>

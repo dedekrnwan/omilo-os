@@ -7,9 +7,9 @@ jobs:
     services:
       postgres:
         image: pgvector/pgvector:pg16
-        env: {POSTGRES_DB: saga_test, POSTGRES_USER: saga, POSTGRES_PASSWORD: saga}
+        env: {POSTGRES_DB: omilo_test, POSTGRES_USER: omilo, POSTGRES_PASSWORD: omilo}
         ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U saga" --health-interval 5s --health-retries 20
+        options: --health-cmd "pg_isready -U omilo" --health-interval 5s --health-retries 20
       redis:
         image: redis:7-alpine
         ports: ["6379:6379"]
@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -e ".[dev]" "mcp>=1.9"
-      - run: ruff check saga_api tests
+      - run: ruff check omilo_api tests
       - run: pytest -q
   web:
     runs-on: ubuntu-latest

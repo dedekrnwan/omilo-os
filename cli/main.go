@@ -1,4 +1,4 @@
-// saga-os: install, run and talk to your Saga OS gateway from a terminal.
+// omilo: install, run and talk to your Omilo gateway from a terminal.
 package main
 
 import (
@@ -34,14 +34,14 @@ type config struct {
 }
 
 func dataDir() string {
-	if d := os.Getenv("SAGA_HOME"); d != "" {
+	if d := os.Getenv("OMILO_HOME"); d != "" {
 		return d
 	}
 	home, _ := os.UserHomeDir()
 	if runtime.GOOS == "windows" {
-		return filepath.Join(home, "SagaOS")
+		return filepath.Join(home, "Omilo")
 	}
-	return filepath.Join(home, ".saga-os")
+	return filepath.Join(home, ".omilo")
 }
 
 func configPath() string { return filepath.Join(dataDir(), "cli.json") }
@@ -51,13 +51,13 @@ func loadConfig() config {
 	if b, err := os.ReadFile(configPath()); err == nil {
 		_ = json.Unmarshal(b, &c)
 	}
-	if u := os.Getenv("SAGA_URL"); u != "" {
+	if u := os.Getenv("OMILO_URL"); u != "" {
 		c.URL = u
 	}
-	if t := os.Getenv("SAGA_TOKEN"); t != "" {
+	if t := os.Getenv("OMILO_TOKEN"); t != "" {
 		c.Token = t
 	}
-	if co := os.Getenv("SAGA_COMPANY"); co != "" {
+	if co := os.Getenv("OMILO_COMPANY"); co != "" {
 		c.Company = co
 	}
 	c.URL = strings.TrimRight(c.URL, "/")
@@ -96,11 +96,11 @@ func call(method, path string, body any, out any) error {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	if c.Company != "" {
-		req.Header.Set("X-Saga-Company", c.Company)
+		req.Header.Set("X-Omilo-Company", c.Company)
 	}
 	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
 	if err != nil {
-		return fmt.Errorf("cannot reach Saga OS at %s (is it running? try `saga-os up`): %w", c.URL, err)
+		return fmt.Errorf("cannot reach Omilo at %s (is it running? try `omilo up`): %w", c.URL, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -114,7 +114,7 @@ func call(method, path string, body any, out any) error {
 			msg = strings.TrimSpace(string(data))
 		}
 		if resp.StatusCode == 401 {
-			msg += " (run `saga-os login`)"
+			msg += " (run `omilo login`)"
 		}
 		return &apiError{resp.StatusCode, msg}
 	}
@@ -203,9 +203,9 @@ func compose(args ...string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("docker", append([]string{"compose", "-f", p, "-p", "saga-os"}, args...)...)
+	cmd := exec.Command("docker", append([]string{"compose", "-f", p, "-p", "omilo"}, args...)...)
 	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
-	cmd.Env = append(os.Environ(), "SAGA_HOME="+dataDir())
+	cmd.Env = append(os.Environ(), "OMILO_HOME="+dataDir())
 	return cmd.Run()
 }
 
@@ -240,15 +240,15 @@ func cmdUp(args []string) {
 	port := fs.String("port", "7700", "port on this machine")
 	noOpen := fs.Bool("no-open", false, "don't open the browser")
 	_ = fs.Parse(args)
-	os.Setenv("SAGA_PORT", *port)
+	os.Setenv("OMILO_PORT", *port)
 	must(compose("up", "-d", "--pull", "missing"))
 	url := "http://localhost:" + *port
 	c := loadConfig()
 	c.URL = url
 	must(saveConfig(c))
-	fmt.Print("Waiting for Saga OS to start")
+	fmt.Print("Waiting for Omilo to start")
 	if !waitHealthy(url) {
-		die(errors.New("it did not become healthy in 60s; see `saga-os logs`"))
+		die(errors.New("it did not become healthy in 60s; see `omilo logs`"))
 	}
 	fmt.Println(" ready:", url)
 	if !*noOpen {
@@ -258,7 +258,7 @@ func cmdUp(args []string) {
 
 func cmdLogin(args []string) {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
-	url := fs.String("url", loadConfig().URL, "Saga OS address")
+	url := fs.String("url", loadConfig().URL, "Omilo address")
 	_ = fs.Parse(args)
 	c := loadConfig()
 	c.URL = strings.TrimRight(*url, "/")
@@ -309,7 +309,7 @@ func cmdInbox() {
 		rows = append(rows, []string{ref, str(i, "kind"), str(i, "staff_id"), flag, short(str(i, "title"), 70)})
 	}
 	table("ID\tKIND\tFROM\t\tTITLE", rows)
-	fmt.Println("\nsaga-os show <id> · approve <id> · reject <id> -note \"...\" · changes <id> -note \"...\" · answer <id> \"...\"")
+	fmt.Println("\nomilo show <id> · approve <id> · reject <id> -note \"...\" · changes <id> -note \"...\" · answer <id> \"...\"")
 }
 
 func cmdShow(id string) {
@@ -335,7 +335,7 @@ func cmdDecide(decision string, args []string) {
 	note := fs.String("note", "", "note for the agent (required to reject or ask for changes)")
 	_ = fs.Parse(reorder(args))
 	if fs.NArg() != 1 {
-		die(fmt.Errorf("usage: saga-os %s <proposal id> [-note \"...\"]", decision))
+		die(fmt.Errorf("usage: omilo %s <proposal id> [-note \"...\"]", decision))
 	}
 	d := map[string]string{"approve": "approve", "reject": "reject", "changes": "changes"}[decision]
 	var p map[string]any
@@ -379,7 +379,7 @@ func cmdCompanies() {
 
 func cmdUse(args []string) {
 	if len(args) != 1 {
-		die(errors.New("usage: saga-os use <company id>   (see `saga-os companies`)"))
+		die(errors.New("usage: omilo use <company id>   (see `omilo companies`)"))
 	}
 	c := loadConfig()
 	c.Company = args[0]
@@ -443,16 +443,16 @@ func cmdRun(args []string) {
 	note := fs.String("note", "", "extra instructions")
 	_ = fs.Parse(reorder(args))
 	if fs.NArg() < 2 {
-		die(errors.New(`usage: saga-os run <staff id> "what to do" [-note "..."]`))
+		die(errors.New(`usage: omilo run <staff id> "what to do" [-note "..."]`))
 	}
 	var t map[string]any
 	must(call("POST", "/tasks", map[string]string{"staff_id": fs.Arg(0), "brief": strings.Join(fs.Args()[1:], " "), "founder_note": *note}, &t))
-	fmt.Println("started", str(t, "id"), "— follow it with `saga-os show", str(t, "id")+"`")
+	fmt.Println("started", str(t, "id"), "— follow it with `omilo show", str(t, "id")+"`")
 }
 
 func cmdChat(args []string) {
 	if len(args) == 0 {
-		die(errors.New(`usage: saga-os chat "your message"`))
+		die(errors.New(`usage: omilo chat "your message"`))
 	}
 	var th map[string]any
 	must(call("POST", "/threads", map[string]string{"scope": "master"}, &th))
@@ -473,7 +473,7 @@ func cmdChat(args []string) {
 
 func cmdImport(args []string) {
 	if len(args) != 1 {
-		die(errors.New("usage: saga-os import <path to the v0 company-os folder>"))
+		die(errors.New("usage: omilo import <path to the v0 company-os folder>"))
 	}
 	root := args[0]
 	files := map[string]string{}
@@ -510,7 +510,7 @@ func cmdImport(args []string) {
 func cmdDoctor() {
 	ok := true
 	if _, err := exec.LookPath("docker"); err != nil {
-		fmt.Println("✕ docker not found (needed for `saga-os up`)")
+		fmt.Println("✕ docker not found (needed for `omilo up`)")
 		ok = false
 	} else {
 		fmt.Println("✓ docker found")
@@ -523,7 +523,7 @@ func cmdDoctor() {
 		ok = false
 	}
 	if c.Token == "" {
-		fmt.Println("– not signed in (saga-os login)")
+		fmt.Println("– not signed in (omilo login)")
 	} else if err := call("GET", "/auth/me", nil, nil); err != nil {
 		fmt.Println("✕ token rejected:", err)
 		ok = false
@@ -545,10 +545,10 @@ func cmdDoctor() {
 	}
 }
 
-const usage = `saga-os — run your company of AI staff agents
+const usage = `omilo — run your company of AI staff agents
 
 Run it
-  up [-port 7700]        start Saga OS (Docker) and open it in the browser
+  up [-port 7700]        start Omilo (Docker) and open it in the browser
   down                   stop it          logs      follow the logs
   login [-url URL]       sign in from this terminal
   doctor                 check Docker, the gateway, your login and the engines
@@ -593,14 +593,14 @@ func main() {
 		cmdInbox()
 	case "show":
 		if len(args) != 1 {
-			die(errors.New("usage: saga-os show <id>"))
+			die(errors.New("usage: omilo show <id>"))
 		}
 		cmdShow(args[0])
 	case "approve", "reject", "changes":
 		cmdDecide(cmd, args)
 	case "answer":
 		if len(args) < 2 {
-			die(errors.New(`usage: saga-os answer <question id> "your answer"`))
+			die(errors.New(`usage: omilo answer <question id> "your answer"`))
 		}
 		must(call("POST", "/inbox/"+args[0]+"/answer", map[string]string{"answer": strings.Join(args[1:], " ")}, nil))
 		fmt.Println("answered; the agent gets a follow-up task")
@@ -622,7 +622,7 @@ func main() {
 	case "import":
 		cmdImport(args)
 	case "version", "--version", "-v":
-		fmt.Println("saga-os", version)
+		fmt.Println("omilo", version)
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:

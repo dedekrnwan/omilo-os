@@ -1,15 +1,15 @@
-# Saga OS
+# Omilo
 
 **The office where a founder runs a company of AI staff agents.**
 
-Saga OS is an open-source gateway between a company owner and their AI staff agents. Every task, proposal, approval,
+Omilo is an open-source gateway between a company owner and their AI staff agents. Every task, proposal, approval,
 question and report passes through it. Claude Code (with your Claude API key or a pool of subscriptions) does the thinking
 and the work behind it. Agents propose, the owner decides, and the gateway enforces that in code, not in prompts. Every regular
 job is a loop that learns from your decisions and improves itself, with its memory kept as notes you can read in Docs.
 
 ## What works today (milestones M1 + M2)
 
-- **Onboarding for non-engineers**: a guided 9-step wizard with plain questions, examples and tap-to-choose answers (business, customers, offer, goals, voice, tools and rules). Saga OS writes the knowledge files from the answers, suggests a team from the goals (no app-building helpers for businesses without their own app), uses the owner's time zone, starts in practice mode, and runs a first practice job so the owner sees an approval in the Inbox right away. Answers are saved as you go.
+- **Onboarding for non-engineers**: a guided 9-step wizard with plain questions, examples and tap-to-choose answers (business, customers, offer, goals, voice, tools and rules). Omilo writes the knowledge files from the answers, suggests a team from the goals (no app-building helpers for businesses without their own app), uses the owner's time zone, starts in practice mode, and runs a first practice job so the owner sees an approval in the Inbox right away. Answers are saved as you go.
 - **Staff**: one card per agent: job, shifts (cron with timezone), engine, permission overrides, MCP token rotation.
 - **Work**: shifts become tasks, the worker dispatches them (concurrency limit, one task per agent, timeout), agents write checkpoints and a report.
 - **Inbox**: proposals, questions and alerts. Approve → an execution task runs exactly the approved text. Request changes → a revision task; every revision is kept. Reject needs a note.
@@ -17,7 +17,7 @@ job is a loop that learns from your decisions and improves itself, with its memo
 - **Chat**: master thread (Chief of Staff) and per-agent / per-task / per-proposal threads, markdown replies.
 - **Agent MCP server** at `/mcp` (Streamable HTTP, per-agent bearer token): `get_context`, `get_task`, `checkpoint`, `report`, `propose`, `revise_proposal`, `get_approved`, `mark_executed`, `request_action`, `ask_founder`, `post_message`, `offer_choices`, `docs_*`, `remember`, `recall`, `share_file`, `update_kpi`, `create_task` (Chief only), `review_week` and `improve` (Chief only, for the retro), `log_usage`. Every call is logged.
 - **Company**: KPIs and the knowledge editor. **Settings**: pause all, strict mode, concurrency, engine health, audit log.
-- **CLI** `saga-os`: `up`, `down`, `logs`, `login`, `doctor`, `status`, `inbox`, `show`, `approve`, `reject`, `changes`, `answer`, `staff`, `tasks`, `run`, `chat`, `pause`, `resume`, `import`.
+- **CLI** `omilo`: `up`, `down`, `logs`, `login`, `doctor`, `status`, `inbox`, `show`, `approve`, `reject`, `changes`, `answer`, `staff`, `tasks`, `run`, `chat`, `pause`, `resume`, `import`.
 - **Import** of the v0 prototype (`legacy/prototype`): knowledge, loops → staff + shifts, runs, approvals.
 
 Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): nudges and quiet hours (M3), connector
@@ -29,19 +29,19 @@ The Workspace puts chat and work on one page (toggle top right) with a side pane
 **Browser** trail. Agent turns render as they happen: a live "Working" card with reasoning, each tool call (expand for input and
 output), sources, account switches and a usage meter (tokens, cost, time). Helpers can offer clickable choices (`offer_choices`).
 Engines report through `/api/events` (`RunEvent`): Claude Code streams every step, built-in Claude streams its turns, and every
-saga-os tool call is recorded by the MCP server.
+omilo tool call is recorded by the MCP server.
 
 ## Harness: a pool of Claude Code subscriptions
 
 Settings live under **Harness**. Add each subscription with a token from `claude setup-token` (stored encrypted), install
 Claude Code with one click (npm), then put helpers on the pool. Each job leases the least recently used free account
-(`SAGA_HARNESS_PARALLEL` jobs per account, default 2). On a usage limit the account rests until its reset time and the job
+(`OMILO_HARNESS_PARALLEL` jobs per account, default 2). On a usage limit the account rests until its reset time and the job
 continues on another account with `--resume`, so no work is lost; sign-in problems mark the account and move on.
 The Workspace header shows the pool at a glance: one short bar per account, side by side, filled by how much of its 5-hour
 limit it has used (green, amber from 70%, red from 90%, striped red while resting, outlined red when it needs signing in again;
-hover for details and reset times). The numbers come from Claude Code's `rate_limit_event` when it reports them; otherwise Saga OS
+hover for details and reset times). The numbers come from Claude Code's `rate_limit_event` when it reports them; otherwise Omilo
 estimates from tokens used against what the account handled before its last limit. The Harness page shows the same per account.
-Runs use `claude -p --output-format stream-json`, the saga-os MCP server, `--permission-mode dontAsk` and an allowlist
+Runs use `claude -p --output-format stream-json`, the omilo MCP server, `--permission-mode dontAsk` and an allowlist
 (web, read, write in the helper's own workspace; `Bash` only when a helper has `allow_shell`).
 
 ## Capabilities: files, folders, connectors and skills
@@ -49,7 +49,7 @@ Runs use `claude -p --output-format stream-json`, the saga-os MCP server, `--per
 The **+** button in the Workspace chat box works like Claude's: attach files or photos, and switch folders, connectors and
 skills on or off for that chat. They are managed under **Capabilities** in the sidebar.
 
-- **Computer**: share folders on the machine running Saga OS (pick them with the built-in folder browser). Per folder: read, or read
+- **Computer**: share folders on the machine running Omilo (pick them with the built-in folder browser). Per folder: read, or read
   and edit, and "run commands" for development work (install, build, test, git). On the Claude Code pool this is enforced by
   Claude Code itself: each folder is passed with `--add-dir`, read-only folders get Edit/Write denied, `Bash` is only allowed when a
   folder permits commands, and even then `rm`, `sudo`, `git push`, publishing, deploying and `ssh` stay denied (helpers ask in the
@@ -92,7 +92,7 @@ It saves as you type; if a helper changed the note meanwhile you choose "keep mi
   (oldest item, your average time to decide), who is working now, and the Claude Code pool
 - tokens by helper over time (stacked bars, hover for the split, or switch to a table), and jobs done vs failed
 - every helper: state (working, awake, sleeping, paused), the job it is on, jobs, tokens, spend, last activity
-- the pool per account, the Saga tools helpers called (with failures and blocked calls), and the latest notices
+- the pool per account, the Omilo tools helpers called (with failures and blocked calls), and the latest notices
 
 Below that: **why jobs failed** (grouped by cause: usage limit, sign-in, took too long, connection, interrupted,
 budget, with what to do and links to the jobs), **run time** per engine and per helper (median, slowest 10%, slowest job),
@@ -112,7 +112,7 @@ chat the same way. **Full view** still opens it in the Workspace.
 sources read and tool calls; click one for the recent steps and Open. Approvals open in a drawer. List shows the classic view
 with history filters.
 
-It reads what Saga OS already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
+It reads what Omilo already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
 items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
 
 ## Plan: goals → work → sub-work
@@ -133,13 +133,13 @@ on the Inbox board and list, the Workspace job list, the job page and the job dr
 
 **Sign-in and setup.** The sign-in and account pages show a corner of the office where the helpers walk, run, sit and
 type, and chat with each other (a picture of the product, not live data). Click the floor and the nearest one runs
-there; on the account page a mascot with your name walks in and takes a desk, and the room sign shows your business. Forgot the password? Saga OS sends no email, so run `make reset-password` on the computer
-that runs it (signs out every browser session of that account). **Onboarding** is guided by Saga, the house mascot:
+there; on the account page a mascot with your name walks in and takes a desk, and the room sign shows your business. Forgot the password? Omilo sends no email, so run `make reset-password` on the computer
+that runs it (signs out every browser session of that account). **Onboarding** is guided by Omilo, the house mascot:
 it comments on what you fill in, your team appears as you pick goals and helpers, a meter shows what your helpers will
-know (click a missing part to jump there), and with a Claude key Saga can fill the business step from your website.
+know (click a missing part to jump there), and with a Claude key Omilo can fill the business step from your website.
 Goals picked in onboarding become Plan goals once; deleting them keeps them deleted.
 
-**Resets keep your data.** `make reset` asks first and moves the data folder aside (`~/.saga-os-old-<date>`), it never
+**Resets keep your data.** `make reset` asks first and moves the data folder aside (`~/.omilo-old-<date>`), it never
 deletes it. Connectors from such a folder come back with one click on the Connectors page ("Your earlier connectors
 are still saved"), secrets included, or with `make restore-connectors [FROM=<folder>]`.
 
@@ -165,7 +165,7 @@ it (the floor tile under the cursor is highlighted, a click on the floor ripples
 stretch or take a short, labelled break at the coffee point or lounge; real work calls them straight back. The cup
 button turns those breaks off.
 
-How it works: a flush hook (`saga_api/office.py`) writes an `office_event` row from each real change (jobs, run
+How it works: a flush hook (`omilo_api/office.py`) writes an `office_event` row from each real change (jobs, run
 events, proposals, questions, chats, pause/resume). `GET /api/office/state` is the authoritative state,
 `GET /api/office/events?after=` the events, `GET /api/office/agent/{id}` the inspector, and the WebSocket
 `/api/office/ws` (same-origin, signed-in) pushes state and events, with a heartbeat and resume from a cursor; the
@@ -220,7 +220,7 @@ results. Each source is split into pieces with a full-text index (right away) an
 - **Helpers** use `recall` (search by meaning, optionally by kind) and `kb_add` (save a page or data so the next helper
   finds it). Workflows have **Save to knowledge** and **Search knowledge** steps.
 - **Embeddings** run on this computer by default (a multilingual model that understands Indonesian, downloaded once to
-  `~/.saga-os/models`), or with Voyage AI or OpenAI (Settings in Docs → Knowledge). Switching re-embeds in the background.
+  `~/.omilo/models`), or with Voyage AI or OpenAI (Settings in Docs → Knowledge). Switching re-embeds in the background.
 - **Docs → Knowledge** shows it: a **map** where every piece is a dot placed by meaning (similar things together; a
   search lands on the map with lines to what a helper would get back), the **sources** with their pieces and what is
   close in meaning, and every **search** helpers and workflows made with what came back. Each note's side panel has a
@@ -236,13 +236,13 @@ web requests, picking and reshaping data, decisions), so they cost nothing; AI i
 ("Give a helper a job", "AI extract"). The builder is a canvas: drag blocks in, drag from a dot to connect, click a card to
 set it up, press **Test run** and watch each card get a badge (Triggered, Completed, Waiting, Failed) with its output.
 
-- **Triggers**: by hand, a schedule, a webhook (a private address another app posts JSON to), or something in Saga OS (a job finished or failed, an approval, a question, a handoff).
+- **Triggers**: by hand, a schedule, a webhook (a private address another app posts JSON to), or something in Omilo (a job finished or failed, an approval, a question, a handoff).
 - **Steps**: use a connector tool (its tools and arguments are listed for you), web request, pick fields, compose text, parse JSON/CSV/lines, find with a pattern, filter a list, If (true/false), **Ask me** (approve/reject in the Inbox), tell me, write a doc, record a KPI, give a helper a job, AI extract.
 - **Templates** pass values along: `{{ trigger.email }}`, `{{ steps.score.output.total | number }}`, `{{ last | length }}`; filters `json lower upper trim length first default number join`.
 - **Safety**: a web request that changes something, or a connector set to "ask first", waits for your OK on every run unless you turn on "Run risky steps without asking". Runs can't loop and stop after 200 steps.
 - **Helpers build workflows**: they get `list_workflows`, `workflow_blocks`, `propose_workflow`, `run_workflow` and `get_workflow_run`, and are told to check for a workflow before repeating work by hand. A workflow a helper proposes lands in your **Inbox** with a preview; nothing runs until you approve it. **Ask a helper to build one** gives a helper that job from a description.
 - **What helpers repeat** lists jobs done three or more times in 30 days (with what they cost) and turns any of them into a workflow request.
-- **Marketplace**: ready-made workflows (lead intake, morning brief, uptime check, failed-job alert, weekly KPI from an API, invoice numbers, GitHub issues digest, social post with your OK) you add with one click and adjust. Share your own with **Copy as JSON** and **Import JSON**; templates live in `apps/api/saga_api/templates/workflows/`.
+- **Marketplace**: ready-made workflows (lead intake, morning brief, uptime check, failed-job alert, weekly KPI from an API, invoice numbers, GitHub issues digest, social post with your OK) you add with one click and adjust. Share your own with **Copy as JSON** and **Import JSON**; templates live in `apps/api/omilo_api/templates/workflows/`.
 
 API: `GET|POST /api/workflows`, `GET|PUT|DELETE /api/workflows/{id}`, `POST /api/workflows/{id}/activate|pause|reject|run`, `GET /api/workflows/{id}/runs|export`,
 `GET /api/workflow-runs[/{id}]`, `POST /api/workflow-runs/{id}/cancel`, `GET /api/workflows/blocks|market|patterns`, `GET /api/workflows/connector-tools/{cid}`,
@@ -251,8 +251,8 @@ API: `GET|POST /api/workflows`, `GET|PUT|DELETE /api/workflows/{id}`, `POST /api
 ## Browser panel
 
 Workspace → Browser shows the pages a helper read, searched or opened, newest first, as a real picture of the page: the
-screenshot its own browser took (Playwright connector), or one Saga OS takes with the Chrome or Chromium on this computer
-(`SAGA_CHROME` to point at one). Below it: the page's title, description and site. **Live** shows the page itself (some sites
+screenshot its own browser took (Playwright connector), or one Omilo takes with the Chrome or Chromium on this computer
+(`OMILO_CHROME` to point at one). Below it: the page's title, description and site. **Live** shows the page itself (some sites
 refuse to be embedded; open them in a new tab). Back and forward step through the pages; refresh takes a new picture.
 Only public web addresses are previewed, never this computer or the local network.
 
@@ -267,14 +267,14 @@ and every post, reply or message comes to your Inbox. The apps you named in onbo
 
 ## Several companies
 
-Run more than one company from one Saga OS. Pick the company at the top of the sidebar (the badge shows what waits in
+Run more than one company from one Omilo. Pick the company at the top of the sidebar (the badge shows what waits in
 the others), or **New company** to set one up from scratch. Each company is fully separate: its own helpers, jobs,
 inbox, Docs, knowledge, skills, budgets, connectors, shared folders and Claude Code pool. Only your login is shared.
 
 - The first company keeps the original layout in the data folder; every other company lives in `<data>/companies/<id>/`
-  with its own `saga.db`, `vault/`, `harness/` and so on. The list is `<data>/companies.json`.
-- Requests pick the company from the `saga_co` cookie (the browser), the `X-Saga-Company` header (the CLI:
-  `saga-os companies`, `saga-os use <id>`, or `SAGA_COMPANY`), or a `/co/<id>/` path prefix (helpers call their
+  with its own `omilo.db`, `vault/`, `harness/` and so on. The list is `<data>/companies.json`.
+- Requests pick the company from the `omilo_co` cookie (the browser), the `X-Omilo-Company` header (the CLI:
+  `omilo companies`, `omilo use <id>`, or `OMILO_COMPANY`), or a `/co/<id>/` path prefix (helpers call their
   company's MCP endpoint at `/co/<id>/mcp`).
 - Switching company in one tab reloads every open tab on it. Web Push names the company and switches to it when opened.
 - Archive a company you no longer run (Manage companies): its helpers pause and it leaves the list; nothing is deleted.
@@ -319,7 +319,7 @@ on the helper's page (Team → helper → Look).
 
 ## Notifications
 
-Saga OS tells you right away when a helper needs you: inbox items (approvals, questions, alerts), chat replies, and failed (or, if
+Omilo tells you right away when a helper needs you: inbox items (approvals, questions, alerts), chat replies, and failed (or, if
 you want, finished) jobs. Notices are written automatically (`Notice` table) and reach you three ways:
 
 - **In the app**: a live stream (`/api/stream`, server-sent events) shows a small pop-up and refreshes the Inbox and counts at once.
@@ -328,7 +328,7 @@ you want, finished) jobs. Notices are written automatically (`Notice` table) and
   open, so you never get two.
 
 The browser asks for permission only after you press **Turn on** (banner, or Settings → Notifications), where you also pick what to hear
-about and send a test. Browsers allow notifications only on https or `localhost`; on iPhone, add Saga OS to the Home Screen first.
+about and send a test. Browsers allow notifications only on https or `localhost`; on iPhone, add Omilo to the Home Screen first.
 
 ## Speed
 
@@ -340,8 +340,8 @@ are cached for a year, and the code highlighter and file preview load only when 
 
 Team → **Hire a specialist** opens a library of about 280 specialists from
 [The Agency](https://github.com/msitarzewski/agency-agents) (MIT): marketing, sales, design, engineering, finance, support and more,
-each with its own personality, process and deliverables. Saga OS downloads the roster from GitHub (`git clone`, or the tarball;
-`SAGA_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
+each with its own personality, process and deliverables. Omilo downloads the roster from GitHub (`git clone`, or the tarball;
+`OMILO_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
 the helper's job, with division-based permissions and the usual approvals on top.
 
 Helpers never sleep: nothing runs for them between jobs, and they start the moment work arrives. Team and Monitor show each one as
@@ -356,7 +356,7 @@ changes made by helpers arrive over the live stream.
 | --- | --- |
 | `apps/api` | FastAPI gateway, worker, MCP server, engines (`claude_code`, `claude`, `fake`), loops and memory, tests |
 | `apps/web` | Next.js (static export) web app, Finity design tokens |
-| `cli` | Go CLI `saga-os` (stdlib only) |
+| `cli` | Go CLI `omilo` (stdlib only) |
 | `deploy` | Server compose: Postgres + API + worker + Traefik labels |
 | `docs` | Spec v1 and diagrams |
 | `legacy/prototype` | v0 shell/Python prototype (kept for reference and import) |
@@ -368,15 +368,15 @@ Requirements: Python 3.11+, Node 20+, Docker (for Postgres and Redis), Go 1.24+ 
 ```bash
 make dev        # starts Postgres (pgvector) + Redis in Docker, builds the web app, installs the API, starts http://localhost:7700
 make db         # just Postgres + Redis (docker-compose.dev.yml); make db-stop stops them, data stays in Docker volumes
-make test       # ruff + pytest (database saga_test, Redis db 15), web lint, go vet
-make cli        # builds cli/saga-os
+make test       # ruff + pytest (database omilo_test, Redis db 15), web lint, go vet
+make cli        # builds cli/omilo
 ```
 
-Already run Postgres or Redis yourself? Skip Docker and set `SAGA_DATABASE_URL` (Postgres 16 with the `vector` extension
-available) and `SAGA_REDIS_URL`. If something else uses port 5432 or 6379, set `SAGA_PG_PORT` / `SAGA_REDIS_PORT` for
+Already run Postgres or Redis yourself? Skip Docker and set `OMILO_DATABASE_URL` (Postgres 16 with the `vector` extension
+available) and `OMILO_REDIS_URL`. If something else uses port 5432 or 6379, set `OMILO_PG_PORT` / `OMILO_REDIS_PORT` for
 `make db` and the matching URLs.
 
-Coming from a version before 0.4 (SQLite)? Your data in `~/.saga-os` moves into Postgres by itself on the first start
+Coming from a version before 0.4 (SQLite)? Your data in `~/.omilo` moves into Postgres by itself on the first start
 (once, the SQLite files are left in place); `make import-sqlite` does it by hand.
 
 Open the web app, create the owner account, finish onboarding. Pick **Demo engine** to try every flow without any AI:
@@ -384,35 +384,35 @@ it uses the real MCP endpoint, files proposals and executes approvals determinis
 
 ## Run with Docker
 
-Laptop (Saga OS, Postgres and Redis containers; data in `~/.saga-os`):
+Laptop (Omilo, Postgres and Redis containers; data in `~/.omilo`):
 
 ```bash
-make cli && ./cli/saga-os up     # then ./cli/saga-os login
+make cli && ./cli/omilo up     # then ./cli/omilo login
 ```
 
 Server (Postgres with pgvector, Redis, separate worker, Traefik):
 
 ```bash
-cd deploy && cp .env.example .env    # set SAGA_SECRET_KEY, POSTGRES_PASSWORD, SAGA_PUBLIC_URL, SAGA_HOST
+cd deploy && cp .env.example .env    # set OMILO_SECRET_KEY, POSTGRES_PASSWORD, OMILO_PUBLIC_URL, OMILO_HOST
 docker compose up -d
 ```
 
-Under a path prefix (e.g. `/os`), set `SAGA_BASE_PATH=/os` and build the web app with `NEXT_PUBLIC_BASE_PATH=/os`.
+Under a path prefix (e.g. `/os`), set `OMILO_BASE_PATH=/os` and build the web app with `NEXT_PUBLIC_BASE_PATH=/os`.
 
 ## Connect the AI
 
 **Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
-console.anthropic.com, check it and pick a model. Saga OS installs Claude Code (`npm install @anthropic-ai/claude-code` in
+console.anthropic.com, check it and pick a model. Omilo installs Claude Code (`npm install @anthropic-ai/claude-code` in
 `<data dir>/harness-tools`, needs Node.js 18+) and runs every helper in it with your key: files and commands in the folders you share
-(with the same limits as the pool), web search and fetch, your connectors, and the Saga tools. The key is stored encrypted and passed
+(with the same limits as the pool), web search and fetch, your connectors, and the Omilo tools. The key is stored encrypted and passed
 only to the Claude Code process as `ANTHROPIC_API_KEY`; usage is billed to your key and shown as real spend.
 
 **Your Claude subscriptions:** add them on the Harness page (above) and choose "Claude Code · subscription pool" per helper under Team.
 
-**Light, nothing to install:** "Built-in Claude" calls the Claude API from Saga OS itself: web search and fetch and the Saga tools,
+**Light, nothing to install:** "Built-in Claude" calls the Claude API from Omilo itself: web search and fetch and the Omilo tools,
 but no files, commands or browser.
 
-Hermes was removed in 0.3: helpers that ran on Hermes move to Claude Code with your API key the first time Saga OS starts.
+Hermes was removed in 0.3: helpers that ran on Hermes move to Claude Code with your API key the first time Omilo starts.
 
 ## Loops, memory and self-improvement
 
@@ -441,7 +441,7 @@ Memory stays readable notes in Docs; the knowledge base (pgvector) indexes them 
 
 ## Configuration
 
-All settings are environment variables with the `SAGA_` prefix (see `apps/api/saga_api/config.py`): `DATA_DIR`,
+All settings are environment variables with the `OMILO_` prefix (see `apps/api/omilo_api/config.py`): `DATA_DIR`,
 `DATABASE_URL`, `REDIS_URL`, `REDIS_PREFIX`, `EMBED_PROVIDER` (local | voyage | openai), `MODELS_DIR`, `SECRET_KEY`, `PUBLIC_URL`, `INTERNAL_URL`, `BASE_PATH`, `TIMEZONE`, `EMBEDDED_WORKER`,
 `MAX_CONCURRENT_TASKS`, `TASK_TIMEOUT_S`, `STRICT_MODE`, `COOKIE_SECURE`.
 

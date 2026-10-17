@@ -61,7 +61,7 @@ export default function Harness() {
   return (
     <div>
       <h1>Harness</h1>
-      <p className="sub">Your Claude Code subscriptions, shared by your helpers. Saga OS picks a free account for each job; when one reaches its usage limit it rests, and the job continues on another account from where it stopped.</p>
+      <p className="sub">Your Claude Code subscriptions, shared by your helpers. Omilo picks a free account for each job; when one reaches its usage limit it rests, and the job continues on another account from where it stopped.</p>
 
       <div className="stats" style={{ marginBottom: 20 }}>
         <div className="stat"><div className="label">Accounts ready</div><div className="num">{pool.ready}<span className="small"> / {pool.total}</span></div></div>
@@ -158,7 +158,7 @@ export default function Harness() {
             <li>A browser opens: sign in with the Claude account you want to add.</li>
             <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it above.</li>
           </ol>
-          <p className="dw-help">Use accounts you own, within the terms of your Claude plan. Saga OS tests the account right after adding it.</p>
+          <p className="dw-help">Use accounts you own, within the terms of your Claude plan. Omilo tests the account right after adding it.</p>
         </div>
         <Err error={err} />
       </Drawer>

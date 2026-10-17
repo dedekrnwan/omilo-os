@@ -1,7 +1,7 @@
 [project]
-name = "saga-os-api"
+name = "omilo-api"
 version = "0.4.0"
-description = "Saga OS gateway: the office between a company owner and their AI staff agents"
+description = "Omilo gateway: the office between a company owner and their AI staff agents"
 requires-python = ">=3.11"
 license = { text = "TBD" }
 dependencies = [
@@ -29,19 +29,19 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.scripts]
-saga-api = "saga_api.main:run"
-saga-worker = "saga_api.worker:main"
-saga-reset-password = "saga_api.reset_password:main"
+omilo-api = "omilo_api.main:run"
+omilo-worker = "omilo_api.worker:main"
+omilo-reset-password = "omilo_api.reset_password:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["saga_api*"]
+include = ["omilo_api*"]
 
 [tool.setuptools.package-data]
-saga_api = ["templates/*.yaml", "templates/workflows/*.json"]
+omilo_api = ["templates/*.yaml", "templates/workflows/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

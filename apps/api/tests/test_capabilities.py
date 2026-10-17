@@ -6,8 +6,8 @@ from pathlib import Path
 
 from conftest import wait_for
 
-from saga_api.capabilities import Resources
-from saga_api.engines.claude_code import plan
+from omilo_api.capabilities import Resources
+from omilo_api.engines.claude_code import plan
 
 
 def test_connectors_folders_skills_files(owner, base_url, tmp_path):
@@ -40,8 +40,8 @@ def test_connectors_folders_skills_files(owner, base_url, tmp_path):
     tools = owner.put(f"/api/threads/{th['id']}/tools", json={"folders": [f["id"]], "skills": ["brand-voice"]}).json()
     assert tools["folders"]["on"] == [f["id"]] and tools["skills"]["on"] == ["brand-voice"]
 
-    from saga_api.capabilities import resolve
-    from saga_api.db import session_scope
+    from omilo_api.capabilities import resolve
+    from omilo_api.db import session_scope
     owner.post(f"/api/threads/{th['id']}/messages", json={"text": "see the menu", "blocks": [{"type": "file", **up}]})
     with session_scope() as db:
         r = resolve(db, thread_id=th["id"])
@@ -65,7 +65,7 @@ def test_claude_code_plan():
                     {"id": "notes", "label": "Notes", "kind": "stdio", "url": "", "headers": {}, "env": {"K": "v"}, "args": ["-y"], "command": "npx", "approval": "auto"}],
         files=[{"id": "fil_1", "name": "a.png", "mime": "image/png", "path": "/data/files/fil_1/a.png"}])
     servers, tools, extra = plan(cfg, r)
-    assert set(servers) == {"saga-os", "gmail", "notes"} and servers["notes"]["command"] == "npx"
+    assert set(servers) == {"omilo", "gmail", "notes"} and servers["notes"]["command"] == "npx"
     assert "mcp__notes" in tools and "mcp__gmail" not in tools and "Bash" in tools
     assert "Bash(git push:*)" in extra and "Bash(rm:*)" in extra
     assert extra[extra.index("--add-dir") + 1] == "/w/app" and "/w/docs" in extra and "/data/files/fil_1" in extra
@@ -73,7 +73,7 @@ def test_claude_code_plan():
     r.allow_connectors.add("gmail")  # an approved connector.gmail proposal being executed
     assert "mcp__gmail" in plan(cfg, r)[1]
     servers, tools, extra = plan(cfg, None)
-    assert set(servers) == {"saga-os"} and "Bash" not in tools and extra == []
+    assert set(servers) == {"omilo"} and "Bash" not in tools and extra == []
 
 
 def test_pool_run_in_project_folder(owner, tmp_path):
@@ -82,7 +82,7 @@ def test_pool_run_in_project_folder(owner, tmp_path):
     wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {Path(__file__).parent / 'bin' / 'fake_claude.py'} \"$@\"\n")
     wrapper.chmod(0o755)
     log = tmp_path / "calls.jsonl"
-    os.environ["SAGA_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
+    os.environ["OMILO_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
     try:
         proj = tmp_path / "shop-web"
         proj.mkdir()
@@ -97,7 +97,7 @@ def test_pool_run_in_project_folder(owner, tmp_path):
         assert "--add-dir" in call["argv"] and "Bash" in call["argv"]
         assert str(proj.resolve()) in call["system"]
     finally:
-        os.environ.pop("SAGA_CLAUDE_BIN", None)
+        os.environ.pop("OMILO_CLAUDE_BIN", None)
         os.environ.pop("FAKE_CLAUDE_LOG", None)
         owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["dev"]})
         owner.delete(f"/api/folders/{f['id']}")

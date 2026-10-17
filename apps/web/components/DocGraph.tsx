@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MenuItem, openMenu } from "@/lib/menu";
 
 /* The graph view: every doc is a dot, every [[link]] a line. Colour shows who changed the doc last (you, a helper,
-   or outside Saga OS); hollow dots are links to docs that do not exist yet. Drag to move, scroll to zoom, click to open. */
+   or outside Omilo); hollow dots are links to docs that do not exist yet. Drag to move, scroll to zoom, click to open. */
 
 export type GNode = { id: string; title: string; folder: string; degree: number; by: string; missing?: boolean };
 export type GEdge = { source: string; target: string };
@@ -13,7 +13,7 @@ type L = { source: N; target: N };
 
 // first three categorical slots (validated all-pairs); missing = hollow neutral
 export const BY_COLOR: Record<string, string> = { owner: "#2a78d6", agent: "#eb6834", outside: "#1baf7a", missing: "#a8a29e" };
-export const BY_LABEL: Record<string, string> = { owner: "You", agent: "A helper", outside: "Outside Saga OS", missing: "Not written yet" };
+export const BY_LABEL: Record<string, string> = { owner: "You", agent: "A helper", outside: "Outside Omilo", missing: "Not written yet" };
 
 export default function DocGraph({ nodes, edges, current, onOpen, onNodeMenu }: { nodes: GNode[]; edges: GEdge[]; current?: string | null; onOpen: (n: GNode) => void;
   onNodeMenu?: (n: GNode) => MenuItem[] }) {

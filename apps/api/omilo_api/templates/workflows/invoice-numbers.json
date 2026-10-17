@@ -1,0 +1,80 @@
+{
+  "name": "Catch invoice numbers",
+  "category": "Finance",
+  "icon": "ri-bill-line",
+  "description": "Forward emails to a webhook; invoice numbers are found with a pattern and added to a doc. No AI.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "hook",
+        "type": "trigger.webhook",
+        "label": "Email forwarded",
+        "note": "",
+        "config": {
+          "sample": {
+            "text": "Please pay INV-1042 and INV-1043 by Friday."
+          }
+        },
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "find",
+        "type": "data.regex",
+        "label": "Find invoice numbers",
+        "note": "",
+        "config": {
+          "text": "{{ trigger.text }}",
+          "pattern": "(?P<invoice>INV-\\d+)",
+          "all": true
+        },
+        "x": 0,
+        "y": 150
+      },
+      {
+        "id": "any",
+        "type": "logic.if",
+        "label": "Found any?",
+        "note": "",
+        "config": {
+          "left": "{{ steps.find.output }}",
+          "op": "not_empty"
+        },
+        "x": 0,
+        "y": 300
+      },
+      {
+        "id": "doc",
+        "type": "omilo.doc",
+        "label": "Add to Finance/Invoices",
+        "note": "",
+        "config": {
+          "path": "Finance/Invoices",
+          "content": "- {{ now }}: {{ steps.find.output | json }}",
+          "mode": "append"
+        },
+        "x": 0,
+        "y": 450
+      }
+    ],
+    "edges": [
+      {
+        "from": "hook",
+        "port": "out",
+        "to": "find"
+      },
+      {
+        "from": "find",
+        "port": "out",
+        "to": "any"
+      },
+      {
+        "from": "any",
+        "port": "true",
+        "to": "doc"
+      }
+    ]
+  },
+  "needs": [],
+  "by": "Omilo"
+}

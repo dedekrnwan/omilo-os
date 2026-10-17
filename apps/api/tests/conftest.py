@@ -7,7 +7,7 @@ import time
 import httpx
 import pytest
 
-_tmp = tempfile.mkdtemp(prefix="saga-test-")
+_tmp = tempfile.mkdtemp(prefix="omilo-test-")
 
 
 def _free_port() -> int:
@@ -20,8 +20,8 @@ def _free_port() -> int:
 
 PORT = _free_port()
 # Postgres (with pgvector) and Redis are required: `make db` starts both. Tests use their own database and key prefix.
-DB_URL = os.environ.get("SAGA_TEST_DATABASE_URL", "postgresql+psycopg://saga:saga@127.0.0.1:5432/saga_test")
-REDIS_URL = os.environ.get("SAGA_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+DB_URL = os.environ.get("OMILO_TEST_DATABASE_URL", "postgresql+psycopg://omilo:omilo@127.0.0.1:5432/omilo_test")
+REDIS_URL = os.environ.get("OMILO_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
 
 
 def _fresh_database() -> None:
@@ -36,14 +36,14 @@ def _fresh_database() -> None:
 
 _fresh_database()
 os.environ.update({
-    "SAGA_DATABASE_URL": DB_URL,
-    "SAGA_REDIS_URL": REDIS_URL,
-    "SAGA_REDIS_PREFIX": "sagatest-" + os.urandom(4).hex(),
-    "SAGA_EMBED_PROVIDER": "hash",
-    "SAGA_DATA_DIR": _tmp,
-    "SAGA_PUBLIC_URL": f"http://127.0.0.1:{PORT}",
-    "SAGA_WORKER_INTERVAL_S": "0.2",
-    "SAGA_STRICT_MODE": "false",
+    "OMILO_DATABASE_URL": DB_URL,
+    "OMILO_REDIS_URL": REDIS_URL,
+    "OMILO_REDIS_PREFIX": "omilotest-" + os.urandom(4).hex(),
+    "OMILO_EMBED_PROVIDER": "hash",
+    "OMILO_DATA_DIR": _tmp,
+    "OMILO_PUBLIC_URL": f"http://127.0.0.1:{PORT}",
+    "OMILO_WORKER_INTERVAL_S": "0.2",
+    "OMILO_STRICT_MODE": "false",
 })
 
 
@@ -51,7 +51,7 @@ os.environ.update({
 def base_url():
     import uvicorn
 
-    from saga_api.main import app
+    from omilo_api.main import app
 
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning"))
     th = threading.Thread(target=server.run, daemon=True)

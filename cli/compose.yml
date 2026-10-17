@@ -1,34 +1,34 @@
-# Laptop mode: Saga OS (API + worker + web) with its Postgres (pgvector) and Redis, on localhost. Written by `saga-os up`.
+# Laptop mode: Omilo (API + worker + web) with its Postgres (pgvector) and Redis, on localhost. Written by `omilo up`.
 services:
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
-    environment: {POSTGRES_DB: saga, POSTGRES_USER: saga, POSTGRES_PASSWORD: saga}
+    environment: {POSTGRES_DB: omilo, POSTGRES_USER: omilo, POSTGRES_PASSWORD: omilo}
     volumes:
-      - ${SAGA_HOME:-~/.saga-os}/postgres:/var/lib/postgresql/data
-    healthcheck: {test: ["CMD-SHELL", "pg_isready -U saga -d saga"], interval: 3s, retries: 30}
+      - ${OMILO_HOME:-~/.omilo}/postgres:/var/lib/postgresql/data
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U omilo -d omilo"], interval: 3s, retries: 30}
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - ${SAGA_HOME:-~/.saga-os}/redis:/data
+      - ${OMILO_HOME:-~/.omilo}/redis:/data
     healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 30}
 
-  saga-os:
-    image: ${SAGA_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+  omilo:
+    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
     restart: unless-stopped
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
     ports:
-      - "127.0.0.1:${SAGA_PORT:-7700}:7700"
+      - "127.0.0.1:${OMILO_PORT:-7700}:7700"
     environment:
-      SAGA_DATA_DIR: /data
-      SAGA_DATABASE_URL: postgresql+psycopg://saga:saga@postgres:5432/saga
-      SAGA_REDIS_URL: redis://redis:6379/0
-      SAGA_PUBLIC_URL: http://localhost:${SAGA_PORT:-7700}
-      SAGA_INTERNAL_URL: http://localhost:7700
-      SAGA_TIMEZONE: ${SAGA_TIMEZONE:-UTC}
-      SAGA_EMBEDDED_WORKER: "true"
+      OMILO_DATA_DIR: /data
+      OMILO_DATABASE_URL: postgresql+psycopg://omilo:omilo@postgres:5432/omilo
+      OMILO_REDIS_URL: redis://redis:6379/0
+      OMILO_PUBLIC_URL: http://localhost:${OMILO_PORT:-7700}
+      OMILO_INTERNAL_URL: http://localhost:7700
+      OMILO_TIMEZONE: ${OMILO_TIMEZONE:-UTC}
+      OMILO_EMBEDDED_WORKER: "true"
     volumes:
-      - ${SAGA_HOME:-~/.saga-os}/data:/data
+      - ${OMILO_HOME:-~/.omilo}/data:/data

@@ -38,7 +38,7 @@ function resolve(target: string, paths: string[]): string | null {
   return hits[0] || null;
 }
 const title = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
-const whoLabel = (w?: Who | null) => (!w ? "" : w.kind === "owner" ? "You" : w.kind === "outside" ? "Outside Saga OS" : w.name);
+const whoLabel = (w?: Who | null) => (!w ? "" : w.kind === "owner" ? "You" : w.kind === "outside" ? "Outside Omilo" : w.name);
 
 function WhoBadge({ w }: { w?: Who | null }) {
   if (!w) return null;

@@ -138,7 +138,7 @@ export default function Talent() {
               <p style={{ margin: "0 0 6px" }}>{open.description}</p>
               {open.vibe && <p className="small" style={{ fontStyle: "italic" }}>&ldquo;{open.vibe}&rdquo;</p>}
               <div className="soft" style={{ margin: "14px 0" }}>
-                <div className="small"><i className="ri-shield-check-line" /> Hired specialists follow your Saga OS rules: anything that leaves the company waits for your approval.</div>
+                <div className="small"><i className="ri-shield-check-line" /> Hired specialists follow your Omilo rules: anything that leaves the company waits for your approval.</div>
               </div>
               {open.body ? <Markdown text={open.body} /> : <p className="small">Loading the playbook…</p>}
             </div>

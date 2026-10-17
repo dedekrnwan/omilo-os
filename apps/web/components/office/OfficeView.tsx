@@ -165,8 +165,8 @@ export default function OfficeView() {
   const [ticker, setTicker] = useState<OfficeEvent[]>([]);
   const [idleLife, setIdleLife] = useState(true);
   const idleRef = useRef(true); idleRef.current = idleLife;
-  useEffect(() => { try { if (localStorage.getItem("saga.office.idle") === "0") setIdleLife(false); } catch { /* private window */ } }, []);
-  useEffect(() => { apiRef.current?.setIdleLife(idleLife); try { localStorage.setItem("saga.office.idle", idleLife ? "1" : "0"); } catch { /* private window */ } }, [idleLife]);
+  useEffect(() => { try { if (localStorage.getItem("omilo.office.idle") === "0") setIdleLife(false); } catch { /* private window */ } }, []);
+  useEffect(() => { apiRef.current?.setIdleLife(idleLife); try { localStorage.setItem("omilo.office.idle", idleLife ? "1" : "0"); } catch { /* private window */ } }, [idleLife]);
   useTick(10000);
   const agents = useMemo(() => o.state?.agents || [], [o.state]);
   const nameOf = useCallback((id: string) => agents.find((a) => a.id === id)?.name || id, [agents]);
@@ -199,7 +199,7 @@ export default function OfficeView() {
   return (
     <div className={`ov ${sel ? "with-insp" : ""}`}>
       <nav className="ov-rail" aria-label="Departments and helpers">
-        <div className="ov-rail-h"><b>Saga HQ</b><Freshness compact /></div>
+        <div className="ov-rail-h"><b>Omilo HQ</b><Freshness compact /></div>
         <span className="ov-rail-sec" style={{ paddingTop: 2 }}>Helpers now</span>
         <div className="ov-counts">
           {ORDER.filter((s) => counts[s]).map((s) => <span key={s} className="ov-count" title={STATUS_META[s].hint}><i style={{ background: STATUS_META[s].color }} />{counts[s]} {STATUS_META[s].label.toLowerCase()}</span>)}

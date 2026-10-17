@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode } from "react";
 import { Mascot } from "@/components/Avatar";
-import { SagaMascot } from "@/components/Logo";
+import { OmiloMascot } from "@/components/Logo";
 import OfficeLobby from "@/components/OfficeLobby";
 
 /* The sign-in and account pages: on the left a corner of the office where helpers walk, run, sit and type (click
@@ -44,7 +44,7 @@ export default function AuthShell({ headline, body, children, side, you, sign }:
       <aside className="au-side">
         <OfficeLobby you={you} sign={sign} />
         <div className="au-glass">
-          <div className="au-brand"><SagaMascot size={24} /><b>Saga OS</b></div>
+          <div className="au-brand"><OmiloMascot size={24} /><b>Omilo</b></div>
           <h2>{headline}</h2>
           <p>{body}</p>
           {side}
@@ -56,7 +56,7 @@ export default function AuthShell({ headline, body, children, side, you, sign }:
           <OfficeLobby you={you} sign={sign} />
         </div>
         <div className="au-form">{children}</div>
-        <footer className="au-copy">© {new Date().getFullYear()} Saga OS · runs on your own computer</footer>
+        <footer className="au-copy">© {new Date().getFullYear()} Omilo · runs on your own computer</footer>
       </main>
     </div>
   );

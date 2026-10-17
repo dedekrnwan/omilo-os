@@ -4,7 +4,7 @@ import pytest
 from conftest import wait_for
 from test_flows import tool
 
-from saga_api import workflows as W
+from omilo_api import workflows as W
 
 
 def N(id, type, config=None, **kw):
@@ -127,7 +127,7 @@ def test_helper_proposes_and_runs_a_workflow(owner, base_url):
     blocks = tool(base_url, tok, "workflow_blocks")
     assert "propose_workflow" in str(tool(base_url, tok, "whoami")) or blocks
     res = tool(base_url, tok, "propose_workflow", name="Weekly post log", description="Log each week's post", reason="I do this every Monday",
-               graph={"nodes": [N("t", "trigger.manual"), N("d", "saga.doc", {"path": "Marketing/Post log", "content": "- {{ trigger.post }}"})],
+               graph={"nodes": [N("t", "trigger.manual"), N("d", "omilo.doc", {"path": "Marketing/Post log", "content": "- {{ trigger.post }}"})],
                       "edges": [E("t", "d")]})
     assert not res.get("isError"), res
     wid = res["structuredContent"]["workflow_id"] if "structuredContent" in res else None
@@ -217,7 +217,7 @@ def test_connector_steps(owner, base_url, tmp_path):
     import sys
 
     tok = owner.mcp_tokens["support"]
-    owner.post("/api/connectors", json={"id": "wf-self", "label": "Saga itself", "url": f"{base_url}/mcp",
+    owner.post("/api/connectors", json={"id": "wf-self", "label": "Omilo itself", "url": f"{base_url}/mcp",
                                         "headers": {"Authorization": f"Bearer {tok}"}, "approval": "auto"}).raise_for_status()
     srv = tmp_path / "srv.py"
     srv.write_text(STDIO_SERVER)

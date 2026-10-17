@@ -80,9 +80,9 @@ def anthropic_url():
             break
         except httpx.HTTPError:
             time.sleep(0.05)
-    os.environ["SAGA_ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{port}"
+    os.environ["OMILO_ANTHROPIC_BASE_URL"] = f"http://127.0.0.1:{port}"
     yield
-    os.environ.pop("SAGA_ANTHROPIC_BASE_URL", None)
+    os.environ.pop("OMILO_ANTHROPIC_BASE_URL", None)
     server.should_exit = True
 
 
@@ -123,7 +123,7 @@ def test_claude_needs_a_key(base_url):
 def test_web_tools_fallback_and_pause(anthropic_url):
     import asyncio
 
-    from saga_api.engines.claude import ClaudeEngine
+    from omilo_api.engines.claude import ClaudeEngine
 
     e = ClaudeEngine()
     msgs = lambda: [{"role": "user", "content": "hello"}]  # noqa: E731

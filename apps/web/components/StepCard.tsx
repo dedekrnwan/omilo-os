@@ -1,7 +1,7 @@
 "use client";
 import { ReactNode, forwardRef } from "react";
 import { MascotField } from "@/components/AuthShell";
-import { SagaMascot } from "@/components/Logo";
+import { OmiloMascot } from "@/components/Logo";
 
 /* The setup card: the current step as a card with a small tab (icon + name), the next step peeking out behind it,
    an artwork panel on the left with a short line, and the form on the right with one big button at the bottom.
@@ -22,12 +22,12 @@ const TONES: Record<Tone, { deep: string; mid: string; light: string; icon: stri
 
 const MOOD: Record<Tone, "warm" | "cool" | "fresh"> = { green: "fresh", orange: "warm", blue: "cool", violet: "cool", rose: "warm", teal: "fresh", amber: "warm", ink: "cool" };
 
-/** The artwork panel: a soft room in the step's colour with Saga's helpers floating in it (they react to the cursor). */
+/** The artwork panel: a soft room in the step's colour with Omilo's helpers floating in it (they react to the cursor). */
 export function StepArt({ tone = "green", caption, mascot }: { tone?: Tone; seed?: number; caption?: ReactNode; mascot?: boolean }) {
   return (
     <div className="sc-art sc-art-soft" aria-hidden={!caption}>
       <MascotField tone={MOOD[tone]} />
-      {mascot && <div className="sc-mascot"><span className="sg-tile"><SagaMascot size={96} tile={false} /></span></div>}
+      {mascot && <div className="sc-mascot"><span className="sg-tile"><OmiloMascot size={96} tile={false} /></span></div>}
       {caption && <div className="sc-cap">{caption}</div>}
     </div>
   );
@@ -36,7 +36,7 @@ export function StepArt({ tone = "green", caption, mascot }: { tone?: Tone; seed
 type Props = {
   icon: string; title: string; tone?: Tone; seed?: number; caption?: ReactNode; mascot?: boolean;
   next?: { icon: string; title: string; tone?: Tone } | null; meta?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean;
-  art?: ReactNode;  // replaces the artwork panel (onboarding puts Saga's guide there)
+  art?: ReactNode;  // replaces the artwork panel (onboarding puts Omilo's guide there)
 };
 
 /** One step as a card. `children` is the scrolling form; `footer` sits at the bottom of the form column (the Next button). */
@@ -70,7 +70,7 @@ export function StepPage({ children, top }: { children: ReactNode; top?: ReactNo
     <div className="sc-page">
       {top && <div className="sc-top">{top}</div>}
       <main className="sc-center">{children}</main>
-      <footer className="sc-copy">© {new Date().getFullYear()} Saga OS</footer>
+      <footer className="sc-copy">© {new Date().getFullYear()} Omilo</footer>
     </div>
   );
 }

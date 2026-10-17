@@ -1,7 +1,7 @@
 """Docs: vault notes with links, versions, conflicts, outside edits, helper edits and suggestions."""
 import httpx
 
-from saga_api import docs as D
+from omilo_api import docs as D
 
 
 def _mcp(base_url, tok, name, args):
@@ -27,7 +27,7 @@ def test_docs_vault_links_versions_and_agents(owner, base_url):
     r = owner.put("/api/vault/write", json={"path": "Projects/Launch plan.md", "content": "# my old edit", "base_version": 1})
     assert r.status_code == 409 and r.json()["detail"]["current"]["version"] == 2
 
-    # edited outside Saga OS (e.g. in Obsidian) -> recorded as an outside version
+    # edited outside Omilo (e.g. in Obsidian) -> recorded as an outside version
     D.file_for("Projects/Launch plan.md").write_text("# Launch v3 from Obsidian")
     d = owner.get("/api/vault/read", params={"path": "Projects/Launch plan.md"}).json()
     assert d["version"] == 3 and d["updated_by"]["kind"] == "outside"

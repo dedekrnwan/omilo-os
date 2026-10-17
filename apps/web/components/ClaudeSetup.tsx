@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 
 /* Paste a Claude API key, check it, pick a model in plain words. Used by onboarding and Settings.
-   The key is sent to Saga OS only when saved (stored encrypted); it is never kept in the onboarding draft. */
+   The key is sent to Omilo only when saved (stored encrypted); it is never kept in the onboarding draft. */
 
 export type ClaudeChoice = { key: string; model: string; ok: boolean };
 type Model = { id: string; name: string };

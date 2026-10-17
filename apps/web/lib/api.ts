@@ -16,7 +16,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   const res = await fetch(`${BASE}/api${path}`, {
     method,
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...(method !== "GET" ? { "X-Saga": "1" } : {}) },
+    headers: { "Content-Type": "application/json", ...(method !== "GET" ? { "X-Omilo": "1" } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
   if (!res.ok) {

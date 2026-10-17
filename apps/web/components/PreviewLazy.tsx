@@ -9,8 +9,8 @@ export default function PreviewLazy() {
   const [first, setFirst] = useState<any>(null);
   useEffect(() => {
     const on = (e: Event) => setFirst((cur: any) => cur || (e as CustomEvent).detail);
-    window.addEventListener("saga:preview", on);
-    return () => window.removeEventListener("saga:preview", on);
+    window.addEventListener("omilo:preview", on);
+    return () => window.removeEventListener("omilo:preview", on);
   }, []);
   return first ? <Host initial={first} /> : null;
 }

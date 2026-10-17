@@ -32,7 +32,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   { label: "You", items: [
     { id: "account", label: "Account", icon: "ri-user-line", words: "name email password", desc: "Your name and password." },
     { id: "devices", label: "Devices & tokens", icon: "ri-device-line", words: "sessions browsers sign out tokens cli api", desc: "Where you're signed in, and tokens for the command line." },
-    { id: "notifications", label: "Notifications", icon: "ri-notification-3-line", words: "push alerts notify phone", desc: "What Saga OS tells you about, and where." },
+    { id: "notifications", label: "Notifications", icon: "ri-notification-3-line", words: "push alerts notify phone", desc: "What Omilo tells you about, and where." },
   ] },
   { label: "Data", items: [
     { id: "activity", label: "Activity log", icon: "ri-history-line", words: "audit log history who changed what export csv", desc: "Everything that changed, who did it and when." },
@@ -145,11 +145,11 @@ function AiEngine() {
       await api("/ai", { body: isClaude ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
       setEdit(false); setClaude({ key: "", model: "", ok: false });
       setMsg(provider === "claude" ? "Saved. Your helpers now run in Claude Code with your API key."
-        : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Saga's tools)." : "Saved. All helpers are in practice mode.");
+        : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Omilo's tools)." : "Saved. All helpers are in practice mode.");
       load();
     } catch (e: any) { setErr(e.message); }
   };
-  const label = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Saga's tools)",
+  const label = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Omilo's tools)",
     fake: "Practice mode (no AI)", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p || "…";
   return (
     <>
@@ -169,7 +169,7 @@ function AiEngine() {
           {claude.ok && !light && <ClaudeCodeSetup autoInstall onReady={setCcReady} />}
           {claude.ok && !ccReady && (
             <label className="check"><input type="checkbox" checked={light} onChange={(e) => setLight(e.target.checked)} />
-              <span>Use built-in Claude for now (nothing to install: web search and Saga&apos;s tools, but no files, commands or browser)</span></label>
+              <span>Use built-in Claude for now (nothing to install: web search and Omilo&apos;s tools, but no files, commands or browser)</span></label>
           )}
           <div className="acts" style={{ marginTop: 12 }}>
             <button className="btn primary" disabled={!(claude.ok && claude.model && (ccReady || light))} onClick={() => save(light ? "claude-direct" : "claude")}>Use Claude for all helpers</button>
@@ -226,7 +226,7 @@ function Account() {
   const pwOk = pw.next.length >= 10 && pw.next === pw.again && pw.current;
   return (
     <>
-      <Row title="Email" desc="You sign in with it. To change it, reset the account from the computer running Saga OS."><span className="mono">{me.email}</span></Row>
+      <Row title="Email" desc="You sign in with it. To change it, reset the account from the computer running Omilo."><span className="mono">{me.email}</span></Row>
       <Row title="Your name" desc="Helpers address you by it.">
         <div className="acts nowrap"><input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Your name" />
           <button className="btn" disabled={!name.trim() || name === me.name} onClick={async () => {
@@ -254,7 +254,7 @@ function Account() {
       </Row>
       {msg && <div className="callout ok">{msg}</div>}
       <Err error={err} />
-      <p className="small set-foot">Forgot it? On the computer that runs Saga OS: <span className="mono">make reset-password</span></p>
+      <p className="small set-foot">Forgot it? On the computer that runs Omilo: <span className="mono">make reset-password</span></p>
     </>
   );
 }
@@ -282,9 +282,9 @@ function Devices() {
           </div>
         ))}
       </div>
-      <div className="set-sub"><b>Access tokens</b><span className="small">For the command line (<span className="mono">saga-os login</span>) and scripts.</span></div>
+      <div className="set-sub"><b>Access tokens</b><span className="small">For the command line (<span className="mono">omilo login</span>) and scripts.</span></div>
       <div className="set-list">
-        {tokens.length === 0 ? <p className="small">None. <span className="mono">saga-os login</span> creates one.</p> : tokens.map((t) => (
+        {tokens.length === 0 ? <p className="small">None. <span className="mono">omilo login</span> creates one.</p> : tokens.map((t) => (
           <div key={t.id} className="set-li">
             <i className="ri-key-2-line" /><b>{t.name}</b>
             <span className="small grow">created {ago(t.created_at)} · last used {ago(t.last_used_at)}</span>
@@ -328,7 +328,7 @@ function Activity() {
       <div className="act-filters">
         <div className="act-search"><i className="ri-search-line" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search actions, names, ids…" aria-label="Search the activity log" /></div>
         <select value={actor} onChange={(e) => pick(() => setActor(e.target.value))} aria-label="Who">
-          <option value="">Everyone</option><option value="owner">You</option><option value="helpers">Helpers</option><option value="system">Saga OS & workflows</option>
+          <option value="">Everyone</option><option value="owner">You</option><option value="helpers">Helpers</option><option value="system">Omilo & workflows</option>
         </select>
         <select value={days} onChange={(e) => pick(() => setDays(Number(e.target.value)))} aria-label="When">
           <option value={0}>All time</option><option value={1}>Last 24 hours</option><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option>
@@ -407,7 +407,7 @@ function System() {
       {card(i.redis.ok, "ri-flashlight-line", `Redis ${i.redis.version || ""}`,
         i.redis.ok ? <>Live updates, locks and queues · {i.redis.memory} in use · {i.redis.host}</> : i.redis.error)}
       {card(true, "ri-folder-3-line", "Files", <>Docs, uploads, skills and keys · {fmtBytes(i.files.size_bytes)} · <span className="mono">{i.files.path}</span></>, false)}
-      <Row title="Version" desc="Saga OS on this computer."><span className="mono">{i.version}</span></Row>
+      <Row title="Version" desc="Omilo on this computer."><span className="mono">{i.version}</span></Row>
       <Row title="Companies" desc="Each one is fully separate (its own schema and folder).">
         <span>{i.companies} <span className="small">· add or switch in the company menu, top left</span></span></Row>
       <Row title="Background worker" desc="Runs jobs, schedules, workflows and indexing.">

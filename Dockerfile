@@ -1,4 +1,4 @@
-# Saga OS: one image with the gateway API, the worker and the web app.
+# Omilo: one image with the gateway API, the worker and the web app.
 FROM node:22-alpine AS web
 WORKDIR /web
 COPY apps/web/package.json apps/web/package-lock.json ./
@@ -9,10 +9,10 @@ RUN npm run build
 
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    SAGA_HOST=0.0.0.0 SAGA_PORT=7700 SAGA_WEB_DIR=/app/web SAGA_DATA_DIR=/data
+    OMILO_HOST=0.0.0.0 OMILO_PORT=7700 OMILO_WEB_DIR=/app/web OMILO_DATA_DIR=/data
 WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/
-COPY apps/api/saga_api apps/api/saga_api
+COPY apps/api/omilo_api apps/api/omilo_api
 RUN pip install --no-cache-dir ./apps/api
 # Claude Code, the engine helpers run on (your API key or the subscription pool). WITH_CLAUDE_CODE=0 for a smaller image.
 ARG WITH_CLAUDE_CODE=1
@@ -27,10 +27,10 @@ COPY --from=web /web/out /app/web
 ARG PRELOAD_EMBEDDINGS=0
 RUN if [ "$PRELOAD_EMBEDDINGS" = "1" ]; then mkdir -p /opt/models && python -c "from fastembed import TextEmbedding; \
       TextEmbedding('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='/opt/models')" && chmod -R a+rX /opt/models; fi
-ENV SAGA_MODELS_DIR=${PRELOAD_EMBEDDINGS:+/opt/models}
-RUN useradd -r -u 10001 saga && mkdir -p /data && chown saga /data
-USER saga
+ENV OMILO_MODELS_DIR=${PRELOAD_EMBEDDINGS:+/opt/models}
+RUN useradd -r -u 10001 omilo && mkdir -p /data && chown omilo /data
+USER omilo
 VOLUME /data
 EXPOSE 7700
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7700/healthz')"
-CMD ["saga-api"]
+CMD ["omilo-api"]

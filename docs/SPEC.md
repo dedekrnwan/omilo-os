@@ -1,4 +1,4 @@
-# Saga OS — Spec v1
+# Omilo — Spec v1
 
 Draft · 15 Oct 2026 · Dede Kurniawan
 
@@ -8,9 +8,9 @@ Draft · 15 Oct 2026 · Dede Kurniawan
 
 ## Summary
 
-Saga OS becomes the **gateway between the founder and his staff agents**: every message, task, approval and report passes through it, and Hermes does the thinking and the work behind it. The current build (loops, runner, dashboard, chat) is the prototype; v1 turns it into a product that installs in one command, explains itself, and is safe to leave running.
+Omilo becomes the **gateway between the founder and his staff agents**: every message, task, approval and report passes through it, and Hermes does the thinking and the work behind it. The current build (loops, runner, dashboard, chat) is the prototype; v1 turns it into a product that installs in one command, explains itself, and is safe to leave running.
 
-**It is a product, not a Sahabat Warga tool.** Saga OS is an open-source platform any owner can install for any company: nothing about Sahabat Warga is built in. A first-run onboarding learns the company (what it does, goals, rules, voice) and recommends a team of agents sized to how many the owner wants running at once. It installs and runs on macOS, Windows and Linux. Sahabat Warga is the first company to run on it, and the example used throughout this spec.
+**It is a product, not a Sahabat Warga tool.** Omilo is an open-source platform any owner can install for any company: nothing about Sahabat Warga is built in. A first-run onboarding learns the company (what it does, goals, rules, voice) and recommends a team of agents sized to how many the owner wants running at once. It installs and runs on macOS, Windows and Linux. Sahabat Warga is the first company to run on it, and the example used throughout this spec.
 
 | Decision | Choice | Why |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ The gateway owns **who, what's allowed, and what happened**; Hermes owns **think
 
 Work goes down to Hermes as tasks; agents come back up only through MCP tools, where the policy engine decides what is allowed.
 
-| Concern | Gateway (Saga OS) | Hermes |
+| Concern | Gateway (Omilo) | Hermes |
 | --- | --- | --- |
 | Founder identity, login, sessions | owns | — |
 | Routing a message to the right staff agent | owns (Chief of Staff by default) | — |
@@ -158,9 +158,9 @@ The gateway treats Hermes as a pluggable engine behind one adapter, so a staff a
 - Each profile's gateway exposes the OpenAI-compatible API server: `API_SERVER_ENABLED=true`, `API_SERVER_KEY`, default `127.0.0.1:8642`, base URL `/v1`, health at `/health`. One port per profile (8642, 8643, …), all bound to localhost.
 - A task is sent as a chat completion with a header block the agent always gets: task id, staff id, shift brief, founder note, approved items to execute. The gateway streams the reply into the task's thread.
 
-**Hermes → Gateway (MCP server `saga-os`)**
+**Hermes → Gateway (MCP server `omilo`)**
 
-Every profile connects its own gateway MCP endpoint, /mcp/\<staff\_id> (see Connectors), which always carries these saga-os tools next to the connector tools it was granted (`hermes mcp`). The tools are the contract; the gateway checks policy on every call.
+Every profile connects its own gateway MCP endpoint, /mcp/\<staff\_id> (see Connectors), which always carries these omilo tools next to the connector tools it was granted (`hermes mcp`). The tools are the contract; the gateway checks policy on every call.
 
 | Tool | What it does | Policy check |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ An agent's Hermes profile and the harness it calls share the same endpoint, so t
 
 | Kind | Examples | How it connects |
 | --- | --- | --- |
-| Built-in | Saga OS itself, Postgres replica (read-only), Prometheus, GitHub, Telegram | Shipped with the gateway; credentials from `.env` or the wizard |
+| Built-in | Omilo itself, Postgres replica (read-only), Prometheus, GitHub, Telegram | Shipped with the gateway; credentials from `.env` or the wizard |
 | Your own systems | Sahabat Warga `go-core` API (residents, dues, communities), `go-notification` | A connector generated from the service's API (OpenAPI or routes), read-only first |
 | SaaS via OAuth | Gmail, Google Calendar, Google Drive, Slack, Notion | Catalog entry + an OAuth click in Settings; the gateway refreshes tokens |
 | Any MCP server | Third-party or community MCP servers (HTTP or stdio) | Paste a URL or a package name; runs sandboxed in the `worker` container |
@@ -319,7 +319,7 @@ Yes, skills run through Hermes: each Hermes profile loads its own skills folder 
 | Role | Dev: PR workflow and repo conventions; Sales: prospect research; Finance: KPI queries; Support: ticket triage | the agents of that role |
 | Connector | How to use the Gmail, Calendar or SW system tools well (search tips, limits, what needs approval) | installed automatically with the connector, to the agents granted it |
 
-The library is a `skills/` folder in the saga-os repo (same SKILL.md format), versioned in git and shown in **Company → Skills** with: who uses each skill, version, last change, and how often it was used last week.
+The library is a `skills/` folder in the omilo repo (same SKILL.md format), versioned in git and shown in **Company → Skills** with: who uses each skill, version, last change, and how often it was used last week.
 
 **Same skills on every harness**
 
@@ -415,8 +415,8 @@ The platform chases you, not the other way round: anything waiting on you is pus
 
 | Channel | How | Good for |
 | --- | --- | --- |
-| Browser push (Chrome, Edge, Firefox; desktop and Android) | Web Push via a service worker; you allow notifications once. Arrives while Chrome is running, even with no Saga OS tab open | Approvals, questions, alerts |
-| In the app | Inbox badge, count in the tab title ("(3) Saga OS"), a dot on the favicon, optional sound | While you're working in it |
+| Browser push (Chrome, Edge, Firefox; desktop and Android) | Web Push via a service worker; you allow notifications once. Arrives while Chrome is running, even with no Omilo tab open | Approvals, questions, alerts |
+| In the app | Inbox badge, count in the tab title ("(3) Omilo"), a dot on the favicon, optional sound | While you're working in it |
 | Telegram (Chief of Staff) | A message with a signed link to the item | When you're away from the laptop |
 | Phone browser | The same Web Push once the app is installed to the home screen (on iPhone this needs iOS 16.4 or later) | Quick decisions on the go |
 
@@ -482,7 +482,7 @@ Live means: one command to install, nothing reachable from the internet except t
 **Install**
 
 ```bash
-git clone <saga-os> && cd saga-os
+git clone <omilo> && cd omilo
 cp .env.example .env          # domain, owner email, Telegram bot token, keys
 docker compose up -d          # gateway-api, gateway-web, postgres, worker, hermes
 open https://os.<your-domain>  # first-run wizard
@@ -502,35 +502,35 @@ Every service runs in a container, so the platform behaves the same on every OS;
 | Database | SQLite by default (one file); Postgres when it moves to a server | same | Postgres recommended on servers |
 | Opens | `http://localhost:7700` → onboarding | same | same, or your domain with TLS |
 
-- The installer checks for Docker and offers to install it, creates the data folder (`~/SagaOS` or `%USERPROFILE%\SagaOS`), generates keys, starts the stack and opens the browser on onboarding. `saga-os` CLI commands work on every OS: `start`, `stop`, `status`, `update`, `backup`, `restore`, `logs`, `doctor`.
+- The installer checks for Docker and offers to install it, creates the data folder (`~/Omilo` or `%USERPROFILE%\Omilo`), generates keys, starts the stack and opens the browser on onboarding. `omilo` CLI commands work on every OS: `start`, `stop`, `status`, `update`, `backup`, `restore`, `logs`, `doctor`.
 - Hermes, the browser and the harnesses (Claude Code, Codex) run **inside** the containers, so Windows owners don't need WSL knowledge and nothing touches their own Claude Code setup.
 - **Laptop mode**: when the machine sleeps, shifts are paused; on wake, missed shifts run once (not every missed one), and the Inbox says what was skipped. **Server mode**: always on, TLS via the bundled reverse proxy or your own (e.g. Traefik).
-- **Moving from laptop to server**: `saga-os backup` → copy the file → `saga-os restore` on the server. Company profile, staff, knowledge, history and the encrypted vault move together; you re-enter only the vault passphrase.
-- Updates: `saga-os update` pulls a new version, runs database migrations, and keeps the last version to roll back to.
+- **Moving from laptop to server**: `omilo backup` → copy the file → `omilo restore` on the server. Company profile, staff, knowledge, history and the encrypted vault move together; you re-enter only the vault passphrase.
+- Updates: `omilo update` pulls a new version, runs database migrations, and keeps the last version to roll back to.
 
 ## Distribution and install
 
-One small program, the `saga-os` CLI, is what people install; it then pulls the containers and walks them through setup. Shipping one binary lets it sit in every package manager people already use.
+One small program, the `omilo` CLI, is what people install; it then pulls the containers and walks them through setup. Shipping one binary lets it sit in every package manager people already use.
 
 **Recommended channels**
 
 | Channel | Command | Who it's for |
 | --- | --- | --- |
-| Homebrew (macOS, Linux) | `brew install <org>/tap/saga-os` | most Mac users, many Linux users |
-| winget (Windows 10/11, built in) | `winget install SagaOS.CLI` | Windows default |
-| Scoop (Windows) | `scoop install saga-os` | Windows developers |
-| npm / bun | `npx saga-os@latest setup` or `bunx saga-os setup` | anyone with Node or Bun; no install needed |
+| Homebrew (macOS, Linux) | `brew install <org>/tap/omilo` | most Mac users, many Linux users |
+| winget (Windows 10/11, built in) | `winget install Omilo.CLI` | Windows default |
+| Scoop (Windows) | `scoop install omilo` | Windows developers |
+| npm / bun | `npx omilo@latest setup` or `bunx omilo setup` | anyone with Node or Bun; no install needed |
 | Script | `curl -fsSL https://get.<project>/install.sh \| sh` / `irm https://get.<project>/install.ps1 \| iex` | servers, CI, everyone else |
 | Linux packages | `.deb` / `.rpm` from releases (an apt repo later) | Debian, Ubuntu, Fedora servers |
 | Containers | `ghcr.io/<org>/saga-os-*` images | Docker-native and Kubernetes users |
 
 - **Build**: the CLI in Go (single static binary for every OS and chip; you already use Go). GoReleaser builds every release and publishes the Homebrew tap, Scoop bucket, winget manifest and .deb/.rpm in one step; the npm package is a thin wrapper that downloads the right binary.
 - **Chocolatey**: later, not at launch. Its review queue slows releases, and winget plus Scoop already cover Windows.
-- **Every channel lands in the same place**: `saga-os setup`.
+- **Every channel lands in the same place**: `omilo setup`.
 
 **The setup stepper**
 
-`saga-os setup` runs in the terminal (arrow keys, sensible defaults, `--yes` for scripts). It checks the machine first (Docker, free ports, RAM and disk, OS) and fixes or explains anything missing. Then:
+`omilo setup` runs in the terminal (arrow keys, sensible defaults, `--yes` for scripts). It checks the machine first (Docker, free ports, RAM and disk, OS) and fixes or explains anything missing. Then:
 
 ![setup stepper · mode, address, proxy, TLS, DNS](img/setup-stepper.png)
 
@@ -539,7 +539,7 @@ One small program, the `saga-os` CLI, is what people install; it then pulls the 
 3. **Reverse proxy**: the stepper looks at what owns ports 80 and 443.
    - **Traefik already running** (like your ops stack): it joins Traefik's Docker network and adds labels for the chosen host or path, reusing your entrypoints and certificate resolver (detected, or asked). Nothing else on the server changes.
    - **Ports 80/443 free**: it offers a bundled Traefik that takes them and gets certificates automatically.
-   - **Nginx, Caddy or another proxy**: it writes the exact config snippet for that proxy and the command to reload it, and keeps Saga OS on an internal port.
+   - **Nginx, Caddy or another proxy**: it writes the exact config snippet for that proxy and the command to reload it, and keeps Omilo on an internal port.
    - **No open ports wanted**: a **Cloudflare Tunnel**; the server makes an outbound connection and nothing is opened on the firewall.
 4. **TLS**: Let's Encrypt over HTTP (needs DNS pointing at the server and port 80 open), Let's Encrypt over DNS with a Cloudflare API token (works behind Cloudflare's proxy and for private servers), a certificate you already have, or none for the tunnel (Cloudflare handles it).
 5. **DNS steps, shown for your choice**: the stepper prints exactly what to do at your DNS provider, then waits.
@@ -551,11 +551,11 @@ One small program, the `saga-os` CLI, is what people install; it then pulls the 
 | --- | --- | --- |
 | Subdomain, own TLS | Add an **A** record `os` → server IP (**AAAA** for IPv6). Proxy **off** (grey cloud) for HTTP certificates, or **on** with SSL/TLS mode **Full (strict)** if using the DNS method | Add an A record `os` → server IP; wait for it to resolve |
 | Main domain | The same on `@` (root); remove or change any existing record pointing elsewhere | Same; note it replaces whatever site was there |
-| Path prefix | No DNS change; the existing site's proxy must forward `/os` to Saga OS (the stepper gives the rule) | Same |
+| Path prefix | No DNS change; the existing site's proxy must forward `/os` to Omilo (the stepper gives the rule) | Same |
 | DNS certificates | Create an API token with *Zone → DNS → Edit* for that zone only and paste it into the stepper | Use your provider's API token if supported; otherwise use HTTP certificates |
 | Cloudflare Tunnel | Run the printed `cloudflared` login once, or paste a tunnel token; the stepper creates the route and the DNS record | Needs the domain on Cloudflare |
 
-Everything chosen here is saved in one settings file and can be changed later with `saga-os setup --network` (or Settings → Network), which re-runs only these steps.
+Everything chosen here is saved in one settings file and can be changed later with `omilo setup --network` (or Settings → Network), which re-runs only these steps.
 
 **Security**
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A stand-in for the `claude` CLI in tests: speaks stream-json and really calls the saga-os MCP server.
+"""A stand-in for the `claude` CLI in tests: speaks stream-json and really calls the omilo MCP server.
 
 Token behaviour: contains "LIMITED" -> usage limit reached; contains "BAD" -> auth error; otherwise works.
 """
@@ -22,7 +22,7 @@ def arg(name, default=None):
 
 
 def mcp_call(cfg, tool, args):
-    srv = json.load(open(cfg))["mcpServers"]["saga-os"]
+    srv = json.load(open(cfg))["mcpServers"]["omilo"]
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}).encode()
     req = urllib.request.Request(srv["url"], data=body, headers={**srv["headers"], "Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req).read())
@@ -52,7 +52,7 @@ path = os.path.join(store, session)
 if os.path.exists(path):
     prompt = open(path).read() + "\n" + prompt
 open(path, "w").write(prompt)
-out({"type": "system", "subtype": "init", "session_id": session, "model": "claude-sonnet-5-5", "tools": ["WebSearch", "mcp__saga-os__report"]})
+out({"type": "system", "subtype": "init", "session_id": session, "model": "claude-sonnet-5-5", "tools": ["WebSearch", "mcp__omilo__report"]})
 if "LIMITED" in token:
     out({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour", "resetsAt": 4102444800000}})
     out({"type": "result", "subtype": "success", "is_error": True, "session_id": session, "result": "Claude AI usage limit reached|4102444800",

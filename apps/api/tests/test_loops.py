@@ -18,9 +18,9 @@ def tool(base_url, token, name, **args):
 
 
 def test_decisions_become_lessons_and_runs_read_them(base_url, owner):
-    from saga_api import memory as M
-    from saga_api.db import session_scope
-    from saga_api.models import Staff
+    from omilo_api import memory as M
+    from omilo_api.db import session_scope
+    from omilo_api.models import Staff
 
     tok = owner.mcp_tokens["marketing"]
     p = tool(base_url, tok, "propose", title="Post: 50% off everything", type="content.publish", risk="medium", body="Big sale!!! 🎉🎉")
@@ -65,9 +65,9 @@ def test_memory_tools_remember_and_recall(base_url, owner):
 
 
 def test_retro_reviews_improves_measures_and_rolls_back(base_url, owner):
-    from saga_api import loops as L
-    from saga_api.db import session_scope
-    from saga_api.models import Improvement, Shift, Staff, Task, now
+    from omilo_api import loops as L
+    from omilo_api.db import session_scope
+    from omilo_api.models import Improvement, Shift, Staff, Task, now
 
     chief, mkt = owner.mcp_tokens["chief-of-staff"], owner.mcp_tokens["marketing"]
     week = tool(base_url, chief, "review_week")["structuredContent"]
@@ -133,7 +133,7 @@ def test_retro_run_writes_the_loop_log(base_url, owner):
 
 
 def test_transient_errors_are_retried():
-    from saga_api import loops as L
+    from omilo_api import loops as L
 
     assert L.transient("ConnectError: All connection attempts failed")
     assert L.transient("Claude Code: Request timed out")
@@ -146,7 +146,7 @@ def test_claude_code_runs_with_the_api_key(owner, tmp_path):
     wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {Path(__file__).parent / 'bin' / 'fake_claude.py'} \"$@\"\n")
     wrapper.chmod(0o755)
     log = tmp_path / "calls.jsonl"
-    os.environ["SAGA_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
+    os.environ["OMILO_CLAUDE_BIN"], os.environ["FAKE_CLAUDE_LOG"] = str(wrapper), str(log)
     try:
         r = owner.post("/api/ai", json={"provider": "claude", "api_key": "sk-ant-api03-" + "k" * 30 + "KEY123", "model": "claude-sonnet-5-5",
                                         "staff_ids": ["support"]})
@@ -158,7 +158,7 @@ def test_claude_code_runs_with_the_api_key(owner, tmp_path):
         call = json.loads(log.read_text().splitlines()[-1])
         assert call["api_key"] == "KEY123" and call["token"] == "" and call["cfgdir"].endswith("api-config")
     finally:
-        os.environ.pop("SAGA_CLAUDE_BIN", None)
+        os.environ.pop("OMILO_CLAUDE_BIN", None)
         owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["support"]})
 
 
@@ -167,8 +167,8 @@ def test_hermes_helpers_move_to_claude_code(tmp_path):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
-    from saga_api.db import Base, _migrate
-    from saga_api.models import Staff
+    from omilo_api.db import Base, _migrate
+    from omilo_api.models import Staff
 
     boot = create_engine(DB_URL)
     with boot.begin() as c:

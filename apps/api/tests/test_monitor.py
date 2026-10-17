@@ -20,9 +20,9 @@ def test_monitor_ranges_and_numbers(owner):
 
 
 def test_budget_alerts_then_pauses(owner):
-    from saga_api import budgets
-    from saga_api.db import session_scope
-    from saga_api.models import RunEvent
+    from omilo_api import budgets
+    from omilo_api.db import session_scope
+    from omilo_api.models import RunEvent
 
     assert owner.patch("/api/staff/finance", json={"budget_tokens_month": 1000}).status_code == 200
     assert owner.get("/api/staff/finance").json()["budget"]["budget_tokens"] == 1000
@@ -50,7 +50,7 @@ def test_monitor_insights_and_digest(owner):
     assert {"timing", "failures", "value", "pool_history", "budgets"} <= set(m)
     assert len(m["pool_history"]["hours"]) == 24 and "engines" in m["timing"]
     d = owner.get("/api/digest").json()
-    assert d["enabled"] is True and d["preview"].startswith("## Your week in Saga OS")
+    assert d["enabled"] is True and d["preview"].startswith("## Your week in Omilo")
     tid = owner.post("/api/digest/send").json()["thread_id"]
     msgs = owner.get(f"/api/threads/{tid}").json()["messages"]
     assert any(x["text"].startswith("## Your week") and x["role"] == "agent" for x in msgs)

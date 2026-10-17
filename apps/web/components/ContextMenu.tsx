@@ -16,8 +16,8 @@ export default function ContextMenuHost() {
 
   useEffect(() => {
     const on = (e: Event) => { const d = (e as CustomEvent<MenuOpen>).detail; setM(d); setPos(null); setIdx(-1); };
-    window.addEventListener("saga:menu", on);
-    return () => window.removeEventListener("saga:menu", on);
+    window.addEventListener("omilo:menu", on);
+    return () => window.removeEventListener("omilo:menu", on);
   }, []);
   useLayoutEffect(() => {
     if (!m || !box.current) return;

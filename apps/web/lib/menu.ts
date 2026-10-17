@@ -1,5 +1,5 @@
 "use client";
-/* Right-click menus for everything in Saga OS. Usage: <div onContextMenu={menu(() => [ { label: "Open", icon: "ri-…", onSelect } ])}>
+/* Right-click menus for everything in Omilo. Usage: <div onContextMenu={menu(() => [ { label: "Open", icon: "ri-…", onSelect } ])}>
    Text fields and selected text keep the browser's own menu (copy, paste, spelling). */
 
 export type MenuItem =
@@ -10,7 +10,7 @@ export type MenuItem =
 export type MenuOpen = { x: number; y: number; items: MenuItem[] };
 
 export function openMenu(x: number, y: number, items: MenuItem[]) {
-  window.dispatchEvent(new CustomEvent<MenuOpen>("saga:menu", { detail: { x, y, items } }));
+  window.dispatchEvent(new CustomEvent<MenuOpen>("omilo:menu", { detail: { x, y, items } }));
 }
 
 const keepNative = (e: React.MouseEvent) => {

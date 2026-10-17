@@ -41,8 +41,8 @@ export function summary(n: WfNode, b: WfBlock | undefined): string {
       const short = (v: any) => String(v ?? "").replace(/\{\{\s*|\s*\}\}/g, "").replace(/^steps\.|\.output/g, "");
       return `${short(c.left) || "?"} ${op[c.op || "equals"] || c.op} ${c.op === "empty" || c.op === "not_empty" ? "" : short(c.right)}`.trim();
     }
-    case "saga.doc": return `Doc: ${c.path || "(pick a doc)"}`;
-    case "saga.kpi": return `KPI: ${c.name || "(pick one)"}`;
+    case "omilo.doc": return `Doc: ${c.path || "(pick a doc)"}`;
+    case "omilo.kpi": return `KPI: ${c.name || "(pick one)"}`;
     default: return b?.label || n.type;
   }
 }
@@ -181,9 +181,9 @@ export default function Canvas({ graph, blocks, steps, selected, onSelect, onCha
   return (
     <div ref={box} className={`wfc ${readOnly ? "ro" : ""} ${linking ? "linking" : ""}`} style={{ height }}
       onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up}
-      onDragOver={(e) => { if (onDropBlock && e.dataTransfer.types.includes("application/x-saga-block")) e.preventDefault(); }}
+      onDragOver={(e) => { if (onDropBlock && e.dataTransfer.types.includes("application/x-omilo-block")) e.preventDefault(); }}
       onDrop={(e) => {
-        const t = e.dataTransfer.getData("application/x-saga-block");
+        const t = e.dataTransfer.getData("application/x-omilo-block");
         if (!t || !onDropBlock) return;
         e.preventDefault();
         const [x, y] = toWorld(e.clientX, e.clientY);

@@ -18,10 +18,10 @@ export default function TaskDrawerLazy() {
       if (!a || a.dataset.full !== undefined || a.target === "_blank") return;
       if (openInDrawer(a.getAttribute("href") || "")) { e.preventDefault(); e.stopPropagation(); }
     };
-    window.addEventListener("saga:task", onTask);
-    window.addEventListener("saga:thread", onThread);
+    window.addEventListener("omilo:task", onTask);
+    window.addEventListener("omilo:thread", onThread);
     document.addEventListener("click", onClick, true);
-    return () => { window.removeEventListener("saga:task", onTask); window.removeEventListener("saga:thread", onThread); document.removeEventListener("click", onClick, true); };
+    return () => { window.removeEventListener("omilo:task", onTask); window.removeEventListener("omilo:thread", onThread); document.removeEventListener("click", onClick, true); };
   }, []);
   return first ? <Host initial={first} /> : null;
 }

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 
 /** Run `fn` now and then every `ms` (a number, or a function re-read after each run so pages can poll fast only while
  *  something is happening). Pauses while the tab is hidden and runs at once when it comes back. Returns nothing;
- *  `nudge` events (window "saga:notice" matching `onNotice`) trigger an immediate run. */
+ *  `nudge` events (window "omilo:notice" matching `onNotice`) trigger an immediate run. */
 export function usePoll(fn: () => unknown, ms: number | (() => number), deps: unknown[] = [], onNotice?: (n: any) => boolean) {
   const f = useRef(fn); f.current = fn;
   const m = useRef(ms); m.current = ms;
@@ -29,29 +29,29 @@ export function usePoll(fn: () => unknown, ms: number | (() => number), deps: un
     const changed = () => later();  // you changed something (here or in another tab): every live view catches up
     run();
     document.addEventListener("visibilitychange", vis);
-    window.addEventListener("saga:notice", note);
-    window.addEventListener("saga:changed", changed);
+    window.addEventListener("omilo:notice", note);
+    window.addEventListener("omilo:changed", changed);
     return () => {
       dead = true; if (timer) clearTimeout(timer); if (soon) clearTimeout(soon);
-      document.removeEventListener("visibilitychange", vis); window.removeEventListener("saga:notice", note); window.removeEventListener("saga:changed", changed);
+      document.removeEventListener("visibilitychange", vis); window.removeEventListener("omilo:notice", note); window.removeEventListener("omilo:changed", changed);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }
 
 /** Ask pollers watching `url` (a thread or task id works too) to refresh now, e.g. right after sending a message. */
-export const kick = (url: string) => window.dispatchEvent(new CustomEvent("saga:notice", { detail: { kind: "local", url } }));
+export const kick = (url: string) => window.dispatchEvent(new CustomEvent("omilo:notice", { detail: { kind: "local", url } }));
 
-/* Every successful change made through api() (and changes in other tabs) is announced as "saga:changed". */
+/* Every successful change made through api() (and changes in other tabs) is announced as "omilo:changed". */
 let chan: BroadcastChannel | null = null;
 if (typeof window !== "undefined") {
   try {  // one channel object: it hears the other tabs, never itself
-    chan = new BroadcastChannel("saga-changes");
-    chan.onmessage = (e) => window.dispatchEvent(new CustomEvent("saga:changed", { detail: e.data }));
+    chan = new BroadcastChannel("omilo-changes");
+    chan.onmessage = (e) => window.dispatchEvent(new CustomEvent("omilo:changed", { detail: e.data }));
   } catch { /* old browser */ }
 }
 export function announceChange(path: string) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("saga:changed", { detail: { path } }));
+  window.dispatchEvent(new CustomEvent("omilo:changed", { detail: { path } }));
   try { chan?.postMessage({ path }); } catch { /* closed */ }
 }

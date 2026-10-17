@@ -8,7 +8,7 @@ import httpx
 from conftest import wait_for
 from test_flows import tool
 
-from saga_api import kb
+from omilo_api import kb
 
 
 def _payload(res):
@@ -88,9 +88,9 @@ def test_files_notes_web_map_and_settings(owner):
 
 def test_workflow_knowledge_steps(owner):
     graph = {"nodes": [{"id": "t", "type": "trigger.manual", "config": {}},
-                       {"id": "save", "type": "saga.kb_save", "config": {"title": "Supplier {{ trigger.name }}", "text": "{{ trigger.terms }}",
+                       {"id": "save", "type": "omilo.kb_save", "config": {"title": "Supplier {{ trigger.name }}", "text": "{{ trigger.terms }}",
                                                                          "source": "crm:supplier:{{ trigger.name }}", "kind": "connector"}},
-                       {"id": "find", "type": "saga.kb_search", "config": {"query": "payment terms supplier", "limit": 3}}],
+                       {"id": "find", "type": "omilo.kb_search", "config": {"query": "payment terms supplier", "limit": 3}}],
              "edges": [{"from": "t", "to": "save"}, {"from": "save", "to": "find"}]}
     wf = owner.post("/api/workflows", json={"name": "Supplier knowledge", "graph": graph}).json()
     run = owner.post(f"/api/workflows/{wf['id']}/run", json={"input": {"name": "Baja Prima", "terms": "Payment terms: 30 days net."}}).json()
@@ -101,12 +101,12 @@ def test_workflow_knowledge_steps(owner):
 
 def test_old_sqlite_data_moves_in(owner, base_url):
     """A company that was a SQLite file before 0.4 is copied into Postgres once."""
-    from saga_api import company as C
-    from saga_api import import_sqlite as I
+    from omilo_api import company as C
+    from omilo_api import import_sqlite as I
 
     cid = owner.post("/api/companies", json={"name": "Old Toko"}).json()["id"]
     owner.cookies.clear()
-    f = C.dir_for(cid) / "saga.db"
+    f = C.dir_for(cid) / "omilo.db"
     con = sqlite3.connect(f)
     con.execute("CREATE TABLE staff (id VARCHAR PRIMARY KEY, name VARCHAR, role VARCHAR, is_chief BOOLEAN, job TEXT, engine JSON, permissions JSON, "
                 "budget_usd_month FLOAT, max_task_minutes INTEGER, status VARCHAR, created_at DATETIME, updated_at DATETIME)")
@@ -120,6 +120,6 @@ def test_old_sqlite_data_moves_in(owner, base_url):
         counts = I.import_company(cid)
         assert counts and counts["staff"] == 1
         assert I.import_company(cid) is None, "only once"
-    co = httpx.Client(base_url=base_url, timeout=20, headers={**owner.headers, "X-Saga-Company": cid})
+    co = httpx.Client(base_url=base_url, timeout=20, headers={**owner.headers, "X-Omilo-Company": cid})
     assert [s["id"] for s in co.get("/api/staff").json()] == ["kasir"]
     owner.patch(f"/api/companies/{cid}", json={"archived": True})

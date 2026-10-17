@@ -98,7 +98,7 @@ export default function PoolMeter() {
             ))}
           </div>
           <div className="pm-foot small">
-            Exact numbers come from Claude Code when it reports them; otherwise Saga OS estimates from tokens used and what each account handled before its last limit.
+            Exact numbers come from Claude Code when it reports them; otherwise Omilo estimates from tokens used and what each account handled before its last limit.
             <Link href="/harness/">Manage pool</Link>
           </div>
         </div>

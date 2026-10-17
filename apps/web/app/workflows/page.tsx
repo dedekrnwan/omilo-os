@@ -71,11 +71,11 @@ function List() {
   }, []);
   usePoll(load, 15000, [load], (n) => n?.kind === "inbox");
   useEffect(() => {
-    try { const t = localStorage.getItem("saga.wf.tab") as Tab | null; if (t && ["mine", "repeat", "market", "runs"].includes(t)) setTab(t); } catch { /* ignore */ }
+    try { const t = localStorage.getItem("omilo.wf.tab") as Tab | null; if (t && ["mine", "repeat", "market", "runs"].includes(t)) setTab(t); } catch { /* ignore */ }
     api<Staff[]>("/staff").then(setStaff).catch(() => {});
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("saga.wf.tab", tab); } catch { /* ignore */ }
+    try { localStorage.setItem("omilo.wf.tab", tab); } catch { /* ignore */ }
     if (tab === "market" && !market) api<WfTemplate[]>("/workflows/market").then(setMarket).catch((e) => setErr(e.message));
     if (tab === "repeat") api<WfPattern[]>("/workflows/patterns").then(setPats).catch((e) => setErr(e.message));
     if (tab === "runs") api<WfRun[]>("/workflow-runs").then(setRuns).catch((e) => setErr(e.message));
@@ -278,7 +278,7 @@ function List() {
         footer={<><span className="sp" /><button className="btn" onClick={() => setImporting(null)}>Cancel</button>
           <button className="btn primary" disabled={!importing?.trim() || busy === "import"} onClick={doImport}>Import</button></>}>
         <div className="dw-sec">
-          <textarea className="mono" rows={14} value={importing || ""} onChange={(e) => setImporting(e.target.value)} placeholder='{"saga_workflow": 1, "name": "…", "graph": {…}}' />
+          <textarea className="mono" rows={14} value={importing || ""} onChange={(e) => setImporting(e.target.value)} placeholder='{"omilo_workflow": 1, "name": "…", "graph": {…}}' />
           <Err error={err} />
         </div>
       </Drawer>

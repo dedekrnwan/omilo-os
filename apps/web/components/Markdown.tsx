@@ -128,7 +128,7 @@ export function renderMarkdown(text: string): string {
 
 /* ------------------------------------------------------------------ previews (one host for the whole app) */
 export function openPreview(f: FileRef & { kind?: string }) {
-  window.dispatchEvent(new CustomEvent("saga:preview", { detail: f }));
+  window.dispatchEvent(new CustomEvent("omilo:preview", { detail: f }));
 }
 
 function onRichClick(e: React.MouseEvent | React.KeyboardEvent) {
@@ -153,7 +153,7 @@ function onRichClick(e: React.MouseEvent | React.KeyboardEvent) {
 
 const absUrl = (u: string) => (u.startsWith("http") ? u : location.origin + u);
 
-/** What you can do with a file or image shown anywhere in Saga OS. */
+/** What you can do with a file or image shown anywhere in Omilo. */
 export function fileItems(f: FileRef & { kind?: string; path?: string }): MenuItem[] {
   return [
     { heading: f.name },
@@ -300,8 +300,8 @@ export function PreviewHost({ initial = null }: { initial?: (FileRef & { kind?: 
   useEffect(() => {
     const on = (e: Event) => setF((e as CustomEvent).detail);
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") setF(null); };
-    window.addEventListener("saga:preview", on); window.addEventListener("keydown", key);
-    return () => { window.removeEventListener("saga:preview", on); window.removeEventListener("keydown", key); };
+    window.addEventListener("omilo:preview", on); window.addEventListener("keydown", key);
+    return () => { window.removeEventListener("omilo:preview", on); window.removeEventListener("keydown", key); };
   }, []);
   if (!f) return null;
   const kind = kindOf(f);

@@ -41,14 +41,14 @@ const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/``
 
 /** Put a quote of a message into the reply box of the chat that shows it. */
 export const quote = (threadId: string, text: string) =>
-  window.dispatchEvent(new CustomEvent("saga:quote", { detail: { threadId, text: text.trim().split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" } }));
+  window.dispatchEvent(new CustomEvent("omilo:quote", { detail: { threadId, text: text.trim().split("\n").map((l) => `> ${l}`).join("\n") + "\n\n" } }));
 
 /** Let a composer receive quotes for its thread. */
 export function useQuote(threadId: string | undefined | null, setText: (f: (t: string) => string) => void, focus?: () => void) {
   useEffect(() => {
     const on = (e: Event) => { const d = (e as CustomEvent).detail; if (d.threadId !== threadId) return; setText((t) => (t.trim() ? t.trimEnd() + "\n\n" : "") + d.text); focus?.(); };
-    window.addEventListener("saga:quote", on);
-    return () => window.removeEventListener("saga:quote", on);
+    window.addEventListener("omilo:quote", on);
+    return () => window.removeEventListener("omilo:quote", on);
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
@@ -61,7 +61,7 @@ function msgItems(th: FullThread, m: Msg, who: string, staff: Staff[]): MenuItem
     { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: () => copy(m.text) },
     m.role === "agent" && { label: "Ask again", icon: "ri-restart-line", hint: "puts your question back in the box", onSelect: () => {
       const last = th.messages.slice(0, th.messages.findIndex((x) => x.id === m.id)).reverse().find((x) => x.role === "owner");
-      if (last) window.dispatchEvent(new CustomEvent("saga:quote", { detail: { threadId: th.id, text: last.text } }));
+      if (last) window.dispatchEvent(new CustomEvent("omilo:quote", { detail: { threadId: th.id, text: last.text } }));
     } },
     ...(h ? [sep, ...helperItems(h)] : []),
   ].filter(Boolean) as MenuItem[];

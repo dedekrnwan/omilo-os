@@ -2,19 +2,19 @@
 import os
 from pathlib import Path
 
-from saga_api import services as S
-from saga_api import talent as T
-from saga_api.db import session_scope
+from omilo_api import services as S
+from omilo_api import talent as T
+from omilo_api.db import session_scope
 
 FIXTURE = Path(__file__).parent / "fixtures" / "agency"
 
 
 def test_library_search_and_hire(owner):
-    os.environ["SAGA_TALENT_SOURCE"] = str(FIXTURE)
+    os.environ["OMILO_TALENT_SOURCE"] = str(FIXTURE)
     try:
         assert T.syncer.run_now()["state"] == "done"
     finally:
-        os.environ.pop("SAGA_TALENT_SOURCE", None)
+        os.environ.pop("OMILO_TALENT_SOURCE", None)
 
     lib = owner.get("/api/talent").json()
     assert lib["source"]["count"] == 2 and lib["source"]["license"] == "MIT"

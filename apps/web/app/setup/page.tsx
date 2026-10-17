@@ -4,7 +4,7 @@ import { useState } from "react";
 import AuthShell, { Field } from "@/components/AuthShell";
 import { api } from "@/lib/api";
 
-/* First run: your account, then your business name. Then Saga guides the onboarding. */
+/* First run: your account, then your business name. Then Omilo guides the onboarding. */
 function strength(pw: string): [number, string] {
   if (!pw) return [0, ""];
   let n = 0;
@@ -54,7 +54,7 @@ export default function Setup() {
         ) : (
           <>
             <h1>Your business</h1>
-            <p className="au-sub">Saga will ask a few more questions next, so your team knows what you do.</p>
+            <p className="au-sub">Omilo will ask a few more questions next, so your team knows what you do.</p>
             <Field icon="ri-store-2-line" autoFocus value={f.company_name} placeholder="e.g. Warung Kopi Bandung" aria-label="Business name" onChange={(e) => setF({ ...f, company_name: e.target.value })} />
             {err && <div className="au-err" role="alert"><i className="ri-error-warning-line" />{err}</div>}
             <button className="au-btn" type="submit" disabled={!f.company_name.trim() || busy}>{busy ? "Creating…" : <>Create my account <i className="ri-arrow-right-line" /></>}</button>

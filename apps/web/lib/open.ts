@@ -3,8 +3,8 @@ import { BASE } from "@/lib/api";
 
 /* Open a job or a chat in a drawer, from anywhere, instead of navigating away. */
 
-export const openTask = (id: string, tab?: "progress" | "chat" | "approvals") => window.dispatchEvent(new CustomEvent("saga:task", { detail: { id, tab } }));
-export const openThread = (id: string, title?: string) => window.dispatchEvent(new CustomEvent("saga:thread", { detail: { id, title } }));
+export const openTask = (id: string, tab?: "progress" | "chat" | "approvals") => window.dispatchEvent(new CustomEvent("omilo:task", { detail: { id, tab } }));
+export const openThread = (id: string, title?: string) => window.dispatchEvent(new CustomEvent("omilo:thread", { detail: { id, title } }));
 
 const TASK_URL = /^\/chat\/\?(?:.*&)?view=work&(?:.*&)?task=(tsk_[0-9a-f]+)|^\/chat\/\?(?:.*&)?task=(tsk_[0-9a-f]+)(?:&.*)?$/;
 const THREAD_URL = /^\/chat\/\?thread=(thr_[0-9a-f]+)$/;
