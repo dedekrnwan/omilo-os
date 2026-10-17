@@ -188,6 +188,36 @@ measures and the helper who keeps it current. On each card (or by right-click):
 Helpers get every KPI with its target in `get_context`, and goals on the **Plan** page show the KPIs that measure them.
 API: `GET /api/kpis/board`, `PUT|DELETE /api/kpis/defs/{name}`, `POST /api/kpis/values`, `DELETE /api/kpis/values/{id}`, `POST /api/kpis/{name}/ask`.
 
+## Data: Postgres, pgvector and Redis
+
+- **Postgres** holds everything. Each company is its own schema (`co_main`, `co_<id>`) in one database, so companies
+  never see each other's rows; the login lives in the first company's schema. Docs stay Markdown files in the data
+  folder (open them in Obsidian), with their versions in Postgres.
+- **pgvector** holds the helpers' knowledge base (below).
+- **Redis** carries what several processes share: live office events (WebSockets wake up right away in every API
+  process), locks so only one worker hands out a company's jobs and workflow runs, the Claude Code pool's leases,
+  connector health, and the knowledge base's indexing queue. It holds no data you'd miss: losing it costs a few seconds.
+
+## Knowledge base (Docs → Knowledge)
+
+Everything helpers can know is indexed in Postgres: docs, memory and lessons, company context, finished jobs (brief and
+report), chats, approved proposals, uploaded files (PDF, Word, text, CSV, HTML), web pages, connector data and workflow
+results. Each source is split into pieces with a full-text index (right away) and an embedding (in the background).
+
+- **Search** is hybrid: meaning (pgvector cosine) and words (Postgres full text), merged so a weak match in meaning
+  counts little and pieces with more of your words rise. It works by words before embeddings exist.
+- **Helpers** use `recall` (search by meaning, optionally by kind) and `kb_add` (save a page or data so the next helper
+  finds it). Workflows have **Save to knowledge** and **Search knowledge** steps.
+- **Embeddings** run on this computer by default (a multilingual model that understands Indonesian, downloaded once to
+  `~/.saga-os/models`), or with Voyage AI or OpenAI (Settings in Docs → Knowledge). Switching re-embeds in the background.
+- **Docs → Knowledge** shows it: a **map** where every piece is a dot placed by meaning (similar things together; a
+  search lands on the map with lines to what a helper would get back), the **sources** with their pieces and what is
+  close in meaning, and every **search** helpers and workflows made with what came back. Each note's side panel has a
+  **Related** tab with the knowledge closest to it. Add files, web pages and notes from the **Add** button.
+
+API: `GET /api/kb/stats|map|queries|sources[/{id}]|search?q=&project=true|related-doc?path=|settings`,
+`POST /api/kb/files|web|notes|reindex`, `PUT /api/kb/settings`, `DELETE /api/kb/sources/{id}`.
+
 ## Workflows: repeated work without the AI bill
 
 **Workflows** turn work that repeats into a trigger and steps that run on their own. Most steps need no AI (connectors,
@@ -237,8 +267,7 @@ inbox, Docs, knowledge, skills, budgets, connectors, shared folders and Claude C
   company's MCP endpoint at `/co/<id>/mcp`).
 - Switching company in one tab reloads every open tab on it. Web Push names the company and switches to it when opened.
 - Archive a company you no longer run (Manage companies): its helpers pause and it leaves the list; nothing is deleted.
-- With Postgres, put `{company}` in `SAGA_DATABASE_URL` (e.g. `postgresql://…/saga_{company}`) to give each company
-  its own database; otherwise new companies use SQLite in their folder.
+- Each company is its own Postgres schema (`co_<id>`) in the same database.
 
 ## Right-click menus
 
@@ -294,7 +323,7 @@ about and send a test. Browsers allow notifications only on https or `localhost`
 
 Pages poll only as fast as needed: every 1.5 s while a helper is working, every 12–30 s when idle, never while the tab is hidden, and at
 once when a live notice arrives. Unchanged chats answer with `304 Not Modified` (ETag). Responses are gzip-compressed, hashed build files
-are cached for a year, SQLite runs with WAL and `synchronous=NORMAL`, and the code highlighter and file preview load only when used.
+are cached for a year, and the code highlighter and file preview load only when used.
 
 ## Hire specialists from The Agency
 
@@ -323,26 +352,34 @@ changes made by helpers arrive over the live stream.
 
 ## Quick start (development)
 
-Requirements: Python 3.11+, Node 20+, Go 1.24+ (for the CLI).
+Requirements: Python 3.11+, Node 20+, Docker (for Postgres and Redis), Go 1.24+ (for the CLI).
 
 ```bash
-make dev        # builds the web app, installs the API in apps/api/.venv, starts http://localhost:7700
-make test       # ruff + pytest, web lint, go vet
+make dev        # starts Postgres (pgvector) + Redis in Docker, builds the web app, installs the API, starts http://localhost:7700
+make db         # just Postgres + Redis (docker-compose.dev.yml); make db-stop stops them, data stays in Docker volumes
+make test       # ruff + pytest (database saga_test, Redis db 15), web lint, go vet
 make cli        # builds cli/saga-os
 ```
+
+Already run Postgres or Redis yourself? Skip Docker and set `SAGA_DATABASE_URL` (Postgres 16 with the `vector` extension
+available) and `SAGA_REDIS_URL`. If something else uses port 5432 or 6379, set `SAGA_PG_PORT` / `SAGA_REDIS_PORT` for
+`make db` and the matching URLs.
+
+Coming from a version before 0.4 (SQLite)? Your data in `~/.saga-os` moves into Postgres by itself on the first start
+(once, the SQLite files are left in place); `make import-sqlite` does it by hand.
 
 Open the web app, create the owner account, finish onboarding. Pick **Demo engine** to try every flow without any AI:
 it uses the real MCP endpoint, files proposals and executes approvals deterministically.
 
 ## Run with Docker
 
-Laptop (one container, SQLite in `~/.saga-os/data`):
+Laptop (Saga OS, Postgres and Redis containers; data in `~/.saga-os`):
 
 ```bash
 make cli && ./cli/saga-os up     # then ./cli/saga-os login
 ```
 
-Server (Postgres, separate worker, Traefik):
+Server (Postgres with pgvector, Redis, separate worker, Traefik):
 
 ```bash
 cd deploy && cp .env.example .env    # set SAGA_SECRET_KEY, POSTGRES_PASSWORD, SAGA_PUBLIC_URL, SAGA_HOST
@@ -376,7 +413,7 @@ Every regular job is a loop: **schedule → context → work → report and prop
   helper reads before every run. Edit or delete a lesson in Docs and the helper follows your version.
 - **Memory is notes in Docs** (the `Memory/` folder, also in Obsidian): lessons, notes helpers keep with `remember`, a run log per
   regular job (`Memory/Loops/…`), and the weekly retros (`Memory/Retros/…`), all linked from `Memory/Index` so the graph shows one
-  map (Docs → Graph → Memory). Helpers search everything with `recall` (ranked full-text search, SQLite FTS5).
+  map (Docs → Graph → Memory). Helpers search everything with `recall` (the knowledge base: meaning + words).
 - **The weekly retro** (Chief of Staff, Fridays 16:00, or "Run the retro now" on Monitor) reads every loop's scorecard, the week's
   jobs, your decisions and the lessons with `review_week`, then changes what isn't working with `improve`: a helper's instructions,
   a job's brief or schedule, or its lessons (merged and cleaned). Up to 3 changes a week, applied at once.
@@ -388,19 +425,18 @@ Every regular job is a loop: **schedule → context → work → report and prop
 - **Automatic retries**: a job that fails on a network problem or a timeout is tried again after 30 s and 60 s before it reaches
   your Inbox (never for executions of approved work).
 
-Why no vector database: memory is a few hundred to a few thousand short notes. Ranked full-text search and the [[link]] graph
-find what matters at that size, stay readable for you, and need nothing to run. Embeddings (for example `sqlite-vec`) can be added
-later behind `recall` without changing the notes.
+Memory stays readable notes in Docs; the knowledge base (pgvector) indexes them together with jobs, chats, files and pages, so
+`recall` finds a note by what it means, not only by its words.
 
 ## Configuration
 
 All settings are environment variables with the `SAGA_` prefix (see `apps/api/saga_api/config.py`): `DATA_DIR`,
-`DATABASE_URL`, `SECRET_KEY`, `PUBLIC_URL`, `INTERNAL_URL`, `BASE_PATH`, `TIMEZONE`, `EMBEDDED_WORKER`,
+`DATABASE_URL`, `REDIS_URL`, `REDIS_PREFIX`, `EMBED_PROVIDER` (local | voyage | openai), `MODELS_DIR`, `SECRET_KEY`, `PUBLIC_URL`, `INTERNAL_URL`, `BASE_PATH`, `TIMEZONE`, `EMBEDDED_WORKER`,
 `MAX_CONCURRENT_TASKS`, `TASK_TIMEOUT_S`, `STRICT_MODE`, `COOKIE_SECURE`.
 
 ## Status of testing
 
-- 62 API tests pass on SQLite (16 core ones also on Postgres 16) (policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
+- 68 API tests pass on Postgres 16 + pgvector and Redis 7 (knowledge base, SQLite import, policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

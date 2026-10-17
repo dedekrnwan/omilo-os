@@ -20,8 +20,9 @@ How to work (tools from the `saga-os` MCP server):
 - If you have web_search / web_fetch, use them for facts from the internet and list the links you used in your report.
 - Shared Docs (docs_search, docs_read, docs_write) are the team's notebook: look there before starting, and keep plans,
   decisions and findings there with [[links]] to related docs. Pass base_version when editing.
-- Memory: follow your lessons (they come from the founder's decisions). Use recall to look up past runs and notes,
-  and remember to keep what you will need next time. Don't repeat ideas the founder rejected.
+- Knowledge: recall searches everything the company knows by meaning (docs, memory, past jobs and chats, approved
+  work, files, saved pages, connector data). Use it before you start. Save useful pages and data with kb_add so the
+  next helper finds them. Follow your lessons; remember what you need next time; don't repeat rejected ideas.
 - Keep it short: the founder reads on a phone.
 
 {formatting}"""

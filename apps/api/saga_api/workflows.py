@@ -109,6 +109,16 @@ BLOCKS: dict[str, dict] = {
                  "desc": "Create or add to a doc in Docs.",
                  "fields": [F(key="path", label="Doc", kind="template", placeholder="Reports/Leads"), F(key="content", label="Text", kind="template", rows=4),
                             F(key="mode", label="", kind="select", default="append", options=[["append", "Add to the end"], ["replace", "Replace"]])]},
+    "saga.kb_save": {"label": "Save to knowledge", "group": "Saga OS", "icon": "ri-database-2-line", "color": "slate",
+                     "desc": "Keep text in the knowledge base so every helper can find it (same source again = update).",
+                     "fields": [F(key="title", label="Title", kind="template"), F(key="text", label="Text", kind="template", default="{{ last }}", rows=4),
+                                F(key="source", label="Source address or key", kind="template", optional=True,
+                                  help="A URL or any stable key; saving the same source again replaces it."),
+                                F(key="kind", label="Kind", kind="select", default="connector",
+                                  options=[["connector", "Connector data"], ["web", "Web page"], ["workflow", "Workflow result"], ["note", "Note"]])]},
+    "saga.kb_search": {"label": "Search knowledge", "group": "Saga OS", "icon": "ri-search-2-line", "color": "slate",
+                       "desc": "Find what the company knows (meaning + words). Output: the best pieces with their sources.",
+                       "fields": [F(key="query", label="Search for", kind="template"), F(key="limit", label="How many", kind="number", default=5, optional=True)]},
     "saga.kpi": {"label": "Record a KPI", "group": "Saga OS", "icon": "ri-line-chart-line", "color": "slate",
                  "desc": "Save a number on the Company page.",
                  "fields": [F(key="name", label="KPI", kind="kpi"), F(key="value", label="Value", kind="template"),
@@ -503,6 +513,23 @@ async def run_step(db: Session, run: WorkflowRun, wf: Workflow, node: dict, ctx:
         text = content if (raw.get("mode") == "replace" or not cur) else f"{cur.get('content', '').rstrip()}\n\n{content}"
         r = D.write(db, path, text, author=f"workflow:{wf.id}", author_kind="workflow", summary=f"From the workflow {wf.name}"[:300])
         return {"path": r["path"], "version": r.get("version")}, "out"
+    if t == "saga.kb_save":
+        from . import kb
+
+        body = c.get("text")
+        body = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False, indent=1, default=str)
+        kind = raw.get("kind") or "connector"
+        src_ref = str(c.get("source") or f"workflow:{wf.id}:{node['id']}")
+        url = src_ref if re.match(r"^https?://", src_ref) else ""
+        s = kb.put(db, kind if kind in ("connector", "web", "workflow", "note") else "connector", src_ref, str(c.get("title") or wf.name), body or "",
+                   url=url, meta={"workflow_id": wf.id, "run_id": run.id})
+        return {"source_id": s.id, "chunks": s.chunks}, "out"
+    if t == "saga.kb_search":
+        from . import kb
+
+        res = kb.search(db, str(c.get("query") or ""), int(raw.get("limit") or 5), who=f"workflow:{wf.id}", via="workflow")
+        items = [{"title": r["title"], "kind": r["kind"], "text": r["text"], "source": r["url"] or r["ref"], "score": r["score"]} for r in res["results"]]
+        return {"results": items, "count": len(items), "text": "\n\n".join(f"{i['title']}: {i['text']}" for i in items)}, "out"
     if t == "saga.kpi":
         from .models import KpiValue
 

@@ -236,7 +236,21 @@ def write(db: Session, path: str, content: str, *, author: str, author_kind: str
         db.add(Notice(kind="doc", title=f"{names.get(author, author)} {'created' if cur_text is None else 'edited'} {title_of(p)}",
                       body=(summary or "")[:180], url=f"/docs/?path={p}", tag=f"doc-{p}"[:80]))
     db.commit()
+    _kb(db, p)
     return {"path": p, "version": v.version, "created": cur_text is None}
+
+
+def _kb(db: Session, path: str) -> None:
+    """Keep the knowledge base in step with the vault (never fails the doc change)."""
+    from . import kb
+
+    try:
+        kb.sync_doc(db, path)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        import logging
+
+        logging.getLogger("saga.docs").exception("indexing %s failed", path)
 
 
 def suggest(db: Session, st: Staff, task_id: str | None, path: str, content: str, summary: str) -> dict:
@@ -307,6 +321,8 @@ def move(db: Session, src: str, dst: str, *, author: str, author_kind: str) -> d
                 write(db, p, pat.sub(lambda m: f"[[{new_t}{m.group(2)}]]", t), author=author, author_kind=author_kind, summary=f"Link renamed to {new_t}")
                 changed += 1
     db.commit()
+    _kb(db, a)
+    _kb(db, b)
     return {"path": b, "links_updated": changed}
 
 
@@ -321,6 +337,7 @@ def delete(db: Session, path: str, *, author: str) -> dict:
     shutil.move(str(f), str(trash / f"{stamp} {p.replace('/', ' » ')}"))
     db.add(DocVersion(path=p, version=0, content="", author=author, author_kind="owner", summary="Deleted (kept in .trash)", status="deleted"))
     db.commit()
+    _kb(db, p)
     return {"ok": True}
 
 
@@ -332,14 +349,14 @@ def _plain(s: str) -> str:
 
 
 def search(db: Session, q: str, limit: int = 20, folder: str | None = None) -> list[dict]:
-    """Ranked full-text search (SQLite FTS5); falls back to a plain scan if FTS5 is not available."""
+    """Ranked full-text search on the knowledge base (Postgres); an empty query lists docs (newest-named first)."""
     if (q or "").strip():
-        try:
-            from . import search_index
+        from . import kb
 
-            return [{**r, "snippet": _plain(r["snippet"])} for r in search_index.search(q, limit, folder)]
-        except Exception:  # noqa: BLE001
-            pass
+        try:
+            return kb.docs_search(db, q, limit, folder)
+        except Exception:  # noqa: BLE001 - fall back to a plain scan
+            db.rollback()
     words = [w for w in re.split(r"\s+", (q or "").lower().strip()) if w]
     out = []
     for p in all_paths():

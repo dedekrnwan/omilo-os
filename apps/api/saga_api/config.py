@@ -15,7 +15,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SAGA_", env_file=".env", extra="ignore")
 
     data_dir: Path = _default_data_dir()
-    database_url: str = ""  # default: sqlite file in data_dir
+    # Postgres (with the pgvector extension) holds every company's data, one schema per company; Redis carries live
+    # events, locks, shared counters and the knowledge-base queue. `make db` starts both in Docker.
+    database_url: str = "postgresql+psycopg://saga:saga@127.0.0.1:5432/saga"
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_prefix: str = "saga"  # key prefix, so several installs can share one Redis
+    # knowledge base embeddings: local (runs inside Saga OS) | voyage | openai | hash (tests, no model). Owners can
+    # switch in Settings; the setting there wins over this default.
+    embed_provider: str = "local"
+    models_dir: str = ""  # where local embedding models are cached (default: <data_dir>/models)
     secret_key: str = ""  # default: generated once and stored in data_dir/secret.key
     public_url: str = "http://localhost:7700"  # how browsers (and agents outside Docker) reach this gateway
     internal_url: str = ""  # how engines reach it from inside the deployment, e.g. http://saga-os:7700 (default: public_url)
@@ -39,10 +47,13 @@ class Settings(BaseSettings):
         return (self.internal_url or self.public_url).rstrip("/") + self.base_path.rstrip("/") + prefix() + "/mcp"
 
     def resolved_database_url(self) -> str:
-        if self.database_url:
-            return self.database_url
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{self.data_dir / 'saga.db'}"
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg://" + url[len("postgresql://"):]
+        if not url.startswith("postgresql+psycopg://"):
+            raise RuntimeError("SAGA_DATABASE_URL must be a PostgreSQL address (postgresql://user:pass@host:5432/db). "
+                               "Run `make db` to start Postgres and Redis in Docker.")
+        return url
 
     def resolved_secret(self) -> str:
         if self.secret_key:

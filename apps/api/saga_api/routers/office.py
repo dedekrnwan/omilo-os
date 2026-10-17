@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/office", tags=["office"])
 log = logging.getLogger("saga.office")
 HEARTBEAT_S = 5
 RECHECK_S = 15  # recompute the state this often even without events (time-based changes, e.g. a failure ageing out)
+FALLBACK_S = 2.5  # without a Redis wake-up, check the database this often
 
 
 @router.get("/state")
@@ -106,6 +107,31 @@ async def office_ws(ws: WebSocket):
             await inbox.put(None)
 
     rd = asyncio.create_task(reader())
+    wake = asyncio.Event()
+
+    async def listen():  # Redis: a message means "new events"; the database is still what we send
+        from .. import bus
+
+        try:
+            ps = bus.ar().pubsub()
+            await ps.subscribe(bus.key("ch:office", cid))
+            async for m in ps.listen():
+                if m.get("type") == "message":
+                    wake.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - without Redis the stream falls back to checking every few seconds
+            log.warning("office stream without live wake-ups: %s", e)
+
+    ls = asyncio.create_task(listen())
+
+    async def next_msg():
+        get, w = asyncio.ensure_future(inbox.get()), asyncio.ensure_future(wake.wait())
+        done, pending = await asyncio.wait({get, w}, timeout=FALLBACK_S, return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
+        wake.clear()
+        return get.result() if get in done else ""
     loop = asyncio.get_running_loop()
     try:
         st = await asyncio.to_thread(snap)
@@ -114,10 +140,7 @@ async def office_ws(ws: WebSocket):
         await ws.send_json({"type": "state", "state": st})
         t_beat = t_state = t_auth = loop.time()
         while True:
-            try:
-                msg = await asyncio.wait_for(inbox.get(), timeout=0.6)
-            except TimeoutError:
-                msg = ""
+            msg = await next_msg()
             if msg is None:
                 break
             if msg:
@@ -167,3 +190,4 @@ async def office_ws(ws: WebSocket):
             pass
     finally:
         rd.cancel()
+        ls.cancel()

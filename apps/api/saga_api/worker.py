@@ -95,6 +95,7 @@ class Worker:
     async def run_forever(self):
         self.recover()
         self._push = asyncio.create_task(self.push_loop())
+        self._kb = asyncio.create_task(self.kb_loop())
         interval = get_settings().worker_interval_s
         while not self._stop.is_set():
             try:
@@ -113,14 +114,20 @@ class Worker:
 
     # ------------------------------------------------------------ one tick
     async def tick(self):
+        from . import bus
+
         for cid in C.each():  # every company runs on its own: its pause switch, concurrency limit and schedule
             try:
                 self.loop_housekeeping(cid)
-                self.schedule_shifts()
-                self.weekly_digest()
-                self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
-                self.dispatch_chats()
-                self.dispatch_workflows()
+                # several worker processes may run (server mode): only one hands out this company's work at a time
+                with bus.lock("dispatch", ttl_s=30) as mine:
+                    if mine:
+                        self.schedule_shifts()
+                        self.weekly_digest()
+                        self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
+                        self.dispatch_chats()
+                        self.dispatch_workflows()
+                self.knowledge()
             except Exception:
                 log.exception("worker tick failed for %s", cid)
         self.running = {k: v for k, v in self.running.items() if not v.done()}
@@ -206,9 +213,12 @@ class Worker:
             self.flowing[rid] = asyncio.create_task(self.run_workflow(rid))
 
     async def run_workflow(self, run_id: str):
+        from . import bus
         from . import workflows as W
         from .models import WorkflowRun
 
+        if not bus.claim(f"wfrun:{run_id}", ttl_s=1800):
+            return  # another worker process has it
         try:
             with session_scope() as db:
                 r = db.get(WorkflowRun, run_id)
@@ -216,6 +226,56 @@ class Worker:
                     await W.execute(db, r)
         except Exception:
             log.exception("workflow run %s failed", run_id)
+        finally:
+            bus.release(f"wfrun:{run_id}")
+
+    # ------------------------------------------------------------ knowledge base
+    def knowledge(self):
+        """Index what changed (jobs, chats, approved work, docs edited outside); the first time, the history too."""
+        from . import kb
+
+        with session_scope() as db:
+            kb.backfill(db)
+            kb.process_marks(db)
+            kb.sync_docs(db)
+
+    def _embed_company(self, cid: str, seconds: float = 20) -> int:
+        from . import kb
+
+        n, end = 0, time.monotonic() + seconds
+        with C.use(cid):
+            while time.monotonic() < end:
+                with session_scope(cid) as db:
+                    k = kb.embed_pending(db)
+                if not k:
+                    break
+                n += k
+        return n
+
+    async def kb_loop(self):
+        """Embeds new chunks in the background (a thread, so the API stays quick). Companies with new chunks are
+        announced in Redis; every minute all of them are checked anyway."""
+        from . import bus
+
+        t_all = 0.0
+        while not self._stop.is_set():
+            try:
+                due = set(bus.r().spop(bus.gkey("kb:pending"), 50) or [])
+                if time.monotonic() - t_all > 60:
+                    due |= set(C.ids())
+                    t_all = time.monotonic()
+                for cid in due:
+                    with bus.lock("embed", ttl_s=60, cid=cid) as mine:
+                        if mine:
+                            n = await asyncio.to_thread(self._embed_company, cid)
+                            if n:
+                                bus.r().sadd(bus.gkey("kb:pending"), cid)  # more may be left: come back soon
+            except Exception:  # noqa: BLE001 - never let embedding stop the worker
+                log.exception("knowledge loop failed")
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=2)
+            except TimeoutError:
+                pass
 
     # ------------------------------------------------------------ run one task
     def _task_context(self, task_id: str) -> tuple[TaskContext, dict, int]:

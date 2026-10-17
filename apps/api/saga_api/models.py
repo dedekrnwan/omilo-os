@@ -2,7 +2,9 @@
 import datetime as dt
 import secrets
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON, BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -167,7 +169,7 @@ class InboxItem(Base):
     __tablename__ = "inbox_item"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("inb"))
     kind: Mapped[str] = mapped_column(String(16))  # proposal | question | alert
-    ref_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    ref_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     staff_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     title: Mapped[str] = mapped_column(String(300))
@@ -223,7 +225,7 @@ class AuditEvent(Base):
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     actor: Mapped[str] = mapped_column(String(64))  # user id | staff:<id> | system
     action: Mapped[str] = mapped_column(String(64))
-    ref: Mapped[str] = mapped_column(String(64), default="")
+    ref: Mapped[str] = mapped_column(String(500), default="")
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -491,3 +493,53 @@ class WorkflowRun(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ knowledge base (pgvector)
+class KbSource(Base):
+    """One thing the helpers can know: a doc, a memory note, a finished job, a chat, an approved proposal, an uploaded
+    file, a web page, data a connector or workflow saved. Its text is split into chunks with embeddings (kb_chunk)."""
+    __tablename__ = "kb_source"
+    __table_args__ = (UniqueConstraint("kind", "ref", name="uq_kb_source_kind_ref"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("kbs"))
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # doc|memory|context|job|chat|proposal|file|web|connector|workflow|note
+    ref: Mapped[str] = mapped_column(String(500))  # doc path, task id, thread id, url, file id …
+    title: Mapped[str] = mapped_column(String(300), default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    staff_id: Mapped[str] = mapped_column(String(64), default="", index=True)  # who it came from ("" = the owner / the company)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64), default="")
+    chars: Mapped[int] = mapped_column(Integer, default=0)
+    chunks: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | ready | failed
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    indexed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class KbChunk(Base):
+    __tablename__ = "kb_chunk"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("kb_source.id", ondelete="CASCADE"), index=True)
+    ord: Mapped[int] = mapped_column(Integer, default=0)
+    heading: Mapped[str] = mapped_column(String(300), default="")
+    text: Mapped[str] = mapped_column(Text)
+    embedding = mapped_column(Vector(), nullable=True)  # any size: each row records its dim; search casts to that dim
+    dim: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    model: Mapped[str] = mapped_column(String(120), default="")
+    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('simple', coalesce(heading, '') || ' ' || text)", persisted=True))
+
+
+class KbQuery(Base):
+    """A search of the knowledge base (by a helper, a workflow or you) and what came back: shown in Docs → Knowledge."""
+    __tablename__ = "kb_query"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("kbq"))
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    who: Mapped[str] = mapped_column(String(64), default="owner")  # staff id, "owner" or "workflow:<id>"
+    task_id: Mapped[str] = mapped_column(String(32), default="")
+    via: Mapped[str] = mapped_column(String(24), default="recall")  # recall | docs_search | ui | workflow
+    query: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(16), default="hybrid")  # hybrid | words (no embeddings yet)
+    results: Mapped[list] = mapped_column(JSON, default=list)  # [{chunk_id, source_id, title, kind, score}]
+    ms: Mapped[int] = mapped_column(Integer, default=0)

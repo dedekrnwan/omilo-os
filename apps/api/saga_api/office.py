@@ -138,6 +138,22 @@ def _collect(session: Session) -> None:
                 add(o.id, "agent.paused" if ch[1] != "active" else "agent.resumed", None)
     for e in out:
         session.add(e)
+    if out:
+        session.info["office_events"] = True
+
+
+@event.listens_for(Session, "after_commit")
+def _announce(session: Session) -> None:
+    """Wake every open office stream (in any API process) right away; they read the new events from the database."""
+    if session.info.pop("office_events", None):
+        from . import bus
+
+        bus.publish("office", cid=session.info.get("cid"))
+
+
+@event.listens_for(Session, "after_rollback")
+def _forget(session: Session) -> None:
+    session.info.pop("office_events", None)
 
 
 def serialize(e: OfficeEvent) -> dict:

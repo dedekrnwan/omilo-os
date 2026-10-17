@@ -79,7 +79,9 @@ def tree(db: Session, days: int = 30) -> dict:
     names = {s.id: s.name for s in db.scalars(select(Staff))}
     reps = {r.task_id: r.headline for r in db.scalars(select(Report).where(Report.task_id.in_(ids)))} if ids else {}
     props: dict[str, list] = {}
-    for p in db.scalars(select(Proposal).where(Proposal.task_id.in_(ids))) if ids else []:
+    rows = list(db.scalars(select(Proposal).where(Proposal.task_id.in_(ids)).order_by(Proposal.created_at))) if ids else []
+    rows.sort(key=lambda p: p.status not in ("approved", "executing", "done", "executed"))  # approved work first
+    for p in rows:
         props.setdefault(p.task_id, []).append({"id": p.id, "title": p.title[:120], "status": p.status})
     kids: dict[str, list[Task]] = {}
     roots: list[Task] = []

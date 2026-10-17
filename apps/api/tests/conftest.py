@@ -19,7 +19,27 @@ def _free_port() -> int:
 
 
 PORT = _free_port()
+# Postgres (with pgvector) and Redis are required: `make db` starts both. Tests use their own database and key prefix.
+DB_URL = os.environ.get("SAGA_TEST_DATABASE_URL", "postgresql+psycopg://saga:saga@127.0.0.1:5432/saga_test")
+REDIS_URL = os.environ.get("SAGA_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+
+
+def _fresh_database() -> None:
+    import sqlalchemy as sa
+
+    eng = sa.create_engine(DB_URL, poolclass=sa.pool.NullPool)
+    with eng.begin() as c:
+        for (name,) in c.exec_driver_sql("SELECT nspname FROM pg_namespace WHERE left(nspname, 3) = 'co_'").all():
+            c.exec_driver_sql(f'DROP SCHEMA "{name}" CASCADE')
+    eng.dispose()
+
+
+_fresh_database()
 os.environ.update({
+    "SAGA_DATABASE_URL": DB_URL,
+    "SAGA_REDIS_URL": REDIS_URL,
+    "SAGA_REDIS_PREFIX": "sagatest-" + os.urandom(4).hex(),
+    "SAGA_EMBED_PROVIDER": "hash",
     "SAGA_DATA_DIR": _tmp,
     "SAGA_PUBLIC_URL": f"http://127.0.0.1:{PORT}",
     "SAGA_WORKER_INTERVAL_S": "0.2",

@@ -133,7 +133,7 @@ def build(db: Session, rng: str = "7d") -> dict:
     for name, decision, n, avg in tool_rows:
         x = tools[name]
         x["calls"] += n
-        x["ms_total"] += (avg or 0) * n
+        x["ms_total"] += float(avg or 0) * n
         if decision == "error":
             x["errors"] += n
         elif decision == "refused":

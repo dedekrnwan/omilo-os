@@ -1,7 +1,25 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image reset reset-password restore-connectors
+.PHONY: dev api venv web test cli image reset reset-password restore-connectors db db-stop db-logs import-sqlite
 
-dev: web api
+# Saga OS needs Postgres (with pgvector) and Redis. `make dev` starts both in Docker first (docker-compose.dev.yml).
+dev: db web api
+
+DC := docker compose -f docker-compose.dev.yml
+
+db:
+	@command -v docker >/dev/null 2>&1 || { echo "Saga OS needs Postgres and Redis. Install Docker Desktop (https://docker.com) and run make dev again,"; \
+	  echo "or point SAGA_DATABASE_URL and SAGA_REDIS_URL at your own Postgres 16 + pgvector and Redis 7."; exit 1; }
+	@$(DC) up -d --wait postgres redis && echo "Postgres (pgvector) and Redis are up."
+
+db-stop:
+	$(DC) stop
+
+db-logs:
+	$(DC) logs -f --tail 100
+
+# Data from Saga OS before 0.4 (SQLite files in ~/.saga-os) moves in automatically on the first start; this does it by hand.
+import-sqlite: venv
+	cd apps/api && .venv/bin/python -m saga_api.import_sqlite
 
 # Python 3.11+ is needed (macOS ships 3.9: brew install python@3.12).
 PYTHON ?= $(shell for p in python3.13 python3.12 python3.11 python3; do command -v $$p >/dev/null 2>&1 && $$p -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null && echo $$p && break; done)
@@ -19,7 +37,9 @@ venv:
 web:
 	cd apps/web && npm install --no-audit --no-fund && npm run build
 
-test: venv
+# Tests use the database saga_test (created if missing) and Redis db 15.
+test: venv db
+	@$(DC) exec -T postgres psql -U saga -d saga -tc "SELECT 1 FROM pg_database WHERE datname = 'saga_test'" | grep -q 1 || $(DC) exec -T postgres createdb -U saga saga_test
 	cd apps/api && .venv/bin/ruff check saga_api tests && .venv/bin/pytest -q
 	cd apps/web && npm run lint
 	cd cli && go vet ./... && go build ./...
@@ -34,17 +54,17 @@ image:
 reset-password: venv
 	cd apps/api && .venv/bin/python -m saga_api.reset_password
 
-# Start over: moves your Saga OS data (account, helpers, connectors, tasks, keys) aside, it is not deleted.
-# Asks first; `make reset CONFIRM=yes` skips the question. Bring connectors back later with `make restore-connectors`.
-reset:
+# Start over: moves your Saga OS data (account, helpers, connectors, tasks, keys) aside, it is not deleted: the data
+# folder to <data>-old-<date> and each company's Postgres schema to old<date>_co_<id>. Asks first; `make reset CONFIRM=yes`
+# skips the question. Bring connectors back later with `make restore-connectors`.
+reset: venv db
 	@if lsof -nP -iTCP:$${SAGA_PORT:-7700} -sTCP:LISTEN >/dev/null 2>&1; then echo "Saga OS is still running on port $${SAGA_PORT:-7700}. Stop it (Ctrl+C) first."; exit 1; fi
-	@d="$${SAGA_DATA_DIR:-$$HOME/.saga-os}"; if [ ! -d "$$d" ]; then echo "Nothing to reset ($$d does not exist)."; exit 0; fi; \
-	if [ "$(CONFIRM)" != "yes" ]; then \
+	@if [ "$(CONFIRM)" != "yes" ]; then \
 	  echo "This starts Saga OS from zero: a new account, onboarding again, no helpers, connectors or history."; \
-	  echo "Your current data is moved aside (not deleted) to $$d-old-<date>."; \
+	  echo "Your current data is moved aside (not deleted)."; \
 	  printf "Type yes to continue: "; read a; [ "$$a" = "yes" ] || { echo "Cancelled. Nothing changed."; exit 1; }; fi; \
-	mv "$$d" "$$d-old-$$(date +%Y%m%d-%H%M%S)" && echo "Moved $$d aside. Run make dev to start fresh. Connectors can come back: make restore-connectors"
+	cd apps/api && .venv/bin/python -m saga_api.reset
 
 # Bring back connectors from the newest folder a reset moved aside (or FROM=<folder>). Stop Saga OS first.
-restore-connectors: venv
+restore-connectors: venv db
 	cd apps/api && .venv/bin/python -m saga_api.restore $(FROM)

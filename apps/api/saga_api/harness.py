@@ -115,30 +115,91 @@ def serialize(a: HarnessAccount, busy: int = 0) -> dict:
             "runs": a.runs, "tokens": a.tokens, "cost_usd": round(a.cost_usd or 0, 4), "busy": busy}
 
 
-# in-process lease counts (the worker process runs every harness call)
-_busy: dict[str, int] = {}
+# Leases live in Redis, so every worker process sees the same counts: one sorted set per account, a member per lease
+# with its expiry time (a crashed process can't keep an account busy forever).
 _lock = threading.Lock()
 
 
+def _lease_key(account_id: str) -> str:
+    from . import bus
+
+    return bus.key(f"pool:lease:{account_id}")
+
+
+def _busy_of(account_id: str) -> int:
+    import time
+
+    from . import bus
+
+    try:
+        k = _lease_key(account_id)
+        bus.r().zremrangebyscore(k, 0, time.time())
+        return int(bus.r().zcard(k))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+class _Busy:
+    def get(self, account_id: str, default: int = 0) -> int:
+        return _busy_of(account_id) or default
+
+
+_busy = _Busy()
+
+
 def busy_counts() -> dict[str, int]:
-    return dict(_busy)
+    from . import bus
+
+    out: dict[str, int] = {}
+    try:
+        prefix = bus.key("pool:lease:")
+        for k in bus.r().scan_iter(prefix + "*", count=200):
+            aid = k[len(prefix):]
+            out[aid] = _busy_of(aid)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _take(account_id: str) -> None:
+    import time
+    import uuid
+
+    from . import bus
+    from .config import get_settings
+
+    k = _lease_key(account_id)
+    bus.r().zadd(k, {uuid.uuid4().hex: time.time() + get_settings().task_timeout_s + 120})
+    bus.r().expire(k, get_settings().task_timeout_s + 300)
+
+
+def _give_back(account_id: str) -> None:
+    from . import bus
+
+    try:
+        bus.r().zpopmin(_lease_key(account_id), 1)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def lease(exclude: set[str] | None = None) -> tuple[str, str, str] | None:
     """Pick an account: enabled, not cooling, not in error, under the parallel limit, least recently used.
     Returns (account_id, label, token) and counts it busy until release()."""
-    with session_scope() as db, _lock:
+    from . import bus
+
+    with session_scope() as db, _lock, bus.lock("pool", ttl_s=10, wait_s=5):
         rows = list(db.scalars(select(HarnessAccount).where(HarnessAccount.enabled.is_(True))))
         t = now()
+        busy = {a.id: _busy_of(a.id) for a in rows}
         ok = [a for a in rows if a.id not in (exclude or set()) and a.status != "error"
               and not (a.cooldown_until and a.cooldown_until.replace(tzinfo=a.cooldown_until.tzinfo or dt.UTC) > t)
-              and _busy.get(a.id, 0) < MAX_PARALLEL_PER_ACCOUNT]
+              and busy[a.id] < MAX_PARALLEL_PER_ACCOUNT]
         if not ok:
             return None
-        ok.sort(key=lambda a: (_busy.get(a.id, 0), a.last_used_at or dt.datetime.min.replace(tzinfo=dt.UTC)))
+        ok.sort(key=lambda a: (busy[a.id], a.last_used_at or dt.datetime.min.replace(tzinfo=dt.UTC)))
         a = ok[0]
         a.last_used_at = t
-        _busy[a.id] = _busy.get(a.id, 0) + 1
+        _take(a.id)
         return a.id, a.label, decrypt(a.token_enc) or ""
 
 
@@ -187,7 +248,7 @@ def window_tokens(db, account_id: str) -> int:
 def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, error: str = "", limit: bool = False,
             resets_at: dt.datetime | None = None, limits: list[dict] | None = None) -> None:
     with session_scope() as db, _lock:
-        _busy[account_id] = max(0, _busy.get(account_id, 1) - 1)
+        _give_back(account_id)
         a = db.get(HarnessAccount, account_id)
         if not a:
             return

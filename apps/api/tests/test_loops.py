@@ -163,13 +163,18 @@ def test_claude_code_runs_with_the_api_key(owner, tmp_path):
 
 
 def test_hermes_helpers_move_to_claude_code(tmp_path):
+    from conftest import DB_URL
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from saga_api.db import Base, _migrate
     from saga_api.models import Staff
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    boot = create_engine(DB_URL)
+    with boot.begin() as c:
+        c.exec_driver_sql('CREATE SCHEMA IF NOT EXISTS "co_hermes_test"')
+    boot.dispose()
+    eng = create_engine(DB_URL, connect_args={"options": "-csearch_path=co_hermes_test,public"})
     Base.metadata.create_all(eng)
     with Session(eng) as db:
         db.add(Staff(id="dev", name="Dev", engine={"type": "hermes", "managed": True, "port": 8650, "claude_model": "claude-opus-5-5", "timeout_s": 900}))

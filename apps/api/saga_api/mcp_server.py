@@ -85,9 +85,21 @@ TOOLS: list[dict] = [
                                          "Use it for facts, preferences and what worked. Give a title to keep a topic note, e.g. 'Posting times'.",
      "inputSchema": {"type": "object", "properties": {"text": _s("string", "what to remember, one or two sentences"),
                                                       "title": _s("string", "optional topic note title")}, "required": ["text"]}},
-    {"name": "recall", "description": "Search memory and all Docs (ranked full-text). Use before you start: past runs, lessons, decisions, notes.",
-     "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for"),
-                                                      "memory_only": _s("boolean", "only search the Memory folder")}, "required": ["query"]}},
+    {"name": "recall", "description": "Search the company's knowledge base by meaning and words: Docs, memory and lessons, finished jobs, "
+                                       "chats, approved work, uploaded files, saved web pages and connector data. Use before you start.",
+     "inputSchema": {"type": "object", "properties": {"query": _s("string", "what you want to know, in plain words"),
+                                                      "kinds": _s("array", "only these kinds: doc, memory, context, job, chat, proposal, file, web, connector, workflow, note",
+                                                                  items={"type": "string"}),
+                                                      "memory_only": _s("boolean", "only search memory (Docs → Memory)"),
+                                                      "limit": _s("integer", "how many pieces (default 8)"), "task_id": _s("string", "your task id")},
+                     "required": ["query"]}},
+    {"name": "kb_add", "description": "Save something to the knowledge base so every helper can find it later: a web page you read, data "
+                                      "from a connector, a fact sheet. Give the source address if there is one. Same source again = update.",
+     "inputSchema": {"type": "object", "properties": {"title": _s("string", "short title"), "text": _s("string", "the content (Markdown is fine)"),
+                                                      "url": _s("string", "where it came from, if anywhere"),
+                                                      "kind": _s("string", "web | connector | note (default: web when url is given, else note)",
+                                                                 enum=["web", "connector", "note"]),
+                                                      "task_id": _s("string", "your task id")}, "required": ["title", "text"]}},
     {"name": "review_week", "description": "Chief of Staff, for the weekly retro: every loop's scorecard, each helper's jobs, your decisions "
                                             "and notes, their lessons and schedules, and recent improvements with their measured effect.",
      "inputSchema": {"type": "object", "properties": {"days": _s("integer", "how many days back (default 7)")}, "required": []}},
@@ -221,6 +233,16 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
                                    "current_version": e.extra["current"]["version"]}
             raise S.DomainError(str(e), e.code) from e
 
+    if name == "kb_add":
+        from . import kb
+
+        kind = args.get("kind") or ("web" if args.get("url") else "note")
+        if kind not in ("web", "connector", "note"):
+            raise S.DomainError("kind is web, connector or note")
+        ref = str(args.get("url") or f"{st.id}:{args['title']}")
+        src = kb.put(db, kind, ref, str(args["title"]), str(args["text"])[:200_000], url=str(args.get("url") or ""), staff_id=st.id,
+                     meta={"added_by": st.id, "task_id": args.get("task_id")})
+        return "allowed", {"source_id": src.id, "chunks": src.chunks}
     if name in ("remember", "recall"):
         from . import docs as D
         from . import memory as M
@@ -229,7 +251,15 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             if name == "remember":
                 path = M.remember(db, st, str(args["text"]), (str(args["title"]).strip() or None) if args.get("title") else None)
                 return "allowed", {"saved_in": path}
-            return "allowed", {"results": D.search(db, str(args.get("query") or ""), 12, folder=M.ROOT if args.get("memory_only") else None)}
+            from . import kb
+
+            kinds = ["memory"] if args.get("memory_only") else (args.get("kinds") or None)
+            res = kb.search(db, str(args.get("query") or ""), int(args.get("limit") or 8), kinds=kinds, who=st.id,
+                            task_id=str(args.get("task_id") or ""), via="recall")
+            return "allowed", {"mode": res["mode"], "results": [
+                {"title": r["title"], "kind": r["kind"], "path": r["ref"] if r["kind"] in ("doc", "memory", "context") else None,
+                 "source": r["url"] or r["ref"], "section": r["heading"], "snippet": r["text"][:300], "text": r["text"], "score": r["score"]}
+                for r in res["results"]]}
         except D.DocError as e:
             raise S.DomainError(str(e), e.code) from e
     if name in ("review_week", "improve"):

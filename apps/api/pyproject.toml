@@ -1,6 +1,6 @@
 [project]
 name = "saga-os-api"
-version = "0.3.0"
+version = "0.4.0"
 description = "Saga OS gateway: the office between a company owner and their AI staff agents"
 requires-python = ">=3.11"
 license = { text = "TBD" }
@@ -17,6 +17,11 @@ dependencies = [
   "croniter>=2.0",
   "pyyaml>=6.0",
   "psycopg[binary]>=3.1",
+  "pgvector>=0.3",
+  "redis>=5.0",
+  "numpy>=1.26",
+  "fastembed>=0.4",
+  "pypdf>=4.0",
   "pywebpush>=2.0",
 ]
 

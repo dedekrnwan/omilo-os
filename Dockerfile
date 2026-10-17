@@ -22,6 +22,12 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     if [ "$WITH_CLAUDE_CODE" = "1" ]; then npm install -g --no-audit --no-fund @anthropic-ai/claude-code && \
       ln -sf /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js /usr/local/bin/claude; fi
 COPY --from=web /web/out /app/web
+# The knowledge base's local embedding model downloads once into /data/models on first use. PRELOAD_EMBEDDINGS=1 bakes
+# it into the image instead (~220 MB, works offline from the first start).
+ARG PRELOAD_EMBEDDINGS=0
+RUN if [ "$PRELOAD_EMBEDDINGS" = "1" ]; then mkdir -p /opt/models && python -c "from fastembed import TextEmbedding; \
+      TextEmbedding('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='/opt/models')" && chmod -R a+rX /opt/models; fi
+ENV SAGA_MODELS_DIR=${PRELOAD_EMBEDDINGS:+/opt/models}
 RUN useradd -r -u 10001 saga && mkdir -p /data && chown saga /data
 USER saga
 VOLUME /data

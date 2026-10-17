@@ -68,7 +68,7 @@ SHELL_DENY = [f"Bash({c}:*)" for c in (
     "rm", "rmdir", "sudo", "git push", "git reset --hard", "git clean", "npm publish", "pnpm publish", "yarn publish", "twine upload",
     "docker push", "kubectl", "terraform apply", "terraform destroy", "vercel", "netlify deploy", "fly deploy", "flyctl deploy", "gh pr merge",
     "gh release", "ssh", "scp")]
-STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "SAGA_SECRET_KEY", "SAGA_DATABASE_URL", "CLAUDE_CODE_OAUTH_TOKEN")
+STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "SAGA_SECRET_KEY", "SAGA_DATABASE_URL", "SAGA_REDIS_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 

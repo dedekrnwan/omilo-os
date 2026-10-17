@@ -942,22 +942,21 @@ def connectors_restore(body: RestoreIn, db: Session = Depends(get_db), user: Use
 
 
 # last health check per connector (in memory; refreshed by Test and by the chat box every few minutes)
-_conn_health_all: dict[str, dict[str, dict]] = {}
 
 
 class _HealthView:
-    """Per-company view of the health cache (connector ids repeat across companies)."""
-
-    def _d(self) -> dict[str, dict]:
-        from .. import company as _C
-
-        return _conn_health_all.setdefault(_C.current(), {})
+    """Per-company connector health, shared by every API process through Redis (kept a day)."""
 
     def get(self, k, default=None):
-        return self._d().get(k, default)
+        from .. import bus
+
+        v = bus.get_json(f"conn:health:{k}")
+        return default if v is None else v
 
     def __setitem__(self, k, v):
-        self._d()[k] = v
+        from .. import bus
+
+        bus.set_json(f"conn:health:{k}", v, ttl_s=86400)
 
 
 _conn_health = _HealthView()

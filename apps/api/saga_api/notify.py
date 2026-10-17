@@ -195,8 +195,8 @@ async def push_pending(db_factory, auth_factory=None, label: str = "", company: 
                     if label:
                         payload["title"] = f"{label} · {payload['title']}"
                     if company:  # opening it switches to that company
-                        u, _, frag = payload["url"].partition("#")
-                        payload["url"] = u + ("&" if "?" in u else "?") + f"co={company}" + (f"#{frag}" if frag else "")
+                        base, _, frag = payload["url"].partition("#")
+                        payload["url"] = base + ("&" if "?" in base else "?") + f"co={company}" + (f"#{frag}" if frag else "")
                     jobs.append((sub, payload, u.email))
         cur.value = notices[-1].id
         db.commit()

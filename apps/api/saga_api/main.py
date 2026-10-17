@@ -15,6 +15,7 @@ from .config import get_settings
 from .db import init_db
 from .mcp_server import router as mcp_router
 from .routers import api, auth, companies
+from .routers import kb as kb_router
 from .routers import office as office_router
 from .routers import workflows as workflows_router
 from .worker import Worker
@@ -46,6 +47,9 @@ def build_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        from . import bus
+
+        bus.check()  # Redis first: a clear message beats a half-started app
         init_db()
         worker, task = None, None
         if cfg.embedded_worker:
@@ -57,7 +61,7 @@ def build_app() -> FastAPI:
             await worker.stop()
             task.cancel()
 
-    inner = FastAPI(title="Saga OS", version="0.3.0", lifespan=lifespan,
+    inner = FastAPI(title="Saga OS", version="0.4.0", lifespan=lifespan,
                     docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
     inner.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)  # event streams are left alone
     if cfg.cors_origins:
@@ -68,11 +72,27 @@ def build_app() -> FastAPI:
     inner.include_router(api.router)
     inner.include_router(office_router.router)
     inner.include_router(workflows_router.router)
+    inner.include_router(kb_router.router)
     inner.include_router(mcp_router)
 
     @inner.get("/healthz")
     def healthz():
-        return {"ok": True}
+        from sqlalchemy import text
+
+        from . import bus
+        from .db import engine
+
+        out = {"ok": True, "database": "ok", "redis": "ok"}
+        try:
+            with engine().connect() as c:
+                c.execute(text("SELECT 1"))
+        except Exception as e:  # noqa: BLE001
+            out.update(ok=False, database=str(e)[:200])
+        try:
+            bus.r().ping()
+        except Exception as e:  # noqa: BLE001
+            out.update(ok=False, redis=str(e)[:200])
+        return JSONResponse(out, status_code=200 if out["ok"] else 503)
 
     web = _web_dir()
 

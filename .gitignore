@@ -17,3 +17,7 @@ dist/
 .env.*
 !.env.example
 deploy/.env
+
+dump.rdb
+cli/cli
+cli/saga-os

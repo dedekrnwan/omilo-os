@@ -14,6 +14,7 @@ import { confirmDialog } from "@/lib/dialog";
 /* Docs: the shared notebook for you and your helpers, Obsidian-style. A tree of Markdown notes, [[links]] between them,
    backlinks, outline and history on the right, and a graph of how everything connects. Saves as you type. */
 
+const Knowledge = dynamic(() => import("@/components/Knowledge"), { ssr: false, loading: () => <p className="small" style={{ padding: 20 }}>Loading the knowledge base…</p> });
 const DocGraph = dynamic(() => import("@/components/DocGraph"), { ssr: false, loading: () => <p className="small" style={{ padding: 20 }}>Loading the graph…</p> });
 
 type Who = { kind: "owner" | "agent" | "outside"; id: string; name: string };
@@ -100,7 +101,8 @@ function DocsInner() {
   const router = useRouter();
   const params = useSearchParams();
   const path = params.get("path");
-  const graphMode = params.get("graph") === "1";
+  const kbMode = params.get("kb") === "1";
+  const graphMode = params.get("graph") === "1" || kbMode;
 
   const [tree, setTree] = useState<{ docs: TreeDoc[]; vault: string } | null>(null);
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -110,7 +112,8 @@ function DocsInner() {
   const [conflict, setConflict] = useState<{ version: number; content: string; updated_by: Who } | null>(null);
   const [remote, setRemote] = useState<Who | null>(null);
   const [mode, setMode] = useState<"edit" | "preview" | "split">("split");
-  const [tab, setTab] = useState<"links" | "outline" | "history">("links");
+  const [tab, setTab] = useState<"links" | "related" | "outline" | "history">("links");
+  const [related, setRelated] = useState<{ path: string; items: any[]; source: any } | null>(null);
   const [hist, setHist] = useState<Version[] | null>(null);
   const [oldV, setOldV] = useState<{ version: number; content: string } | null>(null);
   const [graph, setGraph] = useState<{ nodes: any[]; edges: any[] } | null>(null);
@@ -152,6 +155,7 @@ function DocsInner() {
 
   useEffect(() => { loadTree(); }, [loadTree]);
   useEffect(() => {
+    if (kbMode) return;
     if (graphMode) { api<{ nodes: any[]; edges: any[] }>("/vault/graph").then(setGraph).catch((e) => setErr(e.message)); return; }
     if (!path) { if (tree && tree.docs.length) go({ path: tree.docs.find((d) => d.path === "Welcome.md")?.path || tree.docs[0].path }); return; }
     if (params.get("new") === "1" && tree && !tree.docs.some((d) => d.path.toLowerCase() === (path.endsWith(".md") ? path : `${path}.md`).toLowerCase())) {
@@ -162,6 +166,11 @@ function DocsInner() {
     }
     loadDoc(path);
   }, [path, graphMode, tree === null]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (tab !== "related" || !doc || related?.path === doc.path) return;
+    api<{ source: any; related: any[] }>(`/kb/related-doc?path=${encodeURIComponent(doc.path)}`)
+      .then((r) => setRelated({ path: doc.path, items: r.related, source: r.source })).catch(() => setRelated({ path: doc.path, items: [], source: null }));
+  }, [tab, doc?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // save as you type (1.2 s after the last key), with the version this edit started from
   const doSave = useCallback(async (force = false) => {
@@ -329,7 +338,7 @@ function DocsInner() {
     <div className="ws docs">
       <div className="topbar">
         <button className="iconbtn hide-lg" aria-label="Show notes" onClick={() => setListOpen(!listOpen)}><i className="ri-menu-2-line" /></button>
-        <span className="crumb"><i className="ri-book-2-line" />Docs{doc && !graphMode && <span className="small" style={{ fontWeight: 400 }}>· {doc.path.replace(/\.md$/, "").split("/").join(" / ")}</span>}{graphMode && <span className="small" style={{ fontWeight: 400 }}>· Graph</span>}</span>
+        <span className="crumb"><i className="ri-book-2-line" />Docs{doc && !graphMode && <span className="small" style={{ fontWeight: 400 }}>· {doc.path.replace(/\.md$/, "").split("/").join(" / ")}</span>}{graphMode && <span className="small" style={{ fontWeight: 400 }}>· {kbMode ? "Knowledge" : "Graph"}</span>}</span>
         <span className="sp" />
         {!graphMode && doc && (
           <>
@@ -339,7 +348,11 @@ function DocsInner() {
             </div>
           </>
         )}
-        <button className={`btn sm ${graphMode ? "primary" : ""}`} onClick={() => go(graphMode ? (doc ? { path: doc.path } : {}) : { graph: "1" })}><i className="ri-share-circle-line" />Graph</button>
+        <div className="seg" role="tablist" aria-label="Docs view">
+          <button role="tab" aria-selected={!graphMode} className={!graphMode ? "on" : ""} onClick={() => go(doc ? { path: doc.path } : {})}><i className="ri-file-text-line" /> Notes</button>
+          <button role="tab" aria-selected={graphMode && !kbMode} className={graphMode && !kbMode ? "on" : ""} onClick={() => go({ graph: "1" })}><i className="ri-share-circle-line" /> Graph</button>
+          <button role="tab" aria-selected={kbMode} className={kbMode ? "on" : ""} onClick={() => go({ kb: "1" })}><i className="ri-database-2-line" /> Knowledge</button>
+        </div>
         {!graphMode && doc && <button className="iconbtn" aria-label={side ? "Hide side panel" : "Show side panel"} onClick={() => setSide(!side)}><i className={side ? "ri-side-bar-fill" : "ri-side-bar-line"} /></button>}
       </div>
 
@@ -355,7 +368,9 @@ function DocsInner() {
         </nav>
 
         <section className="ws-main docs-main">
-          {graphMode ? (
+          {kbMode ? (
+            <Knowledge onOpenDoc={(p) => go({ path: p })} initialSource={params.get("source")} />
+          ) : graphMode ? (
             <div className="docs-graph">
               <div className="seg dg-view" role="tablist" aria-label="Show">
                 {([["all", "Everything"], ["memory", "Memory"], ["notes", "Notes only"]] as const).map(([k, l]) => (
@@ -431,6 +446,7 @@ function DocsInner() {
             <div className="ptabs">
               <div className="seg">
                 <button className={tab === "links" ? "on" : ""} onClick={() => setTab("links")}>Links</button>
+                <button className={tab === "related" ? "on" : ""} onClick={() => setTab("related")} title="Knowledge close in meaning">Related</button>
                 <button className={tab === "outline" ? "on" : ""} onClick={() => setTab("outline")}>Outline</button>
                 <button className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>History</button>
               </div>
@@ -450,6 +466,22 @@ function DocsInner() {
                     </button>
                   ))}
                 </>
+              )}
+              {tab === "related" && (
+                !related || related.path !== doc.path ? <p className="small">Looking…</p> : (
+                  <>
+                    <p className="small" style={{ marginTop: 0 }}>Knowledge close in meaning to this note: other docs, past jobs, chats, files and pages helpers would find with it.</p>
+                    {related.items.length === 0 ? <p className="small">{related.source?.status === "pending" ? "This note is still being embedded." : "Nothing close yet."}</p> : related.items.map((r) => (
+                      <button key={r.id} className="ds-link" onClick={() => (["doc", "memory", "context"].includes(r.kind) ? go({ path: r.ref }) : go({ kb: "1", source: r.id }))}>
+                        <b><i className={{ doc: "ri-file-text-line", memory: "ri-brain-line", context: "ri-building-2-line", job: "ri-briefcase-4-line", chat: "ri-chat-3-line",
+                          proposal: "ri-checkbox-circle-line", file: "ri-attachment-2", web: "ri-global-line", connector: "ri-plug-line", workflow: "ri-flow-chart", note: "ri-sticky-note-line" }[r.kind as string] || "ri-file-line"} />{r.title}</b>
+                        <span>{r.kind_label} · {Math.round(r.similarity * 100)}% similar</span>
+                        <i className="ds-sim"><i style={{ width: `${Math.max(4, Math.round(r.similarity * 100))}%` }} /></i>
+                      </button>
+                    ))}
+                    {related.source && <button className="btn sm quiet" style={{ marginTop: 6 }} onClick={() => go({ kb: "1", source: related.source.id })}><i className="ri-database-2-line" />See it in Knowledge</button>}
+                  </>
+                )
               )}
               {tab === "outline" && (outline.length === 0 ? <p className="small">Headings (#, ##) show up here.</p> : (
                 <div className="ds-outline">{outline.map((h, i) => <button key={i} style={{ paddingLeft: (h.level - 1) * 12 + 6 }} onClick={() => jumpTo(h.line)}>{h.text}</button>)}</div>

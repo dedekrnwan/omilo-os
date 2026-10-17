@@ -49,12 +49,43 @@ def _moved_at(p: Path) -> str | None:
         return None
 
 
-def _db_for(old: Path, cid: str) -> Path | None:
+def _db_for(old: Path, cid: str) -> Path | str | None:
+    """Where that folder's data lives: its Postgres schema (resets since 0.4) or its SQLite file (older versions)."""
+    m = _SUFFIX.search(old.name)
+    if m and "-" in m.group(1):
+        from .db import schema_for
+        from .reset import old_schema
+
+        schema = old_schema(m.group(1), schema_for(cid))
+        try:
+            from sqlalchemy import create_engine, text
+            from sqlalchemy.pool import NullPool
+
+            eng = create_engine(get_settings().resolved_database_url(), poolclass=NullPool)
+            with eng.connect() as c:
+                found = c.execute(text("SELECT 1 FROM pg_namespace WHERE nspname = :s"), {"s": schema}).scalar()
+            eng.dispose()
+            if found:
+                return "pg:" + schema
+        except Exception:  # noqa: BLE001
+            pass
     p = old / "saga.db" if cid == C.MAIN else old / "companies" / cid / "saga.db"
     return p if p.exists() else None
 
 
-def _rows(db: Path) -> list[dict]:
+def _rows(db: Path | str) -> list[dict]:
+    if isinstance(db, str) and db.startswith("pg:"):
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import NullPool
+
+        eng = create_engine(get_settings().resolved_database_url(), poolclass=NullPool)
+        try:
+            with eng.connect() as c:
+                return [dict(r) for r in c.exec_driver_sql(f'SELECT * FROM "{db[3:]}".connector ORDER BY created_at').mappings()]
+        except Exception:  # noqa: BLE001
+            return []
+        finally:
+            eng.dispose()
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         con.row_factory = sqlite3.Row
@@ -118,8 +149,13 @@ def restore(db: Session, dir_name: str, ids: list[str] | None = None, cid: str |
             else:
                 no_secret.append(r["id"])
         args = r.get("args")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args) if args else []
+            except ValueError:
+                args = []
         db.add(Connector(id=r["id"], label=r["label"], kind=r["kind"] or "http", url=r.get("url") or "", command=r.get("command") or "",
-                         args=json.loads(args) if isinstance(args, str) and args else (args or []), secrets_enc=secrets_enc,
+                         args=args or [], secrets_enc=secrets_enc,
                          approval=r.get("approval") or "ask", default_on=bool(r.get("default_on", 1)), enabled=bool(r.get("enabled", 1))))
         restored.append(r["id"])
     from . import services as S
