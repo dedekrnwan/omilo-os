@@ -29,6 +29,7 @@ class Worker:
         self.running: dict[str, asyncio.Task] = {}
         self.retry_at: dict[str, float] = {}  # task id -> monotonic time it may run again (after a transient failure)
         self._daily: dict[str, float] = {}    # company -> last time the loop housekeeping ran
+        self._nudged: dict[str, float] = {}   # company -> last time the nudge ladder ran
         self.chatting: dict[str, asyncio.Task] = {}
         self.flowing: dict[str, asyncio.Task] = {}  # workflow runs in progress
         self._stop = asyncio.Event()
@@ -64,6 +65,24 @@ class Worker:
                 digest.maybe_send(db)
         except Exception:
             log.exception("weekly digest failed")
+
+    def nudges(self) -> None:
+        """The nudge ladder for the current company (every few ticks, at most every 20 s): wake snoozed items, remind about waiting ones."""
+        from . import nudge
+        from .models import User
+
+        cid = C.current()
+        if time.monotonic() - self._nudged.get(cid, 0) < min(20.0, get_settings().worker_interval_s * 5):
+            return
+        self._nudged[cid] = time.monotonic()
+        try:
+            with session_scope(C.MAIN) as adb:
+                owner = adb.scalar(select(User.id).order_by(User.created_at).limit(1))
+            with session_scope() as db:
+                for line in nudge.tick(db, owner):
+                    log.info("nudge: %s", line)
+        except Exception:
+            log.exception("nudge ladder failed")
 
     def _budget(self, staff_id: str) -> None:
         """Monthly budget: alert at 80%, pause the helper at 100%."""
@@ -123,6 +142,7 @@ class Worker:
                 with bus.lock("dispatch", ttl_s=30) as mine:
                     if mine:
                         self.schedule_shifts()
+                        self.nudges()
                         self.weekly_digest()
                         self.dispatch_tasks()  # jobs started here keep this company (context is copied into the task)
                         self.dispatch_chats()
@@ -163,7 +183,12 @@ class Worker:
                     Task.shift_id == sh.id, Task.status.in_(["queued", "running"])))
                 if busy:
                     continue  # previous shift still in progress
-                db.add(Task(staff_id=st.id, origin="shift", brief=sh.brief or sh.name, created_by="schedule", shift_id=sh.id))
+                brief = sh.brief or sh.name
+                if st.is_chief and ("brief" in (sh.name or "").lower() or "morning brief" in brief.lower()):
+                    from . import nudge  # what is still waiting on the owner goes on top of the morning brief
+
+                    brief += nudge.brief_section(db)
+                db.add(Task(staff_id=st.id, origin="shift", brief=brief, created_by="schedule", shift_id=sh.id))
                 S.audit(db, "system", "shift.fire", sh.id, staff=st.id)
 
     def dispatch_tasks(self):

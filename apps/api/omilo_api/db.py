@@ -71,9 +71,26 @@ def _after_create(eng) -> None:
     ensure_indexes(eng)
 
 
+# Columns added to tables that already exist (create_all only creates missing tables). Each runs once per schema,
+# guarded by IF NOT EXISTS, so it is safe on every start.
+_COLUMNS = [
+    ("notice", "item_id", "VARCHAR(32)"),
+    ("notice", "who", "VARCHAR(120) NOT NULL DEFAULT ''"),
+]
+
+
+def _add_columns(eng) -> None:
+    with eng.begin() as c:
+        for table, col, ddl in _COLUMNS:
+            c.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{col}" {ddl}')
+        c.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_notice_item_id ON "notice" (item_id)')
+
+
 def _migrate(eng) -> None:
     """Data migrations that run once per database when it is opened."""
     from sqlalchemy.orm import Session as _S
+
+    _add_columns(eng)
 
     from .models import Staff
 

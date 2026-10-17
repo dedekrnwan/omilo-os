@@ -321,6 +321,29 @@ class Notice(Base):
     url: Mapped[str] = mapped_column(String(300), default="/")
     tag: Mapped[str] = mapped_column(String(80), default="")  # same tag replaces the previous notification
     level: Mapped[str] = mapped_column(String(16), default="info")  # critical | decision | info
+    item_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # the inbox item it is about
+    who: Mapped[str] = mapped_column(String(120), default="")  # the helper's name, for merged pushes ("from Marketing and Sales")
+
+
+class Notification(Base):
+    """One thing Omilo did to reach the owner, and what happened to it. The nudge ladder reads these rows to know which
+    step comes next for an inbox item; the push cap counts them.
+
+    channel: push (a Web Push went out) | ladder (a nudge step fired) | cos (the Chief of Staff called it out in chat)
+             | brief (put on top of the morning brief) | owner (something the owner did: seen, opened, snoozed, ...)
+    action:  sent | merged | nudged | held | seen | opened | snoozed | woke | asked_cos | approved"""
+    __tablename__ = "notification"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inbox_item_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    notice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    user_id: Mapped[str] = mapped_column(String(32), default="")
+    channel: Mapped[str] = mapped_column(String(16))
+    level: Mapped[str] = mapped_column(String(16), default="decision")
+    step: Mapped[int] = mapped_column(Integer, default=0)
+    action: Mapped[str] = mapped_column(String(16), default="sent")
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PushSub(Base):

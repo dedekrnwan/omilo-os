@@ -12,8 +12,9 @@ def test_notices_stream_and_push(owner, base_url, monkeypatch):
     sent = []
     monkeypatch.setattr(pywebpush, "webpush", lambda sub, data, **kw: sent.append((sub["endpoint"], json.loads(data), kw)))
 
+    owner.put("/api/notify/prefs", json={"quiet": {"on": False}})  # tests run at any hour
     cfg = owner.get("/api/notify").json()
-    assert cfg["push"] and len(cfg["vapid_public_key"]) == 87 and cfg["prefs"]["inbox"] and not cfg["prefs"]["job_done"]
+    assert cfg["push"] and len(cfg["vapid_public_key"]) == 87 and cfg["prefs"]["kinds"]["inbox"]["push"] and not cfg["prefs"]["kinds"]["job_done"]["push"]
     assert owner.post("/api/notify/subscribe", json={"endpoint": "http://evil/x", "keys": {"p256dh": "a", "auth": "b"}}).status_code == 400
     assert owner.post("/api/notify/subscribe", json={"endpoint": "https://push.example/abc", "keys": {"p256dh": "k", "auth": "a"}}).status_code == 200
 
@@ -58,5 +59,6 @@ def test_notices_stream_and_push(owner, base_url, monkeypatch):
     assert recent[0]["body"].startswith("Which price")
 
     # preferences
-    assert owner.put("/api/notify/prefs", json={"job_done": True, "bogus": True}).json()["job_done"] is True
-    assert "bogus" not in owner.get("/api/notify").json()["prefs"]
+    assert owner.put("/api/notify/prefs", json={"job_done": True, "bogus": True}).json()["kinds"]["job_done"]["push"] is True
+    assert "bogus" not in owner.get("/api/notify").json()["prefs"]["kinds"]
+    owner.post("/api/notify/unsubscribe", json={"endpoint": "https://push.example/abc"})  # later tests must not push to it for real

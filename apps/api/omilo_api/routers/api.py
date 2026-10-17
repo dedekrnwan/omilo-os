@@ -438,9 +438,14 @@ def list_inbox(status: str = "open", db: Session = Depends(get_db), user: User =
     items = list(db.scalars(q))
     order = {"critical": 0, "decision": 1, "fyi": 2}
     items.sort(key=lambda i: (order.get(i.level, 3), not i.blocking))
+    from .. import nudge
+
     out = []
     for i in items:
         d = X.inbox(i)
+        if i.status == "open":
+            st = nudge.state(db, i)
+            d["nudge"] = {"ladder": st["ladder"], "next_at": X.iso(st["due"]) if st.get("due") else None, "channel": st.get("channel")}
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             d["proposal"] = X.proposal(p)
         elif i.kind == "workflow":
@@ -470,16 +475,64 @@ def answer(iid: str, body: AnswerIn, db: Session = Depends(get_db), user: User =
 
 
 class SnoozeIn(BaseModel):
-    hours: float = Field(1, gt=0, le=24 * 14)
+    hours: float | None = Field(None, gt=0, le=24 * 14)
+    until: str | None = None  # tomorrow | monday (08:00 in the company's time zone)
 
 
 @router.post("/inbox/{iid}/snooze")
 def snooze(iid: str, body: SnoozeIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import nudge
+
     item = _404(db.get(InboxItem, iid))
-    item.status, item.snooze_until = "snoozed", now() + dt.timedelta(hours=body.hours)
-    S.audit(db, user.id, "inbox.snooze", iid, hours=body.hours)
+    try:
+        return X.inbox(_run(nudge.snooze, db, item, user.id, body.hours, body.until))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/inbox/{iid}/ask-cos")
+def ask_cos(iid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Delegate: the Chief of Staff explains the item in the main chat (and the reminders for it stop)."""
+    from .. import nudge
+
+    item = _404(db.get(InboxItem, iid))
+    return X.thread(_run(nudge.ask_cos, db, item, user.id))
+
+
+@router.get("/proposals/{pid}/similar")
+def similar_proposals(pid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import nudge
+
+    return [X.proposal(p) for p in nudge.similar(db, _404(db.get(Proposal, pid)))]
+
+
+class SimilarIn(BaseModel):
+    decision: str = "approve"  # approve | reject
+    note: str = ""
+    ids: list[str] | None = None  # which of the similar ones (default: all)
+
+
+@router.post("/proposals/{pid}/decide-similar")
+def decide_similar(pid: str, body: SimilarIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Decide a low-risk proposal and the similar ones waiting with it (same helper, same type) in one go."""
+    from .. import nudge
+
+    p = _404(db.get(Proposal, pid))
+    if p.risk != "low":
+        raise HTTPException(409, "only low-risk proposals can be decided together")
+    if body.decision not in ("approve", "reject"):
+        raise HTTPException(400, "decision must be approve or reject")
+    others = nudge.similar(db, p)
+    if body.ids is not None:
+        others = [o for o in others if o.id in set(body.ids)]
+    done = []
+    for q in [p, *others]:
+        if q.status == "pending":
+            _run(S.decide_proposal, db, q, body.decision, body.note, user.id)
+            done.append(q.id)
+    S.audit(db, user.id, "proposal.decide_similar", pid, decision=body.decision, count=len(done))
     db.commit()
-    return X.inbox(item)
+    return {"decided": done}
 
 
 @router.post("/inbox/{iid}/dismiss")
@@ -1745,7 +1798,9 @@ def notify_config(db: Session = Depends(get_db), adb: Session = Depends(get_auth
     from .. import notify as N
     from ..models import PushSub
 
-    return {"kinds": N.KINDS, "prefs": N.prefs(db, user.id), "push": N.push_available(), "vapid_public_key": N.vapid_public_key(),
+    p = N.prefs(db, user.id)
+    return {"kinds": N.KINDS, "channels": N.CHANNELS, "prefs": p, **N.status(db, p), "timezone": S.timezone_name(db),
+            "push": N.push_available(), "vapid_public_key": N.vapid_public_key(),
             "devices": [{"id": s.id, "agent": s.agent, "created_at": X.iso(s.created_at), "last_ok_at": X.iso(s.last_ok_at)}
                         for s in adb.scalars(select(PushSub).where(PushSub.user_id == user.id))]}
 
@@ -1754,7 +1809,71 @@ def notify_config(db: Session = Depends(get_db), adb: Session = Depends(get_auth
 def notify_prefs(body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import notify as N
 
-    return N.set_prefs(db, user.id, body)
+    try:
+        p = N.set_prefs(db, user.id, body)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e)) from e
+    if "focus" in body:
+        S.audit(db, user.id, "notify.focus", str(body["focus"]))
+        db.commit()
+    return {**p, **N.status(db, p)}
+
+
+class SeenIn(BaseModel):
+    item_ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/notify/seen")
+def notify_seen(body: SeenIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The owner looked at these inbox items (acknowledges Critical ones, so their reminders stop)."""
+    from .. import nudge
+
+    return {"seen": nudge.seen(db, body.item_ids, user.id)}
+
+
+class ActIn(BaseModel):
+    item_id: str
+    action: str  # open | snooze | approve
+    sig: str
+
+
+@router.post("/notify/act")
+def notify_act(body: ActIn, request: Request, db: Session = Depends(get_db), adb: Session = Depends(get_auth_db),
+               user: User = Depends(current_user)):
+    """A button pressed on a notification (the service worker calls this with the browser's session).
+    Approve works only for low-risk proposals and only with a sign-in from the last 12 hours; otherwise the answer is
+    401 with login_required, and the notification opens the sign-in page first."""
+    from .. import company as C
+    from .. import notify as N
+    from .. import nudge
+    from ..models import AuthToken
+    from ..security import COOKIE, _bearer, sha256
+
+    if not N.check_sig(C.current(), body.item_id, body.sig):
+        raise HTTPException(403, "bad signature")
+    item = _404(db.get(InboxItem, body.item_id))
+    if body.action == "open":
+        nudge.seen(db, [item.id], user.id, action="opened")
+        return {"ok": True, "url": N.item_url(item.id)}
+    if body.action == "snooze":
+        if item.status == "open":
+            _run(nudge.snooze, db, item, user.id, 1)
+        return {"ok": True}
+    if body.action != "approve":
+        raise HTTPException(400, "action must be open, snooze or approve")
+    raw = _bearer(request) or request.cookies.get(COOKIE)  # the credential this request was signed in with
+    tok = adb.scalar(select(AuthToken).where(AuthToken.token_hash == sha256(raw))) if raw else None
+    created = tok.created_at.replace(tzinfo=tok.created_at.tzinfo or dt.UTC) if tok else None
+    if not tok or tok.kind != "session" or created < now() - dt.timedelta(hours=12):
+        raise HTTPException(401, "login_required")
+    if not N.one_tap_ok(db, item.id):
+        raise HTTPException(409, "open it to decide: only low-risk proposals can be approved from a notification")
+    p = _404(db.get(Proposal, item.ref_id))
+    _run(S.decide_proposal, db, p, "approve", "", user.id)
+    nudge.record(db, item, "owner", "approved", user.id)
+    S.audit(db, user.id, "proposal.approve_from_notification", p.id)
+    db.commit()
+    return {"ok": True, "approved": p.id}
 
 
 class PushSubIn(BaseModel):
