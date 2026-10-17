@@ -70,6 +70,32 @@ def pick_default(models: list[dict]) -> str:
     return models[0]["id"] if models else DEFAULT_MODEL
 
 
+# Model tiering: cheap work (chat, extraction) runs on Haiku, normal tasks on Sonnet, hard ones on Opus.
+TIER_HINT = {"fast": "haiku", "balanced": "sonnet", "deep": "opus"}
+_MODELS_CACHE: dict[str, list[dict]] = {}  # (base\nkey) -> models, fetched once per process
+
+
+async def _models_for(key: str, base: str) -> list[dict]:
+    ck = f"{base}\n{key}"
+    if ck not in _MODELS_CACHE:
+        res = await list_models(key, base)
+        _MODELS_CACHE[ck] = res.get("models") or [] if res.get("ok") else []
+    return _MODELS_CACHE[ck]
+
+
+def resolve_model(cfg: dict, models: list[dict]) -> str:
+    """Explicit staff model wins; otherwise match the tier hint against live model ids; else the default."""
+    m = cfg.get("model")
+    if str(m or "").startswith("claude"):
+        return m
+    hint = TIER_HINT.get(cfg.get("tier") or "")
+    if hint:
+        for mm in models:
+            if hint in mm["id"]:
+                return mm["id"]
+    return DEFAULT_MODEL
+
+
 def emit_blocks(emit, content: list[dict]) -> None:
     """Turn Anthropic content blocks into live events (reasoning, text, web tools and their sources)."""
     for b in content:
@@ -99,7 +125,8 @@ class ClaudeEngine(Engine):
         if not key:
             return EngineResult(error="No Claude API key yet. Add one in Settings → AI.")
         base = api_base(cfg)
-        model = cfg.get("model") if str(cfg.get("model") or "").startswith("claude") else DEFAULT_MODEL
+        needs_tier = cfg.get("tier") and not str(cfg.get("model") or "").startswith("claude")
+        model = resolve_model(cfg, await _models_for(key, base) if needs_tier else [])
         tools = []
         if mcp:
             tools = [{"name": t["name"], "description": t.get("description", ""), "input_schema": t.get("inputSchema") or {"type": "object"}}
@@ -108,9 +135,13 @@ class ClaudeEngine(Engine):
         tokens, text, cost = 0, "", 0.0
         async with httpx.AsyncClient(timeout=timeout) as c:
             for _ in range(max_turns):
-                body = {"model": model, "max_tokens": int(cfg.get("max_tokens") or 8192), "system": system, "messages": messages}
+                # Cache the stable prefix (tools → system) so the 40-turn loop re-reads it at 0.1x instead of re-charging full input each turn.
+                body = {"model": model, "max_tokens": int(cfg.get("max_tokens") or 8192),
+                        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}], "messages": messages}
                 if tools or web:
-                    body["tools"] = tools + (WEB_TOOLS if web else [])
+                    all_tools = tools + (WEB_TOOLS if web else [])
+                    all_tools[-1] = {**all_tools[-1], "cache_control": {"type": "ephemeral"}}  # one breakpoint on the last tool caches the whole array
+                    body["tools"] = all_tools
                 try:
                     r = await c.post(f"{base}/v1/messages", json=body, headers=headers(key))
                 except httpx.HTTPError as e:
@@ -122,7 +153,9 @@ class ClaudeEngine(Engine):
                     return EngineResult(error=f"Claude API {r.status_code}: {r.text[:300]}", tokens=tokens, cost_usd=cost)
                 data = r.json()
                 u = data.get("usage") or {}
-                tokens += int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+                # Count cached tokens too: reads bill at 0.1x, writes at 1.25x — fold them in so the meter stays honest.
+                tokens += (int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+                           + int(u.get("cache_read_input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0))
                 cost += SEARCH_USD * int((u.get("server_tool_use") or {}).get("web_search_requests") or 0)
                 content = data.get("content") or []
                 emit_blocks(emit, content)
@@ -142,7 +175,7 @@ class ClaudeEngine(Engine):
         return EngineResult(text=text, tokens=tokens, cost_usd=cost, error=f"stopped after {max_turns} steps without finishing")
 
     async def run_task(self, ctx: TaskContext) -> EngineResult:
-        cfg = ctx.engine_config
+        cfg = {"tier": "balanced", **ctx.engine_config}  # staff config (explicit model or tier) overrides the default
         if not ctx.mcp_token:
             return EngineResult(error="no MCP token for this helper: rotate it in Staff")
         system = with_resources(CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)"), ctx.resources)
@@ -151,7 +184,7 @@ class ClaudeEngine(Engine):
                                     int(cfg.get("max_turns") or MAX_TURNS_TASK), float(cfg.get("request_timeout_s") or 300), ctx.emit)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
-        cfg = ctx.engine_config
+        cfg = {"tier": "fast", **ctx.engine_config}  # conversation defaults to the cheap tier; staff config overrides
         system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
         msgs: list[dict] = []
         for h in ctx.history[-30:]:

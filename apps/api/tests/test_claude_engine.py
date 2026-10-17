@@ -49,6 +49,9 @@ async def messages(request: Request):
             return {"content": [{"type": "server_tool_use", "id": f"srv_{paused}", "name": "web_search", "input": {"query": "q"}}],
                     "stop_reason": "pause_turn", "usage": {"input_tokens": 1, "output_tokens": 1, "server_tool_use": {"web_search_requests": 1}}}
         return {"content": [{"type": "text", "text": f"resumed after {paused}"}], "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}
+    if body["model"] == "claude-cache":
+        return {"content": [{"type": "text", "text": "cached"}], "stop_reason": "end_turn",
+                "usage": {"input_tokens": 5, "output_tokens": 5, "cache_creation_input_tokens": 40, "cache_read_input_tokens": 50}}
     msgs = body["messages"]
     first = msgs[0]["content"] if isinstance(msgs[0]["content"], str) else ""
     usage = {"input_tokens": 100, "output_tokens": 20}
@@ -131,6 +134,48 @@ def test_web_tools_fallback_and_pause(anthropic_url):
     assert r.error == "" and r.text.startswith("Claude here"), r  # retried without web tools
     r = asyncio.run(e._loop({"api_key": KEY, "model": "claude-pause"}, "sys", msgs(), None, None, 6, 10))
     assert r.text == "resumed after 2" and abs(r.cost_usd - 0.02) < 1e-9, r
+
+
+def test_prompt_caching_breakpoints_and_cache_token_accounting(anthropic_url):
+    import asyncio
+
+    from omilo_api.engines.claude import ClaudeEngine
+
+    SEEN["bodies"].clear()
+    e = ClaudeEngine()
+    msgs = [{"role": "user", "content": "hello"}]
+    # claude-pause returns a cache_read/creation usage so we can assert accounting folds it in
+    r = asyncio.run(e._loop({"api_key": KEY, "model": "claude-cache"}, "a very long stable system prompt", msgs, None, None, 2, 10))
+    body = next(b for b in SEEN["bodies"] if b.get("model") == "claude-cache")
+    # system is a content-block list with a cache breakpoint
+    assert isinstance(body["system"], list) and body["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert body["system"][0]["text"] == "a very long stable system prompt"
+    # last tool carries the breakpoint; WEB_TOOLS global is not mutated
+    assert body["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+    from omilo_api.engines.claude import WEB_TOOLS
+    assert all("cache_control" not in t for t in WEB_TOOLS)
+    assert r.tokens >= 90  # input+output+cache_read+cache_creation all counted
+
+
+def test_model_tiering_resolves_against_live_models(anthropic_url):
+    import asyncio
+
+    from omilo_api.engines import claude as C
+
+    SEEN["bodies"].clear()
+    C._MODELS_CACHE.clear()
+    e = C.ClaudeEngine()
+    # tier "fast" with no explicit model -> matches "haiku" in the live model list (claude-haiku-x)
+    asyncio.run(e._loop({"api_key": KEY, "tier": "fast"}, "sys", [{"role": "user", "content": "hello"}], None, None, 1, 10))
+    assert SEEN["bodies"][-1]["model"] == "claude-haiku-x"
+    # explicit model always wins over tier
+    asyncio.run(e._loop({"api_key": KEY, "tier": "fast", "model": "claude-sonnet-5-5"}, "sys", [{"role": "user", "content": "hi"}], None, None, 1, 10))
+    assert SEEN["bodies"][-1]["model"] == "claude-sonnet-5-5"
+    # no tier and no model -> default, and the untiered path never hits /v1/models
+    C._MODELS_CACHE.clear()
+    asyncio.run(e._loop({"api_key": KEY}, "sys", [{"role": "user", "content": "hi"}], None, None, 1, 10))
+    assert SEEN["bodies"][-1]["model"] == C.DEFAULT_MODEL
+    assert C._MODELS_CACHE == {}
 
 
 def test_onboarding_assist_fills_the_form(owner, anthropic_url):
