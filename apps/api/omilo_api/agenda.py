@@ -49,20 +49,24 @@ def _occurrences(cron: str, start: dt.datetime, end: dt.datetime, tz, limit: int
         yield t
 
 
-def typical_minutes(db: Session, shift_ids: list[str]) -> dict[str, int]:
+def typical_minutes(db: Session, shift_ids: list[str], last: int = 10) -> dict[str, int]:
     """How long each regular job usually runs (average of its last finished runs), for the size of its block."""
     if not shift_ids:
         return {}
-    rows = db.execute(select(Task.shift_id, func.avg(func.extract("epoch", Task.ended_at - Task.started_at)))
-                      .where(Task.shift_id.in_(shift_ids), Task.status == "done", Task.started_at.is_not(None), Task.ended_at.is_not(None))
-                      .group_by(Task.shift_id)).all()
-    return {sid: max(5, min(240, round((secs or 0) / 60) or DEFAULT_MIN)) for sid, secs in rows}
+    secs = func.extract("epoch", Task.ended_at - Task.started_at)
+    recent = (select(Task.shift_id.label("sid"), secs.label("secs"),
+                     func.row_number().over(partition_by=Task.shift_id, order_by=Task.ended_at.desc()).label("n"))
+              .where(Task.shift_id.in_(shift_ids), Task.status == "done", Task.started_at.is_not(None), Task.ended_at.is_not(None))
+              .subquery())
+    rows = db.execute(select(recent.c.sid, func.avg(recent.c.secs)).where(recent.c.n <= last).group_by(recent.c.sid)).all()
+    return {sid: max(5, min(240, round(float(v or 0) / 60))) for sid, v in rows}
 
 
-def _skips(db: Session, shift_ids: list[str]) -> set[tuple[str, str]]:
+def _skips(db: Session, shift_ids: list[str], start: dt.datetime, end: dt.datetime) -> set[tuple[str, str]]:
     if not shift_ids:
         return set()
-    return {(s.shift_id, iso(_aware(s.at))) for s in db.scalars(select(ShiftSkip).where(ShiftSkip.shift_id.in_(shift_ids)))}
+    q = select(ShiftSkip).where(ShiftSkip.shift_id.in_(shift_ids), ShiftSkip.at >= start, ShiftSkip.at <= end)
+    return {(s.shift_id, iso(_aware(s.at))) for s in db.scalars(q)}
 
 
 def _first_line(text: str, n: int = 90) -> str:
@@ -126,7 +130,7 @@ def events(db: Session, start: dt.datetime, end: dt.datetime, staff_id: str | No
     out: list[dict] = []
 
     if "shift" in want:
-        skips = _skips(db, list(by_id))
+        skips = _skips(db, list(by_id), start, end)
         for sh in shifts:
             if staff_id and sh.staff_id != staff_id:
                 continue
@@ -135,7 +139,8 @@ def events(db: Session, start: dt.datetime, end: dt.datetime, staff_id: str | No
 
     if "task" in want:
         when = func.coalesce(Task.started_at, Task.created_at)
-        q = select(Task).where(or_(Task.status.in_(["queued", "running"]), (when >= start) & (when < end))).order_by(when).limit(2000)
+        until = func.coalesce(Task.ended_at, func.now())  # a job that crosses midnight shows on both days
+        q = select(Task).where(or_(Task.status.in_(["queued", "running"]), (when < end) & (until > start))).order_by(when).limit(2000)
         if staff_id:
             q = q.where(Task.staff_id == staff_id)
         for t in db.scalars(q):
@@ -150,7 +155,8 @@ def events(db: Session, start: dt.datetime, end: dt.datetime, staff_id: str | No
 
     if not staff_id and "workflow_run" in want:
         when = func.coalesce(WorkflowRun.started_at, WorkflowRun.created_at)
-        runs = list(db.scalars(select(WorkflowRun).where(when >= start, when < end).order_by(when).limit(1000)))
+        until = func.coalesce(WorkflowRun.ended_at, func.now())
+        runs = list(db.scalars(select(WorkflowRun).where(when < end, until > start).order_by(when).limit(1000)))
         names = {w.id: w for w in db.scalars(select(Workflow).where(Workflow.id.in_({r.workflow_id for r in runs})))} if runs else {}
         out += [_run_event(r, names.get(r.workflow_id)) for r in runs]
 
@@ -179,7 +185,8 @@ def upcoming(db: Session, after: dt.datetime | None = None, after_id: str = "", 
     shifts, staff, wfs = _schedules(db)
     by_id = {sh.id: sh for sh in shifts}
     minutes = typical_minutes(db, list(by_id))
-    skips = _skips(db, list(by_id))
+    horizon = after + dt.timedelta(days=366)
+    skips = _skips(db, list(by_id), after - dt.timedelta(seconds=1), horizon)
     items: list[dict] = []
 
     if first_page:
@@ -190,19 +197,21 @@ def upcoming(db: Session, after: dt.datetime | None = None, after_id: str = "", 
             items.append({**_task_event(t, staff.get(t.staff_id), by_id, minutes), "now": True})
 
     # each schedule yields its own sorted stream; merge them and stop after `limit`
+    # each stream starts a second early: runs at exactly the cursor's time that were not on the last page still come
     streams = []
-    horizon = after + dt.timedelta(days=366)
+    since = after - dt.timedelta(seconds=1)
     for sh in shifts:
         if not sh.enabled or (staff_id and sh.staff_id != staff_id):
             continue
-        streams.append(_shift_stream(sh, staff.get(sh.staff_id), after, horizon, tz, limit + 1, minutes.get(sh.id, DEFAULT_MIN), skips))
+        streams.append(_shift_stream(sh, staff.get(sh.staff_id), since, horizon, tz, limit + 2, minutes.get(sh.id, DEFAULT_MIN), skips))
     if not staff_id:
         for wf, cron in wfs:
-            streams.append(_workflow_stream(wf, cron, after, horizon, tz, limit + 1))
+            streams.append(_workflow_stream(wf, cron, since, horizon, tz, limit + 2))
     later: list[dict] = []
+    cut = iso(after)
     for ev in merge(*streams, key=lambda e: (e["start"], e["id"])):
-        if ev["start"] == iso(after) and ev["id"] <= after_id:
-            continue  # already on the previous page
+        if ev["start"] < cut or (not first_page and ev["start"] == cut and ev["id"] <= after_id):
+            continue  # already passed, or already on the previous page
         later.append(ev)
         if len(later) > limit:
             break

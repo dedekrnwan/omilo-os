@@ -97,8 +97,11 @@ function TimeGrid({ days, events, tz, color, onOpen, now }: { days: Day[]; event
             const end = instant(addDays(d, 1).y, addDays(d, 1).m, addDays(d, 1).d, 0, 0, tz).getTime();
             const mine = events.filter((e) => new Date(e.start).getTime() < end && new Date(e.end).getTime() > start).map((e) => {
               const a = Math.max(new Date(e.start).getTime(), start), b = Math.min(new Date(e.end).getTime(), end);
-              const top = ((a - start) / 3600000) * HOUR;
-              return { e, top, h: Math.max(20, ((b - a) / 3600000) * HOUR) };
+              // place by the wall clock (not elapsed time), so days with a daylight-saving change still line up with the hours
+              const wa = wall(a, tz), wb = wall(b, tz);
+              const from = wa.h * 60 + wa.mi, to = b >= end ? 24 * 60 : wb.h * 60 + wb.mi;
+              const top = (from / 60) * HOUR;
+              return { e, top, h: Math.max(20, (Math.max(to - from, 0) / 60) * HOUR) };
             });
             return (
               <div key={dayKey(d)} className={`cal-col ${sameDay(d, t) ? "today" : ""}`}>
@@ -148,37 +151,50 @@ function MonthGrid({ start, anchor, events, tz, color, onOpen, onDay }: { start:
 }
 
 /* ---------------------------------------------------------- the right-hand list: what comes next, loading as you scroll */
-function Upcoming({ tz, staffId, color, onOpen, stamp }: { tz: string; staffId: string; color: (e: Ev) => string; onOpen: (e: Ev) => void; stamp: number }) {
+function Upcoming({ tz, staffId, color, onOpen, stamp, tick }: { tz: string; staffId: string; color: (e: Ev) => string; onOpen: (e: Ev) => void;
+  stamp: number; tick: number }) {
+  type Cursor = { after: string; after_id: string } | null;
   const [items, setItems] = useState<Ev[]>([]);
-  const [next, setNext] = useState<{ after: string; after_id: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const next = useRef<Cursor>(null);
+  const loading = useRef(false);
   const gen = useRef(0);
 
-  const load = useCallback(async (cursor: { after: string; after_id: string } | null) => {
-    const g = gen.current;
-    setBusy(true);
+  const load = useCallback(async (more: boolean) => {
+    if (loading.current && more) return;
+    if (more && !next.current) return;
+    const g = more ? gen.current : ++gen.current;
+    loading.current = true; setBusy(true); setFailed(false);
     try {
-      const q = new URLSearchParams({ limit: "25", ...(staffId ? { staff_id: staffId } : {}), ...(cursor || {}) });
-      const r = await api<{ items: Ev[]; next: { after: string; after_id: string } | null }>(`/calendar/upcoming?${q}`);
-      if (g !== gen.current) return; // a newer reload started meanwhile
-      setItems((x) => (cursor ? [...x, ...r.items] : r.items));
-      setNext(r.next);
+      const q = new URLSearchParams({ limit: "25", ...(staffId ? { staff_id: staffId } : {}), ...(more && next.current ? next.current : {}) });
+      const r = await api<{ items: Ev[]; next: Cursor }>(`/calendar/upcoming?${q}`);
+      if (g !== gen.current) return; // a fresh reload started meanwhile
+      setItems((x) => (more ? [...x, ...r.items] : r.items));
+      next.current = r.next;
       setDone(!r.next);
-    } catch { /* keep what we have */ } finally { if (g === gen.current) setBusy(false); }
+    } catch {
+      if (g === gen.current) setFailed(true); // stop loading on its own; the owner can retry
+    } finally {
+      if (g === gen.current) { loading.current = false; setBusy(false); }
+    }
   }, [staffId]);
 
-  useEffect(() => { gen.current++; setItems([]); setNext(null); setDone(false); load(null); }, [load, stamp]);
+  useEffect(() => { next.current = null; setDone(false); load(false); }, [load, stamp]);
+  useEffect(() => { // jobs changed: refresh, unless the owner has scrolled down the list (don't pull it from under them)
+    if (tick > 1 && (box.current?.scrollTop ?? 0) < 40) { next.current = null; setDone(false); load(false); }
+  }, [tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { // load the next page when the end of the list scrolls into view
     const el = end.current;
-    if (!el || done) return;
-    const io = new IntersectionObserver((ents) => { if (ents[0].isIntersecting && !busy && next) load(next); }, { root: box.current, rootMargin: "200px" });
+    if (!el) return;
+    const io = new IntersectionObserver((ents) => { if (ents[0].isIntersecting && !failed) load(true); }, { root: box.current, rootMargin: "200px" });
     io.observe(el);
     return () => io.disconnect();
-  }, [busy, next, done, load]);
+  }, [load, failed]);
 
   let last = "";
   return (
@@ -200,7 +216,10 @@ function Upcoming({ tz, staffId, color, onOpen, stamp }: { tz: string; staffId: 
           );
         })}
         {!items.length && !busy && <p className="small" style={{ padding: "12px 14px" }}>Nothing scheduled. Give a helper a regular job in Team.</p>}
-        <div ref={end} className="cal-side-end">{busy ? <span className="spin" /> : done && items.length ? <span className="small">That's everything in the next year.</span> : null}</div>
+        <div ref={end} className="cal-side-end">
+          {busy ? <span className="spin" /> : failed ? <button className="btn sm" onClick={() => load(items.length > 0)}>Couldn't load. Try again</button>
+            : done && items.length ? <span className="small">That's everything in the next year.</span> : null}
+        </div>
       </div>
     </aside>
   );
@@ -298,7 +317,8 @@ export default function CalendarPage() {
       if (r.timezone && r.timezone !== tz) setTz(r.timezone);
     } catch (e: any) { setErr(e.message); }
   }, [start.y, start.m, start.d, n, tz, kinds, staffId]); // eslint-disable-line react-hooks/exhaustive-deps
-  usePoll(load, 60000, [load], (x) => x?.kind?.startsWith("job") || x?.kind === "local");
+  const [tick, setTick] = useState(0);
+  usePoll(async () => { await load(); setTick((t) => t + 1); }, 60000, [load], (x) => x?.kind?.startsWith("job") || x?.kind === "local");
   const changed = () => { load(); setStamp((s) => s + 1); };
 
   const step = (dir: number) => setAnchor((a) => view === "day" ? addDays(a, dir) : view === "week" ? addDays(a, 7 * dir)
@@ -344,7 +364,7 @@ export default function CalendarPage() {
           ? <MonthGrid start={start} anchor={anchor} events={shown} tz={tz} color={color} onOpen={setSel} onDay={(d) => { setAnchor(d); pick("day"); }} />
           : <TimeGrid days={days} events={shown} tz={tz} color={color} onOpen={setSel} now={now} />}
       </div>
-      <Upcoming tz={tz} staffId={staffId} color={color} onOpen={setSel} stamp={stamp} />
+      <Upcoming tz={tz} staffId={staffId} color={color} onOpen={setSel} stamp={stamp} tick={tick} />
       <Detail e={sel} tz={tz} onClose={() => setSel(null)} onChanged={changed} />
     </div>
   );

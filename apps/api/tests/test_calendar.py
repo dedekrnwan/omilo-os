@@ -95,3 +95,31 @@ def test_worker_lets_a_skipped_run_pass(owner):
         assert s.next_at > now() and not db.scalars(select(Task).where(Task.shift_id == s.id)).first()
         assert agenda.is_skipped(db, s, due)
     owner.delete(f"/api/shifts/{sh['id']}")
+
+
+def test_upcoming_keeps_runs_at_the_same_time_across_pages(owner):
+    _setup(owner)
+    a = owner.post("/api/staff/finance/shifts", json={"name": "tie-a", "cron": "17 3 * * *"}).json()
+    b = owner.post("/api/staff/finance/shifts", json={"name": "tie-b", "cron": "17 3 * * *"}).json()
+    c = owner.post("/api/staff/finance/shifts", json={"name": "tie-c", "cron": "17 3 * * *"}).json()
+    seen, cur = [], None
+    for _ in range(30):  # one item a page: three runs share every timestamp (the helper has other jobs too)
+        if len(seen) >= 6:
+            break
+        r = owner.get("/api/calendar/upcoming", params={"limit": 1, "staff_id": "finance", **(cur or {})}).json()
+        seen += [i["id"] for i in r["items"] if not i.get("now") and i["ref_id"] in (a["id"], b["id"], c["id"])]
+        cur = r["next"]
+    assert len(seen) >= 6 and len(set(seen)) == len(seen), seen
+    assert {s.split(":")[1] for s in seen[:3]} == {a["id"], b["id"], c["id"]}, "all three runs of the first day, none lost"
+
+    # resuming a paused job does not fire the run it missed
+    owner.patch(f"/api/shifts/{a['id']}", json={"enabled": False})
+    from omilo_api.db import session_scope
+    from omilo_api.models import Shift, now
+
+    with session_scope() as db:
+        db.get(Shift, a["id"]).next_at = now() - dt.timedelta(hours=3)
+    sh = owner.patch(f"/api/shifts/{a['id']}", json={"enabled": True}).json()
+    assert dt.datetime.fromisoformat(sh["next_at"]) > dt.datetime.now(dt.UTC)
+    for x in (a, b, c):
+        owner.delete(f"/api/shifts/{x['id']}")

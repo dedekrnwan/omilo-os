@@ -96,6 +96,11 @@ def _set_timezone(db: Session, tz: str, actor: str) -> None:
     S.set_setting(db, "timezone", tz, actor=actor)
     for sh in db.scalars(select(Shift)):
         sh.next_at = S.next_run(sh.cron, db=db)
+    from .. import workflows as W
+    from ..models import Workflow
+
+    for wf in db.scalars(select(Workflow).where(Workflow.status == "active")):
+        W.set_next(wf)  # scheduled workflows follow the new clock too
     db.commit()
 
 
@@ -309,6 +314,8 @@ def patch_shift(shid: str, body: ShiftPatch, db: Session = Depends(get_db), user
     if body.brief is not None:
         sh.brief = body.brief
     if body.enabled is not None:
+        if body.enabled and not sh.enabled:  # resuming: the next run is the next one on the schedule, not a missed one
+            sh.next_at = S.next_run(sh.cron, db=db)
         sh.enabled = body.enabled
     S.audit(db, user.id, "shift.update", shid)
     db.commit()
