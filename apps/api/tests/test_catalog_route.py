@@ -159,3 +159,81 @@ class TestCatalogRoute:
         assert r2.status_code == 404, (
             f"Expected 404 for unknown slug 'not-in-catalog-xyz', got {r2.status_code}"
         )
+
+
+class TestLogoProxyGuard2:
+    """Guard-2 isolation: path-traversal check inside catalog_logo.
+
+    Guard 1 rejects unknown slugs before any FS join.
+    Guard 2 resolves the logo_rel path and verifies the result stays inside repo_dir.
+    This test exercises Guard 2 specifically by monkeypatching pieces.get_piece so that
+    a KNOWN slug ('gmail') returns an entry whose logo_rel points outside repo_dir,
+    then asserts the route returns 404 (not a file read from outside the repo).
+    """
+
+    @pytest.fixture(autouse=True)
+    def seed(self, tmp_path):
+        _seed_catalog(tmp_path)
+        yield
+        os.environ.pop("PIECES_SOURCE", None)
+        get_settings.cache_clear()
+
+    def test_guard2_rejects_logo_rel_outside_repo_dir(self, owner, monkeypatch):
+        """Guard 2 blocks logo_rel values that resolve outside repo_dir.
+
+        TDD: this test would fail if the resolve+prefix check in catalog_logo were removed.
+        With Guard 2 in place the route must return 404.
+        """
+        import omilo_api.pieces as P
+
+        # Capture the real repo_dir so we can confirm the guard is about escaping it.
+        real_repo_dir = P.repo_dir()
+
+        # Build a fake index entry for 'gmail' (Guard 1 passes) but with a logo_rel that
+        # traverses outside repo_dir.  Use an absolute path to make the escape obvious.
+        traversal_logo_rel = "../../etc/passwd"
+        fake_entry = {
+            "slug": "gmail",
+            "status": "ok",
+            "label": "Gmail",
+            "category": "Email",
+            "description": "Read and draft email",
+            "logo_rel": traversal_logo_rel,
+            "manifest": {},
+        }
+
+        # Monkeypatch pieces.get_piece so the route sees our crafted entry.
+        monkeypatch.setattr(P, "get_piece", lambda slug: fake_entry if slug == "gmail" else None)
+
+        r = owner.get("/api/catalog/gmail/logo")
+
+        # Guard 2 must block this — resolved path escapes repo_dir.
+        assert r.status_code == 404, (
+            f"Guard 2 must reject logo_rel '{traversal_logo_rel}' that escapes repo_dir "
+            f"(repo_dir={real_repo_dir}).  Got {r.status_code}: {r.text[:300]}"
+        )
+
+    def test_guard2_rejects_absolute_logo_rel(self, owner, monkeypatch):
+        """Guard 2 also blocks an absolute logo_rel (e.g. /etc/passwd)."""
+        import omilo_api.pieces as P
+
+        real_repo_dir = P.repo_dir()
+
+        fake_entry = {
+            "slug": "gmail",
+            "status": "ok",
+            "label": "Gmail",
+            "category": "Email",
+            "description": "Read and draft email",
+            "logo_rel": "/etc/passwd",
+            "manifest": {},
+        }
+
+        monkeypatch.setattr(P, "get_piece", lambda slug: fake_entry if slug == "gmail" else None)
+
+        r = owner.get("/api/catalog/gmail/logo")
+
+        assert r.status_code == 404, (
+            f"Guard 2 must reject absolute logo_rel '/etc/passwd' "
+            f"(repo_dir={real_repo_dir}).  Got {r.status_code}: {r.text[:300]}"
+        )

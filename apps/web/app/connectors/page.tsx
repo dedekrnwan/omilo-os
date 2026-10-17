@@ -186,11 +186,10 @@ function ConnectorCard({
         {logo_url ? (
           <img
             src={logo_url}
-            alt={label}
+            alt=""
             width={28}
             height={28}
             style={{ borderRadius: 6, objectFit: "contain", flexShrink: 0 }}
-            aria-hidden="true"
           />
         ) : (
           <span
@@ -206,7 +205,7 @@ function ConnectorCard({
           <span className="chip warn" style={{ marginLeft: "auto" }}>Reconnect</span>
         )}
         {connected && !needs_reconnect && (
-          <span className="chip up" style={{ marginLeft: "auto" }}>Connected</span>
+          <span className="chip up" style={{ marginLeft: "auto" }}>Connected ✓</span>
         )}
       </div>
 
@@ -557,7 +556,7 @@ export default function Connectors() {
         ) : catalog.length === 0 ? (
           <div className="empty">
             <b>No apps in the catalog yet</b>
-            <span>Use the Advanced section below to add an MCP server directly.</span>
+            <span>Use the Advanced section below to add a custom integration.</span>
           </div>
         ) : (
           groups.map(([category, entries]) => (
@@ -591,7 +590,7 @@ export default function Connectors() {
           style={{ marginBottom: showAdvanced ? 16 : 0 }}
         >
           <i className={showAdvanced ? "ri-subtract-line" : "ri-add-line"} />
-          {showAdvanced ? "Hide advanced" : "Advanced: custom MCP servers"}
+          {showAdvanced ? "Hide advanced" : "Advanced: custom integrations"}
         </button>
 
         {showAdvanced && (

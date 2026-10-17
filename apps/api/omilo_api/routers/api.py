@@ -1037,9 +1037,12 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
 
     ok_pieces = P.catalog()  # [{slug, label, category, description, logo_rel}]
 
-    # Build a lookup of existing Connector rows for this company (id == slug for piece connectors)
+    # Only fetch Connector rows whose id matches a catalog slug (avoids loading all connectors)
+    catalog_slugs = [p["slug"] for p in ok_pieces]
     connector_rows: dict[str, Connector] = {
-        c.id: c for c in db.scalars(select(Connector))
+        c.id: c for c in db.scalars(
+            select(Connector).where(Connector.id.in_(catalog_slugs))
+        )
     }
 
     result = []
