@@ -1,457 +1,146 @@
+<div align="center">
+
+<img src="apps/web/public/omilo.svg" alt="Omilo" width="96" height="96" />
+
 # Omilo
 
-**The office where a founder runs a company of AI staff agents.**
-
-Omilo is an open-source gateway between a company owner and their AI staff agents. Every task, proposal, approval,
-question and report passes through it. Claude Code (with your Claude API key or a pool of subscriptions) does the thinking
-and the work behind it. Agents propose, the owner decides, and the gateway enforces that in code, not in prompts. Every regular
-job is a loop that learns from your decisions and improves itself, with its memory kept as notes you can read in Docs.
-
-## What works today (milestones M1 + M2)
-
-- **Onboarding for non-engineers**: a guided 9-step wizard with plain questions, examples and tap-to-choose answers (business, customers, offer, goals, voice, tools and rules). Omilo writes the knowledge files from the answers, suggests a team from the goals (no app-building helpers for businesses without their own app), uses the owner's time zone, starts in practice mode, and runs a first practice job so the owner sees an approval in the Inbox right away. Answers are saved as you go.
-- **Staff**: one card per agent: job, shifts (cron with timezone), engine, permission overrides, MCP token rotation.
-- **Work**: shifts become tasks, the worker dispatches them (concurrency limit, one task per agent, timeout), agents write checkpoints and a report.
-- **Inbox**: proposals, questions and alerts. Approve → an execution task runs exactly the approved text. Request changes → a revision task; every revision is kept. Reject needs a note.
-- **Policy**: per action type `off / ask / do_and_tell / auto`; strict mode (default) caps every external action at *ask*. Agents cannot send, spend, merge, deploy or publish on their own.
-- **Chat**: master thread (Chief of Staff) and per-agent / per-task / per-proposal threads, markdown replies.
-- **Agent MCP server** at `/mcp` (Streamable HTTP, per-agent bearer token): `get_context`, `get_task`, `checkpoint`, `report`, `propose`, `revise_proposal`, `get_approved`, `mark_executed`, `request_action`, `ask_founder`, `post_message`, `offer_choices`, `docs_*`, `remember`, `recall`, `share_file`, `update_kpi`, `create_task` (Chief only), `review_week` and `improve` (Chief only, for the retro), `log_usage`. Every call is logged.
-- **Company**: KPIs and the knowledge editor. **Settings**: pause all, strict mode, concurrency, engine health, audit log.
-- **CLI** `omilo`: `up`, `down`, `logs`, `login`, `doctor`, `status`, `inbox`, `show`, `approve`, `reject`, `changes`, `answer`, `staff`, `tasks`, `run`, `chat`, `pause`, `resume`, `import`.
-- **Import** of the v0 prototype (`legacy/prototype`): knowledge, loops → staff + shifts, runs, approvals.
-
-Not built yet (see the roadmap in [`docs/SPEC.md`](docs/SPEC.md)): nudges and quiet hours (M3), connector
-OAuth (M4), Codex in the harness (M5), Telegram, passkeys, package-manager installers.
-
-## Workspace: chat and work, live
-
-The Workspace puts chat and work on one page (toggle top right) with a side panel for **Progress**, **Output** and the
-**Browser** trail. Agent turns render as they happen: a live "Working" card with reasoning, each tool call (expand for input and
-output), sources, account switches and a usage meter (tokens, cost, time). Helpers can offer clickable choices (`offer_choices`).
-Engines report through `/api/events` (`RunEvent`): Claude Code streams every step, built-in Claude streams its turns, and every
-omilo tool call is recorded by the MCP server.
-
-## Harness: a pool of Claude Code subscriptions
-
-Settings live under **Harness**. Add each subscription with a token from `claude setup-token` (stored encrypted), install
-Claude Code with one click (npm), then put helpers on the pool. Each job leases the least recently used free account
-(`OMILO_HARNESS_PARALLEL` jobs per account, default 2). On a usage limit the account rests until its reset time and the job
-continues on another account with `--resume`, so no work is lost; sign-in problems mark the account and move on.
-The Workspace header shows the pool at a glance: one short bar per account, side by side, filled by how much of its 5-hour
-limit it has used (green, amber from 70%, red from 90%, striped red while resting, outlined red when it needs signing in again;
-hover for details and reset times). The numbers come from Claude Code's `rate_limit_event` when it reports them; otherwise Omilo
-estimates from tokens used against what the account handled before its last limit. The Harness page shows the same per account.
-Runs use `claude -p --output-format stream-json`, the omilo MCP server, `--permission-mode dontAsk` and an allowlist
-(web, read, write in the helper's own workspace; `Bash` only when a helper has `allow_shell`).
-
-## Capabilities: files, folders, connectors and skills
-
-The **+** button in the Workspace chat box works like Claude's: attach files or photos, and switch folders, connectors and
-skills on or off for that chat. They are managed under **Capabilities** in the sidebar.
-
-- **Computer**: share folders on the machine running Omilo (pick them with the built-in folder browser). Per folder: read, or read
-  and edit, and "run commands" for development work (install, build, test, git). On the Claude Code pool this is enforced by
-  Claude Code itself: each folder is passed with `--add-dir`, read-only folders get Edit/Write denied, `Bash` is only allowed when a
-  folder permits commands, and even then `rm`, `sudo`, `git push`, publishing, deploying and `ssh` stay denied (helpers ask in the
-  Inbox instead). The same rules apply when Claude Code runs with your API key; built-in Claude has no file access at all.
-  In Docker only mounted folders can be shared.
-- **Connectors**: any MCP server, by web address (with secret headers) or as a program on this computer (command, arguments, secret
-  environment). "Ask me first" connectors stay locked until you approve a `connector.<id>` request; "Use directly" ones are open.
-  Secrets are stored encrypted. Add the Playwright connector to give helpers a real browser.
-- **Skills**: `SKILL.md` files in `<data dir>/skills/<id>/`. Write your own, or turn an Agency specialist's playbook into a skill.
-  "Standard" skills apply everywhere; others are switched on per chat.
-- **Files**: uploaded into `<data dir>/files/` (25 MB each). Helpers get their paths (read-only on the pool), and give files back with the
-  `share_file` tool: they appear as cards you can preview (images, PDF, video, CSV as a table, Markdown, code) and download. Files in a
-  shared folder or helper workspace are served by `/api/fs/file`; HTML and SVG are served as text, so nothing runs at the app's origin.
-
-The chat box stays quiet: switched-on folders, connectors and skills show as small count badges next to **+**. The connector badge has a
-health dot (green: all reachable, amber: a few are not, red: half or more are not), from a check every five minutes and the Test button.
-
-Replies render like Claude's: highlighted code with Copy (long blocks fold), JSON pretty-printed even without a fence, tables, images and
-file links (`file:///path`, or an absolute path in backticks) that open the preview.
-
-## Docs: the shared notebook
-
-**Docs** (under Work) is an Obsidian-style notebook for you and every helper: folders of Markdown notes, `[[wiki links]]`
-(type `[[` for suggestions), backlinks, an outline, full version history with who changed what (you, a helper, or "outside" when
-the file was edited in Obsidian or on disk), restore, rename that keeps links working, and a **graph view** of how notes connect.
-It saves as you type; if a helper changed the note meanwhile you choose "keep mine" or "use theirs".
-
-- The vault is a plain folder, `<data dir>/vault`: open it in Obsidian as well. Company knowledge is its `Company/` folder.
-- Helpers use `docs_search`, `docs_read` and `docs_write` (with `base_version`, so nobody overwrites anyone). Shared notes:
-  helpers edit directly and you get a notice (`docs.write`, do and tell). Company knowledge: a helper's change is a suggestion
-  you approve in the Inbox (`knowledge.write`, ask). Change either per helper under Permissions.
-- Deleted notes go to the vault's `.trash` folder.
-
-## Monitor
-
-**Monitor** (under Work) shows how the company of helpers is doing over the last 24 hours, 7 days or 30 days, refreshed every
-30 seconds and at once when a job ends or something lands in the Inbox:
-
-- tiles: tokens and spend (with the change against the previous period), jobs finished and the success rate, what waits on you
-  (oldest item, your average time to decide), who is working now, and the Claude Code pool
-- tokens by helper over time (stacked bars, hover for the split, or switch to a table), and jobs done vs failed
-- every helper: state (working, awake, sleeping, paused), the job it is on, jobs, tokens, spend, last activity
-- the pool per account, the Omilo tools helpers called (with failures and blocked calls), and the latest notices
-
-Below that: **why jobs failed** (grouped by cause: usage limit, sign-in, took too long, connection, interrupted,
-budget, with what to do and links to the jobs), **run time** per engine and per helper (median, slowest 10%, slowest job),
-**value per helper** (proposals, approval rate, cost per approved item), the **pool over the last 24 hours** (tokens per account
-per hour, red marks where a limit hit), and the **weekly digest**: every Monday at 08:00 the Chief of Staff posts last week's
-numbers in the main chat (switch it off or send it now from the page).
-
-**Budgets.** Each helper can have a monthly spend limit (USD, at API prices) and a token limit (Team → helper → Budget). At 80%
-you get an Inbox alert, at 100% the helper pauses until you raise the budget or resume it; each level fires once a month.
-
-**Jobs and chats open in a drawer, from anywhere.** Click a job in the Inbox, Monitor, a notification or any link, and it
-opens on the right: **Progress** (the brief, live run cards, checkpoint, report, what went wrong, handoffs), **Needs you**
-(approve, answer or dismiss right there) and **Chat** (talk to the helper about this job). "Discuss" on a proposal opens the
-chat the same way. **Full view** still opens it in the Workspace.
-
-**Inbox board.** The Inbox is a board: Needs you, Running and Done (last 48 hours). Cards show how long it has been going, the
-sources read and tool calls; click one for the recent steps and Open. Approvals open in a drawer. List shows the classic view
-with history filters.
-
-It reads what Omilo already records (`/api/monitor?range=`): run usage events from every engine, tasks, proposals, inbox
-items, MCP tool calls, pool usage and notices. Charts use Recharts, loaded only on this page.
-
-## Plan: goals → work → sub-work
-
-**Plan** (under Work) shows the goals you set at the top and, under each, the work that serves it: what the Chief of Staff
-handed out (`create_task` with a `goal_id`; helpers see your goals in `get_context`), what helpers passed on, executions of
-proposals you approved, and the regular jobs you linked to the goal. A new job finds its goal by itself (the one it was given,
-else its parent's, else its regular job's). Goals picked in onboarding become the first goals. Right-click a job to move it
-under another goal; the job drawer shows which goal it serves.
-
-**Inbox → Map** (and Plan → Map) draws the same hierarchy as a tree from left to right: your goals → the jobs handed out for
-them → what helpers passed on → what is waiting on you, with a count on every branch. "What needs me" shows only branches that
-end in an approval, question or alert; "All work" shows everything. Click a box to open it. The job drawer shows "Where it fits":
-goal, the jobs above, this job, and the jobs it handed on.
-
-Every card shows where it comes from: a small line on top with the goal (opens the Plan) and the job above it (opens that job),
-on the Inbox board and list, the Workspace job list, the job page and the job drawer.
-
-**Sign-in and setup.** The sign-in and account pages show a corner of the office where the helpers walk, run, sit and
-type, and chat with each other (a picture of the product, not live data). Click the floor and the nearest one runs
-there; on the account page a mascot with your name walks in and takes a desk, and the room sign shows your business. Forgot the password? Omilo sends no email, so run `make reset-password` on the computer
-that runs it (signs out every browser session of that account). **Onboarding** is guided by Omilo, the house mascot:
-it comments on what you fill in, your team appears as you pick goals and helpers, a meter shows what your helpers will
-know (click a missing part to jump there), and with a Claude key Omilo can fill the business step from your website.
-Goals picked in onboarding become Plan goals once; deleting them keeps them deleted.
-
-**Resets keep your data.** `make reset` asks first and moves the data folder aside (`~/.omilo-old-<date>`), it never
-deletes it. Connectors from such a folder come back with one click on the Connectors page ("Your earlier connectors
-are still saved"), secrets included, or with `make restore-connectors [FROM=<folder>]`.
-
-## Monitor: Simple and Office
-
-The Monitor page has two views of the same live state (switch at the top right; `?mode=office` links straight to it):
-
-- **Simple**: the dashboard (usage, jobs, helpers, pool). The helpers table shows the live status.
-- **Office**: a top-down virtual office (Phaser 3, client-only). Each helper sits at its own desk in its department
-  (Leadership, Marketing, Sales, Support, Engineering & Ops, Finance, Studio), drawn as its own mascot. Drag to pan,
-  scroll or pinch to zoom, arrow keys/WASD, `+`/`−`, Esc. Rooms on the left jump the camera; click a helper for the
-  inspector (now, log of the current job, recent jobs, last output, tools this week, recent events); click the
-  approvals desk, plan board, docs library, team board or server corner to open that page.
-
-Status is worked out on the server from the records, so both views always agree: **working** (job or chat running),
-**waiting on you** (approval or question open), **failed** (last job failed in the past 24 h), **up next** (queued),
-**idle**, **paused**. Only verified events animate: job started (sits down, types, monitor lights up), tool calls
-(bubble, monitor flash), handoffs (walks to the other helper's desk), approval requests (walks to the approvals desk),
-approvals decided, done / failed bursts, chat replies, retries. A dashed moving line links helpers on linked jobs.
-With no new events nothing moves; the view shows the connection and how long ago the last event was.
-Helpers react to the cursor: those nearby turn towards it, hovering lifts one and shows its status, clicking selects
-it (the floor tile under the cursor is highlighted, a click on the floor ripples). Idle helpers (only idle ones) may
-stretch or take a short, labelled break at the coffee point or lounge; real work calls them straight back. The cup
-button turns those breaks off.
-
-How it works: a flush hook (`omilo_api/office.py`) writes an `office_event` row from each real change (jobs, run
-events, proposals, questions, chats, pause/resume). `GET /api/office/state` is the authoritative state,
-`GET /api/office/events?after=` the events, `GET /api/office/agent/{id}` the inspector, and the WebSocket
-`/api/office/ws` (same-origin, signed-in) pushes state and events, with a heartbeat and resume from a cursor; the
-web app falls back to polling if the socket can't connect. The shared store is `apps/web/lib/office.ts`.
-The map is Tiled-compatible: `apps/web/public/office/hq.json` + `tiles.png`, generated by
-`python3 apps/web/scripts/office_map.py` (original art); open `hq.json` in Tiled to edit rooms, desks (`seats`),
-spots and interactive objects.
-
-## KPIs
-
-The **Company** page has a card per KPI: the latest value and unit, the change since the last value (green when it moves the
-right way: up or down, you choose), a trend line, progress toward the target, where the number came from, the goal it
-measures and the helper who keeps it current. On each card (or by right-click):
-
-- **Value**: record a number with its period and source.
-- **Ask to update**: gives the helper who owns the KPI (else Finance, else the Chief) a job to find the current number from a real source and record it with `update_kpi`.
-- **History**: every value, newest first, each one deletable.
-- **Edit KPI**: name, key, unit, target, direction, linked goal, owner and what the number means. **New KPI** adds one.
-
-Helpers get every KPI with its target in `get_context`, and goals on the **Plan** page show the KPIs that measure them.
-API: `GET /api/kpis/board`, `PUT|DELETE /api/kpis/defs/{name}`, `POST /api/kpis/values`, `DELETE /api/kpis/values/{id}`, `POST /api/kpis/{name}/ask`.
-
-## Settings
-
-Grouped, each section with its own address (`/settings/?s=activity`) and a search box: **Company** (general: name, time
-zone; safety & limits: strict mode, helpers at once, pause), **AI** (engine, connection check, knowledge embeddings),
-**You** (account and password, devices & tokens, notifications) and **Data** (activity log, data & storage). The
-activity log reads as sentences ("Support asked for approval · Draft from …"), grouped by day, filterable by group,
-by who and by period, searchable, paged (25/50/100) and exportable as CSV. Settings that belong to one thing (a
-helper's permissions, a connector) stay on that page; "Elsewhere" links to them.
-API: `GET /api/audit?q=&category=&actor=&days=&page=&per_page=`, `GET /api/audit/export`, `PATCH /api/auth/me`,
-`POST /api/auth/password`, `GET /api/auth/sessions`, `POST /api/auth/sessions/sign-out-others`, `GET /api/system/info`.
-
-## Data: Postgres, pgvector and Redis
-
-- **Postgres** holds everything. Each company is its own schema (`co_main`, `co_<id>`) in one database, so companies
-  never see each other's rows; the login lives in the first company's schema. Docs stay Markdown files in the data
-  folder (open them in Obsidian), with their versions in Postgres.
-- **pgvector** holds the helpers' knowledge base (below).
-- **Redis** carries what several processes share: live office events (WebSockets wake up right away in every API
-  process), locks so only one worker hands out a company's jobs and workflow runs, the Claude Code pool's leases,
-  connector health, and the knowledge base's indexing queue. It holds no data you'd miss: losing it costs a few seconds.
-
-## Knowledge base (Docs → Knowledge)
-
-Everything helpers can know is indexed in Postgres: docs, memory and lessons, company context, finished jobs (brief and
-report), chats, approved proposals, uploaded files (PDF, Word, text, CSV, HTML), web pages, connector data and workflow
-results. Each source is split into pieces with a full-text index (right away) and an embedding (in the background).
-
-- **Search** is hybrid: meaning (pgvector cosine) and words (Postgres full text), merged so a weak match in meaning
-  counts little and pieces with more of your words rise. It works by words before embeddings exist.
-- **Helpers** use `recall` (search by meaning, optionally by kind) and `kb_add` (save a page or data so the next helper
-  finds it). Workflows have **Save to knowledge** and **Search knowledge** steps.
-- **Embeddings** run on this computer by default (a multilingual model that understands Indonesian, downloaded once to
-  `~/.omilo/models`), or with Voyage AI or OpenAI (Settings in Docs → Knowledge). Switching re-embeds in the background.
-- **Docs → Knowledge** shows it: a **map** where every piece is a dot placed by meaning (similar things together; a
-  search lands on the map with lines to what a helper would get back), the **sources** with their pieces and what is
-  close in meaning, and every **search** helpers and workflows made with what came back. Each note's side panel has a
-  **Related** tab with the knowledge closest to it. Add files, web pages and notes from the **Add** button.
-
-API: `GET /api/kb/stats|map|queries|sources[/{id}]|search?q=&project=true|related-doc?path=|settings`,
-`POST /api/kb/files|web|notes|reindex`, `PUT /api/kb/settings`, `DELETE /api/kb/sources/{id}`.
-
-## Workflows: repeated work without the AI bill
-
-**Workflows** turn work that repeats into a trigger and steps that run on their own. Most steps need no AI (connectors,
-web requests, picking and reshaping data, decisions), so they cost nothing; AI is only used in the steps that think
-("Give a helper a job", "AI extract"). The builder is a canvas: drag blocks in, drag from a dot to connect, click a card to
-set it up, press **Test run** and watch each card get a badge (Triggered, Completed, Waiting, Failed) with its output.
-
-- **Triggers**: by hand, a schedule, a webhook (a private address another app posts JSON to), or something in Omilo (a job finished or failed, an approval, a question, a handoff).
-- **Steps**: use a connector tool (its tools and arguments are listed for you), web request, pick fields, compose text, parse JSON/CSV/lines, find with a pattern, filter a list, If (true/false), **Ask me** (approve/reject in the Inbox), tell me, write a doc, record a KPI, give a helper a job, AI extract.
-- **Templates** pass values along: `{{ trigger.email }}`, `{{ steps.score.output.total | number }}`, `{{ last | length }}`; filters `json lower upper trim length first default number join`.
-- **Safety**: a web request that changes something, or a connector set to "ask first", waits for your OK on every run unless you turn on "Run risky steps without asking". Runs can't loop and stop after 200 steps.
-- **Helpers build workflows**: they get `list_workflows`, `workflow_blocks`, `propose_workflow`, `run_workflow` and `get_workflow_run`, and are told to check for a workflow before repeating work by hand. A workflow a helper proposes lands in your **Inbox** with a preview; nothing runs until you approve it. **Ask a helper to build one** gives a helper that job from a description.
-- **What helpers repeat** lists jobs done three or more times in 30 days (with what they cost) and turns any of them into a workflow request.
-- **Marketplace**: ready-made workflows (lead intake, morning brief, uptime check, failed-job alert, weekly KPI from an API, invoice numbers, GitHub issues digest, social post with your OK) you add with one click and adjust. Share your own with **Copy as JSON** and **Import JSON**; templates live in `apps/api/omilo_api/templates/workflows/`.
-
-API: `GET|POST /api/workflows`, `GET|PUT|DELETE /api/workflows/{id}`, `POST /api/workflows/{id}/activate|pause|reject|run`, `GET /api/workflows/{id}/runs|export`,
-`GET /api/workflow-runs[/{id}]`, `POST /api/workflow-runs/{id}/cancel`, `GET /api/workflows/blocks|market|patterns`, `GET /api/workflows/connector-tools/{cid}`,
-`POST /api/workflows/market/{slug}/install`, `POST /api/workflows/build|import`, `POST /api/inbox/{id}/decide`, `POST /api/hooks/{token}` (no sign-in; the address is the key).
-
-## Browser panel
-
-Workspace → Browser shows the pages a helper read, searched or opened, newest first, as a real picture of the page: the
-screenshot its own browser took (Playwright connector), or one Omilo takes with the Chrome or Chromium on this computer
-(`OMILO_CHROME` to point at one). Below it: the page's title, description and site. **Live** shows the page itself (some sites
-refuse to be embedded; open them in a new tab). Back and forward step through the pages; refresh takes a new picture.
-Only public web addresses are previewed, never this computer or the local network.
-
-## Social media and work apps
-
-Connectors → Add has templates for Instagram, Facebook Pages, WhatsApp Business, TikTok, LinkedIn, X and YouTube, and for
-Gmail, Google Calendar, Sheets, Notion and Slack. They connect through [Composio](https://composio.dev), which holds the app
-login (you sign in on the app's own page) and gives one MCP address per app: paste the address and your Composio API key
-(`x-api-key`). Or connect many apps at once through [Zapier MCP](https://mcp.zapier.com) (`https://mcp.zapier.com/api/v1/connect`
-with `Authorization: Bearer <connection token>`). Social connectors default to "Ask me first": helpers read, plan and draft,
-and every post, reply or message comes to your Inbox. The apps you named in onboarding are suggested at the top.
-
-## Several companies
-
-Run more than one company from one Omilo. Pick the company at the top of the sidebar (the badge shows what waits in
-the others), or **New company** to set one up from scratch. Each company is fully separate: its own helpers, jobs,
-inbox, Docs, knowledge, skills, budgets, connectors, shared folders and Claude Code pool. Only your login is shared.
-
-- The first company keeps the original layout in the data folder; every other company lives in `<data>/companies/<id>/`
-  with its own `omilo.db`, `vault/`, `harness/` and so on. The list is `<data>/companies.json`.
-- Requests pick the company from the `omilo_co` cookie (the browser), the `X-Omilo-Company` header (the CLI:
-  `omilo companies`, `omilo use <id>`, or `OMILO_COMPANY`), or a `/co/<id>/` path prefix (helpers call their
-  company's MCP endpoint at `/co/<id>/mcp`).
-- Switching company in one tab reloads every open tab on it. Web Push names the company and switches to it when opened.
-- Archive a company you no longer run (Manage companies): its helpers pause and it leaves the list; nothing is deleted.
-- Each company is its own Postgres schema (`co_<id>`) in the same database.
-
-## Right-click menus
-
-Everything you can see has a right-click menu with the actions that fit it, the same actions wherever the thing shows up:
-
-- **Helpers** (Team, Workspace list, Inbox cards, Monitor, chat messages): chat, open their page, budget, change look, pause or resume, give them a job.
-- **Jobs** (Inbox board, Workspace, Team page, Monitor, the job drawer): open, chat about it, what needs you, full view, stop or run again, copy the brief.
-- **Inbox items**: open, approve, discuss, snooze, dismiss, open the job, copy.
-- **Messages**: quote in reply, copy text or Markdown, ask again. Inside a message: copy code, copy a table as CSV or for a spreadsheet, and preview, download or copy the link of files and images.
-- **Docs**: notes, folders, links, backlinks and graph dots (open, rename, move, duplicate, copy link, history, delete).
-- **Connectors, skills, shared folders, pool accounts and specialists**: edit, test, switch on or off, copy, remove, hire.
-
-Text fields and selected text keep the browser's own menu. Use the arrow keys and Enter to pick, Esc to close.
-
-## Chat box: slash commands and the pool meter
-
-Type `/` in the chat box for a menu that filters as you type (arrows to choose, Enter to use, Esc to close): quick prompts
-(`/brief`, `/status`, `/plan`, `/research`, `/delegate`, `/draft`, `/review`), `/job <brief>` to start a job for the Chief of
-Staff, `/attach`, `/folder`, `/connector`, every skill by name (switches it on for the chat), `/<helper>` to talk to a helper, and
-shortcuts (`/inbox`, `/hire`, `/pool`, `/settings`, `/pause`). Under the chat box, the Claude Code pool meter shows one bar per account.
-
-## Helper mascots
-
-**Letting a helper go.** Right-click a helper (or use the button on its page) and choose *Let … go*. Its queued and
-running jobs are cancelled, its regular jobs and MCP token removed, its open drafts and questions closed; its past
-work stays. It moves to *Former helpers* on the Team page, where you can hire it back. The Chief of Staff can't be let
-go (pause it instead). Every confirmation in the app is a dialog with the helper it concerns: sad when you are about
-to do something to it, happy when you point at *Keep*.
-
-Every mascot in the app is alive: its eyes follow the cursor when it comes near, it blinks now and then, hovering lifts
-it and makes it smile, a click makes it hop, and a helper that is working bobs at its desk with typing dots. Uploaded
-pictures lift and hop too. All of this is off when the system asks for reduced motion.
-
-Every helper has its own little character, drawn in SVG by the web app: colour and shape come from its id, and a prop hints at the
-job (crown for the Chief, headset for Support, glasses for Dev, megaphone for Marketing, tie for Sales, coin for Finance, gear for
-Ops…). Sleeping helpers close their eyes; a helper that is starting work glows. Change colour, shape and prop, or upload a picture,
-on the helper's page (Team → helper → Look).
-
-## Notifications
-
-Omilo tells you right away when a helper needs you: inbox items (approvals, questions, alerts), chat replies, and failed (or, if
-you want, finished) jobs. Notices are written automatically (`Notice` table) and reach you three ways:
-
-- **In the app**: a live stream (`/api/stream`, server-sent events) shows a small pop-up and refreshes the Inbox and counts at once.
-- **Tab in the background**: a system notification, and the tab title shows the count.
-- **No tab open**: Web Push through the service worker (`pywebpush`, VAPID key created in the data dir). Push pauses while a tab is
-  open, so you never get two.
-
-The browser asks for permission only after you press **Turn on** (banner, or Settings → Notifications), where you also pick what to hear
-about and send a test. Browsers allow notifications only on https or `localhost`; on iPhone, add Omilo to the Home Screen first.
-
-## Speed
-
-Pages poll only as fast as needed: every 1.5 s while a helper is working, every 12–30 s when idle, never while the tab is hidden, and at
-once when a live notice arrives. Unchanged chats answer with `304 Not Modified` (ETag). Responses are gzip-compressed, hashed build files
-are cached for a year, and the code highlighter and file preview load only when used.
-
-## Hire specialists from The Agency
-
-Team → **Hire a specialist** opens a library of about 280 specialists from
-[The Agency](https://github.com/msitarzewski/agency-agents) (MIT): marketing, sales, design, engineering, finance, support and more,
-each with its own personality, process and deliverables. Omilo downloads the roster from GitHub (`git clone`, or the tarball;
-`OMILO_TALENT_SOURCE=<local checkout>` to use your own copy), indexes it, and hires a specialist in one click: their playbook becomes
-the helper's job, with division-based permissions and the usual approvals on top.
-
-Helpers never sleep: nothing runs for them between jobs, and they start the moment work arrives. Team and Monitor show each one as
-**Working**, **Job queued**, **Ready** (with its next regular job) or **Paused**.
-
-Every page stays current without reloading: any change you make (in this tab or another) refreshes the views that show it, and
-changes made by helpers arrive over the live stream.
-
-## Layout
-
-| Path | What |
-| --- | --- |
-| `apps/api` | FastAPI gateway, worker, MCP server, engines (`claude_code`, `claude`, `fake`), loops and memory, tests |
-| `apps/web` | Next.js (static export) web app, Finity design tokens |
-| `cli` | Go CLI `omilo` (stdlib only) |
-| `deploy` | Server compose: Postgres + API + worker + Traefik labels |
-| `docs` | Spec v1 and diagrams |
-| `legacy/prototype` | v0 shell/Python prototype (kept for reference and import) |
+**Run your company with a team of AI staff you actually manage.**
+
+Omilo is an open-source office for a founder and their AI staff. Helpers do the work, you approve what leaves the company, and the gateway enforces that in code, not in prompts.
+
+[Website](https://omilo.saga.co.id) · [Spec & roadmap](docs/SPEC.md) · [Connector catalog](https://github.com/dedekrnwan/omilo-pieces)
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-6366f1.svg)](LICENSE)
+![Version](https://img.shields.io/badge/version-0.4.0-6366f1.svg)
+![Stack](https://img.shields.io/badge/stack-FastAPI%20·%20Next.js%20·%20Postgres-1c1917.svg)
+
+</div>
+
+---
+
+## What Omilo is
+
+A business owner describes their company once, in plain language. Omilo turns that into a team of AI helpers (Marketing, Sales, Support, Finance, and more), each with a job, a schedule, and permissions. Helpers research, draft, and plan on their own; anything that sends, spends, posts, merges, or deploys waits for the owner's approval in an Inbox. Every recurring job is a loop that learns from the owner's decisions and gets better over time.
+
+The thinking runs on Claude Code (with your own Claude API key or a pool of subscriptions) or a multi-vendor engine. The owner never sees a prompt, a token, or the word "MCP": they see helpers, jobs, and approvals.
+
+<div align="center">
+<img src="docs/img/onboarding.png" alt="Guided onboarding: plain questions build the team" width="80%" />
+</div>
+
+## Who it is for
+
+- **Non-technical founders** who want help running the day to day without hiring, and without learning AI tooling.
+- **Developers** who want a self-hosted, auditable agent platform where policy is enforced in code and every action is logged.
+
+## Features
+
+- **Guided onboarding.** A plain-language wizard (business, customers, offer, goals, voice, tools, rules) writes the knowledge files every helper reads and suggests a team from the goals. Business-type templates cover common Indonesian businesses (warung, kuliner, laundry, bengkel, online shop, and more), each seeding sensible goals, tools, and tone.
+- **Staff and work.** One card per helper: job, shifts (cron in the owner's timezone), engine, permissions. Shifts become tasks; a worker dispatches them with a concurrency limit; helpers write checkpoints and a report.
+- **Approvals Inbox.** Proposals, questions, and alerts. Approve and an execution task runs exactly the approved text; request changes and every revision is kept; reject needs a note (which becomes a lesson).
+- **Policy in code.** Per action type `off / ask / do_and_tell / auto`, with a strict mode (default) that caps every outward action at *ask*. Helpers cannot send, spend, merge, deploy, or publish on their own.
+- **Connector marketplace.** Browse a catalog of apps and connect them (see [Connectors](#connectors)).
+- **Workflows.** Turn repeated work into a trigger and steps that run on their own. Most steps need no AI (connectors, web requests, reshaping data, decisions), so they cost nothing; AI runs only in the steps that think.
+- **Knowledge base.** Everything helpers can know (docs, memory, finished jobs, chats, files, web pages) is indexed in Postgres with hybrid search (pgvector meaning + full text). Embeddings run locally by default, or via Voyage/OpenAI.
+- **Docs.** An Obsidian-style shared notebook for the owner and helpers: Markdown notes, wiki links, backlinks, version history, and a graph view. The vault is a plain folder you can open in Obsidian.
+- **Monitor, Simple and Office.** A dashboard of usage, jobs, helpers, and the Claude Code pool; plus a top-down virtual office (Phaser 3) where each helper sits at a desk and only verified events animate.
+- **Multi-company.** Run several companies from one Omilo, each fully separate (its own helpers, data, connectors), with only the login shared. Each company is its own Postgres schema.
+
+For the full behavior of each area, read [`docs/SPEC.md`](docs/SPEC.md).
+
+## Connectors
+
+Owners connect the apps their business already uses from a **marketplace**: a grid of apps (Gmail, Google Calendar, Google Sheets, WhatsApp, Instagram, Facebook, with more added over time) that they connect in a few taps. No URLs, keys, or server config.
+
+The catalog is **data, not code**. Omilo fetches a GitHub repo of connector "pieces" ([`dedekrnwan/omilo-pieces`](https://github.com/dedekrnwan/omilo-pieces)), validates each manifest, and builds a local index. Adding a connector is a pull request with one `piece.yaml` (metadata, OAuth config, and HTTP actions) plus a logo. A piece is declarative data the runtime interprets, never a program Omilo runs; every action's request host is restricted to the provider's own domains.
+
+How a piece reaches a helper: **fetch** the repo (local checkout, `git clone`, or tarball) → **index** each `pieces/*/piece.yaml` into `~/.omilo/pieces/index.json` → **read** it in the marketplace and expose each app's actions to helpers as tools. The catalog refreshes on startup and from a Refresh button.
+
+- Point Omilo at a catalog with `PIECES_REPO=owner/name`, or `PIECES_SOURCE=/path/to/checkout` for local development.
+- Outward actions keep the usual approval: helpers read and draft freely, and posting, sending, or spending waits for the owner's OK.
+- **Advanced:** add any raw MCP server by address or local command (kept behind an Advanced section for developers).
+
+A hosted sign-in service that holds each provider's OAuth app (so "Connect Gmail" is one tap on any self-hosted instance) is in progress; event triggers ("when a DM arrives, draft a reply") are planned for a later version.
+
+<div align="center">
+<img src="docs/img/connector-hub.png" alt="Connecting apps" width="80%" />
+</div>
 
 ## Quick start (development)
 
 Requirements: Python 3.11+, Node 20+, Docker (for Postgres and Redis), Go 1.24+ (for the CLI).
 
 ```bash
-make dev        # starts Postgres (pgvector) + Redis in Docker, builds the web app, installs the API, starts http://localhost:7700
-make db         # just Postgres + Redis (docker-compose.dev.yml); make db-stop stops them, data stays in Docker volumes
-make test       # ruff + pytest (database omilo_test, Redis db 15), web lint, go vet
-make cli        # builds cli/omilo
+make dev    # Postgres (pgvector) + Redis in Docker, builds the web app, installs the API, serves http://localhost:7700
+make db     # just Postgres + Redis; make db-stop stops them (data stays in Docker volumes)
+make test   # ruff + pytest (database omilo_test, Redis db 15), web lint, go vet
+make cli    # builds cli/omilo
 ```
 
-Already run Postgres or Redis yourself? Skip Docker and set `OMILO_DATABASE_URL` (Postgres 16 with the `vector` extension
-available) and `OMILO_REDIS_URL`. If something else uses port 5432 or 6379, set `OMILO_PG_PORT` / `OMILO_REDIS_PORT` for
-`make db` and the matching URLs.
+Already running Postgres or Redis yourself? Skip Docker and set `OMILO_DATABASE_URL` (Postgres 16 with the `vector` extension) and `OMILO_REDIS_URL`.
 
-Coming from a version before 0.4 (SQLite)? Your data in `~/.omilo` moves into Postgres by itself on the first start
-(once, the SQLite files are left in place); `make import-sqlite` does it by hand.
-
-Open the web app, create the owner account, finish onboarding. Pick **Demo engine** to try every flow without any AI:
-it uses the real MCP endpoint, files proposals and executes approvals deterministically.
+Open the web app, create the owner account, and finish onboarding. Pick **Demo engine** to try every flow without any AI: it uses the real MCP endpoint and executes approvals deterministically.
 
 ## Run with Docker
 
-Laptop (Omilo, Postgres and Redis containers; data in `~/.omilo`):
+Laptop (Omilo, Postgres, and Redis containers; data in `~/.omilo`):
 
 ```bash
 make cli && ./cli/omilo up     # then ./cli/omilo login
 ```
 
-Server (Postgres with pgvector, Redis, separate worker, Traefik):
+Server (Postgres with pgvector, Redis, a separate worker, Traefik):
 
 ```bash
 cd deploy && cp .env.example .env    # set OMILO_SECRET_KEY, POSTGRES_PASSWORD, OMILO_PUBLIC_URL, OMILO_HOST
 docker compose up -d
 ```
 
-Under a path prefix (e.g. `/os`), set `OMILO_BASE_PATH=/os` and build the web app with `NEXT_PUBLIC_BASE_PATH=/os`.
+To serve under a path prefix (e.g. `/os`), set `OMILO_BASE_PATH=/os` and build the web app with `NEXT_PUBLIC_BASE_PATH=/os`.
 
 ## Connect the AI
 
-**Easiest: your Claude API key.** In onboarding (or Settings → AI) choose "Use my Claude API key", paste a key from
-console.anthropic.com, check it and pick a model. Omilo installs Claude Code (`npm install @anthropic-ai/claude-code` in
-`<data dir>/harness-tools`, needs Node.js 18+) and runs every helper in it with your key: files and commands in the folders you share
-(with the same limits as the pool), web search and fetch, your connectors, and the Omilo tools. The key is stored encrypted and passed
-only to the Claude Code process as `ANTHROPIC_API_KEY`; usage is billed to your key and shown as real spend.
+- **Your Claude API key (easiest).** In onboarding or Settings, choose "Use my Claude API key", paste a key from console.anthropic.com, and pick a model. Omilo installs Claude Code and runs every helper in it with your key. The key is stored encrypted and passed only to the Claude Code process; usage is billed to your key and shown as real spend.
+- **Your Claude subscriptions.** Add them on the Harness page and put helpers on the pool. Each job leases the least recently used free account; on a usage limit the job continues on another account with `--resume`, so no work is lost.
+- **Built-in / multi-vendor.** A lighter path calls the model API from Omilo itself (web search and the Omilo tools, no files or browser). The engine layer is vendor-agnostic (via LiteLLM) with prompt caching and model tiering, so cheaper work can run on smaller models.
 
-**Your Claude subscriptions:** add them on the Harness page (above) and choose "Claude Code · subscription pool" per helper under Team.
+## Project layout
 
-**Light, nothing to install:** "Built-in Claude" calls the Claude API from Omilo itself: web search and fetch and the Omilo tools,
-but no files, commands or browser.
+| Path | What |
+| --- | --- |
+| `apps/api` | FastAPI gateway, worker, MCP server, engines (`claude_code`, `claude`, `litellm`, `fake`), connector pieces, loops and memory, tests |
+| `apps/web` | Next.js (static export) web app |
+| `cli` | Go CLI `omilo` (stdlib only) |
+| `deploy` | Server compose: Postgres + API + worker + Traefik labels |
+| `docs` | Spec, diagrams, design and implementation plans |
+| `legacy/prototype` | v0 prototype, kept for reference and import |
 
-Hermes was removed in 0.3: helpers that ran on Hermes move to Claude Code with your API key the first time Omilo starts.
+## Architecture
 
-## Loops, memory and self-improvement
+Postgres holds everything (one schema per company), pgvector holds the knowledge base, and Redis carries what several processes share (live office events, worker locks, the Claude Code pool's leases, connector health). Helpers reach Omilo through a per-agent MCP server at `/mcp`; every tool call is checked against that helper's permissions and logged.
 
-Every regular job is a loop: **schedule → context → work → report and proposals → your decision → execution → retro**.
-
-- **Context** for each run: company knowledge and KPIs, the helper's **lessons**, the **last runs of this job** (so it builds on them
-  instead of repeating them), and how you decided on its recent proposals, with your notes.
-- **Your notes become lessons.** Rejecting or asking for changes needs a note; it is added to `Memory/<helper>/Lessons.md`, which the
-  helper reads before every run. Edit or delete a lesson in Docs and the helper follows your version.
-- **Memory is notes in Docs** (the `Memory/` folder, also in Obsidian): lessons, notes helpers keep with `remember`, a run log per
-  regular job (`Memory/Loops/…`), and the weekly retros (`Memory/Retros/…`), all linked from `Memory/Index` so the graph shows one
-  map (Docs → Graph → Memory). Helpers search everything with `recall` (the knowledge base: meaning + words).
-- **The weekly retro** (Chief of Staff, Fridays 16:00, or "Run the retro now" on Monitor) reads every loop's scorecard, the week's
-  jobs, your decisions and the lessons with `review_week`, then changes what isn't working with `improve`: a helper's instructions,
-  a job's brief or schedule, or its lessons (merged and cleaned). Up to 3 changes a week, applied at once.
-- **Measured and reversible.** Each change keeps the old version and the scores before it. After a week (and 3 runs) it is kept, or
-  rolled back automatically if the success or approval rate dropped. Monitor → Self-improvement shows every change with Undo.
-  The retro can never change permissions, budgets, the engine, approvals or the hard rules.
-- **Loops on Monitor**: per regular job, runs, success rate, approval rate, spend, the last useful result, and a flag when a loop has
-  stalled (three failed runs in a row, or nothing approved).
-- **Automatic retries**: a job that fails on a network problem or a timeout is tried again after 30 s and 60 s before it reaches
-  your Inbox (never for executions of approved work).
-
-Memory stays readable notes in Docs; the knowledge base (pgvector) indexes them together with jobs, chats, files and pages, so
-`recall` finds a note by what it means, not only by its words.
+<div align="center">
+<img src="docs/img/architecture.png" alt="Omilo architecture" width="80%" />
+</div>
 
 ## Configuration
 
-All settings are environment variables with the `OMILO_` prefix (see `apps/api/omilo_api/config.py`): `DATA_DIR`,
-`DATABASE_URL`, `REDIS_URL`, `REDIS_PREFIX`, `EMBED_PROVIDER` (local | voyage | openai), `MODELS_DIR`, `SECRET_KEY`, `PUBLIC_URL`, `INTERNAL_URL`, `BASE_PATH`, `TIMEZONE`, `EMBEDDED_WORKER`,
-`MAX_CONCURRENT_TASKS`, `TASK_TIMEOUT_S`, `STRICT_MODE`, `COOKIE_SECURE`.
+Settings are environment variables with the `OMILO_` prefix (see `apps/api/omilo_api/config.py`): `DATA_DIR`, `DATABASE_URL`, `REDIS_URL`, `EMBED_PROVIDER` (local | voyage | openai), `SECRET_KEY`, `PUBLIC_URL`, `BASE_PATH`, `TIMEZONE`, `STRICT_MODE`, `MAX_CONCURRENT_TASKS`, and others. Connector catalog: `PIECES_REPO` or `PIECES_SOURCE`.
 
-## Status of testing
+## Testing
 
-- 71 API tests pass on Postgres 16 + pgvector and Redis 7 (knowledge base, SQLite import, policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
-- Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
-- CLI checked against a live server.
-- The Docker image and server compose have **not** been built in CI yet.
+```bash
+make test
+```
+
+The API suite runs on Postgres 16 + pgvector and Redis 7 (knowledge base, policy, auth and CSRF, the propose → approve → execute path, the changes loop, MCP auth and tools, cross-company isolation, the connector marketplace and runtime, workflows, the retro's measured changes and rollback). The web build and the full UI flow are checked with Playwright on desktop and mobile. The Docker image and server compose are not yet built in CI.
+
+## Contributing
+
+- **Connectors:** open a pull request to [`omilo-pieces`](https://github.com/dedekrnwan/omilo-pieces) with a new `pieces/<slug>/piece.yaml` and `logo.svg`. No Omilo release is needed to add an app.
+- **Code:** run `make test` before opening a pull request. Keep outward-facing behavior behind the approval policy, and never log secrets.
+- Design and implementation notes live under `docs/`.
 
 ## License
 
-MIT
+[MIT](LICENSE)
