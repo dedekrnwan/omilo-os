@@ -21,7 +21,8 @@ export async function letGo(h: H, after?: () => void): Promise<boolean> {
   const name = h.name || h.id;
   if (h.is_chief) return false;
   const ok = await confirmDialog({
-    title: `Let ${name} go?`, who: h, danger: true, confirm: `Let ${name} go`, cancel: `Keep ${name}`,
+    title: `Let ${name} go?`, who: h, danger: true,
+    confirm: name.length <= 12 ? `Let ${name} go` : "Let go", cancel: name.length <= 12 ? `Keep ${name}` : "Keep",
     body: <>
       {name} leaves your team:
       <ul>
@@ -42,7 +43,7 @@ export async function letGo(h: H, after?: () => void): Promise<boolean> {
 /** Hire back a helper you let go. */
 export async function hireBack(h: H, after?: () => void): Promise<boolean> {
   const name = h.name || h.id;
-  if (!(await confirmDialog({ title: `Hire ${name} back?`, body: `${name} rejoins with the same job, look and history. Its regular jobs need setting up again.`, confirm: `Hire ${name} back`, who: h, mood: "happy" }))) return false;
+  if (!(await confirmDialog({ title: `Hire ${name} back?`, body: `${name} rejoins with the same job, look and history. Its regular jobs need setting up again.`, confirm: name.length <= 12 ? `Hire ${name} back` : "Hire back", who: h, mood: "happy" }))) return false;
   await api(`/staff/${h.id}/rehire`, { body: {} });
   after?.();
   return true;

@@ -1555,3 +1555,7 @@ main.page:has(> .monitor.office) { max-width: none; }
 @media (max-width: 900px) { .au-mobile-top { height: 220px; } }
 @media (prefers-reduced-motion: reduce) { .lw * { animation: none !important; } }
 .au-side .au-glass .au-brand { position: static; background: none; box-shadow: none; padding: 0; margin: 0 0 12px; }
+/* dialog buttons never overflow: they share the row, wrap their text, and stack on narrow screens */
+.dlg-acts { flex-wrap: wrap; }
+.dlg-acts .btn { flex: 1 1 140px; min-width: 0; height: auto; min-height: 40px; padding: 8px 14px; white-space: normal; line-height: 1.25; text-align: center; }
+.dlg h2 { overflow-wrap: anywhere; }

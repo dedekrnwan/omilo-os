@@ -231,28 +231,18 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
 }
 
 function StaffList() {
-  const router = useRouter();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [former, setFormer] = useState<Staff[]>([]);
-  const [roles, setRoles] = useState<Record<string, { name: string }>>({});
-  const [role, setRole] = useState("");
-  const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
     const [a, f] = await Promise.all([api<Staff[]>("/staff"), api<Staff[]>("/staff?former=true").catch(() => [] as Staff[])]);
     setStaff(a); setFormer(f);
   }, []);
   usePoll(load, 30000, [load]);
-  useEffect(() => { api<{ roles: Record<string, { name: string }> }>("/templates").then((t) => setRoles(t.roles)); }, []);
-  const hire = async () => {
-    const back = former.find((f) => f.id === role);
-    if (back) { if (await hireBack(back, load)) router.push(`/staff/?id=${role}`); return; }
-    try { await api("/team/apply", { body: { roles: [role], engine: staff[0]?.engine || { type: "fake" } } }); router.push(`/staff/?id=${role}`); } catch (e: any) { setErr(e.message); }
-  };
   return (
     <div>
       <h1>Your team</h1>
       <p className="sub">Your AI helpers. Open one to change its job, schedule or what it may do without asking.</p>
-      {staff.length === 0 ? <Empty title="No staff yet" text="Finish onboarding or hire from a template below." /> : (
+      {staff.length === 0 ? <Empty title="No helpers yet" text="Finish onboarding, or hire one from the Hire page." /> : (
         <div className="cards">{staff.map((s) => (
           <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}
             onContextMenu={menu(() => [{ heading: s.name }, ...helperItems(s, load), sep,
@@ -287,17 +277,6 @@ function StaffList() {
             <div className="small">Browse about 280 specialists from The Agency: SEO, ads, sales, design, engineering, finance and more.</div></div>
           <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a specialist</Link>
         </div>
-      </div>
-      <div className="sec">
-        <h2>Add a basic helper</h2>
-        <div className="acts" style={{ marginTop: 8 }}>
-          <select style={{ width: 260 }} value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="">Choose a role</option>
-            {Object.entries(roles).filter(([k]) => !staff.some((s) => s.id === k)).map(([k, r]) => <option key={k} value={k}>{r.name}</option>)}
-          </select>
-          <button className="btn primary" disabled={!role} onClick={hire}>Hire</button>
-        </div>
-        <Err error={err} />
       </div>
     </div>
   );
