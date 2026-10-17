@@ -85,10 +85,20 @@ def test_key_stored_per_provider_not_as_claude(owner):
 def test_vendor_provider_rejected_without_key(owner, monkeypatch):
     """POST /api/ai {provider:"gemini"} with no api_key and no env var → 400.
 
-    Uses gemini because it has never had a key stored at this point in the session
-    (prior tests only touched openai). Runs before test_all_eight_vendor_ids_accepted_with_key
-    which is the first test that populates gemini's key slot.
+    Order-independent: explicitly clears any stored gemini key before the assertion
+    so the test owns its precondition regardless of execution order or prior test state.
     """
+    # Remove any previously stored gemini key from the DB so this test doesn't rely
+    # on file-order or assume no prior test touched the gemini slot.
+    from omilo_api.db import session_scope
+    from omilo_api import services as S
+
+    with session_scope() as db:
+        keys = dict(S.get_setting(db, "ai_keys", None) or {})
+        if "gemini" in keys:
+            del keys["gemini"]
+            S.set_setting(db, "ai_keys", keys)
+
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     r = owner.post("/api/ai", json={"provider": "gemini"})
     assert r.status_code == 400, f"Expected 400 when no gemini key available, got {r.status_code}: {r.text}"
