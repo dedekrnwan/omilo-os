@@ -201,16 +201,59 @@ def test_malformed_response_without_tool_calls_terminates():
 
 
 # ---------------------------------------------------------------------------
-# Test 6: missing key returns EngineResult(error=...) without making a network call
+# Test 6: assistant message content is non-None on a tool-only turn (I2)
+# ---------------------------------------------------------------------------
+
+def test_tool_only_turn_assistant_content_not_none():
+    """When the model returns tool_calls with content=None, the appended assistant message
+    must have content="" (not None) so Mistral/Groq don't reject the next request."""
+    tc = _tool_call("tc_x", "echo", {"msg": "test"})
+    # Turn 1: tool-only response (content=None, has tool_calls)
+    turn1 = _resp(content=None, tool_calls=[tc], prompt=5, completion=3)
+    # Turn 2: plain text to end the loop
+    turn2 = _resp(content="finished", tool_calls=None, prompt=4, completion=2)
+
+    call_count = {"n": 0}
+    captured_msgs = {}
+
+    async def fake_acompletion(**kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            # Capture the messages sent on the second call so we can inspect the assistant msg
+            captured_msgs["second_call"] = list(kwargs["messages"])
+        return turn1 if call_count["n"] == 1 else turn2
+
+    mcp = FakeMCP(results={"echo": ('{"result":"test"}', False)})
+    engine = LiteLLMEngine()
+    cfg = {"provider": "groq", "api_key": "sk-test-groq"}
+
+    with patch("litellm.acompletion", side_effect=fake_acompletion):
+        with patch("litellm.completion_cost", return_value=0.0):
+            r = asyncio.run(engine._loop(cfg, "sys", [{"role": "user", "content": "go"}], mcp, None, 10, 30))
+
+    assert r.error == ""
+    # Find the assistant turn in the messages sent to the second call
+    assistant_msgs = [m for m in captured_msgs["second_call"] if m["role"] == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0]["content"] is not None, "content must not be None (breaks Mistral/Groq)"
+    assert isinstance(assistant_msgs[0]["content"], str)
+
+
+# ---------------------------------------------------------------------------
+# Test 7: missing key returns EngineResult(error=...) without making a network call
 # ---------------------------------------------------------------------------
 
 def test_missing_key_returns_error_result(monkeypatch):
-    """No key in cfg, no DB key, no env var → EngineResult(error=...), no network call."""
+    """No key in cfg, no DB key, no env var → EngineResult(error=...), no network call.
+
+    Exercises the real resolve_key → _key_from_db → env fallback chain:
+    _key_from_db is patched to return None (simulates no DB key stored),
+    the provider env var is unset via monkeypatch, and cfg has no api_key.
+    """
     engine = LiteLLMEngine()
 
-    # Ensure no env var leaks in
+    # Ensure the provider env var is absent so env fallback also returns ""
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     called = {"n": 0}
 
@@ -219,17 +262,17 @@ def test_missing_key_returns_error_result(monkeypatch):
         return _resp("never")
 
     with patch("litellm.acompletion", side_effect=should_not_be_called):
-        # Patch the DB lookup to return None (no stored key)
-        with patch("omilo_api.engines.litellm_engine.resolve_key", return_value=""):
+        # Patch _key_from_db to return None — no DB key — while leaving resolve_key intact
+        with patch("omilo_api.engines.litellm_engine._key_from_db", return_value=None):
             r = asyncio.run(engine._loop(
-                {"provider": "groq"},  # no api_key
+                {"provider": "groq"},  # no api_key in cfg
                 "sys",
                 [{"role": "user", "content": "hello"}],
                 None, None, 5, 10
             ))
 
     assert r.error != ""
-    assert called["n"] == 0
+    assert called["n"] == 0  # no network call made
 
 
 # ---------------------------------------------------------------------------

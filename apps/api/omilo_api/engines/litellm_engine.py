@@ -25,6 +25,7 @@ _PROVIDER_ENV: dict[str, str] = {
     "xai": "XAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "mistral": "MISTRAL_API_KEY",
+    # TODO(task-3): Bedrock also needs AWS_SECRET_ACCESS_KEY + AWS_DEFAULT_REGION passed as litellm kwargs
     "bedrock": "AWS_ACCESS_KEY_ID",
     "groq": "GROQ_API_KEY",
 }
@@ -101,7 +102,9 @@ def _sum_tokens(usage) -> int:
     total += _g(usage, "cache_read_input_tokens")
     total += _g(usage, "cache_creation_input_tokens")
 
-    # Nested under prompt_tokens_details (some versions)
+    # Nested under prompt_tokens_details (some versions).
+    # Assumption: a provider surfaces cached tokens either directly OR nested, not both — so this
+    # won't double-count as long as a provider only populates one path.
     details = getattr(usage, "prompt_tokens_details", None) or {}
     if hasattr(details, "__getitem__") or hasattr(details, "__dict__"):
         total += _g(details, "cached_tokens", "cache_read_input_tokens")
@@ -196,7 +199,8 @@ class LiteLLMEngine(Engine):
 
             # --- Append assistant turn with tool calls ---
             # Serialize to a plain dict so the next messages list stays JSON-safe.
-            assistant_msg: dict = {"role": "assistant", "content": msg.content, "tool_calls": [
+            # Use "" instead of None for content: Mistral and Groq reject null content fields.
+            assistant_msg: dict = {"role": "assistant", "content": msg.content or "", "tool_calls": [
                 {"id": tc.id, "type": "function",
                  "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                 for tc in tool_calls
