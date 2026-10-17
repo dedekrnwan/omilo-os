@@ -31,6 +31,7 @@ from ..models import (
     User,
     now,
 )
+from ..engines import providers as _providers_reg
 from ..security import current_user
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -607,8 +608,6 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 
 
 # ------------------------------------------------------------------ AI (the engine every helper uses)
-from ..engines import providers as _providers_reg  # noqa: E402 — import here to keep locality
-
 _LITELLM_PROVIDER_IDS = tuple(_providers_reg.provider_ids())  # 8 vendor ids from registry
 
 AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code") + _LITELLM_PROVIDER_IDS
@@ -646,6 +645,16 @@ def _need_claude_key(db: Session) -> None:
         raise HTTPException(400, "Add your Claude API key first, or choose practice mode for now.")
 
 
+def _need_vendor_key(db: Session, provider: str) -> None:
+    """Require an API key for vendor ids; bedrock accepts AWS_ACCESS_KEY_ID as the env signal."""
+    if S.ai_api_key(db, provider):
+        return
+    env_key = "AWS_ACCESS_KEY_ID" if provider == "bedrock" else f"{provider.upper()}_API_KEY"
+    if os.environ.get(env_key):
+        return
+    raise HTTPException(400, f"Add your {provider} API key first, or choose practice mode for now.")
+
+
 def _provider_of(e: dict) -> str:
     if e.get("type") in ("claude", "anthropic"):
         return "claude-direct"
@@ -674,15 +683,10 @@ def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
 @router.get("/ai/providers")
 def ai_providers(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Return all 8 vendor providers with key-presence flags. No live network calls."""
-    return [
-        {
-            "id": pid,
-            "label": _providers_reg.get_provider(pid).label,
-            "icon": _providers_reg.get_provider(pid).icon,
-            "has_key": S.ai_key_hint(db, pid) is not None,
-        }
-        for pid in _LITELLM_PROVIDER_IDS
-    ]
+    def _entry(pid: str) -> dict:
+        p = _providers_reg.get_provider(pid)
+        return {"id": pid, "label": p.label, "icon": p.icon, "has_key": S.ai_key_hint(db, pid) is not None}
+    return [_entry(pid) for pid in _LITELLM_PROVIDER_IDS]
 
 
 class AiCheckIn(BaseModel):
@@ -720,6 +724,8 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
         S.set_ai_key(db, key_slot, body.api_key, user.id)
     if body.provider in ("claude", "claude-direct"):
         _need_claude_key(db)
+    if body.provider in _LITELLM_PROVIDER_IDS:
+        _need_vendor_key(db, body.provider)
     engine = _engine_for(body.provider, body.model, body.base_url)
     changed = []
     for st in db.scalars(select(Staff)):

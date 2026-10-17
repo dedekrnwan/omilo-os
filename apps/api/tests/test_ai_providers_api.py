@@ -82,8 +82,20 @@ def test_key_stored_per_provider_not_as_claude(owner):
     owner.post("/api/ai", json={"provider": "fake"})
 
 
-def test_all_eight_vendor_ids_accepted(owner):
-    """Every vendor id in the registry is accepted by POST /api/ai (with a dummy key)."""
+def test_vendor_provider_rejected_without_key(owner, monkeypatch):
+    """POST /api/ai {provider:"gemini"} with no api_key and no env var → 400.
+
+    Uses gemini because it has never had a key stored at this point in the session
+    (prior tests only touched openai). Runs before test_all_eight_vendor_ids_accepted_with_key
+    which is the first test that populates gemini's key slot.
+    """
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = owner.post("/api/ai", json={"provider": "gemini"})
+    assert r.status_code == 400, f"Expected 400 when no gemini key available, got {r.status_code}: {r.text}"
+
+
+def test_all_eight_vendor_ids_accepted_with_key(owner):
+    """Every vendor id in the registry is accepted by POST /api/ai when a key is supplied."""
     for pid in VENDOR_IDS:
         r = owner.post("/api/ai", json={"provider": pid, "api_key": f"sk-{pid}-dummy-0000"})
         assert r.status_code == 200, f"provider={pid} → {r.status_code}: {r.text}"
