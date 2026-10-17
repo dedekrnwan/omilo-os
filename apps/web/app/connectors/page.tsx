@@ -86,6 +86,29 @@ export default function Connectors() {
 
   const [usesTools, setUsesTools] = useState<string[]>([]);
   const load = useCallback(async () => { try { setList(await api<Conn[]>("/connectors")); } catch (e: any) { setErr(e.message); } }, []);
+  // connectors left in an earlier data folder (a reset moves the old one aside): offer to bring them back
+  type Old = { dir: string; moved_at: string | null; connectors: { id: string; label: string; kind: string; here: boolean }[] };
+  const [old, setOld] = useState<Old | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoredMsg, setRestoredMsg] = useState<string | null>(null);
+  useEffect(() => {
+    api<Old[]>("/connectors/restorable").then((r) => {
+      let hidden: string[] = [];
+      try { hidden = JSON.parse(localStorage.getItem("saga.restore.hidden") || "[]"); } catch { /* private window */ }
+      setOld(r.find((x) => x.connectors.some((c) => !c.here) && !hidden.includes(x.dir)) || null);
+    }).catch(() => {});
+  }, []);
+  const bringBack = async () => {
+    if (!old) return;
+    setRestoring(true);
+    try {
+      const r = await api<{ restored: string[]; secrets_missing: string[] }>("/connectors/restore", { body: { dir: old.dir } });
+      setRestoredMsg(`Brought back ${r.restored.length} connector${r.restored.length === 1 ? "" : "s"}.` + (r.secrets_missing.length ? ` Re-enter the secret for: ${r.secrets_missing.join(", ")}.` : ""));
+      setOld(null); await load();
+      r.restored.forEach((id) => test(id));
+    } catch (e: any) { setErr(e.message); } finally { setRestoring(false); }
+  };
+  const hideOld = () => { if (!old) return; try { const h = JSON.parse(localStorage.getItem("saga.restore.hidden") || "[]"); localStorage.setItem("saga.restore.hidden", JSON.stringify([...h, old.dir])); } catch { /* private window */ } setOld(null); };
   usePoll(load, 60000, [load], (n) => n?.url === "/connectors");
   useEffect(() => { api<{ answers: { tools?: string[] } }>("/onboarding").then((o) => setUsesTools(o.answers?.tools || [])).catch(() => {}); }, []);
   const have = new Set((list || []).map((c) => c.label.toLowerCase()));
@@ -147,6 +170,20 @@ export default function Connectors() {
         <button className="btn primary" onClick={startNew}><i className="ri-add-line" />Add connector</button>
       </div>
 
+      {old && (
+        <div className="restore-banner">
+          <i className="ri-history-line" />
+          <div>
+            <b>Your earlier connectors are still saved</b>
+            <div className="small">A reset{old.moved_at ? ` on ${new Date(old.moved_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""} moved your old Saga OS data aside, with
+              {" "}{old.connectors.filter((c) => !c.here).map((c) => c.label).join(", ")}. Their secrets are kept too.</div>
+          </div>
+          <span className="sp" />
+          <button className="btn quiet" onClick={hideOld}>Not now</button>
+          <button className="btn primary" disabled={restoring} onClick={bringBack}><i className="ri-arrow-go-back-line" />{restoring ? "Bringing back…" : `Bring back ${old.connectors.filter((c) => !c.here).length}`}</button>
+        </div>
+      )}
+      {restoredMsg && <div className="callout ok" style={{ marginTop: 16 }}>{restoredMsg}</div>}
       {suggested.length > 0 && (
         <div className="soft acts" style={{ marginTop: 20, justifyContent: "space-between" }}>
           <div><b style={{ fontWeight: 500 }}>Connect the apps you told us about</b>

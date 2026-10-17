@@ -139,6 +139,10 @@ it comments on what you fill in, your team appears as you pick goals and helpers
 know (click a missing part to jump there), and with a Claude key Saga can fill the business step from your website.
 Goals picked in onboarding become Plan goals once; deleting them keeps them deleted.
 
+**Resets keep your data.** `make reset` asks first and moves the data folder aside (`~/.saga-os-old-<date>`), it never
+deletes it. Connectors from such a folder come back with one click on the Connectors page ("Your earlier connectors
+are still saved"), secrets included, or with `make restore-connectors [FROM=<folder>]`.
+
 ## Monitor: Simple and Office
 
 The Monitor page has two views of the same live state (switch at the top right; `?mode=office` links straight to it):

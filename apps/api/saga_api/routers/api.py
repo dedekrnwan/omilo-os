@@ -912,6 +912,29 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
     return {"ok": True}
 
 
+@router.get("/connectors/restorable")
+def connectors_restorable(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Connectors left in earlier data folders (moved aside by a reset) that could come back."""
+    from .. import restore as R
+
+    return R.restorable(db)
+
+
+class RestoreIn(BaseModel):
+    dir: str
+    ids: list[str] | None = None
+
+
+@router.post("/connectors/restore")
+def connectors_restore(body: RestoreIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import restore as R
+
+    try:
+        return R.restore(db, body.dir, body.ids)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 # last health check per connector (in memory; refreshed by Test and by the chat box every few minutes)
 _conn_health_all: dict[str, dict[str, dict]] = {}
 

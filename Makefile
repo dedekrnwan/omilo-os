@@ -1,5 +1,5 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image reset reset-password
+.PHONY: dev api venv web test cli image reset reset-password restore-connectors
 
 dev: web api
 
@@ -34,7 +34,17 @@ image:
 reset-password: venv
 	cd apps/api && .venv/bin/python -m saga_api.reset_password
 
-# Start over: moves your Saga OS data (account, helpers, tasks, keys) aside. Stop the server first.
+# Start over: moves your Saga OS data (account, helpers, connectors, tasks, keys) aside, it is not deleted.
+# Asks first; `make reset CONFIRM=yes` skips the question. Bring connectors back later with `make restore-connectors`.
 reset:
 	@if lsof -nP -iTCP:$${SAGA_PORT:-7700} -sTCP:LISTEN >/dev/null 2>&1; then echo "Saga OS is still running on port $${SAGA_PORT:-7700}. Stop it (Ctrl+C) first."; exit 1; fi
-	@d="$${SAGA_DATA_DIR:-$$HOME/.saga-os}"; if [ -d "$$d" ]; then mv "$$d" "$$d-old-$$(date +%Y%m%d-%H%M%S)" && echo "Moved $$d aside. Run make dev to start fresh."; else echo "Nothing to reset ($$d does not exist)."; fi
+	@d="$${SAGA_DATA_DIR:-$$HOME/.saga-os}"; if [ ! -d "$$d" ]; then echo "Nothing to reset ($$d does not exist)."; exit 0; fi; \
+	if [ "$(CONFIRM)" != "yes" ]; then \
+	  echo "This starts Saga OS from zero: a new account, onboarding again, no helpers, connectors or history."; \
+	  echo "Your current data is moved aside (not deleted) to $$d-old-<date>."; \
+	  printf "Type yes to continue: "; read a; [ "$$a" = "yes" ] || { echo "Cancelled. Nothing changed."; exit 1; }; fi; \
+	mv "$$d" "$$d-old-$$(date +%Y%m%d-%H%M%S)" && echo "Moved $$d aside. Run make dev to start fresh. Connectors can come back: make restore-connectors"
+
+# Bring back connectors from the newest folder a reset moved aside (or FROM=<folder>). Stop Saga OS first.
+restore-connectors: venv
+	cd apps/api && .venv/bin/python -m saga_api.restore $(FROM)

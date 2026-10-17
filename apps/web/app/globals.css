@@ -1559,3 +1559,7 @@ main.page:has(> .monitor.office) { max-width: none; }
 .dlg-acts { flex-wrap: wrap; }
 .dlg-acts .btn { flex: 1 1 140px; min-width: 0; height: auto; min-height: 40px; padding: 8px 14px; white-space: normal; line-height: 1.25; text-align: center; }
 .dlg h2 { overflow-wrap: anywhere; }
+.restore-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; padding: 14px 16px; border-radius: 14px;
+  background: #f7f6ff; border: 1px solid #e0e1fb; }
+.restore-banner > i { font-size: 22px; color: #6366f1; }
+.restore-banner > div { flex: 1 1 320px; min-width: 0; }
