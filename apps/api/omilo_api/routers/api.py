@@ -1021,6 +1021,97 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ piece connector marketplace catalog
+
+@router.get("/catalog")
+def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Return all ok pieces with connected/needs_reconnect flags for the current company.
+
+    Each entry: {slug, label, category, logo_url, connected: bool, needs_reconnect: bool}
+    logo_url points at /api/catalog/{slug}/logo when the piece has a logo.svg, else ''.
+    Only pieces with status=='ok' in the index appear; invalid/missing pieces are hidden.
+    """
+    from .. import capabilities as C
+    from .. import pieces as P
+    from ..models import Connector
+
+    ok_pieces = P.catalog()  # [{slug, label, category, description, logo_rel}]
+
+    # Build a lookup of existing Connector rows for this company (id == slug for piece connectors)
+    connector_rows: dict[str, Connector] = {
+        c.id: c for c in db.scalars(select(Connector))
+    }
+
+    result = []
+    for piece in ok_pieces:
+        slug = piece["slug"]
+        logo_url = f"/api/catalog/{slug}/logo" if piece.get("logo_rel") else ""
+        conn = connector_rows.get(slug)
+        connected = conn is not None
+        needs_reconnect = bool(conn and C.connector_secrets(conn).get("needs_reconnect"))
+        result.append({
+            "slug": slug,
+            "label": piece["label"],
+            "category": piece["category"],
+            "logo_url": logo_url,
+            "connected": connected,
+            "needs_reconnect": needs_reconnect,
+        })
+
+    return result
+
+
+# SVG safe headers — same posture as _SAFE_FILE_HEADERS but forces SVG content-type
+# and disallows script execution (nosniff + no inline).
+_SVG_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "public, max-age=86400",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+}
+
+
+@router.get("/catalog/{slug}/logo")
+def catalog_logo(slug: str, user: User = Depends(current_user)):
+    """Serve a piece's logo.svg from the local repo clone.
+
+    Security:
+    - The slug is validated against the known catalog (only ok pieces allowed).
+    - Path traversal is impossible: we look up logo_rel from the index entry (which
+      was validated during reindex) and join it with repo_dir() using resolve(), then
+      verify the result stays inside repo_dir().
+    - SVG is served with X-Content-Type-Options: nosniff and a tight CSP so the
+      browser cannot execute it as a script.
+    """
+    from fastapi.responses import Response
+
+    from .. import pieces as P
+
+    # Guard 1: slug must be in the ok catalog — reject unknown/invalid slugs entirely
+    entry = P.get_piece(slug)
+    if entry is None or entry.get("status") != "ok":
+        raise HTTPException(404, f"piece '{slug}' not found in catalog")
+
+    logo_rel = entry.get("logo_rel", "")
+    if not logo_rel:
+        raise HTTPException(404, f"piece '{slug}' has no logo")
+
+    # Guard 2: resolve the path and confirm it stays inside repo_dir()
+    base = P.repo_dir().resolve()
+    logo_path = (base / logo_rel).resolve()
+    if not str(logo_path).startswith(str(base) + "/") and logo_path != base:
+        raise HTTPException(404, "logo not found")
+
+    if not logo_path.is_file():
+        raise HTTPException(404, "logo not found")
+
+    svg_content = logo_path.read_bytes()
+    return Response(
+        content=svg_content,
+        media_type="image/svg+xml",
+        headers=_SVG_HEADERS,
+    )
+
+
 @router.get("/connectors/restorable")
 def connectors_restorable(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Connectors left in earlier data folders (moved aside by a reset) that could come back."""
