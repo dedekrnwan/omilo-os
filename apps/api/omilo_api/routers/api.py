@@ -630,7 +630,7 @@ def _engine_for(provider: str, model: str | None, base_url: str | None = None) -
 
 
 def _assign_engine(db: Session, st: Staff, template: dict) -> None:
-    keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens", "web")}
+    keep = {k: v for k, v in (st.engine or {}).items() if k in ("timeout_s", "max_turns", "max_tokens", "web", "tier")}
     st.engine = {**template, **keep}
 
 
@@ -901,6 +901,8 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
     from ..models import Connector
 
     c = _404(db.get(Connector, cid), "unknown connector")
+    if c.kind == "piece":
+        raise HTTPException(400, "piece connectors are managed from the marketplace")
     _connector_apply(c, body)
     S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
     db.commit()
@@ -1201,6 +1203,8 @@ async def connector_test(cid: str, db: Session = Depends(get_db), user: User = D
     from ..models import Connector
 
     c = _404(db.get(Connector, cid), "unknown connector")
+    if c.kind == "piece":
+        raise HTTPException(400, "piece connectors are managed from the marketplace")
     res = await _probe(C.connector_runtime(c))
     _conn_health[cid] = res
     return res

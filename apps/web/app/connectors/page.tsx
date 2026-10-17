@@ -38,7 +38,7 @@ type CatalogEntry = {
 };
 
 type Conn = {
-  id: string; label: string; kind: "http" | "stdio"; url: string; command: string;
+  id: string; label: string; kind: "http" | "stdio" | "piece"; url: string; command: string;
   args: string[]; approval: "auto" | "ask"; default_on: boolean; enabled: boolean;
   header_names: string[]; env_names: string[];
 };
@@ -428,9 +428,12 @@ export default function Connectors() {
     editing: f?.editing || false,
   }));
   const edit = (c: Conn) => {
+    // Piece connectors are managed from the marketplace and never appear in rawList,
+    // so c.kind is always "http" | "stdio" here — the cast is safe.
+    const rawKind = c.kind === "piece" ? "http" : c.kind;
     setErr(null);
     setForm({
-      id: c.id, label: c.label, kind: c.kind, url: c.url, command: c.command,
+      id: c.id, label: c.label, kind: rawKind, url: c.url, command: c.command,
       args: c.args.join(" "), approval: c.approval, default_on: c.default_on,
       enabled: c.enabled, editing: true, tpl: "edit",
       secrets: withBlankRow((c.kind === "http" ? c.header_names : c.env_names).map((k) => ({ k, v: "" }))),
@@ -501,6 +504,8 @@ export default function Connectors() {
   const ready = !!form && !!form.label.trim()
     && (form.kind === "http" ? /^https?:\/\//.test(form.url.trim()) : !!form.command.trim());
 
+  // Piece connectors are managed by the marketplace grid, not the raw Advanced list.
+  const rawList = (list || []).filter((c) => c.kind !== "piece");
   const have = new Set((list || []).map((c) => c.label.toLowerCase()));
   const suggested = TEMPLATES.filter(
     (t) => t.tools?.some((x) => usesTools.includes(x)) && !have.has((t.form.label || t.name).toLowerCase())
@@ -612,7 +617,7 @@ export default function Connectors() {
 
               {list === null ? (
                 <p className="small">Loading...</p>
-              ) : list.length === 0 ? (
+              ) : rawList.length === 0 ? (
                 <div className="empty">
                   <b>No custom servers yet</b>
                   <span>Start from a template or add any MCP server by URL or command.</span>
@@ -624,7 +629,7 @@ export default function Connectors() {
                 </div>
               ) : (
                 <div className="grid2">
-                  {list.map((c) => {
+                  {rawList.map((c) => {
                     const t = tests[c.id];
                     return (
                       <div

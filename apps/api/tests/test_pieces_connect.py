@@ -146,3 +146,44 @@ class TestPiecesConnect:
         assert r3.json()["status"] == "expired", (
             f"Expected status=expired after state consumed, got: {r3.json()}"
         )
+
+    def test_put_piece_connector_returns_400(self, owner):
+        """PUT /connectors/{id} on a piece connector must return 400 — piece connectors
+        are managed from the marketplace, not the raw update endpoint."""
+        # Connect first so the piece connector row exists
+        r = owner.post("/api/connectors/pieces/gmail/connect")
+        assert r.status_code == 200, r.text
+        state = r.json()["state"]
+        r2 = owner.get(f"/api/connectors/pieces/connect/{state}")
+        assert r2.json()["status"] == "connected"
+
+        # Attempt raw PUT — must be rejected with 400
+        r3 = owner.put("/api/connectors/gmail", json={
+            "id": "gmail", "label": "Gmail", "kind": "http",
+            "url": "https://evil.example.com/mcp", "approval": "auto",
+        })
+        assert r3.status_code == 400, (
+            f"Expected 400 for PUT on piece connector, got {r3.status_code}: {r3.text}"
+        )
+        assert "marketplace" in r3.text.lower(), (
+            f"Expected 'marketplace' in error body, got: {r3.text}"
+        )
+
+    def test_test_piece_connector_returns_400(self, owner):
+        """POST /connectors/{id}/test on a piece connector must return 400 — piece connectors
+        are not raw MCP servers and cannot be tested with a raw MCP handshake."""
+        # Connect first
+        r = owner.post("/api/connectors/pieces/gmail/connect")
+        assert r.status_code == 200, r.text
+        state = r.json()["state"]
+        r2 = owner.get(f"/api/connectors/pieces/connect/{state}")
+        assert r2.json()["status"] == "connected"
+
+        # Attempt raw /test — must be rejected with 400
+        r3 = owner.post("/api/connectors/gmail/test", json={})
+        assert r3.status_code == 400, (
+            f"Expected 400 for /test on piece connector, got {r3.status_code}: {r3.text}"
+        )
+        assert "marketplace" in r3.text.lower(), (
+            f"Expected 'marketplace' in error body, got: {r3.text}"
+        )

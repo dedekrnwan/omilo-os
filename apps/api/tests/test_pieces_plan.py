@@ -394,3 +394,126 @@ class TestPieceMcpEndpoint:
             f"Expected JSON-RPC error for absent connector, got: {body}"
         )
         assert isinstance(body["error"].get("code"), int), body
+
+
+# ---------------------------------------------------------------------------
+# E2E token-shape test — Finding #1 (CRITICAL)
+# ---------------------------------------------------------------------------
+# This test drives the /mcp/piece/{slug} endpoint with a real secrets_enc
+# blob (same shape the connect flow stores) and asserts the outgoing
+# Authorization header is exactly "Bearer dev-token-X".
+#
+# RED against the unfixed code: piece_token = secrets.get("token", "") returns
+# the whole dict {"access_token": "dev-token-X", "token_type": "bearer"} and
+# run_action builds headers={"Authorization": "Bearer {'access_token': ...}"}
+# which is a stringified dict — not a valid token.
+#
+# GREEN after fix: the endpoint extracts tok.get("access_token", "") before
+# calling run_action so the header is exactly "Bearer dev-token-X".
+# ---------------------------------------------------------------------------
+
+class TestPieceMcpEndpointAuthHeader:
+    """E2E: the Authorization header sent to the vendor is exactly Bearer <access_token>."""
+
+    def test_auth_header_uses_access_token_not_whole_dict(self, monkeypatch):
+        """
+        Store a token in the same shape the connect flow produces
+        ({"token": {"access_token": "dev-token-X", "token_type": "bearer"}}),
+        call tools/call via the /mcp/piece/{slug} endpoint,
+        and assert the vendor receives exactly 'Bearer dev-token-X'.
+
+        This test must FAIL against the unfixed code (piece_token = secrets.get("token", ""))
+        and PASS after the fix (access_token is extracted before calling run_action).
+        """
+        import json as _json
+        import omilo_api.mcp_server as MS
+        from omilo_api import capabilities as CAP
+        from omilo_api import pieces as P
+        from omilo_api.security import encrypt
+
+        # --- Stub pieces catalog -----------------------------------------------
+        monkeypatch.setattr(P, "get_piece", lambda slug: FAKE_MANIFEST if slug == "gmail" else None)
+
+        # --- Stub staff auth ----------------------------------------------------
+        monkeypatch.setattr(
+            MS, "staff_from_mcp_token",
+            lambda db, token: _FakeStaff() if token == "test-mcp-token" else None,
+        )
+
+        # --- Build a Connector with secrets_enc in the REAL connect-flow shape --
+        # The connect flow (piece_connect_poll) does:
+        #   secrets["token"] = token_dict   # {"access_token": "...", "token_type": "bearer"}
+        #   c.secrets_enc = encrypt(json.dumps(secrets))
+        class _RealConnector:
+            id = "gmail"
+            enabled = True
+            secrets_enc = encrypt(_json.dumps({
+                "token": {"access_token": "dev-token-X", "token_type": "bearer"}
+            }))
+
+        real_conn = _RealConnector()
+
+        class _RealSecretsDB:
+            def close(self): pass
+            def scalars(self, *a, **kw): return []
+            def get(self, model, id_=None):
+                from omilo_api.models import Connector
+                if model is Connector and id_ == "gmail":
+                    return real_conn
+                return None
+            def add(self, *a, **kw): pass
+            def commit(self): pass
+            def rollback(self): pass
+
+        monkeypatch.setattr(MS, "get_db", lambda: iter([_RealSecretsDB()]))
+
+        # --- Restore real connector_secrets so the handler decrypts the blob ----
+        from omilo_api.security import decrypt
+
+        def _real_connector_secrets(c):
+            raw = decrypt(c.secrets_enc) if c.secrets_enc else None
+            try:
+                return _json.loads(raw) if raw else {}
+            except ValueError:
+                return {}
+
+        monkeypatch.setattr(CAP, "connector_secrets", _real_connector_secrets)
+
+        # --- Capture the token run_action actually receives via respx -----------
+        import respx
+        import httpx
+
+        captured_auth_headers = []
+
+        with respx.mock:
+            def _capture_and_respond(request):
+                captured_auth_headers.append(request.headers.get("authorization", ""))
+                return httpx.Response(200, json={"id": "msg123"})
+
+            respx.post(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+            ).mock(side_effect=_capture_and_respond)
+
+            from fastapi.testclient import TestClient
+            from omilo_api.main import app
+            client = TestClient(app)
+
+            r = client.post(
+                "/mcp/piece/gmail",
+                json=_rpc("tools/call", {"name": "send-email", "arguments": {"to": "boss@co.com", "message": "hi"}}),
+                headers={"Authorization": "Bearer test-mcp-token"},
+            )
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "result" in body, f"Expected result, got: {body}"
+        assert not body["result"].get("isError"), f"Expected success, got isError: {body}"
+
+        assert captured_auth_headers, (
+            "No outgoing HTTP request was made — run_action did not call the vendor endpoint."
+        )
+        auth = captured_auth_headers[0]
+        assert auth == "Bearer dev-token-X", (
+            f"Expected 'Bearer dev-token-X' but vendor received: {auth!r}\n"
+            "DIAGNOSIS: piece_token = secrets.get('token', '') is returning the whole dict instead of the access_token string."
+        )

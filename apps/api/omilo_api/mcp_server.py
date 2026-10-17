@@ -531,7 +531,11 @@ async def mcp_piece_post(slug: str, request: Request):
                     return _rpc_error(id_, -32602, f"no connected Connector for piece '{slug}'; connect it first")
                 from .capabilities import connector_secrets
                 secrets = connector_secrets(conn)
-                piece_token = secrets.get("token", "")
+                # Extract the access_token string from the stored token dict.
+                # The connect flow stores: secrets["token"] = {"access_token": "...", "token_type": "bearer"}
+                # Defensive: also handle legacy plain-string tokens.
+                _tok = secrets.get("token") or {}
+                piece_token = _tok.get("access_token", "") if isinstance(_tok, dict) else (str(_tok) if _tok else "")
                 try:
                     summary, meta = _pieces.run_action(manifest, name, args, piece_token)
                 except (ValueError, KeyError) as exc:
