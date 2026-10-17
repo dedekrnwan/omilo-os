@@ -607,10 +607,15 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 
 
 # ------------------------------------------------------------------ AI (the engine every helper uses)
-AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code")
+from ..engines import providers as _providers_reg  # noqa: E402 — import here to keep locality
+
+_LITELLM_PROVIDER_IDS = tuple(_providers_reg.provider_ids())  # 8 vendor ids from registry
+
+AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code") + _LITELLM_PROVIDER_IDS
 # "claude"        = Claude Code run with your Claude API key: files, commands in shared folders, web, connectors
 # "claude-code"   = Claude Code on the subscription pool (Harness)
 # "claude-direct" = Omilo calls the Claude API itself: nothing to install, web + Omilo's tools only
+# 8 vendor ids    = LiteLLM-routed direct API calls (anthropic, openai, gemini, xai, deepseek, mistral, bedrock, groq)
 
 
 def _claude_model(model: str | None) -> str:
@@ -626,6 +631,8 @@ def _engine_for(provider: str, model: str | None, base_url: str | None = None) -
         return {"type": "claude", "model": _claude_model(model)}
     if provider == "claude-code":
         return {"type": "claude-code", **({"model": model} if model else {})}
+    if provider in _LITELLM_PROVIDER_IDS:
+        return {"type": "litellm", "provider": provider, **({"model": model} if model else {})}
     return {"type": "fake"}
 
 
@@ -644,6 +651,8 @@ def _provider_of(e: dict) -> str:
         return "claude-direct"
     if e.get("type") == "claude-code":
         return "claude" if e.get("auth") == "api" else "claude-code"
+    if e.get("type") == "litellm" and e.get("provider"):
+        return e["provider"]
     return e.get("type", "fake")
 
 
@@ -660,6 +669,20 @@ def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
             "claude_key_hint": S.ai_key_hint(db, "claude"),
             "claude_code": {"installed": bool(cli), "path": cli, "install": H.installer.snapshot()},
             "staff": {st.id: {"provider": _provider_of(st.engine or {})} for st in staff}}
+
+
+@router.get("/ai/providers")
+def ai_providers(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Return all 8 vendor providers with key-presence flags. No live network calls."""
+    return [
+        {
+            "id": pid,
+            "label": _providers_reg.get_provider(pid).label,
+            "icon": _providers_reg.get_provider(pid).icon,
+            "has_key": S.ai_key_hint(db, pid) is not None,
+        }
+        for pid in _LITELLM_PROVIDER_IDS
+    ]
 
 
 class AiCheckIn(BaseModel):
@@ -692,7 +715,9 @@ def _apply_ai(db: Session, user: User, body: "AiIn") -> list[str]:
     if body.provider not in AI_PROVIDERS:
         raise HTTPException(400, f"provider must be one of {', '.join(AI_PROVIDERS)}")
     if body.api_key and body.api_key.strip():
-        S.set_ai_key(db, "claude", body.api_key, user.id)
+        # claude / claude-direct share one Anthropic key stored under "claude" (back-compat)
+        key_slot = "claude" if body.provider in ("claude", "claude-direct") else body.provider
+        S.set_ai_key(db, key_slot, body.api_key, user.id)
     if body.provider in ("claude", "claude-direct"):
         _need_claude_key(db)
     engine = _engine_for(body.provider, body.model, body.base_url)
