@@ -947,15 +947,16 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
     broker = B.default_broker
     slug = broker.slug_for_state(state)
     if slug is None:
-        # Unknown state — treat as pending (the real broker would also return None)
-        return {"status": "pending"}
+        # Unknown or already-consumed state — signal the client to stop polling.
+        return {"status": "expired"}
 
     token_result = broker.poll(state)
     if token_result is None:
         return {"status": "pending"}
 
-    # Token is ready — upsert the Connector row
-    token_dict = token_result.get("token") if "token" in token_result else token_result
+    # Token is ready — upsert the Connector row.
+    # BrokerClient.poll always wraps the credential dict under "token".
+    token_dict = token_result["token"]
 
     # Load the manifest to derive approval and label
     entry = P.get_piece(slug)

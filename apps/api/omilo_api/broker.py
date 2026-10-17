@@ -5,9 +5,11 @@ it swaps in by replacing the module-level `default_broker` instance.
 
 Protocol
 --------
-BrokerClient.start_connect(manifest) -> {"auth_url": str, "state": str}
-BrokerClient.poll(state)             -> {"token": {...}} | None
-BrokerClient.revoke(token)           -> None   (best-effort, may be no-op)
+BrokerClient.start_connect(manifest)  -> {"auth_url": str, "state": str}
+BrokerClient.poll(state)              -> {"token": {...}} | None
+BrokerClient.revoke(token)            -> None   (best-effort, may be no-op)
+BrokerClient.slug_for_state(state)    -> str | None
+BrokerClient.consume_state(state)     -> None
 
 DevBroker
 ---------
@@ -43,12 +45,29 @@ class BrokerClient(Protocol):
 
         Returns:
             {"token": {...}}  when the token is available (flow complete).
+                              The "token" key always wraps the credential dict.
             None              when the flow is still in progress.
         """
         ...
 
     def revoke(self, token: dict) -> None:
         """Best-effort token revocation.  Implementations may be a no-op."""
+        ...
+
+    def slug_for_state(self, state: str) -> str | None:
+        """Return the piece slug a pending state is for, or None if unknown/expired.
+
+        Used by the poll route to recover which manifest to load without requiring
+        the client to pass the slug again on each poll request.
+        """
+        ...
+
+    def consume_state(self, state: str) -> None:
+        """Single-use invalidation: remove a state after a successful connect.
+
+        Prevents state replay.  After this call, slug_for_state(state) returns None
+        and poll(state) returns None.
+        """
         ...
 
 
@@ -60,11 +79,20 @@ class DevBroker:
     connect → poll → upsert Connector flow be exercised in tests without any
     external dependency.
 
+    In-memory limitation
+    --------------------
+    All state correlation lives in a process-local dict (_pending).  In a
+    multi-worker deployment (e.g., Gunicorn with multiple processes), a poll
+    request routed to a different worker than the one that handled start_connect
+    would fail to find the state and return None.  DevBroker is intentionally
+    single-worker only (dev server, unit tests).  The real HttpBroker uses
+    durable external storage so state is visible to all workers.
+
     Internal state
     --------------
     _pending : dict[state, slug]
         Correlates each generated state to the piece slug it belongs to.
-        Entries are consumed by poll() (removed on first successful poll) to
+        Entries are removed by consume_state() after a successful upsert to
         prevent stale-state accumulation in long-running processes.
     """
 
@@ -82,19 +110,24 @@ class DevBroker:
         return {"auth_url": auth_url, "state": state}
 
     def poll(self, state: str) -> dict | None:
-        """Return a fixture token immediately if state is known, else None."""
+        """Return a fixture token immediately if state is known, else None.
+
+        Returns {"token": {"access_token": ..., "token_type": ...}} to match
+        the Protocol contract.  The outer "token" key is always present so the
+        poll route can read token_result["token"] unconditionally.
+        """
         if state not in self._pending:
             return None
         # Do NOT consume the entry here — the route needs the slug after poll.
-        # The route deletes it from _pending after a successful upsert.
-        return {"access_token": f"dev-token-{state}", "token_type": "bearer"}
+        # The route removes it from _pending via consume_state after a successful upsert.
+        return {"token": {"access_token": f"dev-token-{state}", "token_type": "bearer"}}
 
     def revoke(self, token: dict) -> None:
         """No-op for DevBroker — the token is fictional."""
         return
 
     def slug_for_state(self, state: str) -> str | None:
-        """Return the slug associated with a state, or None if state is unknown."""
+        """Return the slug associated with a state, or None if state is unknown/expired."""
         return self._pending.get(state)
 
     def consume_state(self, state: str) -> None:
@@ -103,4 +136,7 @@ class DevBroker:
 
 
 # Module-level default instance.  The real HttpBroker swaps this out.
-default_broker: DevBroker = DevBroker()
+# Annotated as BrokerClient so type-checkers enforce that the routes only call
+# methods on the Protocol surface (slug_for_state and consume_state are part of
+# the Protocol; any implementation that omits them will be caught here).
+default_broker: BrokerClient = DevBroker()

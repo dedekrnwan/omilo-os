@@ -81,11 +81,14 @@ class TestPiecesConnect:
         assert r2.status_code == 200, r2.text
         assert r2.json()["status"] == "connected", f"Expected connected, got: {r2.json()}"
 
-        # Step 3: connector appears in list with kind==piece
+        # Step 3: connector appears in list with kind==piece, enabled, and correct approval
         connectors = owner.get("/api/connectors").json()
         gmail = next((c for c in connectors if c["id"] == "gmail"), None)
         assert gmail is not None, f"gmail not in connectors: {connectors}"
         assert gmail["kind"] == "piece", f"Expected kind=piece, got: {gmail['kind']}"
+        assert gmail["enabled"] is True, f"Expected enabled=True, got: {gmail['enabled']}"
+        # Gmail manifest has an action with approval='ask' → most-restrictive wins
+        assert gmail["approval"] == "ask", f"Expected approval=ask, got: {gmail['approval']}"
 
         # Step 4: public view must NOT contain the raw token
         assert "token" not in gmail, f"Raw token must not appear in public view: {gmail}"
@@ -116,3 +119,30 @@ class TestPiecesConnect:
         """Connecting a slug not in the catalog returns 404."""
         r = owner.post("/api/connectors/pieces/no-such-piece/connect")
         assert r.status_code == 404, f"Expected 404 for unknown slug, got {r.status_code}: {r.text}"
+
+    def test_poll_fabricated_state_returns_expired(self, owner):
+        """Polling a fabricated or already-consumed state returns status=expired (not pending)."""
+        r = owner.get("/api/connectors/pieces/connect/not-a-real-state-xyz123")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "expired", (
+            f"Expected status=expired for unknown state, got: {body}"
+        )
+
+    def test_poll_consumed_state_returns_expired(self, owner):
+        """After a successful connect, polling the same state again returns status=expired."""
+        # Connect (state is consumed on success)
+        r = owner.post("/api/connectors/pieces/gmail/connect")
+        assert r.status_code == 200, r.text
+        state = r.json()["state"]
+
+        # First poll — completes the connect, consumes the state
+        r2 = owner.get(f"/api/connectors/pieces/connect/{state}")
+        assert r2.json()["status"] == "connected"
+
+        # Second poll on the same state — state is consumed, must signal expired
+        r3 = owner.get(f"/api/connectors/pieces/connect/{state}")
+        assert r3.status_code == 200, r3.text
+        assert r3.json()["status"] == "expired", (
+            f"Expected status=expired after state consumed, got: {r3.json()}"
+        )
