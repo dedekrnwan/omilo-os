@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { lookFor, useLooks } from "@/components/Avatar";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import Avatar, { lookFor, useLooks } from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
 import { useOverview } from "@/components/Shell";
 import { Err } from "@/components/ui";
@@ -45,12 +45,26 @@ function title(view: View, anchor: Day, tz: string) {
   return s.m === e.m ? `${s.d}–${e.d} ${MONTHS[s.m - 1]} ${s.y}` : `${s.d} ${MONTHS[s.m - 1].slice(0, 3)} – ${e.d} ${MONTHS[e.m - 1].slice(0, 3)} ${e.y}`;
 }
 
+/* ---------------------------------------------------------- who does it: the helper's own mascot on every event */
+type Who = { id: string; name: string; is_chief?: boolean };
+const WhoCtx = createContext<Record<string, Who>>({});
+
+/** The face of an event: the helper's mascot (working while the job runs, asleep while it is paused), or the
+ *  workflow mark for automations that run without a helper. */
+function Face({ e, size }: { e: Ev; size: number }) {
+  const team = useContext(WhoCtx);
+  if (!e.staff_id) return <span className="cal-wf" style={{ width: size, height: size }} aria-hidden><i className="ri-flow-chart" /></span>;
+  const who = team[e.staff_id] || { id: e.staff_id, name: e.staff };
+  return <Avatar who={who} size={size} state={e.status === "running" ? "working" : e.status === "paused" ? "sleeping" : null}
+    mood={e.status === "failed" ? "sad" : null} />;
+}
+
 /* ---------------------------------------------------------- one event, as a chip (month) or a block (time grid) */
 function Chip({ e, color, tz, onOpen }: { e: Ev; color: string; tz: string; onOpen: (e: Ev) => void }) {
   return (
     <button className={`cal-chip st-${e.status}`} style={{ "--c": color } as React.CSSProperties} onClick={(x) => { x.stopPropagation(); onOpen(e); }}
       title={`${hhmm(e.start, tz)} ${e.title} · ${e.staff}`}>
-      <i className="dot" /><span className="t">{hhmm(e.start, tz)}</span><span className="n">{e.title}</span>
+      <Face e={e} size={16} /><span className="t">{hhmm(e.start, tz)}</span><span className="n">{e.title}</span>
     </button>
   );
 }
@@ -109,7 +123,8 @@ function TimeGrid({ days, events, tz, color, onOpen, now }: { days: Day[]; event
                   <button key={e.id} className={`cal-block st-${e.status}`} onClick={() => onOpen(e)}
                     style={{ top, height: h - 2, left: `calc(${(col / cols) * 100}% + 2px)`, width: `calc(${100 / cols}% - 4px)`, "--c": color(e) } as React.CSSProperties}
                     title={`${hhmm(e.start, tz)}–${hhmm(e.end, tz)} ${e.title} · ${e.staff}`}>
-                    <b>{e.title}</b>{h >= 34 && <span>{hhmm(e.start, tz)} · {e.staff}</span>}
+                    <span className="cal-block-t"><Face e={e} size={h >= 34 ? 20 : 16} /><b>{e.title}</b></span>
+                    {h >= 40 && <span className="cal-block-s">{hhmm(e.start, tz)} · {e.staff}</span>}
                   </button>
                 ))}
                 {sameDay(d, t) && <div className="cal-now" style={{ top: ((nowW.h * 60 + nowW.mi) / 60) * HOUR }} aria-label="Now" />}
@@ -210,12 +225,16 @@ function Upcoming({ tz, staffId, color, onOpen, stamp, tick }: { tz: string; sta
               {show && <div className="cal-side-day">{head}</div>}
               <button className={`cal-up st-${e.status}`} style={{ "--c": color(e) } as React.CSSProperties} onClick={() => onOpen(e)}>
                 <span className="when">{e.now ? (e.status === "running" ? "running" : "queued") : hhmm(e.start, tz)}</span>
+                <Face e={e} size={30} />
                 <span className="what"><b>{e.title}</b><span>{e.staff}{e.kind === "workflow" ? "" : e.recurring ? " · regular job" : ""}</span></span>
               </button>
             </div>
           );
         })}
-        {!items.length && !busy && <p className="small" style={{ padding: "12px 14px" }}>Nothing scheduled. Give a helper a regular job in Team.</p>}
+        {!items.length && !busy && !failed && (
+          <div className="cal-empty"><Avatar who={{ id: staffId || "omilo", name: "Omilo" }} size={48} state="sleeping" />
+            <p className="small">Nothing scheduled. Give a helper a regular job in Team.</p></div>
+        )}
         <div ref={end} className="cal-side-end">
           {busy ? <span className="spin" /> : failed ? <button className="btn sm" onClick={() => load(items.length > 0)}>Couldn't load. Try again</button>
             : done && items.length ? <span className="small">That's everything in the next year.</span> : null}
@@ -240,7 +259,7 @@ function Detail({ e, tz, onClose, onChanged }: { e: Ev | null; tz: string; onClo
   return (
     <Drawer open onClose={onClose} title={e.title}
       sub={`${e.staff} · ${dayLabel(day, tz)} ${hhmm(e.start, tz)}–${hhmm(e.end, tz)}`}
-      icon={<span className="cal-ico"><i className={e.kind === "workflow" || e.kind === "workflow_run" ? "ri-flow-chart" : e.recurring || e.shift_id ? "ri-repeat-line" : "ri-list-check-3"} /></span>}
+      icon={<Face e={e} size={32} />}
       footer={<><span className="sp" /><button className="btn" onClick={onClose}>Close</button></>}>
       <div className="dw-sec">
         <p><span className={`chip st-${e.status}`}>{STATUS[e.status] || e.status}</span>{" "}
@@ -280,12 +299,16 @@ function Detail({ e, tz, onClose, onChanged }: { e: Ev | null; tz: string; onClo
 export default function CalendarPage() {
   const { overview } = useOverview();
   const [tz, setTz] = useState<string>(overview?.timezone || "UTC");
-  useEffect(() => { if (overview?.timezone) setTz(overview.timezone); }, [overview?.timezone]);
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchorRaw] = useState<Day>(() => today(overview?.timezone || "UTC"));
   const moved = useRef(false); // until the owner navigates, "today" follows the company's clock once it is known
   const setAnchor = useCallback((a: Day | ((x: Day) => Day)) => { moved.current = true; setAnchorRaw(a); }, []);
-  useEffect(() => { if (!moved.current) setAnchorRaw(today(tz)); }, [tz]);
+  useEffect(() => { // one render with both: the company's clock and today on it
+    const z = overview?.timezone;
+    if (!z) return;
+    setTz(z);
+    if (!moved.current) setAnchorRaw(today(z));
+  }, [overview?.timezone]);
   const [staffId, setStaffId] = useState("");
   const [kinds, setKinds] = useState<Set<string>>(new Set(["shift", "task", "workflow"]));
   const [events, setEvents] = useState<Ev[]>([]);
@@ -305,7 +328,11 @@ export default function CalendarPage() {
 
   const [start, n] = range(view, anchor);
   const days = useMemo(() => Array.from({ length: n }, (_, i) => addDays(start, i)), [start.y, start.m, start.d, n]); // eslint-disable-line react-hooks/exhaustive-deps
+  const req = useRef(0);
+  const ready = !!overview?.timezone && tz === overview.timezone; // don't fetch a range on the wrong clock first
   const load = useCallback(async () => {
+    if (!ready) return;
+    const mine = ++req.current;
     const endD = addDays(start, n);
     const q = new URLSearchParams({
       start: instant(start.y, start.m, start.d, 0, 0, tz).toISOString(), end: instant(endD.y, endD.m, endD.d, 0, 0, tz).toISOString(),
@@ -313,10 +340,10 @@ export default function CalendarPage() {
     });
     try {
       const r = await api<{ events: Ev[]; timezone: string }>(`/calendar?${q}`);
+      if (mine !== req.current) return; // the view changed while this was loading: a newer answer is coming
       setEvents(r.events); setErr(null);
-      if (r.timezone && r.timezone !== tz) setTz(r.timezone);
     } catch (e: any) { setErr(e.message); }
-  }, [start.y, start.m, start.d, n, tz, kinds, staffId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [start.y, start.m, start.d, n, tz, kinds, staffId, ready]); // eslint-disable-line react-hooks/exhaustive-deps
   const [tick, setTick] = useState(0);
   usePoll(async () => { await load(); setTick((t) => t + 1); }, 60000, [load], (x) => x?.kind?.startsWith("job") || x?.kind === "local");
   const changed = () => { load(); setStamp((s) => s + 1); };
@@ -334,7 +361,10 @@ export default function CalendarPage() {
   });
 
   const shown = events.filter((e) => kinds.has(e.kind === "workflow_run" ? "workflow" : e.kind));
+  const team = useMemo(() => Object.fromEntries((overview?.staff || []).map((s) => [s.id, s])), [overview?.staff]);
+  const focus = staffId ? team[staffId] : null;
   return (
+    <WhoCtx.Provider value={team}>
     <div className="cal">
       <div className="cal-main">
         <div className="cal-bar">
@@ -343,12 +373,19 @@ export default function CalendarPage() {
             <button className="iconbtn" aria-label="Previous" onClick={() => step(-1)}><i className="ri-arrow-left-s-line" /></button>
             <button className="iconbtn" aria-label="Next" onClick={() => step(1)}><i className="ri-arrow-right-s-line" /></button>
           </div>
-          <h2 className="cal-title">{title(view, anchor, tz)}</h2>
+          <h2 className="cal-title">{title(view, anchor, tz)}{focus && <span className="cal-focus"> · {focus.name}</span>}</h2>
           <span className="sp" />
-          <select value={staffId} onChange={(e) => setStaffId(e.target.value)} aria-label="Helper" className="cal-select">
-            <option value="">All helpers</option>
-            {(overview?.staff || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="cal-team" role="group" aria-label="Whose schedule">
+            <button className={`cal-all ${staffId ? "" : "on"}`} onClick={() => setStaffId("")} aria-pressed={!staffId}>All</button>
+            {(overview?.staff || []).map((s) => (
+              <button key={s.id} className={`cal-who ${staffId === s.id ? "on" : ""} ${staffId && staffId !== s.id ? "dim" : ""}`}
+                aria-pressed={staffId === s.id} title={staffId === s.id ? `${s.name}: show everyone again` : `Only ${s.name}`}
+                style={{ "--c": color({ staff_id: s.id, staff: s.name } as Ev) } as React.CSSProperties}
+                onClick={() => setStaffId(staffId === s.id ? "" : s.id)}>
+                <Avatar who={s} size={26} state={s.running ? "working" : null} />
+              </button>
+            ))}
+          </div>
           <div className="seg" role="group" aria-label="Show">
             {KINDS.map(([k, l, tip]) => (
               <button key={k} className={kinds.has(k) ? "on" : ""} aria-pressed={kinds.has(k)} title={tip}
@@ -367,5 +404,6 @@ export default function CalendarPage() {
       <Upcoming tz={tz} staffId={staffId} color={color} onOpen={setSel} stamp={stamp} tick={tick} />
       <Detail e={sel} tz={tz} onClose={() => setSel(null)} onChanged={changed} />
     </div>
+    </WhoCtx.Provider>
   );
 }

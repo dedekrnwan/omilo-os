@@ -2009,3 +2009,31 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .cal-time-h em { font-size: 13px; width: 24px; height: 24px; }
   .cal-block { padding: 2px 3px; }
 }
+
+/* calendar: every event wears its helper's mascot */
+.cal-chip { gap: 5px; padding: 1px 4px 1px 2px; }
+.cal-chip .av-wrap, .cal-chip .cal-wf { flex-shrink: 0; }
+.cal-block-t { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.cal-block-t b { min-width: 0; }
+.cal-block-s { padding-left: 25px; }
+.cal-block .av-wrap { filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .6)); }
+.cal-wf { display: inline-grid; place-items: center; border-radius: 30%; background: var(--ink); flex-shrink: 0; }
+.cal-wf i { color: #fff; font-size: 70%; }
+.cal-up { align-items: center; }
+.cal-up .when { padding-top: 0; width: 44px; }
+.cal-up .what { border-left: 0; padding-left: 2px; }
+.cal-up .av-wrap, .cal-up .cal-wf { flex-shrink: 0; }
+.cal-up .cal-wf i { font-size: 15px; }
+.cal-team { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+.cal-team button { border: 0; background: transparent; padding: 2px; border-radius: 999px; display: inline-grid; place-items: center; }
+.cal-team .cal-all { height: 30px; padding: 0 10px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cal-team .cal-all.on { background: var(--soft); color: var(--ink); }
+.cal-who { transition: transform .15s, opacity .15s; }
+.cal-who:hover { transform: translateY(-2px); }
+.cal-who.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
+.cal-who.dim { opacity: .4; }
+.cal-who.dim:hover { opacity: .85; }
+.cal-focus { color: var(--muted); font-weight: 500; }
+.cal-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; }
+.cal-ico { display: none; }
+@media (max-width: 640px) { .cal-block-s { display: none; } .cal-chip .t { display: none; } }
