@@ -470,6 +470,92 @@ async def mcp_post(request: Request):
         db.close()
 
 
+@router.post("/mcp/piece/{slug}")
+async def mcp_piece_post(slug: str, request: Request):
+    """MCP endpoint for a single piece connector.
+
+    Authenticates the same Bearer token as POST /mcp (staff MCP token).
+    Handles JSON-RPC:
+      - tools/list  → pieces.action_tools(manifest)
+      - tools/call  → pieces.run_action(manifest, name, args, decrypted_token)
+                       on needs_reconnect: marks the Connector disabled.
+    """
+    from . import pieces as _pieces
+    from .models import Connector
+
+    raw = request.headers.get("authorization", "")
+    token = raw[7:].strip() if raw.lower().startswith("bearer ") else None
+    db = next(get_db())
+    try:
+        st = staff_from_mcp_token(db, token)
+        if not st:
+            return JSONResponse({"error": "invalid or missing staff MCP token"}, status_code=401)
+        if st.status != "active":
+            return JSONResponse({"error": f"staff {st.id} is paused"}, status_code=403)
+
+        # Load manifest (file-based catalog, no DB)
+        manifest = _pieces.get_piece(slug)
+        if manifest is None:
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            id_ = body.get("id") if isinstance(body, dict) else None
+            return JSONResponse(_rpc_error(id_, -32602, f"piece '{slug}' not found in catalog"))
+
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(_rpc_error(None, -32700, "parse error"), status_code=400)
+
+        def _handle_piece(msg: dict) -> dict | None:
+            method, id_ = msg.get("method"), msg.get("id")
+            if id_ is None:
+                return None  # notification
+            params = msg.get("params") or {}
+            if method == "initialize":
+                req = params.get("protocolVersion")
+                ver = req if req in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
+                return _rpc_result(id_, {"protocolVersion": ver, "capabilities": {"tools": {"listChanged": False}},
+                                         "serverInfo": SERVER_INFO})
+            if method == "ping":
+                return _rpc_result(id_, {})
+            if method == "tools/list":
+                return _rpc_result(id_, {"tools": _pieces.action_tools(manifest)})
+            if method == "tools/call":
+                name = params.get("name")
+                args = params.get("arguments") or {}
+                # Look up the connected Connector to get its OAuth token
+                conn = db.get(Connector, slug)
+                if conn is None:
+                    return _rpc_error(id_, -32602, f"no connected Connector for piece '{slug}'; connect it first")
+                from .capabilities import connector_secrets
+                secrets = connector_secrets(conn)
+                piece_token = secrets.get("token", "")
+                try:
+                    summary, meta = _pieces.run_action(manifest, name, args, piece_token)
+                except (ValueError, KeyError) as exc:
+                    return _rpc_result(id_, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
+                if meta.get("needs_reconnect"):
+                    # Mark the connector as disabled so the owner knows it needs re-authorisation.
+                    # Choice: set enabled=False (minimal, reversible, consistent with existing boolean).
+                    conn.enabled = False
+                    db.commit()
+                payload = {"summary": summary, **meta}
+                is_error = bool(meta.get("needs_reconnect"))
+                return _rpc_result(id_, {"content": [{"type": "text", "text": json.dumps(payload, default=str)}],
+                                          "structuredContent": payload, "isError": is_error})
+            return _rpc_error(id_, -32601, f"method not found: {method}")
+
+        if isinstance(body, list):
+            out = [r for r in (_handle_piece(m) for m in body) if r is not None]
+            return JSONResponse(out) if out else Response(status_code=202)
+        res = _handle_piece(body)
+        return JSONResponse(res) if res is not None else Response(status_code=202)
+    finally:
+        db.close()
+
+
 @router.get("/mcp")
 async def mcp_get():
     return Response(status_code=405, headers={"Allow": "POST"})

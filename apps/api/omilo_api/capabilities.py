@@ -84,6 +84,11 @@ def connector_public(c: Connector) -> dict:
 
 def connector_runtime(c: Connector) -> dict:
     s = connector_secrets(c)
+    if c.kind == "piece":
+        # piece connectors: url/headers are populated at run time by plan() using piece_mcp_url;
+        # we carry id/label/kind/approval so plan() can recognise and wire them.
+        return {"id": c.id, "label": c.label, "kind": "piece", "url": "", "command": "",
+                "args": [], "headers": {}, "env": {}, "approval": c.approval}
     return {"id": c.id, "label": c.label, "kind": c.kind, "url": c.url, "command": c.command, "args": c.args or [],
             "headers": s.get("headers") or {}, "env": s.get("env") or {}, "approval": c.approval}
 

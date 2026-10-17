@@ -44,6 +44,10 @@ def plan(cfg: dict, resources) -> tuple[dict, list[str], list[str]]:
         for c in resources.connectors:
             if c["kind"] == "stdio":
                 servers[c["id"]] = {"command": c["command"], "args": c["args"], "env": c["env"]}
+            elif c["kind"] == "piece":
+                piece_url = cfg["_mcp_url"] + "/piece/" + c["id"]
+                servers[c["id"]] = {"type": "http", "url": piece_url,
+                                    "headers": {"Authorization": f"Bearer {cfg['_mcp_token']}"}}
             else:
                 servers[c["id"]] = {"type": "http", "url": c["url"], "headers": c["headers"]}
             if c["approval"] == "auto" or c["id"] in resources.allow_connectors:

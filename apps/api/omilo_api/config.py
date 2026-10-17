@@ -46,6 +46,10 @@ class Settings(BaseSettings):
 
         return (self.internal_url or self.public_url).rstrip("/") + self.base_path.rstrip("/") + prefix() + "/mcp"
 
+    def piece_mcp_url(self, slug: str) -> str:
+        """The MCP endpoint for a piece connector identified by slug."""
+        return self.mcp_url() + "/piece/" + slug
+
     def resolved_database_url(self) -> str:
         url = self.database_url
         if url.startswith("postgresql://"):
