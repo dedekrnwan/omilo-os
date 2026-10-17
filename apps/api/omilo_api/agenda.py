@@ -74,11 +74,33 @@ def _first_line(text: str, n: int = 90) -> str:
     return line if len(line) <= n else line[: n - 1] + "…"
 
 
+def _clip(text: str, n: int = 280) -> str:
+    t = " ".join((text or "").split())
+    return t if len(t) <= n else t[: n - 1] + "…"
+
+
+_WHEN: dict[str, str] = {}
+
+
+def _when(cron: str) -> str:
+    """'30 7 * * *' → 'Every day at 07:30' (cached: the same few schedules repeat on every event)."""
+    if cron not in _WHEN:
+        from .onboarding import describe_cron
+
+        p = cron.split()
+        if len(p) == 5 and p[0].isdigit() and p[1].startswith("*/") and p[1][2:].isdigit() and p[2:] == ["*", "*", "*"]:
+            _WHEN[cron] = f"Every {p[1][2:]} hours at :{int(p[0]):02d}"  # describe_cron calls these "custom"
+        else:
+            _WHEN[cron] = describe_cron(cron)
+    return _WHEN[cron]
+
+
 def _shift_event(sh: Shift, st: Staff | None, at: dt.datetime, minutes: int, skipped: bool) -> dict:
     return {"id": f"shift:{sh.id}:{iso(at)}", "kind": "shift", "ref_id": sh.id, "staff_id": sh.staff_id,
-            "staff": st.name if st else sh.staff_id, "title": sh.name.replace("-", " ").capitalize(), "detail": _first_line(sh.brief),
-            "start": iso(at), "end": iso(at + dt.timedelta(minutes=minutes)),
-            "status": "paused" if not sh.enabled else "skipped" if skipped else "scheduled", "recurring": True, "cron": sh.cron}
+            "staff": st.name if st else sh.staff_id, "role": st.role if st else "", "title": sh.name.replace("-", " ").capitalize(),
+            "detail": _first_line(sh.brief), "brief": _clip(sh.brief), "start": iso(at), "end": iso(at + dt.timedelta(minutes=minutes)),
+            "status": "paused" if not sh.enabled else "skipped" if skipped else "scheduled", "recurring": True, "cron": sh.cron,
+            "when": _when(sh.cron), "typical_min": minutes}
 
 
 def _task_event(t: Task, st: Staff | None, shifts: dict[str, Shift], minutes: dict[str, int]) -> dict:
@@ -86,23 +108,31 @@ def _task_event(t: Task, st: Staff | None, shifts: dict[str, Shift], minutes: di
     end = _aware(t.ended_at) or (now() if t.status == "running" else start + dt.timedelta(minutes=minutes.get(t.shift_id or "", DEFAULT_MIN)))
     sh = shifts.get(t.shift_id or "")
     title = sh.name.replace("-", " ").capitalize() if sh else _first_line(t.brief, 70) or t.origin
+    ended, began = _aware(t.ended_at), _aware(t.started_at)
+    outcome = _first_line(t.error, 160) if t.status == "failed" else _first_line(t.result_text, 160) if t.status == "done" else ""
     return {"id": f"task:{t.id}", "kind": "task", "ref_id": t.id, "staff_id": t.staff_id, "staff": st.name if st else t.staff_id,
-            "title": title, "detail": _first_line(t.brief), "start": iso(start), "end": iso(max(end, start + dt.timedelta(minutes=5))),
-            "status": t.status, "origin": t.origin, "shift_id": t.shift_id, "recurring": False}
+            "role": st.role if st else "", "title": title, "detail": _first_line(t.brief), "brief": _clip(t.brief),
+            "start": iso(start), "end": iso(max(end, start + dt.timedelta(minutes=5))),
+            "status": t.status, "origin": t.origin, "shift_id": t.shift_id, "recurring": False,
+            "when": _when(sh.cron) if sh else "", "outcome": outcome,
+            "seconds": round((ended - began).total_seconds()) if ended and began else None,
+            "cost_usd": round(t.cost_usd or 0, 4), "tokens": t.tokens or 0}
 
 
 def _workflow_event(wf: Workflow, at: dt.datetime, cron: str) -> dict:
     return {"id": f"workflow:{wf.id}:{iso(at)}", "kind": "workflow", "ref_id": wf.id, "staff_id": None, "staff": "Workflow",
-            "title": wf.name, "detail": _first_line(wf.description), "start": iso(at), "end": iso(at + dt.timedelta(minutes=10)),
-            "status": "scheduled", "recurring": True, "cron": cron}
+            "title": wf.name, "detail": _first_line(wf.description), "brief": _clip(wf.description), "start": iso(at),
+            "end": iso(at + dt.timedelta(minutes=10)), "status": "scheduled", "recurring": True, "cron": cron, "when": _when(cron)}
 
 
 def _run_event(r: WorkflowRun, wf: Workflow | None) -> dict:
     start = _aware(r.started_at) or _aware(r.created_at)
     end = _aware(r.ended_at) or (now() if r.status in ("running", "waiting") else start + dt.timedelta(minutes=10))
     return {"id": f"run:{r.id}", "kind": "workflow_run", "ref_id": r.id, "workflow_id": r.workflow_id, "staff_id": None, "staff": "Workflow",
-            "title": wf.name if wf else "Workflow run", "detail": f"{r.trigger} run", "start": iso(start),
-            "end": iso(max(end, start + dt.timedelta(minutes=5))), "status": r.status, "recurring": False}
+            "title": wf.name if wf else "Workflow run", "detail": f"{r.trigger} run", "brief": _clip(wf.description) if wf else "",
+            "start": iso(start), "end": iso(max(end, start + dt.timedelta(minutes=5))), "status": r.status, "recurring": False,
+            "outcome": _first_line(r.error, 160) if r.status == "failed" else "", "ai_steps": r.ai_steps,
+            "seconds": round((_aware(r.ended_at) - _aware(r.started_at)).total_seconds()) if r.ended_at and r.started_at else None}
 
 
 def _schedules(db: Session) -> tuple[list[Shift], dict[str, Staff], list[tuple[Workflow, str]]]:

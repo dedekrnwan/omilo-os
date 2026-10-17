@@ -5,7 +5,7 @@ import Avatar, { lookFor, useLooks } from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
 import { useOverview } from "@/components/Shell";
 import { Err } from "@/components/ui";
-import { api } from "@/lib/api";
+import { ago, api } from "@/lib/api";
 import { openTask } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
 import { DAYS, Day, MONTHS, addDays, dayKey, dayLabel, dayOf, dow, hhmm, instant, sameDay, today, wall } from "@/lib/tz";
@@ -16,7 +16,8 @@ import { DAYS, Day, MONTHS, addDays, dayKey, dayLabel, dayOf, dow, hhmm, instant
 
 type Ev = { id: string; kind: "shift" | "task" | "workflow" | "workflow_run"; ref_id: string; staff_id: string | null; staff: string;
   title: string; detail: string; start: string; end: string; status: string; recurring: boolean; cron?: string; origin?: string;
-  shift_id?: string | null; workflow_id?: string; now?: boolean };
+  shift_id?: string | null; workflow_id?: string; now?: boolean; role?: string; brief?: string; when?: string; outcome?: string;
+  seconds?: number | null; cost_usd?: number; tokens?: number; typical_min?: number; ai_steps?: number };
 type View = "month" | "week" | "day";
 
 const HOUR = 44; // px per hour in week and day views
@@ -49,6 +50,73 @@ function title(view: View, anchor: Day, tz: string) {
 type Who = { id: string; name: string; is_chief?: boolean };
 const WhoCtx = createContext<Record<string, Who>>({});
 
+/* ---------------------------------------------------------- hover card: more about an event, without a click */
+type Hover = { e: Ev; r: DOMRect } | null;
+const HoverCtx = createContext<(e: Ev | null, el?: HTMLElement) => void>(() => {});
+
+/** Props that make any element show the hover card for `e` (mouse and keyboard focus; touch uses the click). */
+function useHoverable(e: Ev) {
+  const show = useContext(HoverCtx);
+  return {
+    onPointerEnter: (x: React.PointerEvent<HTMLElement>) => { if (x.pointerType !== "touch") show(e, x.currentTarget); },
+    onPointerLeave: () => show(null),
+    onFocus: (x: React.FocusEvent<HTMLElement>) => show(e, x.currentTarget),
+    onBlur: () => show(null),
+  };
+}
+
+const ORIGIN: Record<string, string> = { shift: "Regular job", manual: "Asked by you", chat: "From a chat", delegation: "Handed out by a helper",
+  execution: "Doing what you approved", revision: "Revising a proposal", answer: "After your answer", followup: "After your answer" };
+const dur = (s: number) => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`);
+
+const kindLabel = (e: Ev) => (e.kind === "workflow" ? "Scheduled workflow" : e.kind === "workflow_run" ? "Workflow run"
+  : e.kind === "shift" || e.shift_id ? "Regular job" : "One-off job");
+
+function HoverCard({ h, tz, color }: { h: Hover; tz: string; color: (e: Ev) => string }) {
+  const card = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    if (!h || !card.current) { setPos(null); return; }
+    const c = card.current.getBoundingClientRect(), r = h.r, pad = 10, vw = window.innerWidth, vh = window.innerHeight;
+    let left: number, top: number;
+    if (r.right + pad + c.width <= vw - pad) { left = r.right + pad; top = r.top; }          // beside, on the right
+    else if (r.left - pad - c.width >= pad) { left = r.left - pad - c.width; top = r.top; }  // beside, on the left
+    else {                                                                                     // no room beside: below, or above
+      left = Math.min(Math.max(pad, r.left), vw - c.width - pad);
+      top = r.bottom + 8 + c.height <= vh - pad ? r.bottom + 8 : r.top - 8 - c.height;
+    }
+    top = Math.min(Math.max(pad, top), vh - c.height - pad);
+    setPos({ left, top });
+  }, [h]);
+  if (!h) return null;
+  const e = h.e;
+  const start = new Date(e.start), end = new Date(e.end);
+  const future = start.getTime() > Date.now();
+  const length = e.seconds != null ? dur(e.seconds) : e.typical_min ? `about ${e.typical_min} min` : dur((end.getTime() - start.getTime()) / 1000);
+  return (
+    <div ref={card} className={`cal-hover st-${e.status}`} role="tooltip" style={{ "--c": color(e), left: pos?.left ?? -9999, top: pos?.top ?? -9999 } as React.CSSProperties}>
+      <div className="ch-head">
+        <Face e={e} size={44} />
+        <div className="ch-who"><b>{e.staff}</b><span>{kindLabel(e)}{e.role && e.role.replace(/[-_]/g, " ").toLowerCase() !== e.staff.toLowerCase() ? ` · ${e.role}` : ""}</span></div>
+        <span className={`chip st-${e.status}`}>{STATUS[e.status] || e.status}</span>
+      </div>
+      <div className="ch-title">{e.title}</div>
+      <div className="ch-rows">
+        <div><i className="ri-time-line" /><span>{dayLabel(dayOf(e.start, tz), tz)}, {hhmm(e.start, tz)}–{hhmm(e.end, tz)}
+          <em> · {e.status === "running" ? "running for " + dur((Date.now() - start.getTime()) / 1000) : future ? length : e.seconds != null ? `took ${length}` : length}</em></span></div>
+        {e.when && <div><i className="ri-repeat-line" /><span>{e.when}</span></div>}
+        {e.kind === "task" && e.origin && !e.shift_id && <div><i className="ri-user-line" /><span>{ORIGIN[e.origin] || e.origin}</span></div>}
+        {future && <div><i className="ri-hourglass-line" /><span>Starts {ago(e.start)}</span></div>}
+        {!!e.cost_usd && <div><i className="ri-coins-line" /><span>${e.cost_usd.toFixed(e.cost_usd < 0.1 ? 3 : 2)}{e.tokens ? ` · ${e.tokens.toLocaleString()} tokens` : ""}</span></div>}
+        {e.kind === "workflow_run" && e.ai_steps != null && <div><i className="ri-sparkling-line" /><span>{e.ai_steps ? `${e.ai_steps} AI step${e.ai_steps > 1 ? "s" : ""}` : "No AI steps: free"}</span></div>}
+      </div>
+      {e.brief && <p className="ch-brief">{e.brief}</p>}
+      {e.outcome && <p className={`ch-out ${e.status === "failed" ? "bad" : ""}`}><i className={e.status === "failed" ? "ri-error-warning-line" : "ri-checkbox-circle-line"} />{e.outcome}</p>}
+      <div className="ch-foot">Click for actions</div>
+    </div>
+  );
+}
+
 /** The face of an event: the helper's mascot (working while the job runs, asleep while it is paused), or the
  *  workflow mark for automations that run without a helper. */
 function Face({ e, size }: { e: Ev; size: number }) {
@@ -63,8 +131,28 @@ function Face({ e, size }: { e: Ev; size: number }) {
 function Chip({ e, color, tz, onOpen }: { e: Ev; color: string; tz: string; onOpen: (e: Ev) => void }) {
   return (
     <button className={`cal-chip st-${e.status}`} style={{ "--c": color } as React.CSSProperties} onClick={(x) => { x.stopPropagation(); onOpen(e); }}
-      title={`${hhmm(e.start, tz)} ${e.title} · ${e.staff}`}>
+      aria-label={`${hhmm(e.start, tz)} ${e.title}, ${e.staff}`} {...useHoverable(e)}>
       <Face e={e} size={16} /><span className="t">{hhmm(e.start, tz)}</span><span className="n">{e.title}</span>
+    </button>
+  );
+}
+
+function Block({ e, h, tz, style, onOpen }: { e: Ev; h: number; tz: string; style: React.CSSProperties; onOpen: (e: Ev) => void }) {
+  return (
+    <button className={`cal-block st-${e.status}`} onClick={() => onOpen(e)} style={style} aria-label={`${hhmm(e.start, tz)}–${hhmm(e.end, tz)} ${e.title}, ${e.staff}`}
+      {...useHoverable(e)}>
+      <span className="cal-block-t"><Face e={e} size={h >= 34 ? 20 : 16} /><b>{e.title}</b></span>
+      {h >= 40 && <span className="cal-block-s">{hhmm(e.start, tz)} · {e.staff}</span>}
+    </button>
+  );
+}
+
+function UpItem({ e, tz, color, onOpen }: { e: Ev; tz: string; color: string; onOpen: (e: Ev) => void }) {
+  return (
+    <button className={`cal-up st-${e.status}`} style={{ "--c": color } as React.CSSProperties} onClick={() => onOpen(e)} {...useHoverable(e)}>
+      <span className="when">{e.now ? (e.status === "running" ? "running" : "queued") : hhmm(e.start, tz)}</span>
+      <Face e={e} size={30} />
+      <span className="what"><b>{e.title}</b><span>{e.staff}{e.kind === "workflow" ? "" : e.recurring ? " · regular job" : ""}</span></span>
     </button>
   );
 }
@@ -120,12 +208,8 @@ function TimeGrid({ days, events, tz, color, onOpen, now }: { days: Day[]; event
             return (
               <div key={dayKey(d)} className={`cal-col ${sameDay(d, t) ? "today" : ""}`}>
                 {lanes(mine).map(({ e, top, h, col, cols }) => (
-                  <button key={e.id} className={`cal-block st-${e.status}`} onClick={() => onOpen(e)}
-                    style={{ top, height: h - 2, left: `calc(${(col / cols) * 100}% + 2px)`, width: `calc(${100 / cols}% - 4px)`, "--c": color(e) } as React.CSSProperties}
-                    title={`${hhmm(e.start, tz)}–${hhmm(e.end, tz)} ${e.title} · ${e.staff}`}>
-                    <span className="cal-block-t"><Face e={e} size={h >= 34 ? 20 : 16} /><b>{e.title}</b></span>
-                    {h >= 40 && <span className="cal-block-s">{hhmm(e.start, tz)} · {e.staff}</span>}
-                  </button>
+                  <Block key={e.id} e={e} h={h} tz={tz} onOpen={onOpen}
+                    style={{ top, height: h - 2, left: `calc(${(col / cols) * 100}% + 2px)`, width: `calc(${100 / cols}% - 4px)`, "--c": color(e) } as React.CSSProperties} />
                 ))}
                 {sameDay(d, t) && <div className="cal-now" style={{ top: ((nowW.h * 60 + nowW.mi) / 60) * HOUR }} aria-label="Now" />}
               </div>
@@ -223,11 +307,7 @@ function Upcoming({ tz, staffId, color, onOpen, stamp, tick }: { tz: string; sta
           return (
             <div key={e.id + (e.now ? ":now" : "")}>
               {show && <div className="cal-side-day">{head}</div>}
-              <button className={`cal-up st-${e.status}`} style={{ "--c": color(e) } as React.CSSProperties} onClick={() => onOpen(e)}>
-                <span className="when">{e.now ? (e.status === "running" ? "running" : "queued") : hhmm(e.start, tz)}</span>
-                <Face e={e} size={30} />
-                <span className="what"><b>{e.title}</b><span>{e.staff}{e.kind === "workflow" ? "" : e.recurring ? " · regular job" : ""}</span></span>
-              </button>
+              <UpItem e={e} tz={tz} color={color(e)} onOpen={onOpen} />
             </div>
           );
         })}
@@ -363,8 +443,24 @@ export default function CalendarPage() {
   const shown = events.filter((e) => kinds.has(e.kind === "workflow_run" ? "workflow" : e.kind));
   const team = useMemo(() => Object.fromEntries((overview?.staff || []).map((s) => [s.id, s])), [overview?.staff]);
   const focus = staffId ? team[staffId] : null;
+  const [hover, setHover] = useState<Hover>(null);
+  const hoverT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showHover = useCallback((e: Ev | null, el?: HTMLElement) => {
+    if (hoverT.current) clearTimeout(hoverT.current);
+    if (!e || !el) { hoverT.current = setTimeout(() => setHover(null), 60); return; }
+    // a short wait, so sweeping the mouse across the grid doesn't flash cards; moving between events switches at once
+    hoverT.current = setTimeout(() => setHover({ e, r: el.getBoundingClientRect() }), hover ? 40 : 280);
+  }, [hover]);
+  useEffect(() => {
+    const hide = () => { if (hoverT.current) clearTimeout(hoverT.current); setHover(null); };
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => { window.removeEventListener("scroll", hide, true); window.removeEventListener("resize", hide); };
+  }, []);
+  const open = useCallback((e: Ev) => { if (hoverT.current) clearTimeout(hoverT.current); setHover(null); setSel(e); }, []);
   return (
     <WhoCtx.Provider value={team}>
+    <HoverCtx.Provider value={showHover}>
     <div className="cal">
       <div className="cal-main">
         <div className="cal-bar">
@@ -382,7 +478,8 @@ export default function CalendarPage() {
                 aria-pressed={staffId === s.id} title={staffId === s.id ? `${s.name}: show everyone again` : `Only ${s.name}`}
                 style={{ "--c": color({ staff_id: s.id, staff: s.name } as Ev) } as React.CSSProperties}
                 onClick={() => setStaffId(staffId === s.id ? "" : s.id)}>
-                <Avatar who={s} size={26} state={s.running ? "working" : null} />
+                <Avatar who={s} size={26} />
+                {staffId === s.id && <span className="nm">{s.name}</span>}
               </button>
             ))}
           </div>
@@ -398,12 +495,14 @@ export default function CalendarPage() {
         </div>
         <Err error={err} />
         {view === "month"
-          ? <MonthGrid start={start} anchor={anchor} events={shown} tz={tz} color={color} onOpen={setSel} onDay={(d) => { setAnchor(d); pick("day"); }} />
-          : <TimeGrid days={days} events={shown} tz={tz} color={color} onOpen={setSel} now={now} />}
+          ? <MonthGrid start={start} anchor={anchor} events={shown} tz={tz} color={color} onOpen={open} onDay={(d) => { setAnchor(d); pick("day"); }} />
+          : <TimeGrid days={days} events={shown} tz={tz} color={color} onOpen={open} now={now} />}
       </div>
-      <Upcoming tz={tz} staffId={staffId} color={color} onOpen={setSel} stamp={stamp} tick={tick} />
+      <Upcoming tz={tz} staffId={staffId} color={color} onOpen={open} stamp={stamp} tick={tick} />
       <Detail e={sel} tz={tz} onClose={() => setSel(null)} onChanged={changed} />
+      {!sel && <HoverCard h={hover} tz={tz} color={color} />}
     </div>
+    </HoverCtx.Provider>
     </WhoCtx.Provider>
   );
 }

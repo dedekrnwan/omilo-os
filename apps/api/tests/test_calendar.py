@@ -27,6 +27,7 @@ def test_events_upcoming_skip_and_run_now(owner):
     first = dt.datetime.fromisoformat(mine[0]["start"]).astimezone(JKT)
     assert (first.hour, first.minute) == (9, 15) and mine[0]["title"] == "Calendar check" and mine[0]["detail"] == "Check the calendar"
     assert mine[0]["status"] == "scheduled" and mine[0]["end"] > mine[0]["start"]
+    assert mine[0]["when"] == "Every day at 09:15" and mine[0]["brief"] == "Check the calendar more" and mine[0]["typical_min"] >= 5
     starts = [e["start"] for e in r.json()["events"]]
     assert starts == sorted(starts)
 
