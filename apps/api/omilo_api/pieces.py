@@ -1,4 +1,5 @@
-"""Connector pieces: manifest schema, validation, and file-based GitHub catalog indexer.
+"""Connector pieces: manifest schema, validation, file-based GitHub catalog indexer,
+and declarative action runtime (MCP tool compilation + SSRF-guarded HTTP execution).
 
 The catalog mirrors the talent.py pattern: a JSON index lives under <data_dir>/pieces/index.json
 and is populated by fetching the omilo/pieces GitHub repo (or a local checkout), walking
@@ -8,6 +9,7 @@ Sources, in order: PIECES_SOURCE (a local checkout path) → `git clone` → Git
 """
 from __future__ import annotations
 
+import base64 as _base64
 import io
 import json
 import logging
@@ -18,6 +20,7 @@ import subprocess
 import tarfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import yaml
@@ -488,3 +491,262 @@ def validate_manifest(data: dict) -> list[str]:
                             )
 
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Declarative action runtime (Task 3)
+# ---------------------------------------------------------------------------
+
+# Map manifest input types → JSON Schema types.  Unmapped types fall through as-is.
+_TYPE_MAP: dict[str, str] = {
+    "string": "string",
+    "integer": "integer",
+    "number": "number",
+    "boolean": "boolean",
+    "array": "array",
+    "object": "object",
+}
+
+# Regex that matches a {{ ... }} template expression
+_TMPL_RE = re.compile(r"\{\{\s*(.+?)\s*\}\}")
+
+# Regex that detects a base64(expr) helper call
+_BASE64_RE = re.compile(r"^base64\((.+)\)$")
+
+
+def _render_value(expr: str, args: dict) -> str:
+    """Resolve a single template expression (the content between {{ }}).
+
+    Supported:
+    - Plain variable reference: ``some_var``
+    - base64 helper: ``base64(some_var)``
+
+    Raises KeyError if a variable is not present in args.
+    Raises ValueError for unrecognised helper calls.
+    """
+    expr = expr.strip()
+    m = _BASE64_RE.match(expr)
+    if m:
+        inner = m.group(1).strip()
+        raw_val = str(args[inner])
+        return _base64.b64encode(raw_val.encode()).decode()
+    # Plain variable
+    return str(args[expr])
+
+
+def _render_str(template: str, args: dict) -> str:
+    """Substitute every {{ expr }} in *template* using args.
+
+    Raises KeyError for missing variables, ValueError for unknown helpers.
+    """
+    def _sub(match: re.Match) -> str:
+        return _render_value(match.group(1), args)
+
+    return _TMPL_RE.sub(_sub, template)
+
+
+def _render_obj(obj: object, args: dict) -> object:
+    """Recursively render template expressions in dicts, lists, and strings."""
+    if isinstance(obj, str):
+        return _render_str(obj, args)
+    if isinstance(obj, dict):
+        return {k: _render_obj(v, args) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_render_obj(item, args) for item in obj]
+    return obj
+
+
+def _has_template(value: str) -> bool:
+    """Return True if the string contains a {{ ... }} placeholder."""
+    return bool(_TMPL_RE.search(value))
+
+
+def provider_hosts(manifest: dict) -> set[str]:
+    """Return the set of allowed hostnames derived from the manifest's action http.url values.
+
+    Only static (non-templated) hosts are included, AND the hostname must belong to the
+    declared ``auth.provider`` — i.e. the provider name must appear as a component of the
+    hostname (e.g. provider ``"google"`` allows ``gmail.googleapis.com`` because the
+    hostname contains ``"google"``).
+
+    This two-stage filter prevents a tampered manifest from sneaking an off-provider host
+    into the allowlist merely by listing it as an action URL.
+
+    An action whose http.url contains a {{ ... }} placeholder in the *host* component is
+    silently excluded — templated hosts cannot be safely allowlisted.
+
+    All returned hostnames are lowercase; only HTTPS URLs are considered
+    (validated manifests guarantee this, but we guard anyway).
+    """
+    provider = (manifest.get("auth") or {}).get("provider", "").lower()
+    hosts: set[str] = set()
+    for action in manifest.get("actions", []):
+        url = action.get("http", {}).get("url", "")
+        if not url or not url.startswith("https://"):
+            continue
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        hostname = hostname.lower()
+        # Reject templated hostnames
+        if _has_template(hostname):
+            continue
+        # Host must belong to the declared provider: the provider name must appear in the
+        # hostname (e.g. "google" in "gmail.googleapis.com").
+        if provider and provider not in hostname:
+            continue
+        if hostname:
+            hosts.add(hostname)
+    return hosts
+
+
+def _check_host(url: str, manifest: dict) -> None:
+    """Raise ValueError if the resolved request URL's host is not in provider_hosts(manifest).
+
+    This is the SSRF guard: no call may leave the provider's declared domain(s).
+    """
+    allowed = provider_hosts(manifest)
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if not hostname or hostname not in allowed:
+        raise ValueError(
+            f"Request host '{hostname}' is not in the manifest's allowed hosts {allowed!r}. "
+            "Possible SSRF attempt — action aborted."
+        )
+
+
+def action_tools(manifest: dict) -> list[dict]:
+    """Compile a manifest's actions into MCP tool definitions.
+
+    Each action becomes:
+    ``{"name": action.name, "description": action.label, "inputSchema": {...}}``
+
+    The inputSchema is a JSON Schema object built from the action's ``inputs`` list:
+    - ``type`` is always ``"object"``
+    - ``properties`` maps each input name → ``{"type": <json-schema-type>}``
+    - ``required`` lists the names of inputs with ``required: true``
+    """
+    tools: list[dict] = []
+    for action in manifest.get("actions", []):
+        inputs = action.get("inputs") or []
+        properties: dict[str, dict] = {}
+        required: list[str] = []
+        for inp in inputs:
+            name = inp["name"]
+            raw_type = inp.get("type", "string")
+            json_type = _TYPE_MAP.get(raw_type, raw_type)
+            properties[name] = {"type": json_type}
+            if inp.get("required"):
+                required.append(name)
+
+        tools.append({
+            "name": action["name"],
+            "description": action.get("label", ""),
+            "inputSchema": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            },
+        })
+    return tools
+
+
+def run_action(
+    manifest: dict,
+    action: str,
+    args: dict,
+    token: str,
+) -> tuple[str, dict]:
+    """Execute a named action against the provider API.
+
+    Steps:
+    1. Find the action definition in the manifest; raise ValueError if missing.
+    2. Resolve the URL (template path variables from args, but *never* the host).
+    3. SSRF guard: verify the resolved host is in provider_hosts(manifest).
+    4. Template the request body (if any) from args.
+    5. Issue the HTTP request via httpx with ``Authorization: Bearer <token>``.
+    6. Map 401/403 → needs_reconnect=True.
+    7. Return ``(summary_text, meta_dict)``.
+
+    Args:
+        manifest: A validated connector piece manifest.
+        action: The action ``name`` to execute.
+        args: Template arguments (variable substitutions).
+        token: OAuth2 bearer token for the request.
+
+    Returns:
+        A ``(summary, meta)`` tuple where meta has keys:
+        ``status`` (int), ``needs_reconnect`` (bool), and optionally ``raw`` (dict).
+
+    Raises:
+        ValueError: If the action is not found, or the resolved host is off-provider.
+        KeyError: If a required template variable is missing from args.
+    """
+    # 1. Locate action definition
+    action_def: dict | None = None
+    for a in manifest.get("actions", []):
+        if a["name"] == action:
+            action_def = a
+            break
+    if action_def is None:
+        raise ValueError(f"Action '{action}' not found in manifest '{manifest.get('id')}'.")
+
+    http_cfg = action_def.get("http", {})
+    method: str = http_cfg.get("method", "POST").upper()
+    url_template: str = http_cfg.get("url", "")
+
+    # 2. Template the URL — but only the path/query, never the host.
+    #    Parse first, render only path and query, reassemble.
+    parsed = urlparse(url_template)
+    # Reject if the host itself is templated
+    if _has_template(parsed.netloc):
+        raise ValueError(
+            f"Action '{action}' http.url has a templated host '{parsed.netloc}', "
+            "which is not allowed (SSRF prevention)."
+        )
+    rendered_path = _render_str(parsed.path, args)
+    rendered_query = _render_str(parsed.query, args) if parsed.query else ""
+    rendered_url = parsed._replace(path=rendered_path, query=rendered_query).geturl()
+
+    # 3. SSRF guard on the final URL — before issuing the request
+    _check_host(rendered_url, manifest)
+
+    # 4. Template the request body
+    body_template = http_cfg.get("body")
+    rendered_body: dict | None = None
+    if body_template is not None:
+        rendered_body = _render_obj(body_template, args)  # type: ignore[assignment]
+
+    # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF)
+    headers = {"Authorization": f"Bearer {token}"}
+    with httpx.Client(follow_redirects=False) as client:
+        request = client.build_request(
+            method,
+            rendered_url,
+            json=rendered_body,
+            headers=headers,
+        )
+        # Second host check after request construction guards url-with-userinfo tricks
+        _check_host(str(request.url), manifest)
+        response = client.send(request)
+
+    # 6. Map 401/403 → needs_reconnect
+    status = response.status_code
+    needs_reconnect = status in (401, 403)
+
+    # 7. Build result
+    raw: dict | None = None
+    try:
+        raw = response.json()
+    except Exception:  # noqa: BLE001
+        pass
+
+    if needs_reconnect:
+        summary = f"Action '{action}' failed with {status}; reconnect required."
+    else:
+        summary = f"Action '{action}' completed with status {status}."
+
+    meta: dict = {"status": status, "needs_reconnect": needs_reconnect}
+    if raw is not None:
+        meta["raw"] = raw
+
+    return summary, meta
