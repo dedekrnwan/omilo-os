@@ -294,3 +294,55 @@ def test_label_and_category_non_empty():
         "category": "",
     }
     assert any("category" in e for e in validate_manifest(bad2))
+
+
+def test_auth_scopes_elements_must_be_non_empty_strings():
+    """Each element in auth.scopes must be a non-empty string."""
+    # Invalid: scopes with non-string element
+    bad_int = {
+        **GMAIL_MANIFEST,
+        "auth": {**GMAIL_MANIFEST["auth"], "scopes": ["valid.scope", 1, "another.scope"]},
+    }
+    assert any("scope" in e.lower() for e in validate_manifest(bad_int)), \
+        "Should reject scopes with integer element"
+
+    # Invalid: scopes with bool element
+    bad_bool = {
+        **GMAIL_MANIFEST,
+        "auth": {**GMAIL_MANIFEST["auth"], "scopes": [True, "valid.scope"]},
+    }
+    assert any("scope" in e.lower() for e in validate_manifest(bad_bool)), \
+        "Should reject scopes with boolean element"
+
+    # Invalid: scopes with None element
+    bad_none = {
+        **GMAIL_MANIFEST,
+        "auth": {**GMAIL_MANIFEST["auth"], "scopes": ["valid.scope", None]},
+    }
+    assert any("scope" in e.lower() for e in validate_manifest(bad_none)), \
+        "Should reject scopes with None element"
+
+    # Invalid: scopes with empty string element
+    bad_empty = {
+        **GMAIL_MANIFEST,
+        "auth": {**GMAIL_MANIFEST["auth"], "scopes": ["valid.scope", ""]},
+    }
+    assert any("scope" in e.lower() for e in validate_manifest(bad_empty)), \
+        "Should reject scopes with empty string element"
+
+    # Valid: all strings
+    good = {
+        **GMAIL_MANIFEST,
+        "auth": {**GMAIL_MANIFEST["auth"], "scopes": ["gmail.send", "gmail.readonly", "another.scope"]},
+    }
+    assert not any("scope" in e.lower() for e in validate_manifest(good)), \
+        "Should accept all non-empty string scopes"
+
+
+@pytest.mark.parametrize("bad_input", [None, [], "string", 42, True, {"not": "at_top_level"}])
+def test_validate_manifest_non_dict_input_returns_errors_not_raises(bad_input):
+    """validate_manifest must not raise on non-dict input; must return error list."""
+    result = validate_manifest(bad_input)
+    assert isinstance(result, list), f"Should return a list for input {bad_input!r}"
+    assert len(result) > 0, f"Should return non-empty error list for input {bad_input!r}"
+    # Should not raise an exception

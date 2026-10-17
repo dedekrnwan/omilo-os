@@ -71,6 +71,13 @@ def validate_manifest(data: dict) -> list[str]:
             errors.append(
                 "Missing or invalid 'auth.scopes': must be a non-empty list."
             )
+        else:
+            # Validate each scope element is a non-empty string
+            for i, scope in enumerate(scopes):
+                if not isinstance(scope, str) or len(scope) == 0:
+                    errors.append(
+                        f"Invalid 'auth.scopes[{i}]': must be a non-empty string, got {type(scope).__name__}."
+                    )
 
     # Validate 'actions'
     actions = data.get("actions")
