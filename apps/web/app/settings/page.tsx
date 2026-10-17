@@ -128,6 +128,19 @@ function Safety({ set }: { set: (b: Record<string, unknown>) => Promise<boolean>
 }
 
 type AiState = { provider: string; model: string | null; claude_key_hint: string | null; staff: Record<string, { provider: string }> };
+type VendorProvider = { id: string; label: string; icon: string; has_key: boolean };
+
+const VENDOR_ICON: Record<string, string> = {
+  anthropic: "ri-anthropic-line",
+  openai: "ri-openai-line",
+  gemini: "ri-gemini-line",
+  deepseek: "ri-deepseek-line",
+  xai: "ri-twitter-x-line",
+  mistral: "ri-wind-line",
+  bedrock: "ri-amazon-line",
+  groq: "ri-cpu-line",
+};
+
 function AiEngine() {
   const [ai, setAi] = useState<AiState | null>(null);
   const [edit, setEdit] = useState(false);
@@ -136,8 +149,13 @@ function AiEngine() {
   const [light, setLight] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // vendor picker state
+  const [vendors, setVendors] = useState<VendorProvider[]>([]);
+  const [vendorEdit, setVendorEdit] = useState<string | null>(null);
+  const [vendorKey, setVendorKey] = useState("");
   const load = useCallback(() => api<AiState>("/ai").then(setAi).catch((e) => setErr(e.message)), []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api<VendorProvider[]>("/ai/providers").then(setVendors).catch(() => {}); }, []);
   const save = async (provider: string) => {
     setErr(null); setMsg(null);
     try {
@@ -149,15 +167,27 @@ function AiEngine() {
       load();
     } catch (e: any) { setErr(e.message); }
   };
+  const saveVendor = async (id: string) => {
+    setErr(null); setMsg(null);
+    try {
+      await api("/ai", { body: { provider: id, api_key: vendorKey || undefined } });
+      setVendorEdit(null); setVendorKey("");
+      setMsg(`Saved. All helpers now use ${vendors.find((v) => v.id === id)?.label || id}.`);
+      load();
+      // refresh has_key state
+      api<VendorProvider[]>("/ai/providers").then(setVendors).catch(() => {});
+    } catch (e: any) { setErr(e.message); }
+  };
   const label = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Omilo's tools)",
-    fake: "Practice mode (no AI)", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || p || "…";
+    fake: "Practice mode (no AI)", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || (vendors.find((v) => v.id === (p || ""))?.label) || p || "…";
+  const isVendor = (p?: string) => !!vendors.find((v) => v.id === p);
   return (
     <>
       <div className="set-card">
-        <i className={`ri-sparkling-2-line set-card-ic ${ai?.provider === "fake" ? "idle" : ""}`} />
+        <i className={`${isVendor(ai?.provider) ? (VENDOR_ICON[ai?.provider || ""] || "ri-sparkling-2-line") : "ri-sparkling-2-line"} set-card-ic ${ai?.provider === "fake" ? "idle" : ""}`} />
         <div className="t"><b>{label(ai?.provider)}</b>
-          <span>{ai?.provider === "claude" && ai.model ? `${ai.model} · ` : ""}{ai?.claude_key_hint ? `key ending in ${ai.claude_key_hint}` : ai?.provider === "fake" ? "Helpers go through every step without calling an AI." : ""}</span></div>
-        {!edit && <div className="acts">
+          <span>{ai?.provider === "claude" && ai.model ? `${ai.model} · ` : ""}{ai?.claude_key_hint ? `key ending in ${ai.claude_key_hint}` : ai?.provider === "fake" ? "Helpers go through every step without calling an AI." : isVendor(ai?.provider) ? "Direct API · key on file" : ""}</span></div>
+        {!edit && !vendorEdit && <div className="acts">
           <button className="btn primary" onClick={() => setEdit(true)}>{ai?.provider === "claude" || ai?.provider === "claude-direct" ? "Change key or model" : "Use my Claude API key"}</button>
           {ai && ai.provider !== "fake" && <button className="btn" onClick={async () => { if (await confirmDialog({ title: "Switch every helper to practice mode?", body: "They stop calling the AI until you switch back.", confirm: "Practice mode" })) save("fake"); }}>Practice mode</button>}
         </div>}
@@ -176,6 +206,57 @@ function AiEngine() {
             <button className="btn" onClick={() => setEdit(false)}>Cancel</button>
           </div>
         </div>
+      )}
+      {vendors.length > 0 && !edit && (
+        <>
+          <div className="set-sub" style={{ marginTop: 14 }}><b>Or use a direct API key</b></div>
+          <div className="set-vendor-grid">
+            {vendors.map((v) => {
+              const active = ai?.provider === v.id;
+              const expanding = vendorEdit === v.id;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  className={`set-vendor-tile${active ? " on" : ""}${expanding ? " expand" : ""}`}
+                  onClick={() => { setVendorEdit(expanding ? null : v.id); setVendorKey(""); setErr(null); setMsg(null); }}
+                  aria-pressed={active}
+                >
+                  <i className={VENDOR_ICON[v.id] || "ri-sparkling-2-line"} />
+                  <span>{v.label}</span>
+                  {!v.has_key && <span className="set-vendor-needs">Add key</span>}
+                  {active && <i className="ri-check-line set-vendor-check" />}
+                </button>
+              );
+            })}
+          </div>
+          {vendorEdit && (
+            <div className="set-box" style={{ marginTop: 8 }}>
+              <p className="small" style={{ marginBottom: 8 }}>
+                <b>{vendors.find((v) => v.id === vendorEdit)?.label}</b> API key
+                {vendors.find((v) => v.id === vendorEdit)?.has_key && <span style={{ marginLeft: 6, color: "var(--ok)" }}><i className="ri-check-line" />Key on file — enter a new one to replace it</span>}
+              </p>
+              <div className="acts nowrap">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder={vendors.find((v) => v.id === vendorEdit)?.has_key ? "Replace existing key…" : "Paste API key…"}
+                  value={vendorKey}
+                  onChange={(e) => setVendorKey(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn primary"
+                  disabled={!vendorKey.trim() && !vendors.find((v) => v.id === vendorEdit)?.has_key}
+                  onClick={() => saveVendor(vendorEdit)}
+                >
+                  {ai?.provider === vendorEdit ? "Update" : "Use this provider"}
+                </button>
+                <button className="btn" onClick={() => { setVendorEdit(null); setVendorKey(""); }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       <Err error={err} />
       <p className="small set-foot">Prefer your Claude subscriptions? Add them on <Link href="/harness/">Harness</Link> and pick the pool per helper on <Link href="/staff/">Team</Link>.</p>

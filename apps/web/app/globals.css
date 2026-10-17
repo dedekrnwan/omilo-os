@@ -1848,6 +1848,14 @@ main.page:has(> .set) { max-width: 1120px; }
 .set-opt .t b .chip { height: 18px; font-size: 10.5px; font-style: normal; }
 .set-opt .t span { font-size: 13px; color: var(--muted); }
 .set-fields { margin-bottom: 10px; } .set-fields label:first-child { margin-top: 0; }
+.set-vendor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 4px; }
+.set-vendor-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); color: var(--ink-2); font-size: 12.5px; font-weight: 500; cursor: pointer; position: relative; transition: background .1s; }
+.set-vendor-tile i { font-size: 22px; }
+.set-vendor-tile:hover { background: var(--soft); color: var(--ink); }
+.set-vendor-tile.on { border-color: var(--ink); box-shadow: 0 0 0 2px rgba(12,10,9,.07); color: var(--ink); background: var(--soft); }
+.set-vendor-tile.expand { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(12,10,9,.07); color: var(--ink); }
+.set-vendor-needs { font-size: 10px; font-weight: 500; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 4px; padding: 0 4px; line-height: 16px; }
+.set-vendor-check { position: absolute; top: 6px; right: 6px; font-size: 13px !important; color: var(--ok) !important; }
 .ks .acts { margin-top: 10px; }
 /* activity log */
 .act-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
