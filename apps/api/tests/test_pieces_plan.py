@@ -281,26 +281,26 @@ class TestPieceMcpEndpoint:
         assert captured.get("action") == "send-email"
         assert captured.get("token") == "oauth-access-token"
 
-    def test_tools_call_needs_reconnect_disables_connector(self, piece_app, monkeypatch):
-        """When run_action returns needs_reconnect=True, the connector is disabled."""
-        client, _ = piece_app
-
-        from omilo_api import pieces as P
+    def test_tools_call_needs_reconnect_sets_sentinel_and_commits(self, piece_app, monkeypatch):
+        """When run_action returns needs_reconnect=True, the sentinel is stored in secrets_enc
+        AND db.commit() is called — not conn.enabled = False."""
         import omilo_api.mcp_server as MS
-
-        disabled_conn = {"enabled": True}
+        from omilo_api import pieces as P
+        from omilo_api import capabilities as CAP
 
         def _fake_run_action_reconnect(manifest, action, args, token):
             return "Action 'send-email' failed with 401; reconnect required.", {"status": 401, "needs_reconnect": True}
 
         monkeypatch.setattr(P, "run_action", _fake_run_action_reconnect)
 
-        # Override get_db to capture connector mutation
+        # Track the connector and whether commit() was called
         class _TrackingConn:
             id = "gmail"
             enabled = True
+            secrets_enc = ""  # start empty so sentinel can be written
 
         tracking_conn = _TrackingConn()
+        commits = []
 
         class _TrackingDB:
             def close(self): pass
@@ -311,11 +311,28 @@ class TestPieceMcpEndpoint:
                     return tracking_conn
                 return None
             def add(self, *a, **kw): pass
-            def commit(self): pass
+            def commit(self): commits.append(True)
             def rollback(self): pass
 
+        # Restore the real connector_secrets so that set_connector_needs_reconnect can read
+        # and write secrets_enc correctly.  The piece_app fixture has already replaced
+        # CAP.connector_secrets with a stub; we need the real decrypt implementation.
+        # We get it by importing the underlying security primitives and rebuilding the logic.
+        import omilo_api.capabilities as CAP
+        from omilo_api.security import decrypt, encrypt
+
+        def _real_connector_secrets(c):
+            import json
+            raw = decrypt(c.secrets_enc) if c.secrets_enc else None
+            try:
+                return json.loads(raw) if raw else {}
+            except ValueError:
+                return {}
+
+        monkeypatch.setattr(CAP, "connector_secrets", _real_connector_secrets)
         monkeypatch.setattr(MS, "get_db", lambda: iter([_TrackingDB()]))
 
+        client, _ = piece_app
         r = client.post(
             "/mcp/piece/gmail",
             json=_rpc("tools/call", {"name": "send-email", "arguments": {}}),
@@ -323,12 +340,57 @@ class TestPieceMcpEndpoint:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        # The response must indicate needs_reconnect
+
+        # The response must indicate needs_reconnect / isError
         result = body.get("result", {})
         content_text = result.get("content", [{}])[0].get("text", "{}")
         payload = json.loads(content_text) if isinstance(content_text, str) else {}
         assert payload.get("needs_reconnect") is True or result.get("isError"), (
             f"Expected needs_reconnect in response, got: {body}"
         )
-        # The connector should have been disabled
-        assert tracking_conn.enabled is False, "connector should be disabled after needs_reconnect"
+
+        # CRITICAL: enabled must remain True — sentinel lives in secrets_enc, not enabled flag
+        assert tracking_conn.enabled is True, (
+            "connector.enabled must NOT be set to False; use the needs_reconnect sentinel in secrets_enc"
+        )
+
+        # The needs_reconnect sentinel must be set in the connector's secrets (via the real decrypt)
+        secrets = _real_connector_secrets(tracking_conn)
+        assert secrets.get("needs_reconnect") is True, (
+            f"Expected needs_reconnect=True in connector secrets, got: {secrets}"
+        )
+
+        # db.commit() must have been called (not just in-memory mutation)
+        assert commits, "db.commit() was never called after setting the needs_reconnect sentinel"
+
+    def test_tools_call_absent_connector_returns_rpc_error(self, piece_app, monkeypatch):
+        """tools/call for a slug that IS in the catalog but has no Connector row in the DB
+        must return a JSON-RPC error — not crash."""
+        import omilo_api.mcp_server as MS
+        from omilo_api import pieces as P
+
+        # piece is in the catalog (get_piece already returns FAKE_MANIFEST for 'gmail' via fixture)
+        # but the DB has no Connector row for it
+        class _EmptyDB:
+            def close(self): pass
+            def scalars(self, *a, **kw): return []
+            def get(self, model, id_=None): return None  # always None — no connector row
+            def add(self, *a, **kw): pass
+            def commit(self): pass
+            def rollback(self): pass
+
+        monkeypatch.setattr(MS, "get_db", lambda: iter([_EmptyDB()]))
+
+        client, _ = piece_app
+        r = client.post(
+            "/mcp/piece/gmail",
+            json=_rpc("tools/call", {"name": "send-email", "arguments": {}}),
+            headers={"Authorization": "Bearer test-mcp-token"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # Must be a JSON-RPC error, not a crash / 5xx
+        assert "error" in body, (
+            f"Expected JSON-RPC error for absent connector, got: {body}"
+        )
+        assert isinstance(body["error"].get("code"), int), body

@@ -75,10 +75,28 @@ def set_connector_secrets(c: Connector, headers: dict | None, env: dict | None) 
     c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
 
 
+def set_connector_needs_reconnect(c: Connector, value: bool) -> None:
+    """Store or clear the needs_reconnect sentinel inside secrets_enc.
+
+    Uses the encrypted secrets blob rather than conn.enabled so that:
+    - resolve() / capabilities filtering (enabled=True) is unaffected
+    - the connector stays visible in the marketplace
+    - the sentinel can be cleared by the connect flow (Task 5) on a fresh token
+    - existing token/headers/env keys are preserved exactly
+    """
+    cur = connector_secrets(c)
+    if value:
+        cur["needs_reconnect"] = True
+    else:
+        cur.pop("needs_reconnect", None)
+    c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
+
+
 def connector_public(c: Connector) -> dict:
     s = connector_secrets(c)
     return {"id": c.id, "label": c.label, "kind": c.kind, "url": c.url, "command": c.command, "args": c.args or [],
             "approval": c.approval, "default_on": c.default_on, "enabled": c.enabled,
+            "needs_reconnect": bool(s.get("needs_reconnect")),
             "header_names": sorted((s.get("headers") or {}).keys()), "env_names": sorted((s.get("env") or {}).keys())}
 
 

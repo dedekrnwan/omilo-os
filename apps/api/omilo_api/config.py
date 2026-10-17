@@ -46,9 +46,9 @@ class Settings(BaseSettings):
 
         return (self.internal_url or self.public_url).rstrip("/") + self.base_path.rstrip("/") + prefix() + "/mcp"
 
-    def piece_mcp_url(self, slug: str) -> str:
-        """The MCP endpoint for a piece connector identified by slug."""
-        return self.mcp_url() + "/piece/" + slug
+    # piece_mcp_url: piece connector URLs are derived at run time inside plan()
+    # as  cfg["_mcp_url"] + "/piece/" + slug  so that plan() stays a pure function
+    # with no Settings import.  The pattern is: mcp_url() + "/piece/{slug}".
 
     def resolved_database_url(self) -> str:
         url = self.database_url

@@ -537,9 +537,12 @@ async def mcp_piece_post(slug: str, request: Request):
                 except (ValueError, KeyError) as exc:
                     return _rpc_result(id_, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
                 if meta.get("needs_reconnect"):
-                    # Mark the connector as disabled so the owner knows it needs re-authorisation.
-                    # Choice: set enabled=False (minimal, reversible, consistent with existing boolean).
-                    conn.enabled = False
+                    # Store the sentinel inside secrets_enc — do NOT touch conn.enabled.
+                    # This keeps resolve() / capabilities filtering unaffected and the connector
+                    # visible in the marketplace.  The connect flow (Task 5) will clear it on
+                    # a fresh token via set_connector_needs_reconnect(conn, False).
+                    from .capabilities import set_connector_needs_reconnect
+                    set_connector_needs_reconnect(conn, True)
                     db.commit()
                 payload = {"summary": summary, **meta}
                 is_error = bool(meta.get("needs_reconnect"))
