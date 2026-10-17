@@ -312,3 +312,141 @@ def test_resolve_key_empty_when_nothing(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     with patch("omilo_api.engines.litellm_engine._key_from_db", return_value=None):
         assert resolve_key({}, "groq") == ""
+
+
+# ---------------------------------------------------------------------------
+# Task 3 tests: get_engine factory + run_task/chat/health wrappers
+# ---------------------------------------------------------------------------
+
+def test_get_engine_routes_litellm():
+    """get_engine({"type":"litellm","provider":"openai"}) returns a LiteLLMEngine."""
+    from omilo_api.engines import get_engine
+    from omilo_api.engines.litellm_engine import LiteLLMEngine
+
+    engine = get_engine({"type": "litellm", "provider": "openai"})
+    assert isinstance(engine, LiteLLMEngine)
+
+
+def test_run_task_defaults_balanced_tier():
+    """run_task with no tier in engine_config -> 'balanced' tier -> groq/llama-3.3-70b-versatile."""
+    import asyncio
+    from omilo_api.engines import TaskContext
+    from omilo_api.engines.litellm_engine import LiteLLMEngine
+
+    captured = {}
+
+    async def fake_acompletion(**kwargs):
+        captured["model"] = kwargs["model"]
+        return _resp("ok")
+
+    engine = LiteLLMEngine()
+    ctx = TaskContext(
+        staff_id="s1",
+        staff_name="Aria",
+        job="test job",
+        is_chief=False,
+        task_id="t1",
+        origin="test",
+        brief="do something",
+        founder_note="",
+        checkpoint=None,
+        proposal=None,
+        mcp_url="http://fake",
+        mcp_token="tok",
+        # No tier key -> engine must default to "balanced"
+        engine_config={"provider": "groq", "api_key": "sk-groq-test"},
+        emit=lambda kind, **d: None,
+        resources=None,
+    )
+
+    class FakeMCPCtx:
+        """Context manager wrapping FakeMCP."""
+        async def __aenter__(self):
+            return FakeMCP()
+        async def __aexit__(self, *_):
+            pass
+
+    with patch("litellm.acompletion", side_effect=fake_acompletion):
+        with patch("litellm.completion_cost", return_value=0.0):
+            with patch("omilo_api.engines.litellm_engine.MCPClient", return_value=FakeMCPCtx()):
+                r = asyncio.run(engine.run_task(ctx))
+
+    # groq balanced tier -> llama-3.3-70b-versatile; with groq prefix -> "groq/llama-3.3-70b-versatile"
+    assert "llama-3.3-70b-versatile" in captured.get("model", ""), \
+        f"Expected balanced model (llama-3.3-70b-versatile), got: {captured.get('model')}"
+
+
+def test_chat_defaults_fast_tier():
+    """chat with no tier in engine_config -> 'fast' tier -> groq/llama-3.1-8b-instant."""
+    import asyncio
+    from omilo_api.engines import ChatContext
+    from omilo_api.engines.litellm_engine import LiteLLMEngine
+
+    captured = {}
+
+    async def fake_acompletion(**kwargs):
+        captured["model"] = kwargs["model"]
+        return _resp("ok")
+
+    engine = LiteLLMEngine()
+    ctx = ChatContext(
+        staff_id="s1",
+        staff_name="Aria",
+        job="test job",
+        is_chief=False,
+        thread_id="th1",
+        scope="general",
+        history=[{"role": "owner", "text": "hello"}],
+        context_note="",
+        mcp_url="http://fake",
+        mcp_token="tok",
+        # No tier key -> engine must default to "fast"
+        engine_config={"provider": "groq", "api_key": "sk-groq-test"},
+        emit=lambda kind, **d: None,
+        resources=None,
+    )
+
+    class FakeMCPCtx:
+        async def __aenter__(self):
+            return FakeMCP()
+        async def __aexit__(self, *_):
+            pass
+
+    with patch("litellm.acompletion", side_effect=fake_acompletion):
+        with patch("litellm.completion_cost", return_value=0.0):
+            with patch("omilo_api.engines.litellm_engine.MCPClient", return_value=FakeMCPCtx()):
+                r = asyncio.run(engine.chat(ctx))
+
+    # groq fast tier -> llama-3.1-8b-instant; with prefix -> "groq/llama-3.1-8b-instant"
+    assert "llama-3.1-8b-instant" in captured.get("model", ""), \
+        f"Expected fast model (llama-3.1-8b-instant), got: {captured.get('model')}"
+
+
+def test_run_task_requires_mcp_token():
+    """run_task with mcp_token=None returns EngineResult(error=...) without calling _loop."""
+    import asyncio
+    from omilo_api.engines import TaskContext
+    from omilo_api.engines.litellm_engine import LiteLLMEngine
+
+    engine = LiteLLMEngine()
+    ctx = TaskContext(
+        staff_id="s1",
+        staff_name="Aria",
+        job="test job",
+        is_chief=False,
+        task_id="t1",
+        origin="test",
+        brief="do something",
+        founder_note="",
+        checkpoint=None,
+        proposal=None,
+        mcp_url="http://fake",
+        mcp_token=None,  # <-- no token
+        engine_config={"provider": "groq", "api_key": "sk-groq-test"},
+        emit=lambda kind, **d: None,
+        resources=None,
+    )
+
+    r = asyncio.run(engine.run_task(ctx))
+    assert r.error != "", "Expected an error when mcp_token is None"
+    assert r.text == ""

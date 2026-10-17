@@ -80,4 +80,8 @@ def get_engine(config: dict) -> Engine:
         from .fake import FakeEngine
 
         return FakeEngine()
+    if t == "litellm":
+        from .litellm_engine import LiteLLMEngine
+
+        return LiteLLMEngine()
     raise ValueError(f"unknown engine type '{t}'")
