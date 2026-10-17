@@ -91,7 +91,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
   const [detail, setDetail] = useState<NeedCard | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => { try { setB(await api<Board>("/board")); setErr(null); } catch (e: any) { setErr(e.message); } }, []);
-  usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind?.startsWith("job") || n?.kind === "local");
+  usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind === "nudge" || n?.kind?.startsWith("job") || n?.kind === "local");
   const now = useNow(!!b?.running.length || !!b?.needs.length);
   const seenIds = useRef<Set<string>>(new Set());
   useEffect(() => {

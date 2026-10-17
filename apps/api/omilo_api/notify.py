@@ -135,6 +135,16 @@ def prefs(db: Session, user_id: str) -> dict:
     return _normalize(s.value if s else None)
 
 
+def next_morning(local: dt.datetime, weekday: int | None = None) -> dt.datetime:
+    """The next 08:00 (on `weekday`, 0 = Monday, when given) after `local`: just after midnight that is this morning."""
+    at = local.replace(hour=8, minute=0, second=0, microsecond=0)
+    if weekday is None:
+        return at if local < at else at + dt.timedelta(days=1)
+    days = (weekday - local.weekday()) % 7
+    at += dt.timedelta(days=days)
+    return at if at > local else at + dt.timedelta(days=7)
+
+
 def focus_until(db: Session, choice) -> dict | None:
     """The focus switch: '1h', '2h', 'tomorrow' (08:00 local), 'off' or None."""
     from . import services as S
@@ -143,8 +153,7 @@ def focus_until(db: Session, choice) -> dict | None:
         return None
     start = now()
     if choice == "tomorrow":
-        local = start.astimezone(S._tz(db))
-        until = (local + dt.timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        until = next_morning(start.astimezone(S._tz(db)))
     else:
         m = re.fullmatch(r"(\d{1,2})h", str(choice))
         if not m or not 1 <= int(m.group(1)) <= 24:
@@ -346,6 +355,14 @@ def merged(rows: list[Notice]) -> dict:
             "item_id": None, "count": len(rows)}
 
 
+def _still_relevant(db: Session, n: Notice) -> bool:
+    """A waiting notice about an inbox item that was decided meanwhile is not worth a push any more."""
+    if not n.item_id:
+        return True
+    item = db.get(InboxItem, n.item_id)
+    return bool(item and item.status == "open")
+
+
 def _sent_last_hour(db: Session, user_id: str) -> int:
     since = now() - dt.timedelta(hours=1)
     return db.scalar(select(func.count()).select_from(Notification).where(
@@ -399,16 +416,19 @@ async def push_pending(db_factory, auth_factory=None, label: str = "", company: 
         jobs = []
         for uid in dict.fromkeys(s.user_id for s in subs):
             u = adb.get(User, uid)
+            ob = backlog.get(uid)
             if not u or is_present(db, uid):
+                if ob and ob.value:
+                    ob.value = []  # they are looking at Omilo: what waited has been seen
                 continue
             p = prefs(db, uid)
-            ob = backlog.get(uid)
-            waiting = [db.get(Notice, i) for i in ((ob.value if ob else None) or [])]
-            fresh = [n for n in notices if wants(p, n.kind, "push")]
-            candidates = [n for n in waiting + fresh if n and not held(db, p, n.level)]
-            if not candidates:
-                continue
-            out, keep = plan_pushes(db, uid, p, candidates)
+            waiting = [n for n in (db.get(Notice, i) for i in ((ob.value if ob else None) or [])) if n and _still_relevant(db, n)]
+            fresh = [n for n in notices if wants(p, n.kind, "push") and not (n.kind == "inbox" and n.level == "info")]  # FYI: no push
+            now_ok = [n for n in waiting + fresh if not held(db, p, n.level)]
+            # quiet hours / focus: inbox items come back through the nudge ladder; everything else waits here
+            wait = [n.id for n in waiting + fresh if held(db, p, n.level) and not n.item_id]
+            out, keep = plan_pushes(db, uid, p, now_ok) if now_ok else ([], [])
+            keep = list(dict.fromkeys(wait + keep))
             if ob:
                 ob.value = keep
             elif keep:

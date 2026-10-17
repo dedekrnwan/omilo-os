@@ -84,7 +84,7 @@ def state(db: Session, item: InboxItem) -> dict:
     if any(r.action in STOP for r in rows):
         return {"ladder": kind, "next": None, "due": None, "stopped": True}
     steps = [r for r in rows if r.channel == "ladder" and r.action == "nudged"]
-    if kind == "critical" and steps and any(r.action in ACK and r.id > steps[0].id for r in rows):
+    if kind == "critical" and any(r.action in ACK for r in rows):  # seen (even before the first reminder): stop repeating
         return {"ladder": kind, "next": None, "due": None, "stopped": True}
     plan, repeat = LADDERS[kind]
     woke = next((r for r in rows if r.action == "woke"), None)
@@ -208,8 +208,8 @@ def tick(db: Session, owner_id: str | None = None, at: dt.datetime | None = None
             continue  # quiet hours or focus: the step waits (Critical never does)
         channel = st.get("channel", "push")
         notice_id = None
-        if k == 0 and st.get("fresh") and at - st["due"] < FRESH:
-            pass  # the item's own notice just went out: that is the first step
+        if k == 0 and st.get("fresh") and at - st["due"] < FRESH and not N.held(db, p, level, st["due"]):
+            pass  # the item's own notice just went out (it was not held back): that is the first step
         elif channel == "brief":
             record(db, item, "brief", "nudged", owner_id or "", step=k, level=level, at=at)
         else:
@@ -225,15 +225,14 @@ def tick(db: Session, owner_id: str | None = None, at: dt.datetime | None = None
 
 
 # ------------------------------------------------------------------ what the owner does
-def snooze_until(db: Session, hours: float | None = None, until: str | None = None) -> dt.datetime:
+def snooze_until(db: Session, hours: float | None = None, until: str | None = None, at: dt.datetime | None = None) -> dt.datetime:
     """Snooze choices: a number of hours, 'tomorrow' (08:00) or 'monday' (08:00), in the company's time zone."""
     if until in ("tomorrow", "monday"):
-        local = now().astimezone(S._tz(db))
-        days = 1 if until == "tomorrow" else (7 - local.weekday()) or 7
-        return (local + dt.timedelta(days=days)).replace(hour=8, minute=0, second=0, microsecond=0).astimezone(dt.UTC)
+        local = (at or now()).astimezone(S._tz(db))
+        return N.next_morning(local, 0 if until == "monday" else None).astimezone(dt.UTC)
     if until:
         raise ValueError("until must be tomorrow or monday")
-    return now() + dt.timedelta(hours=float(hours or 1))
+    return (at or now()) + dt.timedelta(hours=float(hours or 1))
 
 
 def snooze(db: Session, item: InboxItem, user_id: str, hours: float | None = None, until: str | None = None) -> InboxItem:
@@ -286,8 +285,13 @@ def stale(db: Session, older_than: dt.timedelta = 24 * H) -> list[InboxItem]:
     """Open items older than a day, or ones whose ladder reached the brief step."""
     cut = now() - older_than
     briefed = set(db.scalars(select(Notification.inbox_item_id).where(Notification.channel == "brief")))
+
+    def due_for_brief(i: InboxItem) -> bool:  # the ladder's next step is this brief (it may fire a moment after the brief job)
+        st = state(db, i)
+        return st.get("channel") == "brief" and st.get("due") is not None and st["due"] <= now() + 2 * H
+
     items = [i for i in db.scalars(select(InboxItem).where(InboxItem.status == "open"))
-             if (_aware(i.created_at) or now()) <= cut or i.id in briefed]
+             if (_aware(i.created_at) or now()) <= cut or i.id in briefed or due_for_brief(i)]
     items.sort(key=lambda i: (i.level != "critical", not i.blocking, _aware(i.created_at)))
     return items
 

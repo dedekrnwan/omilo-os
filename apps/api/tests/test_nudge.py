@@ -1,6 +1,7 @@
 """M3: the nudge ladder, quiet hours and focus, snooze, the push cap, notification buttons and the morning brief."""
 import datetime as dt
 import json
+import time
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -180,6 +181,10 @@ def test_quiet_hours_start_the_ladder_late_not_skip_it(owner, jakarta, quiet_wor
     assert _nudges(iid) == [("Support needs an answer", "decision")], "delivered when quiet hours end"
     assert _tick(iid, local(2026, 10, 21, 8, 0)) == [], "next step counts from the delivery, not the creation"
 
+    late = _item(local(2026, 10, 21, 6, 58), title="Just before seven")
+    assert _tick(late, local(2026, 10, 21, 7, 0, )) == [f"decision {late} step 0 push"]
+    assert _nudges(late) == [("Support needs an answer", "decision")], "its first push was held: send it now, don't assume it went"
+
 
 def test_blocking_and_critical_ladders(owner, jakarta, quiet_worker):
     t0 = local(2026, 10, 20, 10, 0)
@@ -196,6 +201,9 @@ def test_blocking_and_critical_ladders(owner, jakarta, quiet_worker):
     assert _tick(c, t) == [f"critical {c} step 0 push"], "Critical ignores quiet hours"
     assert _tick(c, t + dt.timedelta(minutes=16)) == [f"critical {c} step 1 push"]
     assert _nudges(c)[-1] == ("Still critical: Site is down", "critical")
+    early = _item(local(2026, 10, 20, 23, 0), kind="alert", level="critical", staff="chief-of-staff", title="Disk full")
+    assert owner.post("/api/notify/seen", json={"item_ids": [early]}).json() == {"seen": 1}
+    assert _tick(early, t) == [], "seen before the first reminder: nothing repeats"
     assert owner.post("/api/notify/seen", json={"item_ids": [c]}).json() == {"seen": 1}
     assert owner.post("/api/notify/seen", json={"item_ids": [c]}).json() == {"seen": 0}, "once per reminder"
     assert _tick(c, t + dt.timedelta(minutes=40)) == [], "seen: the repeats stop"
@@ -213,6 +221,10 @@ def test_snooze_choices_wake_up_and_restart(owner, jakarta, quiet_worker):
     assert owner.post(f"/api/inbox/{iid}/snooze", json={"until": "someday"}).status_code == 400
     with session_scope() as db:
         assert nudge.snooze_until(db, until="tomorrow").astimezone(JKT).hour == 8
+        assert nudge.snooze_until(db, until="tomorrow", at=local(2026, 10, 20, 0, 30)) == local(2026, 10, 20, 8), "just after midnight: this morning"
+        assert nudge.snooze_until(db, until="tomorrow", at=local(2026, 10, 20, 9, 0)) == local(2026, 10, 21, 8)
+        assert nudge.snooze_until(db, until="monday", at=local(2026, 10, 19, 7, 0)) == local(2026, 10, 19, 8), "Monday before 08:00: today"
+        assert nudge.snooze_until(db, until="monday", at=local(2026, 10, 19, 9, 0)) == local(2026, 10, 26, 8)
     after = dt.datetime.fromisoformat(r.json()["snooze_until"]) + dt.timedelta(minutes=1)
     assert _tick(iid, after) == [f"woke {iid}", f"decision {iid} step 0 push"]
     assert _nudges(iid)[-1][0] == "Back from snooze: Snooze me"
@@ -286,6 +298,15 @@ def test_brief_lists_what_waits_and_similar_groups(owner, jakarta):
     assert "2 similar low-risk seo.fix proposals from marketing" in text
 
 
+def _overflow():
+    from omilo_api.db import session_scope
+    from omilo_api.models import Setting
+
+    with session_scope() as db:
+        s = db.get(Setting, f"push_overflow:{_owner_id()}")
+        return (s.value if s else None) or []
+
+
 # ------------------------------------------------------------------ settings and push delivery
 def test_settings_quiet_focus_and_push_payload(owner, monkeypatch, jakarta):
     from omilo_api import company as C
@@ -324,11 +345,23 @@ def test_settings_quiet_focus_and_push_payload(owner, monkeypatch, jakarta):
     assert N.check_sig("main", iid, got["sig"])
 
     # focus holds everything but Critical
-    f = owner.put("/api/notify/prefs", json={"focus": "1h"}).json()
+    f = owner.put("/api/notify/prefs", json={"focus": "1h", "kinds": {"reply": {"push": True}}}).json()
     assert f["focus_now"] is True and f["focus"]["until"]
     _, held = _proposal(_owner_id(), title="Held while focusing")
     crit = _item(dt.datetime.now(dt.UTC), kind="alert", level="critical", staff="chief-of-staff", title="Payments failing")
     wait_for(lambda: any(d.get("item_id") == crit for d in sent), timeout=15)
     assert not any(d.get("item_id") == held for d in sent)
-    assert owner.put("/api/notify/prefs", json={"focus": "off", "quiet": {"on": True}}).json()["focus"] is None
+    # what is not an inbox item (a reply, a failed job) waits during focus and goes out when it ends
+    from omilo_api.models import Message, Thread
+    with session_scope() as db:
+        th = db.query(Thread).filter(Thread.scope == "master").first()
+        db.add(Message(thread_id=th.id, role="agent", author="chief-of-staff", text="Here is the weekly summary.", blocks=[]))
+    wait_for(lambda: len(_overflow()) >= 1, timeout=15)
+    assert not any(d.get("title", "").endswith("replied") for d in sent)
+    fyi = _item(dt.datetime.now(dt.UTC), kind="alert", level="fyi", staff="ops", title="Backup finished")
+    assert owner.put("/api/notify/prefs", json={"focus": "off", "quiet": {"on": False}}).json()["focus"] is None
+    wait_for(lambda: any("replied" in d.get("title", "") or d.get("kind") == "digest" for d in sent), timeout=15)
+    time.sleep(4)
+    assert not any(d.get("item_id") == fyi for d in sent), "FYI never pushes"
+    owner.put("/api/notify/prefs", json={"quiet": {"on": True}})
     owner.post("/api/notify/unsubscribe", json={"endpoint": "https://push.example/m3"})
