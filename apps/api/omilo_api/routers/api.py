@@ -1066,6 +1066,18 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
     return result
 
 
+@router.post("/catalog/refresh")
+def catalog_refresh(user: User = Depends(current_user)):
+    """Re-fetch the pieces repo and rebuild the catalog index. Returns {ok, invalid, missing}.
+
+    File-based and company-independent: safe to call from any signed-in session. On fetch
+    failure the last-good index is kept (see pieces.reindex).
+    """
+    from .. import pieces as P
+
+    return P.reindex()
+
+
 # SVG safe headers — same posture as _SAFE_FILE_HEADERS but forces SVG content-type
 # and disallows script execution (nosniff + no inline).
 _SVG_HEADERS = {

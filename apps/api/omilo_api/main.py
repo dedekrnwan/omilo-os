@@ -52,12 +52,27 @@ def build_app() -> FastAPI:
 
         bus.check()  # Redis first: a clear message beats a half-started app
         init_db()
+
+        async def _refresh_catalog():
+            # Best-effort: fetch the pieces repo and rebuild the connector catalog index.
+            # Runs off the event loop (reindex does network + disk I/O) and never blocks or
+            # crashes boot — on failure pieces.reindex keeps the last-good index.
+            from . import pieces
+            try:
+                counts = await asyncio.to_thread(pieces.reindex)
+                log.info("connector catalog indexed: %s", counts)
+            except Exception as e:  # noqa: BLE001
+                log.warning("connector catalog reindex failed at startup: %s", e)
+
+        catalog_task = asyncio.create_task(_refresh_catalog())
+
         worker, task = None, None
         if cfg.embedded_worker:
             worker = Worker()
             task = asyncio.create_task(worker.run_forever())
             log.info("embedded worker started")
         yield
+        catalog_task.cancel()
         if worker:
             await worker.stop()
             task.cancel()

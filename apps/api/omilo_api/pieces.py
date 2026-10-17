@@ -2,7 +2,7 @@
 and declarative action runtime (MCP tool compilation + SSRF-guarded HTTP execution).
 
 The catalog mirrors the talent.py pattern: a JSON index lives under <data_dir>/pieces/index.json
-and is populated by fetching the omilo/pieces GitHub repo (or a local checkout), walking
+and is populated by fetching the pieces GitHub repo (PIECES_REPO, or a local checkout), walking
 pieces/*/piece.yaml, and running validate_manifest on each.
 
 Sources, in order: PIECES_SOURCE (a local checkout path) → `git clone` → GitHub tarball.
@@ -37,7 +37,10 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # ---------------------------------------------------------------------------
 # Catalog repo configuration
 # ---------------------------------------------------------------------------
-PIECES_REPO = os.environ.get("PIECES_REPO", "omilo/pieces")
+# Default catalog repo. Override with PIECES_REPO (owner/name on GitHub) or, for local
+# development, PIECES_SOURCE (a path to a checkout) which takes precedence in fetch().
+DEFAULT_PIECES_REPO = "dedekrnwan/omilo-pieces"
+PIECES_REPO = os.environ.get("PIECES_REPO", DEFAULT_PIECES_REPO)
 MAX_FILE = 500_000
 
 
@@ -79,7 +82,7 @@ def fetch(dest: Path | None = None) -> None:
         return
 
     # Re-read PIECES_REPO at call time so env overrides after module load work.
-    repo = os.environ.get("PIECES_REPO", "omilo/pieces")
+    repo = os.environ.get("PIECES_REPO", DEFAULT_PIECES_REPO)
     repo_url = f"https://github.com/{repo}"
     tarballs = [
         f"https://codeload.github.com/{repo}/tar.gz/refs/heads/main",

@@ -295,6 +295,15 @@ export default function Connectors() {
     catch { /* catalog not loaded yet — leave null */ }
   }, []);
 
+  // Re-fetch the pieces repo and rebuild the catalog, then reload the grid.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshCatalog = useCallback(async () => {
+    setRefreshing(true);
+    try { await api("/catalog/refresh", { method: "POST" }); await loadCatalog(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setRefreshing(false); }
+  }, [loadCatalog]);
+
   // Load raw connectors list (advanced section)
   const loadList = useCallback(async () => {
     try { setList(await api<Conn[]>("/connectors")); }
@@ -528,6 +537,11 @@ export default function Connectors() {
             Connect an app and your helpers can read, plan and act within it.
           </p>
         </div>
+        <button className="btn quiet" onClick={refreshCatalog} disabled={refreshing}
+                aria-label="Refresh the list of available apps">
+          {refreshing ? <span className="spin" /> : <i className="ri-refresh-line" />}
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
       {/* Restorable connectors banner */}
