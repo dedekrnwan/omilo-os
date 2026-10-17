@@ -1244,6 +1244,7 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
         )
     }
 
+    manifests = {e.get("slug"): e.get("manifest") or {} for e in P._load_index()}  # one read for the whole list
     result = []
     for piece in ok_pieces:
         slug = piece["slug"]
@@ -1251,13 +1252,19 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
         conn = connector_rows.get(slug)
         connected = conn is not None
         needs_reconnect = bool(conn and C.connector_secrets(conn).get("needs_reconnect"))
+        man = manifests.get(slug) or {}
         result.append({
             "slug": slug,
             "label": piece["label"],
             "category": piece["category"],
+            "description": piece.get("description") or "",
             "logo_url": logo_url,
             "connected": connected,
             "needs_reconnect": needs_reconnect,
+            # what a helper can do with it, and which of those wait for your OK (shown on the card and its details)
+            "actions": [{"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
+                        for a in (man.get("actions") or []) if isinstance(a, dict)],
+            "provider": ((man.get("auth") or {}).get("provider") or ""),
         })
 
     return result

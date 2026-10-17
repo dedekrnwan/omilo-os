@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -32,9 +32,12 @@ type CatalogEntry = {
   slug: string;
   label: string;
   category: string;
+  description?: string;
   logo_url: string;
   connected: boolean;
   needs_reconnect: boolean;
+  actions?: { label: string; approval: string }[];
+  provider?: string;
 };
 
 type Conn = {
@@ -147,99 +150,57 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 const withBlankRow = (p: Pair[]) => (p.length && !p[p.length - 1].k && !p[p.length - 1].v ? p : [...p, { k: "", v: "" }]);
 
 // ---------------------------------------------------------------------------
-// Category grouping for the marketplace grid
+// The app catalog: search, category picks and a card per app (the same look as hiring from The Agency)
 // ---------------------------------------------------------------------------
 
-function groupByCategory(entries: CatalogEntry[]): [string, CatalogEntry[]][] {
-  const order: string[] = [];
-  const map: Record<string, CatalogEntry[]> = {};
-  for (const e of entries) {
-    const cat = e.category || "Other";
-    if (!map[cat]) { order.push(cat); map[cat] = []; }
-    map[cat].push(e);
-  }
-  return order.map((cat) => [cat, map[cat]]);
+const CAT_COLORS = ["#6366f1", "#ec4899", "#14b8a6", "#f97316", "#0ea5e9", "#8b5cf6", "#65a30d", "#f59e0b", "#ef4444", "#06b6d4"];
+function catColor(cat: string) {
+  let h = 0;
+  for (const c of cat) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return CAT_COLORS[h % CAT_COLORS.length];
 }
 
-// ---------------------------------------------------------------------------
-// ConnectorCard — a single marketplace card
-// ---------------------------------------------------------------------------
+function AppLogo({ entry, size = 32 }: { entry: CatalogEntry; size?: number }) {
+  return entry.logo_url ? (
+    <span className="emoji app-logo" style={{ width: size, height: size }}><img src={entry.logo_url} alt="" width={size * 0.62} height={size * 0.62} /></span>
+  ) : (
+    <span className="emoji app-logo" style={{ width: size, height: size }} aria-hidden="true"><i className="ri-plug-line" /></span>
+  );
+}
 
-function ConnectorCard({
-  entry,
-  onConnect,
-  onDisconnect,
-  connectState,
-}: {
-  entry: CatalogEntry;
-  onConnect: (slug: string) => void;
-  onDisconnect: (slug: string, label: string) => void;
-  connectState: ConnectState;
+function actionsLine(e: CatalogEntry) {
+  const acts = e.actions || [];
+  if (!acts.length) return "";
+  const ask = acts.filter((a) => a.approval !== "auto").length;
+  return `${acts.length} action${acts.length > 1 ? "s" : ""}${ask ? ` · ${ask} need${ask > 1 ? "" : "s"} your OK` : ""}`;
+}
+
+function ConnectorCard({ entry, onOpen, onConnect, connectState }: {
+  entry: CatalogEntry; onOpen: (e: CatalogEntry) => void; onConnect: (slug: string) => void; connectState: ConnectState;
 }) {
-  const { slug: s, label, logo_url, connected, needs_reconnect } = entry;
-  const busy = connectState !== "idle" && connectState !== "expired";
-
+  const busy = connectState === "connecting" || connectState === "polling";
+  const on = entry.connected && !entry.needs_reconnect;
   return (
-    <div className="card" style={{ gap: 12 }}>
-      {/* Logo + label row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        {logo_url ? (
-          <img
-            src={logo_url}
-            alt=""
-            width={28}
-            height={28}
-            style={{ borderRadius: 6, objectFit: "contain", flexShrink: 0 }}
-          />
-        ) : (
-          <span
-            style={{ width: 28, height: 28, borderRadius: 6, background: "var(--soft)",
-              display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-            aria-hidden="true"
-          >
-            <i className="ri-plug-line" style={{ fontSize: 14 }} />
-          </span>
-        )}
-        <span style={{ fontWeight: 500, fontSize: 14 }}>{label}</span>
-        {needs_reconnect && (
-          <span className="chip warn" style={{ marginLeft: "auto" }}>Reconnect</span>
-        )}
-        {connected && !needs_reconnect && (
-          <span className="chip up" style={{ marginLeft: "auto" }}>Connected ✓</span>
-        )}
+    <div className={`card talent app-card ${on ? "is-on" : ""}`} role="button" tabIndex={0} onClick={() => onOpen(entry)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(entry); } }} aria-label={`${entry.label}: details`}>
+      <div className="acts" style={{ gap: 10, flexWrap: "nowrap" }}>
+        <AppLogo entry={entry} />
+        <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <b>{entry.label}</b>
+          <span className="small"><span className="dot" style={{ background: catColor(entry.category || "Other") }} />{entry.category || "Other"}</span>
+        </span>
+        {entry.needs_reconnect ? <span className="chip warn" style={{ marginLeft: "auto" }}>Reconnect</span>
+          : on ? <span className="chip up" style={{ marginLeft: "auto" }}><i className="ri-check-line" />Connected</span> : null}
       </div>
-
-      {/* State feedback while connecting */}
-      {connectState === "connecting" && (
-        <p className="small" style={{ margin: 0 }}>Opening sign-in window...</p>
-      )}
-      {connectState === "polling" && (
-        <p className="small" style={{ margin: 0 }}>Waiting for sign-in to complete...</p>
-      )}
-      {connectState === "expired" && (
-        <p className="small" style={{ margin: 0, color: "var(--warn)" }}>
-          The sign-in window timed out. Try again.
-        </p>
-      )}
-
-      {/* Action buttons */}
-      <div className="acts" style={{ marginTop: 4 }}>
-        {!connected || needs_reconnect ? (
-          <button
-            className="btn sm primary"
-            disabled={busy}
-            onClick={() => onConnect(s)}
-            aria-label={needs_reconnect ? `Reconnect ${label}` : `Connect ${label}`}
-          >
-            {busy ? "Connecting..." : needs_reconnect ? "Reconnect" : "Connect"}
-          </button>
-        ) : (
-          <button
-            className="btn sm quiet"
-            onClick={() => onDisconnect(s, label)}
-            aria-label={`Disconnect ${label}`}
-          >
-            Disconnect
+      <span className="clamp small" style={{ color: "var(--ink-2)" }}>{entry.description || "Let your helpers use " + entry.label + "."}</span>
+      <div className="app-foot">
+        <span className="small">{busy ? (connectState === "connecting" ? "Opening sign-in…" : "Waiting for sign-in…")
+          : connectState === "expired" ? <span style={{ color: "var(--warn)" }}>Sign-in timed out. Try again.</span> : actionsLine(entry)}</span>
+        <span className="sp" />
+        {!on && (
+          <button className="btn sm primary" disabled={busy} onClick={(e) => { e.stopPropagation(); onConnect(entry.slug); }}
+            aria-label={entry.needs_reconnect ? `Reconnect ${entry.label}` : `Connect ${entry.label}`}>
+            {busy ? <span className="spin" /> : <i className="ri-link" />}{entry.needs_reconnect ? "Reconnect" : "Connect"}
           </button>
         )}
       </div>
@@ -280,6 +241,9 @@ export default function Connectors() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [q, setQ] = useState("");
+  const [cat, setCat] = useState("");
+  const [openApp, setOpenApp] = useState<string | null>(null);
 
   // Restorable connectors
   type Old = { dir: string; moved_at: string | null; connectors: { id: string; label: string; kind: string; here: boolean }[] };
@@ -520,7 +484,19 @@ export default function Connectors() {
     (t) => t.tools?.some((x) => usesTools.includes(x)) && !have.has((t.form.label || t.name).toLowerCase())
   );
 
-  const groups = catalog ? groupByCategory(catalog) : [];
+  const nConnected = (catalog || []).filter((e) => e.connected).length;
+  const cats = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of catalog || []) m.set(e.category || "Other", (m.get(e.category || "Other") || 0) + 1);
+    return [...m.entries()].sort((x, y) => x[0].localeCompare(y[0]));
+  }, [catalog]);
+  const shown = useMemo(() => {
+    const words = q.trim().toLowerCase();
+    return (catalog || []).filter((e) => (cat === "" || (cat === "@connected" ? e.connected : (e.category || "Other") === cat))
+      && (!words || `${e.label} ${e.category} ${e.description || ""} ${(e.actions || []).map((a) => a.label).join(" ")}`.toLowerCase().includes(words)))
+      .sort((x, y) => Number(y.connected) - Number(x.connected) || x.label.localeCompare(y.label));
+  }, [catalog, q, cat]);
+  const appOpen = openApp ? (catalog || []).find((e) => e.slug === openApp) || null : null;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -529,20 +505,36 @@ export default function Connectors() {
   return (
     <div>
       {/* Page header */}
-      <div className="sechead" style={{ alignItems: "flex-start" }}>
-        <div>
-          <h1>App connections</h1>
-          <p className="sub" style={{ marginBottom: 0 }}>
-            Give your helpers access to the apps your business already uses.
-            Connect an app and your helpers can read, plan and act within it.
-          </p>
+      <h1>App connections</h1>
+      <p className="sub">
+        Give your helpers the apps your business already uses. Connect an app and they can read, plan and act in it;
+        anything that posts, sends or spends still waits for your OK.
+      </p>
+      <div className="acts" style={{ marginBottom: 12 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+          <i className="ri-search-line" style={{ position: "absolute", left: 10, top: 10 }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: Instagram, email, calendar, sheets…" style={{ paddingLeft: 32 }}
+            aria-label="Search apps" />
         </div>
-        <button className="btn quiet" onClick={refreshCatalog} disabled={refreshing}
-                aria-label="Refresh the list of available apps">
-          {refreshing ? <span className="spin" /> : <i className="ri-refresh-line" />}
-          {refreshing ? "Refreshing..." : "Refresh"}
+        <button className="btn" onClick={refreshCatalog} disabled={refreshing} title="Download the latest list of apps">
+          {refreshing ? <span className="spin" /> : <i className="ri-refresh-line" />}{refreshing ? "Updating…" : "Update list"}
         </button>
       </div>
+      {catalog && catalog.length > 0 && (
+        <div className="picks" style={{ marginBottom: 16 }}>
+          <button className={`pick ${cat === "" ? "on" : ""}`} onClick={() => setCat("")}>All <span className="mono" style={{ opacity: .6 }}>{catalog.length}</span></button>
+          {nConnected > 0 && (
+            <button className={`pick ${cat === "@connected" ? "on" : ""}`} onClick={() => setCat(cat === "@connected" ? "" : "@connected")}>
+              <span className="dot" style={{ background: "var(--ok)" }} />Connected <span className="mono" style={{ opacity: .6 }}>{nConnected}</span>
+            </button>
+          )}
+          {cats.map(([c, n]) => (
+            <button key={c} className={`pick ${cat === c ? "on" : ""}`} onClick={() => setCat(cat === c ? "" : c)}>
+              <span className="dot" style={{ background: catColor(c) }} />{c} <span className="mono" style={{ opacity: .6 }}>{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Restorable connectors banner */}
       {old && (
@@ -569,36 +561,56 @@ export default function Connectors() {
       {!form && err && <Err error={err} />}
 
       {/* --------------- Marketplace grid --------------- */}
-      <div className="sec">
-        {catalog === null ? (
-          <p className="small">Loading available apps...</p>
-        ) : catalog.length === 0 ? (
-          <div className="empty">
-            <b>No apps in the catalog yet</b>
-            <span>Use the Advanced section below to add a custom integration.</span>
+      {catalog === null ? (
+        <p className="small">Loading available apps…</p>
+      ) : catalog.length === 0 ? (
+        <div className="empty">
+          <b>No apps in the list yet</b>
+          <span>Update the list, or add a custom integration under Advanced below.</span>
+          <div style={{ marginTop: 12 }}><button className="btn primary" onClick={refreshCatalog} disabled={refreshing}>Update list</button></div>
+        </div>
+      ) : shown.length === 0 ? (
+        <div className="empty"><b>No app matches</b><span>Try another word or category, or add it as a custom integration below.</span></div>
+      ) : (
+        <div className="cards app-cards">
+          {shown.map((entry) => (
+            <ConnectorCard key={entry.slug} entry={entry} onOpen={(e) => setOpenApp(e.slug)} onConnect={startConnect}
+              connectState={connectStates[entry.slug] ?? "idle"} />
+          ))}
+        </div>
+      )}
+
+      {/* --------------- App details --------------- */}
+      {appOpen && (
+        <Drawer open onClose={() => setOpenApp(null)} title={appOpen.label} icon={<AppLogo entry={appOpen} size={34} />}
+          sub={<><span className="dot" style={{ background: catColor(appOpen.category || "Other") }} />{appOpen.category || "Other"}
+            {appOpen.connected && !appOpen.needs_reconnect ? " · Connected" : appOpen.needs_reconnect ? " · Needs reconnecting" : ""}</>}
+          footer={<>
+            {appOpen.connected && !appOpen.needs_reconnect
+              ? <button className="btn danger" onClick={() => { const e = appOpen; setOpenApp(null); disconnect(e.slug, e.label); }}><i className="ri-link-unlink" />Disconnect</button>
+              : <button className="btn primary" disabled={["connecting", "polling"].includes(connectStates[appOpen.slug] ?? "idle")} onClick={() => startConnect(appOpen.slug)}>
+                  <i className="ri-link" />{appOpen.needs_reconnect ? "Reconnect" : `Connect ${appOpen.label}`}</button>}
+            <span className="sp" /><button className="btn" onClick={() => setOpenApp(null)}>Close</button>
+          </>}>
+          <div className="dw-sec">
+            <p style={{ marginTop: 0 }}>{appOpen.description || `Let your helpers use ${appOpen.label}.`}</p>
+            <div className="soft" style={{ margin: "14px 0" }}>
+              <div className="small"><i className="ri-shield-check-line" /> You sign in with {appOpen.provider ? `your ${appOpen.provider[0].toUpperCase()}${appOpen.provider.slice(1)} account` : "your account"}; Omilo keeps the access encrypted. Anything that posts, sends or spends waits for your OK in the Inbox.</div>
+            </div>
+            {(appOpen.actions || []).length > 0 && (
+              <>
+                <label style={{ marginTop: 0 }}>What helpers can do</label>
+                <ul className="app-acts">
+                  {(appOpen.actions || []).map((a) => (
+                    <li key={a.label}><span>{a.label}</span>
+                      <span className={`chip ${a.approval === "auto" ? "" : "warn"}`}>{a.approval === "auto" ? "Directly" : "Asks you first"}</span></li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
-        ) : (
-          groups.map(([category, entries]) => (
-            <section key={category} style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--muted)", letterSpacing: "0.04em",
-                textTransform: "uppercase", margin: "0 0 12px" }}>
-                {category}
-              </h2>
-              <div className="cards">
-                {entries.map((entry) => (
-                  <ConnectorCard
-                    key={entry.slug}
-                    entry={entry}
-                    onConnect={startConnect}
-                    onDisconnect={disconnect}
-                    connectState={connectStates[entry.slug] ?? "idle"}
-                  />
-                ))}
-              </div>
-            </section>
-          ))
-        )}
-      </div>
+        </Drawer>
+      )}
 
       {/* --------------- Advanced section (collapsed by default) --------------- */}
       <div style={{ marginTop: 32 }}>

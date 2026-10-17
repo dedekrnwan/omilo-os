@@ -413,10 +413,16 @@ details.tech summary { cursor: pointer; font-weight: 500; }
 .mi .t b { font-weight: 400; }
 .mi .t span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu .sep { height: 1px; background: var(--line-strong); margin: 4px 6px; }
-.switch { flex-shrink: 0; width: 30px; height: 18px; border-radius: 999px; background: var(--line-strong); position: relative; transition: background .15s; }
-.switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+/* a switch is often a <button>: reset the button's own border, padding and size, so the knob sits inside the track */
+.switch { -webkit-appearance: none; appearance: none; box-sizing: border-box; display: inline-block; flex-shrink: 0; width: 32px; height: 18px;
+  min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 999px; background: var(--line-strong); position: relative;
+  cursor: pointer; vertical-align: middle; transition: background .15s; }
+.switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
 .switch.on { background: var(--primary); }
-.switch.on i { left: 14px; }
+.switch.on i { transform: translateX(14px); }
+button.switch:hover { filter: brightness(.96); }
+button.switch:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .files a { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--line-strong); background: var(--surface);
   border-radius: var(--r); font-size: 12px; color: var(--ink-2); }
@@ -1905,7 +1911,6 @@ main.page:has(> .set) { max-width: 1120px; }
 .ntable th:first-child { text-align: left; padding-left: 0; }
 .ntable td { padding: 8px; border-top: 1px solid var(--line); text-align: center; }
 .ntable td:first-child { text-align: left; padding-left: 0; }
-.ntable .switch { display: inline-block; cursor: pointer; border: 0; padding: 0; }
 .nrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
 .nrow input[type="time"] { width: auto; min-height: 32px; padding: 4px 8px; }
 @media (max-width: 560px) { .later .sp-l { margin-left: 0; width: 100%; } }
@@ -2079,3 +2084,16 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .queue-note span { margin-left: 4px; }
 .mention-menu .sl-item { display: flex; align-items: center; gap: 8px; }
 .mention-menu .sl-label b { font-weight: 600; }
+
+/* app connections: cards like hiring from The Agency */
+.app-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.app-card { gap: 10px; }
+.app-card b { font-size: 14px; font-weight: 600; }
+.app-card.is-on { border-color: var(--ok-line); }
+.app-logo { background: #fff; }
+.app-logo img { object-fit: contain; display: block; }
+.app-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 4px; min-height: 30px; }
+.app-acts { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-md); }
+.app-acts li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; font-size: 13px; }
+.app-acts li + li { border-top: 1px solid var(--line); }
+.app-foot > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
