@@ -35,11 +35,6 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # Catalog repo configuration
 # ---------------------------------------------------------------------------
 PIECES_REPO = os.environ.get("PIECES_REPO", "omilo/pieces")
-_REPO_URL = f"https://github.com/{PIECES_REPO}"
-_TARBALLS = [
-    f"https://codeload.github.com/{PIECES_REPO}/tar.gz/refs/heads/main",
-    f"https://api.github.com/repos/{PIECES_REPO}/tarball/main",
-]
 MAX_FILE = 500_000
 
 

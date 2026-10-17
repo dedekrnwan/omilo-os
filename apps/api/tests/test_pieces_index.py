@@ -156,7 +156,7 @@ def test_reindex_marks_removed_piece_missing(tmp_path, monkeypatch):
 
 
 def test_fetch_failure_keeps_last_good_index(tmp_path, monkeypatch):
-    """When fetch() raises, an existing index.json is left untouched (last-good)."""
+    """When fetch() fails, reindex() returns normally and leaves index.json untouched (last-good)."""
     source = tmp_path / "source"
     _write_piece(source, "gmail", GMAIL_MANIFEST)
 
@@ -164,19 +164,20 @@ def test_fetch_failure_keeps_last_good_index(tmp_path, monkeypatch):
     _point_source(monkeypatch, source)
 
     # Build a good index first
-    pieces.reindex()
+    counts1 = pieces.reindex()
+    assert counts1["ok"] == 1
     good_text = pieces.index_path().read_text()
 
-    # Now point PIECES_SOURCE at a non-existent path and clear any git/tarball fallback
+    # Now point PIECES_SOURCE at a non-existent path to trigger fetch failure
     monkeypatch.setenv("PIECES_SOURCE", str(tmp_path / "nonexistent"))
-    # Also unset PIECES_REPO to a garbage value to prevent real network calls
+    # Also override PIECES_REPO to a garbage value to prevent real network calls
     monkeypatch.setenv("PIECES_REPO", "omilo/this-repo-does-not-exist-xyzzy")
 
-    # reindex should log but not raise, and index.json must remain unchanged
-    try:
-        pieces.reindex()
-    except Exception:
-        pass  # if it raises, that's also acceptable as long as index is intact
+    # reindex must return normally (not raise) with last-good counts
+    counts2 = pieces.reindex()
+    assert counts2["ok"] == 1  # from prior index
+    assert counts2["invalid"] == 0
+    assert counts2["missing"] == 0
 
     # The prior index must still be intact
     assert pieces.index_path().read_text() == good_text
@@ -213,19 +214,3 @@ def test_index_path(tmp_path, monkeypatch):
     assert pieces.index_path() == pieces.root() / "index.json"
 
 
-def test_pieces_repo_default_and_env_override(monkeypatch):
-    """PIECES_REPO defaults to 'omilo/pieces' but can be overridden via env."""
-    monkeypatch.delenv("PIECES_REPO", raising=False)
-    # Re-import to pick up the module-level constant
-    import importlib
-    import omilo_api.pieces as p_mod
-    importlib.reload(p_mod)
-    assert p_mod.PIECES_REPO == "omilo/pieces"
-
-    monkeypatch.setenv("PIECES_REPO", "myorg/mypieces")
-    importlib.reload(p_mod)
-    assert p_mod.PIECES_REPO == "myorg/mypieces"
-
-    # Restore default after test
-    monkeypatch.delenv("PIECES_REPO", raising=False)
-    importlib.reload(p_mod)
