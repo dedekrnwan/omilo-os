@@ -371,10 +371,11 @@ def _sent_last_hour(db: Session, user_id: str) -> int:
 
 
 def plan_pushes(db: Session, user_id: str, p: dict, candidates: list[Notice]) -> tuple[list[dict], list[int]]:
-    """Which pushes go out now for one owner: Critical always, the rest up to the hourly cap; what does not fit is merged
+    """Which pushes go out now for one owner: Critical (and tests) always, the rest up to the hourly cap; what does not fit is merged
     into one push when there is room for it, otherwise kept (ids returned) for when a slot frees up."""
-    crit = [n for n in candidates if n.level == "critical"]
-    rest = [n for n in candidates if n.level != "critical"]
+    always = lambda n: n.level == "critical" or n.kind == "test"  # noqa: E731  (a test from Settings must show as itself)
+    crit = [n for n in candidates if always(n)]
+    rest = [n for n in candidates if not always(n)]
     out: list[dict] = [serialize(n) for n in crit]
     slots = max(0, p["max_per_hour"] - _sent_last_hour(db, user_id) - len(crit))
     if len(rest) <= slots:

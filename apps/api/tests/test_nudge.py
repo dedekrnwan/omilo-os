@@ -333,6 +333,7 @@ def test_settings_quiet_focus_and_push_payload(owner, monkeypatch, jakarta):
     def caught_up():  # earlier tests' notices go out first (merged under the cap); start counting after them
         with session_scope() as db:
             db.query(Notification).filter(Notification.channel == "push").delete()
+            db.query(Setting).filter(Setting.key.like("push_overflow:%")).delete(synchronize_session=False)
             return db.get(Setting, "push_cursor").value == N.latest_id(db)
 
     wait_for(caught_up, timeout=15)
