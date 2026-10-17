@@ -21,3 +21,6 @@ deploy/.env
 dump.rdb
 cli/cli
 cli/omilo
+
+# Local scratch (never commit)
+Claude outputs/
