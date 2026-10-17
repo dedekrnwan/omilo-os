@@ -18,7 +18,14 @@ export default function Login() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setErr(null);
-    try { await api("/auth/login", { body: { email, password } }); router.replace("/"); }
+    try {
+      await api("/auth/login", { body: { email, password } });
+      // from a notification button: go back to the item (only ever a page of this Omilo)
+      const next = new URLSearchParams(location.search).get("next");
+      let dest: URL | null = null;
+      try { dest = next ? new URL(next, location.href) : null; } catch { dest = null; }
+      if (dest && dest.origin === location.origin) location.assign(dest.href); else router.replace("/");
+    }
     catch (x: any) { setErr(x.status === 401 || /invalid|wrong|password/i.test(x.message) ? "That email and password don't match." : x.message); setBusy(false); }
   };
   return (

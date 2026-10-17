@@ -70,7 +70,9 @@ def _task_facts(db: Session, task_ids: list[str]) -> dict[str, dict]:
     return facts
 
 
-def build(db: Session, done_hours: int = 48) -> dict:
+def build(db: Session, done_hours: int = 48, prefs: dict | None = None) -> dict:
+    from . import nudge
+
     staff = {s.id: s for s in db.scalars(select(Staff))}
     t_now = now()
 
@@ -94,7 +96,7 @@ def build(db: Session, done_hours: int = 48) -> dict:
         card = {"id": i.id, "kind": i.kind, "title": _clip(i.title, 70), "summary": _clip(i.body or i.title),
                 "staff": who(i.staff_id), "since": X.iso(i.created_at), "level": i.level, "blocking": i.blocking, "task_id": i.task_id,
                 "searches": f["searches"] if f else 0, "tools": f["tools"] if f else 0, "engine": f["engine"] if f else "",
-                "steps": f["steps"] if f else [], "item": X.inbox(i)}
+                "steps": f["steps"] if f else [], "item": {**X.inbox(i), "nudge": nudge.info(db, i, prefs)}}
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             card["item"]["proposal"] = X.proposal(p)
             card["summary"] = _clip(X.proposal(p).get("body_md") or i.title)

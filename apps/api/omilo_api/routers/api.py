@@ -438,14 +438,15 @@ def list_inbox(status: str = "open", db: Session = Depends(get_db), user: User =
     items = list(db.scalars(q))
     order = {"critical": 0, "decision": 1, "fyi": 2}
     items.sort(key=lambda i: (order.get(i.level, 3), not i.blocking))
+    from .. import notify as N
     from .. import nudge
 
+    prefs = N.prefs(db, user.id)
     out = []
     for i in items:
         d = X.inbox(i)
         if i.status == "open":
-            st = nudge.state(db, i)
-            d["nudge"] = {"ladder": st["ladder"], "next_at": X.iso(st["due"]) if st.get("due") else None, "channel": st.get("channel")}
+            d["nudge"] = nudge.info(db, i, prefs)
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             d["proposal"] = X.proposal(p)
         elif i.kind == "workflow":
@@ -1866,6 +1867,8 @@ def notify_act(body: ActIn, request: Request, db: Session = Depends(get_db), adb
     created = tok.created_at.replace(tzinfo=tok.created_at.tzinfo or dt.UTC) if tok else None
     if not tok or tok.kind != "session" or created < now() - dt.timedelta(hours=12):
         raise HTTPException(401, "login_required")
+    if item.status != "open":
+        raise HTTPException(409, "already decided")
     if not N.one_tap_ok(db, item.id):
         raise HTTPException(409, "open it to decide: only low-risk proposals can be approved from a notification")
     p = _404(db.get(Proposal, item.ref_id))
@@ -1983,8 +1986,9 @@ def monitor(range: str = "7d", db: Session = Depends(get_db), user: User = Depen
 def inbox_board(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """The Inbox board: needs you, running, done (last 48 hours)."""
     from .. import board as B
+    from .. import notify as N
 
-    return B.build(db)
+    return B.build(db, prefs=N.prefs(db, user.id))
 
 
 @router.get("/digest")

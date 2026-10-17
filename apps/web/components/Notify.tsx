@@ -7,9 +7,31 @@ import { openInDrawer, visibleThreads } from "@/lib/open";
 /* Real-time notices: a live stream while Omilo is open (toasts, and system notifications when the tab is in the
    background), and Web Push when no tab is open. The browser asks for permission only after the owner clicks. */
 
-export type Notice = { id: number; at: string; kind: string; title: string; body: string; url: string; tag: string; level: string };
-export type NotifyConfig = { kinds: Record<string, string>; prefs: Record<string, boolean>; push: boolean; vapid_public_key: string | null;
-  devices: { id: string; agent: string; created_at: string; last_ok_at: string | null }[] };
+export type Notice = { id: number; at: string; kind: string; title: string; body: string; url: string; tag: string; level: string; item_id?: string | null };
+export type NotifyPrefs = { kinds: Record<string, Record<string, boolean>>; quiet: { on: boolean; start: string; end: string };
+  focus: { from: string; until: string } | null; sound: boolean; max_per_hour: number };
+export type NotifyConfig = { kinds: Record<string, string>; channels: Record<string, string>; prefs: NotifyPrefs; quiet_now: boolean; focus_now: boolean;
+  timezone: string; push: boolean; vapid_public_key: string | null; devices: { id: string; agent: string; created_at: string; last_ok_at: string | null }[] };
+
+const PREF_KEY: Record<string, string> = { nudge: "inbox", digest: "inbox" };
+const wants = (p: NotifyPrefs | null, kind: string, ch: string) => kind === "test" || !p || p.kinds[PREF_KEY[kind] || kind]?.[ch] !== false;
+
+/* A short two-note chime (no audio file needed). */
+function chime(critical: boolean) {
+  try {
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AC();
+    const notes = critical ? [880, 660, 880] : [660, 880];
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.type = "sine";
+      const t = ctx.currentTime + i * 0.16;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.15, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.16);
+    });
+    setTimeout(() => ctx.close(), 1000);
+  } catch { /* no audio here */ }
+}
 
 export const supported = () => typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator;
 export const permission = (): NotificationPermission | "unsupported" | "insecure" =>
@@ -69,7 +91,8 @@ async function systemNotify(n: Notice) {
   x.onclick = () => { window.focus(); location.href = BASE + n.url; };
 }
 
-const ICON: Record<string, string> = { inbox: "ri-inbox-2-line", reply: "ri-chat-3-line", job_done: "ri-checkbox-circle-line", job_failed: "ri-error-warning-line", test: "ri-notification-3-line" };
+const ICON: Record<string, string> = { inbox: "ri-inbox-2-line", nudge: "ri-alarm-line", reply: "ri-chat-3-line", job_done: "ri-checkbox-circle-line",
+  job_failed: "ri-error-warning-line", test: "ri-notification-3-line" };
 
 export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => void }) {
   const router = useRouter();
@@ -77,13 +100,15 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
   const [toasts, setToasts] = useState<Notice[]>([]);
   const [ask, setAsk] = useState(false);
   const [askMsg, setAskMsg] = useState<string | null>(null);
-  const prefs = useRef<Record<string, boolean>>({ inbox: true, reply: true, job_failed: true, job_done: false });
-  const unseen = useRef(0);
-  const baseTitle = useRef<string>("");
+  const prefs = useRef<NotifyPrefs | null>(null);
+  const calm = useRef(false); // quiet hours or focus right now: no sound
   const cb = useRef(onNotice);
   cb.current = onNotice;
 
-  const loadPrefs = useCallback(() => { api<NotifyConfig>("/notify").then((c) => { prefs.current = c.prefs; }).catch(() => {}); }, []);
+  const loadPrefs = useCallback(() => {
+    api<NotifyConfig>("/notify").then((c) => { prefs.current = c.prefs; calm.current = c.quiet_now || c.focus_now; }).catch(() => {});
+  }, []);
+  useEffect(() => { const t = setInterval(loadPrefs, 5 * 60000); return () => clearInterval(t); }, [loadPrefs]); // quiet hours begin and end
 
   useEffect(() => {
     loadPrefs();
@@ -96,11 +121,6 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
     return () => window.removeEventListener("omilo:notify-prefs", loadPrefs);
   }, [loadPrefs]);
 
-  useEffect(() => {
-    const vis = () => { if (!document.hidden) { unseen.current = 0; if (baseTitle.current) document.title = baseTitle.current; } };
-    document.addEventListener("visibilitychange", vis);
-    return () => document.removeEventListener("visibilitychange", vis);
-  }, []);
 
   useEffect(() => {
     const es = new EventSource(`${BASE}/api/stream`, { withCredentials: true });
@@ -109,18 +129,17 @@ export default function NotifyHost({ onNotice }: { onNotice?: (n: Notice) => voi
       try { n = JSON.parse((ev as MessageEvent).data); } catch { return; }
       cb.current?.(n);
       window.dispatchEvent(new CustomEvent("omilo:notice", { detail: n }));
-      if (n.kind !== "test" && prefs.current[n.kind] === false) return;
+      if (!wants(prefs.current, n.kind, "app")) return;
       const here = location.pathname + location.search;
       const looking = !document.hidden && document.hasFocus();
       if (looking && n.kind === "reply" && (here.endsWith(n.url) || [...visibleThreads].some((t) => n.url.includes(t)))) return; // already on screen
+      const hush = calm.current && n.level !== "critical"; // quiet hours or focus: Critical only
+      if (prefs.current?.sound && !hush && (n.kind === "inbox" || n.kind === "nudge" || n.level === "critical")) chime(n.level === "critical");
       if (looking) {
         setToasts((t) => [...t.filter((x) => !(n.tag && x.tag === n.tag)), n].slice(-3));
         setTimeout(() => setToasts((t) => t.filter((x) => x.id !== n.id)), n.level === "critical" ? 15000 : 7000);
-      } else {
-        systemNotify(n).catch(() => {});
-        if (!baseTitle.current || !document.title.startsWith("(")) baseTitle.current = document.title;
-        unseen.current += 1;
-        document.title = `(${unseen.current}) ${baseTitle.current}`;
+      } else if (!hush) {
+        systemNotify(n).catch(() => {}); // the tab title and icon already show the Inbox count (see Shell)
       }
     });
     return () => es.close();

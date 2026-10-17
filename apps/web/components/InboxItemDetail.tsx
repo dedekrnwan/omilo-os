@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
-import { InboxItem, api } from "@/lib/api";
-import { openInDrawer } from "@/lib/open";
+import { InboxItem, Proposal, ago, api, when } from "@/lib/api";
+import { openInDrawer, openThread } from "@/lib/open";
 import { useBlocks } from "@/components/workflows/blocks";
 import Canvas from "@/components/workflows/Canvas";
 
@@ -31,6 +31,67 @@ function WorkflowItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn:
         </div>
       ) : <p className="small">Decided: {i.answer || "done"}</p>}
     </>
+  );
+}
+
+export const SNOOZES: [string, string, { hours?: number; until?: string }][] = [
+  ["1 hour", "ri-time-line", { hours: 1 }], ["Tomorrow 08:00", "ri-sun-line", { until: "tomorrow" }], ["Monday 08:00", "ri-calendar-line", { until: "monday" }],
+];
+
+export async function askCos(itemId: string) {
+  const th = await api<{ id: string }>(`/inbox/${itemId}/ask-cos`, { body: {} });
+  openThread(th.id);
+}
+
+/* Under every open item: snooze it, hand it to the Chief of Staff, and when Omilo will remind you next. */
+function Later({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  if (i.status !== "open" && i.status !== "snoozed") return null;
+  const next = i.nudge?.next_at;
+  return (
+    <div className="later">
+      {i.status === "snoozed" ? (
+        <span className="small"><i className="ri-time-line" /> Snoozed until {when(i.snooze_until)}</span>
+      ) : (
+        <>
+          <span className="small">Snooze</span>
+          <div className="seg">{SNOOZES.map(([label, icon, body]) => (
+            <button key={label} disabled={busy} onClick={() => act(() => api(`/inbox/${i.id}/snooze`, { body }))}><i className={icon} />{label}</button>
+          ))}</div>
+          <button className="btn sm quiet" disabled={busy} onClick={() => askCos(i.id).catch((e) => setErr(e.message))}><i className="ri-user-star-line" />Ask the Chief of Staff</button>
+        </>
+      )}
+      {i.status === "open" && next && (
+        <span className="small sp-l" title={when(next)}>
+          <i className={i.nudge?.held ? "ri-moon-line" : "ri-alarm-line"} />{" "}
+          {i.nudge?.held ? "Reminders wait for quiet hours or focus to end"
+            : new Date(next).getTime() <= Date.now() ? "Reminder going out now"
+            : i.nudge?.channel === "brief" ? `In the morning brief ${ago(next)} if still open`
+            : i.nudge?.channel === "cos" ? `The Chief of Staff calls it out ${ago(next)}`
+            : `Next reminder ${ago(next)}`}
+        </span>
+      )}
+      <Err error={err} />
+    </div>
+  );
+}
+
+/* Low-risk proposals of the same kind from the same helper can be approved together. */
+function Similar({ p, busy, act }: { p: Proposal; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
+  const [list, setList] = useState<Proposal[]>([]);
+  useEffect(() => {
+    if (p.risk !== "low" || p.status !== "pending") return;
+    api<Proposal[]>(`/proposals/${p.id}/similar`).then(setList).catch(() => setList([]));
+  }, [p.id, p.risk, p.status]);
+  if (!list.length) return null;
+  return (
+    <div className="callout" style={{ marginTop: 10 }}>
+      <b>{list.length} more like this</b> are waiting from the same helper ({p.type}, low risk):
+      <ul className="small" style={{ margin: "4px 0 8px" }}>{list.slice(0, 5).map((x) => <li key={x.id}>{x.title}</li>)}{list.length > 5 && <li>…</li>}</ul>
+      <button className="btn sm" disabled={busy} onClick={() => act(() => api(`/proposals/${p.id}/decide-similar`, { body: { decision: "approve" } }))}>
+        <i className="ri-check-double-line" />Approve this and {list.length} similar
+      </button>
+    </div>
   );
 }
 
@@ -65,6 +126,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
                 <span className="sp" />
                 <button className="btn quiet" onClick={() => discuss(i.proposal!.id)}><i className="ri-chat-3-line" />Discuss</button>
               </div>
+              <Similar p={i.proposal} busy={busy} act={act} />
             </>
           )}
         </>
@@ -77,7 +139,6 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
               <textarea placeholder="Your answer" value={note} onChange={(e) => setNote(e.target.value)} />
               <div className="acts" style={{ marginTop: 8 }}>
                 <button className="btn primary" disabled={busy || !note.trim()} onClick={() => act(() => api(`/inbox/${i.id}/answer`, { body: { answer: note } }))}>Answer</button>
-                <button className="btn" disabled={busy} onClick={() => act(() => api(`/inbox/${i.id}/snooze`, { body: { hours: 1 } }))}>Snooze 1h</button>
               </div>
             </>
           )}
@@ -94,6 +155,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
           </div>
         </>
       )}
+      <Later i={i} busy={busy} act={act} />
       <Err error={err} />
     </div>
   );

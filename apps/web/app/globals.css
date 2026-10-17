@@ -1887,3 +1887,17 @@ main.page:has(> .set) { max-width: 1120px; }
   .act-detail { padding-left: 14px; }
   .set-card { flex-wrap: wrap; }
 }
+
+/* M3: snooze / ask CoS row under an inbox item, and the notification settings grid */
+.later { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.later .seg button i { margin-right: 4px; }
+.later .sp-l { margin-left: auto; }
+.ntable { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 14px; }
+.ntable th { text-align: center; font-weight: 500; font-size: 12px; color: var(--muted); padding: 4px 8px; }
+.ntable th:first-child { text-align: left; padding-left: 0; }
+.ntable td { padding: 8px; border-top: 1px solid var(--line); text-align: center; }
+.ntable td:first-child { text-align: left; padding-left: 0; }
+.ntable .switch { display: inline-block; cursor: pointer; border: 0; padding: 0; }
+.nrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.nrow input[type="time"] { width: auto; min-height: 32px; padding: 4px 8px; }
+@media (max-width: 560px) { .later .sp-l { margin-left: 0; width: 100%; } }

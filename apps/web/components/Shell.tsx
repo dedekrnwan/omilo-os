@@ -3,7 +3,7 @@ import { usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
-import { ApiError, Overview, api } from "@/lib/api";
+import { ApiError, BASE, Overview, api } from "@/lib/api";
 import PreviewHost from "./PreviewLazy";
 import NotifyHost from "./Notify";
 import TaskDrawerLazy from "./TaskDrawerLazy";
@@ -22,6 +22,28 @@ const TITLES: Record<string, [string, string]> = Object.fromEntries(NAV.flatMap(
 type Ctx = { overview: Overview | null; refresh: () => void };
 const OverviewCtx = createContext<Ctx>({ overview: null, refresh: () => {} });
 export const useOverview = () => useContext(OverviewCtx);
+
+/* A dot on the tab's icon while something waits in the Inbox (red when it is critical). */
+let plainIcons: { el: HTMLLinkElement; href: string }[] | null = null;
+function setFaviconDot(color: string | null) {
+  if (typeof document === "undefined") return;
+  const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]'));
+  if (!plainIcons) plainIcons = links.map((el) => ({ el, href: el.href }));
+  if (!color) { plainIcons.forEach(({ el, href }) => { el.href = href; }); return; }
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.drawImage(img, 0, 0, 64, 64);
+    g.beginPath(); g.arc(48, 16, 14, 0, 2 * Math.PI); g.fillStyle = "#fff"; g.fill();
+    g.beginPath(); g.arc(48, 16, 11, 0, 2 * Math.PI); g.fillStyle = color; g.fill();
+    const url = c.toDataURL("image/png");
+    plainIcons!.forEach(({ el }) => { el.href = url; });
+  };
+  img.src = `${BASE}/icon-192.png`;
+}
 
 export { Mark } from "./Logo";
 import { Mark } from "./Logo";
@@ -62,6 +84,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     const n = overview?.inbox.open || 0;
     const base = overview?.company_name ? `${overview.company_name} · Omilo` : "Omilo";
     document.title = n ? `(${n}) ${base}` : base;
+    setFaviconDot(n ? (overview?.inbox.critical ? "#dc2626" : "#f59e0b") : null);
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
 

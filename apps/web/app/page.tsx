@@ -1,12 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
 import Lineage from "@/components/Lineage";
 import WorkMap from "@/components/WorkMap";
-import InboxItemDetail from "@/components/InboxItemDetail";
+import InboxItemDetail, { SNOOZES, askCos } from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { InboxItem, ago, api } from "@/lib/api";
@@ -93,6 +93,20 @@ function BoardView({ onCount }: { onCount: () => void }) {
   const load = useCallback(async () => { try { setB(await api<Board>("/board")); setErr(null); } catch (e: any) { setErr(e.message); } }, []);
   usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind?.startsWith("job") || n?.kind === "local");
   const now = useNow(!!b?.running.length || !!b?.needs.length);
+  const seenIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!b) return;
+    // opened from a notification (/?item=…): show that item
+    const want = new URLSearchParams(location.search).get("item");
+    if (want) {
+      const c = b.needs.find((x) => x.id === want);
+      if (c) { if (c.task_id && c.kind !== "workflow") openTask(c.task_id, "approvals"); else setDetail(c); }
+      const u = new URL(location.href); u.searchParams.delete("item"); history.replaceState(history.state, "", u.pathname + u.search);
+    }
+    // looking at the board acknowledges Critical items, so their every-15-minutes reminders stop
+    const crit = b.needs.filter((c) => c.level === "critical" && !seenIds.current.has(c.id)).map((c) => c.id);
+    if (crit.length && !document.hidden) { crit.forEach((id) => seenIds.current.add(id)); api("/notify/seen", { body: { item_ids: crit } }).catch(() => {}); }
+  }, [b]);
   const toggle = (id: string) => setOpen((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
   const closeDetail = useCallback(() => setDetail(null), []);
 
@@ -107,7 +121,10 @@ function BoardView({ onCount }: { onCount: () => void }) {
       c.kind === "workflow" && c.item.status === "open" && { label: c.item.workflow?.type === "proposal" ? "Approve and switch on" : "Approve", icon: "ri-check-line", onSelect: () => quick(() => api(`/inbox/${c.id}/decide`, { body: { decision: "approved" } })) },
       c.kind === "workflow" && c.item.workflow?.workflow && { label: "Open the workflow", icon: "ri-flow-chart", onSelect: () => router.push(`/workflows/?id=${(c.item.workflow!.workflow as any).id}`) },
       c.kind === "question" && { label: "Answer…", icon: "ri-question-answer-line", onSelect: () => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c)) },
-      c.kind === "question" && { label: "Snooze for an hour", icon: "ri-time-line", onSelect: () => quick(() => api(`/inbox/${c.id}/snooze`, { body: { hours: 1 } })) },
+      sep,
+      ...SNOOZES.map(([label, icon, body]) => ({ label: `Snooze: ${label}`, icon, onSelect: () => quick(() => api(`/inbox/${c.id}/snooze`, { body })) })),
+      { label: "Ask the Chief of Staff", icon: "ri-user-star-line", onSelect: () => askCos(c.id).catch((e) => setErr(e.message)) },
+      sep,
       c.kind === "alert" && { label: "Dismiss", icon: "ri-close-circle-line", onSelect: () => quick(() => api(`/inbox/${c.id}/dismiss`, { body: {} })) },
       c.task_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => openTask(c.task_id!) },
       { label: "Copy the text", icon: "ri-file-copy-line", onSelect: () => copy(`${c.title}\n\n${c.summary}`) },
@@ -183,7 +200,8 @@ function ListView({ onCount }: { onCount: () => void }) {
               { label: open === i.id ? "Close" : "Open", icon: "ri-file-list-3-line", onSelect: () => setOpen(open === i.id ? null : i.id) },
               p && p.status === "pending" && { label: "Approve", icon: "ri-check-line", onSelect: () => act(() => api(`/proposals/${p.id}/decide`, { body: { decision: "approve", note: "" } })) },
               p && { label: "Discuss with the helper", icon: "ri-chat-3-line", onSelect: async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: p.id } }); openThread(th.id); } },
-              i.kind === "question" && i.status === "open" && { label: "Snooze for an hour", icon: "ri-time-line", onSelect: () => act(() => api(`/inbox/${i.id}/snooze`, { body: { hours: 1 } })) },
+              ...(i.status === "open" ? SNOOZES.map(([label, icon, body]) => ({ label: `Snooze: ${label}`, icon, onSelect: () => act(() => api(`/inbox/${i.id}/snooze`, { body })) })) : []),
+              i.status === "open" && { label: "Ask the Chief of Staff", icon: "ri-user-star-line", onSelect: () => askCos(i.id).catch((e) => setErr(e.message)) },
               i.kind === "alert" && i.status === "open" && { label: "Dismiss", icon: "ri-close-circle-line", onSelect: () => act(() => api(`/inbox/${i.id}/dismiss`, { body: {} })) },
               !!i.task_id && { label: "Open the job", icon: "ri-list-check-3", onSelect: () => openTask(i.task_id!) },
               { label: "Copy the text", icon: "ri-file-copy-line", onSelect: () => copy(`${i.title}\n\n${i.body}`) },

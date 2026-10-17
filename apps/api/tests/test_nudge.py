@@ -33,6 +33,23 @@ def jakarta(owner):
     yield
 
 
+_made: list[str] = []
+
+
+@pytest.fixture(autouse=True)
+def _close_items_after():
+    """Close what these tests opened: helpers allow only a few open questions, and other tests ask some too."""
+    yield
+    from omilo_api.db import session_scope
+    from omilo_api.models import InboxItem
+
+    with session_scope() as db:
+        for iid in _made:
+            if (i := db.get(InboxItem, iid)) and i.status != "done":
+                i.status = "done"
+    _made.clear()
+
+
 def _item(created, kind="question", level="decision", blocking=False, staff="support", title="Which price?"):
     from omilo_api.db import session_scope
     from omilo_api.models import InboxItem
@@ -41,6 +58,7 @@ def _item(created, kind="question", level="decision", blocking=False, staff="sup
         i = InboxItem(kind=kind, staff_id=staff, title=title, body=title, level=level, blocking=blocking, created_at=created)
         db.add(i)
         db.flush()
+        _made.append(i.id)
         return i.id
 
 

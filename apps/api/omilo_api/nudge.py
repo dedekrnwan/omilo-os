@@ -105,6 +105,21 @@ def state(db: Session, item: InboxItem) -> dict:
     return {"ladder": kind, "next": k, "due": due, "channel": channel, "stopped": False}
 
 
+def info(db: Session, item: InboxItem, p: dict | None = None) -> dict:
+    """For the web app: which ladder, when (and how) the next reminder comes, and whether quiet hours or focus hold it."""
+    from .serialize import iso
+
+    st = state(db, item)
+    due, channel = st.get("due"), st.get("channel", "push")
+    if st.get("next") == 0 and st.get("fresh") and due and now() - due < FRESH:
+        plan, _ = LADDERS[st["ladder"]]  # the first notice just went out: what comes after it
+        channel, gap = plan[1]
+        due = next_brief(db, due) if gap == BRIEF else due + gap
+    level = "critical" if st["ladder"] == "critical" else "decision"
+    return {"ladder": st["ladder"], "next_at": iso(due) if due else None, "channel": channel if due else None,
+            "held": bool(due and p and N.held(db, p, level))}
+
+
 # ------------------------------------------------------------------ the reminders themselves
 def _who(db: Session, item: InboxItem) -> str:
     st = db.get(Staff, item.staff_id) if item.staff_id else None
