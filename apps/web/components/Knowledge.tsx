@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Avatar from "@/components/Avatar";
 import Drawer from "@/components/Drawer";
+import KnowledgeSettings from "@/components/KnowledgeSettings";
 import { Markdown } from "@/components/Markdown";
 import { Err } from "@/components/ui";
 import { BASE, api } from "@/lib/api";
@@ -126,59 +127,10 @@ function KMap({ data, hits, point, kinds, onOpen }: { data: MapData; hits: Hit[]
 }
 
 function Settings({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
-  const [s, setS] = useState<any>(null);
-  const [form, setForm] = useState<{ provider: string; model: string; api_key: string }>({ provider: "local", model: "", api_key: "" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    api<any>("/kb/settings").then((x) => { setS(x); setForm({ provider: x.current.provider || "local", model: x.current.model || "", api_key: "" }); }).catch((e) => setErr(e.message));
-  }, []);
-  const save = async () => {
-    setBusy(true); setErr(null);
-    try { await api("/kb/settings", { method: "PUT", body: { provider: form.provider, model: form.model || null, api_key: form.api_key || null } }); onChanged(); onClose(); }
-    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
-  };
-  const reindex = async () => {
-    if (!(await confirmDialog({ title: "Re-embed all knowledge?", body: "Every piece is embedded again in the background. Search keeps working by words meanwhile.", confirm: "Re-embed" }))) return;
-    await api("/kb/reindex", { body: {} }); onChanged();
-  };
-  const p = s?.providers?.[form.provider];
   return (
     <Drawer open onClose={onClose} icon={<i className="ri-settings-3-line" />} title="Knowledge settings" sub="How text becomes vectors for search by meaning."
-      footer={<><button className="btn quiet" onClick={reindex}><i className="ri-refresh-line" />Re-embed everything</button><span className="sp" />
-        <button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy || !s} onClick={save}>{busy ? "Checking…" : "Save"}</button></>}>
-      {!s ? <div className="dw-sec"><p className="small">Loading…</p><Err error={err} /></div> : (
-        <div className="dw-sec">
-          <label style={{ marginTop: 0 }}>Embedding model runs</label>
-          {Object.entries(s.providers as Record<string, any>).filter(([k]) => k !== "hash" || form.provider === "hash").map(([k, v]) => (
-            <div key={k} className="togrow" onClick={() => setForm({ provider: k, model: Object.keys(v.models)[0], api_key: "" })}>
-              <span className="t"><b>{v.label}</b><span>{k === "local" ? "Free and private. Downloads once (~220 MB), then works offline. Understands Indonesian."
-                : k === "voyage" ? "Anthropic's recommended embeddings. Best quality; billed by Voyage per token." : k === "openai" ? "text-embedding-3. Cheap and good; billed by OpenAI." : "Word matching only."}</span></span>
-              <span className={`switch ${form.provider === k ? "on" : ""}`} role="radio" aria-checked={form.provider === k}><i /></span>
-            </div>
-          ))}
-          {p && (
-            <>
-              <label>Model</label>
-              <select value={form.model || Object.keys(p.models)[0]} onChange={(e) => setForm({ ...form, model: e.target.value })}>
-                {Object.entries(p.models as Record<string, string>).map(([m, l]) => <option key={m} value={m}>{l}</option>)}
-              </select>
-              {p.needs_key && (
-                <>
-                  <label>API key</label>
-                  <input type="password" autoComplete="off" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                    placeholder={s.keys[form.provider] ? `Saved: …${s.keys[form.provider]}` : "Paste the key"} />
-                  <p className="dw-help">Stored encrypted; only the last 4 characters are shown again.</p>
-                </>
-              )}
-            </>
-          )}
-          {s.current.provider === "local" && s.current.local?.error && <div className="error" style={{ marginTop: 12 }}>{s.current.local.error}</div>}
-          <p className="dw-help" style={{ marginTop: 14 }}>Switching re-embeds everything in the background; search by words keeps working meanwhile.
-            Now: <b>{s.current.provider}</b> · {s.current.model}{s.current.dim ? ` · ${s.current.dim} dims` : ""}</p>
-          <Err error={err} />
-        </div>
-      )}
+      footer={<><span className="sp" /><button className="btn" onClick={onClose}>Close</button></>}>
+      <div className="dw-sec"><KnowledgeSettings onChanged={onChanged} /></div>
     </Drawer>
   );
 }

@@ -19,7 +19,6 @@ from ..db import get_auth_db, get_db
 from ..engines import get_engine
 from ..importer import import_prototype
 from ..models import (
-    AuditEvent,
     Checkpoint,
     InboxItem,
     Proposal,
@@ -1438,12 +1437,6 @@ def kpis(db: Session = Depends(get_db), user: User = Depends(current_user)):
 
 
 # ------------------------------------------------------------------ audit & import
-@router.get("/audit")
-def audit_log(limit: int = 200, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    rows = db.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(min(limit, 1000)))
-    return [{"id": a.id, "at": X.iso(a.at), "actor": a.actor, "action": a.action, "ref": a.ref, "detail": a.detail} for a in rows]
-
-
 class ImportIn(BaseModel):
     files: dict[str, str]
 

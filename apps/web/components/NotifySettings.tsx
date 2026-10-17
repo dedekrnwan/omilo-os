@@ -5,7 +5,7 @@ import { usePoll } from "@/lib/poll";
 import { NotifyConfig, disablePush, enableNotifications, permission } from "./Notify";
 
 /* Settings → Notifications: turn them on for this browser, choose what to hear about, send a test. */
-export default function NotifySettings() {
+export default function NotifySettings({ embedded = false }: { embedded?: boolean }) {
   const [cfg, setCfg] = useState<NotifyConfig | null>(null);
   const [perm, setPerm] = useState<string>("default");
   const [msg, setMsg] = useState<string | null>(null);
@@ -21,9 +21,9 @@ export default function NotifySettings() {
   };
 
   return (
-    <div className="paper" style={{ marginBottom: 24 }}>
+    <div className={embedded ? "" : "paper"} style={embedded ? undefined : { marginBottom: 24 }}>
       <div className="acts" style={{ justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0 }}>Notifications</h2><span className={`chip ${state[0]}`}>{state[1]}</span>
+        {embedded ? <b>This browser</b> : <h2 style={{ margin: 0 }}>Notifications</h2>}<span className={`chip ${state[0]}`}>{state[1]}</span>
       </div>
       <p className="note">Saga OS tells you right away when a helper needs you. Inside the app you see a small pop-up; when the tab is in the
         background or closed, your computer or phone shows a notification.</p>

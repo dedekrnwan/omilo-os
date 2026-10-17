@@ -188,6 +188,17 @@ measures and the helper who keeps it current. On each card (or by right-click):
 Helpers get every KPI with its target in `get_context`, and goals on the **Plan** page show the KPIs that measure them.
 API: `GET /api/kpis/board`, `PUT|DELETE /api/kpis/defs/{name}`, `POST /api/kpis/values`, `DELETE /api/kpis/values/{id}`, `POST /api/kpis/{name}/ask`.
 
+## Settings
+
+Grouped, each section with its own address (`/settings/?s=activity`) and a search box: **Company** (general: name, time
+zone; safety & limits: strict mode, helpers at once, pause), **AI** (engine, connection check, knowledge embeddings),
+**You** (account and password, devices & tokens, notifications) and **Data** (activity log, data & storage). The
+activity log reads as sentences ("Support asked for approval · Draft from …"), grouped by day, filterable by group,
+by who and by period, searchable, paged (25/50/100) and exportable as CSV. Settings that belong to one thing (a
+helper's permissions, a connector) stay on that page; "Elsewhere" links to them.
+API: `GET /api/audit?q=&category=&actor=&days=&page=&per_page=`, `GET /api/audit/export`, `PATCH /api/auth/me`,
+`POST /api/auth/password`, `GET /api/auth/sessions`, `POST /api/auth/sessions/sign-out-others`, `GET /api/system/info`.
+
 ## Data: Postgres, pgvector and Redis
 
 - **Postgres** holds everything. Each company is its own schema (`co_main`, `co_<id>`) in one database, so companies
@@ -436,7 +447,7 @@ All settings are environment variables with the `SAGA_` prefix (see `apps/api/sa
 
 ## Status of testing
 
-- 68 API tests pass on Postgres 16 + pgvector and Redis 7 (knowledge base, SQLite import, policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
+- 71 API tests pass on Postgres 16 + pgvector and Redis 7 (knowledge base, SQLite import, policy, auth, CSRF, propose → approve → execute, changes loop, MCP auth and tools, cross-agent isolation, delegation, questions, chat, official MCP client, prototype import, several companies, lessons, memory search, the retro's measured changes and rollback, retries, Claude Code with an API key, the Hermes migration).
 - Web build passes; the full UI flow was checked with Playwright on desktop and mobile.
 - CLI checked against a live server.
 - The Docker image and server compose have **not** been built in CI yet.

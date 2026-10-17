@@ -82,7 +82,7 @@ export type WfPattern = { staff: { id: string; name: string }; title: string; co
 export type Message = { id: string; role: string; author: string; text: string; at: string };
 export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[] };
 export type Overview = {
-  company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number;
+  company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
   inbox: { open: number; critical: number; blocking: number };
   tasks: { running: number; queued: number; done_24h: number; failed_24h: number };
   staff: { id: string; name: string; status: string; is_chief: boolean; running: number }[];
