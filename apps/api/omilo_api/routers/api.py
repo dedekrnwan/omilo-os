@@ -907,11 +907,114 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
     return C.connector_public(c)
 
 
+@router.post("/connectors/pieces/{slug}/connect")
+def piece_connect_start(slug: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Begin an OAuth flow for a piece connector.
+
+    Validates that the slug exists in the catalog, calls broker.start_connect,
+    and returns {"auth_url": str, "state": str} to the caller.
+    """
+    from .. import broker as B
+    from .. import pieces as P
+
+    entry = P.get_piece(slug)
+    if entry is None or entry.get("status") != "ok":
+        raise HTTPException(404, f"piece '{slug}' not found in catalog")
+
+    manifest = entry["manifest"]
+    result = B.default_broker.start_connect(manifest)
+    return result
+
+
+@router.get("/connectors/pieces/connect/{state}")
+def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Poll the broker for a pending OAuth flow.
+
+    If the token is ready:
+      - Upserts a Connector row (id=slug, kind='piece').
+      - Derives approval from the manifest actions: 'ask' if any action is 'ask', else 'auto'.
+      - Stores the token encrypted in secrets_enc (clears any needs_reconnect sentinel).
+      - Returns {"status": "connected"}.
+    If still pending: returns {"status": "pending"}.
+    """
+    from .. import broker as B
+    from .. import capabilities as C
+    from .. import pieces as P
+    from ..models import Connector
+    from ..security import encrypt
+    import json
+
+    broker = B.default_broker
+    slug = broker.slug_for_state(state)
+    if slug is None:
+        # Unknown state — treat as pending (the real broker would also return None)
+        return {"status": "pending"}
+
+    token_result = broker.poll(state)
+    if token_result is None:
+        return {"status": "pending"}
+
+    # Token is ready — upsert the Connector row
+    token_dict = token_result.get("token") if "token" in token_result else token_result
+
+    # Load the manifest to derive approval and label
+    entry = P.get_piece(slug)
+    manifest = entry["manifest"] if entry else {}
+    label = manifest.get("label", slug)
+
+    # Derive connector-level approval: 'ask' if ANY action has approval=='ask', else 'auto'
+    actions = manifest.get("actions", [])
+    approval = "ask" if any(a.get("approval") == "ask" for a in actions) else "auto"
+
+    # Upsert: fetch existing or create new
+    c = db.get(Connector, slug)
+    if c is None:
+        c = Connector(id=slug)
+        db.add(c)
+
+    c.label = label
+    c.kind = "piece"
+    c.url = ""
+    c.command = ""
+    c.args = []
+    c.approval = approval
+    c.default_on = True
+    c.enabled = True
+
+    # Store the token encrypted, clear any needs_reconnect sentinel
+    secrets = C.connector_secrets(c)
+    secrets["token"] = token_dict
+    secrets.pop("needs_reconnect", None)
+    c.secrets_enc = encrypt(json.dumps(secrets))
+
+    S.audit(db, user.id, "connector.piece.connect", slug, approval=approval)
+    db.commit()
+
+    # Consume the state so it can't be replayed
+    broker.consume_state(state)
+
+    return {"status": "connected"}
+
+
 @router.delete("/connectors/{cid}")
 def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import broker as B
+    from .. import capabilities as C
     from ..models import Connector
 
-    db.delete(_404(db.get(Connector, cid), "unknown connector"))
+    c = _404(db.get(Connector, cid), "unknown connector")
+
+    # Best-effort revoke for piece connectors
+    if c.kind == "piece":
+        try:
+            secrets = C.connector_secrets(c)
+            token = secrets.get("token")
+            if token:
+                B.default_broker.revoke(token)
+        except Exception:  # noqa: BLE001
+            pass  # revoke is best-effort; never block disconnect
+
+    db.delete(c)
     S.audit(db, user.id, "connector.remove", cid)
     db.commit()
     return {"ok": True}
