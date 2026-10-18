@@ -359,6 +359,14 @@ function WorkspaceInner() {
                   <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff"
                     : isGroup ? "No @mention: the Chief of Staff answers · Enter to send" : "@ to mention · / for commands · Enter to send"}</span>
                   <span className="sp" />
+                  {current.awaiting_reply && (
+                    <button type="button" className="btn sm danger" onClick={async () => {
+                      if (!(await confirmDialog({ title: "Stop this reply?", body: "The helper stops after its current step. What it already wrote stays.", confirm: "Stop", cancel: "Let it finish", danger: true }))) return;
+                      try { await api(`/threads/${current.id}/cancel`, { body: {} }); } catch (e: any) { setErr(e.message); }
+                    }}>
+                      <i className="ri-stop-circle-line" />Stop
+                    </button>
+                  )}
                   <button className="btn primary sm" type="submit" disabled={(!text.trim() && !files.length) || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
                 </div>
               </form>
