@@ -65,7 +65,7 @@ desktop:
 	@test -f dist/runtime/VERSION || $(MAKE) desktop-runtime
 	@$(MAKE) desktop-app
 
-# Just the app around the existing dist/runtime: Omilo.app and the .dmg.
+# Just the app around the existing dist/runtime: Omilo.app and the .dmg, with your current web app and Omilo code.
 desktop-app:
 	@command -v cargo >/dev/null 2>&1 || { echo "The Mac app is built with Rust. Install it (one line, then open a new Terminal):"; \
 	  echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"; exit 1; }
@@ -73,6 +73,7 @@ desktop-app:
 	@for f in pgsql/bin/initdb pgsql/bin/postgres pgsql/bin/pg_ctl pgsql/share/extension/vector.control valkey/bin/valkey-server \
 	  python/bin/python3 node/bin/node web/index.html; do test -e dist/runtime/$$f || { echo "dist/runtime/$$f is missing: \
 	  rebuild that part (ONLY=postgres|valkey|python|node|web scripts/desktop/build-runtime.sh, then scripts/desktop/sign-runtime.sh)"; exit 1; }; done
+	ONLY=web scripts/desktop/build-runtime.sh
 	scripts/desktop/sync-api.sh
 	cd apps/desktop && npm install --no-audit --no-fund && npx tauri build --bundles app,dmg
 	@echo "Done: $$(ls -d apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg)"
