@@ -256,6 +256,20 @@ function WorkspaceInner() {
     } catch (e: any) { setErr(e.message); }
   };
 
+  const decideProposal = async (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => {
+    try {
+      await api(`/proposals/${proposalId}/decide`, { body: { decision, note } });
+      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
+    } catch (e: any) { setErr(e.message); }
+  };
+
+  const answerQuestion = async (itemId: string, answer: string) => {
+    try {
+      await api(`/inbox/${itemId}/answer`, { body: { answer } });
+      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
+    } catch (e: any) { setErr(e.message); }
+  };
+
   const send = async (t: string) => {
     if (slash.jobBrief !== null && t.startsWith("/job")) { startJob(slash.jobBrief); return; }
     if ((!t.trim() && !files.length) || !tid) return;
@@ -360,7 +374,7 @@ function WorkspaceInner() {
         </nav>
         <section className="ws-main">
           <div className="ws-scroll" ref={scroller}>
-            {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} onDecide={decide} /></div>
+            {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} /></div>
               : <div className="ws-inner"><p className="small">Loading…</p></div>)
               : taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
               : taskId ? <TaskView id={taskId} staff={staff} />

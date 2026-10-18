@@ -13,7 +13,7 @@ import { kick, usePoll } from "@/lib/poll";
 /* A conversation with a helper: messages, live run cards and clickable choices. Used by the Workspace and by the
    job / chat drawers that open from anywhere. */
 
-export type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string; request_id?: string; kind?: string; target?: Record<string, unknown>; reason?: string; decided?: string }[] };
+export type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string; request_id?: string; kind?: string; target?: Record<string, unknown>; reason?: string; decided?: string; proposal_id?: string; title?: string; risk?: "low" | "medium" | "high"; summary?: string; item_id?: string; question?: string }[] };
 export type FullThread = Thread & { messages: Msg[] };
 
 export function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]; busy: boolean; onPick: (o: string) => void }) {
@@ -154,6 +154,179 @@ function AccessCard({ requestId, kind, target, reason, decided, onDecide }: {
   );
 }
 
+/** Proposal approval card — mirrors AccessCard. */
+function ProposalCard({ proposalId, title, risk, summary, onProposal }: {
+  proposalId: string; title: string; risk: "low" | "medium" | "high"; summary: string;
+  onProposal: (id: string, decision: "approve" | "reject" | "changes", note: string) => void;
+}) {
+  const [noteOpen, setNoteOpen] = useState<"reject" | "changes" | null>(null);
+  const [note, setNote] = useState("");
+  const [decided, setDecided] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  const act = async (decision: "approve" | "reject" | "changes", n = "") => {
+    setBusy(true);
+    try {
+      await onProposal(proposalId, decision, n);
+      setDecided(decision);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openNote = (kind: "reject" | "changes") => {
+    setNoteOpen(kind);
+    setTimeout(() => noteRef.current?.focus(), 0);
+  };
+
+  const riskChip = risk === "high"
+    ? <span className="chip down">High risk</span>
+    : risk === "medium"
+    ? <span className="chip outline">Medium risk</span>
+    : <span className="chip quiet">Low risk</span>;
+
+  if (decided) {
+    const label = decided === "approve" ? "Approved" : decided === "changes" ? "Changes requested" : "Rejected";
+    const icon = decided === "approve" ? "ri-checkbox-circle-fill" : "ri-close-circle-line";
+    const color = decided === "approve" ? "var(--ok)" : "var(--bad)";
+    return (
+      <div className="callout" style={{ marginTop: 8 }}>
+        <div className="small" style={{ fontWeight: 500, marginBottom: 4 }}>Proposal: {title}</div>
+        <div className="small" style={{ color, fontWeight: 500 }}>
+          <i className={icon} /> {label}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="callout" style={{ marginTop: 8 }}>
+      <div className="acts" style={{ gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+        <div className="small" style={{ fontWeight: 500 }}>Proposal: {title}</div>
+        {riskChip}
+      </div>
+      {summary && <div className="small" style={{ marginBottom: 8 }}>{summary}</div>}
+      {!noteOpen ? (
+        <div className="acts" style={{ gap: 6, flexWrap: "wrap" }}>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => act("approve")}><i className="ri-check-line" />Approve</button>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => openNote("changes")}><i className="ri-edit-line" />Request changes</button>
+          <button className="btn sm danger" type="button" disabled={busy} onClick={() => openNote("reject")}><i className="ri-close-line" />Reject</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <textarea
+            ref={noteRef}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={noteOpen === "changes" ? "What should change? (the helper will see this)" : "Why are you rejecting this? (the helper will see this)"}
+            rows={2}
+            aria-label={noteOpen === "changes" ? "Reason for requesting changes (visible to the helper)" : "Reason for rejecting (visible to the helper)"}
+            style={{ resize: "vertical", fontSize: 13 }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setNoteOpen(null); setNote(""); } }}
+          />
+          <div className="acts" style={{ gap: 6 }}>
+            <button
+              className={noteOpen === "reject" ? "btn sm danger" : "btn sm"}
+              type="button"
+              disabled={busy || !note.trim()}
+              onClick={() => act(noteOpen, note)}
+            >
+              {noteOpen === "changes" ? <><i className="ri-edit-line" />Send changes</> : <><i className="ri-close-line" />Confirm reject</>}
+            </button>
+            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => { setNoteOpen(null); setNote(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ProposalRequest({ m, onProposal }: { m: Msg; onProposal: (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => void }) {
+  const blocks = m.blocks?.filter((b) => b.type === "proposal") || [];
+  if (!blocks.length) return null;
+  return (
+    <>
+      {blocks.map((b, i) => (
+        <ProposalCard
+          key={i}
+          proposalId={b.proposal_id || ""}
+          title={b.title || ""}
+          risk={b.risk || "low"}
+          summary={b.summary || ""}
+          onProposal={onProposal}
+        />
+      ))}
+    </>
+  );
+}
+
+/** Question card — lets the owner answer inline. */
+function QuestionCard({ itemId, question, onAnswer }: {
+  itemId: string; question: string; onAnswer: (id: string, answer: string) => void;
+}) {
+  const [answer, setAnswer] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    if (!answer.trim()) return;
+    setBusy(true);
+    try {
+      await onAnswer(itemId, answer);
+      setSent(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="callout" style={{ marginTop: 8 }}>
+        <div className="small" style={{ marginBottom: 4 }}>{question}</div>
+        <div className="small" style={{ color: "var(--ok)", fontWeight: 500 }}><i className="ri-checkbox-circle-line" /> Answer sent</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="callout" style={{ marginTop: 8 }}>
+      <div className="small" style={{ fontWeight: 500, marginBottom: 6 }}>{question}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          placeholder="Type your answer here"
+          rows={2}
+          aria-label="Your answer to the helper's question"
+          style={{ resize: "vertical", fontSize: 13 }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+        />
+        <div className="acts" style={{ gap: 6 }}>
+          <button className="btn sm primary" type="button" disabled={busy || !answer.trim()} onClick={send}><i className="ri-send-plane-line" />Send answer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function QuestionRequest({ m, onAnswer }: { m: Msg; onAnswer: (itemId: string, answer: string) => void }) {
+  const blocks = m.blocks?.filter((b) => b.type === "question") || [];
+  if (!blocks.length) return null;
+  return (
+    <>
+      {blocks.map((b, i) => (
+        <QuestionCard
+          key={i}
+          itemId={b.item_id || ""}
+          question={b.question || ""}
+          onAnswer={onAnswer}
+        />
+      ))}
+    </>
+  );
+}
+
 const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/```\w*\n?/g, "")).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/[*_`~]+/g, "").replace(/^#+\s*/gm, "").replace(/^>\s?/gm, "").trim();
 
@@ -185,7 +358,7 @@ function msgItems(th: FullThread, m: Msg, who: string, staff: Staff[]): MenuItem
   ].filter(Boolean) as MenuItem[];
 }
 
-export function Conversation({ th, staff, events, onSend, busy, onDecide }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean; onDecide?: (requestId: string, scope: "once" | "always" | "deny", note: string) => void }) {
+export function Conversation({ th, staff, events, onSend, busy, onDecide, onProposal, onAnswer }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean; onDecide?: (requestId: string, scope: "once" | "always" | "deny", note: string) => void; onProposal?: (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => void; onAnswer?: (itemId: string, answer: string) => void }) {
   const runs = toRuns(events);
   const people = staff; // @Name of these is highlighted
   const next = (th.pending && th.pending[0]) || th.staff_id; // who is answering now
@@ -216,6 +389,8 @@ export function Conversation({ th, staff, events, onSend, busy, onDecide }: { th
                 <Attachments blocks={row.m.blocks} />
                 <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
                 {onDecide && <AccessRequest m={row.m} onDecide={onDecide} />}
+                {onProposal && <ProposalRequest m={row.m} onProposal={onProposal} />}
+                {onAnswer && <QuestionRequest m={row.m} onAnswer={onAnswer} />}
                 <JobProposal m={row.m} />
               </div>
             </div>
