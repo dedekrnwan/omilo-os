@@ -605,6 +605,102 @@ def answer(iid: str, body: AnswerIn, db: Session = Depends(get_db), user: User =
     return X.inbox(_run(S.answer_question, db, item, body.answer, user.id))
 
 
+class BulkDecideIn(BaseModel):
+    ids: list[str]
+    decision: Literal["approve", "deny"]
+    note: str = ""
+    confirm_high_risk: bool = False
+
+
+@router.post("/inbox/bulk")
+def bulk_decide(body: BulkDecideIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Approve or deny many Inbox items at once.
+
+    Returns:
+      approved       — ids of items successfully acted on (approve path)
+      denied         — ids of items successfully acted on (deny path)
+      skipped        — ids that were missing, already decided, or ineligible kind
+      needs_confirm  — high-risk proposals blocking the batch when confirm_high_risk=False
+    """
+    _ELIGIBLE_KINDS = {"proposal", "access_request"}
+
+    # 1. Load items; partition into eligible / skipped
+    eligible: list[InboxItem] = []
+    skipped: list[dict] = []
+    for iid in body.ids:
+        item = db.get(InboxItem, iid)
+        if item is None:
+            skipped.append({"id": iid, "reason": "not found"})
+        elif item.status != "open":
+            skipped.append({"id": iid, "reason": f"already decided (status={item.status})"})
+        elif item.kind not in _ELIGIBLE_KINDS:
+            skipped.append({"id": iid, "reason": f"kind '{item.kind}' is not bulk-eligible"})
+        else:
+            eligible.append(item)
+
+    # 2. Deny requires a note — check before touching anything
+    if body.decision == "deny" and not body.note.strip():
+        raise HTTPException(400, "a note is required to deny")
+
+    # 3. High-risk gate (approve only)
+    if body.decision == "approve" and not body.confirm_high_risk:
+        needs_confirm: list[dict] = []
+        for item in eligible:
+            if item.kind == "proposal":
+                p = db.get(Proposal, item.ref_id)
+                if p and p.risk == "high":
+                    needs_confirm.append({
+                        "id": item.id,
+                        "risk": "high",
+                        "why": p.title or "spends money or sends externally",
+                    })
+        if needs_confirm:
+            return {"approved": [], "denied": [], "skipped": skipped, "needs_confirm": needs_confirm}
+
+    # 4. Apply decisions
+    approved: list[str] = []
+    denied: list[str] = []
+    approve = body.decision == "approve"
+
+    for item in eligible:
+        try:
+            if item.kind == "proposal":
+                p = db.get(Proposal, item.ref_id)
+                if p is None:
+                    skipped.append({"id": item.id, "reason": "proposal not found"})
+                    continue
+                S.decide_proposal(
+                    db, p,
+                    "approve" if approve else "reject",
+                    body.note,
+                    by=user.id,
+                )
+            else:  # access_request
+                S.decide_access(
+                    db, item,
+                    "once" if approve else "deny",
+                    by=user.id,
+                    note=body.note,
+                )
+            if approve:
+                approved.append(item.id)
+            else:
+                denied.append(item.id)
+        except S.DomainError as e:
+            skipped.append({"id": item.id, "reason": str(e)})
+
+    # 5. Summary audit
+    S.audit(
+        db, user.id, "inbox.bulk", "",
+        decision=body.decision,
+        count=len(approved) + len(denied),
+        high_risk_confirmed=body.confirm_high_risk,
+    )
+    db.commit()
+
+    return {"approved": approved, "denied": denied, "skipped": skipped, "needs_confirm": []}
+
+
 class AccessDecisionIn(BaseModel):
     scope: Literal["once", "always", "deny"]
     note: str = ""
