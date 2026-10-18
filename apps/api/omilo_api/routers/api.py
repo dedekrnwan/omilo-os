@@ -1121,6 +1121,65 @@ def harness_state(db: Session = Depends(get_db), user: User = Depends(current_us
     return {**H.pool_summary(), "helpers_on_pool": users}
 
 
+def _vendor_key_set(db: Session, provider: str) -> bool:
+    """Return True if a usable key exists for *provider*: stored in DB OR the env-var fallback that
+    _need_vendor_key checks (AWS_ACCESS_KEY_ID for bedrock, else {PROVIDER}_API_KEY).
+    No network calls. Pure DB + os.environ read."""
+    if S.ai_api_key(db, provider):
+        return True
+    env_key = "AWS_ACCESS_KEY_ID" if provider == "bedrock" else f"{provider.upper()}_API_KEY"
+    return bool(os.environ.get(env_key))
+
+
+@router.get("/harness/engines")
+def harness_engines(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Return a no-network summary of every engine surface: the Claude Code pool + one card per LiteLLM vendor.
+
+    Powers the multi-engine Harness page. Zero network calls; zero health() calls.
+    Key presence and helper assignments are read from DB + env only.
+    """
+    from .. import harness as H
+
+    # --- 1. Build a lookup: provider_id → list of {id, name} helper stubs --------
+    staff_rows = list(db.scalars(select(Staff)))
+    helpers_by_provider: dict[str, list[dict]] = {}
+    for st in staff_rows:
+        pid = _provider_of(st.engine or {})
+        helpers_by_provider.setdefault(pid, []).append({"id": st.id, "name": st.name})
+
+    # --- 2. Claude Code section (pool summary + helpers on the pool) ---------------
+    cc_helpers = helpers_by_provider.get("claude-code", [])
+    claude_code_section = {**H.pool_summary(), "helpers": cc_helpers}
+
+    # --- 3. Vendor cards: one per litellm provider id, never 'fake' ----------------
+    vendors = []
+    for pid in _LITELLM_PROVIDER_IDS:
+        p = _providers_reg.get_provider(pid)
+        if p is None:
+            continue  # registry gap — skip gracefully
+
+        # Derive representative model from the helpers that use this provider, else provider default.
+        pid_helpers = helpers_by_provider.get(pid, [])
+        # Collect models from staff engines whose provider resolves to pid
+        models_used = {
+            (st.engine or {}).get("model")
+            for st in staff_rows
+            if _provider_of(st.engine or {}) == pid and (st.engine or {}).get("model")
+        }
+        model = next(iter(models_used)) if len(models_used) == 1 else (p.default_model if not models_used else None)
+
+        vendors.append({
+            "id": pid,
+            "label": p.label,
+            "icon": p.icon,
+            "key_set": _vendor_key_set(db, pid),
+            "model": model,
+            "helpers": pid_helpers,
+        })
+
+    return {"claude_code": claude_code_section, "vendors": vendors}
+
+
 class HarnessAccountIn(BaseModel):
     label: str = ""
     token: str
