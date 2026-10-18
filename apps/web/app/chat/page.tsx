@@ -366,10 +366,9 @@ function WorkspaceInner() {
             <div className="ws-composer">
               {related.length > 0 && (
                 <div className="chat-people">
-                  <span className="cp-label">In this chat</span>
                   {related.map((s) => (
-                    <button type="button" key={s.id} className="chip person" title={`Mention ${s.name}`} onClick={() => addMention(s)}>
-                      <Avatar who={s} size={16} /><span>{s.name}</span>
+                    <button type="button" key={s.id} className="chip person" aria-label={`Mention ${s.name}`} onClick={() => addMention(s)}>
+                      <Avatar who={s} size={22} />
                     </button>
                   ))}
                 </div>
