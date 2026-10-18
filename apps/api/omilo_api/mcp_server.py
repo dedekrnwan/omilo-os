@@ -224,9 +224,20 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         r = S.write_report(db, st, args["task_id"], args["headline"], args["body"], args.get("kpis"))
         return "allowed", {"report_id": r.id, "message": "Report saved. Your task closes when you finish."}
     if name == "propose":
-        if args.get("task_id"):
-            S.task_for_staff(db, st, args["task_id"])
-        p = S.create_proposal(db, st, args.get("task_id"), args["title"], args["type"], args.get("risk", "medium"), args["body"])
+        from .events import current_run
+
+        task_id_arg, thread_id = current_run(db, st.id, args.get("task_id"))
+        if task_id_arg:
+            t = S.task_for_staff(db, st, task_id_arg)
+            th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
+        elif thread_id:
+            th = db.get(S.Thread, thread_id)
+        else:
+            th = None  # background call: no chat, no error — create proposal + inbox item only
+        p = S.create_proposal(
+            db, st, args.get("task_id"), args["title"], args["type"], args.get("risk", "medium"), args["body"],
+            thread_id=th.id if th else None, th=th,
+        )
         return "proposal", {"proposal_id": p.id, "message": "In the founder's Inbox. Do not act on it until it comes back approved."}
     if name == "revise_proposal":
         p = db.get(Proposal, args["proposal_id"])

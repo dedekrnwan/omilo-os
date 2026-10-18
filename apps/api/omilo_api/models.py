@@ -192,6 +192,7 @@ class InboxItem(Base):
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open | done | snoozed
     answer: Mapped[str] = mapped_column(Text, default="")
     snooze_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    thread_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

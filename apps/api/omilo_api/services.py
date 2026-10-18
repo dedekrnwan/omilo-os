@@ -302,7 +302,8 @@ def write_report(db: Session, st: Staff, task_id: str, headline: str, body: str,
 MAX_OPEN_PROPOSALS = 10
 
 def create_proposal(
-    db: Session, st: Staff, task_id: str | None, title: str, type_: str, risk: str, body: str, actor: str | None = None
+    db: Session, st: Staff, task_id: str | None, title: str, type_: str, risk: str, body: str,
+    actor: str | None = None, thread_id: str | None = None, th: "Thread | None" = None,
 ) -> Proposal:
     if risk not in ("low", "medium", "high"):
         risk = "medium"
@@ -315,14 +316,25 @@ def create_proposal(
     db.add(p)
     db.flush()
     db.add(ProposalRevision(proposal_id=p.id, n=1, body_md=body, author=actor or f"staff:{st.id}", summary="first draft"))
-    db.add(
-        InboxItem(
-            kind="proposal", ref_id=p.id, staff_id=st.id, task_id=task_id, title=p.title, level="decision",
-            body=f"{st.name} proposes ({type_}, {risk} risk)",
-        )
+    # summary = first non-empty line of body, trimmed
+    summary = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+    item = InboxItem(
+        kind="proposal", ref_id=p.id, staff_id=st.id, task_id=task_id, title=p.title, level="decision",
+        body=f"{st.name} proposes ({type_}, {risk} risk)", thread_id=thread_id,
     )
+    db.add(item)
     audit(db, actor or f"staff:{st.id}", "proposal.create", p.id, type=type_, risk=risk)
-    db.commit()
+    if th is not None:
+        text = f"Proposal: {title[:200]}"
+        post_message(
+            db, th, "agent", st.id, text,
+            blocks=[
+                {"type": "text", "text": text},
+                {"type": "proposal", "proposal_id": p.id, "title": p.title, "risk": risk, "summary": summary},
+            ],
+        )
+    else:
+        db.commit()
     return p
 
 
