@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Avatar from "@/components/Avatar";
+import Avatar, { mascotSVG, lookFor, type Look } from "@/components/Avatar";
 import { Staff } from "@/lib/api";
 
 /* @mentions in a chat box: type @ and pick a helper (arrows, Enter or Tab), or keep typing to filter. The picked
@@ -83,8 +83,11 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
   return { open, onKeyDown, menu, mentioned };
 }
 
-/** Highlight @Name of known helpers in rendered message HTML (outside tags and code). */
-export function markMentions(html: string, staff: { id: string; name: string }[]): string {
+type MentionStaff = { id: string; name: string; role?: string; is_chief?: boolean };
+const htmlEsc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Highlight @Name of known helpers in rendered message HTML (outside tags and code) as a mascot + name chip. */
+export function markMentions(html: string, staff: MentionStaff[], looks?: Record<string, Look>): string {
   if (!staff.length || !html.includes("@")) return html;
   const names = [...staff].sort((a, b) => b.name.length - a.name.length);
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -100,7 +103,9 @@ export function markMentions(html: string, staff: { id: string; name: string }[]
     if (inCode) return part;
     return part.replace(re, (_m, pre, name) => {
       const who = names.find((s) => s.name.toLowerCase() === String(name).toLowerCase());
-      return `${pre}<span class="mention" data-staff="${who?.id || ""}">@${who?.name || name}</span>`;
+      const label = htmlEsc(who?.name || name);
+      const svg = who ? mascotSVG(lookFor(who, looks?.[who.id])) : "";
+      return `${pre}<span class="mention" data-staff="${htmlEsc(who?.id || "")}">${svg}<span class="mention-name">@${label}</span></span>`;
     });
   }).join("");
 }
