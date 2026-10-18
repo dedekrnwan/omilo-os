@@ -99,6 +99,10 @@ def test_auto_mode_spills_over_to_api_key_when_pool_empty(owner, fake_cli, monke
     """Provider 'claude-code' is the hybrid 'auto' mode: with no pool account free it must fall back to the
     company's API key (same CLI) rather than erroring, so work still runs."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "z" * 24 + "APIKEY")
+    # guarantee an empty effective pool regardless of accounts other tests left behind
+    for a in owner.get("/api/harness").json()["accounts"]:
+        if a["enabled"]:
+            owner.patch(f"/api/harness/accounts/{a['id']}", json={"enabled": False})
     owner.post("/api/ai", json={"provider": "claude-code", "staff_ids": ["sales"]})
     eng = owner.get("/api/staff/sales").json()["engine"]
     assert eng["type"] == "claude-code" and eng["auth"] == "auto", eng
