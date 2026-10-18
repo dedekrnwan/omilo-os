@@ -111,10 +111,48 @@ class Worker:
             except TimeoutError:
                 pass
 
+    async def cancel_loop(self):
+        """Subscribe to Redis cancel:chat signals across all companies and cancel matching chatting tasks."""
+        from . import bus
+
+        prefix = get_settings().redis_prefix
+        pattern = f"{prefix}:*:ch:cancel:chat"
+        pubsub = bus.ar().pubsub()
+        try:
+            await pubsub.psubscribe(pattern)
+            async for message in pubsub.listen():
+                if self._stop.is_set():
+                    break
+                if message["type"] != "pmessage":
+                    continue
+                try:
+                    import json
+                    data = json.loads(message["data"])
+                    thread_id = data.get("thread_id")
+                    if not thread_id:
+                        continue
+                    task = self.chatting.get(thread_id)
+                    if task and not task.done():
+                        task.cancel()
+                        log.info("cancel_loop: cancelled chatting task for thread %s", thread_id)
+                except Exception:
+                    log.exception("cancel_loop: error handling cancel signal")
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("cancel_loop: unexpected error")
+        finally:
+            try:
+                await pubsub.punsubscribe(pattern)
+                await pubsub.aclose()
+            except Exception:
+                pass
+
     async def run_forever(self):
         self.recover()
         self._push = asyncio.create_task(self.push_loop())
         self._kb = asyncio.create_task(self.kb_loop())
+        self._cancelsub = asyncio.create_task(self.cancel_loop())
         interval = get_settings().worker_interval_s
         while not self._stop.is_set():
             try:
@@ -130,6 +168,8 @@ class Worker:
         self._stop.set()
         for t in list(self.running.values()) + list(self.chatting.values()) + list(self.flowing.values()):
             t.cancel()
+        if hasattr(self, "_cancelsub"):
+            self._cancelsub.cancel()
 
     # ------------------------------------------------------------ one tick
     async def tick(self):
@@ -401,32 +441,45 @@ class Worker:
 
         answered: list[str] = []
         turn = None  # the owner message being answered; a new one while answering starts the round again
-        while True:
-            with session_scope() as db:
-                th = db.get(Thread, thread_id)
-                if not th or not th.awaiting_reply:
-                    return
-                last = db.scalar(select(Message.id).where(Message.thread_id == th.id, Message.role == "owner").order_by(Message.at.desc()).limit(1))
-                if last != turn:
-                    turn, answered = last, []
-                queue = [s for s in TC.responders(th) if s not in answered]
-                if not queue or len(answered) >= TC.MAX_REPLIES:
-                    th.pending, th.awaiting_reply = None, False
-                    return
-                sid = queue[0]
-            text = await self._answer_as(thread_id, sid, answered)
-            answered.append(sid)
-            with session_scope() as db:
-                th = db.get(Thread, thread_id)
-                if not th:
-                    return
-                rest = [s for s in (th.pending or []) if s not in answered]
-                rest += [s for s in TC.handover(db, th, sid, text or "", answered) if s not in rest]
-                if rest and len(answered) < TC.MAX_REPLIES:
-                    th.pending = rest
-                else:
-                    th.pending, th.awaiting_reply = None, False
-                    return
+        try:
+            while True:
+                with session_scope() as db:
+                    th = db.get(Thread, thread_id)
+                    if not th or not th.awaiting_reply:
+                        return
+                    last = db.scalar(select(Message.id).where(Message.thread_id == th.id, Message.role == "owner").order_by(Message.at.desc()).limit(1))
+                    if last != turn:
+                        turn, answered = last, []
+                    queue = [s for s in TC.responders(th) if s not in answered]
+                    if not queue or len(answered) >= TC.MAX_REPLIES:
+                        th.pending, th.awaiting_reply = None, False
+                        return
+                    sid = queue[0]
+                text = await self._answer_as(thread_id, sid, answered)
+                answered.append(sid)
+                with session_scope() as db:
+                    th = db.get(Thread, thread_id)
+                    if not th:
+                        return
+                    rest = [s for s in (th.pending or []) if s not in answered]
+                    rest += [s for s in TC.handover(db, th, sid, text or "", answered) if s not in rest]
+                    if rest and len(answered) < TC.MAX_REPLIES:
+                        th.pending = rest
+                    else:
+                        th.pending, th.awaiting_reply = None, False
+                        return
+        except asyncio.CancelledError:
+            log.info("answer_thread: turn cancelled for thread %s (stop requested by owner)", thread_id)
+            try:
+                with session_scope() as db:
+                    th = db.get(Thread, thread_id)
+                    if th:
+                        th.awaiting_reply = False
+                        th.pending = None
+                        S.post_message(db, th, "system", "omilo", "Stopped by the owner.")
+            except Exception:
+                log.exception("answer_thread: failed to post stop note for thread %s", thread_id)
+            # Do not re-raise — the task ends cleanly (not as a failure)
 
     async def _answer_as(self, thread_id: str, staff_id: str, answered: list[str]) -> str:
         """One helper's reply in the thread. Returns what it wrote ("" when it could not answer)."""

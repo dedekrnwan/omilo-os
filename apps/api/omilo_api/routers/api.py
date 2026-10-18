@@ -710,6 +710,20 @@ def send_message(thid: str, body: MessageIn, db: Session = Depends(get_db), user
     return thread_detail(thid, db, user)
 
 
+@router.post("/threads/{thid}/cancel")
+def cancel_thread(thid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Force-stop the running AI turn in a thread. Sets awaiting_reply=False, signals the worker."""
+    from .. import bus
+
+    th = _404(db.get(Thread, thid))
+    th.awaiting_reply = False
+    th.pending = None
+    db.commit()
+    bus.publish("cancel:chat", {"thread_id": thid})
+    S.audit(db, user.id, "chat.stop", thid)
+    return {"status": "stopping"}
+
+
 class ThreadPatch(BaseModel):
     title: str = Field(min_length=1, max_length=80)
 
