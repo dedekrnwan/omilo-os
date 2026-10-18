@@ -24,3 +24,6 @@ cli/omilo
 
 # Local scratch (never commit)
 Claude outputs/
+
+# setuptools scratch (scripts/desktop/build-runtime.sh)
+apps/api/build/

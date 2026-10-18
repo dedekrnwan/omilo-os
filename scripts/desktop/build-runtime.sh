@@ -10,6 +10,9 @@
 # Downloads are cached in dist/cache, so a rebuild only redoes what changed. Versions and download addresses can be
 # changed with PG_VERSION/PG_URL, PGVECTOR_VERSION/PGVECTOR_URL, VALKEY_VERSION/VALKEY_URL, NODE_VERSION/NODE_URL.
 set -euo pipefail
+# Started from `make desktop`, the outer make's level would reach Postgres' own build, which only generates its
+# headers (utils/errcodes.h and friends) when it believes it is the top-level make: start every build fresh.
+unset MAKELEVEL MAKEFLAGS MFLAGS
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="${OUT:-$ROOT/dist/runtime}"
@@ -57,6 +60,7 @@ if want python; then
   rm -f "$OUT/python/lib/python$PY_VERSION/EXTERNALLY-MANAGED"
   PY="$OUT/python/bin/python3"
   uv pip install --python "$PY" --no-cache "$ROOT/apps/api"
+  rm -rf "$ROOT/apps/api/build"  # setuptools' scratch folder
   # smaller and quieter: no tests, docs or the Tk GUI kit; headers only matter for building
   rm -rf "$OUT/python/include" "$OUT/python/share" "$OUT/python/lib/python$PY_VERSION"/{test,idlelib,tkinter,turtledemo,ensurepip} \
          "$OUT/python/lib"/libtcl* "$OUT/python/lib"/libtk* "$OUT/python/lib"/tcl* "$OUT/python/lib"/tk* "$OUT/python/lib"/itcl* "$OUT/python/lib"/thread*
