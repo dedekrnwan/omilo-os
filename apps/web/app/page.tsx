@@ -137,27 +137,28 @@ function BoardView({ onCount }: { onCount: () => void }) {
       const ids = Array.from(selectedIds);
       const res = await api<BulkResult>("/inbox/bulk", { body: { ids, decision: "approve" } });
       if (res.needs_confirm.length > 0) {
+        // The whole batch was held back (nothing applied yet) because some items spend
+        // money or send externally. Confirm, then re-send the FULL selection so the
+        // low-risk items in it are approved too, not only the high-risk ones.
         const ok = await confirmDialog({
           title: `${res.needs_confirm.length} item${res.needs_confirm.length === 1 ? "" : "s"} need a second look`,
           body: (
             <div>
               <p style={{ margin: "0 0 8px" }}>
                 {res.needs_confirm.length === 1 ? "This item" : "These items"} spend money or send messages externally.
-                Confirm to approve {res.needs_confirm.length === 1 ? "it" : "all of them"}.
+                Confirm to approve everything you selected.
               </p>
               <ul style={{ margin: 0, paddingLeft: 18, textAlign: "left", fontSize: 13 }}>
                 {res.needs_confirm.map((x) => <li key={x.id}>{x.why}</li>)}
               </ul>
             </div>
           ),
-          confirm: `Approve ${res.needs_confirm.length === 1 ? "it" : "all"}`,
+          confirm: "Approve everything",
           danger: true,
         });
-        if (ok) {
-          const confirmIds = res.needs_confirm.map((x) => x.id);
-          const res2 = await api<BulkResult>("/inbox/bulk", { body: { ids: confirmIds, decision: "approve", confirm_high_risk: true } });
-          if (res2.skipped.length > 0) setErr(`${res2.skipped.length} item${res2.skipped.length === 1 ? "" : "s"} could not be decided.`);
-        }
+        if (!ok) return;  // nothing was applied; keep the selection so the owner can adjust it
+        const res2 = await api<BulkResult>("/inbox/bulk", { body: { ids, decision: "approve", confirm_high_risk: true } });
+        if (res2.skipped.length > 0) setErr(`${res2.skipped.length} item${res2.skipped.length === 1 ? "" : "s"} could not be decided.`);
       } else if (res.skipped.length > 0) {
         setErr(`${res.skipped.length} item${res.skipped.length === 1 ? "" : "s"} could not be decided.`);
       }
@@ -252,15 +253,15 @@ function BoardView({ onCount }: { onCount: () => void }) {
             const eligible = BULK_ELIGIBLE.has(c.kind);
             const checked = selectedIds.has(c.id);
             return (
-              <div key={c.id} className={`bcard-wrap${checked ? " bcard-wrap-sel" : ""}`}>
+              <div key={c.id} className={`bcard-wrap${eligible ? " has-check" : ""}${checked ? " bcard-wrap-sel" : ""}`}>
                 {eligible && (
                   <input
                     type="checkbox"
                     className="bcard-check"
                     checked={checked}
+                    readOnly
                     aria-label={`Select ${c.title}`}
                     onClick={(e) => toggleSelect(c.id, e)}
-                    onChange={() => {/* controlled via onClick to stop propagation */}}
                     onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleSelect(c.id, e); } }}
                   />
                 )}
