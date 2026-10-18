@@ -428,7 +428,10 @@ def mark_executed(db: Session, st: Staff, proposal_id: str, ok: bool, result: st
 
 
 # ---------------------------------------------------------------- inbox: questions & alerts
-def ask_founder(db: Session, st: Staff, task_id: str | None, question: str, blocking: bool) -> InboxItem:
+def ask_founder(
+    db: Session, st: Staff, task_id: str | None, question: str, blocking: bool,
+    *, thread_id: str | None = None, th: "Thread | None" = None,
+) -> InboxItem:
     open_q = db.scalar(
         select(func.count()).select_from(InboxItem).where(
             InboxItem.kind == "question", InboxItem.staff_id == st.id, InboxItem.status == "open"
@@ -438,11 +441,21 @@ def ask_founder(db: Session, st: Staff, task_id: str | None, question: str, bloc
         raise DomainError("you already have 5 open questions; wait for answers", 429)
     item = InboxItem(
         kind="question", staff_id=st.id, task_id=task_id, title=question[:300], body=question,
-        level="decision", blocking=blocking,
+        level="decision", blocking=blocking, thread_id=thread_id,
     )
     db.add(item)
+    db.flush()  # obtain item.id before posting the message
     audit(db, f"staff:{st.id}", "question.ask", task_id or "", blocking=blocking)
-    db.commit()
+    if th is not None:
+        post_message(
+            db, th, "agent", st.id, question,
+            blocks=[
+                {"type": "text", "text": question},
+                {"type": "question", "item_id": item.id, "question": question},
+            ],
+        )
+    else:
+        db.commit()
     return item
 
 

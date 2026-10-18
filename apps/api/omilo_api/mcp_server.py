@@ -255,7 +255,20 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         res = S.request_action(db, st, args.get("task_id"), args["action"], args["summary"], args["details"])
         return {"allowed": "allowed", "needs_approval": "proposal", "refused": "refused"}[res["decision"]], res
     if name == "ask_founder":
-        item = S.ask_founder(db, st, args.get("task_id"), args["question"], bool(args.get("blocking")))
+        from .events import current_run
+
+        task_id_arg, thread_id = current_run(db, st.id, args.get("task_id"))
+        if task_id_arg:
+            t = S.task_for_staff(db, st, task_id_arg)
+            th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
+        elif thread_id:
+            th = db.get(S.Thread, thread_id)
+        else:
+            th = None  # background call: no chat, no error — file question to inbox only
+        item = S.ask_founder(
+            db, st, task_id_arg, args["question"], bool(args.get("blocking")),
+            thread_id=th.id if th else None, th=th,
+        )
         return "proposal", {"question_id": item.id, "message": "Asked. The answer will arrive as a new task."}
     if name == "post_message":
         t = S.task_for_staff(db, st, args["task_id"])
