@@ -518,6 +518,7 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
     - skill/once    : add slug to ThreadTools.skills
     """
     import json as _json
+    from sqlalchemy import select as _select
 
     from .models import Connector, Folder, ThreadTools
 
@@ -535,7 +536,6 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
         label = Path(raw_path).name or raw_path
 
         # Find existing Folder row by path or create new one
-        from sqlalchemy import select as _select
         row = db.scalar(_select(Folder).where(Folder.path == raw_path))
         if row is None:
             row = Folder(path=raw_path, label=label, access=access, commands=commands, default_on=False)
@@ -580,8 +580,7 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
                 raise DomainError("need a thread for a one-off connector grant")
             tt = db.get(ThreadTools, thread_id)
             if tt is None:
-                from sqlalchemy import select as _select2
-                existing_defaults = list(db.scalars(_select2(Connector).where(Connector.default_on.is_(True), Connector.enabled.is_(True))))
+                existing_defaults = list(db.scalars(_select(Connector).where(Connector.default_on.is_(True), Connector.enabled.is_(True))))
                 tt = ThreadTools(thread_id=thread_id, connectors=[c.id for c in existing_defaults])
                 db.add(tt)
                 db.flush()

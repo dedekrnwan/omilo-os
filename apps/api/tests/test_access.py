@@ -160,12 +160,21 @@ def test_grant_connector_once_is_thread_scoped(owner, base_url):
     owner.delete(f"/api/connectors/{conn_id}")
 
 
-def test_folder_commands_grant_keeps_hard_denials(owner, base_url):
+def test_folder_commands_grant_keeps_hard_denials(owner, base_url, tmp_path):
     """Even after granting a folder with commands=True, the claude_code hard-denial list
     still denies rm and git push — the grant does NOT remove those restrictions."""
     from omilo_api.engines.claude_code import SHELL_DENY
+    from omilo_api import services
+    from omilo_api.db import session_scope
 
-    # Prove the hard-denial set covers the critical commands
-    denied_str = " ".join(SHELL_DENY)
+    folder_path = tmp_path / "commands-test"
+    folder_path.mkdir()
+
+    # Apply a folder grant with commands=True
+    with session_scope() as db:
+        item = _make_access_item(db, "folder", {"path": str(folder_path), "access": "write", "commands": True})
+        services.apply_grant(db, item, scope="always", thread_id=None)
+
+    # Prove the hard-denial set still covers the critical commands (unchanged by apply_grant)
     assert "Bash(rm:*)" in SHELL_DENY, f"'rm' not in SHELL_DENY: {SHELL_DENY}"
     assert any("git push" in d for d in SHELL_DENY), f"'git push' not in SHELL_DENY: {SHELL_DENY}"
