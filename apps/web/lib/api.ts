@@ -54,7 +54,7 @@ export type Proposal = {
   created_at: string; revisions?: { n: number; body_md: string; author: string; summary: string; at: string }[];
 };
 export type InboxItem = {
-  id: string; kind: "proposal" | "question" | "alert" | "workflow" | "access_request"; ref_id: string | null; staff_id: string | null; task_id: string | null;
+  id: string; kind: "proposal" | "question" | "alert" | "workflow" | "access_request" | "skill_share"; ref_id: string | null; staff_id: string | null; task_id: string | null;
   title: string; body: string; level: string; blocking: boolean; status: string; created_at: string; proposal?: Proposal; answer?: string;
   snooze_until?: string | null; nudge?: { ladder: string | null; next_at: string | null; channel: string | null; held?: boolean };
   workflow?: { type: "proposal" | "approval" | "gate"; workflow: (Workflow & { graph?: WfGraph }) | { id: string; name: string } | null; run_id?: string; node?: WfNode | null } | null;

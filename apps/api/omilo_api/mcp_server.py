@@ -93,6 +93,29 @@ TOOLS: list[dict] = [
          "questions": _s("array", "what you still need to know", items={"type": "string"}),
          "note": _s("string", "one or two sentences to the founder: what changed and why"),
      }, "required": ["responsibilities"]}},
+    {"name": "skills_list", "description": "The skills you can use: team skills and your own. Read one with skill_read before you rely on it.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "skill_read", "description": "Read a skill (its steps, checklist and examples).",
+     "inputSchema": {"type": "object", "properties": {"slug": _s("string", "skill id")}, "required": ["slug"]}},
+    {"name": "skill_save", "description": "Write or improve a skill: reusable know-how (steps, checklist, rules, examples) so you do it better next "
+                                          "time. It is yours and works at once. share=true asks the founder to make it a team skill every helper "
+                                          "uses. Changing a team skill sends your version to the founder for approval. Skills from a folder you "
+                                          "can read (e.g. a SKILL.md file) can be saved this way too.",
+     "inputSchema": {"type": "object", "properties": {
+         "slug": _s("string", "short id: lowercase, digits, dashes"), "name": _s("string", "title"),
+         "description": _s("string", "one line: when to use it"), "body": _s("string", "markdown: the steps, checklist, rules, examples"),
+         "share": _s("boolean", "ask the founder to share it with the whole team")}, "required": ["slug", "name", "body"]}},
+    {"name": "ask_teammate", "description": "Ask a teammate (another helper) a question to learn from them or agree on something. It goes to the "
+                                            "team chat, where they answer right after and the founder can follow along.",
+     "inputSchema": {"type": "object", "properties": {"teammate": _s("string", "their id or name"), "question": _s("string", "the question, with context")},
+                     "required": ["teammate", "question"]}},
+    {"name": "read_team_chat", "description": "Read the latest messages of the team chat (answers to your questions, what teammates discuss).",
+     "inputSchema": {"type": "object", "properties": {"limit": _s("integer", "how many messages (default 20)")}, "required": []}},
+    {"name": "message_founder", "description": "Write to the founder in your own chat, on your own initiative: an idea that helps their goals, a "
+                                               "check-in, or a question about your work. Only when it is worth their time (a few a day at most). "
+                                               "options: clickable replies.",
+     "inputSchema": {"type": "object", "properties": {"text": _s("string", "short message, markdown"),
+                                                      "options": _s("array", "2-5 short clickable replies", items={"type": "string"})}, "required": ["text"]}},
     {"name": "docs_search", "description": "Search the shared Docs (notes for the owner and all helpers) by words. Returns paths, titles and snippets.",
      "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for; empty lists recent docs")}, "required": []}},
     {"name": "docs_read", "description": "Read one doc from the shared Docs, with its version, [[links]] and backlinks.",
@@ -371,6 +394,28 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         th = db.get(S.Thread, thread_id) if thread_id else None
         m = J.propose(db, st, args, intro=str(args.get("note") or ""), th=th)
         return "allowed", {"decision": "needs_approval", "message_id": m.id, "thread_id": m.thread_id}
+    if name in ("skills_list", "skill_read", "skill_save", "ask_teammate", "read_team_chat", "message_founder"):
+        from . import capabilities as CAP
+        from . import growth as G
+
+        if name == "skills_list":
+            mine = [k for k in CAP.list_skills() if not k["owner"] or k["owner"] == st.id]
+            return "allowed", {"skills": [{"slug": k["slug"], "name": k["name"], "description": k["description"],
+                                           "yours": k["owner"] == st.id, "team": not k["owner"]} for k in mine]}
+        if name == "skill_read":
+            k = CAP.get_skill(str(args.get("slug") or ""))
+            if not k or (k["owner"] and k["owner"] != st.id):
+                raise S.DomainError("no such skill", 404)
+            return "allowed", {k2: k[k2] for k2 in ("slug", "name", "description", "body")}
+        if name == "skill_save":
+            return "allowed", G.save_skill(db, st, str(args.get("slug") or ""), str(args.get("name") or ""), str(args.get("description") or ""),
+                                           str(args.get("body") or ""), bool(args.get("share")))
+        if name == "ask_teammate":
+            return "allowed", G.ask_teammate(db, st, str(args.get("teammate") or ""), str(args.get("question") or ""))
+        if name == "read_team_chat":
+            return "allowed", {"messages": G.read_team_chat(db, int(args.get("limit") or 20))}
+        m = G.message_founder(db, st, str(args.get("text") or ""), args.get("options") if isinstance(args.get("options"), list) else None)
+        return "allowed", {"message_id": m.id, "thread_id": m.thread_id}
     if name == "update_kpi":
         if policy.level_for("kpi.write", st.permissions) < policy.DO_AND_TELL:
             raise S.DomainError("you may not write KPIs; ask Finance or propose it", 403)

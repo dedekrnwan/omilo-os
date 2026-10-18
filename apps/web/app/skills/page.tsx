@@ -12,7 +12,7 @@ import { confirmDialog } from "@/lib/dialog";
 /* Skills: reusable instructions (SKILL.md) a helper follows when you switch them on for a chat or job.
    Writing, editing and importing happen in a drawer on the right. */
 
-type Skill = { slug: string; name: string; description: string; default_on: boolean; chars: number };
+type Skill = { slug: string; name: string; description: string; default_on: boolean; chars: number; owner?: string | null; made_by?: string | null };
 type Form = { slug: string; name: string; description: string; body: string; default_on: boolean; editing: boolean };
 type Talent = { slug: string; name: string; description?: string; division: string; emoji?: string };
 
@@ -63,6 +63,13 @@ export default function Skills() {
     try { const sk = await api<Skill>(`/skills/from-talent/${t.slug}`, { body: {} }); closeImport(); await load(); open(sk.slug); }
     catch (e: any) { setErr(e.message); } finally { setBusy(null); }
   };
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => { api<{ id: string; name: string }[]>("/staff").then((l) => setNames(Object.fromEntries(l.map((x) => [x.id, x.name])))).catch(() => {}); }, []);
+  const who = (id?: string | null) => (id ? names[id] || id : "");
+  const share = async (s: Skill) => {
+    if (!(await confirmDialog({ title: `Share “${s.name}” with the whole team?`, body: `${who(s.owner)} wrote it for itself. Shared, every helper uses it.`, confirm: "Share with the team" }))) return;
+    await api(`/skills/${s.slug}/share`, { body: {} }); load();
+  };
   const toggleDefault = async (s: Skill) => {
     const full = await api<Skill & { body: string }>(`/skills/${s.slug}`);
     await api("/skills", { body: { ...full, default_on: !s.default_on } });
@@ -71,7 +78,8 @@ export default function Skills() {
   const items = (s: Skill) => [
     { heading: s.name },
     { label: "Open and edit", icon: "ri-edit-line", onSelect: () => open(s.slug) },
-    { label: "Standard for everyone", icon: "ri-star-line", checked: s.default_on, onSelect: () => toggleDefault(s) },
+    ...(s.owner ? [{ label: "Share with the team", icon: "ri-team-line", onSelect: () => share(s) }]
+      : [{ label: "Standard for everyone", icon: "ri-star-line", checked: s.default_on, onSelect: () => toggleDefault(s) }]),
     { label: "Use it in a chat", icon: "ri-chat-3-line", href: "/chat/", hint: `type /${s.slug}` },
     sep,
     { label: "Copy the command", icon: "ri-slash-commands-2", hint: `/${s.slug}`, onSelect: () => copy(`/${s.slug}`) },
@@ -103,12 +111,16 @@ export default function Skills() {
               <div key={s.slug} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }} onContextMenu={menu(() => items(s))}>
                 <div className="acts" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
                   <b style={{ fontWeight: 500 }}><i className="ri-magic-line" /> {s.name}</b>
-                  {s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}
+                  {s.owner ? <span className="chip idle" title="Only this helper uses it"><i className="ri-user-line" /> {who(s.owner)}’s own</span>
+                    : s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}
                 </div>
                 <div className="small clamp">{s.description || "No description"}</div>
                 <div className="acts" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
-                  <span className="small mono">/{s.slug}</span><span className="sp" />
-                  <button className="btn sm" onClick={() => toggleDefault(s)}>{s.default_on ? "Make per chat" : "Make standard"}</button>
+                  <span className="small mono">/{s.slug}</span>
+                  {s.made_by && !s.owner && <span className="small">· made by {who(s.made_by)}</span>}
+                  <span className="sp" />
+                  {s.owner ? <button className="btn sm" onClick={() => share(s)}><i className="ri-team-line" />Share with the team</button>
+                    : <button className="btn sm" onClick={() => toggleDefault(s)}>{s.default_on ? "Make per chat" : "Make standard"}</button>}
                 </div>
               </div>
             ))}

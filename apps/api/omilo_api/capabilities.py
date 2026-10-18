@@ -136,7 +136,9 @@ def _parse_skill(slug: str, text: str) -> dict:
         except (ValueError, yaml.YAMLError):
             meta = {}
     return {"slug": slug, "name": str(meta.get("name") or slug), "description": str(meta.get("description") or ""),
-            "default_on": bool(meta.get("default_on", False)), "body": body.strip()[:MAX_SKILL_CHARS]}
+            "default_on": bool(meta.get("default_on", False)), "body": body.strip()[:MAX_SKILL_CHARS],
+            # a helper's own skill (it wrote it for itself); None = a team skill anyone can use
+            "owner": str(meta["owner"]) if meta.get("owner") else None, "made_by": str(meta["made_by"]) if meta.get("made_by") else None}
 
 
 def list_skills() -> list[dict]:
@@ -153,12 +155,26 @@ def get_skill(slug: str) -> dict | None:
     return _parse_skill(slug, f.read_text(errors="replace")) if SLUG.match(slug) and f.exists() else None
 
 
-def save_skill(slug: str, name: str, description: str, body: str, default_on: bool = False) -> dict:
+_KEEP = object()
+
+
+def save_skill(slug: str, name: str, description: str, body: str, default_on: bool = False, owner=_KEEP, made_by: str | None = None) -> dict:
+    """Write a skill. `owner` = a helper's id for its own skill, None for a team skill; left out, an existing skill keeps
+    its owner. `made_by` records which helper wrote it (kept when sharing)."""
     if not SLUG.match(slug):
         raise ValueError("skill id: lowercase letters, digits and dashes")
+    cur = get_skill(slug)
+    if owner is _KEEP:
+        owner = cur["owner"] if cur else None
+    made_by = made_by or (cur or {}).get("made_by")
     d = skills_dir() / slug
     d.mkdir(parents=True, exist_ok=True)
-    fm = yaml.safe_dump({"name": name, "description": description, "default_on": default_on}, sort_keys=False, allow_unicode=True)
+    meta = {"name": name, "description": description, "default_on": default_on}
+    if owner:
+        meta["owner"] = owner
+    if made_by:
+        meta["made_by"] = made_by
+    fm = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)
     (d / "SKILL.md").write_text(f"---\n{fm}---\n\n{body.strip()}\n")
     return get_skill(slug)  # type: ignore[return-value]
 
@@ -290,6 +306,20 @@ def folder_for_helper(f: Folder, own: dict | None, picked: bool) -> dict | None:
     return None
 
 
+def _skills_for(skills: list[dict], picked: list[dict], own: dict, staff, chat_pick: list | None) -> list[dict]:
+    """Team skills: the chat's picks or the defaults, adjusted by the helper's own on/off. A helper's own skills: always
+    on for it; another helper's own skill only when the founder picked it for this chat."""
+    on = {k["slug"] for k in picked}
+    out = []
+    for k in skills:
+        mine_ = staff is not None and k["owner"] == staff.id
+        if own.get(k["slug"]) is False or (k["owner"] and not mine_ and k["slug"] not in (chat_pick or [])):
+            continue
+        if own.get(k["slug"]) or mine_ or k["slug"] in on:
+            out.append(k)
+    return out
+
+
 # ------------------------------------------------------------------ resolve for a run
 def resolve(db, thread_id: str | None = None, proposal: dict | None = None, file_ids: list[str] | None = None,
             staff=None) -> Resources:
@@ -317,8 +347,8 @@ def resolve(db, thread_id: str | None = None, proposal: dict | None = None, file
         connectors=[connector_runtime(c) for c in mine(conns, lambda c: c.id,
                                                        pick(conns, lambda c: c.id, tt.connectors if tt else None, lambda c: c.default_on),
                                                        own["connectors"])],
-        skills=mine(skills, lambda s: s["slug"], pick(skills, lambda s: s["slug"], tt.skills if tt else None, lambda s: s["default_on"]),
-                    own["skills"]),
+        skills=_skills_for(skills, pick(skills, lambda s: s["slug"], tt.skills if tt else None, lambda s: s["default_on"]),
+                           own["skills"], staff, tt.skills if tt else None),
         helper=getattr(staff, "name", "") or "",
     )
     if proposal and str(proposal.get("type", "")).startswith("connector."):

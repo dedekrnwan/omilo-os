@@ -277,7 +277,7 @@ def _access_view(db: Session, st: Staff) -> dict:
              for c in db.scalars(select(Connector).where(Connector.enabled.is_(True)).order_by(Connector.label))]
     skills = [{"id": k["slug"], "label": k["name"], "description": k["description"], "default": k["default_on"],
                "own": own["skills"].get(k["slug"]), "effective": own["skills"].get(k["slug"], k["default_on"])}
-              for k in C.list_skills()]
+              for k in C.list_skills() if not k.get("owner") or k["owner"] == st.id]
     engine = (st.engine or {}).get("type")
     return {"staff_id": st.id, "name": st.name, "uses_files": engine == "claude-code",
             "folders": folders, "connectors": conns, "skills": skills}
@@ -1651,6 +1651,42 @@ def skill_save(body: SkillIn, db: Session = Depends(get_db), user: User = Depend
     S.audit(db, user.id, "skill.save", body.slug)
     db.commit()
     return sk
+
+
+@router.post("/skills/{slug}/share")
+def skill_share(slug: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Make a helper's own skill a team skill (every helper uses it)."""
+    from .. import capabilities as C
+
+    sk = _404(C.get_skill(slug), "unknown skill")
+    sk = C.save_skill(slug, sk["name"], sk["description"], sk["body"], default_on=True, owner=None, made_by=sk["owner"] or sk.get("made_by"))
+    for it in db.scalars(select(InboxItem).where(InboxItem.kind == "skill_share", InboxItem.ref_id == slug, InboxItem.status == "open")):
+        it.status, it.closed_at, it.answer = "done", now(), "shared"
+    S.audit(db, user.id, "skill.share", slug)
+    db.commit()
+    return sk
+
+
+@router.get("/skill-requests/{iid}")
+def skill_request(iid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import growth as G
+
+    it = _404(db.get(InboxItem, iid))
+    if it.kind != G.SHARE:
+        raise HTTPException(404, "not a skill request")
+    return {**G.share_view(it), "staff_id": it.staff_id, "status": it.status}
+
+
+class SkillDecideIn(BaseModel):
+    approve: bool
+    note: str = ""
+
+
+@router.post("/skill-requests/{iid}/decide")
+def skill_request_decide(iid: str, body: SkillDecideIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import growth as G
+
+    return _run(G.decide_share, db, _404(db.get(InboxItem, iid)), body.approve, user.id, body.note)
 
 
 @router.delete("/skills/{slug}")

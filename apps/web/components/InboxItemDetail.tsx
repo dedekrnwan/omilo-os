@@ -97,6 +97,47 @@ function Similar({ p, busy, act }: { p: Proposal; busy: boolean; act: (fn: () =>
 }
 
 /* Inline decision UI for an access_request inbox item. Mirrors the chat-card AccessCard. */
+type SkillReq = { slug: string; update: boolean; name: string; description: string; body: string; current_body: string | null; status?: string };
+
+function SkillShareItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
+  const [req, setReq] = useState<SkillReq | null>(null);
+  const [note, setNote] = useState("");
+  const [showOld, setShowOld] = useState(false);
+  useEffect(() => { api<SkillReq>(`/skill-requests/${i.id}`).then(setReq).catch(() => setReq(null)); }, [i.id]);
+  const decide = (approve: boolean) => act(() => api(`/skill-requests/${i.id}/decide`, { body: { approve, note } }));
+  if (!req) return <p className="small">Loading the skill…</p>;
+  return (
+    <>
+      <p className="small" style={{ margin: "0 0 6px" }}>
+        {req.update ? "A new version of a skill the whole team uses. Approve it and every helper follows the new steps."
+          : "This helper wrote the skill for itself and thinks teammates would use it too. Share it and every helper can follow it."}
+      </p>
+      <div className="paper">
+        <p style={{ margin: "0 0 4px", fontWeight: 500 }}><i className="ri-magic-line" /> {req.name} <span className="small mono">/{req.slug}</span></p>
+        {req.description && <p className="small" style={{ margin: "0 0 8px" }}>{req.description}</p>}
+        <Markdown text={req.body} />
+      </div>
+      {req.update && req.current_body && (
+        <>
+          <button className="btn quiet sm" type="button" onClick={() => setShowOld(!showOld)}>{showOld ? "Hide" : "Show"} the current version</button>
+          {showOld && <div className="paper" style={{ opacity: 0.8 }}><Markdown text={req.current_body} /></div>}
+        </>
+      )}
+      {i.status === "open" && (
+        <>
+          <textarea placeholder="Optional note for the helper (it learns from it)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+          <div className="acts" style={{ marginTop: 8 }}>
+            <button className="btn primary" disabled={busy} onClick={() => decide(true)}><i className="ri-team-line" />{req.update ? "Approve the change" : "Share with the team"}</button>
+            <button className="btn" disabled={busy} onClick={() => decide(false)}>{req.update ? "Keep the current version" : "Keep it personal"}</button>
+            <span className="sp" />
+            <Link className="btn quiet" href="/skills/">Open Skills</Link>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function AccessRequestItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
   let parsed: { kind?: string; target?: Record<string, unknown>; reason?: string } = {};
   try { parsed = JSON.parse(i.body); } catch { /* malformed body: show title only */ }
@@ -219,6 +260,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
         </>
       )}
       {i.kind === "access_request" && <AccessRequestItem i={i} busy={busy} act={act} />}
+      {i.kind === "skill_share" && <SkillShareItem i={i} busy={busy} act={act} />}
       <Later i={i} busy={busy} act={act} />
       <Err error={err} />
     </div>

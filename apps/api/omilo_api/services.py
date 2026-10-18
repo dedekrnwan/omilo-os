@@ -155,6 +155,9 @@ def create_staff(db: Session, data: dict, actor: str) -> Staff:
     db.flush()
     for sh in shifts:
         add_shift(db, st, sh["name"], sh["cron"], sh.get("brief", ""), commit=False)
+    from . import growth
+
+    growth.ensure_learning_shift(db, st, commit=False)  # every helper learns once a week
     audit(db, actor, "staff.create", sid, name=st.name)
     db.commit()
     return st

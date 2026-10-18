@@ -5,6 +5,7 @@ how many tools it used, the engine, and a few recent steps (checkpoints and nota
 from __future__ import annotations
 
 import datetime as dt
+import json
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -100,6 +101,16 @@ def build(db: Session, done_hours: int = 48, prefs: dict | None = None) -> dict:
         if i.kind == "proposal" and (p := db.get(Proposal, i.ref_id)):
             card["item"]["proposal"] = X.proposal(p)
             card["summary"] = _clip(X.proposal(p).get("body_md") or i.title)
+        elif i.kind == "skill_share":
+            from . import growth as G
+
+            v = G.share_view(i)
+            card["summary"] = _clip(v.get("description") or v.get("body") or i.title)
+        elif i.kind == "access_request":
+            try:
+                card["summary"] = _clip(json.loads(i.body or "{}").get("reason") or i.title)
+            except ValueError:
+                pass
         elif i.kind == "workflow":
             from . import workflows as W
 

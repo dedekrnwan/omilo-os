@@ -34,7 +34,7 @@ const dur = (s: number | null | undefined) => {
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
 };
 const since = (iso: string | null, now: number) => (iso ? (now - new Date(iso).getTime()) / 1000 : null);
-const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow", access_request: "Permission" };
+const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow", access_request: "Permission", skill_share: "Skill" };
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now());

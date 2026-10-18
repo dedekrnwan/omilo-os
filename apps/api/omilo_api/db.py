@@ -97,6 +97,14 @@ def _migrate(eng) -> None:
     from .models import Staff
 
     with _S(eng) as db:
+        from . import growth
+
+        for st in db.query(Staff):  # helpers hired before weekly learning existed get it too
+            try:
+                growth.ensure_learning_shift(db, st, commit=False)
+            except Exception:  # noqa: BLE001 - never block opening the database for this
+                db.rollback()
+        db.commit()
         changed = False
         for st in db.query(Staff):
             e = dict(st.engine or {})
