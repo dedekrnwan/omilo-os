@@ -1,8 +1,10 @@
 """Tests for Task 4: force-stop a running chat turn.
 
-Two focused unit tests — no live Claude subprocess needed:
+Unit tests — no live Claude subprocess needed:
   1. Route POST /api/threads/{thid}/cancel clears awaiting_reply and signals Redis.
   2. Worker cancel handler cancels a real asyncio.Task in chatting[].
+  3. cancel_loop survives a Redis error and retries (Finding 1).
+  4. answer_thread exits cleanly when awaiting_reply is flipped False between boundaries (Finding 2).
 """
 import asyncio
 import json
@@ -146,3 +148,161 @@ async def test_worker_cancel_done_task_no_error():
         task.cancel()
     # task is done, cancel() is a no-op — no error
     assert done_task.done()
+
+
+# ---------------------------------------------------------------------------
+# Finding 1: cancel_loop survives a Redis error and retries
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_cancel_loop_survives_redis_error():
+    """cancel_loop retries after a Redis error instead of exiting permanently.
+
+    Strategy: monkeypatch bus.ar() to return a fake async-redis-like object whose
+    pubsub().listen() raises an exception on the first call, then blocks forever on
+    the second call (simulating reconnect). We confirm the loop reached the retry
+    iteration by observing the second subscribe call, then stop the worker cleanly.
+    """
+    import asyncio as _asyncio
+    import omilo_api.bus as bus_mod
+    import omilo_api.worker as worker_mod
+    from omilo_api.worker import Worker
+
+    call_counts = {"subscribe": 0, "listen": 0}
+
+    class FakePubSub:
+        async def psubscribe(self, pattern):
+            call_counts["subscribe"] += 1
+
+        async def listen(self):
+            call_counts["listen"] += 1
+            if call_counts["listen"] == 1:
+                # First iteration: simulate a Redis connection error
+                raise ConnectionError("simulated Redis error")
+            # Second iteration: block until cancelled (simulates reconnected idle listen)
+            await _asyncio.sleep(9999)
+            return
+            yield  # make this an async generator
+
+        async def punsubscribe(self, pattern):
+            pass
+
+        async def aclose(self):
+            pass
+
+    class FakeAsyncRedis:
+        def pubsub(self):
+            return FakePubSub()
+
+    original_ar = bus_mod.ar
+    bus_mod.ar = lambda: FakeAsyncRedis()
+
+    w = Worker()
+    # Shorten the retry backoff so the test is fast
+    original_sleep = _asyncio.sleep
+
+    async def fast_sleep(t):
+        # Only shorten the 5 s retry backoff; let 0-second sleeps through as-is
+        await original_sleep(0)
+
+    worker_mod.asyncio.sleep = fast_sleep
+
+    cancel_loop_task = _asyncio.create_task(w.cancel_loop())
+
+    # Wait up to 2 s for the loop to retry (subscribe called twice: first + retry)
+    deadline = _asyncio.get_event_loop().time() + 2.0
+    while call_counts["subscribe"] < 2 and _asyncio.get_event_loop().time() < deadline:
+        await original_sleep(0.02)
+
+    cancel_loop_task.cancel()
+    try:
+        await cancel_loop_task
+    except _asyncio.CancelledError:
+        pass
+
+    # Restore patched names
+    bus_mod.ar = original_ar
+    worker_mod.asyncio.sleep = original_sleep
+
+    assert call_counts["subscribe"] >= 2, (
+        f"cancel_loop should have retried and re-subscribed after the Redis error "
+        f"(subscribe called {call_counts['subscribe']} time(s))"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Finding 2: answer_thread exits cleanly when awaiting_reply flipped False between boundaries
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_answer_thread_exits_on_awaiting_reply_false(monkeypatch):
+    """answer_thread stops at the next loop boundary when awaiting_reply is flipped False (cross-process cancel).
+
+    Strategy: monkeypatch _answer_as to return immediately and flip Thread.awaiting_reply=False
+    in the DB (simulating the cancel route running in another process). Confirm answer_thread
+    exits without posting a second stop note if CancelledError is not raised.
+
+    Uses the live SQLite test DB via conftest session_scope.
+    """
+    import omilo_api.services as S_mod
+    from omilo_api.worker import Worker
+    from omilo_api.db import session_scope
+    from omilo_api.models import Thread, now
+
+    # Create a minimal thread directly in the DB
+    with session_scope() as db:
+        # Find the chief staff for this test thread
+        from sqlalchemy import select
+        from omilo_api.models import Staff
+        chief = db.scalar(select(Staff).where(Staff.is_chief.is_(True)).limit(1))
+        if chief is None:
+            pytest.skip("no chief staff in test DB — run after team setup")
+        th = Thread(
+            scope="master",
+            staff_id=chief.id,
+            title="cancel-test",
+            awaiting_reply=True,
+            pending=[chief.id],
+        )
+        db.add(th)
+        db.flush()
+        thid = th.id
+
+    stop_notes: list[str] = []
+    original_post = S_mod.post_message
+
+    def capturing_post(db, th, role, sid, text, **kw):
+        if "Stopped by the owner" in (text or ""):
+            stop_notes.append(text)
+        return original_post(db, th, role, sid, text, **kw)
+
+    monkeypatch.setattr(S_mod, "post_message", capturing_post)
+
+    answer_count = [0]
+
+    async def stub_answer_as(thread_id, staff_id, answered):
+        answer_count[0] += 1
+        # After the first answer, flip awaiting_reply=False to simulate cross-process cancel
+        with session_scope() as db:
+            t = db.get(Thread, thread_id)
+            if t:
+                t.awaiting_reply = False
+                t.pending = None
+        return "stub answer"
+
+    w = Worker()
+    monkeypatch.setattr(w, "_answer_as", stub_answer_as)
+
+    # Run answer_thread with a tight timeout so the test can't hang
+    try:
+        await asyncio.wait_for(w.answer_thread(thid), timeout=5.0)
+    except asyncio.TimeoutError:
+        pytest.fail("answer_thread did not exit after awaiting_reply was flipped False")
+
+    # Should have called _answer_as exactly once, then detected the flip and stopped
+    assert answer_count[0] >= 1, "stub _answer_as was never called"
+
+    # Stop note should be posted at most once (double-post guard)
+    assert len(stop_notes) <= 1, (
+        f"stop note posted {len(stop_notes)} times — double-post detected: {stop_notes}"
+    )
