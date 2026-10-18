@@ -484,7 +484,7 @@ def request_access(
         staff_id=st.id,
         task_id=task_id,
         title=reason[:300],
-        body=_json.dumps({"kind": kind, "target": target, "reason": reason}),
+        body=_json.dumps({"kind": kind, "target": target, "reason": reason, "thread_id": thread_id}),
         level="decision",
         blocking=False,
     )
@@ -634,28 +634,25 @@ def decide_access(db: Session, item: "InboxItem", scope: str, by: str, note: str
     if scope not in ("once", "always", "deny"):
         raise DomainError("scope must be 'once', 'always', or 'deny'")
 
-    # Resolve thread_id from the card Message that contains this request's block.
-    # blocks is a JSON column (not JSONB), so we filter in Python after a bounded query.
+    # Resolve thread_id from the persisted item body (stored at request time).
+    thread_id = _json.loads(item.body).get("thread_id")
+
+    # Locate the card Message in a bounded per-thread lookup (only when thread_id is known).
     card_msg = None
-    candidate_msgs = db.scalars(
-        select(Message).where(Message.role == "agent", Message.author == (item.staff_id or ""))
-        .order_by(Message.at.desc()).limit(500)
-    )
-    for m in candidate_msgs:
-        for blk in (m.blocks or []):
-            if blk.get("type") == "access_request" and blk.get("request_id") == item.id:
-                card_msg = m
-                break
-        if card_msg:
-            break
-    thread_id = card_msg.thread_id if card_msg else None
-    # Safe degrade if card Message not found (e.g., staff_id is None): thread_id stays None,
-    # follow-up task spawn is still skipped but the decision is recorded. Log for visibility.
-    if card_msg is None:
-        logging.getLogger(__name__).warning(
-            f"decide_access: card message not found for access request {item.id}; "
-            f"thread_id will be None, no follow-up task sent"
+    if thread_id:
+        candidate_msgs = db.scalars(
+            select(Message)
+            .where(Message.thread_id == thread_id, Message.role == "agent")
+            .order_by(Message.at.desc())
+            .limit(200)
         )
+        for m in candidate_msgs:
+            for blk in (m.blocks or []):
+                if blk.get("type") == "access_request" and blk.get("request_id") == item.id:
+                    card_msg = m
+                    break
+            if card_msg:
+                break
 
     body = _json.loads(item.body)
     reason = body.get("reason", "")

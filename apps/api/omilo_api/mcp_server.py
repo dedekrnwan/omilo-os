@@ -346,9 +346,11 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
         elif thread_id:
             th = db.get(S.Thread, thread_id)
+            if th is None:
+                raise S.DomainError("no open chat to attach the access request to")
         else:
             raise S.DomainError("no open task or chat to attach the access request to")
-        item = S.request_access(db, st, task_id, thread_id, kind, target, reason, th=th)
+        item = S.request_access(db, st, task_id, th.id if th else None, kind, target, reason, th=th)
         return "allowed", {"decision": "needs_approval", "request_id": item.id, "thread_id": th.id}
     if name == "update_kpi":
         if policy.level_for("kpi.write", st.permissions) < policy.DO_AND_TELL:

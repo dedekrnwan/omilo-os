@@ -34,7 +34,7 @@ const dur = (s: number | null | undefined) => {
   return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
 };
 const since = (iso: string | null, now: number) => (iso ? (now - new Date(iso).getTime()) / 1000 : null);
-const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow" };
+const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow", access_request: "Permission" };
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now());
@@ -145,7 +145,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
               items={() => needItems(c)}
               indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
               time={dur(since(c.since, now))}
-              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
+              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
                 {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
           ))}
         </Column>
@@ -207,7 +207,7 @@ function ListView({ onCount }: { onCount: () => void }) {
               { label: "Copy the text", icon: "ri-file-copy-line", onSelect: () => copy(`${i.title}\n\n${i.body}`) },
               ...(i.staff_id ? [sep, ...helperItems({ id: i.staff_id })] : [])];
           })}>
-            <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" ? "warn" : "outline"}`}>{KIND[i.kind] || i.kind}</span>
+            <span className={`chip ${i.kind === "alert" ? "down" : i.kind === "question" || i.kind === "access_request" ? "warn" : "outline"}`}>{KIND[i.kind] || i.kind}</span>
             {i.blocking && <span className="chip warn">Blocking</span>}
             <div className="t"><Lineage l={(i as any).lineage} /><b>{i.title}</b><span className="small">{i.staff_id} · {ago(i.created_at)}{i.proposal ? ` · ${i.proposal.type}` : ""}</span></div>
             {i.proposal && <StatusChip status={i.proposal.status} />}

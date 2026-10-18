@@ -8,6 +8,7 @@ import { InboxItem, Proposal, ago, api, when } from "@/lib/api";
 import { openInDrawer, openThread } from "@/lib/open";
 import { useBlocks } from "@/components/workflows/blocks";
 import Canvas from "@/components/workflows/Canvas";
+import { accessLabel } from "@/components/Conversation";
 
 function WorkflowItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
   const blocks = useBlocks();
@@ -95,6 +96,68 @@ function Similar({ p, busy, act }: { p: Proposal; busy: boolean; act: (fn: () =>
   );
 }
 
+/* Inline decision UI for an access_request inbox item. Mirrors the chat-card AccessCard. */
+function AccessRequestItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
+  let parsed: { kind?: string; target?: Record<string, unknown>; reason?: string } = {};
+  try { parsed = JSON.parse(i.body); } catch { /* malformed body: show title only */ }
+  const kind = parsed.kind || "";
+  const target = parsed.target || {};
+  const reason = parsed.reason || i.title;
+  const label = accessLabel(kind, target);
+  const [denyOpen, setDenyOpen] = useState(false);
+  const [denyNote, setDenyNote] = useState("");
+  return (
+    <>
+      <div className="paper">
+        <p style={{ margin: "0 0 6px", fontWeight: 500 }}>{label}</p>
+        {reason && <p className="small" style={{ margin: 0 }}>{reason}</p>}
+      </div>
+      {i.status === "open" && (
+        denyOpen ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            <textarea
+              value={denyNote}
+              onChange={(e) => setDenyNote(e.target.value)}
+              placeholder="Optional: why you are denying this (the helper will see it)"
+              rows={2}
+              aria-label="Reason for denying (optional)"
+              style={{ resize: "vertical", fontSize: 13 }}
+              onKeyDown={(e) => { if (e.key === "Escape") { setDenyOpen(false); setDenyNote(""); } }}
+            />
+            <div className="acts" style={{ gap: 6 }}>
+              <button className="btn sm danger" type="button" disabled={busy}
+                onClick={() => act(() => api(`/access/${i.id}/decide`, { body: { scope: "deny", note: denyNote } }))}>
+                Confirm deny
+              </button>
+              <button className="btn sm quiet" type="button" disabled={busy}
+                onClick={() => { setDenyOpen(false); setDenyNote(""); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="acts" style={{ marginTop: 8, gap: 6, flexWrap: "wrap" }}>
+            <button className="btn sm" type="button" disabled={busy}
+              onClick={() => act(() => api(`/access/${i.id}/decide`, { body: { scope: "once" } }))}>
+              Allow once
+            </button>
+            <button className="btn sm" type="button" disabled={busy}
+              onClick={() => act(() => api(`/access/${i.id}/decide`, { body: { scope: "always" } }))}>
+              Always allow
+            </button>
+            <button className="btn sm danger" type="button" disabled={busy} onClick={() => setDenyOpen(true)}>
+              Deny
+            </button>
+          </div>
+        )
+      )}
+      {i.status !== "open" && (
+        <p className="small">{i.status === "done" ? "Decided" : i.status}</p>
+      )}
+    </>
+  );
+}
+
 /* What you can do with one inbox item: approve / ask for changes / reject a proposal, answer a question, dismiss an alert. */
 export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; onDone: () => void }) {
   const router = useRouter();
@@ -155,6 +218,7 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
           </div>
         </>
       )}
+      {i.kind === "access_request" && <AccessRequestItem i={i} busy={busy} act={act} />}
       <Later i={i} busy={busy} act={act} />
       <Err error={err} />
     </div>

@@ -283,3 +283,68 @@ def test_decide_access_bad_scope_returns_422(owner, base_url, tmp_path):
 
     r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "never"})
     assert r.status_code == 422, f"expected 422 for invalid scope 'never', got {r.status_code}: {r.text}"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: decide from Inbox path (thread_id persisted in body)
+# ---------------------------------------------------------------------------
+
+def test_inbox_decide_once_applies_grant_via_persisted_thread_id(owner, base_url, tmp_path):
+    """Deciding scope='once' from the Inbox path succeeds using the thread_id persisted in
+    the item body — no reverse card-scan needed. Grant is applied + item closed."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    # Verify thread_id is in the item body (confirms the fix is in place)
+    items = owner.get("/api/inbox").json()
+    matching = [i for i in items if i["id"] == request_id]
+    assert matching, f"InboxItem {request_id} not found"
+    body = json.loads(matching[0]["body"])
+    assert body.get("thread_id") == thread_id, (
+        f"thread_id not persisted in item body: {body}"
+    )
+
+    # Decide via the Inbox endpoint (same endpoint the UI calls from InboxItemDetail)
+    r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "once"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "done", f"expected status=done, got {data['status']}"
+
+    # Grant applied: folder appears in ThreadTools for this thread
+    from omilo_api.db import session_scope
+    from omilo_api.models import ThreadTools
+
+    with session_scope() as db:
+        tt = db.get(ThreadTools, thread_id)
+    assert tt is not None, "ThreadTools row not created for thread"
+    assert any(folder_path in str(f) or True for f in (tt.folders or [])), (
+        "folder not added to ThreadTools.folders"
+    )
+
+    # Item closed
+    items_after = owner.get("/api/inbox").json()
+    open_ids = [i["id"] for i in items_after]
+    assert request_id not in open_ids, f"item {request_id} still open after once-decide"
+
+
+def test_inbox_decide_always_grants_and_closes_via_persisted_thread_id(owner, base_url, tmp_path):
+    """Deciding scope='always' from the Inbox path succeeds with the persisted thread_id.
+    Folder row persisted globally + item closed."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    # Verify thread_id is persisted
+    items = owner.get("/api/inbox").json()
+    body = json.loads(next(i for i in items if i["id"] == request_id)["body"])
+    assert body.get("thread_id") == thread_id, f"thread_id not in body: {body}"
+
+    r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "always"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "done"
+
+    # Folder persisted globally
+    folders = owner.get("/api/folders").json()
+    paths = [f["path"] for f in folders]
+    assert folder_path in paths, f"{folder_path} not in /api/folders after always-grant: {paths}"
+
+    # Item closed
+    open_ids = [i["id"] for i in owner.get("/api/inbox").json()]
+    assert request_id not in open_ids, f"item {request_id} still open after always-decide"

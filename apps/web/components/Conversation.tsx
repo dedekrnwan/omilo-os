@@ -36,11 +36,11 @@ export function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]
   );
 }
 
-function accessLabel(kind: string, target: Record<string, unknown>): string {
+export function accessLabel(kind: string, target: Record<string, unknown>): string {
   if (kind === "folder") {
     const path = String(target.path || "");
     const access = target.access === "write" ? "read and write" : "read";
-    const hasCommands = Array.isArray(target.commands) ? target.commands.length > 0 : !!target.commands;
+    const hasCommands = !!target.commands;
     const cmds = hasCommands ? ", and run commands in it" : "";
     return `Folder: ${path} (${access}${cmds})`;
   }
