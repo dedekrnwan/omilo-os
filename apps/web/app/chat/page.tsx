@@ -287,8 +287,13 @@ function WorkspaceInner() {
     return order.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as Staff[];
   }, [current, staff]);
   const addMention = (s: Staff) => {
-    setText((cur) => (cur && !cur.endsWith(" ") ? cur + " " : cur) + `@${s.name} `);
-    setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(h.getValue().length); } }, 0);
+    // read the composer's real value (not just React state), and treat a whitespace-only box as empty so a
+    // stray newline left in an "emptied" contenteditable never pushes the mention onto a new line
+    const raw = box.current?.getValue() ?? text;
+    const cur = raw.trim() === "" ? "" : /\s$/.test(raw) ? raw : raw + " ";
+    const next = `${cur}@${s.name} `;
+    setText(next);
+    setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(next.length); } }, 0);
   };
 
   const output = view === "chat"
