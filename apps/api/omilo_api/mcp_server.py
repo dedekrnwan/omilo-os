@@ -235,7 +235,7 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         else:
             th = None  # background call: no chat, no error — create proposal + inbox item only
         p = S.create_proposal(
-            db, st, args.get("task_id"), args["title"], args["type"], args.get("risk", "medium"), args["body"],
+            db, st, task_id_arg, args["title"], args["type"], args.get("risk", "medium"), args["body"],
             thread_id=th.id if th else None, th=th,
         )
         return "proposal", {"proposal_id": p.id, "message": "In the founder's Inbox. Do not act on it until it comes back approved."}

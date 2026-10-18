@@ -98,7 +98,7 @@ def test_propose_without_thread_files_inbox_only(owner, base_url):
     from omilo_api import services as S
     from omilo_api.db import session_scope
     from omilo_api.models import InboxItem, Staff, Thread
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     with session_scope() as db:
         st = db.get(Staff, "support")
@@ -126,9 +126,9 @@ def test_propose_without_thread_files_inbox_only(owner, base_url):
     # No message was posted to any thread (no Thread row for this proposal)
     with session_scope() as db:
         thread_count_for_proposal = db.scalar(
-            select(Thread).where(Thread.scope == "task", Thread.ref_id == p.id)
+            select(func.count()).select_from(Thread).where(Thread.scope == "task", Thread.ref_id == p.id)
         )
-    assert thread_count_for_proposal is None, "unexpected thread created for proposal"
+    assert thread_count_for_proposal == 0, "unexpected thread created for proposal"
 
 
 def test_decide_proposal_from_inbox_after_chat_card_is_idempotent(owner, base_url):
