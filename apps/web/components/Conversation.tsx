@@ -13,7 +13,7 @@ import { kick, usePoll } from "@/lib/poll";
 /* A conversation with a helper: messages, live run cards and clickable choices. Used by the Workspace and by the
    job / chat drawers that open from anywhere. */
 
-export type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string }[] };
+export type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string; request_id?: string; kind?: string; target?: Record<string, unknown>; reason?: string; decided?: string }[] };
 export type FullThread = Thread & { messages: Msg[] };
 
 export function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]; busy: boolean; onPick: (o: string) => void }) {
@@ -33,6 +33,99 @@ export function Choices({ m, messages, busy, onPick }: { m: Msg; messages: Msg[]
       ))}
       {open && busy && m.blocks?.some((b) => b.type === "choices") && <div className="small" style={{ marginTop: 4 }}>You can pick as soon as the helper finishes this turn.</div>}
     </>
+  );
+}
+
+function accessLabel(kind: string, target: Record<string, unknown>): string {
+  if (kind === "folder") {
+    const path = String(target.path || "");
+    const access = target.access === "write" ? "read and write" : "read";
+    const cmds = target.commands ? ", and run commands in it" : "";
+    return `Folder: ${path} (${access}${cmds})`;
+  }
+  if (kind === "connector") return `Connection: ${String(target.name || target.id || "")}`;
+  if (kind === "skill") return `Skill: ${String(target.name || target.slug || "")}`;
+  return kind;
+}
+
+function decidedLabel(decided: string): string {
+  if (decided === "once") return "Allowed for this session";
+  if (decided === "always") return "Allowed permanently";
+  if (decided === "deny") return "Denied";
+  return decided;
+}
+
+export function AccessRequest({ m, onDecide }: { m: Msg; onDecide: (requestId: string, scope: "once" | "always" | "deny", note: string) => void }) {
+  const blocks = m.blocks?.filter((b) => b.type === "access_request") || [];
+  if (!blocks.length) return null;
+  return (
+    <>
+      {blocks.map((b, i) => {
+        const requestId = b.request_id || "";
+        const kind = b.kind || "";
+        const target = (b.target as Record<string, unknown>) || {};
+        const reason = b.reason || "";
+        const decided = b.decided;
+        return <AccessCard key={i} requestId={requestId} kind={kind} target={target} reason={reason} decided={decided} onDecide={onDecide} />;
+      })}
+    </>
+  );
+}
+
+function AccessCard({ requestId, kind, target, reason, decided, onDecide }: {
+  requestId: string; kind: string; target: Record<string, unknown>; reason: string;
+  decided?: string; onDecide: (id: string, scope: "once" | "always" | "deny", note: string) => void;
+}) {
+  const [denyOpen, setDenyOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+
+  const decide = async (scope: "once" | "always" | "deny", n = "") => {
+    setBusy(true);
+    try { await onDecide(requestId, scope, n); } finally { setBusy(false); }
+  };
+
+  const openDeny = () => { setDenyOpen(true); setTimeout(() => noteRef.current?.focus(), 0); };
+
+  if (decided) {
+    return (
+      <div className="callout warn" style={{ marginTop: 8 }}>
+        <div className="small" style={{ fontWeight: 500, marginBottom: 4 }}>Access request</div>
+        <div style={{ marginBottom: 4 }}>{accessLabel(kind, target)}</div>
+        {reason && <div className="small" style={{ marginBottom: 6 }}>{reason}</div>}
+        <div className="small" style={{ color: decided === "deny" ? "var(--bad)" : "var(--ok)", fontWeight: 500 }}>
+          {decided === "deny" ? <i className="ri-close-circle-line" /> : <i className="ri-checkbox-circle-line" />}
+          {" "}{decidedLabel(decided)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="callout warn" style={{ marginTop: 8 }}>
+      <div className="small" style={{ fontWeight: 500, marginBottom: 4 }}>Access request</div>
+      <div style={{ marginBottom: 4 }}>{accessLabel(kind, target)}</div>
+      {reason && <div className="small" style={{ marginBottom: 8 }}>{reason}</div>}
+      {!denyOpen ? (
+        <div className="acts" style={{ gap: 6, flexWrap: "wrap" }}>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("once")}>Allow once</button>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("always")}>Always allow</button>
+          <button className="btn sm danger" type="button" disabled={busy} onClick={openDeny}>Deny</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="Optional: why you're denying this (the helper will see it)" rows={2}
+            style={{ resize: "vertical", fontSize: 13 }}
+            onKeyDown={(e) => { if (e.key === "Escape") { setDenyOpen(false); setNote(""); } }} />
+          <div className="acts" style={{ gap: 6 }}>
+            <button className="btn sm danger" type="button" disabled={busy} onClick={() => decide("deny", note)}>Confirm deny</button>
+            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => { setDenyOpen(false); setNote(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -67,7 +160,7 @@ function msgItems(th: FullThread, m: Msg, who: string, staff: Staff[]): MenuItem
   ].filter(Boolean) as MenuItem[];
 }
 
-export function Conversation({ th, staff, events, onSend, busy }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean }) {
+export function Conversation({ th, staff, events, onSend, busy, onDecide }: { th: FullThread; staff: Staff[]; events: RunEvent[]; onSend: (t: string) => void; busy: boolean; onDecide?: (requestId: string, scope: "once" | "always" | "deny", note: string) => void }) {
   const runs = toRuns(events);
   const people = staff; // @Name of these is highlighted
   const next = (th.pending && th.pending[0]) || th.staff_id; // who is answering now
@@ -97,6 +190,7 @@ export function Conversation({ th, staff, events, onSend, busy }: { th: FullThre
                 <Markdown text={row.m.text} people={people} />
                 <Attachments blocks={row.m.blocks} />
                 <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
+                {onDecide && <AccessRequest m={row.m} onDecide={onDecide} />}
               </div>
             </div>
           )

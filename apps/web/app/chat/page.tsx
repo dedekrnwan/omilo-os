@@ -9,7 +9,7 @@ import PoolMeter from "@/components/PoolMeter";
 import Avatar from "@/components/Avatar";
 import BrowserView from "@/components/BrowserView";
 import Lineage from "@/components/Lineage";
-import { Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
+import { AccessRequest, Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
 import { useMentions } from "@/components/Mentions";
 import MentionBox, { type MentionHandle } from "@/components/MentionBox";
@@ -109,10 +109,11 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
           <Markdown text={t.brief + (t.founder_note ? `\n\n**Your note:** ${t.founder_note}` : "")} />
         </div>
         {runs.map((r) => <RunCard key={r.id} run={r} />)}
-        {th && (th.messages as Msg[]).filter((m) => m.role === "agent" && m.blocks?.some((b) => b.type === "choices" || b.type === "file")).map((m) => (
+        {th && (th.messages as Msg[]).filter((m) => m.role === "agent" && m.blocks?.some((b) => b.type === "choices" || b.type === "file" || b.type === "access_request")).map((m) => (
           <div key={m.id} className="agentmsg"><Avatar who={staff.find((x) => x.id === t.staff_id)} size={30} /><div className="body">
             <div className="who">{who} · {when(m.at)}</div><Markdown text={m.text} /><Attachments blocks={m.blocks} />
-            <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} /></div></div>
+            <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} />
+            <AccessRequest m={m} onDecide={async (rid, scope, note) => { try { await api(`/access/${rid}/decide`, { body: { scope, note } }); load(); } catch (e: any) { setErr(e.message); } }} /></div></div>
         ))}
         {runs.length === 0 && t.status === "queued" && <div className="sysmsg">Waiting for a free spot…</div>}
         {t.report && (
@@ -247,6 +248,13 @@ function WorkspaceInner() {
     try { await api(`/threads/${t.id}`, { method: "DELETE" }); await loadLists(); if (current?.id === t.id) go({}); } catch (e: any) { setErr(e.message); }
   };
 
+  const decide = async (requestId: string, scope: "once" | "always" | "deny", note: string) => {
+    try {
+      await api(`/access/${requestId}/decide`, { body: { scope, note } });
+      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
+    } catch (e: any) { setErr(e.message); }
+  };
+
   const send = async (t: string) => {
     if (slash.jobBrief !== null && t.startsWith("/job")) { startJob(slash.jobBrief); return; }
     if ((!t.trim() && !files.length) || !tid) return;
@@ -330,7 +338,7 @@ function WorkspaceInner() {
         </nav>
         <section className="ws-main">
           <div className="ws-scroll" ref={scroller}>
-            {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} /></div>
+            {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} onDecide={decide} /></div>
               : <div className="ws-inner"><p className="small">Loading…</p></div>)
               : taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
               : taskId ? <TaskView id={taskId} staff={staff} />
