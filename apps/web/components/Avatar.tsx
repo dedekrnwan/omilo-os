@@ -48,6 +48,58 @@ export function lookFor(w: Who, custom?: Look | null): Required<Omit<Look, "imag
   };
 }
 
+/* ---------------------------------------------------------- static SVG string (for mention chips)
+   A string twin of <Mascot> in its still/bare form, for places that render outside React's control of the DOM:
+   the chat bubble (dangerouslySetInnerHTML) and the contenteditable composer. KEEP IN SYNC with <Body>/<Face>/
+   <Prop> below — same geometry, kebab-case attributes for the HTML parser. No user text enters the SVG; the
+   dynamic colour/image are attribute-escaped. */
+const svgAttr = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function bodySVG(shape: string, color: string): string {
+  if (shape === "box") return `<rect x="13" y="17" width="38" height="52" rx="13" fill="${color}"/>`;
+  if (shape === "bean") return `<ellipse cx="32" cy="44" rx="20" ry="27" fill="${color}"/>`;
+  return `<path d="M10 70 C10 34 19 16 32 16 C45 16 54 34 54 70 Z" fill="${color}"/>`;
+}
+
+const FACE_SVG =
+  '<g class="m-eyes"><circle cx="25" cy="34" r="3.6" fill="#1c1917"/><circle cx="39" cy="34" r="3.6" fill="#1c1917"/>' +
+  '<circle cx="26.2" cy="32.8" r="1.2" fill="#fff"/><circle cx="40.2" cy="32.8" r="1.2" fill="#fff"/></g>' +
+  '<path class="m-mouth" d="M27.5 42.5 Q32 47 36.5 42.5" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round" fill="none"/>' +
+  '<path class="m-mouth-happy" d="M27 42 Q32 50 37 42 Z" fill="#1c1917" stroke="#1c1917" stroke-width="1.6" stroke-linejoin="round"/>' +
+  '<circle class="m-cheek" cx="20.5" cy="41" r="2.6" fill="#fff" opacity=".3"/><circle class="m-cheek" cx="43.5" cy="41" r="2.6" fill="#fff" opacity=".3"/>';
+
+function propSVG(prop: string): string {
+  switch (prop) {
+    case "crown": return '<path d="M21 19 L23.5 8.5 L28.5 14 L32 7 L35.5 14 L40.5 8.5 L43 19 Z" fill="#facc15" stroke="#1c1917" stroke-width="1.6" stroke-linejoin="round"/>';
+    case "glasses": return '<g stroke="#1c1917" stroke-width="2" fill="#fff" fill-opacity=".25"><circle cx="25" cy="34" r="6"/><circle cx="39" cy="34" r="6"/><path d="M31 34 h2"/></g>';
+    case "headset": return '<g stroke="#1c1917" stroke-width="2.6" fill="none" stroke-linecap="round"><path d="M14 36 A18 18 0 0 1 50 36"/><rect x="10.5" y="33" width="6" height="10" rx="3" fill="#1c1917"/><rect x="47.5" y="33" width="6" height="10" rx="3" fill="#1c1917"/><path d="M50 42 Q48 50 38 50" stroke-width="2"/><circle cx="37" cy="50" r="2" fill="#1c1917"/></g>';
+    case "megaphone": return '<g stroke="#1c1917" stroke-width="1.6" stroke-linejoin="round"><path d="M45 47 L58 40 L58 56 L45 50 Z" fill="#fff"/><rect x="41" y="46" width="5" height="6" rx="1.5" fill="#fff"/></g>';
+    case "tie": return '<path d="M29.5 51 h5 l-1 3 l3 9 l-4.5 4 l-4.5 -4 l3 -9 Z" fill="#dc2626" stroke="#1c1917" stroke-width="1.3" stroke-linejoin="round"/>';
+    case "coin": return '<g><circle cx="50" cy="52" r="8" fill="#facc15" stroke="#1c1917" stroke-width="1.6"/><text x="50" y="56" text-anchor="middle" font-size="11" font-weight="700" fill="#1c1917" font-family="ui-sans-serif, system-ui">$</text></g>';
+    case "gear": return '<g transform="translate(50 52)"><path d="M-2 -9 h4 l1 3 l3 -1.5 l2.6 2.6 l-1.5 3 l3 1 v4 l-3 1 l1.5 3 l-2.6 2.6 l-3 -1.5 l-1 3 h-4 l-1 -3 l-3 1.5 l-2.6 -2.6 l1.5 -3 l-3 -1 v-4 l3 -1 l-1.5 -3 l2.6 -2.6 l3 1.5 Z" fill="#e7e5e4" stroke="#1c1917" stroke-width="1.4" stroke-linejoin="round"/><circle r="2.6" fill="#1c1917"/></g>';
+    case "antenna": return '<g><path d="M32 16 V8" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round"/><circle cx="32" cy="7" r="3" fill="#f43f5e" stroke="#1c1917" stroke-width="1.4"/></g>';
+    case "sprout": return '<g stroke="#1c1917" stroke-width="1.5" stroke-linejoin="round"><path d="M32 17 V10" fill="none" stroke-width="2"/><path d="M32 12 C26 12 23 8 23 5 C29 5 32 8 32 12 Z" fill="#4ade80"/><path d="M32 11 C37 11 40 7.5 40 5 C35 5 32 7.5 32 11 Z" fill="#22c55e"/></g>';
+    case "beret": return '<g><path d="M17 22 C17 13 47 11 49 20 C49 24 17 26 17 22 Z" fill="#1c1917"/><circle cx="33" cy="12.5" r="2" fill="#1c1917"/></g>';
+    case "spark": return '<g><path d="M32 0.5 C33 6 34.3 7.4 39.5 8.3 C34.3 9.2 33 10.6 32 16 C31 10.6 29.7 9.2 24.5 8.3 C29.7 7.4 31 6 32 0.5 Z" fill="#f59e0b" stroke="#1c1917" stroke-width="1.4" stroke-linejoin="round"/><circle cx="44" cy="5" r="1.6" fill="#f59e0b"/></g>';
+    case "magnifier": return '<g stroke="#1c1917" stroke-linecap="round"><circle cx="49" cy="49" r="6.5" fill="#fff" fill-opacity=".7" stroke-width="2.2"/><path d="M53.5 53.5 L59 59" stroke-width="3"/></g>';
+    default: return "";
+  }
+}
+
+/** A standalone SVG (or <img>) string for a helper's mascot — matches <Mascot> in its still/bare form. */
+export function mascotSVG(look: ReturnType<typeof lookFor>, size = 18): string {
+  if (look.image) {
+    const src = look.image.startsWith("fil_") ? `${BASE}/api/files/${look.image}` : look.image;
+    return `<img class="mascot img" src="${svgAttr(src)}" width="${size}" height="${size}" alt=""/>`;
+  }
+  const color = svgAttr(look.color);
+  const glasses = look.prop === "glasses";
+  return `<svg class="mascot still tiny" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">` +
+    `<g class="m-char">${bodySVG(look.shape, color)}` +
+    `<g class="m-face">${FACE_SVG}${glasses ? propSVG("glasses") : ""}</g>` +
+    `${glasses ? "" : propSVG(look.prop)}</g></svg>`;
+}
+
 /* ---------------------------------------------------------- custom looks (shared cache, one request per page load) */
 let cache: Record<string, Look> | null = null;
 let pending: Promise<Record<string, Look>> | null = null;
