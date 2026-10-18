@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Avatar, { mascotSVG, lookFor, type Look } from "@/components/Avatar";
+import { type MentionHandle } from "@/components/MentionBox";
 import { Staff } from "@/lib/api";
 
 /* @mentions in a chat box: type @ and pick a helper (arrows, Enter or Tab), or keep typing to filter. The picked
    helper answers in this chat after you send. Names typed by hand (@Marketing) work too: the server reads them. */
 
-type Box = React.RefObject<HTMLTextAreaElement | null>;
+type Box = React.RefObject<MentionHandle | null>;
 
 /** The @word being typed right before the caret, if any. */
 function token(text: string, caret: number): { start: number; query: string } | null {
@@ -21,15 +22,13 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
   const [closedAt, setClosedAt] = useState<string | null>(null);
   const picked = useRef<Set<string>>(new Set());
 
-  useEffect(() => { // follow the caret as the owner types or clicks. Not on "input": a state change there would re-render
-    // before React reads the new value, and the controlled box would drop the keystroke.
-    const el = box.current;
-    if (!el) return;
-    const sync = () => setCaret(el.selectionStart ?? el.value.length);
-    el.addEventListener("keyup", sync); el.addEventListener("click", sync);
-    return () => { el.removeEventListener("keyup", sync); el.removeEventListener("click", sync); };
+  useEffect(() => { // follow the caret as the owner types or clicks. selectionchange covers typing, clicks and arrow
+    // keys; box.current is read lazily so there is no mount-order race with the MentionBox handle.
+    const sync = () => { const h = box.current; if (h?.el && (document.activeElement === h.el || h.el.contains(document.activeElement))) setCaret(h.getCaret()); };
+    document.addEventListener("selectionchange", sync);
+    return () => document.removeEventListener("selectionchange", sync);
   }, [box]);
-  useEffect(() => { const el = box.current; if (el && document.activeElement === el) setCaret(el.selectionStart ?? text.length); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const h = box.current; if (h?.el && (document.activeElement === h.el || h.el.contains(document.activeElement))) setCaret(h.getCaret()); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tok = token(text, Math.min(caret, text.length));
   const items = useMemo(() => {
@@ -50,7 +49,7 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
     picked.current.add(s.id);
     setText(next);
     const pos = tok.start + s.name.length + 2;
-    setTimeout(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = pos; setCaret(pos); } }, 0);
+    setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(pos); setCaret(pos); } }, 0);
   };
 
   /** Returns true when the key was used by the menu. */
