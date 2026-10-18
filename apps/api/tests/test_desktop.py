@@ -40,7 +40,7 @@ def test_one_copy_per_data_folder(tmp_path):
 
     # flock is per open file description: a second process sees the lock
     out = subprocess.run([sys.executable, "-c", "from pathlib import Path; from omilo_api import desktop as D; "
-                          f"print(D.Services(Path('{tmp_path}/rt'), Path('{tmp_path}/data')).lock())"],
+                          f"print(D.Services(Path('{tmp_path}/rt'), Path('{tmp_path}/data')).lock(wait=0))"],
                          capture_output=True, text=True).stdout
     assert "7700" in out
     del b

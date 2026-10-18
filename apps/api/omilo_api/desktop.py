@@ -105,6 +105,19 @@ def merge_path(*parts: str) -> str:
     return os.pathsep.join(out)
 
 
+def _answers(url: str) -> bool:
+    try:
+        urllib.request.urlopen(url + "/healthz", timeout=2)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _q(v) -> str:
+    """A value for valkey.conf, quoted: paths on macOS have spaces ("Application Support")."""
+    return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 class State:
     """<data>/desktop.json: the ports and passwords this install uses (kept so the web app's address, and so its
     cookies and notification subscriptions, stay the same from one start to the next)."""
@@ -159,17 +172,24 @@ class Services:
         return found
 
     # lifecycle -----------------------------------------------------------------
-    def lock(self) -> dict | None:
-        """One copy per data folder. Returns the running copy's details when another one holds it."""
+    def lock(self, wait: float = 60) -> dict | None:
+        """One copy per data folder. Returns the running copy's details when another one holds the folder and
+        answers. A copy that is still shutting down (Omilo quit and was opened again at once) is waited for."""
         self.data.mkdir(parents=True, exist_ok=True)
         self.data.chmod(0o700)
         self._lock_fd = open(self.data / "desktop.lock", "a+")  # noqa: SIM115 - held for the life of the process
-        try:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            st = State(self.data / "desktop.json").d
-            return {"url": st.get("url")} if st.get("url") else {"url": None}
-        return None
+        end = time.time() + wait
+        while True:
+            try:
+                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return None
+            except BlockingIOError:
+                url = State(self.data / "desktop.json").d.get("url")
+                if url and _answers(url):
+                    return {"url": url}
+                if time.time() >= end:
+                    return {"url": url}
+                time.sleep(0.5)
 
     def start(self) -> str:
         for d in (self.logs, self.data / "valkey", self.data / "omilo"):
@@ -303,8 +323,8 @@ class Services:
             self.state.d["kv_port"] = port
             self.state.save()
         conf = self.data / "valkey" / "valkey.conf"  # the password goes in a private file, not the process list
-        conf.write_text(f"port {port}\nbind 127.0.0.1\ndir {self.data / 'valkey'}\nappendonly yes\nsave \"\"\n"
-                        f"protected-mode yes\nrequirepass {password}\nmaxmemory-policy noeviction\npidfile {pidfile}\n")
+        conf.write_text(f"port {port}\nbind 127.0.0.1\ndir {_q(self.data / 'valkey')}\nappendonly yes\nsave \"\"\n"
+                        f"protected-mode yes\nrequirepass {_q(password)}\nmaxmemory-policy noeviction\npidfile {_q(pidfile)}\n")
         conf.chmod(0o600)
         p = self._spawn("valkey", [self.kv(), str(conf)])
         wait_port(port, 20, p, "Valkey")
