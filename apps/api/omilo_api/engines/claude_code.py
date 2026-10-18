@@ -224,15 +224,27 @@ class ClaudeCodeEngine(Engine):
         mcp_file.chmod(0o600)
         tried: set[str] = set()
         total = EngineResult()
-        if cfg.get("auth") == "api":  # your Claude API key instead of the subscription pool: one run, billed to the key
+        auth = cfg.get("auth")
+        if auth == "api":  # your Claude API key instead of the subscription pool: one run, billed to the key
             try:
-                return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
+                return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
             finally:
                 mcp_file.unlink(missing_ok=True)
         try:
             while True:
                 picked = H.lease(exclude=tried)
                 if not picked:
+                    # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key
+                    # (same config dir, so a session begun on the pool resumes cleanly). Pure pool mode errors instead.
+                    if auth == "auto" and api_key():
+                        emit("status", state="switching", account="your API key", reason="pool busy — using your API key")
+                        res = await self._run_api(cli, cfg, system, prompt if not session else "Continue exactly where you left off.",
+                                                  session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
+                        res.tokens += total.tokens
+                        res.cost_usd += total.cost_usd
+                        if total.text and not res.text:
+                            res.text = total.text
+                        return res
                     msg = "No Claude Code account is free right now (all cooling down, busy or none added). See Settings → Harness."
                     return EngineResult(error=msg, tokens=total.tokens, cost_usd=total.cost_usd, text=total.text)
                 acc_id, label, token = picked
@@ -279,12 +291,11 @@ class ClaudeCodeEngine(Engine):
         finally:
             mcp_file.unlink(missing_ok=True)
 
-    async def _run_api(self, cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd) -> EngineResult:
+    async def _run_api(self, cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config) -> EngineResult:
         key = api_key()
         if not key:
             return EngineResult(error="No Claude API key. Add it in Settings → AI.")
-        config = get_settings().company_dir / "harness" / "api-config"
-        config.mkdir(parents=True, exist_ok=True)
+        # shares the pool's config dir on purpose, so "auto" can resume a pool session on the API key and back
         emit("status", state="harness", account="your API key")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
                 "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
@@ -335,6 +346,9 @@ class ClaudeCodeEngine(Engine):
             return {"ok": False, "detail": "Claude Code not installed (Settings → Harness)"}
         if cfg.get("auth") == "api":
             return {"ok": bool(api_key()), "detail": "Claude Code · your API key" if api_key() else "no Claude API key (Settings → AI)"}
+        if cfg.get("auth") == "auto":
+            return {"ok": p["ready"] > 0 or bool(api_key()),
+                    "detail": f"Claude Code pool · {p['ready']}/{p['total']} ready" + (" (+ your API key for overflow)" if api_key() else " (no API-key overflow set)")}
         return {"ok": p["ready"] > 0, "detail": f"Claude Code pool · {p['ready']}/{p['total']} accounts ready"}
 
 

@@ -869,7 +869,7 @@ _LITELLM_PROVIDER_IDS = tuple(_providers_reg.provider_ids())  # 8 vendor ids fro
 
 AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code") + _LITELLM_PROVIDER_IDS
 # "claude"        = Claude Code run with your Claude API key: files, commands in shared folders, web, connectors
-# "claude-code"   = Claude Code on the subscription pool (Harness)
+# "claude-code"   = Claude Code on the subscription pool (Harness), with your API key as automatic overflow
 # "claude-direct" = Omilo calls the Claude API itself: nothing to install, web + Omilo's tools only
 # 8 vendor ids    = LiteLLM-routed direct API calls (anthropic, openai, gemini, xai, deepseek, mistral, bedrock, groq)
 
@@ -886,7 +886,8 @@ def _engine_for(provider: str, model: str | None, base_url: str | None = None) -
     if provider == "claude-direct":
         return {"type": "claude", "model": _claude_model(model)}
     if provider == "claude-code":
-        return {"type": "claude-code", **({"model": model} if model else {})}
+        # subscription pool first, with the company's API key as automatic overflow when the pool is busy/empty
+        return {"type": "claude-code", "auth": "auto", **({"model": model} if model else {})}
     if provider in _LITELLM_PROVIDER_IDS:
         return {"type": "litellm", "provider": provider, **({"model": model} if model else {})}
     return {"type": "fake"}

@@ -156,7 +156,8 @@ def test_claude_code_runs_with_the_api_key(owner, tmp_path):
         done = wait_for(lambda: (x := owner.get(f"/api/tasks/{t['id']}").json())["status"] in ("done", "failed") and x, timeout=30)
         assert done["status"] == "done", done
         call = json.loads(log.read_text().splitlines()[-1])
-        assert call["api_key"] == "KEY123" and call["token"] == "" and call["cfgdir"].endswith("api-config")
+        # api-key runs share the pool's config dir (…/harness/config) so "auto" can resume a session across pool↔key
+        assert call["api_key"] == "KEY123" and call["token"] == "" and call["cfgdir"].endswith("/config")
     finally:
         os.environ.pop("OMILO_CLAUDE_BIN", None)
         owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["support"]})

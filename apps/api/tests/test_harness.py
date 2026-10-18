@@ -95,6 +95,27 @@ def test_pool_failover_resumes_session(owner, fake_cli):
         owner.delete(f"/api/harness/accounts/{a['id']}")
 
 
+def test_auto_mode_spills_over_to_api_key_when_pool_empty(owner, fake_cli, monkeypatch):
+    """Provider 'claude-code' is the hybrid 'auto' mode: with no pool account free it must fall back to the
+    company's API key (same CLI) rather than erroring, so work still runs."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "z" * 24 + "APIKEY")
+    owner.post("/api/ai", json={"provider": "claude-code", "staff_ids": ["sales"]})
+    eng = owner.get("/api/staff/sales").json()["engine"]
+    assert eng["type"] == "claude-code" and eng["auth"] == "auto", eng
+
+    # no pool accounts added -> lease() finds nothing -> auto spills over to the API key
+    t = owner.post("/api/tasks", json={"staff_id": "sales", "brief": "Find 3 office catering prospects"}).json()
+    done = wait_for(lambda: (x := owner.get(f"/api/tasks/{t['id']}").json())["status"] in ("done", "failed") and x, timeout=30)
+    assert done["status"] == "done", done
+
+    last = json.loads(fake_cli.read_text().splitlines()[-1])
+    assert last["token"] == "" and last["api_key"].endswith("APIKEY"), f"expected the API key, not a pool token: {last}"
+    ev = owner.get("/api/events", params={"task_id": t["id"]}).json()
+    assert any(e["kind"] == "status" and e["data"].get("account") == "your API key" for e in ev), "overflow to API key not shown"
+
+    owner.post("/api/ai", json={"provider": "fake", "staff_ids": ["sales"]})
+
+
 def test_offer_choices_and_tool_events(owner, base_url):
     import httpx
 
