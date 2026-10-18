@@ -506,6 +506,121 @@ def request_access(
     return item
 
 
+def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | None) -> None:
+    """Apply a granted access-request item.
+
+    scope: "once" | "always"
+    - folder/always : create or update a Folder row (default_on=True)
+    - folder/once   : ensure a Folder row exists (default_on=False) and add its id to ThreadTools.folders
+    - connector/always : set Connector.approval="auto" and enabled=True
+    - connector/once   : add connector id to ThreadTools.connectors
+    - skill/always  : set the skill's frontmatter default_on=True (via capabilities.save_skill)
+    - skill/once    : add slug to ThreadTools.skills
+    """
+    import json as _json
+
+    from .models import Connector, Folder, ThreadTools
+
+    if scope not in ("once", "always"):
+        raise DomainError("scope must be 'once' or 'always'")
+
+    body = _json.loads(item.body)
+    kind = body["kind"]
+    target = body["target"]
+
+    if kind == "folder":
+        raw_path = target.get("path", "")
+        access = target.get("access", "read")
+        commands = bool(target.get("commands", False))
+        label = Path(raw_path).name or raw_path
+
+        # Find existing Folder row by path or create new one
+        from sqlalchemy import select as _select
+        row = db.scalar(_select(Folder).where(Folder.path == raw_path))
+        if row is None:
+            row = Folder(path=raw_path, label=label, access=access, commands=commands, default_on=False)
+            db.add(row)
+            db.flush()  # get row.id
+
+        if scope == "always":
+            row.access = access
+            row.commands = commands
+            row.default_on = True
+            row.label = row.label or label
+        else:
+            # once: ensure the row exists but keep default_on=False; add to thread's folders
+            row.access = access
+            row.commands = commands
+            if thread_id is None:
+                raise DomainError("need a thread for a one-off folder grant")
+            tt = db.get(ThreadTools, thread_id)
+            if tt is None:
+                # Start from the current default-on set so we don't disable others
+                existing_defaults = list(db.scalars(_select(Folder).where(Folder.default_on.is_(True))))
+                tt = ThreadTools(thread_id=thread_id, folders=[f.id for f in existing_defaults])
+                db.add(tt)
+                db.flush()
+            current = list(tt.folders or [])
+            if row.id not in current:
+                current.append(row.id)
+                tt.folders = current
+
+    elif kind == "connector":
+        conn_id = target.get("id", "")
+        conn = db.get(Connector, conn_id)
+        if conn is None:
+            raise DomainError(f"connector '{conn_id}' not found", 404)
+
+        if scope == "always":
+            conn.approval = "auto"
+            conn.enabled = True
+        else:
+            # once: add to thread's connectors (don't mutate Connector.approval)
+            if thread_id is None:
+                raise DomainError("need a thread for a one-off connector grant")
+            tt = db.get(ThreadTools, thread_id)
+            if tt is None:
+                from sqlalchemy import select as _select2
+                existing_defaults = list(db.scalars(_select2(Connector).where(Connector.default_on.is_(True), Connector.enabled.is_(True))))
+                tt = ThreadTools(thread_id=thread_id, connectors=[c.id for c in existing_defaults])
+                db.add(tt)
+                db.flush()
+            current = list(tt.connectors or [])
+            if conn_id not in current:
+                current.append(conn_id)
+                tt.connectors = current
+
+    elif kind == "skill":
+        slug = target.get("slug", "")
+        from . import capabilities as _cap
+        skill = _cap.get_skill(slug)
+        if skill is None:
+            raise DomainError(f"skill '{slug}' not found", 404)
+
+        if scope == "always":
+            _cap.save_skill(slug, skill["name"], skill.get("description", ""), skill["body"], default_on=True)
+        else:
+            # once: add slug to thread's skills
+            if thread_id is None:
+                raise DomainError("need a thread for a one-off skill grant")
+            tt = db.get(ThreadTools, thread_id)
+            if tt is None:
+                all_skills = _cap.list_skills()
+                tt = ThreadTools(thread_id=thread_id, skills=[s["slug"] for s in all_skills if s["default_on"]])
+                db.add(tt)
+                db.flush()
+            current = list(tt.skills or [])
+            if slug not in current:
+                current.append(slug)
+                tt.skills = current
+    else:
+        raise DomainError(f"unsupported access kind: {kind}")
+
+    actor = f"staff:{item.staff_id}" if item.staff_id else "system"
+    audit(db, actor, "access.grant", item.id, kind=kind, scope=scope)
+    db.commit()
+
+
 # ---------------------------------------------------------------- threads & messages
 def get_or_create_thread(db: Session, scope: str, ref_id: str | None, staff_id: str, title: str = "") -> Thread:
     q = select(Thread).where(Thread.scope == scope, Thread.staff_id == staff_id)
