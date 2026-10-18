@@ -36,6 +36,9 @@ fetch() { # url file
   [ -s "$CACHE/$2" ] || { mkdir -p "$CACHE"; curl -fL --retry 3 -o "$CACHE/$2.part" "$1" && mv "$CACHE/$2.part" "$CACHE/$2"; }
 }
 mkdir -p "$OUT" "$CACHE"
+# VERSION marks a complete runtime: gone while building, so a build that stops halfway (Ctrl+C, a full disk) is
+# never packaged into the app; written again at the very end
+rm -f "$OUT/VERSION"
 
 # On macOS a moved binary must not point at the build folder for its libraries: point it at its neighbours instead.
 relink() { # prefix dir...
