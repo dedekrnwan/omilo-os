@@ -67,10 +67,21 @@ class Staff(Base):
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | paused
     mcp_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     mcp_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # encrypted, so the worker can hand it to the engine
+    brain: Mapped[str] = mapped_column(String(16), default="single_engine")  # single_engine | graph
+    autonomy: Mapped[str] = mapped_column(String(16), default="standard")  # guided | standard | trusted
+    voice: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
     shifts: Mapped[list["Shift"]] = relationship(back_populates="staff", cascade="all, delete-orphan")
+
+
+class StaffRelation(Base):
+    """Directed relationship between two staff members. kind ∈ delegates_to | reviews."""
+    __tablename__ = "staff_relation"
+    from_staff: Mapped[str] = mapped_column(String(64), primary_key=True)
+    to_staff: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)  # delegates_to | reviews
 
 
 class Shift(Base):

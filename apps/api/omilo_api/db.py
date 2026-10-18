@@ -78,6 +78,9 @@ _COLUMNS = [
     ("notice", "who", "VARCHAR(120) NOT NULL DEFAULT ''"),
     ("thread", "pending", "JSON"),
     ("staff", "access", "JSON"),
+    ("staff", "brain", "VARCHAR(16) NOT NULL DEFAULT 'single_engine'"),
+    ("staff", "autonomy", "VARCHAR(16) NOT NULL DEFAULT 'standard'"),
+    ("staff", "voice", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
