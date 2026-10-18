@@ -11,6 +11,7 @@ import { hireBack, helperItems, letGo, taskItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
 import { usePoll } from "@/lib/poll";
 import HelperState from "@/components/HelperState";
+import HelperAccess from "@/components/HelperAccess";
 import { confirmDialog } from "@/lib/dialog";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
@@ -142,6 +143,7 @@ function StaffDetail({ id }: { id: string }) {
           </tbody></table></div>
         </div>
       </div>
+      {s.status !== "retired" && <HelperAccess id={s.id} name={s.name} />}
       <div className="sec" id="memory">
         <h2>Memory</h2>
         <p className="small" style={{ marginTop: 0 }}>What {s.name} has learned, as notes in Docs. {s.name} reads them before every run; edit them and it follows your version.</p>

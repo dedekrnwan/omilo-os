@@ -37,7 +37,7 @@ PHRASES = {
     "login.failed": "failed to sign in", "owner.create": "created the owner account", "token.revoke": "revoked an access token",
     "password.change": "changed the password", "session.revoke_others": "signed out other devices", "notify.subscribe": "turned on notifications",
     "staff.create": "added a helper", "staff.update": "changed a helper", "staff.retire": "let a helper go", "staff.rehire": "hired a helper back",
-    "staff.avatar": "changed a helper's look", "staff.budget_tokens": "changed a token budget", "staff.mcp_token.rotate": "renewed a helper's access key",
+    "staff.avatar": "changed a helper's look", "staff.budget_tokens": "changed a token budget", "staff.access": "changed what a helper may use", "budget.company": "changed the company budget", "staff.mcp_token.rotate": "renewed a helper's access key",
     "talent.hire": "hired a specialist", "task.create": "gave a job", "shift.create": "added a regular job", "shift.update": "changed a regular job",
     "shift.delete": "removed a regular job", "shift.fire": "started a regular job", "proposal.revise": "revised a proposal",
     "question.answer": "answered a question", "inbox.dismiss": "dismissed an Inbox item", "inbox.snooze": "snoozed an Inbox item", "chat.create": "started a team chat", "chat.rename": "renamed a team chat",

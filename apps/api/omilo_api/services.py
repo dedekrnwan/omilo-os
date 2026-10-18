@@ -510,12 +510,12 @@ def request_access(
 def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | None) -> None:
     """Apply a granted access-request item.
 
-    scope: "once" | "always"
-    - folder/always : create or update a Folder row (default_on=True)
+    scope: "once" | "always"; "always" is for the helper that asked (its Access settings), not the whole team
+    - folder/always : ensure a Folder row exists (new ones are not on by default) and give this helper that access
     - folder/once   : ensure a Folder row exists (default_on=False) and add its id to ThreadTools.folders
-    - connector/always : set Connector.approval="auto" and enabled=True
+    - connector/always : this helper always has the connector, and its actions no longer wait for approval (approval="auto")
     - connector/once   : add connector id to ThreadTools.connectors
-    - skill/always  : set the skill's frontmatter default_on=True (via capabilities.save_skill)
+    - skill/always  : this helper always uses the skill
     - skill/once    : add slug to ThreadTools.skills
     """
     import json as _json
@@ -544,10 +544,14 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
             db.flush()  # get row.id
 
         if scope == "always":
-            row.access = access
-            row.commands = commands
-            row.default_on = True
             row.label = row.label or label
+            st = db.get(Staff, item.staff_id) if item.staff_id else None
+            if st is None:  # no helper to give it to: share it with everyone, as before
+                row.access, row.commands, row.default_on = access, commands, True
+            else:
+                from . import capabilities as _cap
+                _cap.set_helper_access(st, {"folders": {row.id: {"access": "write" if access == "write" else "read",
+                                                                 "commands": commands and access == "write"}}})
         else:
             # once: ensure the row exists but keep default_on=False; add to thread's folders
             row.access = access
@@ -575,6 +579,9 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
         if scope == "always":
             conn.approval = "auto"
             conn.enabled = True
+            if item.staff_id and (st := db.get(Staff, item.staff_id)):
+                from . import capabilities as _cap
+                _cap.set_helper_access(st, {"connectors": {conn_id: True}})
         else:
             # once: add to thread's connectors (don't mutate Connector.approval)
             if thread_id is None:
@@ -598,7 +605,10 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
             raise DomainError(f"skill '{slug}' not found", 404)
 
         if scope == "always":
-            _cap.save_skill(slug, skill["name"], skill.get("description", ""), skill["body"], default_on=True)
+            if item.staff_id and (st := db.get(Staff, item.staff_id)):
+                _cap.set_helper_access(st, {"skills": {slug: True}})
+            else:
+                _cap.save_skill(slug, skill["name"], skill.get("description", ""), skill["body"], default_on=True)
         else:
             # once: add slug to thread's skills
             if thread_id is None:

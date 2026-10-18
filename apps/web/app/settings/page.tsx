@@ -22,7 +22,7 @@ type Item = { id: string; label: string; icon: string; words: string; desc: stri
 const GROUPS: { label: string; items: Item[] }[] = [
   { label: "Company", items: [
     { id: "general", label: "General", icon: "ri-building-2-line", words: "name company timezone time zone", desc: "Your company's name and time zone." },
-    { id: "safety", label: "Safety & limits", icon: "ri-shield-check-line", words: "strict mode approvals pause stop concurrency parallel limits", desc: "What needs your approval, how many helpers work at once, and the stop button." },
+    { id: "safety", label: "Safety & limits", icon: "ri-shield-check-line", words: "strict mode approvals pause stop concurrency parallel limits budget spend money cost", desc: "What needs your approval, how many helpers work at once, the company budget and the stop button." },
   ] },
   { label: "AI", items: [
     { id: "ai", label: "AI engine", icon: "ri-sparkling-2-line", words: "claude api key model practice mode engine", desc: "The AI your helpers think with." },
@@ -41,7 +41,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
 ];
 const ALL = GROUPS.flatMap((g) => g.items);
 const ELSEWHERE: [string, string, string][] = [
-  ["/staff/", "Permissions & budgets", "ri-team-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
+  ["/staff/", "Helper access, permissions & budgets", "ri-team-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
   ["/harness/", "Claude subscriptions", "ri-stack-line"], ["/computer/", "Folders", "ri-computer-line"],
 ];
 
@@ -122,8 +122,24 @@ function Safety({ set }: { set: (b: Record<string, unknown>) => Promise<boolean>
           set({ paused: !overview.paused });
         }}><i className={overview.paused ? "ri-play-line" : "ri-pause-line"} />{overview.paused ? "Resume" : "Pause"}</button>
       </Row>
-      <p className="small set-foot">What each helper may do on its own, and its monthly budget, are set per helper on <Link href="/staff/">Team</Link>.</p>
+      <CompanyBudget b={overview.budget_company} set={set} />
+      <p className="small set-foot">What each helper may do on its own, what it may open on this computer (Access) and its own monthly budget are set per helper on <Link href="/staff/">Team</Link>.</p>
     </>
+  );
+}
+
+function CompanyBudget({ b, set }: { b?: { budget_usd: number; cost_usd: number; pct: number | null }; set: (b: Record<string, unknown>) => Promise<boolean> }) {
+  const [usd, setUsd] = useState(b?.budget_usd ? String(b.budget_usd) : "");
+  useEffect(() => { setUsd(b?.budget_usd ? String(b.budget_usd) : ""); }, [b?.budget_usd]);
+  const changed = (Number(usd) || 0) !== (b?.budget_usd || 0);
+  return (
+    <Row title="Company budget per month" desc={<>All helpers together, in USD at API prices. At 80% you get an alert; at 100% every helper pauses until you raise it or resume.
+      Leave empty for no limit.{b && <> This month so far: <b className="mono">${b.cost_usd.toFixed(2)}</b>{b.pct != null && <> ({Math.round(b.pct)}%)</>}.</>}</>}>
+      <div className="set-step">
+        <input inputMode="decimal" aria-label="Company budget per month in USD" style={{ width: 110 }} value={usd} placeholder="No limit" onChange={(e) => setUsd(e.target.value)} />
+        {changed && <button className="btn sm" onClick={() => set({ budget_company_usd: Math.max(0, Number(usd) || 0) })}>Save</button>}
+      </div>
+    </Row>
   );
 }
 

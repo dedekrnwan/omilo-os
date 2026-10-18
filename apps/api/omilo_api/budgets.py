@@ -89,3 +89,45 @@ def check(db: Session, staff_id: str) -> str | None:
             db.add(Setting(key=key, value=sent))
         db.commit()
     return level
+
+
+# ------------------------------------------------------------------ the whole company
+def company_budget(db: Session) -> float:
+    return float(S.get_setting(db, "budget_company_usd", 0) or 0)
+
+
+def company_status(db: Session) -> dict:
+    """Month-to-date spend of every helper together against the company's monthly cap (0 = no cap)."""
+    spent = sum(u["cost_usd"] for u in month_usage(db).values())
+    cap = company_budget(db)
+    return {"budget_usd": cap, "cost_usd": round(spent, 4), "pct": round(spent / cap * 100, 1) if cap else None}
+
+
+def check_company(db: Session) -> str | None:
+    """Alert at 80% of the company cap; at 100% pause everything (the same switch as Pause all helpers)."""
+    b = company_status(db)
+    if b["pct"] is None:
+        return None
+    key = f"budget_company_flag:{month_start(db).strftime('%Y-%m')}"
+    flag = db.get(Setting, key)
+    sent = int(flag.value or 0) if flag else 0
+    what = f"${b['cost_usd']:.2f} of ${b['budget_usd']:.2f}"
+    level = None
+    if b["pct"] >= 100 and sent < 100:
+        S.set_setting(db, "paused", True)
+        S.alert(db, "The company reached its monthly budget: every helper is paused",
+                f"Your helpers spent {what} this month together. Nothing new starts until you raise the company budget "
+                "(Settings → Safety) or resume (Pause all helpers in the sidebar).", None, None, level="critical", commit=False)
+        sent, level = 100, "paused"
+    elif b["pct"] >= 80 and sent < 80:
+        S.alert(db, "Your helpers used 80% of the company's monthly budget",
+                f"Your helpers spent {what} this month together. At 100% every helper pauses until you raise it.",
+                None, None, level="decision", commit=False)
+        sent, level = 80, "warn"
+    if level:
+        if flag:
+            flag.value = sent
+        else:
+            db.add(Setting(key=key, value=sent))
+        db.commit()
+    return level

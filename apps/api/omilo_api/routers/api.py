@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import budgets as _budgets
 from .. import catalog, policy
 from .. import onboarding as OB
 from .. import serialize as X
@@ -62,6 +63,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "paused": S.is_paused(db),
         "strict_mode": S.strict_mode(db),
         "max_concurrent_tasks": S.max_concurrent(db),
+        "budget_company": _budgets.company_status(db),
         "timezone": S.timezone_name(db),
         "inbox": {"open": len(open_items), "critical": sum(i.level == "critical" for i in open_items),
                   "blocking": sum(i.blocking for i in open_items)},
@@ -83,6 +85,7 @@ class SystemIn(BaseModel):
     paused: bool | None = None
     strict_mode: bool | None = None
     max_concurrent_tasks: int | None = Field(None, ge=1, le=100)
+    budget_company_usd: float | None = Field(None, ge=0, le=1_000_000)  # 0 = no company cap
     company_name: str | None = None
     timezone: str | None = None
 
@@ -110,6 +113,9 @@ def update_system(body: SystemIn, db: Session = Depends(get_db), user: User = De
     for k, v in body.model_dump(exclude_none=True).items():
         if k == "timezone":
             _set_timezone(db, v, user.id)
+        elif k == "budget_company_usd":
+            S.set_setting(db, k, float(v), actor=user.id)
+            S.audit(db, user.id, "budget.company", "company", usd=float(v))
         else:
             S.set_setting(db, k, v, actor=user.id)
     db.commit()
@@ -244,6 +250,63 @@ def patch_staff(sid: str, body: StaffPatch, db: Session = Depends(get_db), user:
         S.audit(db, user.id, "staff.budget_tokens", sid, tokens=tok)
         db.commit()
     return X.staff(S.update_staff(db, st, data, user.id))
+
+
+class AccessIn(BaseModel):
+    """Changes to a helper's own access. A value sets it; null goes back to the company default."""
+    folders: dict[str, dict | None] | None = None  # {fld_id: {"access": "none"|"read"|"write", "commands": bool} | null}
+    connectors: dict[str, bool | None] | None = None
+    skills: dict[str, bool | None] | None = None
+
+
+def _access_view(db: Session, st: Staff) -> dict:
+    """Everything shared with the team, and what this helper gets of each: its own setting or the company default."""
+    from .. import capabilities as C
+    from ..models import Connector, Folder
+
+    own = C.helper_access(st)
+    folders = []
+    for f in db.scalars(select(Folder).order_by(Folder.created_at)):
+        mine = own["folders"].get(f.id)
+        default = {"access": f.access if f.default_on else "none", "commands": bool(f.commands and f.default_on)}
+        folders.append({"id": f.id, "path": f.path, "label": f.label or f.path, "exists": os.path.isdir(f.path),
+                        "company": {"access": f.access, "commands": f.commands, "default_on": f.default_on},
+                        "default": default, "own": mine, "effective": mine or default})
+    conns = [{"id": c.id, "label": c.label, "approval": c.approval, "default": c.default_on, "own": own["connectors"].get(c.id),
+              "effective": own["connectors"].get(c.id, c.default_on)}
+             for c in db.scalars(select(Connector).where(Connector.enabled.is_(True)).order_by(Connector.label))]
+    skills = [{"id": k["slug"], "label": k["name"], "description": k["description"], "default": k["default_on"],
+               "own": own["skills"].get(k["slug"]), "effective": own["skills"].get(k["slug"], k["default_on"])}
+              for k in C.list_skills()]
+    engine = (st.engine or {}).get("type")
+    return {"staff_id": st.id, "name": st.name, "uses_files": engine == "claude-code",
+            "folders": folders, "connectors": conns, "skills": skills}
+
+
+@router.get("/staff/{sid}/access")
+def staff_access(sid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return _access_view(db, _404(db.get(Staff, sid)))
+
+
+@router.put("/staff/{sid}/access")
+def staff_access_set(sid: str, body: AccessIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import capabilities as C
+    from ..models import Connector, Folder
+
+    st = _404(db.get(Staff, sid))
+    change = {k: v for k, v in body.model_dump().items() if v is not None}  # null inside: back to the company default
+    known = {"folders": {f.id for f in db.scalars(select(Folder))}, "connectors": {c.id for c in db.scalars(select(Connector))},
+             "skills": {k["slug"] for k in C.list_skills()}}
+    for kind, items in change.items():
+        for i, v in items.items():
+            if v is not None and i not in known[kind]:
+                raise HTTPException(404, f"no {kind[:-1]} '{i}'")
+            if kind == "folders" and v is not None and v.get("access") not in C.ACCESS_LEVELS:
+                raise HTTPException(400, "access must be none, read or write")
+    C.set_helper_access(st, change)
+    S.audit(db, user.id, "staff.access", sid, change=change)
+    db.commit()
+    return _access_view(db, st)
 
 
 @router.delete("/staff/{sid}")
@@ -1484,8 +1547,14 @@ def folders_list(db: Session = Depends(get_db), user: User = Depends(current_use
 
     from ..models import Folder
 
+    from .. import capabilities as C
+
+    own = [(st, C.helper_access(st)["folders"]) for st in S.team(db)]
     return [{"id": f.id, "path": f.path, "label": f.label or _P(f.path).name, "access": f.access, "commands": f.commands,
-             "default_on": f.default_on, "exists": _P(f.path).is_dir()} for f in db.scalars(select(Folder).order_by(Folder.created_at))]
+             "default_on": f.default_on, "exists": _P(f.path).is_dir(),
+             # helpers with their own setting for this folder (Team → helper → Access)
+             "helpers": [{"id": st.id, "name": st.name, **a[f.id]} for st, a in own if f.id in a]}
+            for f in db.scalars(select(Folder).order_by(Folder.created_at))]
 
 
 def _folder_apply(f, body: FolderIn) -> None:

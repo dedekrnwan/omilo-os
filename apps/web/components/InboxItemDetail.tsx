@@ -143,7 +143,7 @@ function AccessRequestItem({ i, busy, act }: { i: InboxItem; busy: boolean; act:
             </button>
             <button className="btn sm" type="button" disabled={busy}
               onClick={() => act(() => api(`/access/${i.id}/decide`, { body: { scope: "always" } }))}>
-              Always allow
+              Always allow this helper
             </button>
             <button className="btn sm danger" type="button" disabled={busy} onClick={() => setDenyOpen(true)}>
               Deny

@@ -85,6 +85,7 @@ export type Thread = { id: string; scope: string; ref_id: string | null; staff_i
   pending?: string[]; updated_at?: string };
 export type Overview = {
   company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
+  budget_company?: { budget_usd: number; cost_usd: number; pct: number | null };
   inbox: { open: number; critical: number; blocking: number };
   tasks: { running: number; queued: number; done_24h: number; failed_24h: number };
   staff: { id: string; name: string; status: string; is_chief: boolean; running: number }[];

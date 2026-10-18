@@ -122,7 +122,12 @@ def test_grant_folder_always_persists(owner, base_url, tmp_path):
     assert row is not None, "Folder row was not created"
     assert row.access == "write"
     assert row.commands is True
-    assert row.default_on is True
+    assert row.default_on is False, "'always' is for the helper that asked (its Access), not every helper"
+    from omilo_api.models import Staff
+
+    with session_scope() as db:
+        own = (db.get(Staff, "support").access or {})["folders"][row.id]
+    assert own == {"access": "write", "commands": True}
 
     folders = owner.get("/api/folders").json()
     paths = [f["path"] for f in folders]

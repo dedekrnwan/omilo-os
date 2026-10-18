@@ -33,6 +33,7 @@ class Resources:
     skills: list[dict] = field(default_factory=list)       # {slug, name, description, body}
     files: list[dict] = field(default_factory=list)        # {id, name, mime, path}
     allow_connectors: set[str] = field(default_factory=set)  # one-off: approved connector calls in an execution task
+    helper: str = ""  # the helper's name, for telling it where its access is set
 
     def note(self) -> str:
         """Plain-language description for any engine's prompt."""
@@ -54,6 +55,14 @@ class Resources:
             out.append("Files the founder attached:\n" + "\n".join(f"- {f['name']} ({f['mime']}): {f['path']}" for f in self.files))
         if self.skills:
             out.append("Skills to apply:\n" + "\n\n".join(f"### Skill: {s['name']}\n{s['body']}" for s in self.skills))
+        if self.helper:
+            out.append(
+                f"Your access is set by the founder in Omilo on Team → {self.helper} → Access: which folders you may read, edit "
+                "or run terminal commands in, and which connectors and skills you use. Terminal commands (Bash) work only in a "
+                "folder listed above with 'terminal commands allowed'. When you need more (a folder, editing, commands, a "
+                "connector or skill), call request_access with exactly what you need; the founder approves it in this chat. "
+                "Don't ask the founder to run commands for you instead. Skills for the team live on Omilo's Skills page "
+                "(files in ~/.claude are not read here).")
         return "\n\n".join(out)
 
 
@@ -234,22 +243,83 @@ def allowed_path(db, raw: str, staff_id: str | None = None) -> Path | None:
     return None
 
 
+# ------------------------------------------------------------------ what one helper may use
+ACCESS_LEVELS = ("none", "read", "write")
+
+
+def helper_access(st) -> dict:
+    """A helper's own access settings, cleaned: {"folders": {id: {"access", "commands"}}, "connectors": {id: bool},
+    "skills": {slug: bool}}. Anything not listed follows the company defaults (Computer, Connectors, Skills)."""
+    return _clean((getattr(st, "access", None) or {}) if st is not None else {})
+
+
+def _clean(raw: dict) -> dict:
+    out: dict = {"folders": {}, "connectors": {}, "skills": {}}
+    for fid, v in (raw.get("folders") or {}).items():
+        if isinstance(v, dict) and v.get("access") in ACCESS_LEVELS:
+            out["folders"][str(fid)] = {"access": v["access"], "commands": bool(v.get("commands")) and v["access"] == "write"}
+    for k in ("connectors", "skills"):
+        for i, on in (raw.get(k) or {}).items():
+            if isinstance(on, bool):
+                out[k][str(i)] = on
+    return out
+
+
+def set_helper_access(st, change: dict) -> dict:
+    """Apply a change: a value sets the helper's own setting, None goes back to the company default."""
+    cur = helper_access(st)
+    for k in ("folders", "connectors", "skills"):
+        for i, v in (change.get(k) or {}).items():
+            if v is None:
+                cur[k].pop(str(i), None)
+            else:
+                cur[k][str(i)] = v
+    st.access = _clean(cur)  # drops invalid values
+    return st.access
+
+
+def folder_for_helper(f: Folder, own: dict | None, picked: bool) -> dict | None:
+    """What one helper gets of a shared folder: its own setting when it has one (also 'none', which wins over a chat
+    picking the folder), else the folder's company setting when the folder is on by default or picked for the chat."""
+    if own is not None:
+        if own["access"] == "none":
+            return None
+        return {"path": f.path, "label": f.label, "access": own["access"], "commands": own["commands"]}
+    if picked:
+        return {"path": f.path, "label": f.label, "access": f.access, "commands": f.commands}
+    return None
+
+
 # ------------------------------------------------------------------ resolve for a run
-def resolve(db, thread_id: str | None = None, proposal: dict | None = None, file_ids: list[str] | None = None) -> Resources:
+def resolve(db, thread_id: str | None = None, proposal: dict | None = None, file_ids: list[str] | None = None,
+            staff=None) -> Resources:
+    """What a run may use. `staff` (the helper running) applies its own Access settings on top of the company
+    defaults and the chat's choices."""
     tt = db.get(ThreadTools, thread_id) if thread_id else None
     folders = list(db.scalars(select(Folder)))
     conns = list(db.scalars(select(Connector).where(Connector.enabled.is_(True))))
     skills = list_skills()
+    own = helper_access(staff)
 
     def pick(items, key, chosen, default):
         """A chat's own choice when it made one, else the items marked as default."""
         return [i for i in items if key(i) in chosen] if chosen is not None else [i for i in items if default(i)]
 
+    def mine(items, key, picked, mine_):
+        """Picked items, adjusted by the helper's own on/off."""
+        on = {key(i) for i in picked}
+        return [i for i in items if mine_.get(key(i), key(i) in on)]
+
+    picked_folders = {f.id for f in pick(folders, lambda f: f.id, tt.folders if tt else None, lambda f: f.default_on)}
     r = Resources(
-        folders=[{"path": f.path, "label": f.label, "access": f.access, "commands": f.commands}
-                 for f in pick(folders, lambda f: f.id, tt.folders if tt else None, lambda f: f.default_on) if Path(f.path).is_dir()],
-        connectors=[connector_runtime(c) for c in pick(conns, lambda c: c.id, tt.connectors if tt else None, lambda c: c.default_on)],
-        skills=[s for s in pick(skills, lambda s: s["slug"], tt.skills if tt else None, lambda s: s["default_on"])],
+        folders=[x for f in folders if Path(f.path).is_dir()
+                 and (x := folder_for_helper(f, own["folders"].get(f.id), f.id in picked_folders))],
+        connectors=[connector_runtime(c) for c in mine(conns, lambda c: c.id,
+                                                       pick(conns, lambda c: c.id, tt.connectors if tt else None, lambda c: c.default_on),
+                                                       own["connectors"])],
+        skills=mine(skills, lambda s: s["slug"], pick(skills, lambda s: s["slug"], tt.skills if tt else None, lambda s: s["default_on"]),
+                    own["skills"]),
+        helper=getattr(staff, "name", "") or "",
     )
     if proposal and str(proposal.get("type", "")).startswith("connector."):
         r.allow_connectors.add(proposal["type"].split(".", 1)[1])

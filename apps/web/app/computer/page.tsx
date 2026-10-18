@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
@@ -10,7 +11,8 @@ import { confirmDialog } from "@/lib/dialog";
 /* Computer: which folders on the machine running Omilo your helpers may read, edit and run commands in.
    Sharing and changing a folder happen in a drawer on the right, with a folder browser. */
 
-type Folder = { id: string; path: string; label: string; access: "read" | "write"; commands: boolean; default_on: boolean; exists: boolean };
+type Own = { id: string; name: string; access: "none" | "read" | "write"; commands: boolean };
+type Folder = { id: string; path: string; label: string; access: "read" | "write"; commands: boolean; default_on: boolean; exists: boolean; helpers?: Own[] };
 type Fs = { path: string; parent: string | null; home: string; dirs: string[] };
 type Form = { id?: string; path: string; label: string; access: "read" | "write"; commands: boolean; default_on: boolean };
 
@@ -52,7 +54,7 @@ export default function Computer() {
     { label: "Edit", icon: "ri-edit-line", onSelect: () => edit(f) },
     { label: "Helpers may edit files", icon: "ri-edit-box-line", checked: f.access === "write", onSelect: () => put(f, { access: f.access === "write" ? "read" : "write" }) },
     { label: "Helpers may run commands", icon: "ri-terminal-box-line", checked: f.commands, onSelect: () => put(f, { commands: !f.commands }) },
-    { label: "On in every chat", icon: "ri-chat-check-line", checked: f.default_on, onSelect: () => put(f, { default_on: !f.default_on }) },
+    { label: "Every helper gets it", icon: "ri-team-line", checked: f.default_on, onSelect: () => put(f, { default_on: !f.default_on }) },
     sep,
     { label: "Copy the path", icon: "ri-file-copy-line", onSelect: () => copy(f.path) },
     sep,
@@ -64,7 +66,8 @@ export default function Computer() {
     <div>
       <div className="sechead" style={{ alignItems: "flex-start" }}>
         <div><h1>Computer</h1>
-          <p className="sub" style={{ marginBottom: 0 }}>Share folders on this computer with your helpers, for example a code project they develop in. They only reach the folders you add here, and only in chats or jobs where the folder is switched on.</p></div>
+          <p className="sub" style={{ marginBottom: 0 }}>Share folders on this computer with your helpers, for example a code project they develop in. The settings here are the team default;
+            give one helper more or less on its own page (Team → the helper → Access).</p></div>
         <span className="sp" />
         <button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button>
       </div>
@@ -82,9 +85,15 @@ export default function Computer() {
                 <div className="acts" style={{ gap: 6 }}>
                   <span className="chip">{f.access === "write" ? "Read and edit" : "Read only"}</span>
                   {f.commands && <span className="chip">Runs commands</span>}
-                  <span className="chip idle">{f.default_on ? "On everywhere" : "Per chat"}</span>
+                  <span className="chip idle">{f.default_on ? "Every helper" : "Per chat"}</span>
                   {!f.exists && <span className="chip down">Missing</span>}
                 </div>
+                {!!f.helpers?.length && (
+                  <div className="small" style={{ marginTop: 6 }}>Own setting: {f.helpers.map((h, i) => (
+                    <span key={h.id}>{i > 0 && ", "}<Link href={`/staff/?id=${h.id}#access`} onClick={(e) => e.stopPropagation()}>{h.name}</Link>{" "}
+                      ({h.access === "none" ? "no access" : h.commands ? "edit + commands" : h.access === "write" ? "read and edit" : "read"})</span>
+                  ))}</div>
+                )}
               </div>
             ))}
           </div>
@@ -94,7 +103,8 @@ export default function Computer() {
       <div className="soft" style={{ marginTop: 24 }}>
         <b style={{ fontWeight: 500 }}>Good to know</b>
         <ul style={{ paddingLeft: 18, margin: "8px 0 0", fontSize: 14, lineHeight: 1.7 }}>
-          <li>Helpers on <b>Claude Code</b> (your API key or the pool) get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.</li>
+          <li>Helpers on <b>Claude Code</b> (your API key or the pool) get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.
+            One helper can get more or less on its own page: <b>Team → the helper → Access</b>.</li>
           <li>Helpers on <b>built-in Claude</b> can't open files at all; use Claude Code (your key or the pool) for folder work.</li>
           <li>Even with commands on, deleting files, pushing code, publishing and deploying are blocked: helpers ask you in the Inbox instead.</li>
           <li>Running Omilo in Docker? Only folders mounted into the container can be shared.</li>
@@ -152,7 +162,7 @@ export default function Computer() {
                 <span className={`switch ${form.commands ? "on" : ""}`} role="switch" aria-checked={form.commands}><i /></span>
               </div>
               <div className="togrow" onClick={() => set({ default_on: !form.default_on })}>
-                <span className="t"><b>On in every chat and job</b><span>Otherwise switch it on per chat with +</span></span>
+                <span className="t"><b>Every helper gets it</b><span>In every chat and job. Otherwise switch it on per chat with +, or for one helper on its page (Access)</span></span>
                 <span className={`switch ${form.default_on ? "on" : ""}`} role="switch" aria-checked={form.default_on}><i /></span>
               </div>
             </div>

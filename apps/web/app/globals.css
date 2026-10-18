@@ -2119,3 +2119,11 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .app-acts li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; font-size: 13px; }
 .app-acts li + li { border-top: 1px solid var(--line); }
 .app-foot > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Team → helper → Access */
+.access-h { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin: 18px 0 8px; }
+.access-h i { color: var(--muted); }
+.access-t td { vertical-align: middle; }
+.access-t td .mono { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.access-t select { min-width: 220px; }
+@media (max-width: 640px) { .access-t select { min-width: 0; width: 100%; } }

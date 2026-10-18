@@ -51,7 +51,7 @@ export function accessLabel(kind: string, target: Record<string, unknown>): stri
 
 function decidedLabel(decided: string): string {
   if (decided === "once") return "Allowed for this session";
-  if (decided === "always") return "Allowed permanently";
+  if (decided === "always") return "Allowed for this helper from now on (Team → Access)";
   if (decided === "deny") return "Denied";
   return decided;
 }
@@ -111,7 +111,7 @@ function AccessCard({ requestId, kind, target, reason, decided, onDecide }: {
       {!denyOpen ? (
         <div className="acts" style={{ gap: 6, flexWrap: "wrap" }}>
           <button className="btn sm" type="button" disabled={busy} onClick={() => decide("once")}>Allow once</button>
-          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("always")}>Always allow</button>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("always")} title="This helper keeps it; change it later on Team → the helper → Access">Always allow this helper</button>
           <button className="btn sm danger" type="button" disabled={busy} onClick={openDeny}>Deny</button>
         </div>
       ) : (

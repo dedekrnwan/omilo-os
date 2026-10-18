@@ -91,6 +91,7 @@ class Worker:
         try:
             with session_scope() as db:
                 budgets.check(db, staff_id)
+                budgets.check_company(db)
         except Exception:
             log.exception("budget check failed")
 
@@ -373,7 +374,7 @@ class Worker:
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop), memory=_memory(db, st, t),
+                emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop, staff=st), memory=_memory(db, st, t),
             )
             return ctx, dict(st.engine or {}), int(st.max_task_minutes or 30)
 
@@ -542,7 +543,7 @@ class Worker:
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
                               mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
-                              emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id), shared=shared)
+                              emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id, staff=st), shared=shared)
         t0 = time.monotonic()
         ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
         try:

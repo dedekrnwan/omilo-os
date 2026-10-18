@@ -60,6 +60,9 @@ class Staff(Base):
     engine: Mapped[dict] = mapped_column(JSON, default=dict)  # {"type": "claude-code"|"claude"|"fake", "auth": "api"|None (pool), "model"}
     permissions: Mapped[dict] = mapped_column(JSON, default=dict)  # {"actions": {"content.publish": 1, ...}}
     budget_usd_month: Mapped[float] = mapped_column(Float, default=0)
+    # what this helper may use beyond (or instead of) the company defaults, set on its page under Access:
+    # {"folders": {fld_id: {"access": "none"|"read"|"write", "commands": bool}}, "connectors": {id: bool}, "skills": {slug: bool}}
+    access: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     max_task_minutes: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | paused
     mcp_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
