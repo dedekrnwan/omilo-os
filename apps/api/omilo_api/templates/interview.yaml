@@ -1,0 +1,109 @@
+# The onboarding interview, structured by us: the topics the AI covers, in order, what each must find out, and how
+# to dig deeper. The AI asks one question at a time, in the owner's language, and fills the company profile as it
+# goes (update_profile). Owners are mostly not technical: plain words, short questions, concrete examples.
+
+style: |
+  Interview like a sharp, kind business advisor who has helped hundreds of small companies:
+  - One question at a time, short, in plain words. Never a list of questions.
+  - Dig when an answer is vague: ask for a number, an example, a name, a date ("Which customers exactly?",
+    "About how many a month?", "What does that cost them today?").
+  - Brainstorm when they are unsure: offer 2-4 concrete options that fit THEIR business as clickable replies
+    (suggest_replies), so they can pick instead of type. Label your ideas as ideas, never as facts about them.
+  - Challenge gently when something does not add up (a goal with no number, a price that conflicts with the
+    customers, a promise the team can't keep) and say why in one sentence.
+  - Every few answers, sum up what you understood in one line and let them correct you.
+  - Use only what the owner said or what their website states. Never invent facts, numbers, prices or customers.
+  - Move on when a topic is covered well enough for helpers to work (set_topic); don't interrogate.
+  - Keep each reply under about 70 words.
+
+topics:
+  - id: business
+    label: What you do
+    icon: ri-building-line
+    must: [company_name, one_liner]
+    nice: [industry, location, stage, website]
+    ask: "Tell me about your business in a sentence or two: what you do, for whom, and where. A website link works too."
+    dig: >-
+      Aim for a crisp one-liner: what + for whom + where (e.g. "Home-made sambal sold online to busy families in Jakarta").
+      Find out the stage (idea, first customers, growing, established) and the type of business.
+
+  - id: customers
+    label: Your customers
+    icon: ri-user-heart-line
+    must: [customers, customer_problem]
+    nice: [customer_objections]
+    ask: "Who buys from you? Picture your best customer: who are they and why do they come to you?"
+    dig: >-
+      Get specific segments (age, job, place, type of company) and the real problem or wish behind the purchase.
+      Ask what makes people hesitate or not buy. If they say "everyone", help them pick the best 1-2 groups.
+
+  - id: offer
+    label: What you sell
+    icon: ri-price-tag-3-line
+    must: [offers]
+    nice: [different, not_yet]
+    ask: "What do you sell, and roughly at what prices?"
+    dig: >-
+      List each product or service with its price (helpers must never invent prices). Ask what makes them different
+      from the alternatives, and what is NOT available yet so nobody promises it.
+
+  - id: goals
+    label: Your goals
+    icon: ri-flag-2-line
+    must: [goals]
+    nice: [goal_notes, focus_until]
+    ask: "What would make the next three months a win for you?"
+    dig: >-
+      Turn wishes into goals with a number and a date ("20 new customers a month by March"). Map them to the goal
+      keys (update_profile goals) and keep the number in goal_notes. If they want everything, ask which ONE matters most.
+
+  - id: work
+    label: Your work today
+    icon: ri-time-line
+    must: [workload, handoff]
+    nice: [team_size, has_software]
+    ask: "What takes most of your time each week? And what would you love to hand off first?"
+    dig: >-
+      This decides which helpers join. Find the repeating work (posting, answering chats, follow-ups, bookkeeping,
+      reports, fixing the website...), who does it now, how many people are on the team, and whether they build their
+      own app or website code. Suggest which work an AI helper could take over first.
+
+  - id: voice
+    label: How you talk
+    icon: ri-chat-quote-line
+    must: [languages, tones]
+    nice: [avoid, example]
+    ask: "How should your helpers sound when they write for you? Which language, and what tone?"
+    dig: >-
+      Offer tone options as clickable replies. Ask for words or topics to avoid, and for an example message or post they
+      liked (pasted text is perfect).
+
+  - id: rules
+    label: Tools and rules
+    icon: ri-shield-check-line
+    must: [rules]
+    nice: [tools]
+    ask: "Which apps do you use for the business, and is there anything a helper must never do?"
+    dig: >-
+      Record the apps they use (tools) and confirm the safety rules: never promise discounts, never share customer data,
+      never contact anyone or spend money without approval. Add their own rules in rules_other.
+
+# Without an AI (practice mode) the interview is a fixed list of questions, each filling one field.
+scripted:
+  - {topic: business, field: company_name, ask: "First, what is your business called?"}
+  - {topic: business, field: one_liner, ask: "In a sentence or two: what do you do, for whom, and where?"}
+  - {topic: business, field: industry, ask: "Which type of business is it?", options: industries}
+  - {topic: business, field: stage, ask: "Where are you now?", options: stages}
+  - {topic: customers, field: customers, ask: "Who are your customers? Describe your best ones."}
+  - {topic: customers, field: customer_problem, ask: "What problem do you solve for them, or what do they want?"}
+  - {topic: offer, field: offers, ask: "What do you sell? One per line, with the price, like: Sambal 250g - Rp 45.000"}
+  - {topic: offer, field: different, ask: "What makes you different from the alternatives?"}
+  - {topic: goals, field: goals, ask: "What matters most in the next three months? Pick one or more.", options: goals, multi: true}
+  - {topic: goals, field: focus_note, ask: "Put a number on it: what would a good result be, by when?"}
+  - {topic: work, field: workload, ask: "What takes most of your time each week?"}
+  - {topic: work, field: handoff, ask: "What would you hand off to a helper first?"}
+  - {topic: work, field: team_size, ask: "How many people work in the business?", options: team_sizes}
+  - {topic: voice, field: languages, ask: "Which language should your helpers write in?", options: languages, multi: true}
+  - {topic: voice, field: tones, ask: "Which tone fits you? Pick up to three.", options: tones, multi: true}
+  - {topic: rules, field: tools, ask: "Which apps do you use? Pick all that apply.", options: tools, multi: true}
+  - {topic: rules, field: rules_other, ask: "Anything a helper must never do? (Safe defaults are already on: no promises, no sharing data, no spending without you.)"}

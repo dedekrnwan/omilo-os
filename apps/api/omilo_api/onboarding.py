@@ -134,6 +134,8 @@ def render(a: dict) -> dict[str, str]:
         _line("Website or main page", _t(a, "website")),
         _line("Runs its own app or website code", "yes" if has_software(a) else "no"),
         "", "## What makes us different", "", _t(a, "different") or MISSING, "",
+        *(["## Where the founder's time goes today", "", _t(a, "workload"), ""] if _t(a, "workload") else []),
+        *(["## What the founder wants to hand off first", "", _t(a, "handoff"), ""] if _t(a, "handoff") else []),
     ])
 
     goal_lines = []

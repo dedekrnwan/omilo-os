@@ -1545,9 +1545,8 @@ class FolderIn(BaseModel):
 def folders_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
     from pathlib import Path as _P
 
-    from ..models import Folder
-
     from .. import capabilities as C
+    from ..models import Folder
 
     own = [(st, C.helper_access(st)["folders"]) for st in S.team(db)]
     return [{"id": f.id, "path": f.path, "label": f.label or _P(f.path).name, "access": f.access, "commands": f.commands,
@@ -1829,9 +1828,38 @@ def talent_hire(slug: str, body: HireIn | None = None, db: Session = Depends(get
 def onboarding_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
     draft = S.get_setting(db, "onboarding_draft", None) or {}
     answers = draft.get("answers") or OB.default_answers(S.get_setting(db, "company_name", ""))
+    from .. import interview as I
+
     return {"answers": answers, "step": draft.get("step", 0), "onboarded": bool(S.get_setting(db, "onboarded", False)),
             "options": OB.options(), "roles": OB.roles_for_people(), "timezone": S.timezone_name(db),
-            "has_team": db.scalar(select(func.count()).select_from(Staff)) > 0}
+            "has_team": db.scalar(select(func.count()).select_from(Staff)) > 0,
+            "ai": _onb_ai_view(db), "providers": _onb_providers(db), "interview": draft.get("interview") or {"history": [], "topic": "business"},
+            "topics": I.coverage(answers), "team": draft.get("team")}
+
+
+def _onb_providers(db: Session) -> list[dict]:
+    """The AI choices for onboarding, in plain words, for the cards."""
+    from .. import harness as H
+
+    out = [{"id": "claude", "label": "Claude", "by": "Anthropic", "domain": "claude.ai", "kind": "key", "recommended": True,
+            "blurb": "Thoughtful, great writing. Works with files and apps on this computer.", "key_url": "https://console.anthropic.com/settings/keys",
+            "has_key": bool(S.ai_key_hint(db, "claude"))},
+           {"id": "claude-code", "label": "Claude subscription", "by": "Claude Pro or Max", "domain": "claude.ai", "kind": "subscription",
+            "blurb": "Use the Claude plan you already pay for. No API key needed.", "has_key": bool(H.pool_summary().get("total"))},
+           {"id": "openai", "label": "ChatGPT", "by": "OpenAI", "domain": "openai.com", "kind": "key", "blurb": "The models behind ChatGPT, with your OpenAI API key.",
+            "key_url": "https://platform.openai.com/api-keys"},
+           {"id": "gemini", "label": "Gemini", "by": "Google", "domain": "gemini.google.com", "kind": "key", "blurb": "Google's AI, with a key from Google AI Studio.",
+            "key_url": "https://aistudio.google.com/app/apikey"}]
+    more = {"xai": ("Grok", "xAI", "x.ai", "https://console.x.ai"), "deepseek": ("DeepSeek", "DeepSeek", "deepseek.com", "https://platform.deepseek.com/api_keys"),
+            "mistral": ("Mistral", "Mistral AI", "mistral.ai", "https://console.mistral.ai/api-keys"), "groq": ("Groq", "Groq", "groq.com", "https://console.groq.com/keys"),
+            "bedrock": ("Amazon Bedrock", "AWS", "aws.amazon.com", "https://console.aws.amazon.com/bedrock")}
+    for pid, (label, by, domain, url) in more.items():
+        if pid in _LITELLM_PROVIDER_IDS:
+            out.append({"id": pid, "label": label, "by": by, "domain": domain, "kind": "key", "more": True, "blurb": f"{by} models, with your API key.", "key_url": url})
+    for o in out:
+        if o["id"] in _LITELLM_PROVIDER_IDS:
+            o["has_key"] = bool(S.ai_key_hint(db, o["id"]))
+    return out
 
 
 class DraftIn(BaseModel):
@@ -1889,16 +1917,113 @@ async def onboarding_assist(body: AssistIn, db: Session = Depends(get_db), user:
         raise HTTPException(502, f"The assistant could not answer: {e}") from e
 
 
+# ------------------------------------------------------------------ onboarding: pick the AI, the interview, the team
+class OnbAiIn(BaseModel):
+    provider: str  # fake | claude (API key) | claude-code (subscription pool) | one of the vendor ids
+    api_key: str | None = None
+    model: str | None = None
+
+
+def _onb_ai_view(db: Session) -> dict:
+    from .. import interview as I
+
+    cfg = I.ai_config(db)
+    return {"provider": cfg["provider"], "label": cfg["label"], "model": cfg.get("model"),
+            "chosen": S.get_setting(db, "onboarding_ai", None) is not None}
+
+
+@router.post("/onboarding/ai")
+async def onboarding_ai(body: OnbAiIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Step 1: the AI that runs the interview (and later the helpers). Saves the key, then proves it works."""
+    from .. import harness as H
+    from .. import interview as I
+
+    pid = body.provider
+    if pid not in ("fake", "claude", "claude-code", *_LITELLM_PROVIDER_IDS):
+        raise HTTPException(400, "unknown AI provider")
+    if body.api_key and body.api_key.strip():
+        S.set_ai_key(db, "claude" if pid in ("claude", "anthropic") else pid, body.api_key, user.id)
+    if pid == "claude-code" and not H.pool_summary().get("total"):
+        raise HTTPException(400, "Add your Claude subscription first (the token from `claude setup-token`).")
+    S.set_setting(db, "onboarding_ai", {"provider": pid, **({"model": body.model.strip()} if body.model and body.model.strip() else {})}, actor=user.id)
+    db.commit()
+    try:
+        await I.check(I.ai_config(db))
+    except I.AiError as e:
+        raise HTTPException(400, str(e)) from e
+    return _onb_ai_view(db)
+
+
+def _draft(db: Session) -> dict:
+    d = dict(S.get_setting(db, "onboarding_draft", None) or {})
+    d.setdefault("answers", OB.default_answers(S.get_setting(db, "company_name", "")))
+    d.setdefault("interview", {"history": [], "topic": "business"})
+    return d
+
+
+class InterviewIn(BaseModel):
+    message: str = ""
+    restart: bool = False
+
+
+@router.post("/onboarding/interview")
+async def onboarding_interview(body: InterviewIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """One exchange of the onboarding interview. An empty message (at the start) gets the first question."""
+    from .. import interview as I
+
+    d = _draft(db)
+    iv = d["interview"] if not body.restart else {"history": [], "topic": "business"}
+    hist = list(iv.get("history") or [])
+    if body.message.strip():
+        hist.append({"role": "owner", "text": body.message.strip()[:4000]})
+    elif hist and hist[-1]["role"] == "ai":  # reopened the page: show where we were
+        return {"history": hist, "topic": iv.get("topic"), "answers": d["answers"], "coverage": I.coverage(d["answers"]), "ai": _onb_ai_view(db)}
+    try:
+        r = await I.turn(I.ai_config(db), d["answers"], hist, iv.get("topic") or "business")
+    except I.AiError as e:
+        raise HTTPException(502, str(e)) from e
+    answers = {**d["answers"], **r["patch"]}
+    hist.append({"role": "ai", "text": r["reply"], "options": r.get("options") or [], **({"field": r["field"]} if r.get("field") else {}),
+                 **({"multi": True} if r.get("multi") else {}), **({"saved": sorted(r["patch"])} if r["patch"] else {})})
+    d.update(answers=answers, interview={"history": hist[-80:], "topic": r["topic"]})
+    S.set_setting(db, "onboarding_draft", d, actor=user.id)
+    if str(answers.get("company_name") or "").strip():
+        S.set_setting(db, "company_name", answers["company_name"].strip(), actor=user.id)
+    db.commit()
+    return {"history": hist, "topic": r["topic"], "answers": answers, "coverage": I.coverage(answers), "ai": _onb_ai_view(db)}
+
+
+@router.post("/onboarding/team-plan")
+async def onboarding_team_plan(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """The helpers that fit what the interview found."""
+    from .. import interview as I
+
+    d = _draft(db)
+    plan = await I.plan_team(I.ai_config(db), d["answers"])
+    d["team"] = plan["helpers"]
+    S.set_setting(db, "onboarding_draft", d, actor=user.id)
+    db.commit()
+    return {**plan, "roles": I.role_cards()}
+
+
 @router.post("/onboarding/preview")
 def onboarding_preview(body: AnswersIn, user: User = Depends(current_user)):
     return {"files": OB.render(body.answers), "completeness": OB.completeness(body.answers),
             "recommended": OB.recommend(body.answers)}
 
 
+class HelperPlanIn(BaseModel):
+    id: str
+    base: str
+    name: str
+    focus: str = ""
+
+
 class FinishIn(BaseModel):
-    answers: dict
-    roles: list[str]
-    engine: dict = Field(default_factory=lambda: {"type": "fake"})
+    answers: dict | None = None  # default: what the interview gathered
+    roles: list[str] = Field(default_factory=list)
+    helpers: list[HelperPlanIn] | None = None  # the team from the interview (base role, name, focus); wins over roles
+    engine: dict | None = None  # default: the AI picked in onboarding
     approval_mode: str = "ask_all"
     timezone: str | None = None
     max_concurrent_tasks: int | None = Field(None, ge=1, le=100)
@@ -1906,34 +2031,125 @@ class FinishIn(BaseModel):
     api_key: str | None = None  # Claude key, when engine.type == "claude"
 
 
+def _engine_from_onboarding(db: Session) -> tuple[str, dict]:
+    """The helpers' engine from the AI picked in step 1: a Claude key runs helpers in Claude Code when it's installed
+    (files, commands, browser), else straight on the Claude API."""
+    from .. import harness as H
+
+    pick = (S.get_setting(db, "onboarding_ai", None) or {})
+    pid = pick.get("provider") or "fake"
+    if pid in ("claude", "anthropic"):
+        pid = "claude" if H.find_cli() else "claude-direct"
+        _need_claude_key(db)
+    elif pid in _LITELLM_PROVIDER_IDS:
+        _need_vendor_key(db, pid)
+    elif pid not in ("claude-code", "fake"):
+        pid = "fake"
+    return pid, _engine_for(pid, pick.get("model"), None)
+
+
+def _create_planned(db: Session, user: User, helpers: list[HelperPlanIn], engine: dict) -> list[str]:
+    """The Chief of Staff plus the planned helpers: each from its base role, with its own name and focus."""
+    from .. import interview as I
+
+    company = S.get_setting(db, "company_name", "") or "the company"
+    created = []
+    if not S.chief(db):
+        created += _create_team(db, user, ["chief-of-staff"], engine)[0]
+    for h in helpers:
+        if not catalog.role(h.base) or catalog.role(h.base).get("is_chief"):
+            raise HTTPException(400, f"unknown role {h.base}")
+        hid = I._slug(h.id or h.name)
+        if db.get(Staff, hid):
+            continue
+        data = _run(catalog.staff_from_role, h.base, company, engine)
+        data.update(id=hid, name=(h.name or data["name"]).strip()[:60], is_chief=False)
+        if h.focus.strip():
+            data["job"] = data["job"].rstrip() + f"\n\n## Your focus at {company}\n{h.focus.strip()}"
+        st = _run(S.create_staff, db, data, user.id)
+        S.rotate_mcp_token(db, st, user.id)
+        created.append(st.id)
+    return created
+
+
+def _kickoff(cid: str, ids: list[str]) -> None:
+    """In the background after onboarding: every new helper drafts its job and proposes it in its own chat."""
+    import asyncio as _a
+    import threading
+
+    from .. import company as C
+    from .. import interview as I
+    from .. import jobs as J
+    from ..db import session_scope
+
+    def run():
+        try:
+            with C.use(cid):
+                with session_scope() as db:
+                    cfg = I.ai_config(db)
+                    answers = (S.get_setting(db, "onboarding_draft", None) or {}).get("answers") or {}
+                    plan = {h["id"]: h for h in (S.get_setting(db, "onboarding_draft", None) or {}).get("team") or []}
+                    helpers = []
+                    for sid in ids:
+                        st = db.get(Staff, sid)
+                        if st:
+                            p = plan.get(sid) or {}
+                            helpers.append({"id": st.id, "name": st.name, "base": st.role or st.id, "focus": p.get("focus", ""), "is_chief": st.is_chief})
+                drafts = _a.run(I.draft_jobs(cfg, answers, helpers))
+                with session_scope() as db:
+                    for h in helpers:
+                        st = db.get(Staff, h["id"])
+                        if st and drafts.get(h["id"]):
+                            J.propose(db, st, drafts[h["id"]], intro=(
+                                f"Hi! I'm {st.name}. Before I start, here's how I understand my job at "
+                                f"{S.get_setting(db, 'company_name', '') or 'your company'}. Approve it, or tell me what to change."))
+                    S.alert(db, "Your helpers proposed their jobs", "Each helper wrote to you in its chat with how it sees its job, "
+                            "goals and first moves. Approve them, or reply to change anything.", None, None, level="decision")
+        except Exception:  # noqa: BLE001 - onboarding is done either way; the helpers can still be briefed in chat
+            import logging
+
+            logging.getLogger("omilo").exception("onboarding kickoff failed")
+
+    threading.Thread(target=run, daemon=True, name="omilo-kickoff").start()
+
+
 @router.post("/onboarding/finish")
 def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    a = body.answers
+    from .. import company as C
+
+    d = _draft(db)
+    a = body.answers or d["answers"]
     company = str(a.get("company_name") or "").strip()
     if not company:
         raise HTTPException(400, "your business needs a name")
     modes = OB.options()["approval_modes"]
     if body.approval_mode not in modes:
         raise HTTPException(400, "unknown approval mode")
-    roles = list(dict.fromkeys(["chief-of-staff", *body.roles]))
     S.set_setting(db, "company_name", company, actor=user.id)
     if body.timezone:
         _set_timezone(db, body.timezone, user.id)
     for name, content in OB.render(a).items():
         _run(S.write_knowledge, db, name, content, user.id)
     S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
-    engine = dict(body.engine)
-    provider = {"claude": "claude", "claude-direct": "claude-direct", "claude-code": "claude-code"}.get(engine.get("type", ""), "fake")
-    if provider in ("claude", "claude-direct"):
-        if body.api_key and body.api_key.strip():
-            S.set_ai_key(db, "claude", body.api_key, user.id)
-        _need_claude_key(db)
-    engine = _engine_for(provider, engine.get("model"), engine.get("base_url"))
-    created, tokens = _create_team(db, user, roles, engine)
+    if body.engine:  # the older form: an explicit engine
+        engine = dict(body.engine)
+        provider = {"claude": "claude", "claude-direct": "claude-direct", "claude-code": "claude-code"}.get(engine.get("type", ""), "fake")
+        if provider in ("claude", "claude-direct"):
+            if body.api_key and body.api_key.strip():
+                S.set_ai_key(db, "claude", body.api_key, user.id)
+            _need_claude_key(db)
+        engine = _engine_for(provider, engine.get("model"), engine.get("base_url"))
+    else:
+        provider, engine = _engine_from_onboarding(db)
+    if body.helpers is not None:
+        created = _create_planned(db, user, body.helpers, engine)
+    else:
+        created, _tokens = _create_team(db, user, list(dict.fromkeys(["chief-of-staff", *body.roles])), engine)
     S.set_setting(db, "ai_provider", provider, actor=user.id)
-    if provider in ("claude", "claude-code"):
-        S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or OB.recommend(a)["max_concurrent_tasks"], actor=user.id)
-    S.set_setting(db, "onboarding_draft", {"answers": a, "step": 0}, actor=user.id)
+    if provider not in ("fake",):
+        S.set_setting(db, "max_concurrent_tasks", body.max_concurrent_tasks or min(8, max(2, len(created))), actor=user.id)
+    d.update(answers=a, step=0)
+    S.set_setting(db, "onboarding_draft", d, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)
     db.commit()
     practice = None
@@ -1942,8 +2158,24 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         t = S.create_task(db, who, "manual", f"Practice task: draft a short post that introduces {company} to new customers, "
                           "in our voice, using only facts from the company files. Propose it for approval.", user.id)
         practice = {"task_id": t.id, "staff_id": who}
+    if body.helpers is not None:
+        _kickoff(C.current(), created)
     return {"created": created, "mcp_tokens": {},
             "mcp_url": get_settings().mcp_url(), "practice": practice, "engine": provider}
+
+
+class JobDecideIn(BaseModel):
+    decision: str = "approve"
+
+
+@router.post("/messages/{mid}/job")
+def job_decide(mid: str, body: JobDecideIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Approve a helper's job proposal (the card in its chat)."""
+    from .. import jobs as J
+    from ..models import Message
+
+    m = _404(db.get(Message, mid))
+    return _run(J.decide, db, m, body.decision, user.id)
 
 
 @router.get("/kpis")

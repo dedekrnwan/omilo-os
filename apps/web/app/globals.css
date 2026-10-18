@@ -2149,3 +2149,65 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .pacts .btn.sm { white-space: nowrap; }
 .pacts-more { border: 1px solid var(--line-strong); width: 28px; height: 28px; }
 @media (max-width: 640px) { .pacts .btn.sm { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; } }
+
+/* ------------------------------------------------------------------ onboarding: AI cards, interview, team */
+.pcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 10px; }
+@media (max-width: 640px) { .pcards { grid-template-columns: 1fr; } }
+.pcard { position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "logo t" "b b"; gap: 8px 10px; align-items: center;
+  text-align: left; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background-color .15s; }
+.pcard:hover { border-color: var(--faint); background: var(--soft); }
+.pcard.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.pcard .plogo { grid-area: logo; }
+.pcard .pc-t { grid-area: t; display: flex; flex-direction: column; min-width: 0; }
+.pcard:has(.pc-rec) .pc-t { padding-right: 96px; }
+.pcard .pc-t b { font-weight: 600; }
+.pcard .pc-b { grid-area: b; font-size: 13px; color: var(--muted); line-height: 18px; }
+.pcard .pc-rec { position: absolute; top: 10px; right: 10px; }
+.pcard .pc-rec + .pc-rec { top: 36px; }
+.plogo { display: inline-grid; place-items: center; border-radius: 10px; background: #fff; border: 1px solid var(--line); flex-shrink: 0; overflow: hidden; }
+.plogo img { display: block; object-fit: contain; }
+.plogo.letter { background: var(--soft); color: var(--ink); font-weight: 600; }
+.pconnect { margin-top: 12px; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--link, #2563c9); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:disabled { opacity: .5; cursor: default; }
+
+.iv { display: flex; flex-direction: column; min-height: 100%; }
+.iv-log { flex: 1; display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+.iv-ai { display: flex; gap: 10px; align-items: flex-start; }
+.iv-who { flex-shrink: 0; padding-top: 2px; }
+.iv-msg { min-width: 0; flex: 1; font-size: 14.5px; line-height: 22px; }
+.iv-msg p:first-child { margin-top: 0; } .iv-msg p:last-child { margin-bottom: 0; }
+.iv-me { display: flex; justify-content: flex-end; }
+.iv-me .bubble { max-width: 82%; white-space: pre-wrap; }
+.iv-saved { margin-top: 4px; font-size: 12px; color: var(--ok); }
+.iv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chipbtn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px;
+  cursor: pointer; transition: background-color .15s, border-color .15s; text-align: left; }
+.chipbtn:hover { background: var(--soft); border-color: var(--faint); }
+.chipbtn.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.iv-compose { display: flex; gap: 8px; align-items: flex-end; position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
+.iv-compose textarea { flex: 1; resize: none; min-height: 44px; }
+.iv-compose .btn { height: 44px; }
+.iv-profile { border-radius: 12px; background: var(--soft); padding: 16px; overflow-y: auto; max-height: min(680px, calc(100dvh - 190px)); font-size: 13px; }
+.iv-ph { display: flex; justify-content: space-between; align-items: baseline; }
+.iv-bar { height: 4px; border-radius: 2px; background: var(--line); margin: 8px 0 12px; overflow: hidden; }
+.iv-bar i { display: block; height: 100%; background: var(--ok); transition: width .4s; }
+.iv-topic { padding: 8px 0; border-top: 1px solid var(--line); }
+.iv-topic h4 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.iv-topic.now h4 { color: var(--ink); }
+.iv-topic.done h4 i { color: var(--ok); }
+.iv-field { margin: 6px 0 0 20px; display: flex; flex-direction: column; gap: 1px; }
+.iv-field .iv-v { display: flex; align-items: flex-start; gap: 4px; color: var(--ink); line-height: 18px; }
+.iv-field .iv-v .iconbtn { width: 22px; height: 22px; opacity: .45; flex-shrink: 0; }
+.iv-field .iv-v .iconbtn:hover { opacity: 1; }
+.iv-field textarea { width: 100%; font-size: 13px; }
+@media (max-width: 760px) { .iv-profile { max-height: 260px; } }
+
+.tm-card { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 8px; background: var(--surface); }
+.tm-card.chief { background: var(--soft); }
+.tm-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.tm-name { font-weight: 600; flex: 1; min-width: 0; }
+.tm-body textarea { font-size: 13px; resize: vertical; }
+.tm-why { margin: 0; color: var(--muted); }
+.jobcard { margin-top: 10px; }

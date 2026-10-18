@@ -1,704 +1,421 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import StepCard, { Tone } from "@/components/StepCard";
-import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import ClaudeSetup, { ClaudeChoice } from "@/components/ClaudeSetup";
 import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
+import ProviderLogo from "@/components/ProviderLogo";
+import Avatar from "@/components/Avatar";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
 import { api } from "@/lib/api";
-import OmiloGuide, { GuideMember } from "@/components/OmiloGuide";
-import { OmiloMascot } from "@/components/Logo";
+import OmiloGuide from "@/components/OmiloGuide";
 
-/* Hybrid onboarding: a guided form (left) and a setup assistant (right) that fills the form from what the
-   owner says or pastes. The form is the source of truth; every change the assistant makes is highlighted. */
+/* Onboarding, AI first, for owners who are not technical:
+   1. Pick your AI: cards with each provider's logo; paste a key, use your Claude subscription, or try without AI.
+   2. The interview: the AI interviews you about the business like an advisor (one question at a time, digs into vague
+      answers, brainstorms options you can click), following topics we set; what it learns fills your company profile,
+      which you can see and correct on the left.
+   3. Your team: the helpers that fit what you said, each with its own focus and why; edit, remove or add.
+   4. Done: every helper writes to you with how it sees its job, goals and first ideas, for you to approve. */
 
 type Opt = Record<string, string | { label: string; [k: string]: unknown }>;
-type Options = {
-  industries: Opt; stages: Opt; team_sizes: Opt; goals: Opt; tones: Opt; languages: Opt; tools: Opt;
-  rules: Record<string, { label: string; default: boolean }>;
-  approval_modes: Record<string, { label: string; detail: string; strict: boolean }>;
-};
-type Role = { name: string; tagline: string; summary: string; does: string[]; is_chief: boolean; schedule: string[]; software: boolean };
-type Offer = { name: string; price: string; note: string };
-type Answers = {
-  company_name: string; one_liner?: string; industry?: string; industry_other?: string; location?: string; stage?: string;
-  team_size?: string; website?: string; different?: string;
-  customers?: string; customer_problem?: string; customer_objections?: string;
-  offers: Offer[]; not_yet?: string;
-  has_software: boolean; goals: string[]; goal_notes?: Record<string, string>; focus_until?: string;
-  languages: string[]; language_other?: string; tones: string[]; avoid?: string; example?: string;
-  tools: string[]; tools_other?: string; rules: string[]; rules_other?: string;
-  team_style: string; approval_mode: string; roles?: string[];
-  engine_type?: string; engine_url?: string; engine_model?: string; claude_model?: string; no_hermes?: boolean; practice?: boolean;
-};
-type State = { answers: Answers; step: number; options: Options; roles: Record<string, Role>; timezone: string };
-type Preview = { files: Record<string, string>; completeness: { items: Record<string, boolean>; score: number };
-  recommended: { roles: string[]; max_concurrent_tasks: number } };
-type Finished = { created: string[]; mcp_tokens: Record<string, string>; mcp_url: string; practice: { task_id: string; staff_id: string } | null };
-type ChatMsg = { role: "owner" | "assistant" | "note"; text: string };
+type Options = { industries: Opt; stages: Opt; team_sizes: Opt; goals: Opt; tones: Opt; languages: Opt; tools: Opt;
+  rules: Record<string, { label: string; default: boolean }>; approval_modes: Record<string, { label: string; detail: string; strict: boolean }> };
+type Answers = Record<string, any> & { company_name: string };
+type Provider = { id: string; label: string; by: string; domain: string; kind: "key" | "subscription"; blurb: string; key_url?: string;
+  recommended?: boolean; more?: boolean; has_key?: boolean };
+type Ai = { provider: string; label: string; model?: string | null; chosen: boolean };
+type Hist = { role: "owner" | "ai"; text: string; options?: string[]; field?: string; multi?: boolean; saved?: string[] };
+type Topic = { id: string; label: string; icon: string; done: boolean; filled: number; of: number };
+type Helper = { id: string; base: string; name: string; focus: string; why: string };
+type RoleCard = { id: string; name: string; tagline: string; summary: string };
+type State = { answers: Answers; step: number; options: Options; timezone: string; ai: Ai; providers: Provider[];
+  interview: { history: Hist[]; topic: string }; topics: Topic[]; team: Helper[] | null };
+type Turn = { history: Hist[]; topic: string; answers: Answers; coverage: Topic[]; ai: Ai };
 
-const STEPS: { id: string; title: string; icon: string; tone: Tone; caption: string }[] = [
-  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "violet", caption: "Hi, I'm Omilo. Let's set up your AI team together." },
-  { id: "ai", title: "Your AI", icon: "ri-cpu-line", tone: "violet", caption: "First, the brain your helpers think with." },
-  { id: "business", title: "Your business", icon: "ri-building-line", tone: "orange", caption: "We need a few details about what you do." },
-  { id: "customers", title: "Your customers", icon: "ri-user-heart-line", tone: "rose", caption: "Who you serve, and what keeps them up at night." },
-  { id: "offer", title: "What you sell", icon: "ri-price-tag-3-line", tone: "amber", caption: "Your products and prices, so nobody invents them." },
-  { id: "goals", title: "Your goals", icon: "ri-flag-2-line", tone: "green", caption: "What winning looks like for the next few months." },
-  { id: "voice", title: "How you talk", icon: "ri-chat-quote-line", tone: "blue", caption: "So every post and message sounds like you." },
-  { id: "rules", title: "Tools and rules", icon: "ri-shield-check-line", tone: "teal", caption: "What your helpers may use, and what they must never do." },
-  { id: "team", title: "Your team", icon: "ri-team-line", tone: "violet", caption: "Pick the helpers who join. You can hire more later." },
-  { id: "finish", title: "Check and finish", icon: "ri-checkbox-circle-line", tone: "green", caption: "One last look before your team gets to work." },
+const STEPS: { id: string; title: string; icon: string; tone: Tone }[] = [
+  { id: "welcome", title: "Welcome", icon: "ri-hand-heart-line", tone: "violet" },
+  { id: "ai", title: "Your AI", icon: "ri-sparkling-2-line", tone: "violet" },
+  { id: "interview", title: "Get to know you", icon: "ri-question-answer-line", tone: "orange" },
+  { id: "team", title: "Your team", icon: "ri-team-line", tone: "green" },
 ];
-const IDX = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
-const FIELD_LABELS: Record<string, string> = {
-  company_name: "name", one_liner: "what you do", industry: "type of business", location: "location", stage: "stage", team_size: "team size",
-  has_software: "own app", website: "website", different: "what makes you different", customers: "customers", customer_problem: "problem you solve",
-  customer_objections: "doubts", offers: "products and prices", not_yet: "not available yet", goals: "goals", goal_notes: "targets",
-  focus_until: "focus period", languages: "languages", language_other: "languages", tones: "tone", avoid: "words to avoid", example: "example",
-  tools: "tools", tools_other: "tools", rules: "rules", rules_other: "rules",
-};
-const FIELD_STEP: Record<string, string> = {
-  company_name: "business", one_liner: "business", industry: "business", industry_other: "business", location: "business", stage: "business",
-  team_size: "business", has_software: "business", website: "business", different: "business", customers: "customers",
-  customer_problem: "customers", customer_objections: "customers", offers: "offer", not_yet: "offer", goals: "goals", goal_notes: "goals",
-  focus_until: "goals", languages: "voice", language_other: "voice", tones: "voice", avoid: "voice", example: "voice",
-  tools: "rules", tools_other: "rules", rules: "rules", rules_other: "rules",
-};
-const label = (v: Opt[string]) => (typeof v === "string" ? v : v.label);
-
-/* ------------------------------------------------------------------ building blocks */
-const FlashCtx = createContext<Set<string>>(new Set());
-
-function Q({ title, hint, optional, f, children }: { title: string; hint?: string; optional?: boolean; f?: string | string[]; children: ReactNode }) {
-  const flash = useContext(FlashCtx);
-  const on = (Array.isArray(f) ? f : f ? [f] : []).some((k) => flash.has(k));
-  return (
-    <div className={`q ${on ? "flash" : ""}`}>
-      <b>{title}{optional && <span className="opt-tag">optional</span>}{on && <span className="rec" style={{ background: "#fef9c3", color: "#854d0e", borderColor: "#fde68a" }}>filled by assistant</span>}</b>
-      {hint && <span className="hint">{hint}</span>}
-      {children}
-    </div>
-  );
-}
-
-function Picks({ opts, value, onChange, multi, max, only }: {
-  opts: Opt; value: string | string[] | undefined; onChange: (v: any) => void; multi?: boolean; max?: number; only?: (k: string) => boolean;
-}) {
-  const sel = Array.isArray(value) ? value : value ? [value] : [];
-  const toggle = (k: string) => {
-    if (!multi) return onChange(sel[0] === k ? "" : k);
-    if (sel.includes(k)) return onChange(sel.filter((x) => x !== k));
-    if (max && sel.length >= max) return;
-    onChange([...sel, k]);
-  };
-  return (
-    <div className="picks" role={multi ? "group" : "radiogroup"}>
-      {Object.entries(opts).filter(([k]) => !only || only(k) || sel.includes(k)).map(([k, v]) => (
-        <button type="button" key={k} className={`pick ${sel.includes(k) ? "on" : ""}`} aria-pressed={sel.includes(k)} onClick={() => toggle(k)}>
-          {label(v)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function browserTimezone() {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
-}
+const label = (v: Opt[string] | undefined) => (v === undefined ? "" : typeof v === "string" ? v : v.label);
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "helper";
+function browserTimezone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } }
 function allTimezones(current: string): string[] {
   try { const l = (Intl as any).supportedValuesOf("timeZone") as string[]; return l.includes(current) ? l : [current, ...l]; }
   catch { return Array.from(new Set([current, "UTC", "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "Asia/Singapore", "Europe/London", "America/New_York"])); }
 }
 
-
-/* ------------------------------------------------------------------ fill the form from a website (Omilo reads it) */
-function SiteFill({ aiReady, answers, onPatch, goAi }: { aiReady: boolean; answers: Answers; onPatch: (p: Partial<Answers>) => void; goAi: () => void }) {
-  const [url, setUrl] = useState(answers.website || "");
+/* ------------------------------------------------------------------ 1. pick your AI */
+function AiStep({ providers, ai, onDone }: { providers: Provider[]; ai: Ai; onDone: (ai: Ai) => void }) {
+  const [sel, setSel] = useState<string | null>(ai.chosen && ai.provider !== "fake" ? (ai.provider === "anthropic" ? "claude" : ai.provider) : null);
+  const [more, setMore] = useState(false);
+  const [key, setKey] = useState("");
+  const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const run = async () => {
-    const u = url.trim();
-    if (!u) return;
-    setBusy(true); setMsg(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [subReady, setSubReady] = useState(false);
+  const [token, setToken] = useState("");
+  const p = providers.find((x) => x.id === sel);
+  const connect = async (provider: string) => {
+    setBusy(true); setErr(null);
     try {
-      const r = await api<{ reply: string; patch: Partial<Answers> }>("/onboarding/assist", { body: { answers, step: "Your business",
-        messages: [{ role: "owner", text: `Here is our website: ${u}. Read it and fill in what you can (only what it says).` }] } });
-      const keys = Object.keys(r.patch || {});
-      if (keys.length) onPatch({ website: u, ...r.patch });
-      setMsg(keys.length ? `Filled in: ${Array.from(new Set(keys.map((k) => FIELD_LABELS[k]).filter(Boolean))).join(", ")}. Check it below.` : r.reply);
-    } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
+      if (provider === "claude-code" && token.trim()) await api("/harness/accounts", { body: { label: "My Claude", token: token.trim() } });
+      onDone(await api<Ai>("/onboarding/ai", { body: { provider, api_key: key.trim() || undefined, model: model.trim() || undefined } }));
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
+  const shown = providers.filter((x) => !x.more || more || x.id === sel);
   return (
-    <div className="sitefill">
-      <div className="sitefill-h"><OmiloMascot size={22} tile={false} /><b>Have a website or Instagram?</b><span className="small">Omilo reads it and fills in this form.</span></div>
-      {aiReady ? (
-        <form className="sitefill-row" onSubmit={(e) => { e.preventDefault(); run(); }}>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-business.com" inputMode="url" />
-          <button className="btn primary" type="submit" disabled={busy || !url.trim()}>{busy ? "Reading…" : <><i className="ri-magic-line" />Fill it in</>}</button>
-        </form>
-      ) : <p className="small" style={{ margin: 0 }}>This needs your Claude key. <button type="button" className="linkbtn" onClick={goAi}>Connect it</button>, or just type below.</p>}
-      {msg && <p className="small" style={{ margin: "6px 0 0" }}>{msg}</p>}
+    <>
+      <h1>Which AI should your team think with?</h1>
+      <p className="lead">Your helpers, and the interview that comes next, run on the AI you pick. You can change it later.</p>
+      <div className="pcards">
+        {shown.map((x) => (
+          <button key={x.id} type="button" className={`pcard ${sel === x.id ? "on" : ""}`} onClick={() => { setSel(x.id); setErr(null); }} aria-pressed={sel === x.id}>
+            <ProviderLogo id={x.id} domain={x.domain} label={x.label} />
+            <span className="pc-t"><b>{x.label}</b><span className="small">{x.by}</span></span>
+            {x.recommended && <span className="chip up pc-rec">Recommended</span>}
+            {x.has_key && <span className="chip pc-rec">{x.kind === "subscription" ? "Connected" : "Key saved"}</span>}
+            <span className="pc-b">{x.blurb}</span>
+          </button>
+        ))}
+      </div>
+      {!more && providers.some((x) => x.more) && <button type="button" className="btn quiet sm" onClick={() => setMore(true)}><i className="ri-add-line" />More AI providers</button>}
+
+      {p && (
+        <div className="paper pconnect">
+          {p.kind === "key" ? (
+            <>
+              <label style={{ marginTop: 0 }}>Your {p.label} API key</label>
+              <input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)}
+                placeholder={p.has_key ? "Saved. Paste a new one to replace it" : "Paste it here"} />
+              <p className="small">Get one at <a href={p.key_url} target="_blank" rel="noopener noreferrer">{p.key_url?.replace(/^https:\/\//, "").split("/")[0]}</a>: sign in, create a key, copy it here.
+                It is stored encrypted and only used by your Omilo.</p>
+              <details><summary className="small">Advanced: a specific model</summary>
+                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Leave empty for a good default" /></details>
+            </>
+          ) : (
+            <>
+              <p style={{ marginTop: 0 }}>Use your Claude Pro or Max plan. Omilo runs Claude Code on this computer with it.</p>
+              <ClaudeCodeSetup autoInstall onReady={setSubReady} />
+              <label>Your Claude token</label>
+              <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={p.has_key ? "Connected. Paste another to add it" : "sk-ant-oat…"} />
+              <p className="small">In the Terminal app run <code>claude setup-token</code>, sign in with your Claude account in the browser, then paste the token it shows.</p>
+            </>
+          )}
+          <div className="acts" style={{ marginTop: 10 }}>
+            <button className="btn primary" disabled={busy || (p.kind === "key" && !key.trim() && !p.has_key) || (p.kind === "subscription" && ((!token.trim() && !p.has_key) || !subReady))}
+              onClick={() => connect(p.id)}>{busy ? "Checking…" : `Connect ${p.label}`}</button>
+          </div>
+          <Err error={err} />
+        </div>
+      )}
+      <p className="small" style={{ marginTop: 18 }}>No AI account yet? <button type="button" className="linkbtn" disabled={busy} onClick={() => connect("fake")}>Try Omilo without AI first</button>:
+        a short list of fixed questions, and helpers show sample work. Connect an AI any time in Settings.</p>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ 2. the interview */
+const SHOWN: Record<string, [string, string][]> = {
+  business: [["company_name", "Name"], ["one_liner", "What you do"], ["industry", "Type"], ["stage", "Stage"], ["location", "Where"]],
+  customers: [["customers", "Customers"], ["customer_problem", "What they need"], ["customer_objections", "Why they hesitate"]],
+  offer: [["offers", "Products and prices"], ["different", "What makes you different"]],
+  goals: [["goals", "Goals"], ["goal_notes", "Targets"]],
+  work: [["workload", "Your time goes to"], ["handoff", "Hand off first"], ["team_size", "Team"]],
+  voice: [["languages", "Language"], ["tones", "Tone"], ["avoid", "Avoid"]],
+  rules: [["tools", "Apps you use"], ["rules_other", "Your own rules"]],
+};
+const ENUM: Record<string, keyof Options> = { industry: "industries", stage: "stages", team_size: "team_sizes", goals: "goals", languages: "languages", tones: "tones", tools: "tools" };
+const TEXT_EDIT = new Set(["company_name", "one_liner", "location", "customers", "customer_problem", "customer_objections", "different", "workload", "handoff", "avoid", "rules_other"]);
+
+function show(a: Answers, f: string, o: Options): string {
+  const v = a[f];
+  if (f === "offers") return (v || []).filter((x: any) => x.name).map((x: any) => x.price ? `${x.name} (${x.price})` : x.name).join(", ");
+  if (f === "goal_notes") return Object.values(v || {}).filter(Boolean).join("; ");
+  if (ENUM[f]) return Array.isArray(v) ? v.map((k: string) => label(o[ENUM[f]][k] as any) || k).join(", ") : label(o[ENUM[f]][v] as any) || "";
+  return String(v || "");
+}
+
+function Profile({ a, o, topics, topic, onEdit }: { a: Answers; o: Options; topics: Topic[]; topic: string; onEdit: (f: string, v: string) => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [val, setVal] = useState("");
+  const done = topics.filter((t) => t.done).length;
+  return (
+    <div className="iv-profile">
+      <div className="iv-ph"><b>What I&apos;ve learned</b><span className="small">{done} of {topics.length} topics</span></div>
+      <div className="iv-bar"><i style={{ width: `${(done / Math.max(1, topics.length)) * 100}%` }} /></div>
+      {topics.map((t) => (
+        <section key={t.id} className={`iv-topic ${t.id === topic ? "now" : ""} ${t.done ? "done" : ""}`}>
+          <h4><i className={t.done ? "ri-checkbox-circle-fill" : t.icon} />{t.label}</h4>
+          {(SHOWN[t.id] || []).map(([f, l]) => {
+            const v = show(a, f, o);
+            if (!v && editing !== f) return null;
+            return (
+              <div key={f} className="iv-field">
+                <span className="small">{l}</span>
+                {editing === f ? (
+                  <div><textarea rows={2} autoFocus value={val} onChange={(e) => setVal(e.target.value)} />
+                    <div className="acts" style={{ gap: 6 }}><button className="btn sm primary" onClick={() => { onEdit(f, val); setEditing(null); }}>Save</button>
+                      <button className="btn sm" onClick={() => setEditing(null)}>Cancel</button></div></div>
+                ) : (
+                  <span className="iv-v">{v}{TEXT_EDIT.has(f) && <button className="iconbtn" aria-label={`Edit ${l}`} title="Correct this" onClick={() => { setEditing(f); setVal(String(a[f] || "")); }}><i className="ri-pencil-line" /></button>}</span>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      ))}
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ what Omilo says (from your answers, never invented) */
-const MOODS: Record<string, "warm" | "cool" | "fresh"> = { violet: "cool", orange: "warm", rose: "warm", amber: "warm", green: "fresh", blue: "cool", teal: "fresh" };
-const listWords = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
-function omiloLine(stepId: string, a: Answers, o: Options, teamCount: number, score: number | null, keyOk: boolean): string {
-  const name = a.company_name.trim();
-  switch (stepId) {
-    case "welcome": return name ? `Hi, I'm Omilo! Let's set up the AI team for ${name}. About 10 minutes, and you can skip anything.` : "Hi, I'm Omilo! Let's set up your AI team together. About 10 minutes.";
-    case "ai":
-      if (a.engine_type === "fake") return "Practice mode is a safe start: your helpers show sample work and you learn how approving works.";
-      return keyOk ? "Your Claude key works. Your helpers can think for real now." : "Paste your Claude key and I'll check it. Or start in practice mode.";
-    case "business": {
-      if (!name) return "First things first: what's your business called?";
-      const ind = a.industry && a.industry !== "other" ? label(o.industries[a.industry] || a.industry).toLowerCase() : a.industry_other?.trim();
-      if (!a.one_liner?.trim()) return `Nice to meet you, ${name}! Now tell me what you do, in a sentence or two.`;
-      return ind ? `${name}, ${ind}. Got it! Anything that makes you different?` : `Lovely. ${name} it is. What kind of business is it?`;
-    }
-    case "customers":
-      return a.customers?.trim() ? (a.customer_problem?.trim() ? "Great. Your helpers will write for those people and their problem." : "Got your customers. What problem do you solve for them?")
-        : "Who buys from you? One sentence is enough.";
-    case "offer": {
-      const n = (a.offers || []).filter((x) => x.name.trim()).length;
-      return n ? `${n} ${n === 1 ? "product" : "products"} noted. Nobody on the team will invent a price.` : "What do you sell? Add prices if you have them, so nobody invents them.";
-    }
-    case "goals": {
-      const n = a.goals.length;
-      return n ? `${n} ${n === 1 ? "goal" : "goals"}. I'll suggest the right helpers for ${n === 1 ? "it" : "them"}, and they show up on your Plan.` : "What should your team help with first? Pick as many as you like.";
-    }
-    case "voice": {
-      const t = a.tones.map((k) => label(o.tones[k] || k).toLowerCase());
-      return t.length ? `So we sound ${listWords(t)}. I'll keep everyone on that tone.` : "How should you sound? Pick a tone, and words to avoid.";
-    }
-    case "rules": {
-      const n = a.rules.length;
-      return n ? `${n} ${n === 1 ? "rule" : "rules"} your helpers will never break. And nothing goes out without your OK.` : "Any rules? Your helpers follow them always.";
-    }
-    case "team": return teamCount ? `Your team: your Chief of Staff and ${teamCount} ${teamCount === 1 ? "helper" : "helpers"}. You can hire more any time.` : "Your Chief of Staff leads the team. Pick who joins.";
-    case "finish": return score == null ? "Putting it all together…" : score >= 80 ? `Your helpers know ${score}% of what they need. Ready when you are!` : `Your helpers know ${score}% so far. Fine to start: they'll ask you for the rest.`;
-    default: return "";
-  }
-}
-
-/* ------------------------------------------------------------------ the setup assistant (chat half) */
-function Assistant({ answers, stepTitle, aiReady, onPatch, open, onClose, goAi }: {
-  answers: Answers; stepTitle: string; aiReady: boolean; onPatch: (p: Partial<Answers>) => void; open: boolean; onClose: () => void; goAi: () => void;
-}) {
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
+function Interview({ st, onAnswers, onDone }: { st: State; onAnswers: (a: Answers, t: Topic[]) => void; onDone: () => void }) {
+  const [hist, setHist] = useState<Hist[]>(st.interview.history || []);
+  const [topic, setTopic] = useState(st.interview.topic || "business");
   const [text, setText] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
-
-  const send = async (t: string) => {
-    const msg = t.trim();
-    if (!msg || busy) return;
-    const next: ChatMsg[] = [...msgs, { role: "owner", text: msg }];
-    setMsgs(next); setText(""); setBusy(true);
+  const send = useCallback(async (message: string) => {
+    setBusy(true); setErr(null);
+    if (message) setHist((h) => [...h, { role: "owner", text: message }]);
     try {
-      const history = next.filter((m) => m.role !== "note").map((m) => ({ role: m.role, text: m.text }));
-      const r = await api<{ reply: string; patch: Partial<Answers> }>("/onboarding/assist", { body: { answers, messages: history, step: stepTitle } });
-      const keys = Object.keys(r.patch || {});
-      if (keys.length) onPatch(r.patch);
-      const filled = Array.from(new Set(keys.map((k) => FIELD_LABELS[k]).filter(Boolean)));
-      setMsgs((m) => [...m, ...(filled.length ? [{ role: "note" as const, text: `Filled in: ${filled.join(", ")}` }] : []), { role: "assistant", text: r.reply }]);
-    } catch (e: any) {
-      setMsgs((m) => [...m, { role: "note", text: e.message }]);
-    } finally { setBusy(false); }
-  };
-
-  const ideas = ["Here is our website: ", "In my own words, my business is ", "What should I write here?"];
+      const r = await api<Turn>("/onboarding/interview", { body: { message } });
+      setHist(r.history); setTopic(r.topic); onAnswers(r.answers, r.coverage); setPicked([]);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }, [onAnswers]);
+  useEffect(() => { if (!hist.length) send(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [hist.length, busy]);
+  const last = hist[hist.length - 1];
+  const finished = topic === "finish";
+  const enough = ["business", "goals", "work"].every((id) => st.topics.find((t) => t.id === id)?.done);
+  const submit = () => { const t = text.trim(); if (!t || busy) return; setText(""); send(t); };
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
   return (
-    <aside className={`ob-chat ${open ? "open" : ""}`} aria-label="Setup assistant">
-      <div className="head">
-        <OmiloMascot size={22} />
-        <b style={{ fontWeight: 600 }}>Ask Omilo</b>
-        <span className="sp" />
-        <button className="iconbtn chatclose" aria-label="Close assistant" onClick={onClose}><i className="ri-close-line" /></button>
-      </div>
-      <div className="msgs" style={{ flex: 1, overflowY: "auto" }}>
-        <div className="msg agent">
-          <div className="md"><p>Hi! Tell me about your business in your own words, or paste your website or Instagram link. I&apos;ll fill in the form for you, and you can change anything.</p></div>
-        </div>
-        {!aiReady && (
-          <div className="callout" style={{ margin: 0 }}>
-            I need your Claude key to help. <button className="btn sm" onClick={goAi} style={{ marginLeft: 6 }}>Connect it</button>
-            <div className="small" style={{ marginTop: 6 }}>Or just fill in the form yourself. It works without me.</div>
+    <div className="iv">
+      <div className="iv-log" aria-live="polite">
+        {hist.map((h, i) => h.role === "ai" ? (
+          <div key={i} className="iv-ai">
+            <span className="iv-who"><Avatar who={{ id: "chief-of-staff", name: "Omilo", is_chief: true }} size={28} /></span>
+            <div className="iv-msg"><Markdown text={h.text} />
+              {!!h.saved?.length && <div className="iv-saved"><i className="ri-save-3-line" /> Noted in your profile</div>}
+              {i === hist.length - 1 && !busy && !!h.options?.length && (
+                <div className="iv-chips">
+                  {h.options.map((o) => (
+                    <button key={o} type="button" className={`chipbtn ${picked.includes(o) ? "on" : ""}`}
+                      onClick={() => h.multi ? setPicked((p) => (p.includes(o) ? p.filter((x) => x !== o) : [...p, o])) : send(o)}>{o}</button>
+                  ))}
+                  {h.multi && picked.length > 0 && <button type="button" className="btn sm primary" onClick={() => send(picked.join(", "))}>Send {picked.length}</button>}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-        {msgs.map((m, i) => m.role === "note"
-          ? <div key={i} className="msg system"><i className="ri-check-line" /> {m.text}</div>
-          : <div key={i} className={`msg ${m.role === "owner" ? "owner" : "agent"}`}>{m.role === "owner" ? m.text : <Markdown text={m.text} />}</div>)}
-        {busy && <div className="typing">Thinking…</div>}
+        ) : <div key={i} className="iv-me"><div className="bubble">{h.text}</div></div>)}
+        {busy && <div className="iv-ai"><span className="iv-who"><Avatar who={{ id: "chief-of-staff", name: "Omilo", is_chief: true }} size={28} state="working" /></span><div className="iv-msg small">Thinking…</div></div>}
         <div ref={end} />
       </div>
-      {aiReady && msgs.length === 0 && (
-        <div className="suggest" style={{ padding: "0 12px 10px", gridTemplateColumns: "1fr" }}>
-          {ideas.map((s) => <button key={s} onClick={() => setText(s)}>{s.replace(/: $| $/, "")}</button>)}
+      <Err error={err} />
+      {finished ? (
+        <div className="callout ok" style={{ marginTop: 8 }}>That&apos;s what I needed. Next: the team that fits what you told me.</div>
+      ) : (
+        <div className="iv-compose">
+          <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} placeholder={last?.multi ? "Pick above, or write your own…" : "Write your answer… (Enter to send)"} disabled={busy} />
+          <button className="btn primary" disabled={busy || !text.trim()} onClick={submit} aria-label="Send"><i className="ri-send-plane-2-line" /></button>
         </div>
       )}
-      <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-        <textarea value={text} disabled={!aiReady} placeholder={aiReady ? "Describe your business, paste a link, or ask a question…" : "Connect your Claude key to chat"}
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
-        <div className="row">
-          <span className="small">{stepTitle}</span><span className="sp" />
-          <button className="btn primary sm" type="submit" disabled={!aiReady || busy || !text.trim()}><i className="ri-send-plane-2-line" />Send</button>
-        </div>
-      </form>
-    </aside>
+      <div className="acts" style={{ justifyContent: "space-between", marginTop: 8 }}>
+        {!finished ? <button className="linkbtn small" disabled={busy} onClick={() => send("Let's skip this topic for now.")}>Skip this topic</button> : <span />}
+        <button className={`btn ${finished || enough ? "primary" : ""}`} disabled={busy} onClick={onDone}>
+          {finished ? "See my team" : enough ? "That's enough, build my team" : "Build my team now"}<i className="ri-arrow-right-line" /></button>
+      </div>
+    </div>
   );
 }
 
-/* ------------------------------------------------------------------ page */
+/* ------------------------------------------------------------------ 3. the team */
+function TeamStep({ team, setTeam, roles, why }: { team: Helper[]; setTeam: (t: Helper[]) => void; roles: RoleCard[]; why: string }) {
+  const [adding, setAdding] = useState("");
+  const upd = (i: number, p: Partial<Helper>) => setTeam(team.map((h, j) => (j === i ? { ...h, ...p } : h)));
+  return (
+    <>
+      <h1>Your team</h1>
+      <p className="lead">{why}</p>
+      <div className="tm-card chief">
+        <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={44} />
+        <div><b>Chief of Staff</b><span className="small"> · always on the team</span>
+          <p className="small" style={{ margin: "2px 0 0" }}>Your right hand: hands out work to the others, keeps track, and briefs you every morning.</p></div>
+      </div>
+      {team.map((h, i) => (
+        <div key={h.id + i} className="tm-card">
+          <Avatar who={{ id: h.id, name: h.name, role: h.base }} size={44} />
+          <div className="tm-body">
+            <div className="acts" style={{ gap: 8, flexWrap: "nowrap" }}>
+              <input className="tm-name" aria-label="Helper name" value={h.name} onChange={(e) => upd(i, { name: e.target.value, id: slug(e.target.value) === h.base ? h.base : slug(e.target.value) })} />
+              <span className="chip">{roles.find((r) => r.id === h.base)?.name || h.base} skills</span>
+              <button className="iconbtn" aria-label={`Remove ${h.name}`} title="Remove" onClick={() => setTeam(team.filter((_, j) => j !== i))}><i className="ri-close-line" /></button>
+            </div>
+            <textarea rows={2} aria-label={`What ${h.name} takes off your plate`} value={h.focus} onChange={(e) => upd(i, { focus: e.target.value })} />
+            {h.why && <p className="small tm-why"><i className="ri-lightbulb-line" /> {h.why}</p>}
+          </div>
+        </div>
+      ))}
+      <div className="acts" style={{ marginTop: 8 }}>
+        <select value={adding} onChange={(e) => setAdding(e.target.value)} aria-label="Add a helper" style={{ maxWidth: 320 }}>
+          <option value="">Add another helper…</option>
+          {roles.map((r) => <option key={r.id} value={r.id}>{r.name}: {r.tagline}</option>)}
+        </select>
+        <button className="btn" disabled={!adding} onClick={() => {
+          const r = roles.find((x) => x.id === adding)!;
+          let id = r.id; let n = 2; while (team.some((h) => h.id === id)) id = `${r.id}-${n++}`;
+          setTeam([...team, { id, base: r.id, name: r.name, focus: r.summary, why: "Added by you." }]); setAdding("");
+        }}><i className="ri-add-line" />Add</button>
+      </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ the page */
 export default function Onboarding() {
   const router = useRouter();
   const [st, setSt] = useState<State | null>(null);
-  const [a, setA] = useState<Answers | null>(null);
   const [step, setStep] = useState(0);
+  const [team, setTeam] = useState<Helper[] | null>(null);
+  const [roles, setRoles] = useState<RoleCard[]>([]);
+  const [teamBy, setTeamBy] = useState("");
   const [tz, setTz] = useState("UTC");
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [mode, setMode] = useState("ask_all");
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<Finished | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [claude, setClaude] = useState<ClaudeChoice>({ key: "", model: "", ok: false });
-  const [keyHint, setKeyHint] = useState<string | null>(null);
-  const [ccReady, setCcReady] = useState(false);
-  const [flash, setFlash] = useState<Set<string>>(new Set());
-  const [chatOpen, setChatOpen] = useState(false);
+  const [done, setDone] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const top = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    Promise.all([api<State>("/onboarding"), api<{ claude_key_hint: string | null }>("/ai").catch(() => ({ claude_key_hint: null }))]).then(([s, ai]) => {
+    api<State>("/onboarding").then((s) => {
       setSt(s);
-      setA({ engine_type: "fake", practice: true, ...s.answers, ...(s.answers?.engine_type === "hermes" ? { engine_type: "claude" } : {}) });
       setStep(Math.min(s.step || 0, STEPS.length - 1));
       setTz(s.timezone && s.timezone !== "UTC" ? s.timezone : browserTimezone());
-      setKeyHint(ai.claude_key_hint);
+      setMode(s.answers.approval_mode || "ask_all");
+      if (s.team) setTeam(s.team);
     }).catch((e) => setErr(e.message));
   }, []);
 
-  const set = (patch: Partial<Answers>) => setA((x) => (x ? { ...x, ...patch } : x));
-  const stepId = STEPS[step]?.id || "welcome";
-  const usingClaude = a?.engine_type === "claude";
-  const aiReady = !!keyHint;  // the assistant can help once a Claude key is saved
-
-  const recKey = a ? JSON.stringify(a) : "";
-  useEffect(() => {
-    if (!a || step < IDX.business) return;
-    const t = setTimeout(() => {
-      api<Preview>("/onboarding/preview", { body: { answers: a } }).then((p) => {
-        setPreview(p);
-        if (step >= IDX.team) setA((x) => (x && x.roles === undefined ? { ...x, roles: p.recommended.roles } : x));
-      }).catch(() => {});
-    }, 450);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recKey, step]);
-
-  const save = useCallback(async (answers: Answers, n: number) => {
-    try { await api("/onboarding", { method: "PUT", body: { answers, step: n } }); } catch { /* best effort */ }
-  }, []);
-
-  const applyPatch = (p: Partial<Answers>) => {
-    if (!a) return;
-    const merged = { ...a, ...p } as Answers;
-    setA(merged);
-    save(merged, step);
-    const keys = new Set(Object.keys(p));
-    setFlash(keys);
-    setTimeout(() => setFlash(new Set()), 4000);
-    // if the assistant filled something on another page, show where (only while still on the intro steps)
-    const firstStep = Object.keys(p).map((k) => IDX[FIELD_STEP[k]]).filter((x) => x !== undefined).sort((x, y) => x - y)[0];
-    if (firstStep !== undefined && step <= IDX.ai) setStep(firstStep);
-  };
-
-  if (err && !st) return <div className="wiz" style={{ padding: 24 }}><Err error={err} /></div>;
-  if (!st || !a) return <p className="small" style={{ padding: 24 }}>Loading…</p>;
-  const o = st.options;
-
   const go = async (n: number) => {
     setErr(null);
-    if (n > step && stepId === "business" && !a.company_name.trim()) { setErr("Please give your business a name first."); return; }
-    if (n > step && stepId === "ai" && usingClaude && !keyHint) { setErr("Check your Claude key first, or choose practice mode."); return; }
-    await save(a, n);
+    if (st) api("/onboarding", { method: "PUT", body: { answers: st.answers, step: n } }).catch(() => {});
     setStep(n);
-    top.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
-
-  const saveKey = async (c: ClaudeChoice) => {
-    setClaude(c);
-    if (c.ok && c.model) {
-      try {
-        if (c.key.trim()) { const r = await api<{ claude_key_hint: string }>("/ai/key", { body: { api_key: c.key, model: c.model } }); setKeyHint(r.claude_key_hint); }
-        set({ claude_model: c.model });
-        if (!a.no_hermes) api("/harness/install", { body: {} }).catch(() => {});  // Claude Code installs while the owner keeps going
-      } catch (e: any) { setErr(e.message); }
-    }
+  const onAnswers = useCallback((answers: Answers, topics: Topic[]) => setSt((s) => (s ? { ...s, answers, topics } : s)), []);
+  const editField = async (f: string, v: string) => {
+    if (!st) return;
+    const answers = { ...st.answers, [f]: v };
+    setSt({ ...st, answers });
+    await api("/onboarding", { method: "PUT", body: { answers, step } }).catch((e) => setErr(e.message));
   };
+  const planTeam = useCallback(async () => {
+    setBusy(true); setErr(null);
+    try { const r = await api<{ helpers: Helper[]; roles: RoleCard[]; by: string }>("/onboarding/team-plan", { body: {} }); setTeam(r.helpers); setRoles(r.roles); setTeamBy(r.by); }
+    catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  }, []);
+  useEffect(() => { if (STEPS[step]?.id === "team" && (!team || !roles.length)) planTeam(); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pickStyle = (style: string) => set({ team_style: style, roles: undefined });
-
-  const canFinish = !usingClaude || a.no_hermes || ccReady;
   const finish = async () => {
+    if (!st || !team) return;
     setBusy(true); setErr(null);
     try {
-      const engine = usingClaude ? { type: a.no_hermes ? "claude-direct" : "claude", model: a.claude_model } : { type: "fake" };
-      const r = await api<Finished>("/onboarding/finish", { body: {
-        answers: a, roles: a.roles || [], engine, approval_mode: a.approval_mode, timezone: tz, practice_task: a.practice !== false } });
-      setDone(r);
+      const r = await api<{ created: string[] }>("/onboarding/finish", { body: { answers: { ...st.answers, approval_mode: mode },
+        helpers: team.map((h) => ({ id: h.id, base: h.base, name: h.name, focus: h.focus })), approval_mode: mode, timezone: tz, practice_task: false } });
+      setDone(r.created);
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
 
-  /* ------------------------------------------------------------------ done */
-  if (done) {
-    const chiefName = st.roles["chief-of-staff"]?.name || "Chief of Staff";
+  if (err && !st) return <div style={{ padding: 24 }}><Err error={err} /></div>;
+  if (!st) return <p className="small" style={{ padding: 24 }}>Loading…</p>;
+  const o = st.options;
+  const cur = STEPS[step];
+  const nxt = STEPS[step + 1];
+  const company = st.answers.company_name || "your business";
 
+  if (done) {
     return (
       <div className="obx">
-        <StepCard wide icon="ri-rocket-2-line" title="Your team is ready" tone="green" seed={7} mascot caption={`${a.company_name} is up and running.`}
-          art={<OmiloGuide tone="fresh" line={`${a.company_name} has a team! ${done.created.length} ${done.created.length === 1 ? "helper" : "helpers"} just joined. Let's go see your Inbox.`}
-            team={done.created.map((id) => ({ id, name: st.roles[id]?.name || id, role: id, is_chief: id === "chief-of-staff" }))} known={null} />}
-          next={{ icon: "ri-inbox-line", title: "Your Inbox", tone: "orange" }}
-          footer={<>
-            <button className="btn primary sc-next" onClick={() => router.replace("/")}>Open my Inbox</button>
-            <div className="row" style={{ justifyContent: "center" }}><button className="sc-skip" onClick={() => router.replace("/chat/")}>Chat with my {chiefName}</button></div>
-          </>}>
+        <StepCard wide icon="ri-rocket-2-line" title="Your team is ready" tone="green" seed={7} mascot caption={`${company} is up and running.`}
+          art={<OmiloGuide tone="fresh" line={`${done.length} helpers joined ${company}. Each one is writing to you now about its job.`}
+            team={done.map((id) => ({ id, name: team?.find((h) => h.id === id)?.name || (id === "chief-of-staff" ? "Chief of Staff" : id), role: team?.find((h) => h.id === id)?.base || id, is_chief: id === "chief-of-staff" }))} known={null} />}
+          footer={<button className="btn primary sc-next" onClick={() => router.replace("/chat/")}>Meet my team</button>}>
           <h1>Your team is ready</h1>
-          <p className="lead">{done.created.length} AI helper{done.created.length === 1 ? "" : "s"} joined {a.company_name}. Here is what happens next.</p>
+          <p className="lead">Before they start, every helper sends you its proposal in its own chat:</p>
           <ul className="checklist">
-            <li><i className="ri-time-line" /><span>Your helpers work on their own schedule. For example, your {chiefName} writes you a brief every morning.</span></li>
-            <li><i className="ri-inbox-2-line" /><span>When something needs your OK, it shows up in your <b>Inbox</b>.</span></li>
-            <li><i className="ri-shield-check-line" /><span>You approve, ask for changes, or say no. Nothing is posted, sent or paid without you.</span></li>
-            <li><i className="ri-chat-3-line" /><span>Want something done? Just ask in <b>Chat</b>, in your own words.</span></li>
+            <li><i className="ri-briefcase-4-line" /><span>How it understands its job at {company}, and what it will own.</span></li>
+            <li><i className="ri-flag-2-line" /><span>The goals it suggests, with numbers, and its first ideas.</span></li>
+            <li><i className="ri-check-double-line" /><span><b>Approve</b> with one click, or reply with what to change and it sends a new version.</span></li>
+            <li><i className="ri-shield-check-line" /><span>Nothing is posted, sent or paid without your OK.</span></li>
           </ul>
-          {done.practice && <div className="callout ok">We started a practice job: a short post introducing {a.company_name}. In a minute or two it will be in your Inbox so you can try approving it.</div>}
-          {usingClaude && <div className="callout">Your helpers use <b>Claude</b> with your own API key{a.no_hermes ? " (built-in: web search and Omilo's tools)" : ", working in Claude Code on this computer (files in the folders you share, web, connectors)"}. Change it any time in Settings.</div>}
-          {a.engine_type === "fake" && <div className="callout">You are in <b>practice mode</b>: helpers show sample work, no real AI is used yet. Connect your AI any time in Settings.</div>}
         </StepCard>
       </div>
     );
   }
 
-  /* ------------------------------------------------------------------ steps */
-  const roles = st.roles;
-  const softwareOk = (k: string) => !(o.goals[k] as any)?.software || a.has_software || a.industry === "software";
-  const chosen = new Set(a.roles || []);
-  const shownRoles = Object.entries(roles).filter(([k, r]) =>
-    !r.is_chief && (showAll || chosen.has(k) || (preview?.recommended.roles || []).includes(k)) && (!r.software || a.has_software || a.industry === "software" || showAll));
-  const toggleRole = (k: string) => set({ roles: chosen.has(k) ? (a.roles || []).filter((x) => x !== k) : [...(a.roles || []), k] });
-  const isQuestionStep = step >= IDX.business && step <= IDX.rules;
-  const teamIds = ["chief-of-staff", ...((a.roles ?? preview?.recommended.roles) || []).filter((r) => r !== "chief-of-staff")];
-  const team: GuideMember[] = teamIds.filter((r) => roles[r]).map((r) => ({ id: r, name: roles[r].name, role: r, is_chief: r === "chief-of-staff" }));
-
-  const nextBtn = stepId === "welcome"
-    ? <button className="btn primary sc-next" onClick={() => go(1)}>Let&apos;s start</button>
-    : stepId !== "finish"
-      ? <button className="btn primary sc-next" onClick={() => go(step + 1)} disabled={stepId === "ai" && usingClaude && !keyHint}>Next</button>
-      : <button className="btn primary sc-next" onClick={finish} disabled={busy || !preview || !canFinish}>
-          {busy ? "Creating your team…" : canFinish ? "Create my team" : "Waiting for Claude Code…"}</button>;
-  const footer = (
-    <>
-      {nextBtn}
-      {step > 0 && (
-        <div className="row" style={{ justifyContent: "center" }}>
-          <button className="sc-skip" onClick={() => go(step - 1)} disabled={busy}><i className="ri-arrow-left-s-line" />Back</button>
-          {isQuestionStep && <button className="sc-skip" onClick={() => go(step + 1)}>Skip for now</button>}
-        </div>
-      )}
-    </>
-  );
-  const cur = STEPS[step];
-  const nxt = STEPS[step + 1];
   const progress = step > 0 ? (
     <span className="acts" style={{ gap: 8 }}>
       <span className="sc-steps" aria-hidden>{STEPS.slice(1).map((_, i) => <i key={i} className={i + 1 < step ? "done" : i + 1 === step ? "now" : ""} />)}</span>
       <span className="small">{step} of {STEPS.length - 1}</span>
     </span>
   ) : null;
+  const back = step > 0 ? <div className="row" style={{ justifyContent: "center" }}><button className="sc-skip" onClick={() => go(step - 1)} disabled={busy}><i className="ri-arrow-left-s-line" />Back</button></div> : null;
 
-  const form = (
-    <div className="inner">
-
-      {stepId === "welcome" && (
-        <>
-          <h1>Set up your AI team</h1>
-          <p className="lead">Omilo gives {a.company_name || "your business"} a team of AI helpers that do real work: write content, find customers, look after customer questions, watch your numbers. You stay the boss.</p>
-          <ul className="checklist">
-            <li><i className="ri-time-line" /><span>About 10 minutes. No technical knowledge needed.</span></li>
-            <li><i className="ri-sparkling-2-line" /><span>Fill in the form yourself, or let Omilo fill it from a description or your website.</span></li>
-            <li><i className="ri-shield-check-line" /><span>Nothing is posted, sent or paid without your OK.</span></li>
-            <li><i className="ri-save-3-line" /><span>Skip anything and change it later. Your answers are saved as you go.</span></li>
-          </ul>
-        </>
-      )}
-
-      {stepId === "ai" && (
-        <>
-          <p className="lead">Your helpers need an AI &ldquo;brain&rdquo;. Connect it now and the assistant can also help you fill in the rest of this setup.</p>
-          <button type="button" className={`choice ${usingClaude ? "on" : ""}`} onClick={() => set({ engine_type: "claude" })}>
-            <b>Use my Claude API key <span className="rec">Recommended</span></b>
-            <span>Paste a key from Anthropic. Omilo installs Claude Code for you in the background, so your helpers can work with files, search the web and use your connectors.</span>
-          </button>
-          {usingClaude && (
-            <div className="paper" style={{ marginTop: -2, marginBottom: 10 }}>
-              <ClaudeSetup value={claude} onChange={saveKey} savedHint={keyHint} />
-              {keyHint && !a.no_hermes && (
-                <p className="small" style={{ marginTop: 12 }}>
-                  <i className="ri-loader-4-line" /> {ccReady ? "Claude Code is ready." : "Installing Claude Code in the background. Keep going, it will be ready by the end."}
-                </p>
-              )}
-            </div>
-          )}
-          <button type="button" className={`choice ${a.engine_type === "fake" ? "on" : ""}`} onClick={() => set({ engine_type: "fake" })}>
-            <b>Practice mode first</b>
-            <span>No key and no cost. Helpers produce sample work so you can learn how approvals and chat work. Switch to real AI any time in Settings.</span>
-          </button>
-          <details className="tech" open={!!a.no_hermes}>
-            <summary>Advanced</summary>
-            {usingClaude && (
-              <label className="check" style={{ marginTop: 10 }}>
-                <input type="checkbox" checked={!!a.no_hermes} onChange={(e) => set({ no_hermes: e.target.checked })} />
-                <span>Use built-in Claude instead (nothing to install: web search and Omilo&apos;s tools, but no files, commands or browser)</span>
-              </label>
-            )}
-          </details>
-        </>
-      )}
-
-      {stepId === "business" && (
-        <>
-          <p className="lead">The basics, the way you would explain it to a new employee on their first day.</p>
-          <SiteFill aiReady={aiReady} answers={a} onPatch={applyPatch} goAi={() => go(IDX.ai)} />
-          <Q title="What is your business called?" f="company_name">
-            <input value={a.company_name} onChange={(e) => set({ company_name: e.target.value })} placeholder="e.g. Warung Bu Sri" autoFocus />
-          </Q>
-          <Q title="What does your business do?" hint="One or two sentences: what you offer, to whom, and where." f="one_liner">
-            <textarea rows={3} value={a.one_liner || ""} onChange={(e) => set({ one_liner: e.target.value })} placeholder="e.g. We deliver home-cooked lunch boxes to offices in South Jakarta." />
-          </Q>
-          <Q title="What kind of business is it?" f={["industry", "industry_other"]}>
-            <Picks opts={o.industries} value={a.industry} onChange={(v) => set({ industry: v })} />
-            {a.industry === "other" && <input style={{ marginTop: 8 }} value={a.industry_other || ""} onChange={(e) => set({ industry_other: e.target.value })} placeholder="Describe it in a few words" />}
-          </Q>
-          <Q title="Where do you operate?" optional f="location">
-            <input value={a.location || ""} onChange={(e) => set({ location: e.target.value })} placeholder="e.g. Jakarta, all of Indonesia, online worldwide" />
-          </Q>
-          <Q title="How far along are you?" f="stage"><Picks opts={o.stages} value={a.stage} onChange={(v) => set({ stage: v })} /></Q>
-          <Q title="How many people work in the business?" f="team_size"><Picks opts={o.team_sizes} value={a.team_size} onChange={(v) => set({ team_size: v })} /></Q>
-          <Q title="Do you have your own app or website that needs programming work?" hint="Say no if you only use ready-made tools like Instagram, a marketplace or a website builder." f="has_software">
-            <Picks opts={{ yes: "Yes", no: "No" }} value={a.has_software ? "yes" : "no"} onChange={(v) => set({ has_software: v === "yes" })} />
-          </Q>
-          <Q title="Your website or main social page" optional f="website">
-            <input value={a.website || ""} onChange={(e) => set({ website: e.target.value })} placeholder="e.g. instagram.com/warungbusri" />
-          </Q>
-          <Q title="What makes you different from others?" optional hint="Why do customers choose you?" f="different">
-            <textarea rows={3} value={a.different || ""} onChange={(e) => set({ different: e.target.value })} placeholder="e.g. Recipes from my grandmother, always fresh, delivered before 12:00." />
-          </Q>
-        </>
-      )}
-
-      {stepId === "customers" && (
-        <>
-          <p className="lead">Your helpers write and search for the people described here, so be specific.</p>
-          <Q title="Who are your customers?" hint="Describe your best customers. If you have different groups, list each one." f="customers">
-            <textarea rows={4} value={a.customers || ""} onChange={(e) => set({ customers: e.target.value })} placeholder={"e.g.\n- Office workers who want a proper lunch\n- HR and admin staff ordering for meetings"} />
-          </Q>
-          <Q title="What problem do you solve for them?" optional f="customer_problem">
-            <textarea rows={3} value={a.customer_problem || ""} onChange={(e) => set({ customer_problem: e.target.value })} placeholder="e.g. No time to go out for lunch, tired of fast food." />
-          </Q>
-          <Q title="Why do some people hesitate to buy?" optional hint="Common doubts or questions you hear. Helpers use this to answer them honestly." f="customer_objections">
-            <textarea rows={3} value={a.customer_objections || ""} onChange={(e) => set({ customer_objections: e.target.value })} placeholder="e.g. Worried about hygiene, minimum order too high." />
-          </Q>
-        </>
-      )}
-
-      {stepId === "offer" && (
-        <>
-          <p className="lead">Your helpers will only mention the products and prices you list here.</p>
-          <Q title="Your products or services" hint="One per line. The price can be a range or 'on request'." f="offers">
-            {a.offers.map((of, i) => (
-              <div className="offer-row" key={i}>
-                <input aria-label="Name" value={of.name} placeholder="Name, e.g. Nasi box" onChange={(e) => set({ offers: a.offers.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
-                <input aria-label="Price" value={of.price} placeholder="Price" onChange={(e) => set({ offers: a.offers.map((x, j) => j === i ? { ...x, price: e.target.value } : x) })} />
-                <input aria-label="Notes" value={of.note} placeholder="Notes, e.g. minimum 10" onChange={(e) => set({ offers: a.offers.map((x, j) => j === i ? { ...x, note: e.target.value } : x) })} />
-                <button type="button" className="iconbtn" aria-label="Remove" onClick={() => set({ offers: a.offers.length > 1 ? a.offers.filter((_, j) => j !== i) : [{ name: "", price: "", note: "" }] })}><i className="ri-close-line" /></button>
-              </div>
-            ))}
-            <button type="button" className="btn sm" onClick={() => set({ offers: [...a.offers, { name: "", price: "", note: "" }] })}><i className="ri-add-line" />Add another</button>
-          </Q>
-          <Q title="Anything that is NOT available yet?" optional hint="Helpers will never promise or sell these." f="not_yet">
-            <textarea rows={2} value={a.not_yet || ""} onChange={(e) => set({ not_yet: e.target.value })} placeholder="e.g. Wedding catering (coming next year)" />
-          </Q>
-        </>
-      )}
-
-      {stepId === "goals" && (
-        <>
-          <p className="lead">Pick what matters most right now. We use this to suggest the right helpers.</p>
-          <Q title="What do you want help with?" hint="Pick as many as you like." f="goals">
-            <Picks multi opts={o.goals} value={a.goals} onChange={(v) => set({ goals: v })} only={softwareOk} />
-          </Q>
-          {a.goals.filter(softwareOk).length > 0 && (
-            <Q title="Any targets?" optional hint="A number and a date helps helpers know what success looks like." f="goal_notes">
-              {a.goals.filter(softwareOk).map((g) => (
-                <div key={g} style={{ marginBottom: 8 }}>
-                  <span className="small">{label(o.goals[g])}</span>
-                  <input value={a.goal_notes?.[g] || ""} onChange={(e) => set({ goal_notes: { ...(a.goal_notes || {}), [g]: e.target.value } })} placeholder="e.g. 20 new customers by March" />
-                </div>
-              ))}
-            </Q>
-          )}
-          <Q title="Until when is this your focus?" optional f="focus_until">
-            <input value={a.focus_until || ""} onChange={(e) => set({ focus_until: e.target.value })} placeholder="e.g. end of this year" />
-          </Q>
-        </>
-      )}
-
-      {stepId === "voice" && (
-        <>
-          <p className="lead">So everything your helpers write sounds like you.</p>
-          <Q title="Which languages do you use with customers?" f={["languages", "language_other"]}>
-            <Picks multi opts={o.languages} value={a.languages} onChange={(v) => set({ languages: v })} />
-            <input style={{ marginTop: 8 }} value={a.language_other || ""} onChange={(e) => set({ language_other: e.target.value })} placeholder="Another language? e.g. Javanese" />
-          </Q>
-          <Q title="What tone fits your business?" hint="Pick up to 3." f="tones"><Picks multi max={3} opts={o.tones} value={a.tones} onChange={(v) => set({ tones: v })} /></Q>
-          <Q title="Words or topics to avoid" optional f="avoid">
-            <input value={a.avoid || ""} onChange={(e) => set({ avoid: e.target.value })} placeholder="e.g. slang, politics, 'cheap'" />
-          </Q>
-          <Q title="Paste an example you like" optional hint="A post, caption or message that sounds the way you want." f="example">
-            <textarea rows={4} value={a.example || ""} onChange={(e) => set({ example: e.target.value })} />
-          </Q>
-        </>
-      )}
-
-      {stepId === "rules" && (
-        <>
-          <p className="lead">What you already use, and the lines your helpers must never cross.</p>
-          <Q title="Which tools do you use today?" hint="Just so helpers know. Connecting tools comes later and always needs your OK." f={["tools", "tools_other"]}>
-            <Picks multi opts={o.tools} value={a.tools} onChange={(v) => set({ tools: v })} />
-            <input style={{ marginTop: 8 }} value={a.tools_other || ""} onChange={(e) => set({ tools_other: e.target.value })} placeholder="Others? e.g. Moka POS, Canva" />
-          </Q>
-          <Q title="House rules" hint="We ticked the ones most businesses want. Untick any that do not fit." f="rules">
-            {Object.entries(o.rules).map(([k, r]) => (
-              <label className="check" key={k}>
-                <input type="checkbox" checked={a.rules.includes(k)} onChange={() => set({ rules: a.rules.includes(k) ? a.rules.filter((x) => x !== k) : [...a.rules, k] })} />
-                <span>{r.label}</span>
-              </label>
-            ))}
-          </Q>
-          <Q title="Any other rules?" optional hint="One per line." f="rules_other">
-            <textarea rows={3} value={a.rules_other || ""} onChange={(e) => set({ rules_other: e.target.value })} placeholder="e.g. Never mention our supplier's name." />
-          </Q>
-        </>
-      )}
-
-      {stepId === "team" && (
-        <>
-          <p className="lead">Based on your goals, here is the team we suggest. Each helper is an AI that works on its own schedule and reports to you.</p>
-          <Q title="How big should your team be?">
-            <button type="button" className={`choice ${a.team_style === "small" ? "on" : ""}`} onClick={() => pickStyle("small")}>
-              <b>Start small <span className="rec">Recommended</span></b>
-              <span>A few all-round helpers. Easier to follow, lower AI costs. You can add more later.</span>
-            </button>
-            <button type="button" className={`choice ${a.team_style === "full" ? "on" : ""}`} onClick={() => pickStyle("full")}>
-              <b>Full team</b>
-              <span>One specialist per job (content, sales, customer care…). More output, more to review.</span>
-            </button>
-          </Q>
-          <Q title="Your helpers" hint="Tap a helper to add or remove it.">
-            <div className="cards">
-              <div className="card helper" style={{ background: "var(--soft)" }}>
-                <span className="chip" style={{ alignSelf: "flex-start" }}>Always included</span>
-                <b>{roles["chief-of-staff"].name}</b>
-                <span className="small">{roles["chief-of-staff"].tagline}. {roles["chief-of-staff"].summary}</span>
-                <ul>{roles["chief-of-staff"].does.map((d) => <li key={d}>{d}</li>)}</ul>
-              </div>
-              {shownRoles.map(([k, r]) => (
-                <button type="button" key={k} className={`card helper choice ${chosen.has(k) ? "on" : ""}`} style={{ margin: 0 }} onClick={() => toggleRole(k)} aria-pressed={chosen.has(k)}>
-                  <b><i className={chosen.has(k) ? "ri-checkbox-circle-fill" : "ri-add-circle-line"} style={{ color: chosen.has(k) ? "var(--ink)" : undefined }} /> {r.name}</b>
-                  <span>{r.tagline}. {r.summary}</span>
-                  <ul>{r.does.map((d) => <li key={d}>{d}</li>)}</ul>
-                  <div className="when">{r.schedule.join(" · ")}</div>
-                </button>
-              ))}
-            </div>
-            <button type="button" className="btn quiet sm" style={{ marginTop: 8 }} onClick={() => setShowAll(!showAll)}>{showAll ? "Show only suggested helpers" : "Show all available helpers"}</button>
-          </Q>
-          <Q title="Your time zone" hint="Helpers follow your local time for their schedules.">
-            <select value={tz} onChange={(e) => setTz(e.target.value)}>
-              {allTimezones(tz).map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
-            </select>
-          </Q>
-          <Q title="How much freedom should your helpers have?">
-            {Object.entries(o.approval_modes).map(([k, m]) => (
-              <button type="button" key={k} className={`choice ${a.approval_mode === k ? "on" : ""}`} onClick={() => set({ approval_mode: k })}>
-                <b>{m.label}{k === "ask_all" && <span className="rec">Recommended to start</span>}</b>
-                <span>{m.detail}</span>
-              </button>
-            ))}
-          </Q>
-          <Q title="Try it right away?">
-            <label className="check">
-              <input type="checkbox" checked={a.practice !== false} onChange={(e) => set({ practice: e.target.checked })} />
-              <span>Start a practice job when I finish: a helper drafts a short post about my business so I can try approving it.</span>
-            </label>
-          </Q>
-        </>
-      )}
-
-      {stepId === "finish" && (
-        <>
-          <p className="lead">Here is what your helpers will know. Missing parts are fine: helpers will ask you when they need them.</p>
-          {preview ? (
-            <>
-              <ul className="checklist">
-                {Object.entries(preview.completeness.items).map(([k, ok], i) => (
-                  <li key={k}>
-                    <i className={ok ? "ri-checkbox-circle-fill" : "ri-error-warning-line"} style={{ color: ok ? "var(--ok)" : "var(--warn)" }} />
-                    <span style={{ flex: 1 }}>{k}{ok ? "" : " (not filled in)"}</span>
-                    {!ok && <button className="btn sm" onClick={() => go([IDX.business, IDX.customers, IDX.offer, IDX.goals, IDX.voice, IDX.rules][i])}>Add</button>}
-                  </li>
-                ))}
-              </ul>
-              <div className="soft" style={{ marginTop: 16 }}>
-                <div className="small">Your team</div>
-                <p style={{ margin: "2px 0 6px", fontWeight: 500 }}>{["chief-of-staff", ...(a.roles || []).filter((r) => r !== "chief-of-staff")].map((r) => roles[r]?.name).join(", ")}</p>
-                <div className="small">{o.approval_modes[a.approval_mode]?.label} · {a.engine_type === "fake" ? "Practice mode" : usingClaude ? (a.no_hermes ? "Built-in Claude" : "Claude Code with your key") : "Practice mode"} · {tz.replace(/_/g, " ")}</div>
-              </div>
-              {usingClaude && !a.no_hermes && <ClaudeCodeSetup autoInstall onReady={setCcReady} />}
-              <details className="tech">
-                <summary>See exactly what your helpers will read</summary>
-                {Object.entries(preview.files).map(([n, c]) => <div key={n} className="paper" style={{ marginTop: 10 }}><Markdown text={c} /></div>)}
-                <p className="small">You can edit all of this later under Company.</p>
-              </details>
-            </>
-          ) : <p className="small">Preparing your summary…</p>}
-        </>
-      )}
-
-      <Err error={err} />
-    </div>
-  );
+  if (cur.id === "interview") {
+    return (
+      <div className="obx">
+        <StepCard wide icon={cur.icon} title={cur.title} tone={cur.tone} next={nxt && { icon: nxt.icon, title: nxt.title, tone: nxt.tone }} meta={progress}
+          art={<Profile a={st.answers} o={o} topics={st.topics} topic={st.interview.topic} onEdit={editField} />} footer={back}>
+          <Interview st={st} onAnswers={onAnswers} onDone={() => go(step + 1)} />
+        </StepCard>
+      </div>
+    );
+  }
 
   return (
-    <FlashCtx.Provider value={flash}>
-      <div className="obx">
-        <StepCard ref={top} wide icon={cur.icon} title={cur.title} tone={cur.tone} seed={step} caption={cur.caption} mascot={stepId === "welcome"}
-          next={nxt ? { icon: nxt.icon, title: nxt.title, tone: nxt.tone } : null} meta={progress} footer={footer}
-          art={<OmiloGuide tone={MOODS[cur.tone] || "warm"} line={omiloLine(stepId, a, o, team.length - 1, preview?.completeness.score ?? null, !!keyHint)}
-            team={step >= IDX.goals ? team : []} known={step >= IDX.business && preview ? preview.completeness : null}
-            onKnown={(i) => go([IDX.business, IDX.customers, IDX.offer, IDX.goals, IDX.voice, IDX.rules][i] ?? step)} />}>
-          {form}
-        </StepCard>
-        <Assistant answers={a} stepTitle={cur.title} aiReady={aiReady} onPatch={applyPatch}
-          open={chatOpen} onClose={() => setChatOpen(false)} goAi={() => { setChatOpen(false); go(IDX.ai); }} />
-        {!chatOpen && <button className="btn primary chatfab" onClick={() => setChatOpen(true)}><OmiloMascot size={20} tile={false} />Ask Omilo</button>}
-      </div>
-    </FlashCtx.Provider>
+    <div className="obx">
+      <StepCard wide={cur.id !== "welcome"} icon={cur.icon} title={cur.title} tone={cur.tone} mascot={cur.id === "welcome"} next={nxt && { icon: nxt.icon, title: nxt.title, tone: nxt.tone }} meta={progress}
+        caption={cur.id === "welcome" ? "Hi, I'm Omilo. Let's build your AI team together." : cur.id === "ai" ? "First, the brain your team thinks with." : "The helpers that fit what you told me."}
+        footer={<>
+          {cur.id === "welcome" && <button className="btn primary sc-next" onClick={() => go(1)}>Let&apos;s start</button>}
+          {cur.id === "team" && <button className="btn primary sc-next" disabled={busy || !team} onClick={finish}>{busy && team ? "Creating your team…" : "Create my team"}</button>}
+          {back}
+        </>}>
+        {cur.id === "welcome" && (
+          <>
+            <h1>Welcome to Omilo</h1>
+            <p className="lead">Omilo gives {company} a team of AI helpers. To set them up, I&apos;ll interview you about the business, the way a good advisor would:
+              one question at a time, with ideas when you&apos;re not sure.</p>
+            <ul className="checklist">
+              <li><i className="ri-sparkling-2-line" /><span>Pick the AI your team uses.</span></li>
+              <li><i className="ri-question-answer-line" /><span>Chat about your business, customers, goals and the work you want off your plate. About 10 minutes.</span></li>
+              <li><i className="ri-team-line" /><span>Get a team that fits. Each helper then proposes its own job for you to approve.</span></li>
+            </ul>
+          </>
+        )}
+        {cur.id === "ai" && <AiStep providers={st.providers} ai={st.ai} onDone={(ai) => { setSt({ ...st, ai }); go(2); }} />}
+        {cur.id === "team" && (
+          !team ? <p className="small">{busy ? "Putting your team together from what you told me…" : ""}</p> : (
+            <>
+              <TeamStep team={team} setTeam={setTeam} roles={roles}
+                why={teamBy === "ai" ? "Based on your goals and the work you want to hand off. Rename helpers, change their focus, remove or add one." : "Suggested from your goals. Rename helpers, change their focus, remove or add one."} />
+              <label>How much freedom should your helpers have?</label>
+              {Object.entries(o.approval_modes).map(([k, m]) => (
+                <button type="button" key={k} className={`choice ${mode === k ? "on" : ""}`} onClick={() => setMode(k)}>
+                  <b>{m.label}{k === "ask_all" && <span className="rec">Recommended to start</span>}</b><span>{m.detail}</span>
+                </button>
+              ))}
+              <label>Your time zone</label>
+              <select value={tz} onChange={(e) => setTz(e.target.value)}>{allTimezones(tz).map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}</select>
+            </>
+          )
+        )}
+        <Err error={err} />
+      </StepCard>
+    </div>
   );
 }

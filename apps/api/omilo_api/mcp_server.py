@@ -82,6 +82,17 @@ TOOLS: list[dict] = [
          "target": _s("object", "what you need access to — shape depends on kind"),
          "reason": _s("string", "why you need it (shown in the Inbox card)"),
      }, "required": ["kind", "target", "reason"]}},
+    {"name": "propose_job", "description": "Propose (or revise) your own job to the founder: what you will own, measurable goals, "
+                                           "first moves and open questions. Shows an Approve card in the current chat (or your chat with "
+                                           "the founder); approving adds it to your job description. Use it when the founder asks you to change "
+                                           "your job, or when you learn your work should change.",
+     "inputSchema": {"type": "object", "properties": {
+         "responsibilities": _s("array", "3-6 concrete things you will own", items={"type": "string"}),
+         "goals": _s("array", "1-3 measurable goals (number + by when)", items={"type": "string"}),
+         "ideas": _s("array", "first moves you suggest", items={"type": "string"}),
+         "questions": _s("array", "what you still need to know", items={"type": "string"}),
+         "note": _s("string", "one or two sentences to the founder: what changed and why"),
+     }, "required": ["responsibilities"]}},
     {"name": "docs_search", "description": "Search the shared Docs (notes for the owner and all helpers) by words. Returns paths, titles and snippets.",
      "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for; empty lists recent docs")}, "required": []}},
     {"name": "docs_read", "description": "Read one doc from the shared Docs, with its version, [[links]] and backlinks.",
@@ -352,6 +363,14 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             raise S.DomainError("no open task or chat to attach the access request to")
         item = S.request_access(db, st, task_id, th.id if th else None, kind, target, reason, th=th)
         return "allowed", {"decision": "needs_approval", "request_id": item.id, "thread_id": th.id}
+    if name == "propose_job":
+        from . import jobs as J
+        from .events import current_run
+
+        _task_id, thread_id = current_run(db, st.id, None)
+        th = db.get(S.Thread, thread_id) if thread_id else None
+        m = J.propose(db, st, args, intro=str(args.get("note") or ""), th=th)
+        return "allowed", {"decision": "needs_approval", "message_id": m.id, "thread_id": m.thread_id}
     if name == "update_kpi":
         if policy.level_for("kpi.write", st.permissions) < policy.DO_AND_TELL:
             raise S.DomainError("you may not write KPIs; ask Finance or propose it", 403)

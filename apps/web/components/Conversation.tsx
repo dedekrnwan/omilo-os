@@ -56,6 +56,29 @@ function decidedLabel(decided: string): string {
   return decided;
 }
 
+/** A helper's job proposal (after onboarding, or when it revises its job): the text is in the message; the card approves it. */
+export function JobProposal({ m }: { m: Msg }) {
+  const b = m.blocks?.find((x) => x.type === "job_proposal") as (Record<string, any> | undefined);
+  const [status, setStatus] = useState<string>(b?.status || "pending");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!b) return null;
+  if (status === "replaced") return <div className="small" style={{ marginTop: 6 }}><i className="ri-history-line" /> Replaced by a newer version below.</div>;
+  if (status === "approved") return <div className="callout ok jobcard"><i className="ri-checkbox-circle-fill" /> Approved. It&apos;s part of the job description now (Team → the helper → Job).</div>;
+  return (
+    <div className="callout jobcard">
+      <div className="acts" style={{ gap: 8, flexWrap: "wrap" }}>
+        <button className="btn sm primary" disabled={busy} onClick={async () => {
+          setBusy(true); setErr(null);
+          try { await api(`/messages/${m.id}/job`, { body: { decision: "approve" } }); setStatus("approved"); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+        }}><i className="ri-check-line" />Approve this job</button>
+        <span className="small">or reply below with what to change, and I&apos;ll send a new version.</span>
+      </div>
+      {err && <div className="small" style={{ color: "var(--bad)", marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
 export function AccessRequest({ m, onDecide }: { m: Msg; onDecide: (requestId: string, scope: "once" | "always" | "deny", note: string) => void }) {
   const blocks = m.blocks?.filter((b) => b.type === "access_request") || [];
   if (!blocks.length) return null;
@@ -193,6 +216,7 @@ export function Conversation({ th, staff, events, onSend, busy, onDecide }: { th
                 <Attachments blocks={row.m.blocks} />
                 <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
                 {onDecide && <AccessRequest m={row.m} onDecide={onDecide} />}
+                <JobProposal m={row.m} />
               </div>
             </div>
           )
