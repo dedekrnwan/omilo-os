@@ -223,3 +223,37 @@ async def test_gate_no_pending_action_finishes_without_proposal(owner, monkeypat
     assert res.error == ""
     assert "waiting" not in (res.text or "").lower()
     assert _proposals_for(task_id) == [], "a pure internal task must not file a proposal"
+
+
+# ---------------------------------------------------------------------------
+# Test 5: with NO Chief of Staff, a low/medium action escalates to the owner
+#         (it must NOT be auto-approved by the worker itself)
+# ---------------------------------------------------------------------------
+
+async def test_gate_no_cos_escalates_instead_of_self_approve(owner, monkeypatch):
+    from omilo_api.graph import delegation as delegation_mod
+
+    stub = _StubEngine(text="drafted")
+    monkeypatch.setattr(graph_engine_mod, "get_engine", lambda cfg: stub)
+    # No delegation authority: cos_id returns None (company without a chief).
+    monkeypatch.setattr(delegation_mod, "cos_id", lambda db: None)
+
+    worker_id = _make_worker_staff()
+    task_id = _make_task(worker_id)
+
+    # A low/medium INTERNAL action that WOULD be auto-approved if a CoS existed.
+    pending = {"action_type": "docs.write", "summary": "draft an internal note",
+               "risk": "low", "title": "Internal note", "body": "note"}
+
+    eng = get_engine({"type": "graph", "exec_engine": {"type": "stub"}})
+    res = await eng.run_task(_ctx(worker_id, task_id, pending))
+
+    # With no CoS, it escalates to the owner rather than self-approving.
+    assert "waiting" in (res.text or "").lower(), f"expected a waiting result, got {res.text!r}"
+    props = _proposals_for(task_id)
+    assert len(props) == 1 and props[0].status == "pending", \
+        f"with no CoS the proposal must stay pending (escalated), got {props}"
+    assert props[0].decided_by == "", "a worker must never approve its own proposal when no CoS exists"
+    with session_scope() as db:
+        exec_tasks = [t for t in db.scalars(select(Task).where(Task.staff_id == worker_id)) if t.origin == "execution"]
+    assert exec_tasks == [], "nothing should execute without owner approval when no CoS exists"

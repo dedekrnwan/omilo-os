@@ -142,19 +142,25 @@ def gate(state: dict, ctx: GateContext) -> dict:
 
     if risk == "high":
         return _escalate(ctx, pending_action, risk)
-    return _auto_approve(ctx, pending_action, risk)
+    # low/medium may be auto-handled — but ONLY by the Chief of Staff. With no CoS there is
+    # no delegation authority, so escalate to the owner rather than let a worker approve its
+    # own proposal (which would break the "CoS is the approver" invariant).
+    with _session() as db:
+        cos = cos_id(db)
+    if cos is None:
+        return _escalate(ctx, pending_action, risk)
+    return _auto_approve(ctx, pending_action, risk, cos)
 
 
-def _auto_approve(ctx: GateContext, pending_action: dict, risk: str) -> dict:
-    """low/medium: file a Proposal and approve it as the Chief of Staff."""
+def _auto_approve(ctx: GateContext, pending_action: dict, risk: str, cos: str) -> dict:
+    """low/medium: file a Proposal and approve it as the Chief of Staff (cos is never None here)."""
     title, type_, body = build_proposal_fields(pending_action)
     with _session() as db:
         st = db.get(Staff, ctx.staff_id)
-        cos = cos_id(db)
-        p = S.create_proposal(db, st, ctx.task_id, title, type_, risk, body, actor=cos or f"staff:{ctx.staff_id}")
+        p = S.create_proposal(db, st, ctx.task_id, title, type_, risk, body, actor=cos)
         # decide_proposal commits; audits with `by` as actor; records the lesson;
         # spawns the execution task — exactly the owner-approval path, as the CoS.
-        S.decide_proposal(db, p, "approve", AUTO_APPROVE_NOTE, by=cos or f"staff:{ctx.staff_id}")
+        S.decide_proposal(db, p, "approve", AUTO_APPROVE_NOTE, by=cos)
     return {"risk": risk, "done": True, "pending_action": None}
 
 
