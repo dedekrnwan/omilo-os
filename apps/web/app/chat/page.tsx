@@ -275,6 +275,22 @@ function WorkspaceInner() {
   const lastAgentText = useMemo(() => [...(current?.messages || [])].reverse().find((m) => m.role === "agent")?.text, [current]);
   const selTask = tasks.find((t) => t.id === taskId);
 
+  // the helpers tied to this chat: the room's default (Chief in a team chat, the helper in a 1:1),
+  // whoever is queued to answer, and everyone who has spoken here, in that order
+  const related = useMemo(() => {
+    if (!current) return [] as Staff[];
+    const order: string[] = [];
+    const add = (id?: string) => { if (id && !order.includes(id)) order.push(id); };
+    add(current.staff_id);
+    (current.pending || []).forEach(add);
+    for (const m of current.messages as Msg[]) if (m.role === "agent") add(m.author);
+    return order.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as Staff[];
+  }, [current, staff]);
+  const addMention = (s: Staff) => {
+    setText((cur) => (cur && !cur.endsWith(" ") ? cur + " " : cur) + `@${s.name} `);
+    setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(h.getValue().length); } }, 0);
+  };
+
   const output = view === "chat"
     ? (lastAgentText ? <Markdown text={lastAgentText} /> : null)
     : selTask?.report ? <div><div className="small" style={{ marginBottom: 6 }}>Report</div><div className="paper md"><Markdown text={selTask.report.body_md} /></div></div> : null;
@@ -348,6 +364,16 @@ function WorkspaceInner() {
           </div>
           {view === "chat" && current && (
             <div className="ws-composer">
+              {related.length > 0 && (
+                <div className="chat-people">
+                  <span className="cp-label">In this chat</span>
+                  {related.map((s) => (
+                    <button type="button" key={s.id} className="chip person" title={`Mention ${s.name}`} onClick={() => addMention(s)}>
+                      <Avatar who={s} size={16} /><span>{s.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
                 {slash.menu}
                 {mention.menu}
