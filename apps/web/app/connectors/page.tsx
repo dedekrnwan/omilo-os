@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Err } from "@/components/ui";
@@ -497,6 +498,10 @@ export default function Connectors() {
       .sort((x, y) => Number(y.connected) - Number(x.connected) || x.label.localeCompare(y.label));
   }, [catalog, q, cat]);
   const appOpen = openApp ? (catalog || []).find((e) => e.slug === openApp) || null : null;
+  usePageActions({ more: [
+    { label: refreshing ? "Updating the list of apps…" : "Update the list of apps", icon: "ri-refresh-line", disabled: refreshing, onSelect: refreshCatalog },
+    { label: "Add a custom server (MCP)", icon: "ri-code-s-slash-line", hint: "advanced", onSelect: startNew },
+  ] }, [refreshing]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -516,9 +521,6 @@ export default function Connectors() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: Instagram, email, calendar, sheets…" style={{ paddingLeft: 32 }}
             aria-label="Search apps" />
         </div>
-        <button className="btn" onClick={refreshCatalog} disabled={refreshing} title="Download the latest list of apps">
-          {refreshing ? <span className="spin" /> : <i className="ri-refresh-line" />}{refreshing ? "Updating…" : "Update list"}
-        </button>
       </div>
       {catalog && catalog.length > 0 && (
         <div className="picks" style={{ marginBottom: 16 }}>

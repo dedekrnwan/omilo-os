@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import { usePoll } from "@/lib/poll";
 import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
@@ -56,6 +57,10 @@ export default function Harness() {
     try { await api("/ai", { body: { provider: "claude-code" } }); setMsg("All helpers now run on the Claude Code pool."); load(); } catch (e: any) { setErr(e.message); }
   };
 
+  usePageActions({
+    primary: { label: "Add account", icon: "ri-add-line", onSelect: () => { setErr(null); setAdding(true); } },
+    more: [!!pool?.total && { label: "Use the pool for all helpers", icon: "ri-team-line", onSelect: useForAll }],
+  }, [pool?.total]);
   if (!pool) return <p className="small">Loading…</p>;
   const cli = pool.cli;
   return (
@@ -93,9 +98,7 @@ export default function Harness() {
       </div>
 
       <div className="sec" style={{ marginTop: 20 }}>
-        <div className="sechead"><h2>Accounts</h2><span className="sp" />
-          <button className="btn primary" onClick={() => { setErr(null); setAdding(true); }}><i className="ri-add-line" />Add account</button>
-          {pool.total > 0 && <button className="btn" onClick={useForAll}><i className="ri-team-line" />Use the pool for all helpers</button>}</div>
+        <div className="sechead"><h2>Accounts</h2></div>
         {pool.accounts.length === 0 ? <div className="empty"><b>No accounts yet</b><span>Add your first Claude Code subscription.</span>
           <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => setAdding(true)}><i className="ri-add-line" />Add account</button></div></div> : (
           <div className="tw"><table>

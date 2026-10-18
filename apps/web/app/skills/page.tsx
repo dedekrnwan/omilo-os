@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Markdown } from "@/components/Markdown";
@@ -81,16 +82,16 @@ export default function Skills() {
   ];
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
+  usePageActions({
+    primary: { label: "New skill", icon: "ri-add-line", onSelect: () => { setErr(null); setTab("write"); setForm({ ...blank, body: STARTER }); } },
+    more: [{ label: "Get one from The Agency", icon: "ri-download-2-line", onSelect: () => { setImporting(true); setFound(null); } }],
+  }, []);
   return (
     <div>
       <div className="sechead" style={{ alignItems: "flex-start" }}>
         <div><h1>Skills</h1>
           <p className="sub" style={{ marginBottom: 0 }}>Know-how your helpers follow: a checklist, a house style, a process. Switch skills on per chat with + or by typing /, or make one standard for everyone.</p></div>
-        <span className="sp" />
-        <div className="acts" style={{ flexWrap: "nowrap" }}>
-          <button className="btn" onClick={() => { setImporting(true); setFound(null); }}><i className="ri-download-2-line" />From The Agency</button>
-          <button className="btn primary" onClick={() => { setErr(null); setTab("write"); setForm({ ...blank, body: STARTER }); }}><i className="ri-add-line" />New skill</button>
-        </div>
+
       </div>
 
       <div className="sec" style={{ marginTop: 20 }}>

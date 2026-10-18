@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
@@ -62,14 +63,13 @@ export default function Computer() {
   ];
   const name = (p: string) => p.split("/").filter(Boolean).pop() || p;
 
+  usePageActions({ primary: { label: "Share a folder", icon: "ri-folder-add-line", onSelect: startNew } }, []);
   return (
     <div>
       <div className="sechead" style={{ alignItems: "flex-start" }}>
         <div><h1>Computer</h1>
           <p className="sub" style={{ marginBottom: 0 }}>Share folders on this computer with your helpers, for example a code project they develop in. The settings here are the team default;
             give one helper more or less on its own page (Team → the helper → Access).</p></div>
-        <span className="sp" />
-        <button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button>
       </div>
 
       <div className="sec" style={{ marginTop: 20 }}>

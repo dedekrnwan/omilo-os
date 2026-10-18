@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import Avatar from "@/components/Avatar";
@@ -91,6 +92,7 @@ export default function PlanPage() {
       : { label: "Make active again", icon: "ri-flag-2-line", onSelect: () => api(`/goals/${g.id}`, { method: "PATCH", body: { status: "active" } }) },
     { label: "Copy the goal", icon: "ri-file-copy-line", onSelect: () => copy(`${g.title}${g.target ? ` — ${g.target}` : ""}`) }];
 
+  usePageActions({ primary: { label: "New goal", icon: "ri-add-line", onSelect: () => edit() } }, []);
   return (
     <div className="plan">
       <div className="sechead" style={{ alignItems: "flex-end" }}>
@@ -100,7 +102,6 @@ export default function PlanPage() {
         <div className="seg"><button className={!asMap ? "on" : ""} onClick={() => setAsMap(false)}><i className="ri-list-check-3" /> Tree</button>
           <button className={asMap ? "on" : ""} onClick={() => setAsMap(true)}><i className="ri-node-tree" /> Map</button></div>
         <div className="seg">{[[7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d as number)}>{l}</button>)}</div>
-        <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button>
       </div>
       <Err error={err} />
       {asMap ? <div style={{ marginTop: 18 }}><WorkMap days={days} defaultOnlyNeeds={false} /></div> : !plan ? <p className="small">Loading…</p> : (

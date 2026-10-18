@@ -7,11 +7,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { Staff, ago, api } from "@/lib/api";
-import { hireBack, helperItems, letGo, taskItems } from "@/lib/actions";
+import { chatWith, hireBack, helperItems, letGo, taskItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
 import { usePoll } from "@/lib/poll";
 import HelperState from "@/components/HelperState";
 import HelperAccess from "@/components/HelperAccess";
+import { usePageActions } from "@/components/PageActions";
 import { confirmDialog } from "@/lib/dialog";
 
 const LEVELS = [["", "default"], ["0", "off"], ["1", "ask"], ["2", "do and tell"], ["3", "auto"]];
@@ -58,6 +59,17 @@ function StaffDetail({ id }: { id: string }) {
     } catch (e: any) { setErr(e.message); }
   }, [id]);
   usePoll(load, 30000, [load]);
+  usePageActions(!s ? null : s.status === "retired" ? { primary: { label: `Hire ${s.name} back`, icon: "ri-user-add-line", onSelect: () => hireBack(s, load) } } : {
+    primary: { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
+    more: [
+      { label: s.status === "active" ? `Pause ${s.name}` : `Activate ${s.name}`, icon: s.status === "active" ? "ri-pause-circle-line" : "ri-play-circle-line",
+        onSelect: () => save({ status: s.status === "active" ? "paused" : "active" }) },
+      { label: `Chat with ${s.name}`, icon: "ri-chat-3-line", onSelect: () => chatWith(s) },
+      { label: "Connect an outside engine (new MCP token)", icon: "ri-key-2-line", onSelect: () => rotate() },
+      { sep: true },
+      !s.is_chief && { label: `Let ${s.name} go`, icon: "ri-user-unfollow-line", danger: true, onSelect: () => letGo(s, () => router.push("/staff/")) },
+    ],
+  }, [s?.id, s?.status, s?.name]);
   if (!s) return <Err error={err} />;
   const overrides: Record<string, number> = s.permissions?.actions || {};
 
@@ -95,9 +107,6 @@ function StaffDetail({ id }: { id: string }) {
       ) : (
         <div className="acts" style={{ marginBottom: 20 }}>
           <StatusChip status={s.status} />
-          <button className="btn" onClick={() => save({ status: s.status === "active" ? "paused" : "active" })}>{s.status === "active" ? "Pause" : "Activate"}</button>
-          <button className="btn" onClick={rotate}>Connect engine (new MCP token)</button>
-          {!s.is_chief && <button className="btn quiet danger-text" onClick={() => letGo(s, () => router.push("/staff/"))}><i className="ri-user-unfollow-line" />Let {s.name} go</button>}
           {msg && <span className="small">{msg}</span>}
         </div>
       )}
@@ -233,6 +242,7 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
 }
 
 function StaffList() {
+  usePageActions({ primary: { label: "Hire a helper", icon: "ri-user-add-line", href: "/talent/" } }, []);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [former, setFormer] = useState<Staff[]>([]);
   const load = useCallback(async () => {

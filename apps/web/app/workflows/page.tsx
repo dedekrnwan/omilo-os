@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Avatar from "@/components/Avatar";
@@ -128,17 +129,16 @@ function List() {
   const rest = (list || []).filter((w) => w.status !== "pending");
   const cats = ["All", ...Array.from(new Set((market || []).map((m) => m.category)))];
   const helpers = staff;
+  usePageActions({
+    primary: { label: "New workflow", icon: "ri-add-line", disabled: busy === "new", onSelect: create },
+    more: [{ label: "Ask a helper to build one", icon: "ri-robot-2-line", onSelect: () => setBuild({ description: "", staff_id: helpers.find((s) => s.is_chief)?.id || "", task_ids: [] }) }],
+  }, [busy, helpers.length]);
 
   return (
     <div>
       <div className="sechead" style={{ alignItems: "flex-start" }}>
         <div><h1>Workflows</h1>
           <p className="sub" style={{ marginBottom: 0, maxWidth: 640 }}>Work that repeats, as steps that run on their own: connectors, web requests and data steps cost nothing; AI only where thinking is needed. Helpers can suggest workflows too. Nothing they suggest runs until you approve it.</p></div>
-        <span className="sp" />
-        <div className="acts">
-          <button className="btn" onClick={() => setBuild({ description: "", staff_id: helpers.find((s) => s.is_chief)?.id || "", task_ids: [] })}><i className="ri-robot-2-line" />Ask a helper to build one</button>
-          <button className="btn primary" disabled={busy === "new"} onClick={create}><i className="ri-add-line" />New workflow</button>
-        </div>
       </div>
 
       <div className="sechead" style={{ marginTop: 16 }}>

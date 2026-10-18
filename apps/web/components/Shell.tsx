@@ -11,13 +11,39 @@ import ContextMenuHost from "./ContextMenu";
 import { copy, menu as ctxMenu } from "@/lib/menu";
 import CompanySwitcher from "./CompanySwitcher";
 import { StepPage } from "./StepCard";
+import { PageActionsBar, PageActionsCtx, PageActionsSpec } from "./PageActions";
 
-const NAV: { group: string; items: [string, string, string][] }[] = [
-  { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/plan/", "Plan", "ri-node-tree"], ["/calendar/", "Calendar", "ri-calendar-line"], ["/workflows/", "Workflows", "ri-flow-chart"], ["/docs/", "Docs", "ri-book-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
-  { group: "Company", items: [["/staff/", "Team", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"], ["/company/", "Company", "ri-building-2-line"], ["/settings/", "Settings", "ri-settings-3-line"]] },
-  { group: "Capabilities", items: [["/harness/", "Harness", "ri-stack-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"], ["/computer/", "Computer", "ri-computer-line"]] },
+/* Five sections in the sidebar; each section's pages are tabs along the top. New pages join a section, so the
+   sidebar stays short however much Omilo grows. */
+type Page = [string, string, string]; // href, label, icon
+export const SECTIONS: { id: string; label: string; icon: string; pages: Page[] }[] = [
+  { id: "home", label: "Home", icon: "ri-home-5-line", pages: [["/", "Inbox", "ri-inbox-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
+  { id: "work", label: "Work", icon: "ri-briefcase-4-line", pages: [["/chat/", "Workspace", "ri-chat-3-line"], ["/plan/", "Plan", "ri-node-tree"],
+    ["/calendar/", "Calendar", "ri-calendar-line"], ["/workflows/", "Workflows", "ri-flow-chart"], ["/docs/", "Docs", "ri-book-2-line"]] },
+  { id: "team", label: "Team", icon: "ri-team-line", pages: [["/staff/", "Helpers", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"],
+    ["/company/", "Company", "ri-building-2-line"]] },
+  { id: "tools", label: "Tools", icon: "ri-tools-line", pages: [["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
+    ["/computer/", "Computer", "ri-computer-line"], ["/harness/", "AI accounts", "ri-stack-line"]] },
+  { id: "settings", label: "Settings", icon: "ri-settings-3-line", pages: [["/settings/", "Settings", "ri-settings-3-line"]] },
 ];
-const TITLES: Record<string, [string, string]> = Object.fromEntries(NAV.flatMap((g) => g.items.map(([h, l, i]) => [h, [l, i]])));
+const PAGES = SECTIONS.flatMap((sec) => sec.pages.map(([h, l, i]) => ({ href: h, label: l, icon: i, section: sec })));
+const pageFor = (path: string) =>
+  PAGES.filter((p) => (p.href === "/" ? path === "/" : path.startsWith(p.href))).sort((a, b) => b.href.length - a.href.length)[0] || PAGES[0];
+const LAST = "omilo.nav.last"; // the page you last opened in each section, so a section opens where you left it
+const lastIn = (id: string) => { try { return (JSON.parse(localStorage.getItem(LAST) || "{}") as Record<string, string>)[id]; } catch { return undefined; } };
+const remember = (id: string, href: string) => { try { localStorage.setItem(LAST, JSON.stringify({ ...JSON.parse(localStorage.getItem(LAST) || "{}"), [id]: href })); } catch { /* ignore */ } };
+
+function SectionTabs({ page }: { page: (typeof PAGES)[number] }) {
+  const sec = page.section;
+  if (sec.pages.length < 2) return <span className="crumb"><i className={page.icon} />{page.label}</span>;
+  return (
+    <nav className="tabs" aria-label={sec.label}>
+      {sec.pages.map(([h, l, ic]) => (
+        <Link key={h} href={h} className={`tab ${h === page.href ? "on" : ""}`} aria-current={h === page.href ? "page" : undefined}><i className={ic} />{l}</Link>
+      ))}
+    </nav>
+  );
+}
 
 type Ctx = { overview: Overview | null; refresh: () => void };
 const OverviewCtx = createContext<Ctx>({ overview: null, refresh: () => {} });
@@ -56,6 +82,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<{ name?: string; email?: string } | null>(null);
   const [ready, setReady] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [actions, setActions] = useState<PageActionsSpec | null>(null);
   const bare = ["/login/", "/setup/"].includes(path);
 
   const refresh = useCallback(async () => {
@@ -87,6 +114,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     setFaviconDot(n ? (overview?.inbox.critical ? "#dc2626" : "#f59e0b") : null);
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
+  useEffect(() => { remember(pageFor(path).section.id, path); }, [path]);
 
   if (bare) return <>{children}</>;
   if (!ready) return null;
@@ -116,11 +144,15 @@ export default function Shell({ children }: { children: ReactNode }) {
     );
   }
 
-  const key = Object.keys(TITLES).filter((h) => (h === "/" ? path === "/" : path.startsWith(h))).sort((a, b) => b.length - a.length)[0] || "/";
-  const [title, icon] = TITLES[key] || ["Omilo", "ri-apps-line"];
+  const page = pageFor(path);
+  const own = path === "/chat/" || path.startsWith("/chat/") || path.startsWith("/docs/");  // pages with their own top bar
+  const global = [
+    { label: overview?.paused ? "Resume all helpers" : "Pause all helpers", icon: overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line", onSelect: togglePause },
+  ];
 
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
+      <PageActionsCtx.Provider value={{ set: setActions }}>
       <div className="frame">
         <PreviewHost />
         {ready && !bare && <NotifyHost onNotice={refresh} />}
@@ -135,25 +167,29 @@ export default function Shell({ children }: { children: ReactNode }) {
         <aside className={`side ${menu ? "open" : ""}`}>
           <div className="head brand"><Mark /><div><b>Omilo</b></div></div>
           <CompanySwitcher overview={overview} />
-          <nav>
-            {NAV.map((g) => (
-              <div className="group" key={g.group}>
-                <p>{g.group}</p>
-                {g.items.map(([href, label, ic]) => {
-                  const on = href === key;
-                  return (
-                    <Link key={href} href={href} className={`navlink ${on ? "on" : ""}`} onContextMenu={ctxMenu(() => [{ heading: label },
-                      { label: "Open", icon: ic, href }, { label: "Open in a new tab", icon: "ri-external-link-line", onSelect: () => window.open(href, "_blank", "noopener") },
-                      { label: "Copy link", icon: "ri-link", onSelect: () => copy(location.origin + href) }])}>
-                      <i className={ic} />{label}
-                      {label === "Inbox" && overview?.inbox.open ? <span className="count">{overview.inbox.open}</span> : null}
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
-            <div className="group">
-              <p>Control</p>
+          <nav className="sections">
+            {SECTIONS.map((sec) => {
+              const on = sec.id === page.section.id;
+              const last = lastIn(sec.id);
+              const go = last && pageFor(last.split("?")[0]).section.id === sec.id ? last : sec.pages[0][0];
+              const count = sec.id === "home" ? overview?.inbox.open || 0 : 0;
+              return (
+                <div key={sec.id} className={`secblock ${on ? "on" : ""}`}>
+                  <Link href={go} className={`navlink ${on ? "on" : ""}`} onContextMenu={ctxMenu(() => [{ heading: sec.label },
+                    ...sec.pages.map(([h, l, ic]) => ({ label: l, icon: ic, href: h }))])}>
+                    <i className={sec.icon} />{sec.label}
+                    {count ? <span className="count">{count}</span> : null}
+                  </Link>
+                  {on && sec.pages.length > 1 && (
+                    <div className="subnav">{sec.pages.map(([h, l]) => (
+                      <Link key={h} href={h} className={`sublink ${h === page.href ? "on" : ""}`}>{l}
+                        {h === "/" && overview?.inbox.open ? <span className="count sm">{overview.inbox.open}</span> : null}</Link>
+                    ))}</div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="secblock" style={{ marginTop: "auto" }}>
               <button className="navlink" style={{ border: 0, background: "transparent", width: "100%" }} onClick={togglePause}>
                 <i className={overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line"} />{overview?.paused ? "Resume all helpers" : "Pause all helpers"}
               </button>
@@ -167,12 +203,18 @@ export default function Shell({ children }: { children: ReactNode }) {
         </aside>
         <div className="workspace">
           <div className="inset">
-            {key === "/chat/" || key === "/docs/" ? children : (
+            {own ? (
+              <>
+                {page.section.pages.length > 1 && <div className="topbar slim"><SectionTabs page={page} /></div>}
+                {children}
+              </>
+            ) : (
               <>
                 <div className="topbar">
-                  <span className="crumb"><i className={icon} />{title}</span>
+                  <SectionTabs page={page} />
                   <span className="sp" />
                   {overview?.paused && <span className="chip warn"><i className="ri-pause-line" />Paused</span>}
+                  <PageActionsBar spec={actions} extra={global} />
                 </div>
                 <div className="scroll"><main className="page">{children}</main></div>
               </>
@@ -180,6 +222,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </div>
+      </PageActionsCtx.Provider>
     </OverviewCtx.Provider>
   );
 }

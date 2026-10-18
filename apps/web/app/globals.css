@@ -2127,3 +2127,25 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .access-t td .mono { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .access-t select { min-width: 220px; }
 @media (max-width: 640px) { .access-t select { min-width: 0; width: 100%; } }
+
+/* ------------------------------------------------------------------ sections (sidebar) + page tabs (top bar) */
+.side nav.sections { gap: 2px; }
+.secblock { display: flex; flex-direction: column; }
+.secblock .navlink { height: 34px; }
+.subnav { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 21px; padding-left: 10px; border-left: 1px solid var(--line); }
+.sublink { display: flex; align-items: center; height: 28px; padding: 0 10px; border-radius: var(--r-sm); color: var(--muted); font-size: 13px; text-decoration: none; }
+.sublink:hover { background: var(--hover); color: var(--ink); text-decoration: none; }
+.sublink.on { color: var(--ink); font-weight: 500; background: var(--hover); }
+.count.sm { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--primary); color: #fff; font: 500 10px/18px var(--font-mono); text-align: center; }
+.topbar .tabs { display: flex; align-items: stretch; gap: 2px; height: 100%; overflow-x: auto; scrollbar-width: none; margin-left: -6px; }
+.topbar .tabs::-webkit-scrollbar { display: none; }
+.topbar .tab { display: flex; align-items: center; gap: 6px; padding: 0 10px; color: var(--muted); font-weight: 500; text-decoration: none; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; }
+.topbar .tab i { font-size: 15px; }
+.topbar .tab:hover { color: var(--ink); text-decoration: none; }
+.topbar .tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.topbar.slim { height: 40px; }
+.pacts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pacts .btn.sm { white-space: nowrap; }
+.pacts-more { border: 1px solid var(--line-strong); width: 28px; height: 28px; }
+@media (max-width: 640px) { .pacts .btn.sm { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; } }

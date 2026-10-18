@@ -1,4 +1,5 @@
 "use client";
+import { usePageActions } from "@/components/PageActions";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Err } from "@/components/ui";
@@ -64,6 +65,7 @@ export default function Talent() {
   const divLabel = (k: string) => lib?.divisions.find((d) => d.key === k)?.label || k;
   const divColor = (k: string) => lib?.divisions.find((d) => d.key === k)?.color || "var(--faint)";
   const syncing = lib?.source.sync.state === "running";
+  usePageActions({ more: [{ label: syncing ? "Updating the roster…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, hint: "from GitHub", onSelect: update }] }, [syncing]);
 
   return (
     <div>
@@ -78,7 +80,6 @@ export default function Talent() {
           <i className="ri-search-line" style={{ position: "absolute", left: 10, top: 10 }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: content, SEO, sales, React, finance…" style={{ paddingLeft: 32 }} autoFocus />
         </div>
-        <button className="btn" onClick={update} disabled={syncing} title="Download the latest roster from GitHub"><i className="ri-refresh-line" />{syncing ? "Updating…" : "Update roster"}</button>
       </div>
 
       {lib && lib.divisions.length > 0 && (
