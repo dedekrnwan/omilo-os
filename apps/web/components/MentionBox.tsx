@@ -128,7 +128,8 @@ export default function MentionBox({ value, onChange, staff, placeholder, ariaEx
   useEffect(() => {
     const el = ref.current; if (!el) return;
     if (value !== last.current) { renderDom(el, value, names, looks); last.current = value; }
-    else if (document.activeElement !== el) renderDom(el, value, names, looks);
+    // idle refresh only for mention-bearing text while unfocused, so plain typing is never rebuilt under the user
+    else if (value.includes("@") && document.activeElement !== el) renderDom(el, value, names, looks);
   }, [value, names, looks]);
 
   // Expose the handle; methods read ref.current lazily so there is no mount-order race with the parent's hooks.
@@ -159,7 +160,11 @@ export default function MentionBox({ value, onChange, staff, placeholder, ariaEx
       const sel = window.getSelection(), el = ref.current; if (!sel || !sel.rangeCount || !el) return;
       const r = sel.getRangeAt(0); if (!r.collapsed) return; // let the browser delete a real selection
       let chip: Node | null = null;
-      if (e.key === "Backspace") {
+      // a click can resolve the caret onto a chip or its inner svg/name — target the whole chip in that case
+      const near = r.endContainer.nodeType === 1 ? (r.endContainer as Element) : r.endContainer.parentElement;
+      const onChip = near?.closest?.(".mention") || null;
+      if (onChip && el.contains(onChip)) chip = onChip;
+      else if (e.key === "Backspace") {
         if (r.endContainer === el) chip = el.childNodes[r.endOffset - 1] || null;
         else if (r.endContainer.nodeType === 3 && r.endOffset === 0) chip = r.endContainer.previousSibling;
       } else {
