@@ -1,5 +1,5 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image desktop desktop-runtime desktop-dev reset reset-password restore-connectors db db-stop db-logs import-sqlite
+.PHONY: dev api venv web test cli image desktop desktop-app desktop-runtime desktop-dev reset reset-password restore-connectors db db-stop db-logs import-sqlite
 
 # Omilo needs Postgres (with pgvector) and Redis. `make dev` starts both in Docker first (docker-compose.dev.yml).
 dev: db web api
@@ -53,12 +53,25 @@ image:
 # Omilo for macOS: one app with everything inside (Postgres, Valkey, Python, Node), no Docker. Run on a Mac with
 # Xcode Command Line Tools, Rust (rustup.rs), uv and Node. The .dmg lands in apps/desktop/src-tauri/target/release/
 # bundle/dmg. Set APPLE_SIGNING_IDENTITY to sign with your Developer ID (default: ad hoc). See docs/desktop.md.
+# rustup puts cargo in ~/.cargo/bin, which a Terminal opened before installing it doesn't have yet
+export PATH := $(HOME)/.cargo/bin:$(PATH)
+
 desktop-runtime:
 	scripts/desktop/build-runtime.sh
 	scripts/desktop/sign-runtime.sh
 
-desktop: desktop-runtime
+# Builds the runtime only when it isn't there yet; `make desktop-runtime` rebuilds it (e.g. after changing apps/api).
+desktop:
+	@test -f dist/runtime/VERSION || $(MAKE) desktop-runtime
+	@$(MAKE) desktop-app
+
+# Just the app around the existing dist/runtime: Omilo.app and the .dmg.
+desktop-app:
+	@command -v cargo >/dev/null 2>&1 || { echo "The Mac app is built with Rust. Install it (one line, then open a new Terminal):"; \
+	  echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"; exit 1; }
+	@test -f dist/runtime/VERSION || { echo "Build the runtime first: make desktop-runtime"; exit 1; }
 	cd apps/desktop && npm install --no-audit --no-fund && npx tauri build --bundles app,dmg
+	@echo "Done: $$(ls -d apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg)"
 
 # The app against the runtime in dist/runtime, without packaging (fast to try changes to the shell).
 desktop-dev:
