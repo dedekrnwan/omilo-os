@@ -103,6 +103,7 @@ if want postgres; then
   relink "$OUT/pgsql" "$OUT/pgsql/bin" "$OUT/pgsql/lib"
   "$OUT/pgsql/bin/postgres" --version
   ls "$OUT/pgsql/share/extension/vector.control" >/dev/null
+  rm -rf "$work"  # ~200 MB of build scratch; the source download stays cached
 fi
 
 # ------------------------------------------------------------------ Valkey (Redis, BSD-licensed)
@@ -113,6 +114,7 @@ if want valkey; then
   tar -xf "$CACHE/valkey-$VALKEY_VERSION.tar" -C "$work" --strip-components=1
   (cd "$work" && make -j"$JOBS" BUILD_TLS=no USE_SYSTEMD=no MALLOC=libc >/dev/null)
   cp "$work/src/valkey-server" "$OUT/valkey/bin/"
+  rm -rf "$work"
   "$OUT/valkey/bin/valkey-server" --version
 fi
 
