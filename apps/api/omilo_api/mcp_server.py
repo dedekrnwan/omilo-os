@@ -70,6 +70,18 @@ TOOLS: list[dict] = [
     {"name": "offer_choices", "description": "Show the founder clickable options in the current chat or task thread (e.g. pick a direction). Their pick comes back as their next message.",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id, if this is about a task"), "question": _s("string", "short question"),
                      "options": _s("array", "2-6 short options", items={"type": "string"})}, "required": ["question", "options"]}},
+    {"name": "request_access", "description": "Ask the founder for access to a folder, connector or skill you need but don't have. "
+                                               "Renders an inline card in the current chat/task thread and files it in the Inbox. "
+                                               "kind: folder | connector | skill. "
+                                               "target (folder): {path, access: read|write, commands: bool}. "
+                                               "target (connector): {id}. "
+                                               "target (skill): {slug}.",
+     "inputSchema": {"type": "object", "properties": {
+         "task_id": _s("string", "task id, if this is about a task"),
+         "kind": _s("string", "folder | connector | skill", enum=["folder", "connector", "skill"]),
+         "target": _s("object", "what you need access to — shape depends on kind"),
+         "reason": _s("string", "why you need it (shown in the Inbox card)"),
+     }, "required": ["kind", "target", "reason"]}},
     {"name": "docs_search", "description": "Search the shared Docs (notes for the owner and all helpers) by words. Returns paths, titles and snippets.",
      "inputSchema": {"type": "object", "properties": {"query": _s("string", "words to look for; empty lists recent docs")}, "required": []}},
     {"name": "docs_read", "description": "Read one doc from the shared Docs, with its version, [[links]] and backlinks.",
@@ -319,6 +331,25 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             raise S.DomainError("no open task or chat to show the options in")
         m = S.post_message(db, th, "agent", st.id, str(args["question"]), blocks=[{"type": "choices", "options": opts}])
         return "allowed", {"message_id": m.id, "thread_id": th.id}
+
+    if name == "request_access":
+        from .events import current_run
+
+        kind = str(args.get("kind") or "")
+        target = args.get("target") if isinstance(args.get("target"), dict) else {}
+        reason = str(args.get("reason") or "").strip()
+        if not reason:
+            raise S.DomainError("reason is required")
+        task_id, thread_id = current_run(db, st.id, args.get("task_id"))
+        if task_id:
+            t = S.task_for_staff(db, st, task_id)
+            th = S.get_or_create_thread(db, "task", t.id, st.id, t.brief[:120])
+        elif thread_id:
+            th = db.get(S.Thread, thread_id)
+        else:
+            raise S.DomainError("no open task or chat to attach the access request to")
+        item = S.request_access(db, st, task_id, thread_id, kind, target, reason, th=th)
+        return "allowed", {"decision": "needs_approval", "request_id": item.id, "thread_id": th.id}
     if name == "update_kpi":
         if policy.level_for("kpi.write", st.permissions) < policy.DO_AND_TELL:
             raise S.DomainError("you may not write KPIs; ask Finance or propose it", 403)

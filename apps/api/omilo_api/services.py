@@ -455,6 +455,57 @@ def alert(db: Session, title: str, body: str, staff_id: str | None, task_id: str
     return item
 
 
+# ---------------------------------------------------------------- access requests
+_VALID_ACCESS_KINDS = {"folder", "connector", "skill"}
+
+
+def request_access(
+    db: Session,
+    st: "Staff",
+    task_id: str | None,
+    thread_id: str | None,
+    kind: str,
+    target: dict,
+    reason: str,
+    th: "Thread | None" = None,
+) -> "InboxItem":
+    """Create an access-request InboxItem and post an inline card into the chat/task thread.
+
+    ``th`` may be passed pre-resolved by the caller (MCP handler); if omitted the function
+    does NOT resolve it itself — the caller is responsible for providing a valid thread.
+    """
+    import json as _json
+
+    if kind not in _VALID_ACCESS_KINDS:
+        raise DomainError(f"kind must be one of: {', '.join(sorted(_VALID_ACCESS_KINDS))}")
+    item = InboxItem(
+        kind="access_request",
+        staff_id=st.id,
+        task_id=task_id,
+        title=reason[:300],
+        body=_json.dumps({"kind": kind, "target": target, "reason": reason}),
+        level="decision",
+        blocking=False,
+    )
+    db.add(item)
+    db.flush()  # obtain item.id without committing
+
+    if th is not None:
+        text = f"Access request: {reason[:200]}"
+        post_message(
+            db, th, "agent", st.id, text,
+            blocks=[
+                {"type": "text", "text": text},
+                {"type": "access_request", "request_id": item.id, "kind": kind, "target": target, "reason": reason},
+            ],
+        )
+    # post_message already commits; if th is None we still need to commit the item
+    else:
+        db.commit()
+
+    return item
+
+
 # ---------------------------------------------------------------- threads & messages
 def get_or_create_thread(db: Session, scope: str, ref_id: str | None, staff_id: str, title: str = "") -> Thread:
     q = select(Thread).where(Thread.scope == scope, Thread.staff_id == staff_id)
