@@ -27,8 +27,14 @@ def test_spend_is_high():
 
 
 def test_internal_draft_is_low_or_medium():
-    """docs.write with an internal-draft summary → low or medium (never escalated to high)."""
-    assert classify_risk("docs.write", "draft a blog post in Docs", worker_label="low") in ("low", "medium")
+    """docs.write with an internal-draft summary → low or medium (never escalated to high).
+
+    NOTE: 'draft a blog post in Docs' previously captured this intent but now fires high
+    because 'post' (outward verb) co-occurs with 'blog' (outward target).  That is an
+    acceptable false-high per the generalised outward-detection design.  Use a summary
+    that does not pair an outward verb with a target word.
+    """
+    assert classify_risk("docs.write", "draft an internal spec in Docs", worker_label="low") in ("low", "medium")
 
 
 def test_worker_cannot_downgrade_but_can_upgrade():
@@ -376,3 +382,99 @@ def test_release_to_production_low_label_cannot_downgrade():
 def test_dm_customer_low_label_cannot_downgrade():
     """Outward DM must stay high regardless of worker_label."""
     assert classify_risk("ops.command", "dm the customer", worker_label="low") == "high"
+
+
+# ---------------------------------------------------------------------------
+# Round-2 fix — generalised outward verb × platform detection
+# Tests pin the three original bypasses plus a representative matrix.
+# ---------------------------------------------------------------------------
+
+# Original bypasses that triggered the fix (all must be "high"):
+
+def test_share_on_linkedin_docs_write_is_high():
+    """docs.write + 'share this on LinkedIn' (empty-ish action, label low) → high."""
+    assert classify_risk("docs.write", "share this on LinkedIn", worker_label="low") == "high"
+
+
+def test_share_announcement_twitter_empty_action_is_high():
+    """Empty action type + 'share our announcement on Twitter' → high."""
+    assert classify_risk("", "share our announcement on Twitter", worker_label="low") == "high"
+
+
+def test_share_externally_social_media_empty_action_is_high():
+    """Empty action type + 'share this externally on social media' → high."""
+    assert classify_risk("", "share this externally on social media", worker_label="low") == "high"
+
+
+# Outward-verb × platform matrix (spot-check ~12+ representative combos):
+
+@pytest.mark.parametrize("verb,target", [
+    ("post", "Instagram"),
+    ("post", "Twitter"),
+    ("post", "LinkedIn"),
+    ("share", "Instagram"),
+    ("share", "Twitter"),
+    ("share", "Facebook"),
+    ("share", "social media"),
+    ("publish", "LinkedIn"),
+    ("publish", "the public"),
+    ("announce", "Twitter"),
+    ("send", "the client"),
+    ("upload", "TikTok"),
+    ("broadcast", "social media"),
+    ("share", "the customer"),
+    ("share", "newsletter"),
+    ("post", "followers"),
+])
+def test_outward_verb_plus_target_is_high(verb, target):
+    """Outward verb × platform/target combo → high with worker_label='low'."""
+    summary = f"{verb} the update on {target}"
+    result = classify_risk("docs.write", summary, worker_label="low")
+    assert result == "high", (
+        f"Expected 'high' for ({verb!r}, {target!r}), got {result!r} — summary: {summary!r}"
+    )
+
+
+# Standalone always-outward verbs (high even without explicit platform):
+
+def test_tweet_about_launch_is_high():
+    """'tweet about the launch' is inherently outward → high."""
+    assert classify_risk("docs.write", "tweet about the launch", worker_label="low") == "high"
+
+
+def test_dm_the_customer_standalone_is_high():
+    """'dm the customer' — 'dm' is hard-rule → high."""
+    assert classify_risk("", "dm the customer about the promotion", worker_label="low") == "high"
+
+
+def test_broadcast_to_everyone_is_high():
+    """'broadcast to everyone' — standalone broadcast → high."""
+    assert classify_risk("", "broadcast to everyone on the team list", worker_label="low") == "high"
+
+
+# Precision regression — these MUST NOT escalate to high:
+
+def test_log_debug_message_is_not_high_r2():
+    """'log a debug message' has no outward target → NOT high (regression guard)."""
+    result = classify_risk("ops.command", "log a debug message", worker_label="low")
+    assert result in ("low", "medium")
+
+
+def test_write_release_notes_internal_r2():
+    """'write release notes' — internal docs task → NOT high (regression guard)."""
+    result = classify_risk("docs.write", "write release notes for v2.1", worker_label="low")
+    assert result in ("low", "medium")
+
+
+def test_transfer_knowledge_to_team_r2():
+    """'transfer knowledge to the team' — no money context → NOT high (regression guard)."""
+    result = classify_risk("docs.write", "transfer knowledge to the team", worker_label="low")
+    assert result in ("low", "medium")
+
+
+def test_draft_blog_post_internal_review_r2():
+    """'draft a blog post outline for internal review' — 'blog' target + draft verb;
+    this is an acceptable false-high because 'blog' is an outward target. Assert high."""
+    result = classify_risk("docs.write", "draft a blog post outline for internal review", worker_label="low")
+    # "post" (verb) + "blog" (target) → high. Acceptable false-high; test is honest.
+    assert result == "high"

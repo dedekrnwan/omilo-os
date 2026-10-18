@@ -154,6 +154,103 @@ _MESSAGE_SAFE_PATTERN: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Outward-verb × platform/target generalisation
+#
+# An OUTWARD VERB co-occurring with a SOCIAL/PUBLIC PLATFORM-OR-TARGET in the
+# same summary string signals an external communication action and must be "high"
+# regardless of worker_label.
+#
+# Design notes:
+#   - Only match whole words (\b anchors).  "sharing" ≠ "haring"; "posted" is
+#     covered via _OUTWARD_VERB_INFLECTIONS below.
+#   - "x" as a platform is ambiguous; we omit it and rely on "twitter" instead.
+#   - "message" is listed here as an outward verb but the existing safe-pattern
+#     check (_MESSAGE_SAFE_PATTERN) is still preserved by applying it separately.
+#     To keep this simple, the verb+target rule fires on "message" only; the
+#     standalone "message" without a target still goes through the existing
+#     _MESSAGE_OUTWARD_PATTERN path.
+#   - "tweet"/"dm"/"broadcast"/"publish" already escalate via HARD_RULE_PATTERNS
+#     or the standalone-verb list below; they are also listed here for clarity.
+# ---------------------------------------------------------------------------
+
+_OUTWARD_VERBS: frozenset[str] = frozenset({
+    # base forms
+    "post", "share", "publish", "tweet", "broadcast", "announce",
+    "dm", "message", "send", "upload", "reply", "comment",
+    # common inflections (past/present-participle/3rd-person)
+    "posts", "posting", "posted",
+    "shares", "sharing", "shared",
+    "publishes", "publishing", "published",
+    "tweets", "tweeting", "tweeted",
+    "broadcasts", "broadcasting", "broadcasted",
+    "announces", "announcing", "announced",
+    "messages", "messaging", "messaged",
+    "sends", "sending", "sent",
+    "uploads", "uploading", "uploaded",
+    "replies", "replying", "replied",
+    "comments", "commenting", "commented",
+    "dms", "dmed",
+})
+
+_OUTWARD_TARGETS: frozenset[str] = frozenset({
+    # social platforms
+    "instagram", "twitter", "linkedin", "facebook", "tiktok",
+    "youtube", "threads", "reddit", "whatsapp", "telegram",
+    # generic social
+    "social media", "social",
+    # public-facing concepts
+    "publicly", "public", "the public",
+    # publishing channels
+    "blog", "newsletter",
+    # audience descriptors
+    "audience", "subscribers", "followers",
+    # external stakeholders
+    "the client", "the customer", "the customers",
+    "client", "customer", "customers",
+    "clients",
+})
+
+# Pre-compiled word-boundary patterns for outward verbs.
+_OUTWARD_VERB_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b" + re.escape(v) + r"\b", re.IGNORECASE)
+    for v in _OUTWARD_VERBS
+]
+
+# Pre-compiled patterns for outward targets (multi-word targets first so they
+# match before their constituent words).
+_OUTWARD_TARGET_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b" + re.escape(t) + r"\b", re.IGNORECASE)
+    for t in sorted(_OUTWARD_TARGETS, key=len, reverse=True)  # longest first
+]
+
+# Standalone verbs that are ALWAYS outward, even without an explicit platform
+# token (e.g. "tweet about the launch" is inherently public).
+_STANDALONE_OUTWARD_VERB_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b" + re.escape(v) + r"\b", re.IGNORECASE)
+    for v in (
+        "tweet", "tweets", "tweeting", "tweeted",
+        "broadcast", "broadcasts", "broadcasting", "broadcasted",
+        # "publish"/"published" already in HARD_RULE_PATTERNS
+        # "dm"/"dms" already in HARD_RULE_PATTERNS
+    )
+]
+
+
+def _is_outward_verb_plus_target(summary: str) -> bool:
+    """Return True when the summary pairs an outward verb with an outward target."""
+    has_verb = any(p.search(summary) for p in _OUTWARD_VERB_PATTERNS)
+    if not has_verb:
+        return False
+    has_target = any(p.search(summary) for p in _OUTWARD_TARGET_PATTERNS)
+    return has_target
+
+
+def _is_standalone_outward_verb(summary: str) -> bool:
+    """Return True for verbs that are inherently outward even without a target."""
+    return any(p.search(summary) for p in _STANDALONE_OUTWARD_VERB_PATTERNS)
+
+
 # "release" in deploy/money context only:
 _RELEASE_DANGEROUS_PATTERN: re.Pattern[str] = re.compile(
     r"\breleas(?:e|ing)\s+(?:to\s+)?(?:production|prod|staging|live|app|build|version|the\s+build|the\s+update|the\s+app|the\s+version)\b"
@@ -171,6 +268,23 @@ _RELEASE_SAFE_PATTERN: re.Pattern[str] = re.compile(
 
 def _is_context_sensitive_hard_rule(summary: str) -> bool:
     """Return True if a context-sensitive dual-use word fires in its dangerous sense."""
+    # --- Outward verb × platform/target generalisation ---
+    # Must come before more specific checks so the broad rule fires first.
+    # Note: "message" is in _OUTWARD_VERBS; we exclude it here when the summary
+    # matches a known safe pattern to preserve dual-use precision.
+    if _is_outward_verb_plus_target(summary):
+        # Carve out: "log a debug message", "draft a message template", etc.
+        # Those are caught by _MESSAGE_SAFE_PATTERN and their summaries will not
+        # contain an outward TARGET (blog/social/customer/etc.), so in practice
+        # the target check already guards them. Belt-and-suspenders: also apply
+        # the safe-message check here.
+        if not _MESSAGE_SAFE_PATTERN.search(summary):
+            return True
+
+    # --- Standalone always-outward verbs (tweet, broadcast) ---
+    if _is_standalone_outward_verb(summary):
+        return True
+
     # --- "post" as outward action ---
     if _POST_OUTWARD_PATTERN.search(summary):
         return True
