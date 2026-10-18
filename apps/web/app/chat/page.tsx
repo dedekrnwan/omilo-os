@@ -12,6 +12,7 @@ import Lineage from "@/components/Lineage";
 import { Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
 import { useMentions } from "@/components/Mentions";
+import MentionBox, { type MentionHandle } from "@/components/MentionBox";
 import { helperItems, taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
@@ -209,7 +210,7 @@ function WorkspaceInner() {
   const nMsgs = current?.messages.length || 0;
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
-  const box = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<MentionHandle>(null);
   useQuote(current?.id, setText, () => box.current?.focus());
   const startJob = async (brief: string) => {
     const who = staff.find((x) => x.is_chief) || staff[0];
@@ -220,7 +221,7 @@ function WorkspaceInner() {
     } catch (e: any) { setErr(e.message); }
   };
   const onSlash = (a: SlashAction, rest: string) => {
-    const focus = () => setTimeout(() => { const el = box.current; if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } }, 0);
+    const focus = () => setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(h.getValue().length); } }, 0);
     if (a.kind === "insert") { setText(a.text + rest); focus(); }
     else if (a.kind === "send") { setText(""); send(rest.trim() ? `${a.text}\n\n${rest}` : a.text); }
     else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("omilo:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
@@ -341,9 +342,9 @@ function WorkspaceInner() {
               <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
                 {slash.menu}
                 {mention.menu}
-                <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)}
+                <MentionBox handleRef={box} value={text} onChange={setText} staff={staff}
                   placeholder={isGroup ? `Message ${threadLabel(current)}… (@ to mention a helper, / for commands)` : `Message ${threadLabel(current)}… (@ to bring someone in, / for commands)`}
-                  aria-expanded={slash.open || mention.open} aria-haspopup="listbox"
+                  ariaExpanded={slash.open || mention.open}
                   onKeyDown={(e) => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
                 <div className="row">
                   <ComposerTools threadId={tid} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
