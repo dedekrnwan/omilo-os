@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { BASE, api } from "@/lib/api";
+import { playMascot } from "@/components/mascotSound";
 
 /* Each helper gets its own little character: an original mascot drawn in SVG, always the same for that helper
    (colour and shape come from its id), with a prop that hints at its job. The owner can change colour, shape and
@@ -127,6 +128,24 @@ function track() {
     if (prev !== next) { el.dataset.look = next; el.style.setProperty("--ex", `${ex.toFixed(2)}px`); el.style.setProperty("--ey", `${ey.toFixed(2)}px`); }
   }
 }
+/* A click (or tap) on any mascot makes it hop and say something in its own voice (see mascotSound.ts). Registered
+   once, for still mascots and pictures too; the hop is skipped when the system asks for reduced motion. */
+let clicking = false;
+function listenClicks() {
+  if (clicking || typeof window === "undefined") return;
+  clicking = true;
+  const calm = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const el = (e.target as Element | null)?.closest?.(".av-wrap, svg.mascot, img.mascot");
+    if (!el) return;
+    const m = (el.matches(".mascot") ? el : el.querySelector(".mascot")) as HTMLElement | null;
+    if (m?.dataset.shape) playMascot({ shape: m.dataset.shape, prop: m.dataset.prop, color: m.dataset.color, mood: m.dataset.mood, sleeping: m.dataset.sleeping === "1" });
+    if (calm) return;
+    el.classList.remove("hop"); void (el as HTMLElement).getBoundingClientRect(); el.classList.add("hop");
+    setTimeout(() => el.classList.remove("hop"), 520);
+  }, { passive: true });
+}
 function listen() {
   if (listening || typeof window === "undefined") return;
   listening = true;
@@ -135,14 +154,6 @@ function listen() {
   window.addEventListener("pointermove", move, { passive: true });
   window.addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(track); }, { passive: true, capture: true });
   document.addEventListener("pointerleave", () => { px = py = -1e4; if (!frame) frame = requestAnimationFrame(track); });
-  // a click (or tap) on any mascot makes it hop
-  document.addEventListener("pointerdown", (e) => {
-    const host = (e.target as Element | null)?.closest?.(".av-wrap, svg.mascot, img.mascot");
-    const el = host;
-    if (!el) return;
-    el.classList.remove("hop"); void (el as HTMLElement).getBoundingClientRect(); el.classList.add("hop");
-    setTimeout(() => el.classList.remove("hop"), 520);
-  }, { passive: true });
 }
 
 const INK = "#1c1917";
@@ -168,17 +179,19 @@ export function Mascot({ look, size = 32, sleeping = false, title, bare, still, 
   const uid = useId().replace(/:/g, "");
   const clip = `tile-${uid}`;  // unique per drawing: a shared id breaks when the first copy is hidden
   const ref = useRef<SVGSVGElement>(null);
+  useEffect(() => { listenClicks(); }, []);
   useEffect(() => {
     const el = ref.current;
     if (!el || still) return;
     listen(); alive.add(el);
     return () => { alive.delete(el); };
   }, [still]);
-  if (look.image) return <img className="mascot img" src={look.image.startsWith("fil_") ? `${BASE}/api/files/${look.image}` : look.image} alt={title || ""} width={size} height={size} />;
+  const voice = { "data-shape": look.shape, "data-prop": look.prop, "data-color": look.color, "data-mood": mood || undefined, "data-sleeping": sleeping ? "1" : undefined };
+  if (look.image) return <img {...voice} className="mascot img" src={look.image.startsWith("fil_") ? `${BASE}/api/files/${look.image}` : look.image} alt={title || ""} width={size} height={size} />;
   // blink at a different moment for each helper
   let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) % 997;
   return (
-    <svg ref={ref} className={`mascot ${still ? "still" : ""} ${size < 22 ? "tiny" : ""} ${mood ? `mood-${mood}` : ""}`} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}
+    <svg ref={ref} {...voice} className={`mascot ${still ? "still" : ""} ${size < 22 ? "tiny" : ""} ${mood ? `mood-${mood}` : ""}`} width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title || "helper"}
       style={{ ["--blink" as any]: `${(h % 40) / 10}s` }}>
       <defs><clipPath id={clip}><rect width="64" height="64" rx="18" /></clipPath></defs>
       <g clipPath={bare ? undefined : `url(#${clip})`}>

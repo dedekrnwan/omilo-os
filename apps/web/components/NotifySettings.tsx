@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { mascotSoundOn, playMascot, setMascotSound } from "./mascotSound";
 import { ago, api, when } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 import { NotifyConfig, NotifyPrefs, disablePush, enableNotifications, permission } from "./Notify";
@@ -13,6 +14,8 @@ export default function NotifySettings({ embedded = false }: { embedded?: boolea
   const [perm, setPerm] = useState<string>("default");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [voices, setVoices] = useState(true);
+  useEffect(() => setVoices(mascotSoundOn()), []);
   const load = useCallback(async () => { setPerm(permission()); try { setCfg(await api<NotifyConfig>("/notify")); } catch { /* ignore */ } }, []);
   usePoll(load, 60000, [load]);
   if (!cfg) return null;
@@ -98,6 +101,11 @@ export default function NotifySettings({ embedded = false }: { embedded?: boolea
       <button type="button" className="mi" style={{ paddingLeft: 0 }} onClick={() => save({ sound: !p.sound })}>
         <span className="t"><b>Play a sound</b><span className="small">for approvals and questions while Omilo is open</span></span>
         <span className={`switch ${p.sound ? "on" : ""}`} role="switch" aria-checked={p.sound}><i /></span>
+      </button>
+      <button type="button" className="mi" style={{ paddingLeft: 0 }}
+        onClick={() => { const on = !voices; setMascotSound(on); setVoices(on); if (on) playMascot({ shape: "blob", prop: "crown", color: "#6366f1" }); }}>
+        <span className="t"><b>Mascot sounds</b><span className="small">each helper makes its own little sound when you click it (this browser only)</span></span>
+        <span className={`switch ${voices ? "on" : ""}`} role="switch" aria-checked={voices}><i /></span>
       </button>
       {err && <div className="callout" style={{ marginTop: 10 }}>{err}</div>}
 
