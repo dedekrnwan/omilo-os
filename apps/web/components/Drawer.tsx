@@ -7,16 +7,21 @@ export default function Drawer({ open, title, sub, icon, onClose, footer, childr
   open: boolean; title: ReactNode; sub?: ReactNode; icon?: ReactNode; onClose: () => void; footer?: ReactNode; children: ReactNode; wide?: boolean;
 }) {
   const panel = useRef<HTMLElement>(null);
+  // Keep the latest onClose without making it an effect dependency: callers pass an inline
+  // arrow (new identity every render), and if the effect below re-ran on that it would re-focus
+  // the first field on every keystroke — stealing the cursor back to it while you type.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", key);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // put the cursor in the first field, so typing can start right away
+    // put the cursor in the first field once, when the drawer opens, so typing can start right away
     const t = setTimeout(() => panel.current?.querySelector<HTMLElement>("input:not([type=hidden]):not([type=checkbox]), textarea, select")?.focus(), 60);
     return () => { window.removeEventListener("keydown", key); document.body.style.overflow = prev; clearTimeout(t); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <>

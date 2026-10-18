@@ -48,6 +48,19 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--f
 button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
 label { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); margin: 14px 0 6px; }
 input[type="checkbox"], input[type="radio"] { width: 16px; min-height: 16px; height: 16px; accent-color: var(--primary); }
+/* Date & time fields: keep the native picker but make the field read the same as every other input,
+   and tame the browser chrome so date/time looks consistent across forms and browsers. */
+input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"] { font-variant-numeric: tabular-nums; }
+input[type="date"]::-webkit-datetime-edit, input[type="time"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit, input[type="month"]::-webkit-datetime-edit { color: var(--ink); padding: 0; }
+input[type="date"]:invalid::-webkit-datetime-edit, input[type="time"]:invalid::-webkit-datetime-edit,
+input[type="datetime-local"]:invalid::-webkit-datetime-edit { color: var(--faint); }
+input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator, input[type="month"]::-webkit-calendar-picker-indicator {
+  cursor: pointer; opacity: .5; filter: grayscale(1); transition: opacity .15s;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover, input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[type="month"]::-webkit-calendar-picker-indicator:hover { opacity: .85; }
 
 /* ------------------------------------------------------------------ app frame: sidebar + inset workspace */
 .frame { display: flex; height: 100dvh; overflow: hidden; }
