@@ -62,8 +62,8 @@ function VendorSection({ v, onReload }: { v: VendorCard; onReload: () => void })
   const doTest = async () => {
     setTesting(true); setTestResult(null); setErr(null);
     try {
-      const r = await api<{ ok: boolean; error?: string }>("/ai/check", { body: {} });
-      setTestResult({ ok: r.ok, text: r.ok ? "Connection works." : (r.error || "Check failed.") });
+      const r = await api<{ ok: boolean; error?: string; detail?: string }>("/ai/check", { body: { provider: v.id } });
+      setTestResult({ ok: r.ok, text: r.ok ? (r.detail || "Key found, ready to use.") : (r.error || "Check failed.") });
     } catch (e: any) { setErr(e.message); } finally { setTesting(false); }
   };
 
@@ -136,10 +136,10 @@ function VendorSection({ v, onReload }: { v: VendorCard; onReload: () => void })
               placeholder={v.key_set ? "Enter a new key to replace the saved one" : "Paste key here"}
               value={keyInput}
               onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && (keyInput.trim() || v.key_set)) doSaveKey(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && keyInput.trim()) doSaveKey(); }}
               style={{ flex: 1 }}
             />
-            <button className="btn primary" disabled={saving || (!keyInput.trim() && !v.key_set)} onClick={doSaveKey}>
+            <button className="btn primary" disabled={saving || !keyInput.trim()} onClick={doSaveKey}>
               {saving ? "Saving…" : "Save"}
             </button>
             <button className="btn" onClick={() => { setAddingKey(false); setKeyInput(""); setErr(null); }}>Cancel</button>

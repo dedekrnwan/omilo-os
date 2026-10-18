@@ -1045,11 +1045,23 @@ def ai_providers(db: Session = Depends(get_db), user: User = Depends(current_use
 
 class AiCheckIn(BaseModel):
     api_key: str | None = None
+    provider: str | None = None  # a LiteLLM vendor id to test; omitted/claude(-direct) → Claude
 
 
 @router.post("/ai/check")
 async def ai_check(body: AiCheckIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Test a Claude key (the given one, or the saved one) and list the models it can use."""
+    """Test one engine's key. For a LiteLLM vendor, confirm its key and model resolve (no paid
+    call is made). For Claude (default), test the key and list the models it can use."""
+    prov = (body.provider or "").strip()
+    if prov in _LITELLM_PROVIDER_IDS:
+        from ..engines.litellm_engine import LiteLLMEngine
+
+        cfg = {"provider": prov, **({"api_key": body.api_key.strip()} if (body.api_key or "").strip() else {})}
+        res = await LiteLLMEngine().health(cfg)
+        # Normalise to the {ok, error} shape the web Test button reads; keep detail for success text.
+        return {"ok": res.get("ok", False), "error": None if res.get("ok") else res.get("detail", "Could not verify this key."),
+                "detail": res.get("detail", "")}
+
     from ..engines import claude
 
     key = (body.api_key or "").strip() or S.ai_api_key(db, "claude") or ""

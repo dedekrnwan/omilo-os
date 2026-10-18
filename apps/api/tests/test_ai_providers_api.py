@@ -112,8 +112,16 @@ def test_all_eight_vendor_ids_accepted_with_key(owner):
         state = r.json()
         assert state["provider"] == pid, f"provider field mismatch for {pid}: {state['provider']}"
 
-    # Reset to fake
+    # Reset to fake AND remove the vendor keys we stored — the owner fixture is session-scoped,
+    # so leftover keys would make key_set=True for other tests (e.g. test_harness_engines).
     owner.post("/api/ai", json={"provider": "fake"})
+    from omilo_api.db import session_scope
+    from omilo_api import services as S
+    with session_scope() as db:
+        keys = dict(S.get_setting(db, "ai_keys", None) or {})
+        for pid in VENDOR_IDS:
+            keys.pop(pid, None)
+        S.set_setting(db, "ai_keys", keys)
 
 
 def test_unknown_provider_rejected(owner):
@@ -129,3 +137,38 @@ def test_existing_providers_still_work(owner):
         assert r.status_code == 200, f"provider={pid} → {r.status_code}: {r.text}"
     # Reset
     owner.post("/api/ai", json={"provider": "fake"})
+
+
+def test_ai_check_is_provider_aware(owner):
+    """POST /api/ai/check with a vendor provider tests THAT vendor's key, not the Claude slot.
+
+    No Claude key is involved here. With no openai key, the check for openai must fail with an
+    openai-specific message (not 'Paste your Claude API key'). After a key is stored, it passes.
+    The Claude key slot is never consulted for a vendor check (no paid/network call is made).
+    """
+    # Ensure openai has no stored key for a clean start.
+    from omilo_api.db import session_scope
+    from omilo_api import services as S
+    with session_scope() as db:
+        keys = dict(S.get_setting(db, "ai_keys", None) or {})
+        keys.pop("openai", None)
+        S.set_setting(db, "ai_keys", keys)
+
+    # No key yet → not ok, and the error is NOT the Claude-only message.
+    r = owner.post("/api/ai/check", json={"provider": "openai"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is False, body
+    assert "Claude" not in (body.get("error") or ""), f"vendor check leaked Claude message: {body}"
+
+    # A supplied key resolves → ok (key+model resolution, no network call).
+    r2 = owner.post("/api/ai/check", json={"provider": "openai", "api_key": "sk-openai-check-0001"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["ok"] is True, r2.json()
+
+    # Reset
+    owner.post("/api/ai", json={"provider": "fake"})
+    with session_scope() as db:
+        keys = dict(S.get_setting(db, "ai_keys", None) or {})
+        keys.pop("openai", None)
+        S.set_setting(db, "ai_keys", keys)
