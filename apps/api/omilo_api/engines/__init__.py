@@ -85,4 +85,10 @@ def get_engine(config: dict) -> Engine:
         from .litellm_engine import LiteLLMEngine
 
         return LiteLLMEngine()
+    if t == "graph":
+        # Lazy import: graph.engine imports from this package, so importing it at
+        # module scope would create a cycle. Resolving it only here keeps startup clean.
+        from ..graph.engine import GraphEngine
+
+        return GraphEngine()
     raise ValueError(f"unknown engine type '{t}'")

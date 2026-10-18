@@ -24,6 +24,7 @@ dependencies = [
   "pypdf>=4.0",
   "pywebpush>=2.0",
   "litellm>=1.81",
+  "langgraph>=1.0,<2",
 ]
 
 [project.optional-dependencies]
