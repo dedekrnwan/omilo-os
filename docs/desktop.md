@@ -65,7 +65,7 @@ open apps/desktop/src-tauri/target/release/bundle/dmg
 The first build compiles Postgres and Valkey from source (a few minutes). Downloads are cached in `dist/cache`.
 
 To build only one part again: `ONLY=python scripts/desktop/build-runtime.sh` (or `postgres`, `valkey`, `node`,
-`web`). `make desktop` builds the runtime only the first time; `make desktop-runtime` rebuilds it (after changing `apps/api`) and `make desktop-app` rebuilds just the app. `make desktop-dev` runs the app against `dist/runtime` without packaging it.
+`web`). `make desktop` builds the runtime only the first time; `make desktop-runtime` rebuilds it (after changing `apps/api`) and `make desktop-app` rebuilds just the app, copying in your current `apps/api` code first (`scripts/desktop/sync-api.sh`). `make desktop-dev` runs the app against `dist/runtime` without packaging it.
 
 ### In GitHub Actions
 
