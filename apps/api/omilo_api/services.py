@@ -3,6 +3,7 @@
 Every state change writes an audit event. Functions take an open Session and commit themselves.
 """
 import datetime as dt
+import logging
 import re
 import secrets
 from pathlib import Path
@@ -648,6 +649,13 @@ def decide_access(db: Session, item: "InboxItem", scope: str, by: str, note: str
         if card_msg:
             break
     thread_id = card_msg.thread_id if card_msg else None
+    # Safe degrade if card Message not found (e.g., staff_id is None): thread_id stays None,
+    # follow-up task spawn is still skipped but the decision is recorded. Log for visibility.
+    if card_msg is None:
+        logging.getLogger(__name__).warning(
+            f"decide_access: card message not found for access request {item.id}; "
+            f"thread_id will be None, no follow-up task sent"
+        )
 
     body = _json.loads(item.body)
     reason = body.get("reason", "")

@@ -3,6 +3,7 @@ import datetime as dt
 import json
 import os
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -542,7 +543,7 @@ def answer(iid: str, body: AnswerIn, db: Session = Depends(get_db), user: User =
 
 
 class AccessDecisionIn(BaseModel):
-    scope: str  # once | always | deny
+    scope: Literal["once", "always", "deny"]
     note: str = ""
 
 

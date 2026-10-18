@@ -275,3 +275,11 @@ def test_decide_access_twice_conflicts(owner, base_url, tmp_path):
 
     r2 = owner.post(f"/api/access/{request_id}/decide", json={"scope": "always"})
     assert r2.status_code == 409, f"expected 409 on second decide, got {r2.status_code}: {r2.text}"
+
+
+def test_decide_access_bad_scope_returns_422(owner, base_url, tmp_path):
+    """POST /api/access/{id}/decide with an invalid scope value returns 422 (Pydantic validation error)."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "never"})
+    assert r.status_code == 422, f"expected 422 for invalid scope 'never', got {r.status_code}: {r.text}"
