@@ -1,5 +1,5 @@
 # Local development on macOS / Linux (Windows: use WSL or run the commands by hand).
-.PHONY: dev api venv web test cli image reset reset-password restore-connectors db db-stop db-logs import-sqlite
+.PHONY: dev api venv web test cli image desktop desktop-runtime desktop-dev reset reset-password restore-connectors db db-stop db-logs import-sqlite
 
 # Omilo needs Postgres (with pgvector) and Redis. `make dev` starts both in Docker first (docker-compose.dev.yml).
 dev: db web api
@@ -49,6 +49,21 @@ cli:
 
 image:
 	docker build -t ghcr.io/super-saga/saga-os:dev .
+
+# Omilo for macOS: one app with everything inside (Postgres, Valkey, Python, Node), no Docker. Run on a Mac with
+# Xcode Command Line Tools, Rust (rustup.rs), uv and Node. The .dmg lands in apps/desktop/src-tauri/target/release/
+# bundle/dmg. Set APPLE_SIGNING_IDENTITY to sign with your Developer ID (default: ad hoc). See docs/desktop.md.
+desktop-runtime:
+	scripts/desktop/build-runtime.sh
+	scripts/desktop/sign-runtime.sh
+
+desktop: desktop-runtime
+	cd apps/desktop && npm install --no-audit --no-fund && npx tauri build --bundles app,dmg
+
+# The app against the runtime in dist/runtime, without packaging (fast to try changes to the shell).
+desktop-dev:
+	@test -x dist/runtime/python/bin/python3 || { echo "Build the runtime first: make desktop-runtime"; exit 1; }
+	cd apps/desktop && npm install --no-audit --no-fund && OMILO_RUNTIME_DIR=$(CURDIR)/dist/runtime npx tauri dev
 
 # Forgot your password? Sets a new one for the owner (run it on the computer that runs Omilo).
 reset-password: venv

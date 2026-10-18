@@ -33,12 +33,15 @@ function chime(critical: boolean) {
   } catch { /* no audio here */ }
 }
 
-export const supported = () => typeof window !== "undefined" && "Notification" in window && "serviceWorker" in navigator;
+/** The Mac app (apps/desktop) puts a small bridge on the page: notifications go to macOS Notification Center. */
+type DesktopBridge = { notify: (n: { title: string; body?: string; url?: string }) => void };
+export const desktop = (): DesktopBridge | null => (typeof window !== "undefined" && (window as any).omiloDesktop) || null;
+export const supported = () => typeof window !== "undefined" && (!!desktop() || ("Notification" in window && "serviceWorker" in navigator));
 export const permission = (): NotificationPermission | "unsupported" | "insecure" =>
-  typeof window === "undefined" ? "unsupported" : !window.isSecureContext ? "insecure" : supported() ? Notification.permission : "unsupported";
+  typeof window === "undefined" ? "unsupported" : desktop() ? "granted" : !window.isSecureContext ? "insecure" : supported() ? Notification.permission : "unsupported";
 
 async function registration(): Promise<ServiceWorkerRegistration | null> {
-  if (!supported() || !window.isSecureContext) return null;
+  if (desktop() || !supported() || !window.isSecureContext) return null;
   try { return await navigator.serviceWorker.register(`${BASE}/sw.js`, { scope: `${BASE}/` }); } catch { return null; }
 }
 
@@ -51,6 +54,7 @@ const b64ToBytes = (s: string) => {
 /** Ask the browser for permission (must run from a click), then subscribe this browser to Web Push. */
 export async function enableNotifications(): Promise<{ ok: boolean; detail: string }> {
   if (permission() === "insecure") return { ok: false, detail: "Browsers only allow notifications on https or localhost. Open Omilo at http://localhost:7700 or behind https." };
+  if (desktop()) return { ok: true, detail: "On. The Omilo app shows them in Notification Center, also while its window is closed (Omilo stays in the menu bar)." };
   if (!supported()) return { ok: false, detail: "This browser does not support notifications. On iPhone, add Omilo to the Home Screen first." };
   const p = await Notification.requestPermission();
   if (p !== "granted") return { ok: false, detail: p === "denied" ? "Notifications are blocked for this site. Allow them in the browser's site settings (the icon left of the address)." : "Not turned on." };
@@ -84,6 +88,8 @@ export async function disablePush(): Promise<void> {
 
 async function systemNotify(n: Notice) {
   if (permission() !== "granted") return;
+  const d = desktop();
+  if (d) { d.notify({ title: n.title, body: n.body, url: BASE + n.url }); return; }
   const reg = await registration();
   const opts: NotificationOptions = { body: n.body, tag: n.tag || undefined, icon: `${BASE}/icon-192.png`, data: { url: BASE + n.url }, requireInteraction: n.level === "critical" };
   if (reg) { await reg.showNotification(n.title, opts); return; }

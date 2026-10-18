@@ -1,0 +1,15 @@
+{
+  "name": "omilo-desktop",
+  "private": true,
+  "version": "0.4.0",
+  "description": "Omilo for macOS: the whole office (database included) in one app",
+  "scripts": {
+    "tauri": "tauri",
+    "icons": "tauri icon app-icon.png",
+    "dev": "tauri dev",
+    "build": "tauri build --bundles app,dmg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0"
+  }
+}

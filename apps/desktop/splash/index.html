@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omilo</title>
+<style>
+  @font-face { font-family: Inter; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: Barlow; src: url(fonts/barlow-condensed-latin-700-normal.woff2) format("woff2"); font-weight: 700; }
+  :root { --bg: #faf9f7; --ink: #1c1917; --muted: #78716c; --line: #e7e5e4; --accent: #6366f1; --bad: #dc2626; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161412; --ink: #f5f5f4; --muted: #a8a29e; --line: #2e2a27; --card: #201d1a; --bad: #f87171; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 Inter, -apple-system, system-ui, sans-serif; display: grid; place-items: center;
+    -webkit-user-select: none; user-select: none; cursor: default; }
+  main { width: min(440px, 100% - 48px); text-align: center; }
+  .mascot { width: 120px; height: 120px; animation: bob 2.4s ease-in-out infinite; filter: drop-shadow(0 10px 18px rgba(99, 102, 241, .22)); }
+  .mascot .eyes { animation: blink 4.2s infinite; transform-origin: 32px 34px; }
+  @keyframes bob { 50% { transform: translateY(-6px); } }
+  @keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+  h1 { font: 700 40px/1 Barlow, Inter, sans-serif; letter-spacing: .5px; margin: 18px 0 6px; }
+  .status { color: var(--muted); min-height: 1.5em; }
+  .dots { display: inline-flex; gap: 5px; margin-top: 18px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .25; animation: dot 1.2s infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; } .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes dot { 30% { opacity: 1; transform: translateY(-3px); } }
+  .first { margin-top: 22px; font-size: 13px; color: var(--muted); }
+  .error { display: none; margin-top: 22px; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .error b { color: var(--bad); display: block; margin-bottom: 4px; }
+  .error p { margin: 0 0 14px; color: var(--muted); font-size: 13px; word-break: break-word; -webkit-user-select: text; user-select: text; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 13px; font-weight: 600; border-radius: 9px; padding: 7px 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  body.failed .dots, body.failed .first { display: none; }
+  body.failed .error { display: block; }
+  body.failed .mascot { animation: none; }
+  @media (prefers-reduced-motion: reduce) { .mascot, .mascot .eyes, .dots i { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+  <svg class="mascot" viewBox="0 0 64 64" aria-hidden="true">
+    <defs><clipPath id="t"><rect width="64" height="64" rx="18"/></clipPath></defs>
+    <g clip-path="url(#t)">
+      <rect width="64" height="64" fill="#fff"/><rect width="64" height="64" fill="#6366f1" opacity=".16"/>
+      <path d="M10 70 C10 34 19 16 32 16 C45 16 54 34 54 70 Z" fill="#6366f1"/>
+      <g class="eyes"><circle cx="25" cy="34" r="3.6" fill="#1c1917"/><circle cx="39" cy="34" r="3.6" fill="#1c1917"/>
+        <circle cx="26.2" cy="32.8" r="1.2" fill="#fff"/><circle cx="40.2" cy="32.8" r="1.2" fill="#fff"/></g>
+      <path id="mouth" d="M27.5 42.5 Q32 47 36.5 42.5" stroke="#1c1917" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <circle cx="20.5" cy="41" r="2.6" fill="#fff" opacity=".3"/><circle cx="43.5" cy="41" r="2.6" fill="#fff" opacity=".3"/>
+      <path d="M32 .5 C33 6 34.3 7.4 39.5 8.3 C34.3 9.2 33 10.6 32 16 C31 10.6 29.7 9.2 24.5 8.3 C29.7 7.4 31 6 32 .5 Z" fill="#f59e0b" stroke="#1c1917" stroke-width="1.4" stroke-linejoin="round"/>
+    </g>
+  </svg>
+  <h1>Omilo</h1>
+  <div class="status" id="status" role="status" aria-live="polite">Starting…</div>
+  <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="first" id="first">The first start sets up your office on this Mac. It takes about a minute.</div>
+  <div class="error" id="error" role="alert">
+    <b>Omilo couldn't start</b>
+    <p id="why"></p>
+    <div class="acts">
+      <button class="primary" id="retry">Try again</button>
+      <button id="logs">Show logs</button>
+      <button id="quit">Quit</button>
+    </div>
+  </div>
+</main>
+<script>
+  const T = window.__TAURI__;
+  const $ = (id) => document.getElementById(id);
+  const call = (cmd, args) => T ? T.core.invoke(cmd, args) : Promise.resolve();
+
+  function render(s) {
+    if (!s) return;
+    if (s.status) $("status").textContent = s.status;
+    if (s.error) {
+      document.body.classList.add("failed");
+      $("why").textContent = s.error;
+      $("status").textContent = "Stopped";
+      $("mouth").setAttribute("d", "M27.5 46.5 Q32 41.5 36.5 46.5");
+    } else {
+      document.body.classList.remove("failed");
+      $("mouth").setAttribute("d", "M27.5 42.5 Q32 47 36.5 42.5");
+    }
+  }
+
+  const err = new URLSearchParams(location.search).get("error");
+  if (err) render({ error: err });
+  if (T) {
+    T.event.listen("backend", (e) => render(e.payload));
+    call("backend_state").then((s) => { if (!err || !s.error) render(s); });
+  }
+  $("retry").onclick = () => { history.replaceState(null, "", location.pathname); render({ status: "Starting…", error: null }); call("retry"); };
+  $("logs").onclick = () => call("open_logs");
+  $("quit").onclick = () => call("quit");
+</script>
+</body>
+</html>

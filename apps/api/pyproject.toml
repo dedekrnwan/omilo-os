@@ -33,6 +33,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 omilo-api = "omilo_api.main:run"
 omilo-worker = "omilo_api.worker:main"
 omilo-reset-password = "omilo_api.reset_password:main"
+omilo-desktop = "omilo_api.desktop:main"
 
 [build-system]
 requires = ["setuptools>=68"]

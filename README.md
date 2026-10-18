@@ -83,6 +83,11 @@ Already running Postgres or Redis yourself? Skip Docker and set `OMILO_DATABASE_
 
 Open the web app, create the owner account, and finish onboarding. Pick **Demo engine** to try every flow without any AI: it uses the real MCP endpoint and executes approvals deterministically.
 
+## Omilo for Mac
+
+One app with everything inside (database included), no Docker: download the `.dmg` from Releases, drag it to
+Applications, open it. Build it yourself with `make desktop` on a Mac. See [docs/desktop.md](docs/desktop.md).
+
 ## Run with Docker
 
 Laptop (Omilo, Postgres, and Redis containers; data in `~/.omilo`):

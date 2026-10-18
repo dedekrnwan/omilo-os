@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "office",
+  "description": "The office page, served by the bundled gateway on this Mac: notifications, the Dock badge and opening links in the browser. Nothing else.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*", "http://localhost:*"] },
+  "permissions": ["allow-notify", "allow-set-badge", "allow-open-external"]
+}

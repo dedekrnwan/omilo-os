@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "start-screen",
+  "description": "The start screen bundled in the app.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-backend-state", "allow-retry", "allow-open-logs", "allow-quit"]
+}
