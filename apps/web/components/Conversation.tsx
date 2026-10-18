@@ -249,7 +249,7 @@ export function ProposalRequest({ m, onProposal }: { m: Msg; onProposal: (propos
     <>
       {blocks.map((b, i) => (
         <ProposalCard
-          key={i}
+          key={b.proposal_id || i}
           proposalId={b.proposal_id || ""}
           title={b.title || ""}
           risk={b.risk || "low"}
@@ -317,7 +317,7 @@ export function QuestionRequest({ m, onAnswer }: { m: Msg; onAnswer: (itemId: st
     <>
       {blocks.map((b, i) => (
         <QuestionCard
-          key={i}
+          key={b.item_id || i}
           itemId={b.item_id || ""}
           question={b.question || ""}
           onAnswer={onAnswer}
