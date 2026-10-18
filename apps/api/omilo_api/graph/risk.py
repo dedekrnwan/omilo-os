@@ -1,13 +1,51 @@
-"""Structural risk classifier.
+"""Escalation router for the Chief-of-Staff (CoS) vs. owner-approval decision.
 
-The worker's self-reported label is a HINT, never the authority. Hard-rule categories
-always escalate to "high" regardless of what the worker claims. This module is the
-single source of truth for those categories — reused by Task 4 (delegation gate) and
-future tasks.
+What this function IS
+---------------------
+``classify_risk`` routes an action to the right approval path: a "low"/"medium"
+result means the CoS can auto-handle it; a "high" result means it needs explicit
+owner approval. That is the ENTIRE job of this function. It is a router, not a gate.
+
+What this function is NOT
+-------------------------
+It is NOT the sole safety net, and it does not need to parse free-text prose
+perfectly. Outward / dangerous actions are already constrained by two independent
+layers that do not depend on this function at all:
+
+1. The execution engine hard-blocks world-changing shell commands (rm, sudo,
+   git push, npm/pnpm/yarn publish, docker push, kubectl, terraform apply,
+   vercel/netlify/fly deploy, gh pr merge, gh release, ssh, scp, ...) regardless
+   of what this classifier returns — see ``SHELL_DENY`` in
+   ``omilo_api/engines/claude_code.py``.
+2. Every outward side-effect is routed through a structured, typed capability
+   (``request_action`` / ``propose`` with a specific ``action_type``). A worker
+   CANNOT perform an outward action without invoking an outward-TYPED capability.
+   The free-text ``summary`` is cosmetic — a worker could word it anything — so it
+   is NOT a reliable signal.
+
+The final semantic judgment lives in the CoS reasoning call (a later task).
+
+Signal model (architecture)
+---------------------------
+Risk is the MAX (low < medium < high) of three signals:
+
+1. ``action_type`` — AUTHORITATIVE and complete over the known taxonomy. This is
+   the reliable signal because a worker must invoke an outward-typed capability to
+   cause an outward effect. See ``HIGH_RISK_ACTION_PATTERNS``.
+2. ``worker_label`` — a valid label may only UPGRADE the result, never downgrade.
+3. ``summary`` — BEST-EFFORT secondary hint only. It can UPGRADE to "high" when the
+   outward-verb+target / hard-keyword heuristic matches, but it is explicitly NOT
+   exhaustive. Its misses are backstopped by ``action_type`` + the execution layer +
+   the CoS call. We do not chase synonym coverage here.
+
+Exports
+-------
+``HIGH_RISK_ACTION_PATTERNS`` and ``HARD_RULE_PATTERNS`` (the outward/free-text
+constants) are exported for reuse by the Task 4 delegation gate.
 
 Usage
 -----
-    from omilo_api.graph.risk import classify_risk, HARD_RULE_PATTERNS
+    from omilo_api.graph.risk import classify_risk, HIGH_RISK_ACTION_PATTERNS
 
     level = classify_risk(action_type, summary, worker_label=proposal.risk)
 """
@@ -28,26 +66,177 @@ def _max_level(*levels: str) -> str:
     return max(levels, key=lambda lvl: _LEVEL_RANK.get(lvl, -1))
 
 
+# ===========================================================================
+# SIGNAL 1 — action_type (AUTHORITATIVE)
+# ===========================================================================
+#
+# The reliable signal. A worker cannot perform an outward/irreversible-external
+# effect without invoking a capability whose action_type denotes that category.
+# This set is intended to be COMPLETE over the taxonomy of outward/spend/deploy/
+# merge/production action types — not best-effort.
+#
+# Matching rule (see _action_type_is_high): an action_type is HIGH if, after
+# lower-casing, it EQUALS, STARTS WITH, or CONTAINS (as a dotted/word segment)
+# any pattern below. Dotted action types (e.g. "content.publish", "social.post",
+# "ops.deploy.prod") and bare verbs (e.g. "publish", "deploy") are both covered.
 # ---------------------------------------------------------------------------
-# Hard-rule patterns — ONE shared constant for the whole package
+HIGH_RISK_ACTION_PATTERNS: frozenset[str] = frozenset({
+    # --- outward side-effect routing (structured escalation capability) ---
+    "request_action",
+    # --- publish / broadcast / social ---
+    "publish",
+    "post",
+    "share",
+    "social",
+    "broadcast",
+    "content.publish",   # explicit existing taxonomy prefixes (kept for clarity)
+    "content.share",
+    "social.",
+    # --- outward messaging ---
+    "send",
+    "message",
+    "email",
+    "sms",
+    "dm",
+    "outreach",
+    # --- deploy / release / merge (irreversible-external to prod) ---
+    "deploy",
+    "release",
+    "merge",
+    "production",
+    # --- spend / money movement ---
+    "pay",
+    "payment",
+    "charge",
+    "purchase",
+    "refund",
+    "transfer",
+    "spend",
+})
+
+# Pre-compiled: match a pattern as a whole dotted/word segment inside the
+# action_type. We split the action_type on "." and non-word chars and also do a
+# substring check for prefix-style patterns (those ending in ".").
+_HIGH_ACTION_WORD_PATTERNS: tuple[tuple[str, re.Pattern[str] | None], ...] = tuple(
+    (
+        p,
+        # Prefix-style patterns (ending in ".") are handled via startswith, no regex.
+        None if p.endswith(".") else re.compile(r"\b" + re.escape(p) + r"\b", re.IGNORECASE),
+    )
+    for p in HIGH_RISK_ACTION_PATTERNS
+)
+
+
+def _action_type_is_high(action_type: str) -> bool:
+    """Return True if the structured action_type denotes an outward/spend/deploy/
+    merge/production category. AUTHORITATIVE signal — complete over the taxonomy."""
+    if not action_type:
+        return False
+    a = action_type.lower()
+    for pattern, word_re in _HIGH_ACTION_WORD_PATTERNS:
+        if pattern.endswith("."):
+            # Prefix form like "social." — match "social.post", "social.dm", etc.
+            if a == pattern.rstrip(".") or a.startswith(pattern):
+                return True
+            continue
+        # Equality / dotted-prefix fast paths.
+        if a == pattern or a.startswith(pattern + ".") or a.endswith("." + pattern):
+            return True
+        # Segment / word-boundary match: covers "ops.deploy.prod", "custom.publish",
+        # "payment_charge", "requestAction"-style spellings via \b.
+        if f".{pattern}." in f".{a}." or (word_re is not None and word_re.search(a)):
+            return True
+    return False
+
+
+# ===========================================================================
+# SIGNAL 1b — internal action_type mapping (low vs. medium)
+# ===========================================================================
 #
-# Design constraints:
-#   - Match case-insensitively.
-#   - Use word-boundary anchors (\b) to avoid substring false positives:
-#       "report"     must NOT match via "port"
-#       "ambassador" must NOT match via any word inside it
-#       "expenditure" must NOT match via "spend" (different word)
-#   - "deploy" / "deployment" ARE hard-rule words because deploying to any environment
-#     (even staging) is a production-adjacent, irreversible side effect that requires
-#     owner approval.
-#   - "spend" matches "spend" and "spending" (same root) but NOT "expenditure" or
-#     "independent" — the \b anchor handles this correctly.
-#   - "send" matches "send" and "sending" but NOT "ambassador" or "recommend".
-#   - "tweet" and "dm" are included as common outward-action verbs.
-#   - "invoice" and "refund" are money-adjacent.
-#   - "transfer", "message", "release" are context-sensitive (see _CONTEXT_SENSITIVE_PATTERNS).
+# Internal action types that are NOT outward/spend/deploy. They change the
+# company's OWN state only, so the CoS can auto-handle them.
 #
-# Each entry is compiled into a word-boundary regex for efficient matching.
+#   LOW     — reads, drafts, planning, reporting, task bookkeeping, questions,
+#             checkpoints. No state change that's hard to reverse internally.
+#   MEDIUM  — multi-step / ambiguous internal config changes: staff lifecycle,
+#             access grants, settings. These mutate the company's own
+#             configuration (but are not outward or spend), so they warrant a
+#             slightly higher internal bar than a plain doc write.
+# ---------------------------------------------------------------------------
+
+# LOW internal types (equality or dotted-prefix match).
+_LOW_ACTION_PATTERNS: tuple[str, ...] = (
+    "docs.write",
+    "knowledge.write",
+    "knowledge.read",
+    "kpi.write",
+    "report.write",
+    "report",          # report.* family → low
+    "task.create",
+    "task",            # task.* family → low
+    "question",        # question.* family → low
+    "checkpoint",
+)
+
+# MEDIUM internal types — internal config/lifecycle mutations (own company state).
+_MEDIUM_ACTION_PATTERNS: tuple[str, ...] = (
+    "staff.update",
+    "staff.create",
+    "staff.retire",
+    "staff.delegate",
+    "staff",           # other staff.* → medium
+    "access.grant",
+    "access",          # access.* → medium
+    "setting.set",
+    "setting",         # setting.* → medium
+    "settings",
+    # Legacy medium-complexity prefixes retained from the prior structural read.
+    "ops.",
+    "code.",
+    "connector.",
+    "skill.",
+    "kpi.",
+    "db.",
+    "pricing.",
+)
+
+
+def _action_matches(action_type: str, patterns: tuple[str, ...]) -> bool:
+    """True if action_type equals a pattern, is a dotted child of it, or (for
+    prefix patterns ending in '.') starts with it."""
+    a = action_type.lower()
+    for p in patterns:
+        if p.endswith("."):
+            if a == p.rstrip(".") or a.startswith(p):
+                return True
+        elif a == p or a.startswith(p + "."):
+            return True
+    return False
+
+
+def _action_type_internal_level(action_type: str) -> str | None:
+    """Return 'low'/'medium' for a known internal action_type, or None if the
+    action_type is unknown/empty (defer to summary heuristic)."""
+    if not action_type:
+        return None
+    if _action_matches(action_type, _LOW_ACTION_PATTERNS):
+        return "low"
+    if _action_matches(action_type, _MEDIUM_ACTION_PATTERNS):
+        return "medium"
+    return None
+
+
+# ===========================================================================
+# SIGNAL 3 — free-text summary (BEST-EFFORT upgrade only)
+# ===========================================================================
+#
+# This is the secondary net. It can UPGRADE to "high" when it matches, but it is
+# explicitly NOT exhaustive and its misses are acceptable because action_type +
+# the execution layer + the CoS call backstop it. We keep the heuristic that was
+# already built; we do NOT try to chase synonym coverage.
+#
+# ``HARD_RULE_PATTERNS`` and the outward verb/target sets remain exported for the
+# Task 4 gate.
 # ---------------------------------------------------------------------------
 
 # Flat set of hard-rule keyword stems (matched with \b on each side).
@@ -81,22 +270,6 @@ HARD_RULE_PATTERNS: frozenset[str] = frozenset({
     "production",
 })
 
-# Action-type prefix patterns — if action_type starts with or equals any of these,
-# it is a hard-rule category. Checked against the full action_type string, not just
-# individual words, because action types use dot-notation (e.g. "content.publish").
-_HARD_RULE_ACTION_PREFIXES: tuple[str, ...] = (
-    "content.publish",
-    "content.share",
-    "social.",
-    "outreach.send",
-    "payment",
-    "money.spend",
-    "code.merge",
-    "deploy",
-    "ops.deploy",
-    "release",
-)
-
 # Pre-compiled word-boundary patterns for each keyword to avoid repeated compilation.
 _COMPILED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE)
@@ -104,30 +277,21 @@ _COMPILED_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Context-sensitive patterns
-#
-# These words are "dual-use": they can mean something benign in internal contexts
-# or something dangerous in outward/financial/deploy contexts. We require nearby
-# context tokens to confirm the dangerous sense.
+# Context-sensitive patterns (dual-use words)
 # ---------------------------------------------------------------------------
 
-# "post" as an outward action: matches "post to", "post on", "post this", "post it",
-# "post the" — within a short window. Does NOT match "blog post", "job post",
-# "post-mortem", "postmortem" (those are noun forms).
-# Pattern: \bpost\b followed within ~3 words by (to|on|this|it|the) OR preceded by
-# "post to"/"post on"/"post this"/"post it".
+# "post" as an outward action: "post to/on", "post this/it/the", "posting to/on".
 _POST_OUTWARD_PATTERN: re.Pattern[str] = re.compile(
-    r"\bpost(?:\s+\w+){0,2}\s+(?:to|on)\b"           # "post to", "post this to", "post it on"
-    r"|\bpost\s+(?:this|it|the)\b"                     # "post this", "post it", "post the"
-    r"|\bpost(?:ing)?\s+(?:to|on)\b",                  # "posting to", "posting on"
+    r"\bpost(?:\s+\w+){0,2}\s+(?:to|on)\b"
+    r"|\bpost\s+(?:this|it|the)\b"
+    r"|\bpost(?:ing)?\s+(?:to|on)\b",
     re.IGNORECASE,
 )
 
-# "transfer" in a money/account context:
-# Requires a nearby money/account token within the same sentence fragment.
+# "transfer" in a money/account context.
 _TRANSFER_MONEY_TOKENS: re.Pattern[str] = re.compile(
-    r"\$\d"                         # dollar amount
-    r"|\b\d+\s*(?:usd|eur|gbp|idr|k|million)\b"  # numeric + currency
+    r"\$\d"
+    r"|\b\d+\s*(?:usd|eur|gbp|idr|k|million)\b"
     r"|\bfunds?\b"
     r"|\bmoney\b"
     r"|\baccount\b"
@@ -138,16 +302,15 @@ _TRANSFER_MONEY_TOKENS: re.Pattern[str] = re.compile(
 )
 _TRANSFER_VERB_PATTERN: re.Pattern[str] = re.compile(r"\btransfer\b", re.IGNORECASE)
 
-# "message" in an outward-action context: must have an outward target or platform word.
+# "message" in an outward-action context.
 _MESSAGE_OUTWARD_PATTERN: re.Pattern[str] = re.compile(
-    # "send a message to X" — "send" already catches this, but "message" alone with target:
     r"\bmessage\s+(?:the\s+)?(?:client|customer|user|subscriber|lead|team|member|vendor|partner)\b"
-    r"|\bmessage\s+@\w+"                              # "message @username"
-    r"|\b(?:whatsapp|slack|telegram|sms|text)\s+message\b"  # platform + message
-    r"|\bsend\s+(?:a\s+)?message\b",                  # "send a message" (belt-and-suspenders)
+    r"|\bmessage\s+@\w+"
+    r"|\b(?:whatsapp|slack|telegram|sms|text)\s+message\b"
+    r"|\bsend\s+(?:a\s+)?message\b",
     re.IGNORECASE,
 )
-# Explicitly safe "message" patterns — these do NOT escalate even if the above misses them.
+# Explicitly safe "message" patterns — these do NOT escalate.
 _MESSAGE_SAFE_PATTERN: re.Pattern[str] = re.compile(
     r"\b(?:log|debug|error|commit|queue|template|format|draft|system|status)\s+message\b"
     r"|\bmessage\s+(?:template|queue|format|log|schema|type|handler|broker|bus)\b",
@@ -155,30 +318,12 @@ _MESSAGE_SAFE_PATTERN: re.Pattern[str] = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Outward-verb × platform/target generalisation
-#
-# An OUTWARD VERB co-occurring with a SOCIAL/PUBLIC PLATFORM-OR-TARGET in the
-# same summary string signals an external communication action and must be "high"
-# regardless of worker_label.
-#
-# Design notes:
-#   - Only match whole words (\b anchors).  "sharing" ≠ "haring"; "posted" is
-#     covered via _OUTWARD_VERB_INFLECTIONS below.
-#   - "x" as a platform is ambiguous; we omit it and rely on "twitter" instead.
-#   - "message" is listed here as an outward verb but the existing safe-pattern
-#     check (_MESSAGE_SAFE_PATTERN) is still preserved by applying it separately.
-#     To keep this simple, the verb+target rule fires on "message" only; the
-#     standalone "message" without a target still goes through the existing
-#     _MESSAGE_OUTWARD_PATTERN path.
-#   - "tweet"/"dm"/"broadcast"/"publish" already escalate via HARD_RULE_PATTERNS
-#     or the standalone-verb list below; they are also listed here for clarity.
+# Outward-verb × platform/target generalisation (best-effort).
 # ---------------------------------------------------------------------------
 
 _OUTWARD_VERBS: frozenset[str] = frozenset({
-    # base forms
     "post", "share", "publish", "tweet", "broadcast", "announce",
     "dm", "message", "send", "upload", "reply", "comment",
-    # common inflections (past/present-participle/3rd-person)
     "posts", "posting", "posted",
     "shares", "sharing", "shared",
     "publishes", "publishing", "published",
@@ -194,45 +339,32 @@ _OUTWARD_VERBS: frozenset[str] = frozenset({
 })
 
 _OUTWARD_TARGETS: frozenset[str] = frozenset({
-    # social platforms
     "instagram", "twitter", "linkedin", "facebook", "tiktok",
     "youtube", "threads", "reddit", "whatsapp", "telegram",
-    # generic social
     "social media", "social",
-    # public-facing concepts
     "publicly", "public", "the public",
-    # publishing channels
     "blog", "newsletter",
-    # audience descriptors
     "audience", "subscribers", "followers",
-    # external stakeholders
     "the client", "the customer", "the customers",
     "client", "customer", "customers",
     "clients",
 })
 
-# Pre-compiled word-boundary patterns for outward verbs.
 _OUTWARD_VERB_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b" + re.escape(v) + r"\b", re.IGNORECASE)
     for v in _OUTWARD_VERBS
 ]
 
-# Pre-compiled patterns for outward targets (multi-word targets first so they
-# match before their constituent words).
 _OUTWARD_TARGET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b" + re.escape(t) + r"\b", re.IGNORECASE)
-    for t in sorted(_OUTWARD_TARGETS, key=len, reverse=True)  # longest first
+    for t in sorted(_OUTWARD_TARGETS, key=len, reverse=True)
 ]
 
-# Standalone verbs that are ALWAYS outward, even without an explicit platform
-# token (e.g. "tweet about the launch" is inherently public).
 _STANDALONE_OUTWARD_VERB_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b" + re.escape(v) + r"\b", re.IGNORECASE)
     for v in (
         "tweet", "tweets", "tweeting", "tweeted",
         "broadcast", "broadcasts", "broadcasting", "broadcasted",
-        # "publish"/"published" already in HARD_RULE_PATTERNS
-        # "dm"/"dms" already in HARD_RULE_PATTERNS
     )
 ]
 
@@ -242,8 +374,7 @@ def _is_outward_verb_plus_target(summary: str) -> bool:
     has_verb = any(p.search(summary) for p in _OUTWARD_VERB_PATTERNS)
     if not has_verb:
         return False
-    has_target = any(p.search(summary) for p in _OUTWARD_TARGET_PATTERNS)
-    return has_target
+    return any(p.search(summary) for p in _OUTWARD_TARGET_PATTERNS)
 
 
 def _is_standalone_outward_verb(summary: str) -> bool:
@@ -251,14 +382,13 @@ def _is_standalone_outward_verb(summary: str) -> bool:
     return any(p.search(summary) for p in _STANDALONE_OUTWARD_VERB_PATTERNS)
 
 
-# "release" in deploy/money context only:
+# "release" in deploy/money context only.
 _RELEASE_DANGEROUS_PATTERN: re.Pattern[str] = re.compile(
     r"\breleas(?:e|ing)\s+(?:to\s+)?(?:production|prod|staging|live|app|build|version|the\s+build|the\s+update|the\s+app|the\s+version)\b"
     r"|\breleas(?:e|ing)\s+(?:the\s+)?(?:build|update|app|version|software|binary|artifact)\b"
     r"|\breleas(?:e|ing)\s+(?:funds?|payment)\b",
     re.IGNORECASE,
 )
-# Safe "release" patterns — docs/planning, never code/money:
 _RELEASE_SAFE_PATTERN: re.Pattern[str] = re.compile(
     r"\brelease\s+(?:notes?|timeline|date|cadence|plan|schedule|process|strategy|candidate)\b"
     r"|\brelease\s+notes?\b",
@@ -268,90 +398,43 @@ _RELEASE_SAFE_PATTERN: re.Pattern[str] = re.compile(
 
 def _is_context_sensitive_hard_rule(summary: str) -> bool:
     """Return True if a context-sensitive dual-use word fires in its dangerous sense."""
-    # --- Outward verb × platform/target generalisation ---
-    # Must come before more specific checks so the broad rule fires first.
-    # Note: "message" is in _OUTWARD_VERBS; we exclude it here when the summary
-    # matches a known safe pattern to preserve dual-use precision.
     if _is_outward_verb_plus_target(summary):
-        # Carve out: "log a debug message", "draft a message template", etc.
-        # Those are caught by _MESSAGE_SAFE_PATTERN and their summaries will not
-        # contain an outward TARGET (blog/social/customer/etc.), so in practice
-        # the target check already guards them. Belt-and-suspenders: also apply
-        # the safe-message check here.
         if not _MESSAGE_SAFE_PATTERN.search(summary):
             return True
 
-    # --- Standalone always-outward verbs (tweet, broadcast) ---
     if _is_standalone_outward_verb(summary):
         return True
 
-    # --- "post" as outward action ---
     if _POST_OUTWARD_PATTERN.search(summary):
         return True
 
-    # --- "transfer" with money/account context ---
     if _TRANSFER_VERB_PATTERN.search(summary) and _TRANSFER_MONEY_TOKENS.search(summary):
         return True
 
-    # --- "message" with outward target (safe patterns take precedence) ---
     if _MESSAGE_OUTWARD_PATTERN.search(summary) and not _MESSAGE_SAFE_PATTERN.search(summary):
         return True
 
-    # --- "release" in deploy/money sense (safe patterns take precedence) ---
     if _RELEASE_DANGEROUS_PATTERN.search(summary) and not _RELEASE_SAFE_PATTERN.search(summary):
         return True
 
     return False
 
 
-# ---------------------------------------------------------------------------
-# Internal: hard-rule detection
-# ---------------------------------------------------------------------------
-
-def _is_hard_rule(action_type: str, summary: str) -> bool:
-    """Return True if the action type or summary triggers a hard-rule category."""
-    action_lower = action_type.lower()
-
-    # 1. Exact / prefix match on the structured action type (most reliable signal).
-    for prefix in _HARD_RULE_ACTION_PREFIXES:
-        if action_lower == prefix or action_lower.startswith(prefix + ".") or action_lower.startswith(prefix):
-            return True
-
-    # 2. Keyword scan on the summary using word-boundary patterns.
+def _summary_suggests_high(summary: str) -> bool:
+    """BEST-EFFORT: return True if the free-text summary looks like an outward /
+    spend / deploy action. NOT exhaustive — misses are acceptable and backstopped
+    by action_type + the execution layer + the CoS call."""
+    if not summary:
+        return False
     for pattern in _COMPILED_PATTERNS:
         if pattern.search(summary):
             return True
-
-    # 3. Context-sensitive dual-use word detection on the summary.
-    if _is_context_sensitive_hard_rule(summary):
-        return True
-
-    # 4. Also keyword-scan the action_type string itself (e.g. "outreach.send",
-    #    "custom.deploy.prod") to catch novel dotted types not in the prefix list.
-    for pattern in _COMPILED_PATTERNS:
-        if pattern.search(action_type):
-            return True
-
-    return False
+    return _is_context_sensitive_hard_rule(summary)
 
 
 # ---------------------------------------------------------------------------
-# Internal: structural read — what the classifier itself thinks
+# Medium-signal summary keywords (multi-step internal work).
 # ---------------------------------------------------------------------------
-
-# Keywords in the summary or action type that suggest medium complexity
-# (multi-step internal changes, ambiguous scope).
-_MEDIUM_ACTION_PREFIXES: tuple[str, ...] = (
-    "ops.",
-    "code.",
-    "staff.",
-    "connector.",
-    "skill.",
-    "kpi.",
-    "knowledge.write",
-    "db.",
-    "pricing.",
-)
 
 _MEDIUM_SUMMARY_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE)
@@ -370,74 +453,62 @@ _MEDIUM_SUMMARY_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 
-def _structural_read(action_type: str, summary: str) -> str:
-    """Return the classifier's own risk estimate ('low' or 'medium') for non-hard-rule actions."""
-    action_lower = action_type.lower()
-
-    # Check for medium-risk action type prefixes.
-    for prefix in _MEDIUM_ACTION_PREFIXES:
-        if action_lower.startswith(prefix) or action_lower == prefix.rstrip("."):
-            return "medium"
-
-    # Check for medium-risk summary keywords.
-    for pattern in _MEDIUM_SUMMARY_PATTERNS:
-        if pattern.search(summary):
-            return "medium"
-
-    # Default for clearly internal actions (drafts, reads, planning, file edits).
-    return "low"
+def _summary_suggests_medium(summary: str) -> bool:
+    """Return True if the summary hints at multi-step/ambiguous internal work."""
+    return any(p.search(summary) for p in _MEDIUM_SUMMARY_PATTERNS)
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Public API
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 def classify_risk(
     action_type: str,
     summary: str,
     worker_label: str | None = None,
 ) -> str:
-    """Return "low" | "medium" | "high".
+    """Route an action to CoS auto-handle ("low"/"medium") vs. owner approval ("high").
 
-    The worker's self-reported label (worker_label) is a HINT, never the authority:
+    Risk is the MAX (low < medium < high) of three signals:
 
-    - Hard-rule categories always return "high" regardless of worker_label.  These are
-      actions that send externally, spend money, merge code, deploy/release software,
-      or touch production.
+    1. ``action_type`` — AUTHORITATIVE. If it denotes an outward/spend/deploy/merge/
+       production category (see ``HIGH_RISK_ACTION_PATTERNS``) the result is "high"
+       regardless of ``summary`` or ``worker_label``. Known internal types map to
+       "low" or "medium". Unknown/empty action_type defers to the summary heuristic.
+    2. ``worker_label`` — a valid "low"/"medium"/"high" may only UPGRADE the result,
+       never downgrade. Invalid / None is ignored.
+    3. ``summary`` — BEST-EFFORT secondary hint. It may UPGRADE to "high" when the
+       outward heuristic matches, but it is NOT exhaustive. Its misses are acceptable
+       because action_type + the execution-layer denials + the CoS call backstop it.
 
-    - For all other actions, the final level is the MAX of:
-        (a) the classifier's own structural read (based on action_type and summary), and
-        (b) a *valid* worker_label ("low" | "medium" | "high").
-
-      This means a worker may UPGRADE the risk level (e.g. label something "high" when
-      the structural read is "low") but may NEVER DOWNGRADE below the structural read.
-
-    An invalid or None worker_label is silently ignored.
-
-    Parameters
-    ----------
-    action_type:
-        The structured action identifier, e.g. "content.publish", "docs.write",
-        "payment.charge".  Used for prefix matching against hard-rule categories.
-    summary:
-        A natural-language description of the proposed action.  Scanned for hard-rule
-        keywords and structural signals.
-    worker_label:
-        The worker's self-reported risk level, or None.  Ignored if not one of
-        "low", "medium", "high".
+    This function is a ROUTER, not the sole enforcement — the hard guarantees live in
+    ``omilo_api/engines/claude_code.py`` (SHELL_DENY), ``request_action`` routing, and
+    the CoS reasoning call.
 
     Returns
     -------
     str
         One of "low", "medium", "high".
     """
-    # Rule 1: hard-rule categories always escalate, label is irrelevant.
-    if _is_hard_rule(action_type, summary):
+    # --- Signal 1: action_type (authoritative). ---
+    if _action_type_is_high(action_type):
         return "high"
 
-    # Rule 2: structural read + optional worker upgrade (max, never downgrade).
-    structural = _structural_read(action_type, summary)
+    internal = _action_type_internal_level(action_type)
 
+    # --- Signal 3: best-effort free-text can UPGRADE to high. ---
+    if _summary_suggests_high(summary):
+        structural = "high"
+    elif internal is not None:
+        # Known internal type: start from its mapping, let summary bump low→medium.
+        structural = internal
+        if structural == "low" and _summary_suggests_medium(summary):
+            structural = "medium"
+    else:
+        # Unknown/empty action_type → do NOT assume low; derive from summary.
+        structural = "medium" if _summary_suggests_medium(summary) else "low"
+
+    # --- Signal 2: worker_label may only upgrade (max), never downgrade. ---
     if worker_label in _LEVEL_RANK:
         return _max_level(structural, worker_label)
 
