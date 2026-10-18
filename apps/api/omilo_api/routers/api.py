@@ -541,6 +541,19 @@ def answer(iid: str, body: AnswerIn, db: Session = Depends(get_db), user: User =
     return X.inbox(_run(S.answer_question, db, item, body.answer, user.id))
 
 
+class AccessDecisionIn(BaseModel):
+    scope: str  # once | always | deny
+    note: str = ""
+
+
+@router.post("/access/{item_id}/decide")
+def decide_access(item_id: str, body: AccessDecisionIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    item = _404(db.get(InboxItem, item_id))
+    if item.kind != "access_request":
+        raise HTTPException(400, "not an access request")
+    return X.inbox(_run(S.decide_access, db, item, body.scope, user.id, body.note))
+
+
 class SnoozeIn(BaseModel):
     hours: float | None = Field(None, gt=0, le=24 * 14)
     until: str | None = None  # tomorrow | monday (08:00 in the company's time zone)

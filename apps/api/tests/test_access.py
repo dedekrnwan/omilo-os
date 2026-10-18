@@ -178,3 +178,100 @@ def test_folder_commands_grant_keeps_hard_denials(owner, base_url, tmp_path):
     # Prove the hard-denial set still covers the critical commands (unchanged by apply_grant)
     assert "Bash(rm:*)" in SHELL_DENY, f"'rm' not in SHELL_DENY: {SHELL_DENY}"
     assert any("git push" in d for d in SHELL_DENY), f"'git push' not in SHELL_DENY: {SHELL_DENY}"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: decide_access tests
+# ---------------------------------------------------------------------------
+
+def _make_access_item_with_thread(owner, base_url, tmp_path):
+    """Create a task, call request_access via MCP (so a card message+thread is created),
+    return (request_id, thread_id)."""
+    tok = owner.mcp_tokens["support"]
+
+    t = owner.post("/api/tasks", json={"staff_id": "support", "brief": "needs folder access for decide test"}).json()
+    folder_path = tmp_path / "decide-folder"
+    folder_path.mkdir(exist_ok=True)
+
+    rpc = mcp_call(
+        base_url, tok, "request_access",
+        {
+            "task_id": t["id"],
+            "kind": "folder",
+            "target": {"path": str(folder_path), "access": "write", "commands": False},
+            "reason": "unit test access",
+        },
+    )
+    assert not rpc["result"]["isError"], rpc
+    payload = rpc["result"]["structuredContent"]
+    return payload["request_id"], payload["thread_id"], str(folder_path), t["id"]
+
+
+def test_decide_access_always_grants_and_unblocks(owner, base_url, tmp_path):
+    """POST /api/access/{id}/decide {scope:'always'} → Folder persisted, inbox item closed,
+    a follow-up task for the helper exists."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "always"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "done", f"expected status=done, got {data['status']}"
+
+    # Folder was persisted
+    folders = owner.get("/api/folders").json()
+    paths = [f["path"] for f in folders]
+    assert folder_path in paths, f"{folder_path} not in /api/folders: {paths}"
+
+    # InboxItem is now closed (not open)
+    items = owner.get("/api/inbox").json()  # default: status=open
+    open_ids = [i["id"] for i in items]
+    assert request_id not in open_ids, f"access_request item {request_id} still open after decide"
+
+    # A follow-up Task for the helper was created
+    from omilo_api.db import session_scope
+    from omilo_api.models import Task as TaskModel
+    from sqlalchemy import select
+
+    with session_scope() as db:
+        follow_ups = list(db.scalars(
+            select(TaskModel)
+            .where(TaskModel.staff_id == "support", TaskModel.parent_task_id == task_id)
+        ))
+    assert follow_ups, "no follow-up task was created for the helper after grant"
+
+
+def test_decide_access_deny_records_reason(owner, base_url, tmp_path):
+    """POST /api/access/{id}/decide {scope:'deny', note:'no thanks'} → item closed as denied,
+    note recorded as a lesson, no Folder created."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    r = owner.post(f"/api/access/{request_id}/decide", json={"scope": "deny", "note": "no thanks, too broad"})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "done", f"expected status=done, got {data['status']}"
+
+    # Item is closed
+    items = owner.get("/api/inbox").json()
+    open_ids = [i["id"] for i in items]
+    assert request_id not in open_ids, f"access_request item {request_id} still open after deny"
+
+    # No Folder was created for this path
+    folders = owner.get("/api/folders").json()
+    paths = [f["path"] for f in folders]
+    assert folder_path not in paths, f"Folder was created despite deny: {folder_path} in {paths}"
+
+    # The note was recorded as a lesson in memory (lessons file contains the note text)
+    from omilo_api import memory
+    lesson_text = memory.lessons("support")
+    assert "no thanks" in lesson_text, f"lesson note not recorded in support's lessons: {lesson_text!r}"
+
+
+def test_decide_access_twice_conflicts(owner, base_url, tmp_path):
+    """Deciding an already-decided request raises 409."""
+    request_id, thread_id, folder_path, task_id = _make_access_item_with_thread(owner, base_url, tmp_path)
+
+    r1 = owner.post(f"/api/access/{request_id}/decide", json={"scope": "always"})
+    assert r1.status_code == 200, r1.text
+
+    r2 = owner.post(f"/api/access/{request_id}/decide", json={"scope": "always"})
+    assert r2.status_code == 409, f"expected 409 on second decide, got {r2.status_code}: {r2.text}"

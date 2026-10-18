@@ -620,6 +620,99 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
     db.commit()
 
 
+def decide_access(db: Session, item: "InboxItem", scope: str, by: str, note: str = "") -> "InboxItem":
+    """Owner decides an access request: once/always → grant + unblock helper; deny → lesson + close.
+
+    scope: "once" | "always" | "deny"
+    Raises DomainError(409) if the item is not pending (status != "open").
+    """
+    import json as _json
+
+    if item.status != "open":
+        raise DomainError(f"access request is already {item.status}", 409)
+    if scope not in ("once", "always", "deny"):
+        raise DomainError("scope must be 'once', 'always', or 'deny'")
+
+    # Resolve thread_id from the card Message that contains this request's block.
+    # blocks is a JSON column (not JSONB), so we filter in Python after a bounded query.
+    card_msg = None
+    candidate_msgs = db.scalars(
+        select(Message).where(Message.role == "agent", Message.author == (item.staff_id or ""))
+        .order_by(Message.at.desc()).limit(500)
+    )
+    for m in candidate_msgs:
+        for blk in (m.blocks or []):
+            if blk.get("type") == "access_request" and blk.get("request_id") == item.id:
+                card_msg = m
+                break
+        if card_msg:
+            break
+    thread_id = card_msg.thread_id if card_msg else None
+
+    body = _json.loads(item.body)
+    reason = body.get("reason", "")
+
+    if scope in ("once", "always"):
+        apply_grant(db, item, scope, thread_id)
+
+        # Spawn a follow-up task so the helper continues where it left off
+        if item.staff_id:
+            original = db.get(Task, item.task_id) if item.task_id else None
+            create_task(
+                db, item.staff_id, "answer",
+                f"Access granted ({scope}): {reason}. Continue where you left off."
+                + (f"\nOriginal task: {original.brief}" if original else ""),
+                created_by=by, parent_task_id=item.task_id,
+            )
+
+        # Mark the card block as decided
+        if card_msg is not None:
+            new_blocks = []
+            for blk in (card_msg.blocks or []):
+                if blk.get("type") == "access_request" and blk.get("request_id") == item.id:
+                    blk = dict(blk, decided=scope)
+                new_blocks.append(blk)
+            card_msg.blocks = new_blocks
+            db.flush()
+
+        # Close the inbox item directly (ref_id is not set on access_request items)
+        item.status, item.closed_at = "done", now()
+        audit(db, by, "access.decide", item.id, scope=scope)
+        db.commit()
+
+    else:  # deny
+        # Record the note as a lesson for the helper (same mechanism as decide_proposal reject)
+        try:
+            from . import memory
+
+            memory.add_lesson(
+                db, item.staff_id or "system",
+                note or f"Access denied to {reason[:100]}",
+                source=f"Denied access request '{reason[:60]}'",
+            )
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("omilo.memory").exception("could not record a lesson for denied access")
+
+        # Mark the card block as decided
+        if card_msg is not None:
+            new_blocks = []
+            for blk in (card_msg.blocks or []):
+                if blk.get("type") == "access_request" and blk.get("request_id") == item.id:
+                    blk = dict(blk, decided="deny")
+                new_blocks.append(blk)
+            card_msg.blocks = new_blocks
+            db.flush()
+
+        # Close the inbox item directly (ref_id is not set on access_request items)
+        item.status, item.closed_at = "done", now()
+        audit(db, by, "access.decide", item.id, scope="deny", note=(note or "")[:300])
+        db.commit()
+
+    db.refresh(item)
+    return item
+
+
 # ---------------------------------------------------------------- threads & messages
 def get_or_create_thread(db: Session, scope: str, ref_id: str | None, staff_id: str, title: str = "") -> Thread:
     q = select(Thread).where(Thread.scope == scope, Thread.staff_id == staff_id)
