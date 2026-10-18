@@ -1141,6 +1141,11 @@ def harness_engines(db: Session = Depends(get_db), user: User = Depends(current_
     from .. import harness as H
 
     # --- 1. Build a lookup: provider_id → list of {id, name} helper stubs --------
+    # Known omission: helpers on "claude-direct" (direct Anthropic API) or "claude"
+    # (Claude Code CLI with an API key, not the subscription pool) resolve to a provider
+    # that is neither "claude-code" nor a LiteLLM vendor, so they appear in no section
+    # here. That is acceptable for v1 (pool + vendor cards); a dedicated section can be
+    # added later if those surfaces need management on this page.
     staff_rows = list(db.scalars(select(Staff)))
     helpers_by_provider: dict[str, list[dict]] = {}
     for st in staff_rows:

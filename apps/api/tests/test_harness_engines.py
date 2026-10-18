@@ -99,7 +99,7 @@ def test_harness_engines_lists_vendors_and_keys(owner):
         assert gemini_card is not None
         assert gemini_card["key_set"] is False, f"gemini key_set should be False: {gemini_card}"
 
-    # Switch some helpers to openai and verify they appear in the helpers list
+    # Switch ALL helpers to openai (no staff_ids = whole team) and verify they appear in the list
     switch_r = owner.post("/api/ai", json={"provider": "openai", "api_key": "sk-openai-harness-test-9999"})
     assert switch_r.status_code == 200, switch_r.text
 
@@ -130,8 +130,10 @@ def test_harness_engines_makes_no_network_calls(owner, monkeypatch):
     """Monkeypatching engine health to raise proves the endpoint does NOT call health or any network I/O.
 
     Strategy: import litellm first (it may do a one-time network fetch at module load, which is fine),
-    then patch its completion entry-points and the harness module's pool_summary so any live-call
-    paths would blow up — but the endpoint must still return 200 because it does pure DB assembly.
+    then patch get_engine, litellm's completion entry-points, and the claude engine's model-listing so
+    any live-call path would blow up. The endpoint must still return 200 because it does pure DB
+    assembly. Note: H.pool_summary() is NOT patched here (it only does a local subprocess CLI version
+    check, not network I/O), so this test guards the vendor/health paths, not the pool CLI probe.
     """
     # Import these BEFORE patching anything, so module-level network calls (litellm cost map) have
     # already happened and won't be incorrectly blamed on our endpoint.
@@ -173,6 +175,10 @@ def test_harness_engines_makes_no_network_calls(owner, monkeypatch):
     )
     body = r.json()
     assert "claude_code" in body and "vendors" in body, f"Unexpected response shape: {body.keys()}"
+    # Assert real shape, so a null/empty body cannot pass this network-isolation test.
+    assert isinstance(body["vendors"], list) and body["vendors"], f"vendors must be a non-empty list: {body['vendors']}"
+    assert isinstance(body["claude_code"], dict), f"claude_code must be an object: {body['claude_code']}"
+    assert isinstance(body["claude_code"].get("helpers"), list), f"claude_code.helpers must be a list: {body['claude_code']}"
 
 
 def _boom_engine():
