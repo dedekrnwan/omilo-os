@@ -45,17 +45,20 @@ def _max_level(*levels: str) -> str:
 #   - "send" matches "send" and "sending" but NOT "ambassador" or "recommend".
 #   - "tweet" and "dm" are included as common outward-action verbs.
 #   - "invoice" and "refund" are money-adjacent.
+#   - "transfer", "message", "release" are context-sensitive (see _CONTEXT_SENSITIVE_PATTERNS).
 #
 # Each entry is compiled into a word-boundary regex for efficient matching.
 # ---------------------------------------------------------------------------
 
 # Flat set of hard-rule keyword stems (matched with \b on each side).
+# NOTE: "transfer", "message", "release" are intentionally excluded here;
+# they are handled via context-sensitive patterns below to avoid false positives
+# on internal usages ("transfer knowledge", "release notes", "log a debug message").
 HARD_RULE_PATTERNS: frozenset[str] = frozenset({
     # --- outward / send ---
     "send",
     "sending",
     "email",
-    "message",
     "dm",
     "tweet",
     "publish",
@@ -64,19 +67,16 @@ HARD_RULE_PATTERNS: frozenset[str] = frozenset({
     "paying",
     "charge",
     "purchase",
-    "transfer",
     "invoice",
     "refund",
     "spend",
     "spending",
     # --- merge ---
     "merge",
-    # --- deploy / release ---
+    # --- deploy ---
     "deploy",
     "deploying",
     "deployment",
-    "release",
-    "releasing",
     # --- production ---
     "production",
 })
@@ -86,6 +86,8 @@ HARD_RULE_PATTERNS: frozenset[str] = frozenset({
 # individual words, because action types use dot-notation (e.g. "content.publish").
 _HARD_RULE_ACTION_PREFIXES: tuple[str, ...] = (
     "content.publish",
+    "content.share",
+    "social.",
     "outreach.send",
     "payment",
     "money.spend",
@@ -101,9 +103,91 @@ _COMPILED_PATTERNS: list[re.Pattern[str]] = [
     for kw in HARD_RULE_PATTERNS
 ]
 
-# Note: "post" (noun — blog post, postmortem) is intentionally NOT in the keyword set.
-# "publish" covers the outward-action case; bare "post" produces too many false positives
-# in internal content descriptions ("draft a blog post", "post-mortem review").
+# ---------------------------------------------------------------------------
+# Context-sensitive patterns
+#
+# These words are "dual-use": they can mean something benign in internal contexts
+# or something dangerous in outward/financial/deploy contexts. We require nearby
+# context tokens to confirm the dangerous sense.
+# ---------------------------------------------------------------------------
+
+# "post" as an outward action: matches "post to", "post on", "post this", "post it",
+# "post the" — within a short window. Does NOT match "blog post", "job post",
+# "post-mortem", "postmortem" (those are noun forms).
+# Pattern: \bpost\b followed within ~3 words by (to|on|this|it|the) OR preceded by
+# "post to"/"post on"/"post this"/"post it".
+_POST_OUTWARD_PATTERN: re.Pattern[str] = re.compile(
+    r"\bpost(?:\s+\w+){0,2}\s+(?:to|on)\b"           # "post to", "post this to", "post it on"
+    r"|\bpost\s+(?:this|it|the)\b"                     # "post this", "post it", "post the"
+    r"|\bpost(?:ing)?\s+(?:to|on)\b",                  # "posting to", "posting on"
+    re.IGNORECASE,
+)
+
+# "transfer" in a money/account context:
+# Requires a nearby money/account token within the same sentence fragment.
+_TRANSFER_MONEY_TOKENS: re.Pattern[str] = re.compile(
+    r"\$\d"                         # dollar amount
+    r"|\b\d+\s*(?:usd|eur|gbp|idr|k|million)\b"  # numeric + currency
+    r"|\bfunds?\b"
+    r"|\bmoney\b"
+    r"|\baccount\b"
+    r"|\bwire\b"
+    r"|\bbalance\b"
+    r"|\bpayment\b",
+    re.IGNORECASE,
+)
+_TRANSFER_VERB_PATTERN: re.Pattern[str] = re.compile(r"\btransfer\b", re.IGNORECASE)
+
+# "message" in an outward-action context: must have an outward target or platform word.
+_MESSAGE_OUTWARD_PATTERN: re.Pattern[str] = re.compile(
+    # "send a message to X" — "send" already catches this, but "message" alone with target:
+    r"\bmessage\s+(?:the\s+)?(?:client|customer|user|subscriber|lead|team|member|vendor|partner)\b"
+    r"|\bmessage\s+@\w+"                              # "message @username"
+    r"|\b(?:whatsapp|slack|telegram|sms|text)\s+message\b"  # platform + message
+    r"|\bsend\s+(?:a\s+)?message\b",                  # "send a message" (belt-and-suspenders)
+    re.IGNORECASE,
+)
+# Explicitly safe "message" patterns — these do NOT escalate even if the above misses them.
+_MESSAGE_SAFE_PATTERN: re.Pattern[str] = re.compile(
+    r"\b(?:log|debug|error|commit|queue|template|format|draft|system|status)\s+message\b"
+    r"|\bmessage\s+(?:template|queue|format|log|schema|type|handler|broker|bus)\b",
+    re.IGNORECASE,
+)
+
+# "release" in deploy/money context only:
+_RELEASE_DANGEROUS_PATTERN: re.Pattern[str] = re.compile(
+    r"\breleas(?:e|ing)\s+(?:to\s+)?(?:production|prod|staging|live|app|build|version|the\s+build|the\s+update|the\s+app|the\s+version)\b"
+    r"|\breleas(?:e|ing)\s+(?:the\s+)?(?:build|update|app|version|software|binary|artifact)\b"
+    r"|\breleas(?:e|ing)\s+(?:funds?|payment)\b",
+    re.IGNORECASE,
+)
+# Safe "release" patterns — docs/planning, never code/money:
+_RELEASE_SAFE_PATTERN: re.Pattern[str] = re.compile(
+    r"\brelease\s+(?:notes?|timeline|date|cadence|plan|schedule|process|strategy|candidate)\b"
+    r"|\brelease\s+notes?\b",
+    re.IGNORECASE,
+)
+
+
+def _is_context_sensitive_hard_rule(summary: str) -> bool:
+    """Return True if a context-sensitive dual-use word fires in its dangerous sense."""
+    # --- "post" as outward action ---
+    if _POST_OUTWARD_PATTERN.search(summary):
+        return True
+
+    # --- "transfer" with money/account context ---
+    if _TRANSFER_VERB_PATTERN.search(summary) and _TRANSFER_MONEY_TOKENS.search(summary):
+        return True
+
+    # --- "message" with outward target (safe patterns take precedence) ---
+    if _MESSAGE_OUTWARD_PATTERN.search(summary) and not _MESSAGE_SAFE_PATTERN.search(summary):
+        return True
+
+    # --- "release" in deploy/money sense (safe patterns take precedence) ---
+    if _RELEASE_DANGEROUS_PATTERN.search(summary) and not _RELEASE_SAFE_PATTERN.search(summary):
+        return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +208,11 @@ def _is_hard_rule(action_type: str, summary: str) -> bool:
         if pattern.search(summary):
             return True
 
-    # 3. Also keyword-scan the action_type string itself (e.g. "outreach.send",
+    # 3. Context-sensitive dual-use word detection on the summary.
+    if _is_context_sensitive_hard_rule(summary):
+        return True
+
+    # 4. Also keyword-scan the action_type string itself (e.g. "outreach.send",
     #    "custom.deploy.prod") to catch novel dotted types not in the prefix list.
     for pattern in _COMPILED_PATTERNS:
         if pattern.search(action_type):
