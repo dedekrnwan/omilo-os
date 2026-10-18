@@ -183,5 +183,5 @@ def test_hermes_helpers_move_to_claude_code(tmp_path):
         db.commit()
     _migrate(eng)
     with Session(eng) as db:
-        assert db.get(Staff, "dev").engine == {"type": "claude-code", "auth": "api", "model": "claude-opus-5-5", "timeout_s": 900}
-        assert db.get(Staff, "ops").engine == {"type": "claude-code", "auth": "api"}
+        assert db.get(Staff, "dev").engine == {"type": "claude-code", "auth": "auto", "model": "claude-opus-5-5", "timeout_s": 900}
+        assert db.get(Staff, "ops").engine == {"type": "claude-code", "auth": "auto"}

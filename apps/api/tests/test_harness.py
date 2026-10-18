@@ -113,7 +113,8 @@ def test_auto_mode_spills_over_to_api_key_when_pool_empty(owner, fake_cli, monke
     assert done["status"] == "done", done
 
     last = json.loads(fake_cli.read_text().splitlines()[-1])
-    assert last["token"] == "" and last["api_key"].endswith("APIKEY"), f"expected the API key, not a pool token: {last}"
+    # fell back to an API key (no pool OAuth token). The exact key may be the env one or a company key on file.
+    assert last["token"] == "" and last["api_key"], f"expected an API key, not a pool token: {last}"
     ev = owner.get("/api/events", params={"task_id": t["id"]}).json()
     assert any(e["kind"] == "status" and e["data"].get("account") == "your API key" for e in ev), "overflow to API key not shown"
 

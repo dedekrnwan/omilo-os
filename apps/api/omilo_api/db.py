@@ -108,10 +108,10 @@ def _migrate(eng) -> None:
         changed = False
         for st in db.query(Staff):
             e = dict(st.engine or {})
-            if e.get("type") in ("hermes", "openai"):  # Hermes is gone: Claude Code with the company's API key
+            if e.get("type") in ("hermes", "openai"):  # Hermes is gone: Claude Code, subscription pool first with API-key overflow
                 keep = {k: v for k, v in e.items() if k in ("timeout_s", "max_turns")}
                 model = e.get("claude_model") or (e.get("model") if str(e.get("model", "")).startswith("claude") else None)
-                st.engine = {"type": "claude-code", "auth": "api", **({"model": model} if model else {}), **keep}
+                st.engine = {"type": "claude-code", "auth": "auto", **({"model": model} if model else {}), **keep}
                 changed = True
         if changed:
             db.commit()

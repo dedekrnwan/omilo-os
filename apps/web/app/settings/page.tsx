@@ -143,8 +143,9 @@ function CompanyBudget({ b, set }: { b?: { budget_usd: number; cost_usd: number;
   );
 }
 
-type AiState = { provider: string; model: string | null; claude_key_hint: string | null; staff: Record<string, { provider: string }> };
+type AiState = { provider: string; model: string | null; claude_key_hint: string | null; staff: Record<string, { provider: string }>; claude_code?: { installed: boolean } };
 type VendorProvider = { id: string; label: string; icon: string; has_key: boolean };
+type PoolState = { ready: number; total: number; cli: { path: string | null } };
 
 const VENDOR_ICON: Record<string, string> = {
   anthropic: "ri-anthropic-line",
@@ -169,16 +170,19 @@ function AiEngine() {
   const [vendors, setVendors] = useState<VendorProvider[]>([]);
   const [vendorEdit, setVendorEdit] = useState<string | null>(null);
   const [vendorKey, setVendorKey] = useState("");
+  const [pool, setPool] = useState<PoolState | null>(null);
   const load = useCallback(() => api<AiState>("/ai").then(setAi).catch((e) => setErr(e.message)), []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api<VendorProvider[]>("/ai/providers").then(setVendors).catch(() => {}); }, []);
+  useEffect(() => { api<PoolState>("/harness").then(setPool).catch(() => {}); }, []);
   const save = async (provider: string) => {
     setErr(null); setMsg(null);
     try {
       const isClaude = provider === "claude" || provider === "claude-direct";
       await api("/ai", { body: isClaude ? { provider, api_key: claude.key || undefined, model: claude.model } : { provider } });
       setEdit(false); setClaude({ key: "", model: "", ok: false });
-      setMsg(provider === "claude" ? "Saved. Your helpers now run in Claude Code with your API key."
+      setMsg(provider === "claude-code" ? "Saved. Your helpers now run on the Claude subscription pool, with your API key as overflow."
+        : provider === "claude" ? "Saved. Your helpers now run in Claude Code with your API key."
         : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Omilo's tools)." : "Saved. All helpers are in practice mode.");
       load();
     } catch (e: any) { setErr(e.message); }
@@ -195,20 +199,53 @@ function AiEngine() {
     } catch (e: any) { setErr(e.message); }
   };
   const label = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Omilo's tools)",
-    fake: "Practice mode (no AI)", "claude-code": "Claude Code pool (Harness)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || (vendors.find((v) => v.id === (p || ""))?.label) || p || "…";
+    fake: "Practice mode (no AI)", "claude-code": "Claude subscription pool (+ API key overflow)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || (vendors.find((v) => v.id === (p || ""))?.label) || p || "…";
   const isVendor = (p?: string) => !!vendors.find((v) => v.id === p);
+  const p = ai?.provider;
+  const sub = p === "claude-code" ? (pool?.cli?.path ? `Pool: ${pool.ready}/${pool.total} seats ready. Your API key covers overflow.` : "Pool first, API key for overflow. Install Claude Code on Harness.")
+    : p === "fake" ? "Helpers go through every step without calling an AI."
+    : ai?.claude_key_hint ? `key ending in ${ai.claude_key_hint}${p === "claude" && ai.model ? ` · ${ai.model}` : ""}`
+    : isVendor(p) ? "Direct API · key on file" : "";
   return (
     <>
+      <div className="callout">
+        <b>How your team runs</b>
+        <p style={{ margin: "6px 0 8px" }}>Every helper is the same Claude Code agent: files, terminal, MCP tools, skills and web work the same way whichever you pick here. The only choice is who pays for each run.</p>
+        <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+          <li><b>Claude subscription pool</b> (recommended): flat-rate seats you add on <Link href="/harness/">Harness</Link>. Your team runs on these first.</li>
+          <li><b>Your Claude API key</b>: the automatic overflow when every pool seat is busy, or it runs the whole team on its own (billed per token) when you have no subscription.</li>
+        </ul>
+      </div>
+
       <div className="set-card">
-        <i className={`${isVendor(ai?.provider) ? (VENDOR_ICON[ai?.provider || ""] || "ri-sparkling-2-line") : "ri-sparkling-2-line"} set-card-ic ${ai?.provider === "fake" ? "idle" : ""}`} />
-        <div className="t"><b>{label(ai?.provider)}</b>
-          <span>{ai?.provider === "claude" && ai.model ? `${ai.model} · ` : ""}{ai?.claude_key_hint ? `key ending in ${ai.claude_key_hint}` : ai?.provider === "fake" ? "Helpers go through every step without calling an AI." : isVendor(ai?.provider) ? "Direct API · key on file" : ""}</span></div>
-        {!edit && !vendorEdit && <div className="acts">
-          <button className="btn primary" onClick={() => setEdit(true)}>{ai?.provider === "claude" || ai?.provider === "claude-direct" ? "Change key or model" : "Use my Claude API key"}</button>
-          {ai && ai.provider !== "fake" && <button className="btn" onClick={async () => { if (await confirmDialog({ title: "Switch every helper to practice mode?", body: "They stop calling the AI until you switch back.", confirm: "Practice mode" })) save("fake"); }}>Practice mode</button>}
-        </div>}
+        <i className={`${isVendor(p) ? (VENDOR_ICON[p || ""] || "ri-sparkling-2-line") : p === "claude-code" ? "ri-stack-line" : "ri-sparkling-2-line"} set-card-ic ${p === "fake" ? "idle" : ""}`} />
+        <div className="t"><b>{label(p)}</b><span>{sub}</span></div>
       </div>
       {msg && <div className="callout ok">{msg}</div>}
+
+      {!edit && !vendorEdit && (
+        <div className="set-box">
+          <div className="set-sub" style={{ marginTop: 0 }}>
+            <i className="ri-stack-line" /><b>Claude subscription pool</b>
+            <span className="small">Recommended. Full powers, flat-rate seats.</span>
+          </div>
+          <p className="small" style={{ margin: "0 0 10px" }}>Helpers run on your Claude subscriptions first; your API key automatically covers any overflow. Add or manage seats on <Link href="/harness/">Harness</Link>{pool?.cli?.path ? ` (${pool.ready}/${pool.total} ready)` : ""}.</p>
+          <div className="acts">
+            <button className="btn primary" disabled={p === "claude-code"} onClick={() => save("claude-code")}>{p === "claude-code" ? "In use for all helpers" : "Use the pool for all helpers"}</button>
+            <Link className="btn" href="/harness/">Manage seats</Link>
+          </div>
+        </div>
+      )}
+
+      {!edit && !vendorEdit && (
+        <>
+          <div className="set-sub"><i className="ri-key-2-line" /><b>Run on your Claude API key only</b><span className="small">Billed per token. Use when you have no subscription.</span></div>
+          <div className="acts" style={{ marginBottom: 10 }}>
+            <button className="btn" onClick={() => setEdit(true)}>{p === "claude" || p === "claude-direct" ? "Change key or model" : "Use my Claude API key"}</button>
+            {ai && p !== "fake" && <button className="btn" onClick={async () => { if (await confirmDialog({ title: "Switch every helper to practice mode?", body: "They stop calling the AI until you switch back.", confirm: "Practice mode" })) save("fake"); }}>Practice mode</button>}
+          </div>
+        </>
+      )}
       {edit && (
         <div className="set-box">
           <ClaudeSetup value={claude} onChange={setClaude} savedHint={ai?.claude_key_hint} />
@@ -225,7 +262,7 @@ function AiEngine() {
       )}
       {vendors.length > 0 && !edit && (
         <>
-          <div className="set-sub" style={{ marginTop: 14 }}><b>Or use a direct API key</b></div>
+          <div className="set-sub" style={{ marginTop: 14 }}><b>Or another provider&apos;s API key</b><span className="small">OpenAI, Gemini, and others (direct API, Omilo&apos;s tools only)</span></div>
           <div className="set-vendor-grid">
             {vendors.map((v) => {
               const active = ai?.provider === v.id;
@@ -275,7 +312,7 @@ function AiEngine() {
         </>
       )}
       <Err error={err} />
-      <p className="small set-foot">Prefer your Claude subscriptions? Add them on <Link href="/harness/">Harness</Link> and pick the pool per helper on <Link href="/staff/">Team</Link>.</p>
+      <p className="small set-foot">Want a different engine for one helper? Set it per helper on <Link href="/staff/">Team</Link>.</p>
     </>
   );
 }
