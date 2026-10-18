@@ -40,7 +40,8 @@ function accessLabel(kind: string, target: Record<string, unknown>): string {
   if (kind === "folder") {
     const path = String(target.path || "");
     const access = target.access === "write" ? "read and write" : "read";
-    const cmds = target.commands ? ", and run commands in it" : "";
+    const hasCommands = Array.isArray(target.commands) ? target.commands.length > 0 : !!target.commands;
+    const cmds = hasCommands ? ", and run commands in it" : "";
     return `Folder: ${path} (${access}${cmds})`;
   }
   if (kind === "connector") return `Connection: ${String(target.name || target.id || "")}`;
@@ -117,6 +118,7 @@ function AccessCard({ requestId, kind, target, reason, decided, onDecide }: {
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="Optional: why you're denying this (the helper will see it)" rows={2}
+            aria-label="Reason for denying (optional, visible to the helper)"
             style={{ resize: "vertical", fontSize: 13 }}
             onKeyDown={(e) => { if (e.key === "Escape") { setDenyOpen(false); setNote(""); } }} />
           <div className="acts" style={{ gap: 6 }}>
