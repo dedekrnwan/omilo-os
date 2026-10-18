@@ -643,8 +643,8 @@ def bulk_decide(body: BulkDecideIn, db: Session = Depends(get_db), user: User = 
         raise HTTPException(400, "a note is required to deny")
 
     # 3. High-risk gate (approve only)
+    needs_confirm: list[dict] = []
     if body.decision == "approve" and not body.confirm_high_risk:
-        needs_confirm: list[dict] = []
         for item in eligible:
             if item.kind == "proposal":
                 p = db.get(Proposal, item.ref_id)
@@ -698,7 +698,7 @@ def bulk_decide(body: BulkDecideIn, db: Session = Depends(get_db), user: User = 
     )
     db.commit()
 
-    return {"approved": approved, "denied": denied, "skipped": skipped, "needs_confirm": []}
+    return {"approved": approved, "denied": denied, "skipped": skipped, "needs_confirm": needs_confirm}
 
 
 class AccessDecisionIn(BaseModel):
