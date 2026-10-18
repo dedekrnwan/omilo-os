@@ -29,6 +29,7 @@ JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 OS="$(uname -s)"; ARCH="$(uname -m)"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
 
+trap 'echo "build-runtime: failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 fetch() { # url file
@@ -40,14 +41,22 @@ mkdir -p "$OUT" "$CACHE"
 relink() { # prefix dir...
   [ "$OS" = Darwin ] || return 0
   local prefix="$1"; shift
-  find "$@" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' \) | while read -r f; do
+  local f rel deps dep changed n=0
+  while IFS= read -r f; do
     file -b "$f" | grep -q 'Mach-O' || continue
-    local rel; rel="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], os.path.dirname(sys.argv[1])))' "$f" "$prefix/lib")"
-    case "$f" in *.dylib) install_name_tool -id "@rpath/$(basename "$f")" "$f" 2>/dev/null || true ;; esac
-    otool -L "$f" | tail -n +2 | awk '{print $1}' | grep "^$prefix/lib/" | while read -r dep; do
-      install_name_tool -change "$dep" "@loader_path/$rel/$(basename "$dep")" "$f"
+    changed=0
+    rel="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], os.path.dirname(sys.argv[1])))' "$f" "$prefix/lib")"
+    case "$f" in *.dylib) install_name_tool -id "@rpath/$(basename "$f")" "$f" 2>/dev/null && changed=1 ;; esac
+    deps="$(otool -L "$f" | awk 'NR > 1 {print $1}' | grep "^$prefix/lib/" || true)"  # most files link nothing of ours
+    for dep in $deps; do
+      install_name_tool -change "$dep" "@loader_path/$rel/$(basename "$dep")" "$f" 2>/dev/null
+      changed=1
     done
-  done
+    # Apple Silicon kills a program whose signature no longer matches: re-sign what we touched (ad hoc here;
+    # sign-runtime.sh signs everything again with the real identity)
+    if [ "$changed" = 1 ]; then codesign --force --sign - "$f" 2>/dev/null; n=$((n + 1)); fi
+  done < <(find "$@" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' \))
+  echo "relinked $n files"
 }
 
 # ------------------------------------------------------------------ Python + Omilo
