@@ -14,6 +14,7 @@ import { chatWith, helperItems, taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { openTask, openThread } from "@/lib/open";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* The Inbox: a board of what needs you, what is running and what just finished (or the classic list with history). */
 
@@ -35,6 +36,9 @@ const dur = (s: number | null | undefined) => {
 };
 const since = (iso: string | null, now: number) => (iso ? (now - new Date(iso).getTime()) / 1000 : null);
 const KIND: Record<string, string> = { proposal: "Approval", question: "Question", alert: "Alert", workflow: "Workflow", access_request: "Permission", skill_share: "Skill" };
+const BULK_ELIGIBLE = new Set(["proposal", "access_request"]);
+
+type BulkResult = { approved: string[]; denied: string[]; skipped: { id: string; reason: string }[]; needs_confirm: { id: string; risk: string; why: string }[] };
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now());
@@ -90,6 +94,10 @@ function BoardView({ onCount }: { onCount: () => void }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<NeedCard | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [denyDialogOpen, setDenyDialogOpen] = useState(false);
+  const [denyNote, setDenyNote] = useState("");
   const load = useCallback(async () => { try { setB(await api<Board>("/board")); setErr(null); } catch (e: any) { setErr(e.message); } }, []);
   usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind === "nudge" || n?.kind?.startsWith("job") || n?.kind === "local");
   const now = useNow(!!b?.running.length || !!b?.needs.length);
@@ -109,6 +117,81 @@ function BoardView({ onCount }: { onCount: () => void }) {
   }, [b]);
   const toggle = (id: string) => setOpen((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
   const closeDetail = useCallback(() => setDetail(null), []);
+
+  const eligibleNeeds = b?.needs.filter((c) => BULK_ELIGIBLE.has(c.kind)) ?? [];
+  const allEligibleSelected = eligibleNeeds.length > 0 && eligibleNeeds.every((c) => selectedIds.has(c.id));
+
+  const toggleSelect = (id: string, e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    setSelectedIds((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
+  };
+
+  const selectAll = () => setSelectedIds(new Set(eligibleNeeds.map((c) => c.id)));
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const bulkApprove = async () => {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    setErr(null);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await api<BulkResult>("/inbox/bulk", { body: { ids, decision: "approve" } });
+      if (res.needs_confirm.length > 0) {
+        const ok = await confirmDialog({
+          title: `${res.needs_confirm.length} item${res.needs_confirm.length === 1 ? "" : "s"} need a second look`,
+          body: (
+            <div>
+              <p style={{ margin: "0 0 8px" }}>
+                {res.needs_confirm.length === 1 ? "This item" : "These items"} spend money or send messages externally.
+                Confirm to approve {res.needs_confirm.length === 1 ? "it" : "all of them"}.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, textAlign: "left", fontSize: 13 }}>
+                {res.needs_confirm.map((x) => <li key={x.id}>{x.why}</li>)}
+              </ul>
+            </div>
+          ),
+          confirm: `Approve ${res.needs_confirm.length === 1 ? "it" : "all"}`,
+          danger: true,
+        });
+        if (ok) {
+          const confirmIds = res.needs_confirm.map((x) => x.id);
+          const res2 = await api<BulkResult>("/inbox/bulk", { body: { ids: confirmIds, decision: "approve", confirm_high_risk: true } });
+          if (res2.skipped.length > 0) setErr(`${res2.skipped.length} item${res2.skipped.length === 1 ? "" : "s"} could not be decided.`);
+        }
+      } else if (res.skipped.length > 0) {
+        setErr(`${res.skipped.length} item${res.skipped.length === 1 ? "" : "s"} could not be decided.`);
+      }
+      clearSelection();
+      await load();
+      onCount();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const openDenyDialog = () => { setDenyNote(""); setDenyDialogOpen(true); };
+  const closeDenyDialog = () => setDenyDialogOpen(false);
+
+  const bulkDeny = async () => {
+    if (bulkBusy || !denyNote.trim()) return;
+    setBulkBusy(true);
+    setErr(null);
+    try {
+      const ids = Array.from(selectedIds);
+      const res = await api<BulkResult>("/inbox/bulk", { body: { ids, decision: "deny", note: denyNote.trim() } });
+      if (res.skipped.length > 0) setErr(`${res.skipped.length} item${res.skipped.length === 1 ? "" : "s"} could not be decided.`);
+      setDenyDialogOpen(false);
+      clearSelection();
+      await load();
+      onCount();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const quick = async (fn: () => Promise<unknown>) => { try { await fn(); await load(); onCount(); } catch (e: any) { setErr(e.message); } };
   const needItems = (c: NeedCard): MenuItem[] => {
@@ -138,16 +221,58 @@ function BoardView({ onCount }: { onCount: () => void }) {
   return (
     <>
       <Err error={err} />
+
+      {selectedIds.size > 0 && (
+        <div className="bulk-bar" role="toolbar" aria-label="Bulk actions">
+          <span className="bulk-bar-count">{selectedIds.size} selected</span>
+          <button className="btn sm" onClick={allEligibleSelected ? clearSelection : selectAll} disabled={bulkBusy}>
+            {allEligibleSelected ? "Deselect all" : "Select all"}
+          </button>
+          <button className="btn sm" onClick={clearSelection} disabled={bulkBusy}>Clear</button>
+          <span className="sp" />
+          <button className="btn sm danger" onClick={openDenyDialog} disabled={bulkBusy}>
+            <i className="ri-close-line" />Deny
+          </button>
+          <button className="btn sm primary" onClick={bulkApprove} disabled={bulkBusy}>
+            {bulkBusy ? <span className="spin" style={{ width: 12, height: 12 }} /> : <i className="ri-check-line" />}
+            Approve
+          </button>
+        </div>
+      )}
+
+      {selectedIds.size === 0 && eligibleNeeds.length > 1 && (
+        <div className="bulk-hint">
+          <button className="btn sm quiet" onClick={selectAll}><i className="ri-checkbox-multiple-line" />Select all approvals and permissions</button>
+        </div>
+      )}
+
       <div className="board">
         <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
-          {b.needs.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
-              items={() => needItems(c)}
-              indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
-              time={dur(since(c.since, now))}
-              tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
-                {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
-          ))}
+          {b.needs.map((c) => {
+            const eligible = BULK_ELIGIBLE.has(c.kind);
+            const checked = selectedIds.has(c.id);
+            return (
+              <div key={c.id} className={`bcard-wrap${checked ? " bcard-wrap-sel" : ""}`}>
+                {eligible && (
+                  <input
+                    type="checkbox"
+                    className="bcard-check"
+                    checked={checked}
+                    aria-label={`Select ${c.title}`}
+                    onClick={(e) => toggleSelect(c.id, e)}
+                    onChange={() => {/* controlled via onClick to stop propagation */}}
+                    onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleSelect(c.id, e); } }}
+                  />
+                )}
+                <Card c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
+                  items={() => needItems(c)}
+                  indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
+                  time={dur(since(c.since, now))}
+                  tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
+                    {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
+              </div>
+            );
+          })}
         </Column>
         <Column title="Running" count={b.running.length} icon={<span className="spin bcol-i" />} empty="No helper is working right now.">
           {b.running.map((c) => (
@@ -166,6 +291,32 @@ function BoardView({ onCount }: { onCount: () => void }) {
           ))}
         </Column>
       </div>
+
+      {denyDialogOpen && (
+        <div className="dlg-scrim" role="dialog" aria-modal="true" aria-labelledby="deny-dlg-title" onClick={(e) => { if (e.target === e.currentTarget) closeDenyDialog(); }}>
+          <div className="dlg danger">
+            <div className="dlg-icon"><i className="ri-close-circle-line" /></div>
+            <h2 id="deny-dlg-title">Deny {selectedIds.size} item{selectedIds.size === 1 ? "" : "s"}</h2>
+            <p className="dlg-body">Add a short reason. The helper sees this note.</p>
+            <textarea
+              className="deny-note-input"
+              rows={3}
+              placeholder="Reason for denying"
+              value={denyNote}
+              onChange={(e) => setDenyNote(e.target.value)}
+              autoFocus
+              style={{ width: "100%", marginTop: 12, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line-strong)", font: "inherit", fontSize: 13, resize: "vertical", boxSizing: "border-box" }}
+            />
+            <div className="dlg-acts">
+              <button className="btn" onClick={closeDenyDialog} disabled={bulkBusy}>Cancel</button>
+              <button className="btn danger-solid" onClick={bulkDeny} disabled={bulkBusy || !denyNote.trim()}>
+                {bulkBusy ? <span className="spin" style={{ width: 12, height: 12 }} /> : null}
+                Deny {selectedIds.size === 1 ? "it" : "all"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Drawer open={!!detail} onClose={closeDetail} wide
         icon={detail ? <Avatar who={detail.staff} size={28} /> : null}

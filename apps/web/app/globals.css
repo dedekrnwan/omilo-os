@@ -812,6 +812,15 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 .bc-open { display: flex; justify-content: flex-end; margin-top: 8px; }
 .itemdetail .paper { margin-bottom: 8px; }
 @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+/* ---- bulk-select bar & card wrappers ---- */
+.bulk-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); }
+.bulk-bar-count { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.bulk-hint { margin-bottom: 10px; }
+.bcard-wrap { position: relative; }
+.bcard-wrap .bcard-check { position: absolute; top: 12px; left: 10px; z-index: 2; width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary, #4f46e5); }
+.bcard-wrap .bcard-check:focus-visible { outline: 2px solid var(--primary, #4f46e5); outline-offset: 2px; }
+.bcard-wrap .bcard { padding-left: 32px; }
+.bcard-wrap-sel .bcard { border-color: var(--primary, #4f46e5); background: color-mix(in srgb, var(--primary, #4f46e5) 5%, var(--surface)); }
 .bud { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .bud i { font-size: 12px; color: inherit; }
 .bud.warning { color: #b45309; } .bud.critical { color: #b91c1c; }
