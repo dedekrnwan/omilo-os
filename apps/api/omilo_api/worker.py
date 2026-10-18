@@ -548,6 +548,13 @@ class Worker:
         ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
         try:
             res = await asyncio.wait_for(get_engine(ctx.engine_config).chat(ctx), timeout=600)
+        except asyncio.CancelledError:
+            # The owner stopped the turn. Close out the run with a terminal status so the UI's
+            # "Working" card finalizes to "Stopped" — without this, no done/failed event ever
+            # arrives and the spinner runs forever. Re-raise so answer_thread posts the stop note
+            # and the cancellation keeps propagating.
+            ctx.emit("status", state="failed", error="stopped by the owner")
+            raise
         except Exception as e:
             res = EngineResult(error=f"{type(e).__name__}: {e}")
         if not res.error and not (res.text or "").strip():

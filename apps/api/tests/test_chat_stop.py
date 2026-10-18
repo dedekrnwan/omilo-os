@@ -306,3 +306,50 @@ async def test_answer_thread_exits_on_awaiting_reply_false(monkeypatch):
     assert len(stop_notes) <= 1, (
         f"stop note posted {len(stop_notes)} times — double-post detected: {stop_notes}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Finding 3: a cancelled engine turn emits a terminal status (UI "Working" must not spin forever)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_answer_as_emits_terminal_status_on_cancel(monkeypatch):
+    """When the owner stops a turn, the engine await raises CancelledError. _answer_as must emit a
+    terminal status=failed event (so the frontend Run card finalizes to "Stopped" instead of
+    spinning "Working" forever) and then re-raise so the cancellation keeps propagating.
+    """
+    from sqlalchemy import select
+
+    import omilo_api.worker as worker_mod
+    from omilo_api.db import session_scope
+    from omilo_api.models import RunEvent, Staff, Thread
+    from omilo_api.worker import Worker
+
+    with session_scope() as db:
+        chief = db.scalar(select(Staff).where(Staff.is_chief.is_(True)).limit(1))
+        if chief is None:
+            pytest.skip("no chief staff in test DB — run after team setup")
+        th = Thread(scope="master", staff_id=chief.id, title="cancel-status-test",
+                    awaiting_reply=True, pending=[chief.id])
+        db.add(th)
+        db.flush()
+        thid, cid = th.id, chief.id
+
+    class CancellingEngine:
+        async def chat(self, ctx):
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker_mod, "get_engine", lambda cfg: CancellingEngine())
+
+    w = Worker()
+    with pytest.raises(asyncio.CancelledError):
+        await w._answer_as(thid, cid, [])
+
+    with session_scope() as db:
+        statuses = [e.data.get("state") for e in db.scalars(
+            select(RunEvent).where(RunEvent.thread_id == thid)) if e.kind == "status"]
+
+    assert "started" in statuses, f"run never started; got {statuses}"
+    assert "failed" in statuses, (
+        f"no terminal status emitted on cancel — UI would spin 'Working' forever; got {statuses}"
+    )

@@ -67,6 +67,35 @@ def test_mention_in_a_one_to_one_chat_and_group_admin(owner):
     assert owner.get(f"/api/threads/{c['id']}").status_code == 404
 
 
+def test_history_tags_the_founders_latest_message(owner):
+    """A brought-in helper must answer the founder's latest message, not a founder-directed question a
+    teammate left in the same (merged) user turn. history() tags the latest founder message distinctly."""
+    from sqlalchemy import select
+
+    from omilo_api import teamchat as TC
+    from omilo_api.db import session_scope
+    from omilo_api.models import Message, Staff, Thread
+
+    with session_scope() as db:
+        th = db.get(Thread, owner.post("/api/threads", json={"scope": "group"}).json()["id"])
+        me = db.scalar(select(Staff).where(Staff.id == "marketing"))
+        assert me is not None, "marketing helper must exist in the test team"
+        msgs = [
+            Message(id="m1", thread_id=th.id, role="owner", author="owner", text="first ask", blocks=[]),
+            Message(id="m2", thread_id=th.id, role="agent", author="chief-of-staff", text="Keputusan Anda: A or B?", blocks=[]),
+            Message(id="m3", thread_id=th.id, role="owner", author="owner", text="go with A, and @Marketing draft it", blocks=[]),
+        ]
+        h = TC.history(db, th, me, msgs)
+
+    joined = "\n".join(x["text"] for x in h)
+    # The latest founder message (m3) is the cue; the earlier one (m1) is not.
+    assert "[The founder's latest message — this is what to answer]\ngo with A" in joined
+    assert "[The founder wrote]\nfirst ask" in joined
+    assert "this is what to answer]\nfirst ask" not in joined
+    # The chief's founder-directed question is framed as a teammate, not as the answer cue.
+    assert "[Chief of Staff, your teammate, wrote]\nKeputusan Anda" in joined
+
+
 def test_helper_hands_over_by_naming_a_teammate(owner):
     from omilo_api import teamchat as TC
     from omilo_api.db import session_scope

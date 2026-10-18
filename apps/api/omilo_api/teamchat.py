@@ -106,8 +106,12 @@ def shared(th: Thread, staff_id: str) -> bool:
 
 def history(db: Session, th: Thread, me: Staff, msgs: list[Message]) -> list[dict]:
     """The conversation as `me` sees it: your words and teammates' words come in as the other side (named), its own
-    words as its side; turns from the same side are joined so engines get a clean back-and-forth."""
+    words as its side; turns from the same side are joined so engines get a clean back-and-forth.
+
+    The founder's most recent message is tagged as the one to answer, so a brought-in helper doesn't mistake a
+    question a teammate put to the founder (merged into the same user turn) for its own cue."""
     names = {s.id: s.name for s in team(db)}
+    last_owner = next((m.id for m in reversed(msgs) if m.role == "owner" and (m.text or "").strip()), None)
     out: list[dict] = []
     for m in msgs:
         if m.role not in ("owner", "agent") or not (m.text or "").strip():
@@ -116,8 +120,11 @@ def history(db: Session, th: Thread, me: Staff, msgs: list[Message]) -> list[dic
             role, text = "agent", m.text
         elif m.role == "agent":
             role, text = "owner", f"[{names.get(m.author, m.author)}, your teammate, wrote]\n{m.text}"
+        elif shared(th, me.id):
+            tag = "The founder's latest message — this is what to answer" if m.id == last_owner else "The founder wrote"
+            role, text = "owner", f"[{tag}]\n{m.text}"
         else:
-            role, text = "owner", (f"[The founder wrote]\n{m.text}" if shared(th, me.id) else m.text)
+            role, text = "owner", m.text
         if out and out[-1]["role"] == role:
             out[-1]["text"] += "\n\n" + text
         else:
@@ -131,7 +138,8 @@ def note(db: Session, th: Thread, me: Staff, answered: list[str]) -> str:
     others = [n for sid, n in names.items() if sid != me.id]  # plain names: listing them must not hand over
     if th.scope == "group":
         head = (f"This is the team chat \"{th.title}\": the founder and the whole team. "
-                f"{'The founder asked the team; as Chief of Staff you answer and route' if me.id == th.staff_id and not answered else 'You were brought in by name'}.")
+                f"{'The founder asked the team; as Chief of Staff you answer and route' if me.id == th.staff_id and not answered else 'You were brought in by name'}. "
+                "Answer the founder's latest message; a question a teammate put to the founder is theirs, not yours to answer.")
     else:
         head = f"You were brought into the founder's chat with {names.get(th.staff_id, th.staff_id)}." if me.id != th.staff_id else ""
     done = f" Already answered this message: {', '.join(names.get(a, a) for a in answered)}." if answered else ""
