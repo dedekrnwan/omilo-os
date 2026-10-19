@@ -93,7 +93,7 @@ The three-service `docker-compose.dev.yml` is the full-tier reference for local 
 
 ## Self-hosting
 
-Three ways to run your own Omilo, smallest first. All three serve the same app on port 7700 — pick by how much you're running, and you can move up later without losing data.
+Three ways to run your own Omilo, smallest first. All three serve the same app on port 7700 — pick by how much you're running, and you can move up later without losing data. The `omilo` CLI (see [Install the CLI](#install-the-cli) below) drives all of them; Option A also works with plain `docker run`.
 
 ### Option A — one container (simplest)
 
@@ -107,15 +107,14 @@ Your data lives in the `omilo-data` volume (`/data/omilo.db`). Good for one user
 
 ### Option B — on the host, no Docker (`omilo start`)
 
-For a VM or server where you'd rather not run Docker at all. From a clone (needs Python 3.11+, Node 20+, Go 1.24+):
+For a VM or server where you'd rather not run Docker at all. Install the server app from a clone (needs Python 3.11+), and get the `omilo` CLI from [Install the CLI](#install-the-cli) (or build it from the clone with `make cli` → `./cli/omilo`):
 
 ```bash
-pip install ./apps/api        # installs the omilo-api + omilo-migrate commands
-make cli                      # builds ./cli/omilo
-./cli/omilo start             # runs Omilo on this machine (SQLite, embedded worker), opens the browser
+pip install ./apps/api        # the server app — adds the omilo-api + omilo-migrate commands
+omilo start                   # run Omilo here on SQLite (embedded worker), opens the browser
 ```
 
-`omilo start` runs in the foreground — press Ctrl+C to stop it. Options: `--data-dir DIR` (default `~/.omilo`), `--port 7700`, `--no-open`. No database or Redis to install; the knowledge base runs on SQLite with local embeddings.
+`omilo start` runs in the foreground — press Ctrl+C to stop it. Options: `--data-dir DIR` (default `~/.omilo`), `--port 7700`, `--no-open`. No database or Redis to install; the knowledge base runs on SQLite with local embeddings. (`omilo start` needs the Python app above; the standalone CLI from npm/brew/curl is for `omilo up`, `omilo login`, and driving a running Omilo.)
 
 ### Option C — full tier (Postgres + pgvector + Redis)
 
