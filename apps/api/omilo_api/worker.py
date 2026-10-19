@@ -779,7 +779,12 @@ def _engine_label(cfg: dict) -> str:
     t = (cfg or {}).get("type", "fake")
     if t == "claude-code":
         auth = cfg.get("auth")
-        base = "Claude Code · your API key" if auth == "api" else "Claude Code pool" + (" + API overflow" if auth == "auto" else "")
+        if auth == "api":
+            base = "Claude Code · your API key"
+        elif auth == "local":
+            base = "Claude Code (your sign-in)"
+        else:
+            base = "Claude Code pool" + (" + API overflow" if auth == "auto" else "")
         return base + (f" · {cfg['model']}" if cfg.get("model") else "")
     if t == "claude":
         return f"Claude · {cfg.get('model') or ''}".strip(" ·")

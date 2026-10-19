@@ -972,10 +972,11 @@ def onboarding_company(body: CompanyIn, db: Session = Depends(get_db), user: Use
 # ------------------------------------------------------------------ AI (the engine every helper uses)
 _LITELLM_PROVIDER_IDS = tuple(_providers_reg.provider_ids())  # 8 vendor ids from registry
 
-AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code") + _LITELLM_PROVIDER_IDS
+AI_PROVIDERS = ("fake", "claude", "claude-direct", "claude-code", "local") + _LITELLM_PROVIDER_IDS
 # "claude"        = Claude Code run with your Claude API key: files, commands in shared folders, web, connectors
 # "claude-code"   = Claude Code on the subscription pool (Harness), with your API key as automatic overflow
 # "claude-direct" = Omilo calls the Claude API itself: nothing to install, web + Omilo's tools only
+# "local"         = Claude Code driven via the user's own locally-authenticated `claude` (no key injected by Omilo)
 # 8 vendor ids    = LiteLLM-routed direct API calls (anthropic, openai, gemini, xai, deepseek, mistral, bedrock, groq)
 
 
@@ -993,6 +994,9 @@ def _engine_for(provider: str, model: str | None, base_url: str | None = None) -
     if provider == "claude-code":
         # subscription pool first, with the company's API key as automatic overflow when the pool is busy/empty
         return {"type": "claude-code", "auth": "auto", **({"model": model} if model else {})}
+    if provider == "local":
+        # user's own locally-authenticated claude — no credential injected by Omilo
+        return {"type": "claude-code", "auth": "local", **({"model": model} if model else {})}
     if provider in _LITELLM_PROVIDER_IDS:
         return {"type": "litellm", "provider": provider, **({"model": model} if model else {})}
     return {"type": "fake"}
@@ -1022,7 +1026,12 @@ def _provider_of(e: dict) -> str:
     if e.get("type") in ("claude", "anthropic"):
         return "claude-direct"
     if e.get("type") == "claude-code":
-        return "claude" if e.get("auth") == "api" else "claude-code"
+        auth = e.get("auth")
+        if auth == "api":
+            return "claude"
+        if auth == "local":
+            return "local"
+        return "claude-code"
     if e.get("type") == "litellm" and e.get("provider"):
         return e["provider"]
     return e.get("type", "fake")
@@ -2419,7 +2428,11 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
     S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
     if body.engine:  # the older form: an explicit engine
         engine = dict(body.engine)
-        provider = {"claude": "claude", "claude-direct": "claude-direct", "claude-code": "claude-code"}.get(engine.get("type", ""), "fake")
+        # For claude-code engines, auth distinguishes the sub-provider; use _provider_of for correct round-trip.
+        if engine.get("type") == "claude-code":
+            provider = _provider_of(engine)  # "claude" | "claude-code" | "local"
+        else:
+            provider = {"claude": "claude", "claude-direct": "claude-direct"}.get(engine.get("type", ""), "fake")
         if provider in ("claude", "claude-direct"):
             if body.api_key and body.api_key.strip():
                 S.set_ai_key(db, "claude", body.api_key, user.id)
