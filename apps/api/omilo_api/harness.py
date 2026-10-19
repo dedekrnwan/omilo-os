@@ -50,11 +50,56 @@ def find_cli() -> str | None:
 def local_login_status(cli: str | None = None) -> dict:
     """Whether the user is signed in to Claude Code locally (their own ~/.claude login).
 
-    Thin stub for now: Task 3 replaces it with the real probe. It only reports whether the CLI
-    is installed; it never claims a login, so the engine's local path is gated off until the
-    real check lands.
+    Returns {"installed": bool, "logged_in": bool}.  Any exception → not-logged-in, never raised.
+    Login is true when ANY of these signals fires (short-circuit, all exception-safe):
+      1. $CLAUDE_CONFIG_DIR/.credentials.json (or ~/.claude/.credentials.json) is non-empty.
+      2. macOS Keychain has the "Claude Code-credentials" generic password (darwin only).
+      3. ~/.claude.json exists and contains an "oauthAccount" key.
     """
-    return {"installed": bool(find_cli()), "logged_in": False}
+    import json as _json
+    import sys as _sys
+
+    installed = bool(find_cli())
+    if not installed:
+        return {"installed": False, "logged_in": False}
+
+    try:
+        # Signal 1: credentials file in CLAUDE_CONFIG_DIR or ~/.claude/
+        config_dir_env = os.environ.get("CLAUDE_CONFIG_DIR")
+        creds_file = (Path(config_dir_env) if config_dir_env else Path.home() / ".claude") / ".credentials.json"
+        try:
+            if creds_file.exists() and creds_file.stat().st_size > 0:
+                return {"installed": True, "logged_in": True}
+        except OSError:
+            pass
+
+        # Signal 2: macOS Keychain
+        if _sys.platform == "darwin":
+            try:
+                r = subprocess.run(
+                    ["security", "find-generic-password", "-s", "Claude Code-credentials"],
+                    capture_output=True,
+                    timeout=2,
+                    check=False,
+                )
+                if r.returncode == 0:
+                    return {"installed": True, "logged_in": True}
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+
+        # Signal 3: ~/.claude.json with oauthAccount key
+        dot_claude_json = Path.home() / ".claude.json"
+        try:
+            if dot_claude_json.exists():
+                data = _json.loads(dot_claude_json.read_text())
+                if "oauthAccount" in data:
+                    return {"installed": True, "logged_in": True}
+        except (OSError, ValueError):
+            pass
+
+        return {"installed": True, "logged_in": False}
+    except Exception:  # noqa: BLE001
+        return {"installed": installed, "logged_in": False}
 
 
 _version: dict[str, str | None] = {}

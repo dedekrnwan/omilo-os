@@ -181,8 +181,9 @@ def test_ladder_not_logged_in_no_key_returns_error(monkeypatch, tmp_path):
     assert "sign in" in low and ("api key" in low or "settings" in low), f"error should guide the user: {res.error!r}"
 
 
-def test_harness_local_login_status_stub():
-    """Thin stub exists and reports logged_in False (Task 3 replaces it with the real probe)."""
-    out = H.local_login_status("claude")
-    assert out["logged_in"] is False
-    assert "installed" in out
+def test_harness_local_login_status_has_correct_shape():
+    """local_login_status returns the required shape: {"installed": bool, "logged_in": bool}."""
+    out = H.local_login_status()
+    assert "installed" in out and "logged_in" in out
+    assert isinstance(out["installed"], bool)
+    assert isinstance(out["logged_in"], bool)

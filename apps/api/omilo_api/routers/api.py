@@ -1049,6 +1049,7 @@ def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return {"provider": current, "model": next(iter(models)) if len(models) == 1 else None,
             "claude_key_hint": S.ai_key_hint(db, "claude"),
             "claude_code": {"installed": bool(cli), "path": cli, "install": H.installer.snapshot()},
+            "local_login": H.local_login_status(),
             "staff": {st.id: {"provider": _provider_of(st.engine or {})} for st in staff}}
 
 

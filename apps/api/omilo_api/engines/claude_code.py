@@ -377,6 +377,13 @@ class ClaudeCodeEngine(Engine):
 
     async def health(self, cfg: dict) -> dict:
         p = H.pool_summary()
+        if cfg.get("auth") == "local":
+            status = H.local_login_status()
+            if status["logged_in"]:
+                return {"ok": True, "detail": "Claude Code · your local login"}
+            if status["installed"]:
+                return {"ok": False, "detail": "Claude Code found — run `claude` to sign in"}
+            return {"ok": False, "detail": "Claude Code not installed"}
         if not p["cli"]["path"]:
             return {"ok": False, "detail": "Claude Code not installed (Settings → Harness)"}
         if cfg.get("auth") == "api":
