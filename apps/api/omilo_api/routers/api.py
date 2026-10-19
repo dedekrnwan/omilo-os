@@ -1443,7 +1443,13 @@ def piece_connect_callback(code: str = "", state: str = ""):
     manifest = entry["manifest"]
     provider = manifest["auth"]["provider"]
 
-    token = oauth.exchange_code(provider, code, get_settings().oauth_redirect_uri())
+    try:
+        token = oauth.exchange_code(provider, code, get_settings().oauth_redirect_uri())
+    except Exception:
+        logger.warning(
+            "piece_connect_callback: code exchange failed for slug=%s", slug
+        )
+        raise HTTPException(400, "Authorization code exchange failed")
 
     # CRITICAL: merge provider so HttpBroker.revoke() can look up the revoke_url.
     token["provider"] = provider

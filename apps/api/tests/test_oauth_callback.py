@@ -206,3 +206,53 @@ class TestOAuthCallback:
             "Likely the {{state}} wildcard route matched 'callback' before the literal route — "
             "check FastAPI declaration order in api.py."
         )
+
+    def test_callback_exchange_failure_returns_400_no_leak(self, owner, monkeypatch):
+        """exchange_code failure → HTTP 400; response body must not contain the exception
+        text or provider detail; nothing must be stashed in the broker.
+
+        Covers the finding: unhandled exchange_code failure could produce a 500 that
+        leaks traceback / provider error body to the browser.
+        """
+        from omilo_api import broker as B
+
+        PROVIDER_ERROR = "invalid_grant: the authorization code has already been used"
+
+        monkeypatch.setattr(
+            "omilo_api.oauth.exchange_code",
+            lambda provider, code, redirect_uri: (_ for _ in ()).throw(
+                ValueError(PROVIDER_ERROR)
+            ),
+        )
+
+        # Obtain a real, live state via start-connect so slug_for_state() resolves it
+        r_start = owner.post("/api/connectors/pieces/gmail/connect")
+        assert r_start.status_code == 200, r_start.text
+        state = r_start.json()["state"]
+
+        # Hit the callback — exchange_code will raise
+        r = owner.get(
+            "/api/connectors/pieces/connect/callback",
+            params={"code": "EXPIRED_CODE", "state": state},
+        )
+
+        # (a) Must return 400, not 500
+        assert r.status_code == 400, (
+            f"Expected 400 on exchange failure, got {r.status_code}: {r.text}"
+        )
+
+        # (b) Response body must NOT contain any provider error detail or exception text
+        body = r.text
+        assert PROVIDER_ERROR not in body, (
+            f"Provider error detail leaked into response body: {body!r}"
+        )
+        assert "Traceback" not in body, f"Traceback leaked into response body: {body!r}"
+        assert "invalid_grant" not in body, (
+            f"Provider error keyword leaked into response body: {body!r}"
+        )
+
+        # (c) Nothing must be stashed in the broker for this state
+        broker = B.get_broker()
+        assert broker.poll(state) is None, (
+            "broker.poll(state) must be None after a failed exchange — nothing was stashed"
+        )
