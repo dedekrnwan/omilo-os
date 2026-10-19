@@ -230,7 +230,7 @@ export default function Harness() {
         <div className="sechead"><h2>Claude Code pool</h2></div>
         <p className="small" style={{ marginBottom: 16 }}>Your Claude Code accounts, shared by your helpers. When one account reaches its limit it rests and the next job continues on another.</p>
 
-        {pool.pool_consent?.notice_pending && (
+        {pool.pool_consent?.consented && pool.pool_consent?.notice_pending && (
           <div className="callout" style={{ marginBottom: 16 }}>
             <p style={{ margin: "0 0 8px" }}>Heads up: the Claude subscription pool is now opt-in. Your existing accounts keep working. Pooling consumer subscriptions for automation may violate Anthropic&apos;s terms and can be suspended; if the pool stops, tasks fall back to your API key automatically.</p>
             <button className="btn sm" onClick={dismissNotice}>Got it</button>
