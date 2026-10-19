@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from sqlalchemy.orm import Session
+
+log = logging.getLogger("omilo.tune")
 
 from .config import get_settings
 from .engines import ChatContext, get_engine
@@ -48,8 +51,8 @@ async def _ask_json(db: Session, staff: Staff, system: str, user: str) -> dict:
         m = re.search(r"\{.*\}", text, re.S)
         if m:
             return json.loads(m.group(0))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        log.warning("tune._ask_json failed: %s", e)
     return {}
 
 # ---------------------------------------------------------------------------
