@@ -27,3 +27,4 @@ Claude outputs/
 
 # setuptools scratch (scripts/desktop/build-runtime.sh)
 apps/api/build/
+.superpowers/

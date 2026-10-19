@@ -656,6 +656,75 @@ code.fpath:hover { background: var(--hover); }
 .look-pick:hover { background: var(--soft); }
 .look-pick.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
 
+/* ---------- chat sessions drawer ---------- */
+/* .chat-drawer overrides the generic .drawer shell: no dw-body padding — ChatThread owns its scroll + composer. */
+.chat-drawer { display: flex; flex-direction: column; }
+.chat-drawer-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.chat-drawer-title { font: 500 15px/1.3 var(--font-sans); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-switch { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
+.chat-switch::-webkit-scrollbar { display: none; }
+.chat-chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-strong);
+  background: var(--soft); color: var(--ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; flex-shrink: 0; cursor: pointer; }
+.chat-chip:hover { background: var(--hover); color: var(--ink); }
+.chat-chip.on { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+/* Body fills remaining space; ChatThread's ws-scroll+ws-composer stack inside it */
+.chat-drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat-drawer-body > * { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---------- floating chat launcher (bottom-right mascot button) ---------- */
+/* z-index 30: above page content (ws-panel overlay is 34-35), below .scrim (40) + .drawer (41) */
+.chat-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, .22), 0 1px 3px rgba(0, 0, 0, .08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: box-shadow .15s, transform .15s;
+  padding: 0;
+}
+.chat-launcher:hover {
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .28), 0 1px 4px rgba(0, 0, 0, .1);
+  transform: translateY(-1px);
+}
+.chat-launcher:active { transform: translateY(0); }
+.chat-launcher-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--bad);
+  color: #fff;
+  font: 600 11px/18px var(--font-mono);
+  text-align: center;
+  padding: 0 4px;
+  border: 2px solid var(--surface);
+  pointer-events: none;
+}
+
+/* On /chat/ and at narrow widths, nudge up to clear .ws-composer + .mobilebar.
+   The .ws class is the root of ChatPage; body:has(.ws) applies on that route. */
+body:has(.ws) .chat-launcher { bottom: 88px; }
+
+/* At mobile widths the .mobilebar is sticky top; .ws-composer sits at bottom ~80px */
+@media (max-width: 860px) {
+  .chat-launcher { bottom: 88px; right: 14px; }
+}
+/* Extra-small: keep clear of anything interactive */
+@media (max-width: 560px) {
+  .chat-launcher { bottom: 100px; right: 12px; width: 46px; height: 46px; }
+}
+
 /* ---------- drawers for add/edit forms ---------- */
 .drawer.dw { animation: dw-in .2s cubic-bezier(.2, .8, .2, 1); }
 .drawer.dw.wide { width: min(720px, calc(100vw - 16px)); }
@@ -2226,3 +2295,71 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .tm-body textarea { font-size: 13px; resize: vertical; }
 .tm-why { margin: 0; color: var(--muted); }
 .jobcard { margin-top: 10px; }
+/* ------------------------------------------------------------------ drag-and-drop catch overlay */
+.dropcatch { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dropcatch-overlay {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(255, 255, 255, .72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-lg);
+  pointer-events: none;
+}
+.dropcatch-ring {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 32px 40px;
+  border: 2px dashed var(--info);
+  border-radius: var(--r-lg);
+  background: var(--info-tint);
+  position: relative;
+}
+.dropcatch-mascot { position: relative; z-index: 1; }
+.dropcatch-label {
+  margin: 0; font-size: 15px; font-weight: 600; color: var(--info);
+  letter-spacing: -.01em;
+}
+.dropcatch-tiles {
+  display: flex; gap: 8px; align-items: flex-end; margin-bottom: 4px;
+}
+.dropcatch-tile {
+  width: 28px; height: 34px;
+  background: var(--surface);
+  border: 1.5px solid var(--info-line);
+  border-radius: var(--r-sm);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+  position: relative;
+}
+.dropcatch-tile::before {
+  content: "";
+  position: absolute; top: 5px; left: 5px; right: 5px; height: 3px;
+  border-radius: 2px; background: var(--info-line);
+}
+.dropcatch-tile::after {
+  content: "";
+  position: absolute; top: 12px; left: 5px; right: 5px; height: 3px;
+  border-radius: 2px; background: var(--line-strong);
+}
+
+/* Animations: gated behind prefers-reduced-motion: no-preference */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dc-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes dc-tumble {
+    0% { transform: rotate(0deg) translateY(0); opacity: .7; }
+    50% { transform: rotate(180deg) translateY(-6px); opacity: 1; }
+    100% { transform: rotate(360deg) translateY(0); opacity: .7; }
+  }
+  @keyframes dc-pulse {
+    0%, 100% { border-color: var(--info); box-shadow: 0 0 0 0 rgba(29, 78, 216, .18); }
+    50% { border-color: #2563eb; box-shadow: 0 0 0 6px rgba(29, 78, 216, 0); }
+  }
+  .dropcatch-mascot { animation: dc-bob 1.2s ease-in-out infinite; }
+  .dropcatch-ring { animation: dc-pulse 2s ease-in-out infinite; }
+  .dropcatch-tile {
+    animation: dc-tumble 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--dc-i, 0) * 0.28s);
+  }
+}

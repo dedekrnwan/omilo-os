@@ -2,17 +2,13 @@
 import { kick, usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Meter, Run, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
-import ComposerTools, { Attached } from "@/components/ComposerTools";
-import PoolMeter from "@/components/PoolMeter";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Meter, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import Avatar from "@/components/Avatar";
 import BrowserView from "@/components/BrowserView";
 import Lineage from "@/components/Lineage";
-import { AccessRequest, Choices, Conversation, FullThread, Msg, useQuote } from "@/components/Conversation";
-import { SlashAction, useSlash } from "@/components/SlashMenu";
-import { useMentions } from "@/components/Mentions";
-import MentionBox, { type MentionHandle } from "@/components/MentionBox";
+import { AccessRequest, Choices, FullThread, Msg } from "@/components/Conversation";
+import ChatThread from "@/components/ChatThread";
 import { helperItems, taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
@@ -171,15 +167,11 @@ function WorkspaceInner() {
   const taskId = params.get("task");
   const [panel, setPanel] = useLocal("omilo.panel", true);
   const [listOpen, setListOpen] = useState(false);
-  const [stopping, setStopping] = useState(false);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [current, setCurrent] = useState<FullThread | null>(null);
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<Attached[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const scroller = useRef<HTMLDivElement>(null);
 
   const loadLists = useCallback(async () => {
     try {
@@ -194,46 +186,23 @@ function WorkspaceInner() {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
   useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "group" }); }, [view, tid, openThread]); // the team's General chat
-
-  // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
-  // unchanged threads cost a 304 thanks to the server's ETag
-  const awaiting = useRef(false);
-  awaiting.current = !!current?.awaiting_reply;
+  // ChatThread owns its composer text now; the side-list menus reach it over a window event (same idiom as omilo:quote)
+  const setComposer = (t: string) => window.dispatchEvent(new CustomEvent("omilo:settext", { detail: { text: t } }));
+  // ChatThread only reports its thread while mounted (chat view with a thread); clear it otherwise so the topbar/panel don't show stale info
   useEffect(() => { if (view !== "chat" || !tid) setCurrent(null); }, [view, tid]);
-  usePoll(async () => {
-    if (view !== "chat" || !tid) return;
-    const want = tid;
-    try { const th = await api<FullThread>(`/threads/${want}`); setCurrent((cur) => (want === tid ? th : cur)); } catch (e: any) { setErr(e.message); }
-  }, () => (awaiting.current ? 1500 : 12000), [view, tid], (n) => !!tid && n?.url?.includes(tid));
 
   const threadEvents = useEvents(view === "chat" && tid ? { thread_id: tid } : null);
   const taskEvents = useEvents(view === "work" && taskId && taskId !== "new" ? { task_id: taskId } : null);
   const events = view === "chat" ? threadEvents : taskEvents;
-  const nMsgs = current?.messages.length || 0;
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
-  const box = useRef<MentionHandle>(null);
-  useQuote(current?.id, setText, () => box.current?.focus());
   const startJob = async (brief: string) => {
     const who = staff.find((x) => x.is_chief) || staff[0];
     if (!who || !brief.trim()) return;
     try {
       const t = await api<Task>("/tasks", { body: { staff_id: who.id, brief: brief.trim() } });
-      setText(""); go({ view: "work", task: t.id });
+      go({ view: "work", task: t.id });
     } catch (e: any) { setErr(e.message); }
   };
-  const onSlash = (a: SlashAction, rest: string) => {
-    const focus = () => setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(h.getValue().length); } }, 0);
-    if (a.kind === "insert") { setText(a.text + rest); focus(); }
-    else if (a.kind === "send") { setText(""); send(rest.trim() ? `${a.text}\n\n${rest}` : a.text); }
-    else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("omilo:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
-    else if (a.kind === "job") { setText("/job "); focus(); }
-    else if (a.kind === "talk") { setText(""); const st = staff.find((x) => x.id === a.staffId); openThread(st?.is_chief ? { scope: "master" } : { scope: "staff", staff_id: a.staffId }); }
-    else if (a.kind === "go") { setText(""); router.push(a.href); }
-    else if (a.kind === "pause") { setText(""); confirmDialog({ title: "Pause all helpers?", body: "Running jobs finish their current step; nothing new starts until you resume.", confirm: "Pause everyone", mood: "worried" }).then((ok) => { if (ok) api("/system", { body: { paused: true } }).catch((e) => setErr(e.message)); }); }
-  };
-  const slash = useSlash(text, staff, onSlash);
-  const mention = useMentions(text, setText, staff, box);
   const [naming, setNaming] = useState<{ id: string | null; title: string } | null>(null); // new team chat / rename
   const saveName = async () => {
     const n = naming;
@@ -249,66 +218,13 @@ function WorkspaceInner() {
     try { await api(`/threads/${t.id}`, { method: "DELETE" }); await loadLists(); if (current?.id === t.id) go({}); } catch (e: any) { setErr(e.message); }
   };
 
-  const decide = async (requestId: string, scope: "once" | "always" | "deny", note: string) => {
-    try {
-      await api(`/access/${requestId}/decide`, { body: { scope, note } });
-      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
-    } catch (e: any) { setErr(e.message); }
-  };
-
-  const decideProposal = async (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => {
-    try {
-      await api(`/proposals/${proposalId}/decide`, { body: { decision, note } });
-      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
-    } catch (e: any) { setErr(e.message); }
-  };
-
-  const answerQuestion = async (itemId: string, answer: string) => {
-    try {
-      await api(`/inbox/${itemId}/answer`, { body: { answer } });
-      if (tid) { const th = await api<FullThread>(`/threads/${tid}`); setCurrent(th); }
-    } catch (e: any) { setErr(e.message); }
-  };
-
-  const send = async (t: string) => {
-    if (slash.jobBrief !== null && t.startsWith("/job")) { startJob(slash.jobBrief); return; }
-    if ((!t.trim() && !files.length) || !tid) return;
-    const att = files;
-    const body = { text: t.trim() || `(attached ${att.length} file${att.length > 1 ? "s" : ""})`,
-      blocks: att.length ? att.map((f) => ({ type: "file", ...f })) : undefined, mentions: mention.mentioned(t) };
-    setText(""); setFiles([]);
-    try { setCurrent(await api<FullThread>(`/threads/${tid}/messages`, { body })); awaiting.current = true; kick(tid); } catch (e: any) { setErr(e.message); setText(t); setFiles(att); }
-  };
-
   const chief = staff.find((s) => s.is_chief);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
   const threadLabel = (th: Thread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.scope === "group" ? `# ${th.title}` : th.title;
   const groups = threads.filter((t) => t.scope === "group").sort((a, b) => (a.ref_id === "general" ? -1 : b.ref_id === "general" ? 1 : a.title.localeCompare(b.title)));
-  const isGroup = current?.scope === "group";
   const title = view === "chat" ? (current ? threadLabel(current) : "Chat") : taskId === "new" ? "New job" : tasks.find((t) => t.id === taskId)?.brief.slice(0, 60) || "Work";
   const lastAgentText = useMemo(() => [...(current?.messages || [])].reverse().find((m) => m.role === "agent")?.text, [current]);
   const selTask = tasks.find((t) => t.id === taskId);
-
-  // the helpers tied to this chat: the room's default (Chief in a team chat, the helper in a 1:1),
-  // whoever is queued to answer, and everyone who has spoken here, in that order
-  const related = useMemo(() => {
-    if (!current) return [] as Staff[];
-    const order: string[] = [];
-    const add = (id?: string) => { if (id && !order.includes(id)) order.push(id); };
-    add(current.staff_id);
-    (current.pending || []).forEach(add);
-    for (const m of current.messages as Msg[]) if (m.role === "agent") add(m.author);
-    return order.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as Staff[];
-  }, [current, staff]);
-  const addMention = (s: Staff) => {
-    // read the composer's real value (not just React state), and treat a whitespace-only box as empty so a
-    // stray newline left in an "emptied" contenteditable never pushes the mention onto a new line
-    const raw = box.current?.getValue() ?? text;
-    const cur = raw.trim() === "" ? "" : /\s$/.test(raw) ? raw : raw + " ";
-    const next = `${cur}@${s.name} `;
-    setText(next);
-    setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(next.length); } }, 0);
-  };
 
   const output = view === "chat"
     ? (lastAgentText ? <Markdown text={lastAgentText} /> : null)
@@ -350,12 +266,12 @@ function WorkspaceInner() {
               <div className="grp">Direct</div>
               {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}
                 onContextMenu={menu(() => [{ heading: "Chief of Staff" }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "master" }) },
-                  { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setText("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
+                  { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setComposer("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
                 <Avatar who={chief} size={24} /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
               {staff.filter((s) => !s.is_chief).map((s) => (
                 <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}
                   onContextMenu={menu(() => [{ heading: s.name }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "staff", staff_id: s.id }) },
-                    { label: `Mention ${s.name} in General`, icon: "ri-at-line", onSelect: async () => { await openThread({ scope: "group" }); setText(`@${s.name} `); } },
+                    { label: `Mention ${s.name} in General`, icon: "ri-at-line", onSelect: async () => { await openThread({ scope: "group" }); setComposer(`@${s.name} `); } },
                     { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", onSelect: () => go({ view: "work", task: "new", staff: s.id }) }, sep, ...helperItems(s, loadLists).slice(1)])}>
                   <Avatar who={s} size={24} state={(s as any).state === "working" ? "working" : null} /><span className="t"><b>{s.name}</b></span></button>
               ))}
@@ -373,51 +289,15 @@ function WorkspaceInner() {
           )}
         </nav>
         <section className="ws-main">
-          <div className="ws-scroll" ref={scroller}>
-            {view === "chat" ? (current ? <div className="ws-inner"><Conversation th={current} staff={staff} events={threadEvents} onSend={send} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} /></div>
-              : <div className="ws-inner"><p className="small">Loading…</p></div>)
-              : taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
-              : taskId ? <TaskView id={taskId} staff={staff} />
-              : <div className="ws-inner"><div className="empty"><b>Pick a job on the left</b><span>Or start a new one. Every step shows up live.</span>
-                  <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => go({ view: "work", task: "new" })}>New job</button></div></div></div>}
-          </div>
-          {view === "chat" && current && (
-            <div className="ws-composer">
-              {related.length > 0 && (
-                <div className="chat-people">
-                  {related.map((s) => (
-                    <button type="button" key={s.id} className="chip person" aria-label={`Mention ${s.name}`} onClick={() => addMention(s)}>
-                      <Avatar who={s} size={22} />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <form className="composer" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-                {slash.menu}
-                {mention.menu}
-                <MentionBox handleRef={box} value={text} onChange={setText} staff={staff}
-                  placeholder={isGroup ? `Message ${threadLabel(current)}… (@ to mention a helper, / for commands)` : `Message ${threadLabel(current)}… (@ to bring someone in, / for commands)`}
-                  ariaExpanded={slash.open || mention.open}
-                  onKeyDown={(e) => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
-                <div className="row">
-                  <ComposerTools threadId={tid} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
-                  <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff"
-                    : isGroup ? "No @mention: the Chief of Staff answers · Enter to send" : "@ to mention · / for commands · Enter to send"}</span>
-                  <span className="sp" />
-                  {current.awaiting_reply && (
-                    <button type="button" className="btn sm danger" disabled={stopping} onClick={async () => {
-                      if (!(await confirmDialog({ title: "Stop this reply?", body: "The helper stops after its current step. What it already wrote stays.", confirm: "Stop", cancel: "Let it finish", danger: true }))) return;
-                      setStopping(true);
-                      try { await api(`/threads/${current.id}/cancel`, { body: {} }); } catch (e: any) { setErr(e.message); } finally { setStopping(false); }
-                    }}>
-                      <i className="ri-stop-circle-line" />Stop
-                    </button>
-                  )}
-                  <button className="btn primary sm" type="submit" disabled={(!text.trim() && !files.length) || current.awaiting_reply}><i className="ri-arrow-up-line" />Send</button>
-                </div>
-              </form>
-              <PoolMeter />
-              <Err error={err} />
+          {view === "chat" ? (tid ? (
+            <ChatThread threadId={tid} staff={staff} events={threadEvents}
+              onThread={setCurrent} onStartJob={startJob} onOpenThread={openThread} onNavigate={(h) => router.push(h)} onExpand={() => {}} />
+          ) : <div className="ws-scroll"><div className="ws-inner"><p className="small">Loading…</p></div></div>) : (
+            <div className="ws-scroll">
+              {taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
+                : taskId ? <TaskView id={taskId} staff={staff} />
+                : <div className="ws-inner"><div className="empty"><b>Pick a job on the left</b><span>Or start a new one. Every step shows up live.</span>
+                    <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => go({ view: "work", task: "new" })}>New job</button></div></div></div>}
             </div>
           )}
         </section>

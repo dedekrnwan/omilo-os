@@ -12,6 +12,7 @@ import { copy, menu as ctxMenu } from "@/lib/menu";
 import CompanySwitcher from "./CompanySwitcher";
 import { StepPage } from "./StepCard";
 import { PageActionsBar, PageActionsCtx, PageActionsSpec } from "./PageActions";
+import ChatLauncher from "./ChatLauncher";
 
 /* Five sections in the sidebar; each section's pages are tabs along the top. New pages join a section, so the
    sidebar stays short however much Omilo grows. */
@@ -158,6 +159,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {ready && !bare && <NotifyHost onNotice={refresh} />}
         {ready && !bare && <TaskDrawerLazy />}
         {ready && !bare && <ContextMenuHost />}
+        {ready && !bare && <ChatLauncher />}
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Omilo"}</b>
           <span className="sp" />
