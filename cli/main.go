@@ -288,18 +288,39 @@ func cmdStart(args []string) {
 	}
 
 	url := "http://localhost:" + *port
-	fmt.Print("Waiting for Omilo to start")
-	if !waitHealthy(url) {
-		die(errors.New("omilo-api did not become healthy in 60s; check its logs above"))
-	}
-	fmt.Println(" ready:", url)
+	noOpenVal := *noOpen
 
-	c := loadConfig()
-	c.URL = url
-	must(saveConfig(c))
+	// Health-check goroutine: waits for the child to become healthy, then
+	// updates config and opens the browser.  On timeout it kills the child
+	// and exits non-zero so the user's terminal gets a clear error.
+	go func() {
+		fmt.Print("Waiting for Omilo to start")
+		if !waitHealthy(url) {
+			fmt.Fprintln(os.Stderr, "\nerror: omilo-api did not become healthy in 60s; check its output above")
+			_ = cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println(" ready:", url)
 
-	if !*noOpen {
-		openBrowser(url)
+		c := loadConfig()
+		c.URL = url
+		if err := saveConfig(c); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not save config:", err)
+		}
+
+		if !noOpenVal {
+			openBrowser(url)
+		}
+	}()
+
+	// Block until the child exits (Ctrl+C at the terminal reaches the child
+	// via the shared process group — the child stops, Wait returns, we exit).
+	if err := cmd.Wait(); err != nil {
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(1)
 	}
 }
 
@@ -618,7 +639,7 @@ const usage = `omilo — run your company of AI staff agents
 
 Run it
   up [-port 7700]        start Omilo (Docker) and open it in the browser
-  start [-port 7700]     run Omilo on this machine (SQLite, no Docker)
+  start [--port 7700] [--data-dir DIR] [--no-open]   run Omilo on this machine (SQLite, no Docker)
   down                   stop it          logs      follow the logs
   login [-url URL]       sign in from this terminal
   doctor                 check Docker, the gateway, your login and the engines

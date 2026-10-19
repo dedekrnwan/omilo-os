@@ -41,9 +41,14 @@ func TestStartBuildsLightEnv(t *testing.T) {
 		}
 	}
 
-	// Structural: startCommand must not reference compose — verified by the
-	// fact that it returns a cmd pointing at omilo-api, not docker.
+	// Structural: no env entry may mention docker or compose.
 	if strings.Contains(cmd.Path, "docker") {
 		t.Errorf("cmd.Path %q references docker; start should not call compose", cmd.Path)
+	}
+	for _, e := range cmd.Env {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "docker") || strings.Contains(lower, "compose") {
+			t.Errorf("env entry %q contains docker/compose; light-tier must not use Docker", e)
+		}
 	}
 }
