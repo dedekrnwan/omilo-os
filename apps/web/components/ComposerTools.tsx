@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BASE, api } from "@/lib/api";
+import { useFileUpload } from "@/lib/upload";
 
 /* The "+" menu in the chat box: attach files or photos, and switch folders, connectors and skills on or off for this chat. */
 
@@ -10,12 +11,6 @@ type Health = { ok: boolean | null; detail: string } | null;
 type Item = { id: string; label: string; path?: string; access?: string; commands?: boolean; approval?: string; description?: string; kind?: string; health?: Health };
 type Tools = Record<"folders" | "connectors" | "skills", { on: string[]; all: Item[] }>;
 
-const toB64 = (f: File) => new Promise<string>((res, rej) => {
-  const r = new FileReader();
-  r.onload = () => res(String(r.result).split(",")[1] || "");
-  r.onerror = rej;
-  r.readAsDataURL(f);
-});
 
 export function useThreadTools(threadId: string | null) {
   const [tools, setTools] = useState<Tools | null>(null);
@@ -47,8 +42,7 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
 }) {
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<"folders" | "connectors" | "skills" | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const { upload, uploading, err } = useFileUpload(files, setFiles);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const { tools, toggle } = useThreadTools(threadId);
@@ -59,21 +53,6 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
-
-  const pick = async (list: FileList | null) => {
-    if (!list?.length) return;
-    setUploading(true); setErr(null); setOpen(false);
-    const added: Attached[] = [];
-    try {
-      for (const f of Array.from(list).slice(0, 10)) {
-        if (f.size > 25 * 1024 * 1024) { setErr(`${f.name} is larger than 25 MB`); continue; }
-        added.push(await api<Attached>("/files", { body: { name: f.name, data: await toB64(f) } }));
-      }
-    } catch (e: any) { setErr(e.message); }
-    setFiles([...files, ...added]);
-    setUploading(false);
-    if (input.current) input.current.value = "";
-  };
 
   const on = (k: "folders" | "connectors" | "skills") => (tools ? tools[k].all.filter((x) => tools[k].on.includes(x.id)) : []);
   const conns = on("connectors");
@@ -130,7 +109,7 @@ export default function ComposerTools({ threadId, files, setFiles, disabled }: {
           {uploading && <span className="cchip"><span className="spin" style={{ width: 12, height: 12 }} />Uploading…</span>}
         </div>
       )}
-      <input ref={input} type="file" multiple hidden onChange={(e) => pick(e.target.files)} />
+      <input ref={input} type="file" multiple hidden onChange={(e) => { setOpen(false); upload(e.target.files); if (input.current) input.current.value = ""; }} />
       <button type="button" className="iconbtn plus" aria-label="Add files, folders, connectors or skills" disabled={disabled} onClick={() => { setOpen(!open); setSub(null); }}>
         <i className="ri-add-line" />
       </button>
