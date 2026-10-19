@@ -106,6 +106,39 @@ class ProbeResult:
 # probe — run a brief once per candidate job description, errors don't abort
 # ---------------------------------------------------------------------------
 
+async def compose(db: Session, staff: Staff, brief: str, probes: list[ProbeResult]) -> int:
+    """Ask the AI judge to pick the winning probe; falls back to index 0 on any invalid reply.
+
+    Builds a numbered list of each probe's output text, asks ``_ask_json`` for
+    ``{"winner": <index>, "why": <str>}``, coerces the winner to int, and returns it
+    only when ``0 <= winner < len(probes)`` AND that probe has no ``error``.
+    Any malformed reply, out-of-range index, or errored probe falls back to 0.
+    """
+    numbered = "\n".join(
+        f"[{i}] {p.text}" for i, p in enumerate(probes)
+    )
+    system = (
+        "You are an expert evaluator of AI assistant outputs. "
+        "Given a task brief and numbered candidate responses, choose the best one. "
+        'Return ONLY a JSON object: {"winner": <index>, "why": "<reason>"}'
+    )
+    user = (
+        f"Task brief:\n{brief}\n\n"
+        f"Candidate responses:\n{numbered}\n\n"
+        'Return JSON: {"winner": <index>, "why": "<reason>"}'
+    )
+    data = await _ask_json(db, staff, system, user)
+    try:
+        winner = int(data.get("winner", 0))
+    except (TypeError, ValueError):
+        return 0
+    if winner < 0 or winner >= len(probes):
+        return 0
+    if probes[winner].error:
+        return 0
+    return winner
+
+
 async def probe(db: Session, staff: Staff, brief: str, jobs: list[str]) -> list[ProbeResult]:
     """Run *brief* under each candidate job description; return one ProbeResult per job in
     the same order. A run that raises or returns EngineResult.error yields a ProbeResult
