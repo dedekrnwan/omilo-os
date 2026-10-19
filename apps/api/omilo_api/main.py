@@ -99,16 +99,22 @@ def build_app() -> FastAPI:
         from . import bus
         from .db import engine
 
-        out = {"ok": True, "database": "ok", "redis": "ok"}
+        light = bus._light()
+        out = {"ok": True, "database": "ok", "redis": "embedded" if light else "ok"}
         try:
             with engine().connect() as c:
                 c.execute(text("SELECT 1"))
         except Exception as e:  # noqa: BLE001
             out.update(ok=False, database=str(e)[:200])
-        try:
-            bus.r().ping()
-        except Exception as e:  # noqa: BLE001
-            out.update(ok=False, redis=str(e)[:200])
+        if not light:  # light tier: one process, no Redis — ok is driven only by the DB check
+            try:
+                bus.r().ping()
+            except Exception as e:  # noqa: BLE001
+                out.update(ok=False, redis=str(e)[:200])
+        from . import health
+        hint = health.graduate_hint()
+        if hint:
+            out["graduate"] = hint
         return JSONResponse(out, status_code=200 if out["ok"] else 503)
 
     web = _web_dir()

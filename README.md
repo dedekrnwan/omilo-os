@@ -68,6 +68,29 @@ A hosted sign-in service that holds each provider's OAuth app (so "Connect Gmail
 <img src="docs/img/connector-hub.png" alt="Connecting apps" width="80%" />
 </div>
 
+## Light tier (default) vs Full tier
+
+The default Docker image runs everything in one container with no sibling services:
+
+```bash
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/saga-os
+```
+
+SQLite is the database (`/data/omilo.db`), the worker runs in-process, and Redis is not required. This is the **light tier**: good for a single user, a laptop, or a low-traffic self-hosted instance.
+
+To use **Postgres + pgvector + Redis** (the full tier), pass the URLs as environment variables:
+
+```bash
+docker run -p 7700:7700 -v omilo-data:/data \
+  -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
+  -e OMILO_REDIS_URL=redis://host:6379/0 \
+  ghcr.io/super-saga/saga-os
+```
+
+Or drop a `/data/.env` file with those variables and restart — the same image reads it on startup.
+
+The three-service `docker-compose.dev.yml` is the full-tier reference for local development (Postgres + Redis running alongside the API). The laptop `cli/compose.yml` (used by `omilo up`) also wires up the full tier with sibling containers.
+
 ## Quick start (development)
 
 Requirements: Python 3.11+, Node 20+, Docker (for Postgres and Redis), Go 1.24+ (for the CLI).

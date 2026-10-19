@@ -3,8 +3,8 @@ import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
+from pydantic_settings import BaseSettings, DotEnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 def _default_data_dir() -> Path:
@@ -12,12 +12,20 @@ def _default_data_dir() -> Path:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="OMILO_", env_file=".env", extra="ignore")
+    # Read two env files, later wins: a dev-CWD ".env" (convenience) and the durable
+    # <data_dir>/.env that `omilo migrate` writes to flip the install to Postgres. OS env still
+    # beats both (pydantic precedence), which is why `omilo start` must NOT pin OMILO_DATABASE_URL.
+    model_config = SettingsConfigDict(
+        env_prefix="OMILO_",
+        env_file=(".env", str(_default_data_dir() / ".env")),
+        extra="ignore",
+    )
 
     data_dir: Path = _default_data_dir()
     # Postgres (with the pgvector extension) holds every company's data, one schema per company; Redis carries live
     # events, locks, shared counters and the knowledge-base queue. `make db` starts both in Docker.
-    database_url: str = "postgresql+psycopg://omilo:omilo@127.0.0.1:5432/omilo"
+    # Empty string = unset sentinel; filled in by @model_validator below when not supplied via env.
+    database_url: str = ""
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_prefix: str = "omilo"  # key prefix, so several installs can share one Redis
     # knowledge base embeddings: local (runs inside Omilo) | voyage | openai | hash (tests, no model). Owners can
@@ -40,6 +48,34 @@ class Settings(BaseSettings):
     session_days: int = 14
     cors_origins: str = ""  # comma-separated, for a web app served from another origin
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep pydantic's precedence (OS env > .env > defaults) but resolve the durable data-dir
+        .env at *construction* time, not at class-definition time. The data dir can be set via
+        OMILO_DATA_DIR after this module imports (tests, and any embedding host), so the static
+        model_config path can be stale; recompute it here so a migrated install is always read."""
+        dotenv = DotEnvSettingsSource(
+            settings_cls,
+            env_file=(".env", str(_default_data_dir() / ".env")),
+            env_prefix="OMILO_",
+            case_sensitive=False,
+        )
+        return (init_settings, env_settings, dotenv, file_secret_settings)
+
+    @model_validator(mode="after")
+    def _fill_database_url_default(self) -> "Settings":
+        """When the user did not supply OMILO_DATABASE_URL, default to SQLite inside data_dir."""
+        if not self.database_url:
+            self.database_url = f"sqlite:///{self.data_dir}/omilo.db"
+        return self
+
     def mcp_url(self) -> str:
         """The MCP endpoint helpers of the current company call (other companies get a /co/<id> prefix)."""
         from .company import prefix
@@ -52,12 +88,25 @@ class Settings(BaseSettings):
 
     def resolved_database_url(self) -> str:
         url = self.database_url
+        if url.startswith("sqlite://"):
+            return url
         if url.startswith("postgresql://"):
             url = "postgresql+psycopg://" + url[len("postgresql://"):]
         if not url.startswith("postgresql+psycopg://"):
-            raise RuntimeError("OMILO_DATABASE_URL must be a PostgreSQL address (postgresql://user:pass@host:5432/db). "
+            raise RuntimeError("OMILO_DATABASE_URL must be a PostgreSQL address (postgresql://user:pass@host:5432/db) "
+                               "or a SQLite address (sqlite:///path/to/db). "
                                "Run `make db` to start Postgres and Redis in Docker.")
         return url
+
+    @property
+    def tier(self) -> str:
+        """Return 'light' or 'full'. OMILO_TIER env var overrides; otherwise derived from the database URL."""
+        explicit = os.environ.get("OMILO_TIER", "")
+        if explicit == "light":
+            return "light"
+        if explicit == "full":
+            return "full"
+        return "light" if self.resolved_database_url().startswith("sqlite") else "full"
 
     def resolved_secret(self) -> str:
         if self.secret_key:

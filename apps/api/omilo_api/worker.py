@@ -127,9 +127,13 @@ class Worker:
         Resilient: if Redis drops or throws, wait 5 s and re-subscribe so a transient hiccup never
         kills cancel processing permanently. asyncio.CancelledError (worker shutdown) exits cleanly.
         """
-        import json as _json
-
         from . import bus
+
+        if bus._light():
+            await self._cancel_loop_local()
+            return
+
+        import json as _json
 
         prefix = get_settings().redis_prefix
         pattern = f"{prefix}:*:ch:cancel:chat"
@@ -145,13 +149,7 @@ class Worker:
                         continue
                     try:
                         data = _json.loads(message["data"])
-                        thread_id = data.get("thread_id")
-                        if not thread_id:
-                            continue
-                        task = self.chatting.get(thread_id)
-                        if task and not task.done():
-                            task.cancel()
-                            log.info("cancel_loop: cancelled chatting task for thread %s", thread_id)
+                        self._cancel_thread(data.get("thread_id"))
                     except Exception:
                         log.exception("cancel_loop: error handling cancel signal")
             except asyncio.CancelledError:
@@ -166,6 +164,56 @@ class Worker:
                 try:
                     await pubsub.punsubscribe(pattern)
                     await pubsub.aclose()
+                except Exception:
+                    pass
+
+    def _cancel_thread(self, thread_id: str | None) -> None:
+        if not thread_id:
+            return
+        task = self.chatting.get(thread_id)
+        if task and not task.done():
+            task.cancel()
+            log.info("cancel_loop: cancelled chatting task for thread %s", thread_id)
+
+    async def _cancel_loop_local(self):
+        """Light tier: cancels arrive in-process (no Redis). cancel_thread() publishes
+        "cancel:chat" on the company's channel; we subscribe to every company's cancel channel
+        and drain the asyncio.Queue the bus hands us. Re-subscribe as companies appear so a new
+        company's cancels are seen; a short poll keeps the subscription set fresh and lets us exit
+        promptly on stop."""
+        from . import bus
+
+        queues: list = []
+        subscribed: set[str] = set()
+
+        def _ensure_subs():
+            for cid in {C.MAIN, *C.ids()}:
+                if cid not in subscribed:
+                    queues.append(bus.subscribe(cid, ["ch:cancel:chat"]))
+                    subscribed.add(cid)
+
+        try:
+            while not self._stop.is_set():
+                _ensure_subs()
+                for q in queues:
+                    try:
+                        while True:
+                            msg = q.get_nowait()
+                            self._cancel_thread((msg.get("data") or {}).get("thread_id"))
+                    except asyncio.QueueEmpty:
+                        pass
+                    except Exception:
+                        log.exception("cancel_loop: error handling cancel signal")
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=0.25)
+                except TimeoutError:
+                    pass
+        except asyncio.CancelledError:
+            return
+        finally:
+            for q in queues:
+                try:
+                    bus.unsubscribe(q)
                 except Exception:
                     pass
 
@@ -353,7 +401,7 @@ class Worker:
         t_all = 0.0
         while not self._stop.is_set():
             try:
-                due = set(bus.r().spop(bus.gkey("kb:pending"), 50) or [])
+                due = set(bus.pop_pending(50))
                 if time.monotonic() - t_all > 60:
                     due |= set(C.ids())
                     t_all = time.monotonic()
@@ -362,7 +410,7 @@ class Worker:
                         if mine:
                             n = await asyncio.to_thread(self._embed_company, cid)
                             if n:
-                                bus.r().sadd(bus.gkey("kb:pending"), cid)  # more may be left: come back soon
+                                bus.mark_pending(cid)  # more may be left: come back soon
             except Exception:  # noqa: BLE001 - never let embedding stop the worker
                 log.exception("knowledge loop failed")
             try:

@@ -234,6 +234,123 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
+// ------------------------------------------------------------------ start (light tier, no Docker)
+
+// startCommand is a pure, testable constructor.  It assembles the *exec.Cmd
+// that launches omilo-api with the light-tier environment; it has no side
+// effects and never calls compose.
+func startCommand(apiBin, dir, port string) *exec.Cmd {
+	// Deliberately do NOT pin OMILO_DATABASE_URL here. The app resolves the DB itself: Postgres
+	// from <data_dir>/.env if this install was migrated (`omilo migrate`), else the SQLite default
+	// at <data_dir>/omilo.db. OS env beats .env in pydantic, so pinning it here would silently
+	// revert a migrated install back to SQLite on every `omilo start`.
+	env := append(os.Environ(),
+		"OMILO_DATA_DIR="+dir,
+		"OMILO_EMBEDDED_WORKER=true",
+		"OMILO_PORT="+port,
+		"OMILO_PUBLIC_URL=http://localhost:"+port,
+	)
+	cmd := exec.Command(apiBin)
+	cmd.Env = env
+	return cmd
+}
+
+// lookupBin resolves a bundled Omilo binary (omilo-api, omilo-migrate …):
+// first via PATH, then next to the running CLI binary.  Returns "" if not found.
+func lookupBin(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), name)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// lookupApiBin resolves the omilo-api binary.
+func lookupApiBin() string { return lookupBin("omilo-api") }
+
+func cmdStart(args []string) {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	dir := fs.String("data-dir", dataDir(), "data directory")
+	port := fs.String("port", "7700", "port on this machine")
+	noOpen := fs.Bool("no-open", false, "don't open the browser")
+	_ = fs.Parse(args)
+
+	apiBin := lookupApiBin()
+	if apiBin == "" {
+		die(errors.New("omilo-api is not installed. Install the Omilo app, or use `omilo up` to run with Docker."))
+	}
+
+	cmd := startCommand(apiBin, *dir, *port)
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+
+	if err := cmd.Start(); err != nil {
+		die(fmt.Errorf("failed to start omilo-api: %w", err))
+	}
+
+	url := "http://localhost:" + *port
+	noOpenVal := *noOpen
+
+	// Health-check goroutine: waits for the child to become healthy, then
+	// updates config and opens the browser.  On timeout it kills the child
+	// and exits non-zero so the user's terminal gets a clear error.
+	go func() {
+		fmt.Print("Waiting for Omilo to start")
+		if !waitHealthy(url) {
+			fmt.Fprintln(os.Stderr, "\nerror: omilo-api did not become healthy in 60s; check its output above")
+			_ = cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println(" ready:", url)
+
+		c := loadConfig()
+		c.URL = url
+		if err := saveConfig(c); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not save config:", err)
+		}
+
+		if !noOpenVal {
+			openBrowser(url)
+		}
+	}()
+
+	// Block until the child exits (Ctrl+C at the terminal reaches the child
+	// via the shared process group — the child stops, Wait returns, we exit).
+	if err := cmd.Wait(); err != nil {
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(1)
+	}
+}
+
+// ------------------------------------------------------------------ migrate (light SQLite -> full Postgres)
+
+// cmdMigrate shells to the omilo-migrate Python entry point, passing the flags
+// straight through.  It runs in the foreground and mirrors its exit code: the
+// migration is all-or-nothing and only flips this install's config on success.
+func cmdMigrate(args []string) {
+	bin := lookupBin("omilo-migrate")
+	if bin == "" {
+		die(errors.New("omilo-migrate is not installed. Install the Omilo app (it ships with the migration tool)."))
+	}
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+	cmd.Env = append(os.Environ(), "OMILO_DATA_DIR="+dataDir())
+	if err := cmd.Run(); err != nil {
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		die(fmt.Errorf("failed to run omilo-migrate: %w", err))
+	}
+}
+
 // ------------------------------------------------------------------ commands
 func cmdUp(args []string) {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
@@ -507,6 +624,25 @@ func cmdImport(args []string) {
 	}
 }
 
+// healthzGraduate reads the "graduate" string from a /healthz response body.
+// It returns an empty string when the key is absent, the body is not JSON, or any read error occurs.
+func healthzGraduate(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return ""
+	}
+	if v, ok := body["graduate"]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func cmdDoctor() {
 	ok := true
 	if _, err := exec.LookPath("docker"); err != nil {
@@ -518,6 +654,9 @@ func cmdDoctor() {
 	c := loadConfig()
 	if r, err := http.Get(c.URL + "/healthz"); err == nil && r.StatusCode == 200 {
 		fmt.Println("✓ gateway reachable at", c.URL)
+		if grad := healthzGraduate(r); grad != "" {
+			fmt.Println("→", grad)
+		}
 	} else {
 		fmt.Println("✕ gateway not reachable at", c.URL)
 		ok = false
@@ -549,7 +688,10 @@ const usage = `omilo — run your company of AI staff agents
 
 Run it
   up [-port 7700]        start Omilo (Docker) and open it in the browser
+  start [--port 7700] [--data-dir DIR] [--no-open]   run Omilo on this machine (SQLite, no Docker)
   down                   stop it          logs      follow the logs
+  migrate --to postgres --database-url URL [--redis-url URL] [--dry-run]
+                         graduate this install from SQLite to Postgres (one-way)
   login [-url URL]       sign in from this terminal
   doctor                 check Docker, the gateway, your login and the engines
 
@@ -579,6 +721,10 @@ func main() {
 	switch cmd {
 	case "up":
 		cmdUp(args)
+	case "start":
+		cmdStart(args)
+	case "migrate":
+		cmdMigrate(args)
 	case "down":
 		must(compose("down"))
 	case "logs":

@@ -9,7 +9,8 @@ RUN npm run build
 
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    OMILO_HOST=0.0.0.0 OMILO_PORT=7700 OMILO_WEB_DIR=/app/web OMILO_DATA_DIR=/data
+    OMILO_HOST=0.0.0.0 OMILO_PORT=7700 OMILO_WEB_DIR=/app/web OMILO_DATA_DIR=/data \
+    OMILO_EMBEDDED_WORKER=true
 WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/
 COPY apps/api/omilo_api apps/api/omilo_api

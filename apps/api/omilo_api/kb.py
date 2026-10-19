@@ -25,6 +25,8 @@ from sqlalchemy.orm import Session
 
 from . import bus
 from . import company as C
+from . import db as _db
+from . import kb_sqlite as _sq
 from .models import KbChunk, KbQuery, KbSource, Message, Proposal, Report, Staff, Task, Thread, now
 
 log = logging.getLogger("omilo.kb")
@@ -42,7 +44,17 @@ MAX_TEXT = 400_000
 
 # ------------------------------------------------------------------ indexes
 def ensure_indexes(eng) -> None:
+    if _db.is_sqlite(eng):
+        _sq.ensure_fts_and_vec(eng)  # FTS5 external-content table + sync triggers (vec tables are lazy per dim)
+        return
     with eng.begin() as c:
+        # `tsv` is a Postgres-only generated column (not ORM-mapped, not in create_all DDL).
+        # Add it here so full-text search / the GIN index below work. Postgres 12+ allows adding
+        # a GENERATED ... STORED column via ALTER TABLE.
+        c.exec_driver_sql(
+            "ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS tsv tsvector "
+            "GENERATED ALWAYS AS (to_tsvector('simple', coalesce(heading, '') || ' ' || text)) STORED"
+        )
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_chunk_tsv ON kb_chunk USING gin (tsv)")
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_source_kind_ref ON kb_source (kind, ref)")
 
@@ -55,9 +67,12 @@ def _ensure_dim_index(db: Session, dim: int) -> None:
     k = (C.current(), dim)
     if k in _dim_indexed:
         return
-    db.execute(text(f"CREATE INDEX IF NOT EXISTS kb_chunk_hnsw_{dim} ON kb_chunk USING hnsw ((embedding::vector({dim})) vector_cosine_ops) "
-                    f"WHERE dim = {dim}"))
-    db.commit()
+    if _db.is_sqlite(db.bind):
+        _sq.ensure_vec_table(db, dim)
+    else:
+        db.execute(text(f"CREATE INDEX IF NOT EXISTS kb_chunk_hnsw_{dim} ON kb_chunk USING hnsw ((embedding::vector({dim})) vector_cosine_ops) "
+                        f"WHERE dim = {dim}"))
+        db.commit()
     _dim_indexed.add(k)
 
 
@@ -157,6 +172,11 @@ def remove(db: Session, kind: str, ref: str, commit: bool = True) -> bool:
     src = db.scalar(select(KbSource).where(KbSource.kind == kind, KbSource.ref == _ref(ref)))
     if not src:
         return False
+    if _db.is_sqlite(db.bind):
+        # vec0 tables have no FK cascade: drop the chunks' vec rows before the source cascade removes
+        # them. (The FTS5 external-content triggers fire on the chunk DELETE and need no help here.)
+        for (cid_,) in db.execute(select(KbChunk.id).where(KbChunk.source_id == src.id)).all():
+            _sq.delete_vec(db, cid_)
     db.delete(src)
     if commit:
         db.commit()
@@ -165,18 +185,12 @@ def remove(db: Session, kind: str, ref: str, commit: bool = True) -> bool:
 
 def _wake(cid: str | None = None) -> None:
     """Tell the embedding worker this company has new chunks."""
-    try:
-        bus.r().sadd(bus.gkey("kb:pending"), cid or C.current())
-    except Exception:  # noqa: BLE001 - the worker also sweeps every minute
-        pass
+    bus.mark_pending(cid or C.current())
 
 
 # ------------------------------------------------------------------ marks: jobs, chats and proposals that changed
 def mark(kind: str, ref: str, cid: str | None = None) -> None:
-    try:
-        bus.r().sadd(bus.key("kb:marks", cid), f"{kind}|{ref}")
-    except Exception:  # noqa: BLE001
-        pass
+    bus.add_marks([f"{kind}|{ref}"], cid)
 
 
 @event.listens_for(Session, "before_flush")
@@ -241,10 +255,7 @@ def _collect(db: Session, kind: str, ref: str) -> dict | None:
 
 
 def process_marks(db: Session, limit: int = 40) -> int:
-    try:
-        items = bus.r().spop(bus.key("kb:marks"), limit) or []
-    except Exception:  # noqa: BLE001
-        return 0
+    items = bus.pop_marks(limit)
     n = 0
     for it in items:
         kind, _, ref = it.partition("|")
@@ -345,17 +356,18 @@ def embed_pending(db: Session, budget: int = 64) -> int:
         log.warning("embedding failed: %s", e)
         return 0
     _ensure_dim_index(db, E.dim)
+    sqlite = _db.is_sqlite(db.bind)
     for c, v in zip(rows, vecs, strict=True):
-        c.embedding, c.dim, c.model = v, E.dim, E.tag
+        c.embedding, c.dim, c.model = (_sq.pack(v) if sqlite else v), E.dim, E.tag
     db.flush()
+    if sqlite:
+        for c, v in zip(rows, vecs, strict=True):
+            _sq.upsert_vec(db, c.id, E.dim, v)  # mirror the blob into kb_vec_{dim} for KNN
     srcs = {c.source_id for c in rows}
     left = set(db.scalars(select(KbChunk.source_id).where(KbChunk.source_id.in_(srcs), (KbChunk.embedding.is_(None)) | (KbChunk.model != E.tag))))
     db.execute(update(KbSource).where(KbSource.id.in_(srcs - left)).values(status="ready", indexed_at=now(), error=""))
     db.commit()
-    try:
-        bus.r().delete(bus.key("kb:error"))
-    except Exception:  # noqa: BLE001
-        pass
+    bus.drop("kb:error")
     bus.publish("kb", {"embedded": len(rows)})
     return len(rows)
 
@@ -389,10 +401,16 @@ def search(db: Session, q: str, k: int = 8, *, kinds: list[str] | None = None, s
     q = (q or "").strip()
     if not q:
         return {"mode": "none", "results": []}
+    sqlite = _db.is_sqlite(db.bind)
     where, params = ["1=1"], {"k": max(k * 5, 40)}
     if kinds:
-        where.append("s.kind = ANY(:kinds)")
-        params["kinds"] = list(kinds)
+        if sqlite:
+            names = {f"kind{i}": kv for i, kv in enumerate(kinds)}
+            where.append("s.kind IN (" + ", ".join(f":{n}" for n in names) + ")")
+            params.update(names)
+        else:
+            where.append("s.kind = ANY(:kinds)")
+            params["kinds"] = list(kinds)
     if staff_id:
         where.append("(s.staff_id = :staff OR s.staff_id = '')")
         params["staff"] = staff_id
@@ -408,10 +426,13 @@ def search(db: Session, q: str, k: int = 8, *, kinds: list[str] | None = None, s
         if not E.ready():
             raise EM.EmbedError("the local model is still loading")
         qv = E.embed([q], "query")[0]
-        params.update(qv=str(qv), tag=E.tag)
-        rows = db.execute(text(
-            f"SELECT c.id, 1 - ((c.embedding::vector({E.dim})) <=> CAST(:qv AS vector({E.dim}))) AS sim FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id "
-            f"WHERE c.dim = {E.dim} AND c.model = :tag AND {w} ORDER BY (c.embedding::vector({E.dim})) <=> CAST(:qv AS vector({E.dim})) LIMIT :k"), params).all()
+        if sqlite:
+            rows = _sq.knn(db, E.dim, qv, max(k * 5, 40), f"c.model = :tag AND {w}", {**params, "tag": E.tag})
+        else:
+            params.update(qv=str(qv), tag=E.tag)
+            rows = db.execute(text(
+                f"SELECT c.id, 1 - ((c.embedding::vector({E.dim})) <=> CAST(:qv AS vector({E.dim}))) AS sim FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id "
+                f"WHERE c.dim = {E.dim} AND c.model = :tag AND {w} ORDER BY (c.embedding::vector({E.dim})) <=> CAST(:qv AS vector({E.dim})) LIMIT :k"), params).all()
         for i, (cid_, sim) in enumerate(rows):
             ranked.setdefault(cid_, {"score": 0.0})
             ranked[cid_]["score"] += max(float(sim), 0.0) * 2 / (60 + i)  # a weak match in meaning counts little
@@ -423,16 +444,25 @@ def search(db: Session, q: str, k: int = 8, *, kinds: list[str] | None = None, s
         db.rollback()
         log.exception("vector search failed")
     # words
-    tq = _tsquery(q)
-    if tq:
-        params["tq"] = tq
-        rows = db.execute(text(
-            f"SELECT c.id, ts_rank_cd(c.tsv, to_tsquery('simple', :tq)) AS r FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id "
-            f"WHERE c.tsv @@ to_tsquery('simple', :tq) AND {w} ORDER BY r DESC LIMIT :k"), params).all()
-        for i, (cid_, rk) in enumerate(rows):
-            ranked.setdefault(cid_, {"score": 0.0})
-            ranked[cid_]["score"] += 1 / (60 + i) * 1.1  # an exact word match counts a little more
-            ranked[cid_]["words"] = round(float(rk), 4)
+    if sqlite:
+        tq = _sq.fts_query(q)
+        if tq:
+            rows = _sq.fts_match(db, tq, w, params, max(k * 5, 40))
+            for i, (cid_, rk) in enumerate(rows):
+                ranked.setdefault(cid_, {"score": 0.0})
+                ranked[cid_]["score"] += 1 / (60 + i) * 1.1  # an exact word match counts a little more
+                ranked[cid_]["words"] = round(float(rk), 4)
+    else:
+        tq = _tsquery(q)
+        if tq:
+            params["tq"] = tq
+            rows = db.execute(text(
+                f"SELECT c.id, ts_rank_cd(c.tsv, to_tsquery('simple', :tq)) AS r FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id "
+                f"WHERE c.tsv @@ to_tsquery('simple', :tq) AND {w} ORDER BY r DESC LIMIT :k"), params).all()
+            for i, (cid_, rk) in enumerate(rows):
+                ranked.setdefault(cid_, {"score": 0.0})
+                ranked[cid_]["score"] += 1 / (60 + i) * 1.1  # an exact word match counts a little more
+                ranked[cid_]["words"] = round(float(rk), 4)
     # how many of the query's words a piece contains decides close calls (and lifts exact matches)
     terms = _terms(q)
     cand = {c.id: c for c in db.scalars(select(KbChunk).where(KbChunk.id.in_(list(ranked))))} if ranked else {}
@@ -472,29 +502,53 @@ def docs_search(db: Session, q: str, limit: int = 20, folder: str | None = None)
     from . import docs as D
 
     sync_docs(db)
+    sqlite = _db.is_sqlite(db.bind)
     out: dict[str, dict] = {}
-    for op in ("&", "|"):
-        tq = _tsquery(q, op=op)
-        if not tq:
-            return []
-        params = {"tq": tq, "tqa": _tsquery(q, op="|"), "lim": limit * 4}
-        extra = ""
-        if folder:
-            extra = " AND s.ref LIKE :folder"
-            params["folder"] = folder.rstrip("/") + "/%"
-        rows = db.execute(text(
-            "SELECT s.ref, s.title, c.text, ts_rank_cd(c.tsv, to_tsquery('simple', :tq)) + "
-            "ts_rank(to_tsvector('simple', s.title), to_tsquery('simple', :tqa)) * 10 AS r "
-            "FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id WHERE s.kind IN ('doc', 'memory', 'context') "
-            f"AND c.tsv @@ to_tsquery('simple', :tq){extra} ORDER BY r DESC LIMIT :lim"), params).all()
-        words = [w.lower() for w in _WORD.findall(q)]
+    words = [w.lower() for w in _WORD.findall(q)]
+    for op in (("AND", "OR") if sqlite else ("&", "|")):
+        if sqlite:
+            tq = _sq.fts_query(q, op=op)
+            if not tq:
+                return []
+            params = {"tq": tq, "lim": limit * 4}
+            extra = ""
+            if folder:
+                extra = " AND s.ref LIKE :folder"
+                params["folder"] = folder.rstrip("/") + "/%"
+            rows = db.execute(text(
+                "SELECT s.ref, s.title, c.text, bm25(kb_chunk_fts) AS b FROM kb_chunk_fts "
+                "JOIN kb_chunk c ON c.id = kb_chunk_fts.rowid JOIN kb_source s ON s.id = c.source_id "
+                "WHERE kb_chunk_fts MATCH :tq AND s.kind IN ('doc', 'memory', 'context')"
+                f"{extra} ORDER BY b LIMIT :lim"), params).all()
+            # bm25 is negative-is-better; flip to positive and add the same *10 title boost the PG path
+            # expresses, computed in Python (whole-word presence in the title).
+            scored = []
+            for ref, title, body, b in rows:
+                tl = (title or "").lower()
+                boost = 10.0 * sum(1 for wd in words if wd in tl) / (len(words) or 1)
+                scored.append((ref, title, body, -float(b) + boost))
+            rows = scored
+        else:
+            tq = _tsquery(q, op=op)
+            if not tq:
+                return []
+            params = {"tq": tq, "tqa": _tsquery(q, op="|"), "lim": limit * 4}
+            extra = ""
+            if folder:
+                extra = " AND s.ref LIKE :folder"
+                params["folder"] = folder.rstrip("/") + "/%"
+            rows = db.execute(text(
+                "SELECT s.ref, s.title, c.text, ts_rank_cd(c.tsv, to_tsquery('simple', :tq)) + "
+                "ts_rank(to_tsvector('simple', s.title), to_tsquery('simple', :tqa)) * 10 AS r "
+                "FROM kb_chunk c JOIN kb_source s ON s.id = c.source_id WHERE s.kind IN ('doc', 'memory', 'context') "
+                f"AND c.tsv @@ to_tsquery('simple', :tq){extra} ORDER BY r DESC LIMIT :lim"), params).all()
         for ref, title, body, r in rows:
             if ref in out:
                 continue
             low = body.lower()
             i = next((low.find(w) for w in words if w in low), 0)
             out[ref] = {"path": ref, "title": title or D.title_of(ref), "score": round(float(r), 4), "snippet": D._plain(body[max(0, i - 60): i + 180])}
-        if len(out) >= limit or op == "|" and out:
+        if len(out) >= limit or op in ("|", "OR") and out:
             break
     return sorted(out.values(), key=lambda x: -x["score"])[:limit]
 
@@ -534,6 +588,8 @@ def related(db: Session, source_id: str, k: int = 6) -> list[dict]:
         E = EM.current(db)
     except EM.EmbedError:
         return []
+    if _db.is_sqlite(db.bind):
+        return _related_sqlite(db, source_id, E, k)
     row = db.execute(text(f"SELECT AVG(embedding::vector({E.dim}))::text FROM kb_chunk WHERE source_id = :s AND dim = {E.dim} AND model = :tag"),
                      {"s": source_id, "tag": E.tag}).scalar()
     if not row:
@@ -544,6 +600,27 @@ def related(db: Session, source_id: str, k: int = 6) -> list[dict]:
         {"v": row, "tag": E.tag, "s": source_id, "k": k}).all()
     srcs = {s.id: s for s in db.scalars(select(KbSource).where(KbSource.id.in_([r[0] for r in rows])))}
     return [{**source_view(srcs[sid]), "similarity": round(1 - float(d), 3)} for sid, d in rows if sid in srcs]
+
+
+def _related_sqlite(db: Session, source_id: str, E, k: int) -> list[dict]:
+    """SQLite related(): a Python centroid of the source's chunk blobs, then KNN, folded to one row
+    per source (its best chunk), skipping the source itself."""
+    blobs = db.execute(text("SELECT embedding FROM kb_chunk WHERE source_id = :s AND dim = :d AND model = :tag AND embedding IS NOT NULL"),
+                       {"s": source_id, "d": E.dim, "tag": E.tag}).all()
+    vecs = [_sq.unpack(b[0]) for b in blobs if b[0]]
+    if not vecs:
+        return []
+    centroid = [sum(col) / len(vecs) for col in zip(*vecs, strict=True)]
+    hits = _sq.knn(db, E.dim, centroid, k * 8, "c.model = :tag AND c.source_id <> :s", {"tag": E.tag, "s": source_id})
+    chunks = {c.id: c for c in db.scalars(select(KbChunk).where(KbChunk.id.in_([cid for cid, _ in hits])))} if hits else {}
+    best: dict[str, float] = {}
+    for cid, sim in hits:  # hits are sorted best-first; keep each source's first (best) sim
+        c = chunks.get(cid)
+        if c and c.source_id not in best:
+            best[c.source_id] = sim
+    top = sorted(best.items(), key=lambda x: -x[1])[:k]
+    srcs = {s.id: s for s in db.scalars(select(KbSource).where(KbSource.id.in_([sid for sid, _ in top])))}
+    return [{**source_view(srcs[sid]), "similarity": round(float(sim), 3)} for sid, sim in top if sid in srcs]
 
 
 def projection(db: Session, limit: int = 3000) -> dict:
@@ -557,18 +634,21 @@ def projection(db: Session, limit: int = 3000) -> dict:
         E = EM.current(db)
     except EM.EmbedError as e:
         return {"points": [], "error": str(e)}
+    sqlite = _db.is_sqlite(db.bind)
     stamp = db.execute(text("SELECT count(*), max(id) FROM kb_chunk WHERE model = :tag"), {"tag": E.tag}).one()
     ck = f"kb:map:{E.tag}:{stamp[0]}:{stamp[1]}"
     cached = bus.get_json(ck)
     if cached:
         return cached
+    textfn = "substr(c.text, 1, 160)" if sqlite else "left(c.text, 160)"
+    embcol = "c.embedding" if sqlite else "c.embedding::text"
     rows = db.execute(text(
-        "SELECT c.id, c.source_id, c.ord, c.heading, left(c.text, 160), c.embedding::text FROM kb_chunk c WHERE c.model = :tag "
+        f"SELECT c.id, c.source_id, c.ord, c.heading, {textfn}, {embcol} FROM kb_chunk c WHERE c.model = :tag "
         "ORDER BY c.id DESC LIMIT :lim"), {"tag": E.tag, "lim": limit}).all()
     if len(rows) < 2:
         out = {"points": [], "sources": [], "basis": None}
         return out
-    X = np.array([json.loads(r[5]) for r in rows], dtype=np.float32)
+    X = np.array([_sq.unpack(r[5]) if sqlite else json.loads(r[5]) for r in rows], dtype=np.float32)
     mean = X.mean(axis=0)
     _, _, vt = np.linalg.svd(X - mean, full_matrices=False)
     comps = vt[:2]
@@ -607,6 +687,9 @@ def project(db: Session, q: str) -> dict | None:
 
 def reindex(db: Session) -> int:
     """Re-embed everything (after switching models, or on request) and rebuild docs."""
+    if _db.is_sqlite(db.bind) and _db.VEC_OK:
+        for t in _sq._vec_tables(db):  # drop stale vectors; embed_pending rebuilds them
+            db.execute(text(f"DELETE FROM {t}"))
     n = db.execute(update(KbChunk).values(embedding=None, dim=0, model="")).rowcount
     db.execute(update(KbSource).values(status="pending"))
     db.commit()

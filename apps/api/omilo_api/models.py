@@ -3,8 +3,7 @@ import datetime as dt
 import secrets
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -571,15 +570,26 @@ class KbSource(Base):
 
 class KbChunk(Base):
     __tablename__ = "kb_chunk"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BIGINT on Postgres; INTEGER PRIMARY KEY on SQLite so it aliases rowid (autoincrement works
+    # and can back a sqlite-vec vec0 content_rowid mapping in Task 5).
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     source_id: Mapped[str] = mapped_column(ForeignKey("kb_source.id", ondelete="CASCADE"), index=True)
     ord: Mapped[int] = mapped_column(Integer, default=0)
     heading: Mapped[str] = mapped_column(String(300), default="")
     text: Mapped[str] = mapped_column(Text)
-    embedding = mapped_column(Vector(), nullable=True)  # any size: each row records its dim; search casts to that dim
+    # Dialect-neutral: Vector() on PostgreSQL, LargeBinary (BLOB) on SQLite.
+    # Blob format: little-endian float32 contiguous bytes.
+    #   pack:   struct.pack(f"<{len(vector)}f", *vector)
+    #   unpack: struct.unpack(f"<{n}f", blob)  where n = dim
+    # Task 5 reads/writes this format to populate sqlite-vec's external FTS5 table.
+    embedding = mapped_column(Vector().with_variant(LargeBinary(), "sqlite"), nullable=True)
     dim: Mapped[int] = mapped_column(Integer, default=0, index=True)
     model: Mapped[str] = mapped_column(String(120), default="")
-    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('simple', coalesce(heading, '') || ' ' || text)", persisted=True))
+    # The Postgres full-text column `tsv` is NOT ORM-mapped: nothing in Python reads a `.tsv`
+    # attribute (full-text search references the DB column by name in raw SQL). It is added to the
+    # Postgres DB as a generated STORED column by kb.ensure_indexes(), so it never appears in the
+    # dialect-neutral create_all DDL and never breaks SQLite INSERT/SELECT. Task 5 builds an
+    # external FTS5 table for full-text search on SQLite instead.
 
 
 class KbQuery(Base):
