@@ -33,6 +33,7 @@ from __future__ import annotations
 import dataclasses
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command
 
 from ..engines import ChatContext, Engine, EngineResult, TaskContext, get_engine
 from .delegation import GateContext
@@ -188,6 +189,88 @@ class GraphEngine(Engine):
             error=agg["error"],
             cost_usd=agg["cost_usd"],
             tokens=agg["tokens"],
+        )
+
+    # --------------------------------------------------------------- resume
+    async def resume(self, task_id: str, decision: str, note: str) -> EngineResult:
+        """Continue a graph suspended on the owner's approval from its checkpoint.
+
+        Task 4 suspended a high-risk run with ``interrupt(...)`` under
+        ``thread_id == task_id`` in a PERSISTENT Postgres checkpointer. The owner's
+        decision now resumes it from a DIFFERENT process. LangGraph delivers the
+        decision by *returning* it from the original ``interrupt`` call when the graph
+        is re-invoked with ``Command(resume=<value>)``; the gate node re-executes from
+        the top, so our resume value is what that ``interrupt`` returns.
+
+        We open a FRESH ``AsyncPostgresSaver`` (an async connection is bound to the loop
+        that opened it, so a cached process-wide saver would break across loops/processes
+        — Task 4's ``open_checkpointer`` pattern). The compiled graph only needs its
+        node topology to match the checkpoint; the per-run closures (worker/agg) are not
+        exercised on this pass because the gate returns before any further worker call.
+
+        Returns the final ``EngineResult``: text on a clean finish, error if the run did
+        not converge. The caller (``worker.resume_graph_run``) marks the task done.
+        """
+        agg = {"cost_usd": 0.0, "tokens": 0, "error": ""}
+        # The resumed gate reads these off the state to branch approve vs reject/changes.
+        resume_value = {"decision": decision, "note": note}
+        config = {
+            "configurable": {"thread_id": task_id},
+            "recursion_limit": MAX_GRAPH_STEPS * 4 + 10,
+        }
+        async with open_checkpointer() as checkpointer:
+            await ensure_setup(checkpointer)
+            # A resume ctx: engine_config has no pending_action (the gate re-enters via
+            # the checkpoint, not a fresh worker pass). task_id/staff come from the
+            # checkpointed state, but the graph builder needs them for GateContext; read
+            # the staff id off the saved state so the gate re-files against the right staff.
+            ctx = self._resume_ctx(task_id, checkpointer, config)
+            underlying_cfg = self._underlying_config(ctx.engine_config)
+            graph = self._build_graph(ctx, underlying_cfg, agg, checkpointer)
+            final: GraphState = await graph.ainvoke(
+                Command(resume=resume_value), config=config
+            )
+
+        # If the run re-suspended (should not happen: the gate returns on resume), report
+        # waiting so the caller does not mark the task done on a still-open run.
+        interrupts = final.get(_INTERRUPT_KEY)
+        if interrupts:
+            return EngineResult(
+                text=f"Still waiting for your approval: {_interrupt_title(interrupts)}",
+                cost_usd=agg["cost_usd"], tokens=agg["tokens"],
+            )
+        if not final.get("done"):
+            return EngineResult(
+                error=f"graph did not converge in {MAX_GRAPH_STEPS} steps after resume",
+                cost_usd=agg["cost_usd"], tokens=agg["tokens"],
+            )
+        return EngineResult(
+            text=final.get("result_text", ""), error=agg["error"],
+            cost_usd=agg["cost_usd"], tokens=agg["tokens"],
+        )
+
+    def _resume_ctx(self, task_id: str, checkpointer, config: dict) -> TaskContext:
+        """A minimal TaskContext for rebuilding the graph on resume.
+
+        The checkpoint already holds the full GraphState (task_id, staff, pending_action,
+        etc.); the rebuilt graph only needs ``task_id`` and ``staff_id`` to construct the
+        gate's ``GateContext``. We read ``staff_id`` from the DB task so the gate re-files
+        against the correct staff, and leave ``pending_action`` out of engine_config (the
+        gate re-enters through the checkpoint, not a fresh worker output)."""
+        from ..db import session_scope
+        from ..models import Task
+
+        staff_id = ""
+        with session_scope() as db:
+            t = db.get(Task, task_id)
+            if t is not None:
+                staff_id = t.staff_id
+        return TaskContext(
+            staff_id=staff_id, staff_name="", job="", is_chief=False,
+            task_id=task_id, origin="task", brief="", founder_note="",
+            checkpoint=None, proposal=None, mcp_url="", mcp_token=None,
+            engine_config={"type": "graph", "exec_engine": dict(_DEFAULT_EXEC_CONFIG)},
+            emit=lambda *a, **k: None,
         )
 
     # ----------------------------------------------------------- internals

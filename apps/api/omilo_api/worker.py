@@ -187,6 +187,7 @@ class Worker:
     async def tick(self):
         from . import bus
 
+        await drain_resume_queue()  # continue any graph runs whose owner decided off-loop
         for cid in C.each():  # every company runs on its own: its pause switch, concurrency limit and schedule
             try:
                 self.loop_housekeeping(cid)
@@ -577,6 +578,76 @@ def _memory(db, st, t) -> str:
     except Exception:  # noqa: BLE001 - a broken note must not stop the work
         log.exception("memory brief failed")
         return ""
+
+
+# ------------------------------------------------------------ resume a suspended graph
+#
+# A high-risk graph run suspends on an ``interrupt`` (Task 4). When the owner decides the
+# escalated proposal, ``services.decide_proposal`` calls ``request_resume`` to continue
+# the checkpointed run OFF the request path — the HTTP handler must not block on the graph.
+#
+# ``resume_graph_run`` is the awaitable hook: it opens a FRESH AsyncPostgresSaver keyed by
+# ``thread_id = task_id`` (never a cached, event-loop-bound saver), re-invokes the graph
+# with the owner's decision, and marks the task done. It is deliberately module-level and
+# awaitable so a test can drive it deterministically instead of sleeping on a background
+# task. ``request_resume`` is the non-blocking dispatcher: it schedules ``resume_graph_run``
+# as a detached asyncio task when a loop is running, preserving the caller's company context.
+
+# Resume requests enqueued when no event loop is running (e.g. a sync test, or a decision
+# made outside the async server). The worker loop drains these on its next tick. Each item
+# is ``(task_id, decision, note, company_id)``.
+_resume_queue: list[tuple[str, str, str, str]] = []
+
+
+async def resume_graph_run(task_id: str, decision: str, note: str, cid: str | None = None):
+    """Continue a suspended graph run from its checkpoint and finish the task.
+
+    Opens a fresh checkpointer (cross-process/loop safe), re-invokes the compiled graph
+    with ``Command(resume={"decision","note"})`` under ``thread_id = task_id``, then marks
+    the task ``done`` (the graph owns completion; no execution task is ever spawned for a
+    graph-origin decision). Returns the ``EngineResult`` so tests can assert on it."""
+    from .graph.engine import GraphEngine
+
+    with C.use(cid or C.current()):
+        res = await GraphEngine().resume(task_id, decision, note)
+        with session_scope() as db:
+            t = db.get(Task, task_id)
+            if t is not None and t.status not in ("done", "failed", "cancelled"):
+                status = "failed" if res.error else "done"
+                t.cost_usd += res.cost_usd
+                t.tokens += res.tokens
+                S.finish_task(db, t, status, error=res.error, result_text=res.text)
+    return res
+
+
+def request_resume(task_id: str, decision: str, note: str) -> None:
+    """Signal a resume without blocking the caller (an HTTP request handler).
+
+    When an event loop is running, schedule the resume as a detached task so the decision
+    returns immediately. Otherwise enqueue it for the worker loop (or a test) to drain.
+    The current company context is captured so the detached run resolves the right schema."""
+    cid = C.current()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None:
+        loop.create_task(resume_graph_run(task_id, decision, note, cid))
+    else:
+        _resume_queue.append((task_id, decision, note, cid))
+
+
+async def drain_resume_queue() -> int:
+    """Run any resume requests enqueued while no loop was available. Returns the count."""
+    n = 0
+    while _resume_queue:
+        task_id, decision, note, cid = _resume_queue.pop(0)
+        try:
+            await resume_graph_run(task_id, decision, note, cid)
+            n += 1
+        except Exception:  # noqa: BLE001 - one bad resume must not stall the rest
+            log.exception("resume of graph task %s failed", task_id)
+    return n
 
 
 def _engine_label(cfg: dict) -> str:

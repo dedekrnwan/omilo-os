@@ -92,13 +92,19 @@ def build_proposal_fields(pending_action: dict) -> tuple[str, str, str]:
 
 
 def _find_pending_proposal(db: Session, task_id: str, staff_id: str) -> Proposal | None:
-    """An already-filed, still-pending proposal for this task+staff (resume safety)."""
+    """The proposal this gate already filed for this task+staff, if any (resume safety).
+
+    ``interrupt`` re-executes the gate node from the top on EVERY pass — both the second
+    suspend pass (still pending) AND the resume pass that returns the decision. On resume,
+    ``services.decide_proposal`` has already moved the proposal off ``pending`` (to
+    approved/rejected/changes_requested), so matching only on ``pending`` would miss it and
+    the gate would file a DUPLICATE. We therefore reuse the most recent proposal for this
+    task+staff regardless of status — one escalation files exactly one proposal."""
     return db.scalar(
         select(Proposal)
         .where(
             Proposal.task_id == task_id,
             Proposal.staff_id == staff_id,
-            Proposal.status == "pending",
         )
         .order_by(Proposal.created_at.desc())
     )
@@ -181,8 +187,8 @@ def _escalate(ctx: GateContext, pending_action: dict, risk: str) -> dict:
             proposal_title = p.title
 
     # Checkpoint + suspend. On the suspending pass this raises GraphInterrupt and does
-    # NOT return; on resume it returns the owner's decision value (handled in Task 5).
-    interrupt(
+    # NOT return; on resume it RETURNS the owner's decision value (Task 5).
+    decided = interrupt(
         {
             "kind": "approval",
             "proposal_id": proposal_id,
@@ -191,8 +197,23 @@ def _escalate(ctx: GateContext, pending_action: dict, risk: str) -> dict:
             "task_id": ctx.task_id,
         }
     )
-    # Reached only on resume (Task 5 continues from here).
-    return {"risk": risk, "pending_action": None}
+    # Reached only on resume. ``decided`` is the dict Task 5 passed via
+    # ``Command(resume={"decision": ..., "note": ...})``. The owner has already decided
+    # the Proposal in ``services.decide_proposal`` (audit + lesson recorded there, and —
+    # for a graph-origin proposal — the normal execution-task spawn deliberately skipped:
+    # the GRAPH owns completion, so there must be no second execution path).
+    #
+    # Either way the graph ends here WITHOUT any further outward work:
+    #   - approve → the escalated action is considered sanctioned; the run finishes done.
+    #   - reject/changes → nothing executes; the run stops cleanly, done.
+    # We set ``done`` so review routes straight to END and clear ``pending_action`` so no
+    # node tries to re-gate it.
+    decision = (decided or {}).get("decision", "") if isinstance(decided, dict) else ""
+    if decision == "approve":
+        result = f"Approved and completed: {proposal_title}"
+    else:
+        result = f"Stopped on your decision ({decision or 'declined'}): {proposal_title}"
+    return {"risk": risk, "pending_action": None, "done": True, "result_text": result}
 
 
 def _session():

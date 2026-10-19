@@ -366,14 +366,52 @@ def _close_inbox(db: Session, kind: str, ref_id: str) -> None:
         item.status, item.closed_at = "done", now()
 
 
+def _graph_origin_task(db: Session, p: Proposal) -> Task | None:
+    """The suspended graph task behind a graph-origin proposal, else None.
+
+    A graph-origin proposal was filed by the delegation gate of a ``brain="graph"``
+    staff and left PENDING while the LangGraph run is SUSPENDED on an ``interrupt``
+    (thread_id = task_id). The owner's decision RESUMES that run instead of spawning a
+    fresh execution task. We recognise it structurally: the proposal's task belongs to a
+    graph-brain staff and is still open (queued/running — i.e. not finished/cancelled),
+    which is the suspended state Task 4 leaves it in. Anything else (single_engine staff,
+    or a task already closed) takes the unchanged normal path."""
+    if not p.task_id:
+        return None
+    t = db.get(Task, p.task_id)
+    if t is None or t.status not in ("queued", "running"):
+        return None
+    st = db.get(Staff, t.staff_id)
+    if st is None or st.brain != "graph":
+        return None
+    return t
+
+
 def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str) -> Proposal:
     if p.status != "pending":
         raise DomainError(f"proposal is already {p.status}", 409)
     if decision in ("reject", "changes") and not note.strip():
         raise DomainError("a note is required: the agent learns from it")
+    if decision not in ("approve", "reject", "changes"):
+        raise DomainError("decision must be approve, reject or changes")
     p.decision_note, p.decided_by, p.decided_at = note, by, now()
     _close_inbox(db, "proposal", p.id)
-    if decision == "approve" and p.type == "docs.write":
+
+    # A graph-origin proposal (brain="graph" staff, run suspended on an interrupt) is
+    # owned by its LangGraph run: the owner's decision RESUMES that run, which drives
+    # completion. We must NOT also spawn the normal execution/revision task — that would
+    # double-execute. We still set the terminal status + audit + lesson below, then signal
+    # a detached resume after commit. The non-graph path is left byte-for-byte unchanged.
+    graph_task = _graph_origin_task(db, p)
+
+    if graph_task is not None:
+        if decision == "approve":
+            p.status = "approved"
+        elif decision == "reject":
+            p.status = "rejected"
+        else:  # changes
+            p.status = "changes_requested"
+    elif decision == "approve" and p.type == "docs.write":
         from . import docs as D  # a helper's suggested doc change: approving saves it, no execution job needed
 
         p.status = "done" if D.apply_suggestion(db, p.id, by) else "approved"
@@ -390,15 +428,13 @@ def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str)
             from . import docs as D
 
             D.reject_suggestion(db, p.id)
-    elif decision == "changes":
+    else:  # changes
         p.status = "changes_requested"
         create_task(
             db, p.staff_id, "revision",
             f"Revise proposal {p.id} ('{p.title}') as the founder asked, then call revise_proposal.",
             created_by=by, founder_note=note, parent_task_id=p.task_id, proposal_id=p.id,
         )
-    else:
-        raise DomainError("decision must be approve, reject or changes")
     audit(db, by, f"proposal.{decision}", p.id, note=note[:300])
     db.commit()
     try:  # your note becomes a lesson the helper reads before every run
@@ -409,6 +445,10 @@ def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str)
         import logging
 
         logging.getLogger("omilo.memory").exception("could not record a lesson")
+    if graph_task is not None:  # resume the suspended run off the request path (non-blocking)
+        from . import worker as W
+
+        W.request_resume(graph_task.id, decision, note)
     return p
 
 
