@@ -235,4 +235,6 @@ The API suite runs on Postgres 16 + pgvector and Redis 7 (knowledge base, policy
 
 ## License
 
-[MIT](LICENSE)
+[GNU AGPL-3.0-or-later](LICENSE). Copyright © 2026 Omilo contributors.
+
+Omilo is network copyleft: if you run a modified version as a network service, you must offer its users the corresponding source. See the [LICENSE](LICENSE) for the full terms.
