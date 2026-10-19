@@ -4,6 +4,7 @@ import secrets
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +40,16 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     session_days: int = 14
     cors_origins: str = ""  # comma-separated, for a web app served from another origin
+
+    # OAuth2 broker — JSON map of {provider: {client_id, client_secret}}.
+    # Example: OMILO_OAUTH_CLIENTS='{"google":{"client_id":"...","client_secret":"..."}}'
+    oauth_clients: Json[dict[str, dict[str, str]]] = "{}"  # type: ignore[assignment]
+
+    def oauth_redirect_uri(self) -> str:
+        """Absolute callback URL that OAuth2 providers must redirect back to."""
+        base = self.public_url.rstrip("/")
+        path = self.base_path.rstrip("/")
+        return base + path + "/api/connectors/pieces/connect/callback"
 
     def mcp_url(self) -> str:
         """The MCP endpoint helpers of the current company call (other companies get a /co/<id> prefix)."""
