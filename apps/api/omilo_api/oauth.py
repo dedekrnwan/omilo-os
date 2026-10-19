@@ -3,9 +3,29 @@
 All functions are pure helpers (no DB, no Redis). They are consumed by the connector
 endpoints that implement the authorization-code flow for piece connectors.
 
+Public API (Task 1):
+  OAUTH_PROVIDERS  — registry dict keyed by provider name
+  provider_client  — returns (client_id, client_secret) from settings
+
+Public API (Task 2):
+  exchange_code          — authorization-code → normalized token dict
+  refresh_access_token   — refresh_token grant → normalized token dict
+                           (raises ValueError for meta_long_lived providers)
+
+Canonical token dict shape:
+  {"access_token": str, "refresh_token": str|None,
+   "expires_at": float|None, "token_type": "bearer"}
+
 Security: client_secret, code, access_token, and refresh_token are NEVER logged.
 """
 from __future__ import annotations
+
+__all__ = [
+    "OAUTH_PROVIDERS",
+    "provider_client",
+    "exchange_code",
+    "refresh_access_token",
+]
 
 import logging
 import time
