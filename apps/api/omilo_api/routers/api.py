@@ -1248,7 +1248,6 @@ def harness_pool_consent(db: Session = Depends(get_db), user: User = Depends(cur
     from .. import harness as H
 
     H.grant_pool_consent(db)
-    db.commit()
     S.audit(db, user.id, "harness.pool_consent", "grant")
     db.commit()
     return H.pool_consent_status(db)
@@ -1259,6 +1258,7 @@ def harness_pool_consent_dismiss(db: Session = Depends(get_db), user: User = Dep
     from .. import harness as H
 
     H.dismiss_pool_notice(db)
+    S.audit(db, user.id, "harness.pool_consent", "dismiss")
     db.commit()
     return H.pool_consent_status(db)
 
