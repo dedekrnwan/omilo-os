@@ -94,7 +94,7 @@ def _normalize_token(raw: dict, existing_refresh_token: str | None = None) -> di
     """
     expires_in = raw.get("expires_in")
     expires_at = time.time() + float(expires_in) if expires_in is not None else None
-    refresh_token = raw.get("refresh_token") or existing_refresh_token
+    refresh_token = raw.get("refresh_token") if raw.get("refresh_token") is not None else existing_refresh_token
     return {
         "access_token": raw["access_token"],
         "refresh_token": refresh_token,

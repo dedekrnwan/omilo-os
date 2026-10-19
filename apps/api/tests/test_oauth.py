@@ -301,3 +301,82 @@ def test_token_type_always_bearer(monkeypatch):
 
     tok = oauth.exchange_code("google", "CODE", "https://omilo/cb")
     assert tok["token_type"] == "bearer"
+
+
+# ---------------------------------------------------------------------------
+# Refresh-token preservation semantics (fix: `or` → explicit `is not None`)
+# ---------------------------------------------------------------------------
+
+def test_refresh_token_preserved_when_server_omits_field(monkeypatch):
+    """When refresh response has NO refresh_token key (absent/None), preserve the prior token."""
+    from omilo_api import oauth
+
+    def fake_post(url, data=None, timeout=None):
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                # refresh_token key is entirely absent
+                return {"access_token": "AT2", "expires_in": 3600}
+
+        return R()
+
+    monkeypatch.setattr(oauth, "provider_client", lambda p: ("cid", "sec"))
+    monkeypatch.setattr(oauth.httpx, "post", fake_post)
+
+    tok = oauth.refresh_access_token("google", "EXISTING_RT")
+    assert tok["refresh_token"] == "EXISTING_RT", (
+        "Prior refresh_token must be preserved when the server does not include the field"
+    )
+
+
+def test_refresh_token_replaced_when_server_provides_new_value(monkeypatch):
+    """When refresh response includes a new non-empty refresh_token, use it."""
+    from omilo_api import oauth
+
+    def fake_post(url, data=None, timeout=None):
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"access_token": "AT2", "refresh_token": "NEW_RT", "expires_in": 3600}
+
+        return R()
+
+    monkeypatch.setattr(oauth, "provider_client", lambda p: ("cid", "sec"))
+    monkeypatch.setattr(oauth.httpx, "post", fake_post)
+
+    tok = oauth.refresh_access_token("google", "EXISTING_RT")
+    assert tok["refresh_token"] == "NEW_RT", (
+        "New refresh_token from server must replace the prior one"
+    )
+
+
+def test_refresh_token_empty_string_kept_not_replaced(monkeypatch):
+    """When the server explicitly returns '' (empty string), that value is kept as-is.
+
+    The guard is `is not None` — an explicit empty string from the server is a valid
+    (if surprising) server response and must NOT be silently replaced by the stale token.
+    This documents the intended behavior introduced by the fix.
+    """
+    from omilo_api import oauth
+
+    def fake_post(url, data=None, timeout=None):
+        class R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"access_token": "AT2", "refresh_token": "", "expires_in": 3600}
+
+        return R()
+
+    monkeypatch.setattr(oauth, "provider_client", lambda p: ("cid", "sec"))
+    monkeypatch.setattr(oauth.httpx, "post", fake_post)
+
+    tok = oauth.refresh_access_token("google", "EXISTING_RT")
+    assert tok["refresh_token"] == "", (
+        "An explicit empty-string refresh_token from the server must be kept, not overwritten by the stale token"
+    )
