@@ -611,6 +611,98 @@ async def mcp_post(request: Request):
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Token refresh helper — just-in-time pre-expiry refresh for piece tool calls
+# ---------------------------------------------------------------------------
+
+REFRESH_SKEW_S = 60  # refresh if expiry is within this many seconds
+
+
+def _fresh_token(conn, manifest: dict, db) -> str:
+    """Return a valid access token for *conn*, refreshing proactively if it is near expiry.
+
+    Logic:
+    - Read the stored token dict from connector_secrets(conn)["token"].
+    - If expires_at is set and within REFRESH_SKEW_S seconds of now, AND a refresh_token
+      exists, AND the provider's refresh_style is not "meta_long_lived": call
+      oauth.refresh_access_token, persist via set_connector_token + db.commit(), return
+      the new access_token.
+    - On refresh failure: call set_connector_needs_reconnect(conn, True) + db.commit(),
+      return the OLD access_token best-effort (no exception escapes).
+    - If expires_at is absent or not near expiry: return current access_token unchanged.
+
+    Security: tokens are never logged.
+    """
+    from . import oauth as _oauth
+    from .capabilities import connector_secrets, set_connector_token, set_connector_needs_reconnect
+
+    secrets = connector_secrets(conn)
+    tok = secrets.get("token") or {}
+    if not isinstance(tok, dict):
+        return str(tok) if tok else ""
+
+    access_token = tok.get("access_token", "")
+    expires_at = tok.get("expires_at")
+    refresh_token = tok.get("refresh_token")
+    provider = manifest.get("auth", {}).get("provider", "")
+
+    # Only attempt proactive refresh when all conditions hold.
+    if (
+        expires_at is not None
+        and float(expires_at) - time.time() < REFRESH_SKEW_S
+        and refresh_token
+        and provider in _oauth.OAUTH_PROVIDERS
+        and _oauth.OAUTH_PROVIDERS[provider].get("refresh_style") != "meta_long_lived"
+    ):
+        try:
+            new_tok = _oauth.refresh_access_token(provider, refresh_token)
+            set_connector_token(conn, new_tok)
+            db.commit()
+            return new_tok["access_token"]
+        except Exception:  # noqa: BLE001
+            set_connector_needs_reconnect(conn, True)
+            db.commit()
+            return access_token  # best-effort: let run_action 401 → retry path handles it
+
+    return access_token
+
+
+def _force_refresh(conn, manifest: dict, db) -> str | None:
+    """Force a token refresh regardless of expiry, returning the new access_token.
+
+    Returns None when there is no usable refresh path (no refresh_token or meta_long_lived).
+    On failure sets needs_reconnect and returns None without raising.
+    Used by the 401-retry path in tools/call.
+    """
+    from . import oauth as _oauth
+    from .capabilities import connector_secrets, set_connector_token, set_connector_needs_reconnect
+
+    secrets = connector_secrets(conn)
+    tok = secrets.get("token") or {}
+    if not isinstance(tok, dict):
+        return None
+
+    refresh_token = tok.get("refresh_token")
+    provider = manifest.get("auth", {}).get("provider", "")
+
+    if (
+        not refresh_token
+        or provider not in _oauth.OAUTH_PROVIDERS
+        or _oauth.OAUTH_PROVIDERS[provider].get("refresh_style") == "meta_long_lived"
+    ):
+        return None
+
+    try:
+        new_tok = _oauth.refresh_access_token(provider, refresh_token)
+        set_connector_token(conn, new_tok)
+        db.commit()
+        return new_tok["access_token"]
+    except Exception:  # noqa: BLE001
+        set_connector_needs_reconnect(conn, True)
+        db.commit()
+        return None
+
+
 @router.post("/mcp/piece/{slug}")
 async def mcp_piece_post(slug: str, request: Request):
     """MCP endpoint for a single piece connector.
@@ -670,25 +762,30 @@ async def mcp_piece_post(slug: str, request: Request):
                 conn = db.get(Connector, slug)
                 if conn is None:
                     return _rpc_error(id_, -32602, f"no connected Connector for piece '{slug}'; connect it first")
-                from .capabilities import connector_secrets
-                secrets = connector_secrets(conn)
-                # Extract the access_token string from the stored token dict.
-                # The connect flow stores: secrets["token"] = {"access_token": "...", "token_type": "bearer"}
-                # Defensive: also handle legacy plain-string tokens.
-                _tok = secrets.get("token") or {}
-                piece_token = _tok.get("access_token", "") if isinstance(_tok, dict) else (str(_tok) if _tok else "")
+                # Just-in-time refresh: if the stored token is near expiry (within
+                # REFRESH_SKEW_S seconds), refresh it now before calling the action.
+                piece_token = _fresh_token(conn, manifest, db)
                 try:
                     summary, meta = _pieces.run_action(manifest, name, args, piece_token)
                 except (ValueError, KeyError) as exc:
                     return _rpc_result(id_, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
                 if meta.get("needs_reconnect"):
-                    # Store the sentinel inside secrets_enc — do NOT touch conn.enabled.
-                    # This keeps resolve() / capabilities filtering unaffected and the connector
-                    # visible in the marketplace.  The connect flow (Task 5) will clear it on
-                    # a fresh token via set_connector_needs_reconnect(conn, False).
-                    from .capabilities import set_connector_needs_reconnect
-                    set_connector_needs_reconnect(conn, True)
-                    db.commit()
+                    # 401/403 from the provider: attempt exactly ONE refresh+retry before
+                    # setting the sentinel.  _force_refresh returns None when there is no
+                    # usable refresh path (no refresh_token or meta_long_lived provider).
+                    retried_token = _force_refresh(conn, manifest, db)
+                    if retried_token is not None:
+                        try:
+                            summary, meta = _pieces.run_action(manifest, name, args, retried_token)
+                        except (ValueError, KeyError) as exc:
+                            return _rpc_result(id_, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
+                    if meta.get("needs_reconnect"):
+                        # Retry still failed (or no refresh path): store the sentinel.
+                        # Do NOT touch conn.enabled — keeps the connector visible in the
+                        # marketplace and in capabilities filtering (enabled=True).
+                        from .capabilities import set_connector_needs_reconnect
+                        set_connector_needs_reconnect(conn, True)
+                        db.commit()
                 payload = {"summary": summary, **meta}
                 is_error = bool(meta.get("needs_reconnect"))
                 return _rpc_result(id_, {"content": [{"type": "text", "text": json.dumps(payload, default=str)}],
