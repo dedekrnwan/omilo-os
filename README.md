@@ -157,10 +157,13 @@ Everything a company owns lives under the data directory (`/data` in the contain
 The `omilo` command drives Omilo from your terminal — start it, sign in, watch the inbox, run and approve work. Install it any of these ways:
 
 ```bash
-# npm / bun — zero install, always the latest (scoped package; the command is still `omilo`)
-npx @dedekrnwan/omilo up        # start Omilo in Docker, then:  npx @dedekrnwan/omilo login
-bunx @dedekrnwan/omilo up
-npm install -g @dedekrnwan/omilo # then the command is just:  omilo up  ·  omilo login  ·  omilo status ...
+# npm / bun — zero install (scoped package; the installed command is still `omilo`)
+npx  @dedekrnwan/omilo up         # run it straight away (then:  npx @dedekrnwan/omilo login)
+bunx @dedekrnwan/omilo up         # same, via bun
+
+# …or install it once, globally, so the command is simply `omilo`
+npm install -g @dedekrnwan/omilo
+bun add     -g @dedekrnwan/omilo  # then:  omilo up  ·  omilo login  ·  omilo status ...
 
 # Homebrew (macOS / Linux)
 brew install dedekrnwan/omilo/omilo
