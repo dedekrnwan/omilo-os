@@ -42,6 +42,8 @@ MAX_TEXT = 400_000
 
 # ------------------------------------------------------------------ indexes
 def ensure_indexes(eng) -> None:
+    if eng.dialect.name == "sqlite":
+        return  # SQLite KB indexing (FTS5 + sqlite-vec) is wired in Task 5
     with eng.begin() as c:
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_chunk_tsv ON kb_chunk USING gin (tsv)")
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_source_kind_ref ON kb_source (kind, ref)")

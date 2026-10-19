@@ -1,14 +1,23 @@
+import logging
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
+from sqlalchemy import event as _sa_event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from . import company as C
 from .config import get_settings
+
+log = logging.getLogger("omilo.db")
+
+# sqlite-vec availability. The connect listener (light tier) tries to load the extension on every
+# new sqlite connection; if it ever fails this flips False and the knowledge base falls back to a
+# brute-force cosine scan (wired in Task 5, keyed on VEC_OK). Engine creation never fails for this.
+VEC_OK = True
 
 
 class Base(DeclarativeBase):
@@ -31,12 +40,63 @@ def _url(cid: str) -> str:
     return get_settings().resolved_database_url()
 
 
+def _sqlite_path(cid: str) -> str:
+    """Light tier: each company's database file lives inside its own directory (next to knowledge/,
+    files/ …): main → <data_dir>/omilo.db, others → <data_dir>/companies/<cid>/omilo.db."""
+    return str(C.dir_for(cid) / "omilo.db")  # dir_for() mkdirs the parent
+
+
+def is_sqlite(bind) -> bool:
+    """True when the engine/connection/session bind speaks sqlite."""
+    eng = getattr(bind, "engine", bind)
+    return getattr(getattr(eng, "dialect", None), "name", None) == "sqlite"
+
+
+def _sqlite_engine(cid: str):
+    """A per-company SQLite engine: WAL + busy_timeout + foreign keys on every connection, and a
+    best-effort sqlite-vec load (failure flips VEC_OK, never breaks the engine)."""
+    path = _sqlite_path(cid)
+    eng = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False, "timeout": 30})
+
+    @_sa_event.listens_for(eng, "connect")
+    def _on_connect(dbapi_conn, _rec):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=30000")
+            cur.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cur.close()
+        global VEC_OK
+        try:
+            dbapi_conn.enable_load_extension(True)
+            import sqlite_vec
+
+            sqlite_vec.load(dbapi_conn)
+            dbapi_conn.enable_load_extension(False)
+        except Exception as e:  # noqa: BLE001 - search falls back to brute force; engine must still boot
+            VEC_OK = False
+            log.warning("sqlite-vec unavailable (%s); knowledge base will use a brute-force cosine scan", e)
+
+    from . import models  # noqa: F401  (register tables)
+
+    Base.metadata.create_all(eng)
+    _after_create(eng)
+    _migrate(eng)
+    return eng
+
+
 def engine(cid: str | None = None):
     cid = cid or C.current()
     if cid in _engines:
         return _engines[cid]
     with _lock:
         if cid in _engines:
+            return _engines[cid]
+        if get_settings().tier == "light":
+            eng = _sqlite_engine(cid)
+            _engines[cid] = eng
+            _makers[cid] = sessionmaker(bind=eng, expire_on_commit=False, info={"cid": cid})
             return _engines[cid]
         schema = schema_for(cid)
         url = _url(cid)
@@ -86,9 +146,23 @@ _COLUMNS = [
 
 
 def _add_columns(eng) -> None:
+    sqlite = is_sqlite(eng)
     with eng.begin() as c:
+        existing: dict[str, set[str]] = {}
+        if sqlite:
+            # SQLite has no "ADD COLUMN IF NOT EXISTS": discover present columns via PRAGMA and add
+            # only the missing ones (on a fresh create_all none are missing → a no-op).
+            for table, _, _ in _COLUMNS:
+                if table not in existing:
+                    rows = c.exec_driver_sql(f'PRAGMA table_info("{table}")').all()
+                    existing[table] = {r[1] for r in rows}
         for table, col, ddl in _COLUMNS:
-            c.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{col}" {ddl}')
+            if sqlite:
+                if col in existing.get(table, set()):
+                    continue
+                c.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN "{col}" {ddl}')
+            else:
+                c.exec_driver_sql(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{col}" {ddl}')
         c.exec_driver_sql('CREATE INDEX IF NOT EXISTS ix_notice_item_id ON "notice" (item_id)')
 
 
@@ -144,10 +218,23 @@ def init_db():
     import_all()
 
 
+def _is_locked(exc: OperationalError) -> bool:
+    """True for a sqlite 'database is locked'/'busy' OperationalError (retry-worthy)."""
+    msg = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in msg or "database is busy" in msg
+
+
 def get_db() -> Iterator[Session]:
     """The current company's database."""
-    db = _maker()()
+    cid = C.current()
+    db = _maker(cid)()
     try:
+        yield db
+    except OperationalError as e:
+        if not (is_sqlite(db.bind) and _is_locked(e)):
+            raise
+        db.close()  # sqlite was busy past busy_timeout: close and retry once on a fresh session
+        db = _maker(cid)()
         yield db
     finally:
         db.close()
@@ -158,19 +245,36 @@ def get_auth_db() -> Iterator[Session]:
     db = _maker(C.MAIN)()
     try:
         yield db
+    except OperationalError as e:
+        if not (is_sqlite(db.bind) and _is_locked(e)):
+            raise
+        db.close()
+        db = _maker(C.MAIN)()
+        yield db
     finally:
         db.close()
 
 
 @contextmanager
 def session_scope(cid: str | None = None) -> Iterator[Session]:
-    db = _maker(cid)()
+    maker = _maker(cid)
+    db = maker()
     try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+        try:
+            yield db
+            db.commit()
+        except OperationalError as e:
+            db.rollback()
+            db.close()
+            if not (is_sqlite(maker.kw["bind"]) and _is_locked(e)):
+                raise
+            # sqlite stayed locked past busy_timeout: retry the whole block once on a fresh session.
+            db = maker()
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
     finally:
         db.close()
 

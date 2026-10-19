@@ -26,6 +26,7 @@ dependencies = [
   "litellm>=1.81",
   "langgraph>=1.0,<2",
   "langgraph-checkpoint-postgres>=2.0",
+  "sqlite-vec>=0.1.9",
 ]
 
 [project.optional-dependencies]
