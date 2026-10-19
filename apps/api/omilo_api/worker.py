@@ -50,6 +50,15 @@ class Worker:
                     t.status, t.error = "queued", "requeued after restart"
                 else:
                     t.status, t.ended_at, t.error = "failed", now(), "interrupted twice"
+            # Graph runs suspended for approval ("waiting"): if the owner already decided before
+            # the crash, the resume may have been lost — re-signal it (enqueued, drained once a
+            # loop runs). If still pending, leave it parked; the nudge ladder prods the owner and
+            # the decision will drive the resume then.
+            _decision = {"approved": "approve", "rejected": "reject", "changes_requested": "changes"}
+            for t in db.scalars(select(Task).where(Task.status == "waiting")):
+                p = db.scalar(select(Proposal).where(Proposal.task_id == t.id).order_by(Proposal.created_at.desc()))
+                if p is not None and p.status in _decision:
+                    request_resume(t.id, _decision[p.status], p.decision_note or "")
             for _th in db.scalars(select(Thread).where(Thread.awaiting_reply.is_(True))):
                 pass  # still awaiting: will be picked up
             from .models import WorkflowRun

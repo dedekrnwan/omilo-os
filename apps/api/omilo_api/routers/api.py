@@ -514,7 +514,9 @@ def rerun_task(tid: str, body: RerunIn, db: Session = Depends(get_db), user: Use
 @router.post("/tasks/{tid}/cancel")
 def cancel_task(tid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     t = _404(db.get(Task, tid))
-    if t.status not in ("queued", "running"):
+    # "waiting" = a graph run suspended for the owner's approval; the owner must be able to
+    # cancel it (the escape hatch for an escalation they don't want to decide).
+    if t.status not in ("queued", "running", "waiting"):
         raise HTTPException(409, f"task is {t.status}")
     S.finish_task(db, t, "cancelled", error=f"cancelled by {user.email}")
     return X.task(t)

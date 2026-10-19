@@ -116,7 +116,7 @@ def _collect(session: Session) -> None:
         if isinstance(o, Task):
             ch = _changed(o, "status")
             if ch:
-                kind = {"running": "job.started", "done": "job.done", "failed": "job.failed", "cancelled": "job.cancelled", "queued": "job.queued"}.get(ch[1])
+                kind = {"running": "job.started", "done": "job.done", "failed": "job.failed", "cancelled": "job.cancelled", "queued": "job.queued", "waiting": "job.waiting"}.get(ch[1])
                 if kind:
                     add(o.staff_id, kind, o.id, brief=_short(o.brief), error=_short(o.error, 300) if ch[1] == "failed" else None,
                         origin=o.origin or "", parent_task_id=o.parent_task_id)
