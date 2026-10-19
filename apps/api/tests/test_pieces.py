@@ -370,3 +370,49 @@ def test_runtime_invalid_value_reported():
 def test_runtime_non_string_reported():
     m = {**GMAIL_MANIFEST, "runtime": ["engine"]}
     assert any("runtime" in e for e in validate_manifest(m))
+
+
+# ---------------------------------------------------------------------------
+# Task 2: triggers field validation
+# ---------------------------------------------------------------------------
+
+_VALID_TRIGGER = {
+    "name": "message-received",
+    "event": "message.received",
+    "mapping": {"text": "{{ messages[0].text.body }}"},
+}
+
+
+def test_triggers_absent_is_valid():
+    assert validate_manifest(GMAIL_MANIFEST) == []
+
+
+def test_valid_triggers_accepted():
+    m = {**GMAIL_MANIFEST, "triggers": [_VALID_TRIGGER]}
+    assert validate_manifest(m) == []
+
+
+def test_triggers_must_be_list():
+    m = {**GMAIL_MANIFEST, "triggers": {"name": "x"}}
+    assert any("triggers" in e for e in validate_manifest(m))
+
+
+def test_trigger_element_must_be_dict():
+    m = {**GMAIL_MANIFEST, "triggers": ["message.received"]}
+    assert any("triggers" in e.lower() for e in validate_manifest(m))
+
+
+def test_trigger_missing_event_reported():
+    t = {k: v for k, v in _VALID_TRIGGER.items() if k != "event"}
+    m = {**GMAIL_MANIFEST, "triggers": [t]}
+    assert any("event" in e for e in validate_manifest(m))
+
+
+def test_trigger_bad_name_reported():
+    m = {**GMAIL_MANIFEST, "triggers": [{**_VALID_TRIGGER, "name": "Bad Name"}]}
+    assert any("name" in e for e in validate_manifest(m))
+
+
+def test_trigger_mapping_must_be_dict_if_present():
+    m = {**GMAIL_MANIFEST, "triggers": [{**_VALID_TRIGGER, "mapping": "nope"}]}
+    assert any("mapping" in e for e in validate_manifest(m))

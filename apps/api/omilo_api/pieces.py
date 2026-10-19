@@ -501,6 +501,31 @@ def validate_manifest(data: dict) -> list[str]:
                                 f"Action {i}, input {j}: missing or invalid 'type'."
                             )
 
+    # Validate 'triggers' (optional; if present must be a list of well-formed trigger dicts)
+    if "triggers" in data:
+        triggers = data["triggers"]
+        if not isinstance(triggers, list):
+            errors.append("Invalid 'triggers': must be a list.")
+        else:
+            for i, trigger in enumerate(triggers):
+                if not isinstance(trigger, dict):
+                    errors.append(f"triggers[{i}]: must be a dictionary.")
+                    continue
+
+                # Validate trigger.name (slug pattern, required)
+                name = trigger.get("name")
+                if not name or not isinstance(name, str) or not SLUG.match(name):
+                    errors.append(f"Trigger {i}: missing or invalid 'name'.")
+
+                # Validate trigger.event (non-empty string, required)
+                event = trigger.get("event")
+                if not event or not isinstance(event, str):
+                    errors.append(f"Trigger {i}: missing or invalid 'event'.")
+
+                # Validate trigger.mapping (optional, must be dict if present)
+                if "mapping" in trigger and not isinstance(trigger["mapping"], dict):
+                    errors.append(f"Trigger {i}: 'mapping' must be a dictionary.")
+
     return errors
 
 
