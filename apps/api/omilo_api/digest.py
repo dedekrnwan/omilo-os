@@ -94,5 +94,7 @@ def maybe_send(db: Session) -> bool:
     local = S.now().astimezone(S._tz(db))
     if local.isoweekday() != 1 or local.hour < SEND_HOUR or last_sent(db) == local.strftime("%G-W%V"):
         return False
+    if not S.chief(db):
+        return False  # no Chief of Staff yet (fresh install) — nothing to send to; skip quietly, not an error
     send(db)
     return True
