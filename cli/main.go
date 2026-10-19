@@ -253,20 +253,23 @@ func startCommand(apiBin, dir, port string) *exec.Cmd {
 	return cmd
 }
 
-// lookupApiBin resolves the omilo-api binary: first via PATH, then next to
-// the running CLI binary.  Returns "" if not found.
-func lookupApiBin() string {
-	if p, err := exec.LookPath("omilo-api"); err == nil {
+// lookupBin resolves a bundled Omilo binary (omilo-api, omilo-migrate …):
+// first via PATH, then next to the running CLI binary.  Returns "" if not found.
+func lookupBin(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
 		return p
 	}
 	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "omilo-api")
+		candidate := filepath.Join(filepath.Dir(exe), name)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 	}
 	return ""
 }
+
+// lookupApiBin resolves the omilo-api binary.
+func lookupApiBin() string { return lookupBin("omilo-api") }
 
 func cmdStart(args []string) {
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
@@ -321,6 +324,28 @@ func cmdStart(args []string) {
 			os.Exit(exitErr.ExitCode())
 		}
 		os.Exit(1)
+	}
+}
+
+// ------------------------------------------------------------------ migrate (light SQLite -> full Postgres)
+
+// cmdMigrate shells to the omilo-migrate Python entry point, passing the flags
+// straight through.  It runs in the foreground and mirrors its exit code: the
+// migration is all-or-nothing and only flips this install's config on success.
+func cmdMigrate(args []string) {
+	bin := lookupBin("omilo-migrate")
+	if bin == "" {
+		die(errors.New("omilo-migrate is not installed. Install the Omilo app (it ships with the migration tool)."))
+	}
+	cmd := exec.Command(bin, args...)
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+	cmd.Env = append(os.Environ(), "OMILO_DATA_DIR="+dataDir())
+	if err := cmd.Run(); err != nil {
+		var exitErr interface{ ExitCode() int }
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.ExitCode())
+		}
+		die(fmt.Errorf("failed to run omilo-migrate: %w", err))
 	}
 }
 
@@ -641,6 +666,8 @@ Run it
   up [-port 7700]        start Omilo (Docker) and open it in the browser
   start [--port 7700] [--data-dir DIR] [--no-open]   run Omilo on this machine (SQLite, no Docker)
   down                   stop it          logs      follow the logs
+  migrate --to postgres --database-url URL [--redis-url URL] [--dry-run]
+                         graduate this install from SQLite to Postgres (one-way)
   login [-url URL]       sign in from this terminal
   doctor                 check Docker, the gateway, your login and the engines
 
@@ -672,6 +699,8 @@ func main() {
 		cmdUp(args)
 	case "start":
 		cmdStart(args)
+	case "migrate":
+		cmdMigrate(args)
 	case "down":
 		must(compose("down"))
 	case "logs":
