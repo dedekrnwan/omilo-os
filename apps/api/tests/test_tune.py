@@ -77,3 +77,32 @@ async def test_compose_picks_judge_winner_clamps_and_skips_errored(owner, monkey
     monkeypatch.setattr(T, "_ask_json", non_int_winner)
     with session_scope() as db:
         assert await T.compose(db, db.get(Staff, "sales"), "brief", probes) == 0  # non-integer winner falls back to 0
+
+
+async def test_refine_noop_when_off(owner):
+    from omilo_api.db import session_scope
+    from omilo_api import services as S
+    import omilo_api.tune as T
+    with session_scope() as db:
+        S.set_setting(db, "self_tuning", False)
+    with session_scope() as db:
+        assert await T.refine(db, "sales", brief="do x") is None  # self_tuning explicitly off
+
+
+async def test_refine_applies_winner_when_on(owner, base_url, monkeypatch):
+    from omilo_api.db import session_scope
+    from omilo_api.models import Staff, Improvement
+    from omilo_api import services as S, security
+    import omilo_api.tune as T
+    async def fake_propose(db, staff, k=2): return ["NEW JOB TEXT"]
+    async def fake_compose(db, staff, brief, probes): return len(probes) - 1  # the candidate wins
+    monkeypatch.setattr(T, "propose", fake_propose)
+    monkeypatch.setattr(T, "compose", fake_compose)
+    with session_scope() as db:
+        S.set_setting(db, "self_tuning", True)
+        db.get(Staff, "sales").mcp_token_enc = security.encrypt(owner.mcp_tokens["sales"])
+    with session_scope() as db:
+        imp = await T.refine(db, "sales", brief="Find 3 catering leads")
+    assert imp is not None and imp.kind == "job"
+    with session_scope() as db:
+        assert db.get(Staff, "sales").job == "NEW JOB TEXT"

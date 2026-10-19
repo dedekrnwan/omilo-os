@@ -2,18 +2,20 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import logging
 import re
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 log = logging.getLogger("omilo.tune")
 
 from .config import get_settings
 from .engines import ChatContext, get_engine
-from .models import Staff
+from .models import Improvement, Staff, Task, now
 from .security import decrypt
 
 # ---------------------------------------------------------------------------
@@ -173,3 +175,79 @@ async def probe(db: Session, staff: Staff, brief: str, jobs: list[str]) -> list[
             log.warning("tune.probe failed for job %r: %s", job, e)
             results.append(ProbeResult(job=job, text="", tokens=0, cost_usd=0.0, error=f"{type(e).__name__}: {e}"))
     return results
+
+
+# ---------------------------------------------------------------------------
+# _tunes_this_week — budget counter for self-tuning improvements
+# ---------------------------------------------------------------------------
+
+def _tunes_this_week(db: Session) -> int:
+    """Count Improvement rows created in the last 6 days whose reason starts with 'Self-tuned:'."""
+    since = now() - dt.timedelta(days=6)
+    return db.scalar(
+        select(Improvement)
+        .where(Improvement.created_at >= since)
+        .where(Improvement.reason.startswith("Self-tuned:"))
+        .with_only_columns(__import__("sqlalchemy").func.count())
+    ) or 0
+
+
+# ---------------------------------------------------------------------------
+# refine — full orchestration: gate → budget → brief → propose → probe → compose → improve
+# ---------------------------------------------------------------------------
+
+async def refine(db: Session, staff_id: str, brief: str | None = None, k: int = DEFAULT_K) -> Improvement | None:
+    """Orchestrate propose→probe→compose and route the winning candidate to loops.improve().
+
+    Returns the created Improvement, or None when: feature off / weekly budget spent /
+    no brief available / judge keeps the current job (win == 0).
+    """
+    from . import loops
+    from . import services
+
+    # 1. Feature gate
+    if not services.is_self_tuning(db):
+        return None
+
+    # 2. Weekly budget
+    if _tunes_this_week(db) >= TUNE_MAX_PER_WEEK:
+        return None
+
+    # 3. Resolve brief: use arg, else most recent Task.brief for this staff, else bail
+    if not brief:
+        task = db.scalar(
+            select(Task)
+            .where(Task.staff_id == staff_id)
+            .where(Task.brief != "")
+            .order_by(Task.created_at.desc())
+        )
+        brief = task.brief if task else None
+    if not brief:
+        return None
+
+    # 4. Load staff
+    staff = db.get(Staff, staff_id)
+    if not staff:
+        return None
+
+    # 5. Propose candidates
+    cands = await propose(db, staff, k)
+    if not cands:
+        return None
+
+    # 6. Probe: index 0 = current baseline job, then candidates
+    probes = await probe(db, staff, brief, [staff.job, *cands])
+
+    # 7. Judge
+    win = await compose(db, staff, brief, probes)
+    if win == 0:
+        return None
+
+    # 8. Apply winning candidate via loops.improve
+    chief = services.chief(db)
+    winning_job = probes[win].job
+    reason = "Self-tuned: judge picked candidate " + str(win)
+    try:
+        return loops.improve(db, chief, staff_id, "job", winning_job, reason=reason, task_id=None)
+    except loops.LoopError:
+        return None
