@@ -293,8 +293,31 @@ class HttpBroker:
             logger.debug("revoke: swallowed error for provider=%s", provider)
 
 
-# Module-level default instance.  The real HttpBroker swaps this out.
-# Annotated as BrokerClient so type-checkers enforce that the routes only call
-# methods on the Protocol surface (slug_for_state and consume_state are part of
-# the Protocol; any implementation that omits them will be caught here).
-default_broker: BrokerClient = DevBroker()
+# Singleton DevBroker: all state lives in-memory, so every call inside one
+# process must share the same instance (otherwise start_connect and poll see
+# different _pending dicts and the state lookup always fails).
+_dev_broker: DevBroker = DevBroker()
+
+
+def get_broker() -> BrokerClient:
+    """Return the active broker based on the current settings.
+
+    Returns a new HttpBroker() when OMILO_OAUTH_CLIENTS is non-empty
+    (production/staging — all state lives in Redis so a per-request instance
+    is fine), else the module-level DevBroker singleton (local dev and automated
+    tests — state is in-memory, so a shared instance is required).
+
+    Called at request time so the selection reflects the live settings object
+    (tests monkeypatch the cached Settings instance; no cache-clear needed).
+    """
+    return HttpBroker() if get_settings().oauth_clients else _dev_broker
+
+
+# ``default_broker`` is kept for any existing importers that reference it as
+# ``B.default_broker``.  Module __getattr__ makes it *computed* on each access
+# (rather than a fixed import-time singleton) so it always reflects the current
+# settings — identical behaviour to calling get_broker() directly.
+def __getattr__(name: str):
+    if name == "default_broker":
+        return get_broker()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -383,3 +383,77 @@ def test_dev_broker_still_works():
 
     b.consume_state(res["state"])
     assert b.slug_for_state(res["state"]) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5: get_broker() selection tests
+# ---------------------------------------------------------------------------
+
+def test_default_broker_is_dev_without_clients(monkeypatch):
+    """get_broker() must return a DevBroker when oauth_clients is empty."""
+    from omilo_api import broker
+    from omilo_api.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "oauth_clients", {}, raising=False)
+    assert isinstance(broker.get_broker(), broker.DevBroker)
+
+
+def test_default_broker_is_http_with_clients(monkeypatch):
+    """get_broker() must return an HttpBroker when oauth_clients is non-empty."""
+    from omilo_api import broker
+    from omilo_api.config import get_settings
+
+    monkeypatch.setattr(
+        get_settings(),
+        "oauth_clients",
+        {"google": {"client_id": "c", "client_secret": "s"}},
+        raising=False,
+    )
+    assert isinstance(broker.get_broker(), broker.HttpBroker)
+
+
+# ---------------------------------------------------------------------------
+# Task 5: set_connector_token round-trip test
+# ---------------------------------------------------------------------------
+
+def test_set_connector_token_round_trips():
+    """set_connector_token must store the token dict and clear needs_reconnect."""
+    from omilo_api.capabilities import connector_secrets, set_connector_token
+    from omilo_api.models import Connector
+
+    c = Connector(id="gmail")
+    set_connector_token(
+        c,
+        {
+            "access_token": "AT",
+            "refresh_token": "RT",
+            "expires_at": 123.0,
+            "token_type": "bearer",
+        },
+    )
+    s = connector_secrets(c)
+    assert s["token"]["access_token"] == "AT"
+    assert s["token"]["refresh_token"] == "RT"
+    assert s["token"]["expires_at"] == 123.0
+    assert "needs_reconnect" not in s
+
+
+def test_set_connector_token_clears_needs_reconnect():
+    """set_connector_token must clear a pre-existing needs_reconnect sentinel."""
+    from omilo_api.capabilities import (
+        connector_secrets,
+        set_connector_needs_reconnect,
+        set_connector_token,
+    )
+    from omilo_api.models import Connector
+
+    c = Connector(id="gmail")
+    # Pre-set needs_reconnect
+    set_connector_needs_reconnect(c, True)
+    assert connector_secrets(c).get("needs_reconnect") is True
+
+    # Now store a fresh token — needs_reconnect must be gone
+    set_connector_token(c, {"access_token": "AT2", "refresh_token": "RT2", "expires_at": 0.0, "token_type": "bearer"})
+    s = connector_secrets(c)
+    assert "needs_reconnect" not in s
+    assert s["token"]["access_token"] == "AT2"

@@ -1394,7 +1394,7 @@ def piece_connect_start(slug: str, db: Session = Depends(get_db), user: User = D
         raise HTTPException(404, f"piece '{slug}' not found in catalog")
 
     manifest = entry["manifest"]
-    result = B.default_broker.start_connect(manifest)
+    result = B.get_broker().start_connect(manifest)
     return result
 
 
@@ -1416,7 +1416,7 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
     from ..security import encrypt
     import json
 
-    broker = B.default_broker
+    broker = B.get_broker()
     slug = broker.slug_for_state(state)
     if slug is None:
         # Unknown or already-consumed state — signal the client to stop polling.
@@ -1483,7 +1483,7 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
             secrets = C.connector_secrets(c)
             token = secrets.get("token")
             if token:
-                B.default_broker.revoke(token)
+                B.get_broker().revoke(token)
         except Exception:  # noqa: BLE001
             pass  # revoke is best-effort; never block disconnect
 
