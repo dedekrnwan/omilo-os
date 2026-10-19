@@ -93,6 +93,16 @@ class BrokerClient(Protocol):
         """
         ...
 
+    def stash_token(self, state: str, token_dict: dict) -> None:
+        """Store a token dict for a pending state so poll() can return it.
+
+        Called by the OAuth callback route after exchanging the authorization
+        code for tokens.  Implementations may store the dict in Redis
+        (HttpBroker), in an in-memory map (DevBroker), or as a no-op when
+        the broker does not support real OAuth flows.
+        """
+        ...
+
 
 class DevBroker:
     """In-process broker for local development and automated tests.
@@ -117,10 +127,17 @@ class DevBroker:
         Correlates each generated state to the piece slug it belongs to.
         Entries are removed by consume_state() after a successful upsert to
         prevent stale-state accumulation in long-running processes.
+    _stashed : dict[state, dict]
+        Token dicts stored via stash_token().  poll() returns the stashed token
+        when one is present, falling back to the fixture token otherwise.  This
+        lets test_oauth_callback.py exercise the real callback → stash → poll
+        path even when DevBroker is active (e.g. an integration test that wants
+        to verify the stashed token carries the provider key).
     """
 
     def __init__(self) -> None:
         self._pending: dict[str, str] = {}
+        self._stashed: dict[str, dict] = {}
 
     def start_connect(self, manifest: dict) -> dict:
         """Generate a random state, stash it, and return a stub auth_url."""
@@ -133,7 +150,12 @@ class DevBroker:
         return {"auth_url": auth_url, "state": state}
 
     def poll(self, state: str) -> dict | None:
-        """Return a fixture token immediately if state is known, else None.
+        """Return a token for the given state, or None if state is unknown.
+
+        If stash_token() was called for this state, its dict is returned
+        (wrapped in {"token": ...}).  Otherwise a fixture token is returned so
+        that the connect → poll → upsert flow completes in tests without any
+        browser redirect.
 
         Returns {"token": {"access_token": ..., "token_type": ...}} to match
         the Protocol contract.  The outer "token" key is always present so the
@@ -143,7 +165,19 @@ class DevBroker:
             return None
         # Do NOT consume the entry here — the route needs the slug after poll.
         # The route removes it from _pending via consume_state after a successful upsert.
+        if state in self._stashed:
+            return {"token": self._stashed[state]}
         return {"token": {"access_token": f"dev-token-{state}", "token_type": "bearer"}}
+
+    def stash_token(self, state: str, token_dict: dict) -> None:
+        """Store a token dict so poll() can return it for the given state.
+
+        This makes the Protocol contract real for DevBroker: callers that
+        invoke broker.stash_token() (e.g. the OAuth callback route in a
+        local/test environment) will see their token reflected by the next
+        poll() call rather than receiving the default fixture token.
+        """
+        self._stashed[state] = token_dict
 
     def revoke(self, token: dict) -> None:
         """No-op for DevBroker — the token is fictional."""
@@ -156,6 +190,7 @@ class DevBroker:
     def consume_state(self, state: str) -> None:
         """Remove a state from the pending map after a successful connect."""
         self._pending.pop(state, None)
+        self._stashed.pop(state, None)
 
 
 class HttpBroker:

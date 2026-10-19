@@ -457,3 +457,79 @@ def test_set_connector_token_clears_needs_reconnect():
     s = connector_secrets(c)
     assert "needs_reconnect" not in s
     assert s["token"]["access_token"] == "AT2"
+
+
+# ---------------------------------------------------------------------------
+# Fix: DevBroker satisfies BrokerClient Protocol including stash_token
+# ---------------------------------------------------------------------------
+
+def test_dev_broker_satisfies_protocol_with_stash_token():
+    """DevBroker must satisfy BrokerClient (runtime_checkable) and expose stash_token."""
+    from omilo_api import broker
+
+    b = broker.DevBroker()
+
+    # (a) isinstance check — BrokerClient is @runtime_checkable
+    assert isinstance(b, broker.BrokerClient), (
+        "DevBroker must satisfy the BrokerClient Protocol"
+    )
+
+    # (b) stash_token attribute must exist (explicit guard for the contract gap)
+    assert hasattr(b, "stash_token"), (
+        "DevBroker must expose stash_token to fulfill the BrokerClient Protocol"
+    )
+
+
+def test_dev_broker_stash_then_poll_returns_stashed_token():
+    """stash_token followed by poll must return the stashed token, not the fixture."""
+    from omilo_api import broker
+
+    b = broker.DevBroker()
+
+    # Prime a state via start_connect
+    m = {"id": "gmail", "auth": {"provider": "google", "scopes": ["email"]}}
+    res = b.start_connect(m)
+    state = res["state"]
+
+    # Stash a real-looking token
+    real_token = {"access_token": "AT-real", "refresh_token": "RT-real", "provider": "google"}
+    b.stash_token(state, real_token)
+
+    # poll must return the stashed token wrapped in {"token": ...}
+    result = b.poll(state)
+    assert result is not None, "poll must return a dict after stash_token"
+    assert result == {"token": real_token}, (
+        f"Expected {{'token': {real_token!r}}}, got: {result!r}"
+    )
+
+    b.consume_state(state)
+    # After consume, both poll and slug_for_state must be gone
+    assert b.poll(state) is None
+    assert b.slug_for_state(state) is None
+
+
+def test_dev_broker_stash_does_not_raise_on_unknown_state():
+    """stash_token on an unregistered state must not raise (the callback route calls it
+    only after slug_for_state succeeds, but we guard the contract here regardless)."""
+    from omilo_api import broker
+
+    b = broker.DevBroker()
+    # Must not raise even for an unknown state
+    b.stash_token("no-such-state", {"access_token": "X"})
+
+
+def test_dev_broker_poll_falls_back_to_fixture_without_stash():
+    """Without stash_token, poll must still return the fixture token (regression guard)."""
+    from omilo_api import broker
+
+    b = broker.DevBroker()
+    m = {"id": "calendar", "auth": {"provider": "google", "scopes": []}}
+    res = b.start_connect(m)
+    state = res["state"]
+
+    result = b.poll(state)
+    assert result is not None, "poll must return a fixture token even without stash"
+    assert "token" in result
+    assert "access_token" in result["token"]
+
+    b.consume_state(state)
