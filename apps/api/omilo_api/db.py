@@ -210,12 +210,16 @@ def reset_engine():
 
 
 def init_db():
-    engine(C.MAIN)
+    main = engine(C.MAIN)
     for cid in C.ids():
         engine(cid)
-    from .import_sqlite import import_all  # data from SQLite versions (before 0.4) moves in once
+    # Pre-0.4 SQLite files move into Postgres once, on the first full-tier start. In the light
+    # tier the live database IS SQLite at those same paths, so there is nothing to import — and
+    # the importer's Postgres-only sequence reset (setval/GREATEST) can't run on SQLite anyway.
+    if not is_sqlite(main):
+        from .import_sqlite import import_all
 
-    import_all()
+        import_all()
 
 
 def _is_locked(exc: OperationalError) -> bool:
