@@ -99,12 +99,15 @@ def helper_states(db: Session) -> dict[str, dict]:
     next regular job, which is given), or paused. Helpers no longer sleep: nothing runs between jobs, they start at once."""
     running = set(db.scalars(select(Task.staff_id).where(Task.status == "running")))
     queued = set(db.scalars(select(Task.staff_id).where(Task.status == "queued")))
+    # A graph run suspended for the owner's approval ("waiting") is in-flight, not idle —
+    # count it as working so a blocked helper never reads as "ready".
+    suspended = set(db.scalars(select(Task.staff_id).where(Task.status == "waiting")))
     chatting = set(db.scalars(select(Thread.staff_id).where(Thread.awaiting_reply.is_(True))))
     out = {}
     for st in db.scalars(select(Staff).where(Staff.status != "retired")):
         nxt = min((sh.next_at for sh in st.shifts if sh.enabled and sh.next_at), default=None)
         nsh = next((sh for sh in st.shifts if sh.enabled and sh.next_at == nxt), None) if nxt else None
-        state = ("paused" if st.status != "active" else "working" if st.id in running or st.id in chatting
+        state = ("paused" if st.status != "active" else "working" if st.id in running or st.id in chatting or st.id in suspended
                  else "waiting" if st.id in queued else "ready")
         out[st.id] = {"state": state, "next_job": {"name": nsh.name, "at": (nxt if nxt.tzinfo else nxt.replace(tzinfo=dt.UTC)).isoformat()} if nsh else None}
     return out
