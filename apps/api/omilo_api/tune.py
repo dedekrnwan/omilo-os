@@ -129,8 +129,8 @@ async def compose(db: Session, staff: Staff, brief: str, probes: list[ProbeResul
     )
     data = await _ask_json(db, staff, system, user)
     try:
-        winner = int(data.get("winner", 0))
-    except (TypeError, ValueError):
+        winner = int(data["winner"])
+    except (TypeError, ValueError, KeyError):
         return 0
     if winner < 0 or winner >= len(probes):
         return 0

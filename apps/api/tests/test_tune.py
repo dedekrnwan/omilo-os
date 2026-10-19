@@ -73,3 +73,7 @@ async def test_compose_picks_judge_winner_clamps_and_skips_errored(owner, monkey
     monkeypatch.setattr(T, "_ask_json", names_errored)
     with session_scope() as db:
         assert await T.compose(db, db.get(Staff, "sales"), "brief", probes) == 0  # an errored probe can never win
+    async def non_int_winner(db, staff, system, user): return {"winner": "foo"}
+    monkeypatch.setattr(T, "_ask_json", non_int_winner)
+    with session_scope() as db:
+        assert await T.compose(db, db.get(Staff, "sales"), "brief", probes) == 0  # non-integer winner falls back to 0
