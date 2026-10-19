@@ -394,7 +394,14 @@ class Worker:
             res = EngineResult(error=f"{type(e).__name__}: {e}")
         ctx.emit("usage", tokens=res.tokens, cost_usd=round(res.cost_usd, 4), seconds=round(time.monotonic() - t0, 1))
         self._budget(ctx.staff_id)
-        ctx.emit("status", state="failed" if res.error else "done", error=res.error)
+        if res.suspended:
+            # A high-risk graph action interrupted for the owner's approval. The run is
+            # PAUSED on its checkpoint, not finished: a Proposal is pending. Mark the task
+            # "waiting" (durable, so services._graph_origin_task can detect it on decision)
+            # and stop — no done/failed, no retry. The resume path finishes it later.
+            ctx.emit("status", state="waiting")
+        else:
+            ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         self.finish(task_id, res)
 
     def finish(self, task_id: str, res: EngineResult):
@@ -410,6 +417,15 @@ class Worker:
                 return
             t.cost_usd += res.cost_usd
             t.tokens += res.tokens
+            if res.suspended:
+                # The graph interrupted for approval: park the task in a durable "waiting"
+                # state and stop. It is in-flight-but-paused — NOT done, NOT failed, NOT
+                # retried, and (because waiting is not "queued") never re-dispatched. The
+                # owner's decision resumes the run and writes the terminal status.
+                t.status = "waiting"
+                S.audit(db, "system", "task.waiting", t.id)
+                db.commit()
+                return
             report = db.scalar(select(Report).where(Report.task_id == t.id))
             from . import loops
 
@@ -598,26 +614,49 @@ def _memory(db, st, t) -> str:
 # is ``(task_id, decision, note, company_id)``.
 _resume_queue: list[tuple[str, str, str, str]] = []
 
+# Dedup guard: a decision both schedules a detached resume (request_resume) AND may be
+# awaited directly (a test, or drain_resume_queue). Both must not resume the same checkpoint
+# concurrently — two resumes race on the same thread_id. We admit exactly one resume per
+# task_id at a time by claiming the id here; a second concurrent call returns immediately.
+_resuming: set[str] = set()
+
 
 async def resume_graph_run(task_id: str, decision: str, note: str, cid: str | None = None):
     """Continue a suspended graph run from its checkpoint and finish the task.
 
     Opens a fresh checkpointer (cross-process/loop safe), re-invokes the compiled graph
-    with ``Command(resume={"decision","note"})`` under ``thread_id = task_id``, then marks
-    the task ``done`` (the graph owns completion; no execution task is ever spawned for a
-    graph-origin decision). Returns the ``EngineResult`` so tests can assert on it."""
+    with ``Command(resume={"decision","note"})`` under ``thread_id = task_id``, then writes
+    the task's terminal status (the resume path does not go back through ``run_task``'s finish,
+    so it must move the task out of ``waiting`` itself). No execution task is ever spawned for
+    a graph-origin decision — the graph owns completion. Returns the ``EngineResult``.
+
+    Idempotent per ``task_id``: if a resume for this id is already in flight, or the task has
+    already left ``waiting`` (another resume finished it), this is a no-op that returns an
+    empty result — so a detached resume and a directly-awaited one never double-resume."""
     from .graph.engine import GraphEngine
 
-    with C.use(cid or C.current()):
-        res = await GraphEngine().resume(task_id, decision, note)
-        with session_scope() as db:
-            t = db.get(Task, task_id)
-            if t is not None and t.status not in ("done", "failed", "cancelled"):
-                status = "failed" if res.error else "done"
-                t.cost_usd += res.cost_usd
-                t.tokens += res.tokens
-                S.finish_task(db, t, status, error=res.error, result_text=res.text)
-    return res
+    if task_id in _resuming:
+        return EngineResult()
+    _resuming.add(task_id)
+    try:
+        with C.use(cid or C.current()):
+            # Only a task still parked in "waiting" is resumable; if it already reached a
+            # terminal state (a prior resume won the race) do nothing.
+            with session_scope() as db:
+                t = db.get(Task, task_id)
+                if t is None or t.status != "waiting":
+                    return EngineResult()
+            res = await GraphEngine().resume(task_id, decision, note)
+            with session_scope() as db:
+                t = db.get(Task, task_id)
+                if t is not None and t.status == "waiting":
+                    status = "failed" if res.error else "done"
+                    t.cost_usd += res.cost_usd
+                    t.tokens += res.tokens
+                    S.finish_task(db, t, status, error=res.error, result_text=res.text)
+        return res
+    finally:
+        _resuming.discard(task_id)
 
 
 def request_resume(task_id: str, decision: str, note: str) -> None:

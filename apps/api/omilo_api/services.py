@@ -3,7 +3,6 @@
 Every state change writes an audit event. Functions take an open Session and commit themselves.
 """
 import datetime as dt
-import logging
 import re
 import secrets
 from pathlib import Path
@@ -372,14 +371,17 @@ def _graph_origin_task(db: Session, p: Proposal) -> Task | None:
     A graph-origin proposal was filed by the delegation gate of a ``brain="graph"``
     staff and left PENDING while the LangGraph run is SUSPENDED on an ``interrupt``
     (thread_id = task_id). The owner's decision RESUMES that run instead of spawning a
-    fresh execution task. We recognise it structurally: the proposal's task belongs to a
-    graph-brain staff and is still open (queued/running — i.e. not finished/cancelled),
-    which is the suspended state Task 4 leaves it in. Anything else (single_engine staff,
-    or a task already closed) takes the unchanged normal path."""
+    fresh execution task. We recognise it by the DURABLE suspended signal the real worker
+    writes: the task is in the ``"waiting"`` state (``worker._finish`` parks it there on an
+    interrupt) AND its staff is on the ``"graph"`` brain. Anything else — a single_engine
+    staff, or a task already ``done``/``failed``/``cancelled`` or still ``queued``/``running``
+    — takes the unchanged normal path. (Using ``waiting`` rather than ``queued``/``running``
+    is what closes the double-execution miss: in the real worker the suspended task is never
+    left ``running``, so the old queued/running check never fired.)"""
     if not p.task_id:
         return None
     t = db.get(Task, p.task_id)
-    if t is None or t.status not in ("queued", "running"):
+    if t is None or t.status != "waiting":
         return None
     st = db.get(Staff, t.staff_id)
     if st is None or st.brain != "graph":
@@ -390,10 +392,10 @@ def _graph_origin_task(db: Session, p: Proposal) -> Task | None:
 def decide_proposal(db: Session, p: Proposal, decision: str, note: str, by: str) -> Proposal:
     if p.status != "pending":
         raise DomainError(f"proposal is already {p.status}", 409)
-    if decision in ("reject", "changes") and not note.strip():
-        raise DomainError("a note is required: the agent learns from it")
     if decision not in ("approve", "reject", "changes"):
         raise DomainError("decision must be approve, reject or changes")
+    if decision in ("reject", "changes") and not note.strip():
+        raise DomainError("a note is required: the agent learns from it")
     p.decision_note, p.decided_by, p.decided_at = note, by, now()
     _close_inbox(db, "proposal", p.id)
 
@@ -587,6 +589,7 @@ def apply_grant(db: Session, item: "InboxItem", scope: str, thread_id: str | Non
     - skill/once    : add slug to ThreadTools.skills
     """
     import json as _json
+
     from sqlalchemy import select as _select
 
     from .models import Connector, Folder, ThreadTools
@@ -919,7 +922,7 @@ def retire_staff(db: Session, st: Staff, actor: str) -> dict:
     if st.status == "retired":
         return {"cancelled": 0, "closed": 0, "shifts": 0}
     cancelled = 0
-    for t in list(db.scalars(select(Task).where(Task.staff_id == st.id, Task.status.in_(["queued", "running"])))):
+    for t in list(db.scalars(select(Task).where(Task.staff_id == st.id, Task.status.in_(["queued", "running", "waiting"])))):
         finish_task(db, t, "cancelled", error="the helper was let go")
         cancelled += 1
     closed = 0

@@ -48,6 +48,7 @@ class EngineResult:
     error: str = ""
     cost_usd: float = 0.0
     tokens: int = 0
+    suspended: bool = False  # the run interrupted for human approval; the task is paused, not done
 
 
 class Engine:

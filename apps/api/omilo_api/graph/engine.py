@@ -172,6 +172,7 @@ class GraphEngine(Engine):
             title = _interrupt_title(interrupts)
             return EngineResult(
                 text=f"Waiting for your approval: {title}",
+                suspended=True,
                 cost_usd=agg["cost_usd"],
                 tokens=agg["tokens"],
             )
@@ -224,7 +225,7 @@ class GraphEngine(Engine):
             # the checkpoint, not a fresh worker pass). task_id/staff come from the
             # checkpointed state, but the graph builder needs them for GateContext; read
             # the staff id off the saved state so the gate re-files against the right staff.
-            ctx = self._resume_ctx(task_id, checkpointer, config)
+            ctx = self._resume_ctx(task_id)
             underlying_cfg = self._underlying_config(ctx.engine_config)
             graph = self._build_graph(ctx, underlying_cfg, agg, checkpointer)
             final: GraphState = await graph.ainvoke(
@@ -249,14 +250,15 @@ class GraphEngine(Engine):
             cost_usd=agg["cost_usd"], tokens=agg["tokens"],
         )
 
-    def _resume_ctx(self, task_id: str, checkpointer, config: dict) -> TaskContext:
+    def _resume_ctx(self, task_id: str) -> TaskContext:
         """A minimal TaskContext for rebuilding the graph on resume.
 
         The checkpoint already holds the full GraphState (task_id, staff, pending_action,
         etc.); the rebuilt graph only needs ``task_id`` and ``staff_id`` to construct the
         gate's ``GateContext``. We read ``staff_id`` from the DB task so the gate re-files
         against the correct staff, and leave ``pending_action`` out of engine_config (the
-        gate re-enters through the checkpoint, not a fresh worker output)."""
+        gate re-enters through the checkpoint, not a fresh worker output). The checkpointer
+        and run config are owned by ``resume`` and are not needed here."""
         from ..db import session_scope
         from ..models import Task
 

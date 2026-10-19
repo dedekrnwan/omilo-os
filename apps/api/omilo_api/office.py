@@ -221,7 +221,7 @@ def state(db: Session) -> dict:
     collab: dict[str, list[dict]] = {}
     for a in active:
         p = parents.get(a.parent_task_id or "")
-        if p and p.staff_id != a.staff_id and p.status in ("running", "queued", "done"):
+        if p and p.staff_id != a.staff_id and p.status in ("running", "queued", "waiting", "done"):
             collab.setdefault(a.staff_id, []).append({"staff_id": p.staff_id, "task_id": a.id, "brief": _short(a.brief, 90), "relation": "working_for", "live": a.status == "running"})
             collab.setdefault(p.staff_id, []).append({"staff_id": a.staff_id, "task_id": a.id, "brief": _short(a.brief, 90), "relation": "handed_to", "live": a.status == "running"})
     hs = S.helper_states(db)

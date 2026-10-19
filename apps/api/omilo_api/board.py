@@ -80,7 +80,7 @@ def build(db: Session, done_hours: int = 48, prefs: dict | None = None) -> dict:
     open_items = list(db.scalars(select(InboxItem).where(InboxItem.status == "open")))
     order = {"critical": 0, "decision": 1, "fyi": 2}
     open_items.sort(key=lambda i: (order.get(i.level, 3), not i.blocking, -(_aware(i.created_at).timestamp())))
-    running = list(db.scalars(select(Task).where(Task.status.in_(["running", "queued"])).order_by(Task.created_at.desc()).limit(50)))
+    running = list(db.scalars(select(Task).where(Task.status.in_(["running", "queued", "waiting"])).order_by(Task.created_at.desc()).limit(50)))
     done = list(db.scalars(select(Task).where(Task.status.in_(["done", "failed", "cancelled"]), Task.ended_at >= t_now - dt.timedelta(hours=done_hours))
                            .order_by(Task.ended_at.desc()).limit(30)))
     tids = [i.task_id for i in open_items if i.task_id] + [t.id for t in running + done]

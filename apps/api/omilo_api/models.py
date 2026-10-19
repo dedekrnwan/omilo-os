@@ -115,7 +115,9 @@ class Task(Base):
     origin: Mapped[str] = mapped_column(String(16))  # shift | manual | chat | delegation | execution
     brief: Mapped[str] = mapped_column(Text, default="")
     founder_note: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|done|failed|cancelled
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|waiting|done|failed|cancelled
+    # waiting = in-flight but PAUSED on a graph interrupt, pending the owner's approval;
+    # not re-dispatched (dispatch picks only "queued") and not terminal (resume finishes it)
     parent_task_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     proposal_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # for execution tasks
     shift_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
