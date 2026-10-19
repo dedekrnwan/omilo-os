@@ -73,7 +73,7 @@ A hosted sign-in service that holds each provider's OAuth app (so "Connect Gmail
 The default Docker image runs everything in one container with no sibling services:
 
 ```bash
-docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/saga-os
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/omilo
 ```
 
 SQLite is the database (`/data/omilo.db`), the worker runs in-process, and Redis is not required. This is the **light tier**: good for a single user, a laptop, or a low-traffic self-hosted instance.
@@ -84,7 +84,7 @@ To use **Postgres + pgvector + Redis** (the full tier), pass the URLs as environ
 docker run -p 7700:7700 -v omilo-data:/data \
   -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
   -e OMILO_REDIS_URL=redis://host:6379/0 \
-  ghcr.io/super-saga/saga-os
+  ghcr.io/super-saga/omilo
 ```
 
 Or drop a `/data/.env` file with those variables and restart — the same image reads it on startup.
@@ -100,7 +100,7 @@ Three ways to run your own Omilo, smallest first. All three serve the same app o
 Everything in a single container on SQLite, no Postgres and no Redis:
 
 ```bash
-docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/saga-os
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/omilo
 ```
 
 Your data lives in the `omilo-data` volume (`/data/omilo.db`). Good for one user or a small team on a single box. Open `http://localhost:7700`, create the owner account, and finish onboarding.
@@ -125,7 +125,7 @@ For a team, higher traffic, or high availability. Omilo does **not** install the
 docker run -p 7700:7700 -v omilo-data:/data \
   -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
   -e OMILO_REDIS_URL=redis://host:6379/0 \
-  ghcr.io/super-saga/saga-os
+  ghcr.io/super-saga/omilo
 ```
 
 …or use the production compose (Postgres with pgvector, Redis, a separate worker, Traefik) under [`deploy/`](deploy/):
