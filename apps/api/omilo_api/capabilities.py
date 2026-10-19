@@ -101,6 +101,21 @@ def set_connector_needs_reconnect(c: Connector, value: bool) -> None:
     c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
 
 
+def set_connector_token(c: Connector, token_dict: dict) -> None:
+    """Store an OAuth token dict inside secrets_enc and clear any needs_reconnect sentinel.
+
+    Writes ``secrets["token"] = token_dict``, removes ``needs_reconnect`` (if present),
+    then re-encrypts the whole blob.  Mirrors ``set_connector_needs_reconnect``.
+
+    token_dict shape: {"access_token", "refresh_token", "expires_at", "token_type"}
+                      with an optional "provider" key.
+    """
+    cur = connector_secrets(c)
+    cur["token"] = token_dict
+    cur.pop("needs_reconnect", None)
+    c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
+
+
 def connector_public(c: Connector) -> dict:
     s = connector_secrets(c)
     return {"id": c.id, "label": c.label, "kind": c.kind, "url": c.url, "command": c.command, "args": c.args or [],

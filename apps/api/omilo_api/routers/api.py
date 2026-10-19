@@ -1394,8 +1394,75 @@ def piece_connect_start(slug: str, db: Session = Depends(get_db), user: User = D
         raise HTTPException(404, f"piece '{slug}' not found in catalog")
 
     manifest = entry["manifest"]
-    result = B.default_broker.start_connect(manifest)
+    result = B.get_broker().start_connect(manifest)
     return result
+
+
+@router.get("/connectors/pieces/connect/callback")
+def piece_connect_callback(code: str = "", state: str = ""):
+    """OAuth2 callback — exchange an authorization code for tokens and stash them.
+
+    This endpoint is hit by the OAuth provider's browser redirect, NOT by an
+    authenticated API client.  It therefore carries NO bearer-token auth dependency;
+    the ``state`` nonce is the sole correlation secret.
+
+    Flow:
+      1. Resolve the piece slug from the broker's pending-state registry.
+         Unknown/expired/consumed state → 400; no connector side-effects.
+      2. Load the manifest via pieces.get_piece(slug) to read auth.provider.
+      3. Exchange the authorization code for tokens via oauth.exchange_code.
+      4. Merge ``{"provider": provider}`` into the token dict so that
+         HttpBroker.revoke() can identify the provider later.
+      5. Stash the token via broker.stash_token(state, token).
+         The open poll (GET /connectors/pieces/connect/{state}) completes the
+         Connector upsert on its next tick.
+      6. Return a minimal success HTML page (200).
+
+    Security: ``code``, ``state``, and token fields are never echoed into the
+    response body or logged.
+    """
+    import logging
+
+    from fastapi.responses import HTMLResponse
+
+    from .. import broker as B
+    from .. import oauth
+    from .. import pieces as P
+
+    logger = logging.getLogger(__name__)
+
+    broker = B.get_broker()
+    slug = broker.slug_for_state(state)
+    if slug is None:
+        raise HTTPException(400, "unknown or expired OAuth state")
+
+    entry = P.get_piece(slug)
+    if entry is None or entry.get("status") != "ok":
+        raise HTTPException(400, f"piece '{slug}' not found in catalog")
+
+    manifest = entry["manifest"]
+    provider = manifest["auth"]["provider"]
+
+    try:
+        token = oauth.exchange_code(provider, code, get_settings().oauth_redirect_uri())
+    except Exception:
+        logger.warning(
+            "piece_connect_callback: code exchange failed for slug=%s", slug
+        )
+        raise HTTPException(400, "Authorization code exchange failed")
+
+    # CRITICAL: merge provider so HttpBroker.revoke() can look up the revoke_url.
+    token["provider"] = provider
+
+    broker.stash_token(state, token)
+    logger.info("piece_connect_callback: stashed token for slug=%s", slug)
+
+    html = (
+        "<!doctype html>"
+        "<html><head><title>Connected</title></head>"
+        "<body><p>Connected — you can close this window.</p></body></html>"
+    )
+    return HTMLResponse(content=html, status_code=200)
 
 
 @router.get("/connectors/pieces/connect/{state}")
@@ -1416,7 +1483,7 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
     from ..security import encrypt
     import json
 
-    broker = B.default_broker
+    broker = B.get_broker()
     slug = broker.slug_for_state(state)
     if slug is None:
         # Unknown or already-consumed state — signal the client to stop polling.
@@ -1483,7 +1550,7 @@ def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depen
             secrets = C.connector_secrets(c)
             token = secrets.get("token")
             if token:
-                B.default_broker.revoke(token)
+                B.get_broker().revoke(token)
         except Exception:  # noqa: BLE001
             pass  # revoke is best-effort; never block disconnect
 
