@@ -24,3 +24,4 @@ cli/omilo
 
 # Local scratch (never commit)
 Claude outputs/
+.superpowers/
