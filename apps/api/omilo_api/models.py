@@ -577,7 +577,9 @@ class KbChunk(Base):
     heading: Mapped[str] = mapped_column(String(300), default="")
     text: Mapped[str] = mapped_column(Text)
     # Dialect-neutral: Vector() on PostgreSQL, LargeBinary (BLOB) on SQLite.
-    # Blob format: little-endian float32 contiguous bytes (struct.pack("<Nf", *vector)).
+    # Blob format: little-endian float32 contiguous bytes.
+    #   pack:   struct.pack(f"<{len(vector)}f", *vector)
+    #   unpack: struct.unpack(f"<{n}f", blob)  where n = dim
     # Task 5 reads/writes this format to populate sqlite-vec's external FTS5 table.
     embedding = mapped_column(Vector().with_variant(LargeBinary(), "sqlite"), nullable=True)
     dim: Mapped[int] = mapped_column(Integer, default=0, index=True)
@@ -588,9 +590,14 @@ class KbChunk(Base):
                         info={"pg_only": True})
 
 
-# Temporarily remove pg_only columns from KbChunk before create_all on non-Postgres dialects,
-# then restore them so the in-memory Table object remains complete for Postgres use.
-_kbchunk_pg_only_removed: list = []
+# Capture the canonical pg_only Column objects ONCE at import time.
+# before_create removes them for non-Postgres dialects; after_create unconditionally
+# restores them from this stable reference (idempotent: skips if already present).
+# This makes the restore stateless — safe across multiple create_all calls in one
+# process (e.g. Task 8 runs sqlite create_all then postgres DDL in the same process).
+_kbchunk_pg_only_cols: list = [
+    col for col in KbChunk.__table__.columns if col.info.get("pg_only")
+]
 
 
 @event.listens_for(KbChunk.__table__, "before_create")
@@ -598,15 +605,15 @@ def _kbchunk_before_create(target, connection, **kw):
     if connection.dialect.name != "postgresql":
         for col in list(target.columns):
             if col.info.get("pg_only"):
-                _kbchunk_pg_only_removed.append(col)
                 target._columns.remove(col)
 
 
 @event.listens_for(KbChunk.__table__, "after_create")
 def _kbchunk_after_create(target, connection, **kw):
-    for col in _kbchunk_pg_only_removed:
-        target.append_column(col)
-    _kbchunk_pg_only_removed.clear()
+    present = {c.name for c in target.columns}
+    for col in _kbchunk_pg_only_cols:
+        if col.name not in present:
+            target.append_column(col)
 
 
 class KbQuery(Base):
