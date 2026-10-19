@@ -111,6 +111,10 @@ def build_app() -> FastAPI:
                 bus.r().ping()
             except Exception as e:  # noqa: BLE001
                 out.update(ok=False, redis=str(e)[:200])
+        from . import health
+        hint = health.graduate_hint()
+        if hint:
+            out["graduate"] = hint
         return JSONResponse(out, status_code=200 if out["ok"] else 503)
 
     web = _web_dir()

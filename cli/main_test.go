@@ -1,9 +1,44 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 )
+
+func makeResp(body string) *http.Response {
+	return &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func TestHealthzGraduate(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"has graduate key", `{"ok":true,"graduate":"run omilo migrate --to postgres"}`, "run omilo migrate --to postgres"},
+		{"no graduate key", `{"ok":true}`, ""},
+		{"graduate empty string", `{"ok":true,"graduate":""}`, ""},
+		{"not json", `not json at all`, ""},
+		{"nil resp", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp *http.Response
+			if tc.body != "" {
+				resp = makeResp(tc.body)
+			}
+			got := healthzGraduate(resp)
+			if got != tc.want {
+				t.Errorf("healthzGraduate() = %q; want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestStartBuildsLightEnv(t *testing.T) {
 	cmd := startCommand("omilo-api", "/tmp/omilodata", "7700")

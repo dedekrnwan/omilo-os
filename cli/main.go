@@ -624,6 +624,25 @@ func cmdImport(args []string) {
 	}
 }
 
+// healthzGraduate reads the "graduate" string from a /healthz response body.
+// It returns an empty string when the key is absent, the body is not JSON, or any read error occurs.
+func healthzGraduate(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return ""
+	}
+	if v, ok := body["graduate"]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 func cmdDoctor() {
 	ok := true
 	if _, err := exec.LookPath("docker"); err != nil {
@@ -635,6 +654,9 @@ func cmdDoctor() {
 	c := loadConfig()
 	if r, err := http.Get(c.URL + "/healthz"); err == nil && r.StatusCode == 200 {
 		fmt.Println("✓ gateway reachable at", c.URL)
+		if grad := healthzGraduate(r); grad != "" {
+			fmt.Println("→", grad)
+		}
 	} else {
 		fmt.Println("✕ gateway not reachable at", c.URL)
 		ok = false
