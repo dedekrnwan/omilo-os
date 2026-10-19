@@ -73,7 +73,7 @@ A hosted sign-in service that holds each provider's OAuth app (so "Connect Gmail
 The default Docker image runs everything in one container with no sibling services:
 
 ```bash
-docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/omilo
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/dedekrnwan/omilo
 ```
 
 SQLite is the database (`/data/omilo.db`), the worker runs in-process, and Redis is not required. This is the **light tier**: good for a single user, a laptop, or a low-traffic self-hosted instance.
@@ -84,7 +84,7 @@ To use **Postgres + pgvector + Redis** (the full tier), pass the URLs as environ
 docker run -p 7700:7700 -v omilo-data:/data \
   -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
   -e OMILO_REDIS_URL=redis://host:6379/0 \
-  ghcr.io/super-saga/omilo
+  ghcr.io/dedekrnwan/omilo
 ```
 
 Or drop a `/data/.env` file with those variables and restart — the same image reads it on startup.
@@ -100,7 +100,7 @@ Three ways to run your own Omilo, smallest first. All three serve the same app o
 Everything in a single container on SQLite, no Postgres and no Redis:
 
 ```bash
-docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/omilo
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/dedekrnwan/omilo
 ```
 
 Your data lives in the `omilo-data` volume (`/data/omilo.db`). Good for one user or a small team on a single box. Open `http://localhost:7700`, create the owner account, and finish onboarding.
@@ -125,7 +125,7 @@ For a team, higher traffic, or high availability. Omilo does **not** install the
 docker run -p 7700:7700 -v omilo-data:/data \
   -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
   -e OMILO_REDIS_URL=redis://host:6379/0 \
-  ghcr.io/super-saga/omilo
+  ghcr.io/dedekrnwan/omilo
 ```
 
 …or use the production compose (Postgres with pgvector, Redis, a separate worker, Traefik) under [`deploy/`](deploy/):
@@ -142,7 +142,7 @@ Postgres must be 16+ with the `vector` (pgvector) extension available; Omilo cre
 Start on SQLite, move to Postgres when you outgrow it — one command, one way, all-or-nothing:
 
 ```bash
-./cli/omilo migrate --to postgres \
+omilo migrate --to postgres \
   --database-url postgresql+psycopg://user:pass@host:5432/omilo \
   [--redis-url redis://host:6379/0]
 ```
@@ -152,6 +152,27 @@ It copies every company's data into Postgres, rebuilds the knowledge base, and o
 ### Data and backups
 
 Everything a company owns lives under the data directory (`/data` in the container, `~/.omilo` on the host): the SQLite database (`omilo.db`, plus `companies/<id>/omilo.db` for additional companies), uploaded files, the knowledge vault, and the generated `secret.key`. Back up that directory (stop Omilo first for a consistent SQLite copy). On the full tier the database lives in Postgres instead — back that up with your usual Postgres tooling — but files and keys still live in the data directory.
+
+## Install the CLI
+
+The `omilo` command drives Omilo from your terminal — start it, sign in, watch the inbox, run and approve work. Install it any of these ways:
+
+```bash
+# npm / bun — zero install, always the latest
+npx omilo up            # start Omilo in Docker, then:  npx omilo login
+bunx omilo up
+npm install -g omilo     # then:  omilo up  ·  omilo login  ·  omilo status ...
+
+# Homebrew (macOS / Linux)
+brew install dedekrnwan/omilo/omilo
+
+# curl | sh (macOS / Linux) — grabs the right binary from Releases
+curl -fsSL https://raw.githubusercontent.com/dedekrnwan/omilo-os/main/packaging/install.sh | sh
+```
+
+Prebuilt binaries for every platform are attached to each [release](https://github.com/dedekrnwan/omilo-os/releases); on Windows use `npx omilo` or download the `.exe`.
+
+The CLI needs an Omilo to talk to. `omilo up` starts the full stack in Docker (the image bundles everything — no Python needed). `omilo start` runs the light tier directly on this machine, but that one also needs the Python app installed (see **Option B** above). To drive an Omilo that's already running somewhere, just `omilo login`.
 
 ## Quick start (development)
 
@@ -178,7 +199,7 @@ Applications, open it. Build it yourself with `make desktop` on a Mac. See [docs
 Laptop (Omilo, Postgres, and Redis containers; data in `~/.omilo`):
 
 ```bash
-make cli && ./cli/omilo up     # then ./cli/omilo login
+omilo up     # then: omilo login   (install the CLI as above, or build it with `make cli` → ./cli/omilo)
 ```
 
 Server (Postgres with pgvector, Redis, a separate worker, Traefik):
