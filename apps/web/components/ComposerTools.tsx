@@ -37,12 +37,18 @@ export function useThreadTools(threadId: string | null) {
   return { tools, toggle, reload: load };
 }
 
-export default function ComposerTools({ threadId, files, setFiles, disabled }: {
+export default function ComposerTools({ threadId, files, setFiles, disabled, upload: uploadProp, uploading: uploadingProp, err: errProp }: {
   threadId: string | null; files: Attached[]; setFiles: (f: Attached[]) => void; disabled?: boolean;
+  upload?: (list: FileList | File[] | null) => Promise<void>;
+  uploading?: boolean;
+  err?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<"folders" | "connectors" | "skills" | null>(null);
-  const { upload, uploading, err } = useFileUpload(files, setFiles);
+  const fb = useFileUpload(files, setFiles);
+  const upload = uploadProp ?? fb.upload;
+  const uploading = uploadingProp ?? fb.uploading;
+  const err = errProp ?? fb.err;
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const { tools, toggle } = useThreadTools(threadId);

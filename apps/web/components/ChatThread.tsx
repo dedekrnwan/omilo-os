@@ -11,6 +11,8 @@ import MentionBox, { type MentionHandle } from "@/components/MentionBox";
 import { Err } from "@/components/ui";
 import { Staff, api } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
+import { useFileUpload } from "@/lib/upload";
+import DropCatcher from "@/components/DropCatcher";
 
 /* Module-level latch: holds the most-recent omilo:settext value dispatched before ChatThread was
    mounted. A module-level listener (below) always captures it; the component drains it on mount. */
@@ -42,6 +44,9 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   const [err, setErr] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const box = useRef<MentionHandle>(null);
+
+  const chief = staff.find((s) => s.is_chief);
+  const { upload, uploading, err: uploadErr } = useFileUpload(files, setFiles);
 
   // keep the caller's `current` in sync with ours
   const report = useRef(onThread);
@@ -123,7 +128,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   if (!current) return <div className="ws-scroll" ref={scroller}><div className="ws-inner"><p className="small">Loading…</p></div></div>;
 
   return (
-    <>
+    <DropCatcher onFiles={(fs) => upload(fs)} chief={chief} disabled={current.awaiting_reply}>
       <div className="ws-scroll" ref={scroller}>
         <div className="ws-inner"><Conversation th={current} staff={staff} events={events} onSend={send} busy={current.awaiting_reply} onDecide={decide} /></div>
       </div>
@@ -136,7 +141,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
             ariaExpanded={slash.open || mention.open}
             onKeyDown={(e) => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
           <div className="row">
-            <ComposerTools threadId={threadId} files={files} setFiles={setFiles} disabled={current.awaiting_reply} />
+            <ComposerTools threadId={threadId} files={files} setFiles={setFiles} disabled={current.awaiting_reply} upload={upload} uploading={uploading} err={uploadErr} />
             <span className="small hide-sm">{current.awaiting_reply ? "Working on it…" : slash.jobBrief !== null ? "Enter starts a job for the Chief of Staff"
               : isGroup ? "No @mention: the Chief of Staff answers · Enter to send" : "@ to mention · / for commands · Enter to send"}</span>
             <span className="sp" />
@@ -155,6 +160,6 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
         <PoolMeter />
         <Err error={err} />
       </div>
-    </>
+    </DropCatcher>
   );
 }

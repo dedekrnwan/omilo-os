@@ -2119,3 +2119,72 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .app-acts li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; font-size: 13px; }
 .app-acts li + li { border-top: 1px solid var(--line); }
 .app-foot > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ------------------------------------------------------------------ drag-and-drop catch overlay */
+.dropcatch { position: relative; display: contents; }
+.dropcatch-overlay {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(255, 255, 255, .72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-lg);
+  pointer-events: none;
+}
+.dropcatch-ring {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 32px 40px;
+  border: 2px dashed var(--info);
+  border-radius: var(--r-lg);
+  background: var(--info-tint);
+  position: relative;
+}
+.dropcatch-mascot { position: relative; z-index: 1; }
+.dropcatch-label {
+  margin: 0; font-size: 15px; font-weight: 600; color: var(--info);
+  letter-spacing: -.01em;
+}
+.dropcatch-tiles {
+  display: flex; gap: 8px; align-items: flex-end; margin-bottom: 4px;
+}
+.dropcatch-tile {
+  width: 28px; height: 34px;
+  background: var(--surface);
+  border: 1.5px solid var(--info-line);
+  border-radius: var(--r-sm);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
+  position: relative;
+}
+.dropcatch-tile::before {
+  content: "";
+  position: absolute; top: 5px; left: 5px; right: 5px; height: 3px;
+  border-radius: 2px; background: var(--info-line);
+}
+.dropcatch-tile::after {
+  content: "";
+  position: absolute; top: 12px; left: 5px; right: 5px; height: 3px;
+  border-radius: 2px; background: var(--line-strong);
+}
+
+/* Animations: gated behind prefers-reduced-motion: no-preference */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dc-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes dc-tumble {
+    0% { transform: rotate(0deg) translateY(0); opacity: .7; }
+    50% { transform: rotate(180deg) translateY(-6px); opacity: 1; }
+    100% { transform: rotate(360deg) translateY(0); opacity: .7; }
+  }
+  @keyframes dc-pulse {
+    0%, 100% { border-color: var(--info); box-shadow: 0 0 0 0 rgba(29, 78, 216, .18); }
+    50% { border-color: #2563eb; box-shadow: 0 0 0 6px rgba(29, 78, 216, 0); }
+  }
+  .dropcatch-mascot { animation: dc-bob 1.2s ease-in-out infinite; }
+  .dropcatch-ring { animation: dc-pulse 2s ease-in-out infinite; }
+  .dropcatch-tile {
+    animation: dc-tumble 1.6s ease-in-out infinite;
+    animation-delay: calc(var(--dc-i, 0) * 0.28s);
+  }
+}
