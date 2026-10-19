@@ -91,6 +91,68 @@ Or drop a `/data/.env` file with those variables and restart — the same image 
 
 The three-service `docker-compose.dev.yml` is the full-tier reference for local development (Postgres + Redis running alongside the API). The laptop `cli/compose.yml` (used by `omilo up`) also wires up the full tier with sibling containers.
 
+## Self-hosting
+
+Three ways to run your own Omilo, smallest first. All three serve the same app on port 7700 — pick by how much you're running, and you can move up later without losing data.
+
+### Option A — one container (simplest)
+
+Everything in a single container on SQLite, no Postgres and no Redis:
+
+```bash
+docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/saga-os
+```
+
+Your data lives in the `omilo-data` volume (`/data/omilo.db`). Good for one user or a small team on a single box. Open `http://localhost:7700`, create the owner account, and finish onboarding.
+
+### Option B — on the host, no Docker (`omilo start`)
+
+For a VM or server where you'd rather not run Docker at all. From a clone (needs Python 3.11+, Node 20+, Go 1.24+):
+
+```bash
+pip install ./apps/api        # installs the omilo-api + omilo-migrate commands
+make cli                      # builds ./cli/omilo
+./cli/omilo start             # runs Omilo on this machine (SQLite, embedded worker), opens the browser
+```
+
+`omilo start` runs in the foreground — press Ctrl+C to stop it. Options: `--data-dir DIR` (default `~/.omilo`), `--port 7700`, `--no-open`. No database or Redis to install; the knowledge base runs on SQLite with local embeddings.
+
+### Option C — full tier (Postgres + pgvector + Redis)
+
+For a team, higher traffic, or high availability. Omilo does **not** install these for you — you point it at your own services. Either pass the URLs to any of the above:
+
+```bash
+docker run -p 7700:7700 -v omilo-data:/data \
+  -e OMILO_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/omilo \
+  -e OMILO_REDIS_URL=redis://host:6379/0 \
+  ghcr.io/super-saga/saga-os
+```
+
+…or use the production compose (Postgres with pgvector, Redis, a separate worker, Traefik) under [`deploy/`](deploy/):
+
+```bash
+cd deploy && cp .env.example .env    # set OMILO_SECRET_KEY, POSTGRES_PASSWORD, OMILO_PUBLIC_URL, OMILO_HOST
+docker compose up -d
+```
+
+Postgres must be 16+ with the `vector` (pgvector) extension available; Omilo creates the extension and one schema per company on first start.
+
+### Graduating from light to full
+
+Start on SQLite, move to Postgres when you outgrow it — one command, one way, all-or-nothing:
+
+```bash
+./cli/omilo migrate --to postgres \
+  --database-url postgresql+psycopg://user:pass@host:5432/omilo \
+  [--redis-url redis://host:6379/0]
+```
+
+It copies every company's data into Postgres, rebuilds the knowledge base, and only then writes the new URLs to `<data_dir>/.env` so the next start comes up on the full tier. If any company fails, nothing is flipped and you stay on SQLite. (There is no automated full→light migration.)
+
+### Data and backups
+
+Everything a company owns lives under the data directory (`/data` in the container, `~/.omilo` on the host): the SQLite database (`omilo.db`, plus `companies/<id>/omilo.db` for additional companies), uploaded files, the knowledge vault, and the generated `secret.key`. Back up that directory (stop Omilo first for a consistent SQLite copy). On the full tier the database lives in Postgres instead — back that up with your usual Postgres tooling — but files and keys still live in the data directory.
+
 ## Quick start (development)
 
 Requirements: Python 3.11+, Node 20+, Docker (for Postgres and Redis), Go 1.24+ (for the CLI).
