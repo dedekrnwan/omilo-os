@@ -12,6 +12,15 @@ import { Err } from "@/components/ui";
 import { Staff, api } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 
+/* Module-level latch: holds the most-recent omilo:settext value dispatched before ChatThread was
+   mounted. A module-level listener (below) always captures it; the component drains it on mount. */
+let _pendingSetText: string | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("omilo:settext", (e: Event) => {
+    _pendingSetText = (e as CustomEvent<{ text: string }>).detail.text;
+  });
+}
+
 /* A single chat thread: the message list, composer, mentions, slash menu, access decisions and Stop.
    Controlled by `threadId`; owns its own poll and reports the loaded thread up via `onThread`.
    Carved out of the /chat page so a later drawer can reuse it. */
@@ -54,9 +63,25 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
   useQuote(current?.id, setText, () => box.current?.focus());
-  // side-list context menus ("Brief me", "Mention … in General") prefill the composer after opening a thread
+  // side-list context menus ("Brief me", "Mention … in General") prefill the composer after opening a thread.
+  // On mount: drain any pending value that was dispatched before this component mounted (e.g. when the
+  // user triggered the menu while no thread was open and ChatThread hadn't rendered yet).
+  // On live event: the module-level listener above always captures the value into _pendingSetText first,
+  // then this handler runs synchronously in the same event cycle — it reads the same value, so no
+  // double-apply: we set text once here and immediately clear the latch.
   useEffect(() => {
-    const on = (e: Event) => { setText((e as CustomEvent).detail.text); setTimeout(() => box.current?.focus(), 0); };
+    // drain the latch on mount (covers the "ChatThread not yet mounted" case)
+    if (_pendingSetText !== null) {
+      const pending = _pendingSetText;
+      _pendingSetText = null;
+      setText(pending);
+      setTimeout(() => box.current?.focus(), 0);
+    }
+    const on = (e: Event) => {
+      _pendingSetText = null; // clear the latch — we're handling it live right now
+      setText((e as CustomEvent<{ text: string }>).detail.text);
+      setTimeout(() => box.current?.focus(), 0);
+    };
     window.addEventListener("omilo:settext", on);
     return () => window.removeEventListener("omilo:settext", on);
   }, []);
