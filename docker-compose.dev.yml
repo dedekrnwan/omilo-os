@@ -1,5 +1,5 @@
-# Postgres (with pgvector) and Redis for running Omilo from the source code. `make db` starts them, `make db-stop`
-# stops them; the data stays in Docker volumes. Both listen on 127.0.0.1 only.
+# FULL-TIER reference: Postgres (with pgvector) and Redis for running Omilo from source. `make db` starts them, `make db-stop`
+# stops them; data stays in Docker volumes. Both listen on 127.0.0.1 only. For single-container light tier, use the image directly.
 name: omilo-dev
 services:
   postgres:
