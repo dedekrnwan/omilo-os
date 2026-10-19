@@ -2176,6 +2176,10 @@ def _onb_providers(db: Session) -> list[dict]:
     for o in out:
         if o["id"] in _LITELLM_PROVIDER_IDS:
             o["has_key"] = bool(S.ai_key_hint(db, o["id"]))
+    local = H.local_login_status()
+    if local.get("logged_in"):
+        out.append({"id": "local", "label": "Your Claude Code sign-in", "by": "This machine", "domain": "claude.ai", "kind": "local",
+                    "blurb": "Use the Claude you're already signed into on this machine — your login never leaves it. No key needed."})
     return out
 
 
@@ -2256,7 +2260,7 @@ async def onboarding_ai(body: OnbAiIn, db: Session = Depends(get_db), user: User
     from .. import interview as I
 
     pid = body.provider
-    if pid not in ("fake", "claude", "claude-code", *_LITELLM_PROVIDER_IDS):
+    if pid not in ("fake", "claude", "claude-code", "local", *_LITELLM_PROVIDER_IDS):
         raise HTTPException(400, "unknown AI provider")
     if body.api_key and body.api_key.strip():
         S.set_ai_key(db, "claude" if pid in ("claude", "anthropic") else pid, body.api_key, user.id)

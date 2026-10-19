@@ -17,7 +17,8 @@ import { confirmDialog } from "@/lib/dialog";
 type Account = { id: string; label: string; token_hint: string; enabled: boolean; state: string; cooldown_until: string | null;
   last_used_at: string | null; last_error: string; runs: number; tokens: number; cost_usd: number; busy: number };
 type Pool = { accounts: Account[]; ready: number; total: number; parallel_per_account: number; helpers_on_pool: string[];
-  cli: { path: string | null; version: string | null; node: boolean; install: { state: string; log: string[] } } };
+  cli: { path: string | null; version: string | null; node: boolean; install: { state: string; log: string[] } };
+  pool_consent: { consented: boolean; notice_pending: boolean } };
 
 type HelperRef = { id: string; name: string };
 type VendorCard = { id: string; label: string; icon: string; key_set: boolean; model: string | null; helpers: HelperRef[] };
@@ -162,9 +163,11 @@ export default function Harness() {
   const [msg, setMsg] = useState<string | null>(null);
   const meter = useMeter();
   const [adding, setAdding] = useState(false);
-  const closeAdd = useCallback(() => { setAdding(false); setErr(null); }, []);
+  const closeAdd = useCallback(() => { setAdding(false); setErr(null); setConsentAccepted(false); }, []);
   const use = (id: string) => meter?.accounts.find((a) => a.id === id);
   const [err, setErr] = useState<string | null>(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
 
   const loadPool = useCallback(async () => { try { setPool(await api<Pool>("/harness")); } catch (e: any) { setErr(e.message); } }, []);
   const loadEngines = useCallback(async () => { try { setEngines(await api<EnginesData>("/harness/engines")); } catch { /* non-fatal */ } }, []);
@@ -173,6 +176,15 @@ export default function Harness() {
   usePoll(reload, 15000, [reload]);
   useEffect(() => { if (pool?.cli.install.state !== "running") return; const t = setInterval(loadPool, 2000); return () => clearInterval(t); }, [pool?.cli.install.state, loadPool]);
 
+  const grantConsent = async () => {
+    setConsentBusy(true); setErr(null);
+    try { await api("/harness/pool-consent", { body: {} }); await loadPool(); }
+    catch (e: any) { setErr(e.message); } finally { setConsentBusy(false); }
+  };
+  const dismissNotice = async () => {
+    try { await api("/harness/pool-consent/dismiss", { body: {} }); await loadPool(); }
+    catch { /* non-fatal */ }
+  };
   const add = async () => {
     setErr(null); setMsg(null);
     try {
@@ -217,6 +229,13 @@ export default function Harness() {
       <div className="sec" style={{ marginBottom: 32 }}>
         <div className="sechead"><h2>Claude Code pool</h2></div>
         <p className="small" style={{ marginBottom: 16 }}>Your Claude Code accounts, shared by your helpers. When one account reaches its limit it rests and the next job continues on another.</p>
+
+        {pool.pool_consent?.notice_pending && (
+          <div className="callout" style={{ marginBottom: 16 }}>
+            <p style={{ margin: "0 0 8px" }}>Heads up: the Claude subscription pool is now opt-in. Your existing accounts keep working. Pooling consumer subscriptions for automation may violate Anthropic&apos;s terms and can be suspended; if the pool stops, tasks fall back to your API key automatically.</p>
+            <button className="btn sm" onClick={dismissNotice}>Got it</button>
+          </div>
+        )}
 
         <div className="stats" style={{ marginBottom: 20 }}>
           <div className="stat"><div className="label">Accounts ready</div><div className="num">{pool.ready}<span className="small"> / {pool.total}</span></div></div>
@@ -307,27 +326,54 @@ export default function Harness() {
 
       <Drawer open={adding} onClose={closeAdd} icon={<i className="ri-stack-line" />} title="Add a Claude Code account"
         sub="One account you own. Helpers share the pool."
-        footer={<><span className="sp" /><button className="btn" onClick={closeAdd}>Cancel</button>
-          <button className="btn primary" disabled={!token.trim()} onClick={add}><i className="ri-add-line" />Add to pool</button></>}>
-        <div className="dw-sec">
-          <label style={{ marginTop: 0 }}>Name</label>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Max #1 (dede@…)" />
-          <label>Token</label>
-          <input className="mono" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat01-…"
-            onKeyDown={(e) => { if (e.key === "Enter" && token.trim()) add(); }} />
-          <p className="dw-help">Stored encrypted. Tokens last a year.</p>
-        </div>
-        <div className="dw-sec">
-          <h3>Get the token (once per account)</h3>
-          <ol className="steps">
-            <li>Open Terminal on this computer.</li>
-            <li>Type <code>claude setup-token</code> and press Enter.</li>
-            <li>A browser opens: sign in with the Claude account you want to add.</li>
-            <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it above.</li>
-          </ol>
-          <p className="dw-help">Use accounts you own, within the terms of your Claude plan. Omilo tests the account right after adding it.</p>
-        </div>
-        <Err error={err} />
+        footer={pool.pool_consent?.consented
+          ? <><span className="sp" /><button className="btn" onClick={closeAdd}>Cancel</button>
+              <button className="btn primary" disabled={!token.trim()} onClick={add}><i className="ri-add-line" />Add to pool</button></>
+          : <><span className="sp" /><button className="btn" onClick={closeAdd}>Cancel</button></>}>
+        {!pool.pool_consent?.consented ? (
+          <div className="dw-sec">
+            <div className="callout warn">
+              <b>Before pooling Claude subscriptions</b>
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+                <li>Add only Claude accounts you own.</li>
+                <li>Pooling consumer Claude subscriptions to automate work may violate Anthropic&apos;s terms — accounts can be rate-limited or suspended. You accept that risk.</li>
+                <li>The pool is optional: if it stops, Omilo automatically falls back to your Claude API key (or waits for capacity). No work is lost.</li>
+              </ul>
+            </div>
+            <div className="acts" style={{ marginTop: 12, flexWrap: "nowrap" }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, margin: 0, fontWeight: 400, cursor: "pointer", flex: 1 }}>
+                <input type="checkbox" checked={consentAccepted} onChange={(e) => setConsentAccepted(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
+                <span className="small">I understand and accept responsibility</span>
+              </label>
+            </div>
+            <div className="acts" style={{ marginTop: 10 }}>
+              <button className="btn primary" disabled={!consentAccepted || consentBusy} onClick={grantConsent}>{consentBusy ? "Saving…" : "Enable the pool"}</button>
+            </div>
+            <Err error={err} />
+          </div>
+        ) : (
+          <>
+            <div className="dw-sec">
+              <label style={{ marginTop: 0 }}>Name</label>
+              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Max #1 (dede@…)" />
+              <label>Token</label>
+              <input className="mono" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat01-…"
+                onKeyDown={(e) => { if (e.key === "Enter" && token.trim()) add(); }} />
+              <p className="dw-help">Stored encrypted. Tokens last a year.</p>
+            </div>
+            <div className="dw-sec">
+              <h3>Get the token (once per account)</h3>
+              <ol className="steps">
+                <li>Open Terminal on this computer.</li>
+                <li>Type <code>claude setup-token</code> and press Enter.</li>
+                <li>A browser opens: sign in with the Claude account you want to add.</li>
+                <li>Copy the token it prints (starts with <code>sk-ant-</code>) and paste it above.</li>
+              </ol>
+              <p className="dw-help">Use accounts you own, within the terms of your Claude plan. Omilo tests the account right after adding it.</p>
+            </div>
+            <Err error={err} />
+          </>
+        )}
       </Drawer>
     </div>
   );

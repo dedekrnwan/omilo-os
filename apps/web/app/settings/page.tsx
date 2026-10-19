@@ -143,7 +143,7 @@ function CompanyBudget({ b, set }: { b?: { budget_usd: number; cost_usd: number;
   );
 }
 
-type AiState = { provider: string; model: string | null; claude_key_hint: string | null; staff: Record<string, { provider: string }>; claude_code?: { installed: boolean } };
+type AiState = { provider: string; model: string | null; claude_key_hint: string | null; staff: Record<string, { provider: string }>; claude_code?: { installed: boolean }; local_login?: { installed: boolean; logged_in: boolean }; pool_consent?: { consented: boolean; notice_pending: boolean } };
 type VendorProvider = { id: string; label: string; icon: string; has_key: boolean };
 type PoolState = { ready: number; total: number; cli: { path: string | null } };
 
@@ -183,7 +183,9 @@ function AiEngine() {
       setEdit(false); setClaude({ key: "", model: "", ok: false });
       setMsg(provider === "claude-code" ? "Saved. Your helpers now run on the Claude subscription pool, with your API key as overflow."
         : provider === "claude" ? "Saved. Your helpers now run in Claude Code with your API key."
-        : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Omilo's tools)." : "Saved. All helpers are in practice mode.");
+        : provider === "claude-direct" ? "Saved. Your helpers use built-in Claude (web search and Omilo's tools)."
+        : provider === "local" ? "Saved. Your helpers now run on your locally signed-in Claude."
+        : "Saved. All helpers are in practice mode.");
       load();
     } catch (e: any) { setErr(e.message); }
   };
@@ -199,10 +201,11 @@ function AiEngine() {
     } catch (e: any) { setErr(e.message); }
   };
   const label = (p?: string) => ({ claude: "Claude Code with your API key", "claude-direct": "Built-in Claude (light: web and Omilo's tools)",
-    fake: "Practice mode (no AI)", "claude-code": "Claude subscription pool (+ API key overflow)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || (vendors.find((v) => v.id === (p || ""))?.label) || p || "…";
+    fake: "Practice mode (no AI)", "claude-code": "Claude subscription pool (+ API key overflow)", local: "My Claude Code sign-in (this machine)", mixed: "Different per helper" } as Record<string, string>)[p || ""] || (vendors.find((v) => v.id === (p || ""))?.label) || p || "…";
   const isVendor = (p?: string) => !!vendors.find((v) => v.id === p);
   const p = ai?.provider;
   const sub = p === "claude-code" ? (pool?.cli?.path ? `Pool: ${pool.ready}/${pool.total} seats ready. Your API key covers overflow.` : "Pool first, API key for overflow. Install Claude Code on Harness.")
+    : p === "local" ? "Runs your own locally signed-in Claude — your login never leaves this machine."
     : p === "fake" ? "Helpers go through every step without calling an AI."
     : ai?.claude_key_hint ? `key ending in ${ai.claude_key_hint}${p === "claude" && ai.model ? ` · ${ai.model}` : ""}`
     : isVendor(p) ? "Direct API · key on file" : "";
@@ -235,6 +238,16 @@ function AiEngine() {
             <Link className="btn" href="/harness/">Manage seats</Link>
           </div>
         </div>
+      )}
+
+      {!edit && !vendorEdit && ai?.local_login?.logged_in && (
+        <button type="button" className={`choice${p === "local" ? " on" : ""}`} onClick={() => { if (p !== "local") save("local"); }}>
+          <b>Use my Claude Code sign-in (this machine)</b>
+          <span>Runs your own locally signed-in Claude — your login never leaves this machine.</span>
+        </button>
+      )}
+      {!edit && !vendorEdit && ai?.local_login?.installed && !ai.local_login.logged_in && (
+        <p className="small" style={{ margin: "4px 0 8px", color: "var(--muted)" }}>Claude Code is installed — run <code>claude</code> in a terminal to sign in, then refresh.</p>
       )}
 
       {!edit && !vendorEdit && (

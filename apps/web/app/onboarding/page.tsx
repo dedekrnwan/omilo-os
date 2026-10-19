@@ -22,7 +22,7 @@ type Opt = Record<string, string | { label: string; [k: string]: unknown }>;
 type Options = { industries: Opt; stages: Opt; team_sizes: Opt; goals: Opt; tones: Opt; languages: Opt; tools: Opt;
   rules: Record<string, { label: string; default: boolean }>; approval_modes: Record<string, { label: string; detail: string; strict: boolean }> };
 type Answers = Record<string, any> & { company_name: string };
-type Provider = { id: string; label: string; by: string; domain: string; kind: "key" | "subscription"; blurb: string; key_url?: string;
+type Provider = { id: string; label: string; by: string; domain: string; kind: "key" | "subscription" | "local"; blurb: string; key_url?: string;
   recommended?: boolean; more?: boolean; has_key?: boolean };
 type Ai = { provider: string; label: string; model?: string | null; chosen: boolean };
 type Hist = { role: "owner" | "ai"; text: string; options?: string[]; field?: string; multi?: boolean; saved?: string[] };
@@ -95,6 +95,8 @@ function AiStep({ providers, ai, onDone }: { providers: Provider[]; ai: Ai; onDo
               <details><summary className="small">Advanced: a specific model</summary>
                 <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Leave empty for a good default" /></details>
             </>
+          ) : p.kind === "local" ? (
+            <p style={{ marginTop: 0 }}>Use your own Claude Code sign-in on this machine — no key needed.</p>
           ) : (
             <>
               <p style={{ marginTop: 0 }}>Use your Claude Pro or Max plan. Omilo runs Claude Code on this computer with it.</p>
