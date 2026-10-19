@@ -185,10 +185,15 @@ def _save_shot(data_b64: str, mime: str) -> str | None:
 class ClaudeCodeEngine(Engine):
     type = "claude-code"
 
-    async def _once(self, cli: str, token: str, args: list[str], cwd: Path, config: Path, emit, timeout: float,
-                    token_env: str = "CLAUDE_CODE_OAUTH_TOKEN") -> tuple[_Run, int, str]:
+    async def _once(self, cli: str, token: str, args: list[str], cwd: Path, config: Path | None, emit, timeout: float,
+                    token_env: str | None = "CLAUDE_CODE_OAUTH_TOKEN") -> tuple[_Run, int, str]:
         env = {k: v for k, v in os.environ.items() if k not in STRIP_ENV}
-        env.update({token_env: token, "CLAUDE_CONFIG_DIR": str(config)})
+        if token_env:  # local path passes token_env=None: inject no auth var at all
+            env[token_env] = token
+        if config is not None:  # local path passes config=None: the user's own ~/.claude resolves
+            env["CLAUDE_CONFIG_DIR"] = str(config)
+        else:  # local path: never let an inherited CLAUDE_CONFIG_DIR override the user's own login
+            env.pop("CLAUDE_CONFIG_DIR", None)
         if token_env == "ANTHROPIC_API_KEY" and os.environ.get("OMILO_ANTHROPIC_BASE_URL"):  # tests and proxies
             env["ANTHROPIC_BASE_URL"] = os.environ["OMILO_ANTHROPIC_BASE_URL"]
         proc = await asyncio.create_subprocess_exec(cli, *args, cwd=str(cwd), env=env, stdin=asyncio.subprocess.DEVNULL,
@@ -228,6 +233,16 @@ class ClaudeCodeEngine(Engine):
         if auth == "api":  # your Claude API key instead of the subscription pool: one run, billed to the key
             try:
                 return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
+            finally:
+                mcp_file.unlink(missing_ok=True)
+        if auth == "local":  # your OWN locally-logged-in claude: the credential never leaves your machine
+            try:
+                if H.local_login_status(cli)["logged_in"]:
+                    return await self._run_local(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
+                if api_key():  # not signed in locally, but a company API key is set — fall back to it
+                    emit("status", state="switching", account="your API key", reason="not signed in to Claude Code")
+                    return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
+                return EngineResult(error="Sign in to Claude Code (run `claude`), or add a Claude API key in Settings → AI.")
             finally:
                 mcp_file.unlink(missing_ok=True)
         try:
@@ -305,6 +320,26 @@ class ClaudeCodeEngine(Engine):
         if session:
             args += ["--resume", session]
         run, code, err = await self._once(cli, key, args, cwd, config, emit, timeout, token_env="ANTHROPIC_API_KEY")
+        if run.session and run.session != session:
+            remember(run.session)
+        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
+        if problem:
+            res.error = f"Claude Code: {problem[:400]}"
+        return res
+
+    async def _run_local(self, cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd) -> EngineResult:
+        # the user's OWN locally-logged-in claude: Omilo injects no token and no config dir, so the user's own
+        # ~/.claude login resolves. The credential never leaves the machine — the compliant, load-bearing path.
+        emit("status", state="harness", account="your Claude sign-in")
+        args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
+        if cfg.get("model"):
+            args += ["--model", cfg["model"]]
+        if session:
+            args += ["--resume", session]
+        run, code, err = await self._once(cli, "", args, cwd, None, emit, timeout, token_env=None)
         if run.session and run.session != session:
             remember(run.session)
         problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))

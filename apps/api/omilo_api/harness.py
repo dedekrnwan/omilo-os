@@ -47,6 +47,16 @@ def find_cli() -> str | None:
     return None
 
 
+def local_login_status(cli: str | None = None) -> dict:
+    """Whether the user is signed in to Claude Code locally (their own ~/.claude login).
+
+    Thin stub for now: Task 3 replaces it with the real probe. It only reports whether the CLI
+    is installed; it never claims a login, so the engine's local path is gated off until the
+    real check lands.
+    """
+    return {"installed": bool(find_cli()), "logged_in": False}
+
+
 _version: dict[str, str | None] = {}
 
 
