@@ -49,6 +49,7 @@ class EngineResult:
     cost_usd: float = 0.0
     tokens: int = 0
     suspended: bool = False  # the run interrupted for human approval; the task is paused, not done
+    defer: bool = False  # the pool is exhausted and there's no API key: re-queue and wait for capacity, don't fail
 
 
 class Engine:

@@ -8,6 +8,7 @@ import time
 from sqlalchemy import func, select
 
 from . import company as C
+from . import harness as H
 from . import services as S
 from .capabilities import resolve
 from .config import get_settings
@@ -28,6 +29,7 @@ class Worker:
     def __init__(self):
         self.running: dict[str, asyncio.Task] = {}
         self.retry_at: dict[str, float] = {}  # task id -> monotonic time it may run again (after a transient failure)
+        self._deferred_since: dict[str, float] = {}  # task id -> monotonic time it first deferred waiting for pool capacity
         self._daily: dict[str, float] = {}    # company -> last time the loop housekeeping ran
         self._nudged: dict[str, float] = {}   # company -> last time the nudge ladder ran
         self.chatting: dict[str, asyncio.Task] = {}
@@ -465,6 +467,10 @@ class Worker:
             # "waiting" (durable, so services._graph_origin_task can detect it on decision)
             # and stop — no done/failed, no retry. The resume path finishes it later.
             ctx.emit("status", state="waiting")
+        elif res.defer:
+            # The pool is exhausted and there's no API key: the task is NOT failing, it's
+            # waiting for a free Claude Code account. Surface a non-failure status only.
+            ctx.emit("status", state="waiting", reason="waiting for Claude Code capacity")
         else:
             ctx.emit("status", state="failed" if res.error else "done", error=res.error)
         self.finish(task_id, res)
@@ -491,6 +497,26 @@ class Worker:
                 S.audit(db, "system", "task.waiting", t.id)
                 db.commit()
                 return
+            if res.defer:
+                # The pool was exhausted and there's no API key. This run didn't fail — it couldn't
+                # start. Re-queue WITHOUT counting an attempt (dispatch already bumped it), and keep
+                # waiting for capacity up to POOL_WAIT_CAP_S, then surface to the owner.
+                t.attempts = max(0, t.attempts - 1)  # undo the dispatch-time increment — not a failed attempt
+                since = self._deferred_since.setdefault(task_id, time.monotonic())
+                if time.monotonic() - since >= H.POOL_WAIT_CAP_S:
+                    self._deferred_since.pop(task_id, None)
+                    self.retry_at.pop(task_id, None)
+                    S.finish_task(db, t, "failed", error="Waited for Claude Code capacity but none freed up.")
+                    S.alert(db, "A job is waiting on Claude Code capacity",
+                            "A job couldn't get a free Claude Code account and timed out waiting. Add capacity (Settings → Harness) or a Claude API key (Settings → AI), then retry.",
+                            t.staff_id, t.id)
+                    db.commit()
+                    return
+                t.status = "queued"
+                self.retry_at[task_id] = time.monotonic() + 30  # re-check in 30s; slot is released because status != "running"
+                db.commit()
+                return
+            self._deferred_since.pop(task_id, None)  # any NON-defer outcome ends a capacity wait
             report = db.scalar(select(Report).where(Report.task_id == t.id))
             from . import loops
 

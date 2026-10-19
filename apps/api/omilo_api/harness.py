@@ -26,6 +26,7 @@ LIMIT_RE = re.compile(r"usage limit|limit reached|rate limit|too many requests|q
 AUTH_RE = re.compile(r"invalid api key|unauthori[sz]ed|authentication|expired|revoked|401|please run /login|oauth token", re.I)
 DEFAULT_COOLDOWN = dt.timedelta(hours=1)
 MAX_PARALLEL_PER_ACCOUNT = int(os.environ.get("OMILO_HARNESS_PARALLEL", "2"))
+POOL_WAIT_CAP_S = int(os.environ.get("OMILO_POOL_WAIT_CAP_S", "2700"))  # 45 min: a job waits this long for pool capacity, then surfaces
 NPM_PACKAGE = "@anthropic-ai/claude-code"
 
 

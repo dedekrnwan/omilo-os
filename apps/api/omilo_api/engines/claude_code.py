@@ -251,7 +251,7 @@ class ClaudeCodeEngine(Engine):
                 if not picked:
                     # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key
                     # (same config dir, so a session begun on the pool resumes cleanly). Pure pool mode errors instead.
-                    if auth == "auto" and api_key():
+                    if api_key():
                         emit("status", state="switching", account="your API key", reason="pool busy — using your API key")
                         res = await self._run_api(cli, cfg, system, prompt if not session else "Continue exactly where you left off.",
                                                   session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
@@ -261,7 +261,7 @@ class ClaudeCodeEngine(Engine):
                             res.text = total.text
                         return res
                     msg = "No Claude Code account is free right now (all cooling down, busy or none added). See Settings → Harness."
-                    return EngineResult(error=msg, tokens=total.tokens, cost_usd=total.cost_usd, text=total.text)
+                    return EngineResult(error=msg, defer=True, tokens=total.tokens, cost_usd=total.cost_usd, text=total.text)
                 acc_id, label, token = picked
                 tried.add(acc_id)
                 emit("status", state="harness", account=label)

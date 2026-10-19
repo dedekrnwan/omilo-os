@@ -25,6 +25,14 @@ def fake_cli(tmp_path):
     os.environ.pop("FAKE_CLAUDE_LOG", None)
 
 
+def test_pool_wait_cap_constant_defined():
+    """Task 4: a job waits POOL_WAIT_CAP_S for pool capacity, then surfaces. Default 45 min."""
+    from omilo_api import harness as H
+
+    assert isinstance(H.POOL_WAIT_CAP_S, int)
+    assert H.POOL_WAIT_CAP_S == 2700
+
+
 def test_accounts_validation_and_test(owner, fake_cli):
     assert owner.post("/api/harness/accounts", json={"label": "x", "token": "hello"}).status_code == 400
     a = owner.post("/api/harness/accounts", json={"label": "Sub #1", "token": OK2}).json()
