@@ -77,10 +77,16 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "kpis": S.latest_kpis(db),
         "cost_7d_usd": round(db.scalar(select(func.coalesce(func.sum(Task.cost_usd), 0)).where(
             Task.created_at >= now() - dt.timedelta(days=7))) or 0, 2),
+        "self_tuning": S.is_self_tuning(db),
     }
 
 
 # ------------------------------------------------------------------ system & settings
+@router.get("/system")
+def get_system(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return overview(db, user)
+
+
 class SystemIn(BaseModel):
     paused: bool | None = None
     strict_mode: bool | None = None
@@ -88,6 +94,7 @@ class SystemIn(BaseModel):
     budget_company_usd: float | None = Field(None, ge=0, le=1_000_000)  # 0 = no company cap
     company_name: str | None = None
     timezone: str | None = None
+    self_tuning: bool | None = None
 
 
 def _set_timezone(db: Session, tz: str, actor: str) -> None:

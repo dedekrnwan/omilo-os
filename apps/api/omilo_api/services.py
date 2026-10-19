@@ -64,6 +64,10 @@ def is_paused(db: Session) -> bool:
     return bool(get_setting(db, "paused", False))
 
 
+def is_self_tuning(db: Session) -> bool:
+    return bool(get_setting(db, "self_tuning", False))
+
+
 def strict_mode(db: Session) -> bool:
     v = get_setting(db, "strict_mode", None)
     return get_settings().strict_mode if v is None else bool(v)
