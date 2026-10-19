@@ -90,8 +90,8 @@ def test_vendor_provider_rejected_without_key(owner, monkeypatch):
     """
     # Remove any previously stored gemini key from the DB so this test doesn't rely
     # on file-order or assume no prior test touched the gemini slot.
-    from omilo_api.db import session_scope
     from omilo_api import services as S
+    from omilo_api.db import session_scope
 
     with session_scope() as db:
         keys = dict(S.get_setting(db, "ai_keys", None) or {})
@@ -115,8 +115,8 @@ def test_all_eight_vendor_ids_accepted_with_key(owner):
     # Reset to fake AND remove the vendor keys we stored — the owner fixture is session-scoped,
     # so leftover keys would make key_set=True for other tests (e.g. test_harness_engines).
     owner.post("/api/ai", json={"provider": "fake"})
-    from omilo_api.db import session_scope
     from omilo_api import services as S
+    from omilo_api.db import session_scope
     with session_scope() as db:
         keys = dict(S.get_setting(db, "ai_keys", None) or {})
         for pid in VENDOR_IDS:
@@ -147,8 +147,8 @@ def test_ai_check_is_provider_aware(owner):
     The Claude key slot is never consulted for a vendor check (no paid/network call is made).
     """
     # Ensure openai has no stored key for a clean start.
-    from omilo_api.db import session_scope
     from omilo_api import services as S
+    from omilo_api.db import session_scope
     with session_scope() as db:
         keys = dict(S.get_setting(db, "ai_keys", None) or {})
         keys.pop("openai", None)

@@ -12,10 +12,8 @@ Test conventions:
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Task 1: provider registry
@@ -67,6 +65,7 @@ def test_provider_client_reads_settings(monkeypatch):
 def test_provider_client_unconfigured_raises():
     """With no clients configured, provider_client must raise ValueError."""
     import os as _os
+
     from omilo_api.config import get_settings
     # Ensure no google entry in oauth_clients by patching the cached Settings object
     get_settings.cache_clear()
@@ -176,6 +175,7 @@ def test_exchange_code_no_expires_in_gives_none(monkeypatch):
 def test_exchange_code_expires_at_is_float(monkeypatch):
     """expires_at must be a float (time.time() + expires_in)."""
     import time
+
     from omilo_api import oauth
 
     def fake_post(url, data=None, timeout=None):

@@ -12,12 +12,7 @@ Test conventions (same as test_oauth.py):
 """
 from __future__ import annotations
 
-import json
-import os
 import secrets
-
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -307,9 +302,10 @@ def test_revoke_posts_to_revoke_url(monkeypatch):
 
 def test_revoke_swallows_errors(monkeypatch):
     """revoke must not raise even when the HTTP call fails."""
+    import httpx as _httpx
+
     from omilo_api import broker
     from omilo_api.config import get_settings
-    import httpx as _httpx
 
     monkeypatch.setattr(
         get_settings(),
@@ -330,9 +326,10 @@ def test_revoke_swallows_errors(monkeypatch):
 
 def test_revoke_noop_when_no_revoke_url(monkeypatch):
     """revoke must silently do nothing when the provider has no revoke_url (e.g. Meta)."""
+    import httpx as _httpx
+
     from omilo_api import broker
     from omilo_api.config import get_settings
-    import httpx as _httpx
 
     monkeypatch.setattr(
         get_settings(),

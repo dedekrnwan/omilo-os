@@ -14,10 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.test_pieces import GMAIL_MANIFEST
-
 import omilo_api.pieces as pieces
 from omilo_api.config import get_settings
+from tests.test_pieces import GMAIL_MANIFEST
 
 # A minimal valid manifest for the "bad" piece that should be excluded.
 # It is deliberately invalid (missing required fields) so it has status!=ok.

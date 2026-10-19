@@ -7,18 +7,15 @@ between tests that mutate the env.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
-import pytest
 import yaml
-
-# Import the GMAIL_MANIFEST shape from the existing test module to avoid duplication.
-from tests.test_pieces import GMAIL_MANIFEST
 
 from omilo_api import pieces
 from omilo_api.config import get_settings
 
+# Import the GMAIL_MANIFEST shape from the existing test module to avoid duplication.
+from tests.test_pieces import GMAIL_MANIFEST
 
 # ---------------------------------------------------------------------------
 # Helpers

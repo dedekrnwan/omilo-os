@@ -2,11 +2,11 @@
 
 Task 4 of 2026-10-18-approvals-in-chat-and-multi-engine-harness.
 """
+from sqlalchemy import select
+
 from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.models import InboxItem, Proposal, Staff
-from sqlalchemy import select
-
 
 # ---------------------------------------------------------------------------
 # Helpers

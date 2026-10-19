@@ -33,7 +33,6 @@ from omilo_api.db import session_scope
 from omilo_api.graph.delegation import cos_id
 from omilo_api.models import AuditEvent, Proposal, Staff, Task
 
-
 # ---------------------------------------------------------------------------
 # Helpers — a throwaway worker per test, scoped to ids we create.
 # ---------------------------------------------------------------------------

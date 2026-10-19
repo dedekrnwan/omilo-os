@@ -19,6 +19,7 @@ from .. import services as S
 from ..config import get_settings
 from ..db import get_auth_db, get_db
 from ..engines import get_engine
+from ..engines import providers as _providers_reg
 from ..importer import import_prototype
 from ..models import (
     Checkpoint,
@@ -33,7 +34,6 @@ from ..models import (
     User,
     now,
 )
-from ..engines import providers as _providers_reg
 from ..security import current_user
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -1449,7 +1449,7 @@ def piece_connect_callback(code: str = "", state: str = ""):
         logger.warning(
             "piece_connect_callback: code exchange failed for slug=%s", slug
         )
-        raise HTTPException(400, "Authorization code exchange failed")
+        raise HTTPException(400, "Authorization code exchange failed") from None
 
     # CRITICAL: merge provider so HttpBroker.revoke() can look up the revoke_url.
     token["provider"] = provider
@@ -1476,12 +1476,13 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
       - Returns {"status": "connected"}.
     If still pending: returns {"status": "pending"}.
     """
+    import json
+
     from .. import broker as B
     from .. import capabilities as C
     from .. import pieces as P
     from ..models import Connector
     from ..security import encrypt
-    import json
 
     broker = B.get_broker()
     slug = broker.slug_for_state(state)

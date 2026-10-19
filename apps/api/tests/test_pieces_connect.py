@@ -20,12 +20,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-# GMAIL_MANIFEST shape from the existing test module — avoid duplication
-from tests.test_pieces import GMAIL_MANIFEST
-
 import omilo_api.pieces as pieces
 from omilo_api.config import get_settings
 
+# GMAIL_MANIFEST shape from the existing test module — avoid duplication
+from tests.test_pieces import GMAIL_MANIFEST
 
 # ---------------------------------------------------------------------------
 # Helpers

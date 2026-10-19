@@ -6,8 +6,6 @@ Three required test cases from the brief:
   - test_decide_proposal_from_inbox_after_chat_card_is_idempotent
 """
 import httpx
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helper: call an MCP tool via the HTTP endpoint using a staff MCP token
@@ -81,9 +79,10 @@ def test_propose_in_chat_posts_proposal_card(owner, base_url):
     assert blk["summary"] == "We should run Facebook ads this week."
 
     # InboxItem.thread_id should be set
+    from sqlalchemy import select
+
     from omilo_api.db import session_scope
     from omilo_api.models import InboxItem
-    from sqlalchemy import select
 
     with session_scope() as db:
         item = db.scalar(select(InboxItem).where(InboxItem.kind == "proposal", InboxItem.ref_id == proposal_id))
@@ -95,10 +94,11 @@ def test_propose_without_thread_files_inbox_only(owner, base_url):
     """create_proposal with th=None (e.g. background task with no open chat) still creates
     the Proposal + InboxItem, posts no message, and thread_id is None. No exception raised.
     """
+    from sqlalchemy import func, select
+
     from omilo_api import services as S
     from omilo_api.db import session_scope
     from omilo_api.models import InboxItem, Staff, Thread
-    from sqlalchemy import func, select
 
     with session_scope() as db:
         st = db.get(Staff, "support")
@@ -181,8 +181,10 @@ def test_ask_founder_in_chat_posts_question_card(owner, base_url):
     thread_id = th_resp["id"]
 
     from sqlalchemy import select
+
     from omilo_api.db import session_scope
-    from omilo_api.models import Task as TaskModel, Thread as ThreadModel
+    from omilo_api.models import Task as TaskModel
+    from omilo_api.models import Thread as ThreadModel
     # Session-scoped DB: earlier tests may have left other awaiting "support" threads or a
     # running "support" task. current_run() resolves by staff-wide state (running task, then
     # most-recent awaiting thread), so make THIS thread the only thing it can pick.
@@ -225,9 +227,10 @@ def test_ask_founder_in_chat_posts_question_card(owner, base_url):
     assert blk["question"] == "Should I target the APAC market first?"
 
     # InboxItem.thread_id must be set to this thread
+    from sqlalchemy import select
+
     from omilo_api.db import session_scope
     from omilo_api.models import InboxItem
-    from sqlalchemy import select
 
     with session_scope() as db:
         item = db.scalar(select(InboxItem).where(InboxItem.id == question_id))
@@ -271,10 +274,11 @@ def test_answer_question_from_chat_closes_item(owner, base_url):
 
 def test_ask_founder_no_thread_inbox_only(owner, base_url):
     """ask_founder with no open task or chat: InboxItem created, thread_id is None, no error."""
+    from sqlalchemy import func, select
+
     from omilo_api import services as S
     from omilo_api.db import session_scope
-    from omilo_api.models import InboxItem, Staff, Message
-    from sqlalchemy import func, select
+    from omilo_api.models import Message, Staff
 
     with session_scope() as db:
         st = db.get(Staff, "support")

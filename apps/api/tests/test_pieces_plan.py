@@ -17,7 +17,6 @@ import pytest
 from omilo_api.capabilities import Resources
 from omilo_api.engines.claude_code import plan
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -194,6 +193,7 @@ def piece_app(monkeypatch):
     monkeypatch.setattr(CAP, "connector_secrets", lambda c: {"token": "oauth-access-token"})
 
     from fastapi.testclient import TestClient
+
     from omilo_api.main import app
     return TestClient(app), _FakeConnector()
 
@@ -258,7 +258,6 @@ class TestPieceMcpEndpoint:
         client, _ = piece_app
 
         from omilo_api import pieces as P
-        import omilo_api.mcp_server as MS
 
         captured = {}
 
@@ -285,8 +284,8 @@ class TestPieceMcpEndpoint:
         """When run_action returns needs_reconnect=True, the sentinel is stored in secrets_enc
         AND db.commit() is called — not conn.enabled = False."""
         import omilo_api.mcp_server as MS
-        from omilo_api import pieces as P
         from omilo_api import capabilities as CAP
+        from omilo_api import pieces as P
 
         def _fake_run_action_reconnect(manifest, action, args, token):
             return "Action 'send-email' failed with 401; reconnect required.", {"status": 401, "needs_reconnect": True}
@@ -318,8 +317,7 @@ class TestPieceMcpEndpoint:
         # and write secrets_enc correctly.  The piece_app fixture has already replaced
         # CAP.connector_secrets with a stub; we need the real decrypt implementation.
         # We get it by importing the underlying security primitives and rebuilding the logic.
-        import omilo_api.capabilities as CAP
-        from omilo_api.security import decrypt, encrypt
+        from omilo_api.security import decrypt
 
         def _real_connector_secrets(c):
             import json
@@ -367,7 +365,6 @@ class TestPieceMcpEndpoint:
         """tools/call for a slug that IS in the catalog but has no Connector row in the DB
         must return a JSON-RPC error — not crash."""
         import omilo_api.mcp_server as MS
-        from omilo_api import pieces as P
 
         # piece is in the catalog (get_piece already returns FAKE_MANIFEST for 'gmail' via fixture)
         # but the DB has no Connector row for it
@@ -426,6 +423,7 @@ class TestPieceMcpEndpointAuthHeader:
         and PASS after the fix (access_token is extracted before calling run_action).
         """
         import json as _json
+
         import omilo_api.mcp_server as MS
         from omilo_api import capabilities as CAP
         from omilo_api import pieces as P
@@ -480,8 +478,8 @@ class TestPieceMcpEndpointAuthHeader:
         monkeypatch.setattr(CAP, "connector_secrets", _real_connector_secrets)
 
         # --- Capture the token run_action actually receives via respx -----------
-        import respx
         import httpx
+        import respx
 
         captured_auth_headers = []
 
@@ -495,6 +493,7 @@ class TestPieceMcpEndpointAuthHeader:
             ).mock(side_effect=_capture_and_respond)
 
             from fastapi.testclient import TestClient
+
             from omilo_api.main import app
             client = TestClient(app)
 

@@ -7,11 +7,8 @@ Unit tests — no live Claude subprocess needed:
   4. answer_thread exits cleanly when awaiting_reply is flipped False between boundaries (Finding 2).
 """
 import asyncio
-import json
 
 import pytest
-from conftest import wait_for
-
 
 # ---------------------------------------------------------------------------
 # Test 1: HTTP route clears awaiting_reply and publishes cancel:chat signal
@@ -164,6 +161,7 @@ async def test_cancel_loop_survives_redis_error():
     iteration by observing the second subscribe call, then stop the worker cleanly.
     """
     import asyncio as _asyncio
+
     import omilo_api.bus as bus_mod
     import omilo_api.worker as worker_mod
     from omilo_api.worker import Worker
@@ -245,14 +243,15 @@ async def test_answer_thread_exits_on_awaiting_reply_false(monkeypatch):
     Uses the live SQLite test DB via conftest session_scope.
     """
     import omilo_api.services as S_mod
-    from omilo_api.worker import Worker
     from omilo_api.db import session_scope
-    from omilo_api.models import Thread, now
+    from omilo_api.models import Thread
+    from omilo_api.worker import Worker
 
     # Create a minimal thread directly in the DB
     with session_scope() as db:
         # Find the chief staff for this test thread
         from sqlalchemy import select
+
         from omilo_api.models import Staff
         chief = db.scalar(select(Staff).where(Staff.is_chief.is_(True)).limit(1))
         if chief is None:
@@ -296,7 +295,7 @@ async def test_answer_thread_exits_on_awaiting_reply_false(monkeypatch):
     # Run answer_thread with a tight timeout so the test can't hang
     try:
         await asyncio.wait_for(w.answer_thread(thid), timeout=5.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pytest.fail("answer_thread did not exit after awaiting_reply was flipped False")
 
     # Should have called _answer_as exactly once, then detected the flip and stopped

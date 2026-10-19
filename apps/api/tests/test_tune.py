@@ -23,9 +23,9 @@ async def test_propose_returns_k_candidates(owner, monkeypatch):
 
 
 async def test_probe_runs_once_per_job(owner, base_url):
+    import omilo_api.tune as T
     from omilo_api.db import session_scope
     from omilo_api.models import Staff
-    import omilo_api.tune as T
     with session_scope() as db:
         st = db.get(Staff, "sales")
         st.mcp_token_enc = __import__("omilo_api.security", fromlist=["encrypt"]).encrypt(owner.mcp_tokens["sales"])
@@ -34,10 +34,10 @@ async def test_probe_runs_once_per_job(owner, base_url):
 
 
 async def test_probe_isolates_a_failing_run(owner, monkeypatch):
-    from omilo_api.db import session_scope
-    from omilo_api.models import Staff
-    from omilo_api.engines import EngineResult
     import omilo_api.tune as T
+    from omilo_api.db import session_scope
+    from omilo_api.engines import EngineResult
+    from omilo_api.models import Staff
 
     class FakeEng:
         async def chat(self, ctx):
@@ -55,9 +55,9 @@ async def test_probe_isolates_a_failing_run(owner, monkeypatch):
 
 
 async def test_compose_picks_judge_winner_clamps_and_skips_errored(owner, monkeypatch):
+    import omilo_api.tune as T
     from omilo_api.db import session_scope
     from omilo_api.models import Staff
-    import omilo_api.tune as T
     probes = [T.ProbeResult(job="cur", text="weak", tokens=1, cost_usd=0, error=""),
               T.ProbeResult(job="A", text="strong", tokens=1, cost_usd=0, error=""),
               T.ProbeResult(job="B", text="", tokens=0, cost_usd=0, error="timed out")]
@@ -80,9 +80,9 @@ async def test_compose_picks_judge_winner_clamps_and_skips_errored(owner, monkey
 
 
 async def test_refine_noop_when_off(owner):
-    from omilo_api.db import session_scope
-    from omilo_api import services as S
     import omilo_api.tune as T
+    from omilo_api import services as S
+    from omilo_api.db import session_scope
     with session_scope() as db:
         S.set_setting(db, "self_tuning", False)
     with session_scope() as db:
@@ -90,11 +90,13 @@ async def test_refine_noop_when_off(owner):
 
 
 async def test_refine_applies_winner_when_on(owner, base_url, monkeypatch):
-    from omilo_api.db import session_scope
-    from omilo_api.models import Staff, Improvement
-    from omilo_api import services as S, security
-    import omilo_api.tune as T
     from sqlalchemy import select
+
+    import omilo_api.tune as T
+    from omilo_api import security
+    from omilo_api import services as S
+    from omilo_api.db import session_scope
+    from omilo_api.models import Improvement, Staff
     async def fake_propose(db, staff, k=2): return ["NEW JOB TEXT"]
     async def fake_compose(db, staff, brief, probes): return len(probes) - 1  # the candidate wins
     monkeypatch.setattr(T, "propose", fake_propose)
@@ -114,14 +116,17 @@ async def test_refine_applies_winner_when_on(owner, base_url, monkeypatch):
 
 
 def test_tune_helper_tool_chief_only(owner, base_url, monkeypatch):
-    import httpx, omilo_api.tune as T
+    import httpx
+    from sqlalchemy import select
+
+    import omilo_api.tune as T
+    from omilo_api import services as S
     from omilo_api.db import session_scope
     from omilo_api.models import Improvement
-    from omilo_api import services as S
-    from sqlalchemy import select
     async def fake_propose(db, staff, k=2): return ["NEW JOB"]
     async def fake_compose(db, staff, brief, probes): return len(probes) - 1
-    monkeypatch.setattr(T, "propose", fake_propose); monkeypatch.setattr(T, "compose", fake_compose)
+    monkeypatch.setattr(T, "propose", fake_propose)
+    monkeypatch.setattr(T, "compose", fake_compose)
     with session_scope() as db:
         # Clear ambient Improvement rows so the chief call's refine is not blocked
         # by a pre-consumed improve weekly cap from earlier tests in the full suite.

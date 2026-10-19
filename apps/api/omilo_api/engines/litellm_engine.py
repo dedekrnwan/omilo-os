@@ -14,9 +14,9 @@ import os
 import litellm
 
 from . import ChatContext, Engine, EngineResult, TaskContext
-from .fake import MCPClient
 from . import providers as P
 from .claude import CHAT_TOOLS, MAX_TURNS_CHAT, MAX_TURNS_TASK
+from .fake import MCPClient
 from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 # Standard environment variable names per provider (fallback when no cfg key and no DB key).

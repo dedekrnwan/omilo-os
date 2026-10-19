@@ -3,8 +3,6 @@ and apply_grant (Task 2): folder/connector/skill grants at once vs always scope.
 import json
 
 import httpx
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helper: call an MCP tool via the HTTP endpoint using a staff MCP token
@@ -94,8 +92,9 @@ def test_request_access_rejects_bad_kind(owner, base_url):
 
 def _make_access_item(db, kind: str, target: dict, reason: str = "test grant"):
     """Build an access_request InboxItem directly in the DB (bypasses MCP)."""
-    from omilo_api.models import InboxItem, Staff
     from sqlalchemy import select
+
+    from omilo_api.models import Staff
 
     st = db.scalar(select(Staff).where(Staff.id == "support"))
     from omilo_api import services
@@ -108,10 +107,11 @@ def test_grant_folder_always_persists(owner, base_url, tmp_path):
     folder_path = tmp_path / "granted-folder"
     folder_path.mkdir()
 
+    from sqlalchemy import select
+
     from omilo_api import services
     from omilo_api.db import session_scope
     from omilo_api.models import Folder
-    from sqlalchemy import select
 
     with session_scope() as db:
         item = _make_access_item(db, "folder", {"path": str(folder_path), "access": "write", "commands": True})
@@ -168,9 +168,9 @@ def test_grant_connector_once_is_thread_scoped(owner, base_url):
 def test_folder_commands_grant_keeps_hard_denials(owner, base_url, tmp_path):
     """Even after granting a folder with commands=True, the claude_code hard-denial list
     still denies rm and git push — the grant does NOT remove those restrictions."""
-    from omilo_api.engines.claude_code import SHELL_DENY
     from omilo_api import services
     from omilo_api.db import session_scope
+    from omilo_api.engines.claude_code import SHELL_DENY
 
     folder_path = tmp_path / "commands-test"
     folder_path.mkdir()
@@ -233,9 +233,10 @@ def test_decide_access_always_grants_and_unblocks(owner, base_url, tmp_path):
     assert request_id not in open_ids, f"access_request item {request_id} still open after decide"
 
     # A follow-up Task for the helper was created
+    from sqlalchemy import select
+
     from omilo_api.db import session_scope
     from omilo_api.models import Task as TaskModel
-    from sqlalchemy import select
 
     with session_scope() as db:
         follow_ups = list(db.scalars(

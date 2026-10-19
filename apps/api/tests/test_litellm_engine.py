@@ -2,11 +2,8 @@
 import asyncio
 import json
 import types
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from omilo_api.engines import EngineResult
 from omilo_api.engines.litellm_engine import LiteLLMEngine, mcp_tools_to_openai, resolve_key
 
 # ---------------------------------------------------------------------------
@@ -330,6 +327,7 @@ def test_get_engine_routes_litellm():
 def test_run_task_defaults_balanced_tier():
     """run_task with no tier in engine_config -> 'balanced' tier -> groq/llama-3.3-70b-versatile."""
     import asyncio
+
     from omilo_api.engines import TaskContext
     from omilo_api.engines.litellm_engine import LiteLLMEngine
 
@@ -369,7 +367,7 @@ def test_run_task_defaults_balanced_tier():
     with patch("litellm.acompletion", side_effect=fake_acompletion):
         with patch("litellm.completion_cost", return_value=0.0):
             with patch("omilo_api.engines.litellm_engine.MCPClient", return_value=FakeMCPCtx()):
-                r = asyncio.run(engine.run_task(ctx))
+                asyncio.run(engine.run_task(ctx))
 
     # groq balanced tier -> llama-3.3-70b-versatile; with groq prefix -> "groq/llama-3.3-70b-versatile"
     assert "llama-3.3-70b-versatile" in captured.get("model", ""), \
@@ -379,6 +377,7 @@ def test_run_task_defaults_balanced_tier():
 def test_chat_defaults_fast_tier():
     """chat with no tier in engine_config -> 'fast' tier -> groq/llama-3.1-8b-instant."""
     import asyncio
+
     from omilo_api.engines import ChatContext
     from omilo_api.engines.litellm_engine import LiteLLMEngine
 
@@ -415,7 +414,7 @@ def test_chat_defaults_fast_tier():
     with patch("litellm.acompletion", side_effect=fake_acompletion):
         with patch("litellm.completion_cost", return_value=0.0):
             with patch("omilo_api.engines.litellm_engine.MCPClient", return_value=FakeMCPCtx()):
-                r = asyncio.run(engine.chat(ctx))
+                asyncio.run(engine.chat(ctx))
 
     # groq fast tier -> llama-3.1-8b-instant; with prefix -> "groq/llama-3.1-8b-instant"
     assert "llama-3.1-8b-instant" in captured.get("model", ""), \
@@ -425,6 +424,7 @@ def test_chat_defaults_fast_tier():
 def test_run_task_requires_mcp_token():
     """run_task with mcp_token=None returns EngineResult(error=...) without calling _loop."""
     import asyncio
+
     from omilo_api.engines import TaskContext
     from omilo_api.engines.litellm_engine import LiteLLMEngine
 

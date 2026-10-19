@@ -26,7 +26,6 @@ Hermeticity notes
 import uuid
 from contextlib import asynccontextmanager
 
-import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from omilo_api.db import session_scope
@@ -35,7 +34,6 @@ from omilo_api.graph import engine as graph_engine_mod
 from omilo_api.graph.engine import GraphEngine, build_node_prompt
 from omilo_api.models import Staff
 from omilo_api.worker import Worker
-
 
 # ---------------------------------------------------------------------------
 # Hermetic checkpointer: replaces the Postgres-backed open_checkpointer with a

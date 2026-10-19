@@ -22,7 +22,6 @@ from omilo_api.graph.risk import (
     classify_risk,
 )
 
-
 # ===========================================================================
 # 1. action_type AUTHORITATIVE — the new completeness guarantee.
 #    Every HIGH-type returns "high" EVEN with worker_label="low" AND a benign

@@ -9,12 +9,9 @@ from __future__ import annotations
 
 import time as _time
 
-import pytest
-
 import omilo_api.mcp_server as M
 from omilo_api.capabilities import (
     connector_secrets,
-    set_connector_needs_reconnect,
     set_connector_token,
 )
 from omilo_api.models import Connector

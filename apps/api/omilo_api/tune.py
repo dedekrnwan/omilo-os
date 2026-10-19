@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-log = logging.getLogger("omilo.tune")
-
 from .config import get_settings
 from .engines import ChatContext, get_engine
 from .models import Improvement, Staff, Task, now
 from .security import decrypt
+
+log = logging.getLogger("omilo.tune")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -201,8 +201,7 @@ async def refine(db: Session, staff_id: str, brief: str | None = None, k: int = 
     Returns the created Improvement, or None when: feature off / weekly budget spent /
     no brief available / judge keeps the current job (win == 0).
     """
-    from . import loops
-    from . import services
+    from . import loops, services
 
     # 1. Feature gate
     if not services.is_self_tuning(db):

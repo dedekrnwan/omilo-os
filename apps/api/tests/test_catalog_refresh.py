@@ -1,10 +1,7 @@
 """POST /api/catalog/refresh rebuilds the file-based catalog index."""
-import os
 from pathlib import Path
 
 import yaml
-
-from omilo_api import pieces as P
 
 
 def _write_piece(src: Path, slug: str, manifest: dict) -> None:

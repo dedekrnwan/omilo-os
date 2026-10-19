@@ -32,7 +32,6 @@ from omilo_api.engines import Engine, EngineResult, TaskContext, get_engine
 from omilo_api.graph import engine as graph_engine_mod
 from omilo_api.graph.engine import MAX_GRAPH_STEPS, GraphEngine
 
-
 # ---------------------------------------------------------------------------
 # In-memory checkpointer: drops-in for open_checkpointer so graph runs in these
 # tests never touch Postgres and never leave stale state across test runs.

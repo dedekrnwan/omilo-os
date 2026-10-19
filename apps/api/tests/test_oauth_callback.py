@@ -18,11 +18,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.test_pieces import GMAIL_MANIFEST
-
 import omilo_api.pieces as pieces
 from omilo_api.config import get_settings
-
+from tests.test_pieces import GMAIL_MANIFEST
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,8 +84,6 @@ class TestOAuthCallback:
           - poll returns {"status": "connected"}
           - stored token carries "provider": "google"
         """
-        import json
-        from omilo_api.security import decrypt
 
         fake_token = {
             "access_token": "AT",
@@ -130,7 +126,6 @@ class TestOAuthCallback:
 
     def test_callback_token_carries_provider(self, owner, monkeypatch):
         """The stashed token must include provider='google' so revoke() works later."""
-        import json
         from omilo_api import broker as B
 
         fake_token = {

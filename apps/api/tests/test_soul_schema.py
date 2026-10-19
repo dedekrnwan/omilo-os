@@ -4,7 +4,6 @@ from sqlalchemy import inspect
 from omilo_api.db import engine, session_scope
 from omilo_api.models import Staff, StaffRelation
 
-
 # ---------------------------------------------------------------------------
 # test_new_staff_has_soul_defaults
 # ---------------------------------------------------------------------------

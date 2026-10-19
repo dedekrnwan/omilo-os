@@ -634,7 +634,7 @@ def _fresh_token(conn, manifest: dict, db) -> str:
     Security: tokens are never logged.
     """
     from . import oauth as _oauth
-    from .capabilities import connector_secrets, set_connector_token, set_connector_needs_reconnect
+    from .capabilities import connector_secrets, set_connector_needs_reconnect, set_connector_token
 
     secrets = connector_secrets(conn)
     tok = secrets.get("token") or {}
@@ -675,7 +675,7 @@ def _force_refresh(conn, manifest: dict, db) -> str | None:
     Used by the 401-retry path in tools/call.
     """
     from . import oauth as _oauth
-    from .capabilities import connector_secrets, set_connector_token, set_connector_needs_reconnect
+    from .capabilities import connector_secrets, set_connector_needs_reconnect, set_connector_token
 
     secrets = connector_secrets(conn)
     tok = secrets.get("token") or {}

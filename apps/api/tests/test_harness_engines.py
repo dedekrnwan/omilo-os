@@ -8,15 +8,13 @@ Covers:
 """
 import os
 
-import pytest
-
 VENDOR_IDS = ("anthropic", "openai", "gemini", "xai", "deepseek", "mistral", "bedrock", "groq")
 
 
 def _clear_vendor_key(provider: str) -> None:
     """Remove a stored AI key from the DB so it does not pollute subsequent tests."""
-    from omilo_api.db import session_scope
     from omilo_api import services as S
+    from omilo_api.db import session_scope
 
     with session_scope() as db:
         keys = dict(S.get_setting(db, "ai_keys", None) or {})

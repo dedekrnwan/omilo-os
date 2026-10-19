@@ -3,7 +3,6 @@ import pytest
 
 from omilo_api.pieces import validate_manifest
 
-
 # Module-level fixture: a valid Gmail connector manifest
 GMAIL_MANIFEST = {
     "id": "gmail",

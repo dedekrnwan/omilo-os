@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from omilo_api.pieces import action_tools, provider_hosts, run_action, _check_host
+from omilo_api.pieces import action_tools, provider_hosts, run_action
 
 # ---------------------------------------------------------------------------
 # Test fixture manifest — Gmail connector with underscored action name so
