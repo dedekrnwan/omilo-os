@@ -158,10 +158,10 @@ Everything a company owns lives under the data directory (`/data` in the contain
 The `omilo` command drives Omilo from your terminal — start it, sign in, watch the inbox, run and approve work. Install it any of these ways:
 
 ```bash
-# npm / bun — zero install, always the latest
-npx omilo up            # start Omilo in Docker, then:  npx omilo login
-bunx omilo up
-npm install -g omilo     # then:  omilo up  ·  omilo login  ·  omilo status ...
+# npm / bun — zero install, always the latest (scoped package; the command is still `omilo`)
+npx @dedekrnwan/omilo up        # start Omilo in Docker, then:  npx @dedekrnwan/omilo login
+bunx @dedekrnwan/omilo up
+npm install -g @dedekrnwan/omilo # then the command is just:  omilo up  ·  omilo login  ·  omilo status ...
 
 # Homebrew (macOS / Linux)
 brew install dedekrnwan/omilo/omilo
@@ -170,7 +170,7 @@ brew install dedekrnwan/omilo/omilo
 curl -fsSL https://raw.githubusercontent.com/dedekrnwan/omilo-os/main/packaging/install.sh | sh
 ```
 
-Prebuilt binaries for every platform are attached to each [release](https://github.com/dedekrnwan/omilo-os/releases); on Windows use `npx omilo` or download the `.exe`.
+Prebuilt binaries for every platform are attached to each [release](https://github.com/dedekrnwan/omilo-os/releases); on Windows use `npx @dedekrnwan/omilo` or download the `.exe`.
 
 The CLI needs an Omilo to talk to. `omilo up` starts the full stack in Docker (the image bundles everything — no Python needed). `omilo start` runs the light tier directly on this machine, but that one also needs the Python app installed (see **Option B** above). To drive an Omilo that's already running somewhere, just `omilo login`.
 

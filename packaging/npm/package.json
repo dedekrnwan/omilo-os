@@ -1,5 +1,5 @@
 {
-  "name": "omilo",
+  "name": "@dedekrnwan/omilo",
   "version": "0.0.0",
   "description": "Omilo CLI — install, run and talk to your Omilo gateway from the terminal.",
   "bin": { "omilo": "bin/omilo.js" },
