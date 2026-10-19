@@ -1869,6 +1869,7 @@ main.page:has(> .set) { max-width: 1120px; }
 .set-li > b { font-weight: 500; white-space: nowrap; }
 .set-li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-sub { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; } .set-sub b { font-weight: 600; } .set-sub .btn, .set-sub .small:last-child { margin-left: auto; }
+.set-sub > i { font-size: 16px; color: var(--muted); flex-shrink: 0; }
 .set-pw { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .set-radio { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .set-opt { display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); }

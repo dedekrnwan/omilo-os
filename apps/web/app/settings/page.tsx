@@ -262,7 +262,7 @@ function AiEngine() {
       )}
       {vendors.length > 0 && !edit && (
         <>
-          <div className="set-sub" style={{ marginTop: 14 }}><b>Or another provider&apos;s API key</b><span className="small">OpenAI, Gemini, and others (direct API, Omilo&apos;s tools only)</span></div>
+          <div className="set-sub" style={{ marginTop: 14 }}><i className="ri-apps-2-line" /><b>Or another provider&apos;s API key</b><span className="small">OpenAI, Gemini, and others (direct API, Omilo&apos;s tools only)</span></div>
           <div className="set-vendor-grid">
             {vendors.map((v) => {
               const active = ai?.provider === v.id;
