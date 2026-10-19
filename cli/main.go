@@ -240,10 +240,12 @@ func openBrowser(url string) {
 // that launches omilo-api with the light-tier environment; it has no side
 // effects and never calls compose.
 func startCommand(apiBin, dir, port string) *exec.Cmd {
-	dbURL := "sqlite:///" + filepath.ToSlash(filepath.Join(dir, "omilo.db"))
+	// Deliberately do NOT pin OMILO_DATABASE_URL here. The app resolves the DB itself: Postgres
+	// from <data_dir>/.env if this install was migrated (`omilo migrate`), else the SQLite default
+	// at <data_dir>/omilo.db. OS env beats .env in pydantic, so pinning it here would silently
+	// revert a migrated install back to SQLite on every `omilo start`.
 	env := append(os.Environ(),
 		"OMILO_DATA_DIR="+dir,
-		"OMILO_DATABASE_URL="+dbURL,
 		"OMILO_EMBEDDED_WORKER=true",
 		"OMILO_PORT="+port,
 		"OMILO_PUBLIC_URL=http://localhost:"+port,

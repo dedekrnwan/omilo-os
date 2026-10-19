@@ -34,7 +34,8 @@ def _pg_reachable() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(not _pg_reachable(), reason="Postgres (omilo_test) not reachable")
+# Applied per-test to the PG-gated end-to-end tests only; the *-INDEPENDENT tests below run always.
+_requires_pg = pytest.mark.skipif(not _pg_reachable(), reason="Postgres (omilo_test) not reachable")
 
 
 def _drop_schemas() -> None:
@@ -81,6 +82,7 @@ def _seed_light(tmp_path: Path) -> list[str]:
     return [C.MAIN, second]
 
 
+@_requires_pg
 def test_migrate_copies_all_companies(light_env, monkeypatch):
     ids = _seed_light(light_env)
     env_file = light_env / ".env"
@@ -109,6 +111,95 @@ def test_migrate_copies_all_companies(light_env, monkeypatch):
             assert staff is not None and staff.name == f"Agent {cid}"
 
 
+# ---------------------------------------------------------------------------
+# Postgres-INDEPENDENT tests of the durable-flip safety invariant.
+#
+# These run with NO skipif: they stub out every Postgres-touching collaborator
+# (import_company, kb.reindex, db.session_scope/reset_engine, bus.reset) so that
+# migrate.run exercises its orchestration — company loop + atomic .env flip — on
+# a pure tmp_path, proving "copy all, then flip; on failure never flip".
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stub_env(tmp_path, monkeypatch):
+    """Isolate migrate.run from Postgres: tmp data dir, stubbed PG collaborators."""
+    monkeypatch.setenv("OMILO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OMILO_TIER", "light")
+    monkeypatch.setenv("OMILO_DATABASE_URL", f"sqlite:///{tmp_path}/omilo.db")
+    monkeypatch.delenv("OMILO_REDIS_URL", raising=False)
+    get_settings.cache_clear()
+
+    # Two companies, discovered without hitting any DB.
+    monkeypatch.setattr(C, "ids", lambda include_archived=False: [C.MAIN, "co_beta"])
+    # session_scope must be a context manager that yields something harmless.
+    import contextlib
+
+    @contextlib.contextmanager
+    def _fake_scope(cid=None):
+        yield object()
+
+    monkeypatch.setattr(db, "session_scope", _fake_scope)
+    monkeypatch.setattr(db, "reset_engine", lambda: None)
+    monkeypatch.setattr(migrate.bus, "reset", lambda: None)
+    monkeypatch.setattr(migrate.kb, "reindex", lambda session: 0)
+    yield tmp_path
+    get_settings.cache_clear()
+
+
+def test_flip_writes_env_atomically_and_merges(stub_env, monkeypatch):
+    """A successful run writes <data_dir>/.env with the postgres URL, preserving an
+    unrelated pre-existing key (atomic merge, not a clobber)."""
+    data_dir = stub_env
+    env_file = data_dir / ".env"
+    env_file.write_text("OMILO_PUBLIC_URL=http://keep.me\n")
+
+    monkeypatch.setattr(import_sqlite, "import_company", lambda cid, force=False: {"settings": 1})
+
+    out = migrate.run(PG_URL)
+
+    assert out["flipped"] is True
+    text = env_file.read_text()
+    assert "OMILO_DATABASE_URL" in text
+    assert PG_URL in text
+    # The unrelated key must survive the merge.
+    assert "OMILO_PUBLIC_URL=http://keep.me" in text
+
+    # End-to-end flip proof (no live PG): a fresh Settings with only OMILO_DATA_DIR set
+    # (no OMILO_DATABASE_URL / OMILO_TIER in os.environ) reads <data_dir>/.env and resolves
+    # to the postgres URL -> tier == "full".
+    monkeypatch.delenv("OMILO_DATABASE_URL", raising=False)
+    monkeypatch.delenv("OMILO_TIER", raising=False)
+    monkeypatch.setenv("OMILO_DATA_DIR", str(data_dir))
+    from omilo_api.config import Settings
+
+    fresh = Settings()
+    assert fresh.resolved_database_url().startswith("postgresql+psycopg://")
+    assert fresh.tier == "full"
+
+
+def test_failure_leaves_env_without_postgres_url(stub_env, monkeypatch):
+    """A failure on the 2nd company raises and leaves .env WITHOUT the postgres URL."""
+    data_dir = stub_env
+    env_file = data_dir / ".env"
+
+    calls = {"n": 0}
+
+    def _raise_on_second(cid, force=False):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RuntimeError("boom on the second company")
+        return {"settings": 1}
+
+    monkeypatch.setattr(import_sqlite, "import_company", _raise_on_second)
+
+    with pytest.raises(RuntimeError):
+        migrate.run(PG_URL)
+
+    assert not env_file.is_file() or "OMILO_DATABASE_URL" not in env_file.read_text()
+
+
+@_requires_pg
 def test_migrate_aborts_before_flip_on_failure(light_env, monkeypatch):
     ids = _seed_light(light_env)
     env_file = light_env / ".env"

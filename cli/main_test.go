@@ -27,11 +27,10 @@ func TestStartBuildsLightEnv(t *testing.T) {
 
 	// Assert required env vars
 	checks := map[string]string{
-		"OMILO_DATABASE_URL":      "sqlite:////tmp/omilodata/omilo.db",
-		"OMILO_EMBEDDED_WORKER":   "true",
-		"OMILO_PORT":              "7700",
-		"OMILO_DATA_DIR":          "/tmp/omilodata",
-		"OMILO_PUBLIC_URL":        "http://localhost:7700",
+		"OMILO_EMBEDDED_WORKER": "true",
+		"OMILO_PORT":            "7700",
+		"OMILO_DATA_DIR":        "/tmp/omilodata",
+		"OMILO_PUBLIC_URL":      "http://localhost:7700",
 	}
 	for k, want := range checks {
 		if got, ok := envMap[k]; !ok {
@@ -39,6 +38,12 @@ func TestStartBuildsLightEnv(t *testing.T) {
 		} else if got != want {
 			t.Errorf("env %s = %q; want %q", k, got, want)
 		}
+	}
+
+	// The app must resolve the DB itself: `start` must NOT pin OMILO_DATABASE_URL, otherwise a
+	// migrated install would silently revert to SQLite (OS env beats .env in pydantic).
+	if _, ok := envMap["OMILO_DATABASE_URL"]; ok {
+		t.Errorf("env must NOT contain OMILO_DATABASE_URL; the app resolves it from <data_dir>/.env or the SQLite default")
 	}
 
 	// Structural: no env entry may mention docker or compose.
