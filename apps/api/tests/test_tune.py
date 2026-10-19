@@ -31,3 +31,24 @@ async def test_probe_runs_once_per_job(owner, base_url):
         st.mcp_token_enc = __import__("omilo_api.security", fromlist=["encrypt"]).encrypt(owner.mcp_tokens["sales"])
         res = await T.probe(db, st, "Find 3 catering leads", ["JOB ONE", "JOB TWO"])
     assert len(res) == 2 and all(r.text and not r.error for r in res)
+
+
+async def test_probe_isolates_a_failing_run(owner, monkeypatch):
+    from omilo_api.db import session_scope
+    from omilo_api.models import Staff
+    from omilo_api.engines import EngineResult
+    import omilo_api.tune as T
+
+    class FakeEng:
+        async def chat(self, ctx):
+            if ctx.job == "BAD":
+                raise RuntimeError("boom")
+            return EngineResult(text="ok", tokens=1, cost_usd=0.0)
+
+    monkeypatch.setattr(T, "get_engine", lambda cfg: FakeEng())
+    with session_scope() as db:
+        st = db.get(Staff, "sales")
+        res = await T.probe(db, st, "do x", ["GOOD", "BAD"])
+    assert len(res) == 2
+    assert res[0].text == "ok" and not res[0].error
+    assert res[1].error and not res[1].text  # the failing run is isolated, batch not aborted
