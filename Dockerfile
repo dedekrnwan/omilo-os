@@ -1,5 +1,7 @@
 # Omilo: one image with the gateway API, the worker and the web app.
-FROM node:22-alpine AS web
+# Debian-based (glibc) node so the node binary copied into the python:3.12-slim final
+# stage below actually runs — an alpine (musl) node would fail there with exit 127.
+FROM node:22-bookworm-slim AS web
 WORKDIR /web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
