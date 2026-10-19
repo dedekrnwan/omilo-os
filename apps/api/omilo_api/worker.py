@@ -379,14 +379,22 @@ class Worker:
             prop = None
             if t.proposal_id and (p := db.get(Proposal, t.proposal_id)):
                 prop = {"id": p.id, "title": p.title, "type": p.type, "approved_text": S.current_body(p)}
+            # Per-staff opt-in to the graph brain. A ``single_engine`` staff (the default)
+            # keeps its engine config exactly as today — ``get_engine(st.engine)`` runs the
+            # ordinary path and the graph is NEVER constructed. A ``graph`` staff's effective
+            # engine becomes the GraphEngine wrapping its REAL engine under ``exec_engine``;
+            # ``get_engine`` stays the single dispatch, and the graph's worker node delegates
+            # to the real engine. The staff's SOUL (voice/autonomy) rides along so the graph's
+            # node prompts reflect it without changing the TaskContext signature.
+            engine_cfg = _effective_engine(st)
             ctx = TaskContext(
                 staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, task_id=t.id, origin=t.origin,
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
-                proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
+                proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=engine_cfg,
                 emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop, staff=st), memory=_memory(db, st, t),
             )
-            return ctx, dict(st.engine or {}), int(st.max_task_minutes or 30)
+            return ctx, dict(engine_cfg), int(st.max_task_minutes or 30)
 
     async def run_task(self, task_id: str):
         ctx, engine_cfg, minutes = self._task_context(task_id)
@@ -593,6 +601,27 @@ class Worker:
             text = res.text if not res.error else f"Sorry, I couldn't answer: {res.error}"
             S.post_message(db, th, "agent" if not res.error else "system", staff_id, text)
         return "" if res.error else res.text
+
+
+def _effective_engine(st: Staff) -> dict:
+    """The engine config the worker actually runs for this staff.
+
+    ``single_engine`` (default): the staff's own engine config, UNCHANGED — the
+    old dispatch path, byte-for-byte. No graph code is reached.
+
+    ``graph``: the GraphEngine wrapper ``{"type":"graph","exec_engine": dict(st.engine or {})}``.
+    ``exec_engine`` is the staff's real engine (what the graph's worker node delegates to),
+    and the staff's SOUL (``voice``/``autonomy``) rides on the wrapper so the graph's node
+    prompts reflect the staff without widening the TaskContext signature.
+    """
+    if st.brain == "graph":
+        return {
+            "type": "graph",
+            "exec_engine": dict(st.engine or {}),
+            "voice": st.voice or "",
+            "autonomy": st.autonomy or "standard",
+        }
+    return st.engine or {}
 
 
 def _memory(db, st, t) -> str:

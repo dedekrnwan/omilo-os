@@ -98,9 +98,16 @@ _HIGH_RISK = {"action_type": "payment.charge", "summary": "charge the client $20
 
 def _make_graph_staff(pending_action: dict | None = _HIGH_RISK) -> str:
     """A throwaway, non-chief worker on the graph brain, whose engine config carries the
-    pending_action the worker node will surface to the gate (the Task 6 test seam)."""
+    pending_action the worker node will surface to the gate (the Task 6 test seam).
+
+    Uses the OPT-IN model: ``brain="graph"`` + ``engine={"type":"stub",...}``.  The real
+    worker's ``_effective_engine`` wraps it as
+    ``{"type":"graph","exec_engine":{"type":"stub","pending_action":...},...}``, and
+    Fix 1 in ``graph/engine.py`` falls back to ``exec_engine.pending_action`` so the
+    gate sees the action through the REAL worker path (not a hand-built ctx).
+    """
     sid = "resume-worker-" + uuid.uuid4().hex[:8]
-    engine = {"type": "graph", "exec_engine": {"type": "stub"}}
+    engine: dict = {"type": "stub"}
     if pending_action is not None:
         engine["pending_action"] = pending_action
     with session_scope() as db:

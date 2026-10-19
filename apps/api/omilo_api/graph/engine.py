@@ -52,6 +52,51 @@ _DEFAULT_EXEC_CONFIG: dict = {"type": "fake"}
 _INTERRUPT_KEY = "__interrupt__"
 
 
+# ---------------------------------------------------------------------------
+# Soul → prompt
+# ---------------------------------------------------------------------------
+#
+# A graph staff's SOUL (voice/autonomy) shapes the prompt the nodes assemble on top
+# of the plain job/brief. Phase 1 keeps this light but real:
+#   - ``voice``    — the staff's personality/voice, layered verbatim onto the brief so
+#                    the underlying engine speaks in it.
+#   - ``autonomy`` — a single behaviour line + the gate-consultation posture:
+#       * ``guided``   → propose rather than act; consult the gate earlier/more.
+#       * ``trusted``  → act within permissions; consult the gate only when needed.
+#       * ``standard`` → the middle ground (the default).
+# This changes prompt TEXT only — never the graph topology (Task 3's shape is fixed).
+
+# How each autonomy level steers the worker. Kept in one map so the prompt line and the
+# (future) parameterised posture stay in lock-step.
+_AUTONOMY_GUIDANCE = {
+    "guided": "Propose rather than act: draft your plan and consult the approval gate "
+              "before taking any outward step.",
+    "trusted": "Act decisively within your permissions; only consult the approval gate "
+               "for actions that truly require the owner.",
+    "standard": "Use your judgement: act on routine work and consult the approval gate "
+                "for anything consequential.",
+}
+
+
+def build_node_prompt(brief: str, voice: str = "", autonomy: str = "standard", role: str = "") -> str:
+    """Assemble the prompt a graph node hands to the underlying engine.
+
+    Layers the staff's personality (``voice``) and autonomy posture on top of the plain
+    job/role + brief. Exposed at module scope so the worker node and tests build the
+    exact same string. Empty ``voice`` simply omits the personality line; an unknown
+    ``autonomy`` falls back to ``standard``.
+    """
+    lines: list[str] = []
+    if role:
+        lines.append(f"You are the team's {role}.")
+    if voice.strip():
+        lines.append(f"Voice: {voice.strip()}")
+    lines.append(_AUTONOMY_GUIDANCE.get(autonomy, _AUTONOMY_GUIDANCE["standard"]))
+    lines.append("")
+    lines.append(f"Task: {brief}")
+    return "\n".join(lines)
+
+
 def _interrupt_title(interrupts) -> str:
     """Pull the human-readable title out of the gate's interrupt payload.
 
@@ -290,7 +335,12 @@ class GraphEngine(Engine):
         # The pending_action the worker wants the gate to rule on. In Phase 1 the test
         # harness (and Task 6's real wiring) supplies it via engine_config; a run with
         # no pending_action is a pure internal task and the gate is a no-op.
-        injected_pending = (ctx.engine_config or {}).get("pending_action")
+        # With the opt-in wrapper (Task 6) the real worker nests the staff's engine under
+        # ``exec_engine``, so a ``pending_action`` that lives in the staff's own engine
+        # config is now at ``engine_config["exec_engine"]["pending_action"]``.  Fall back
+        # to the nested location so the gate sees it regardless of which path created ctx.
+        cfg = ctx.engine_config or {}
+        injected_pending = cfg.get("pending_action") or (cfg.get("exec_engine") or {}).get("pending_action")
 
         def supervisor(state: GraphState) -> dict:
             """One bounded planning step. Phase 1 keeps this structural (no
@@ -304,10 +354,18 @@ class GraphEngine(Engine):
             messages.append({"role": "supervisor", "step": step})
             return {"step": step, "plan": plan, "messages": messages}
 
+        # The staff's soul rides on the graph wrapper config (Task 6). It shapes the
+        # prompt the worker node feeds the underlying engine — voice + autonomy on top
+        # of the plain role/brief — without touching the graph's topology.
+        soul = ctx.engine_config or {}
+        voice = soul.get("voice", "") or ""
+        autonomy = soul.get("autonomy", "standard") or "standard"
+
         async def worker(state: GraphState) -> dict:
             """Delegate the actual work to the underlying engine, and surface the
             action (if any) the worker wants to take for the gate to rule on."""
-            derived = self._derive_ctx(ctx, underlying_cfg)
+            prompt = build_node_prompt(ctx.brief, voice=voice, autonomy=autonomy, role=ctx.job)
+            derived = self._derive_ctx(ctx, underlying_cfg, brief=prompt)
             res = await get_engine(underlying_cfg).run_task(derived)
             agg["cost_usd"] += res.cost_usd
             agg["tokens"] += res.tokens
@@ -356,7 +414,14 @@ class GraphEngine(Engine):
         return builder.compile(checkpointer=checkpointer)
 
     @staticmethod
-    def _derive_ctx(ctx: TaskContext, underlying_cfg: dict) -> TaskContext:
+    def _derive_ctx(ctx: TaskContext, underlying_cfg: dict, brief: str | None = None) -> TaskContext:
         """A copy of the incoming TaskContext whose engine_config is the UNDERLYING
-        engine's config, so the delegated engine sees a plain single-engine run."""
-        return dataclasses.replace(ctx, engine_config=underlying_cfg)
+        engine's config, so the delegated engine sees a plain single-engine run.
+
+        ``brief`` overrides the task brief with the soul-shaped node prompt (Task 6) so
+        the underlying engine works in the staff's voice; left ``None`` it keeps the
+        original brief (used by the resume path, which re-enters via the checkpoint)."""
+        changes: dict = {"engine_config": underlying_cfg}
+        if brief is not None:
+            changes["brief"] = brief
+        return dataclasses.replace(ctx, **changes)
