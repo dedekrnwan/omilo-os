@@ -11,6 +11,7 @@ import ContextMenuHost from "./ContextMenu";
 import { copy, menu as ctxMenu } from "@/lib/menu";
 import CompanySwitcher from "./CompanySwitcher";
 import { StepPage } from "./StepCard";
+import ChatLauncher from "./ChatLauncher";
 
 const NAV: { group: string; items: [string, string, string][] }[] = [
   { group: "Work", items: [["/", "Inbox", "ri-inbox-2-line"], ["/chat/", "Workspace", "ri-chat-3-line"], ["/plan/", "Plan", "ri-node-tree"], ["/calendar/", "Calendar", "ri-calendar-line"], ["/workflows/", "Workflows", "ri-flow-chart"], ["/docs/", "Docs", "ri-book-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
@@ -126,6 +127,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {ready && !bare && <NotifyHost onNotice={refresh} />}
         {ready && !bare && <TaskDrawerLazy />}
         {ready && !bare && <ContextMenuHost />}
+        {ready && !bare && <ChatLauncher />}
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Omilo"}</b>
           <span className="sp" />

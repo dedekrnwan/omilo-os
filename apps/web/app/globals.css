@@ -666,6 +666,60 @@ code.fpath:hover { background: var(--hover); }
 .chat-drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-drawer-body > * { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
+/* ---------- floating chat launcher (bottom-right mascot button) ---------- */
+/* z-index 30: above page content (ws-panel overlay is 34-35), below .scrim (40) + .drawer (41) */
+.chat-launcher {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: 0 4px 16px -4px rgba(0, 0, 0, .22), 0 1px 3px rgba(0, 0, 0, .08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: box-shadow .15s, transform .15s;
+  padding: 0;
+}
+.chat-launcher:hover {
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, .28), 0 1px 4px rgba(0, 0, 0, .1);
+  transform: translateY(-1px);
+}
+.chat-launcher:active { transform: translateY(0); }
+.chat-launcher-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--bad);
+  color: #fff;
+  font: 600 11px/18px var(--font-mono);
+  text-align: center;
+  padding: 0 4px;
+  border: 2px solid var(--surface);
+  pointer-events: none;
+}
+
+/* On /chat/ and at narrow widths, nudge up to clear .ws-composer + .mobilebar.
+   The .ws class is the root of ChatPage; body:has(.ws) applies on that route. */
+body:has(.ws) .chat-launcher { bottom: 88px; }
+
+/* At mobile widths the .mobilebar is sticky top; .ws-composer sits at bottom ~80px */
+@media (max-width: 860px) {
+  .chat-launcher { bottom: 88px; right: 14px; }
+}
+/* Extra-small: keep clear of anything interactive */
+@media (max-width: 560px) {
+  .chat-launcher { bottom: 100px; right: 12px; width: 46px; height: 46px; }
+}
+
 /* ---------- drawers for add/edit forms ---------- */
 .drawer.dw { animation: dw-in .2s cubic-bezier(.2, .8, .2, 1); }
 .drawer.dw.wide { width: min(720px, calc(100vw - 16px)); }
