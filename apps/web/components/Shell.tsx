@@ -183,8 +183,8 @@ export default function Shell({ children }: { children: ReactNode }) {
                     {count ? <span className="count">{count}</span> : null}
                   </Link>
                   {on && sec.pages.length > 1 && (
-                    <div className="subnav">{sec.pages.map(([h, l]) => (
-                      <Link key={h} href={h} className={`sublink ${h === page.href ? "on" : ""}`}>{l}
+                    <div className="subnav">{sec.pages.map(([h, l, ic]) => (
+                      <Link key={h} href={h} className={`sublink ${h === page.href ? "on" : ""}`}><i className={ic} />{l}
                         {h === "/" && overview?.inbox.open ? <span className="count sm">{overview.inbox.open}</span> : null}</Link>
                     ))}</div>
                   )}
