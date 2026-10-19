@@ -226,15 +226,8 @@ def _is_locked(exc: OperationalError) -> bool:
 
 def get_db() -> Iterator[Session]:
     """The current company's database."""
-    cid = C.current()
-    db = _maker(cid)()
+    db = _maker(C.current())()
     try:
-        yield db
-    except OperationalError as e:
-        if not (is_sqlite(db.bind) and _is_locked(e)):
-            raise
-        db.close()  # sqlite was busy past busy_timeout: close and retry once on a fresh session
-        db = _maker(cid)()
         yield db
     finally:
         db.close()
@@ -245,36 +238,46 @@ def get_auth_db() -> Iterator[Session]:
     db = _maker(C.MAIN)()
     try:
         yield db
-    except OperationalError as e:
-        if not (is_sqlite(db.bind) and _is_locked(e)):
-            raise
-        db.close()
-        db = _maker(C.MAIN)()
-        yield db
     finally:
         db.close()
 
 
+def _commit_with_retry(db: Session) -> None:
+    """Commit, retrying briefly on a sqlite 'database is locked'.
+
+    WAL + busy_timeout=30000 already makes a blocked writer WAIT (not fail) while *acquiring* the
+    write lock, so this is only reached in the rare case the lock outlives busy_timeout. For sqlite
+    we flush once (that is where the write lock is taken; a lock here past busy_timeout is a genuine
+    failure and propagates), then retry only the bare COMMIT statement on the SAME session: the
+    writes are already buffered in the open transaction, so re-committing does NOT re-run the
+    caller's `with` body. Postgres (and any non-sqlite bind) commits once, no retry.
+    """
+    if not is_sqlite(db.bind):
+        db.commit()
+        return
+    import time
+
+    db.flush()  # acquire the write lock + emit the writes (busy_timeout governs the wait here)
+    for attempt in range(3):  # bare COMMIT: initial try + 2 retries
+        try:
+            db.commit()
+            return
+        except OperationalError as e:
+            if not _is_locked(e) or attempt == 2:
+                db.rollback()
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 @contextmanager
 def session_scope(cid: str | None = None) -> Iterator[Session]:
-    maker = _maker(cid)
-    db = maker()
+    db = _maker(cid)()
     try:
-        try:
-            yield db
-            db.commit()
-        except OperationalError as e:
-            db.rollback()
-            db.close()
-            if not (is_sqlite(maker.kw["bind"]) and _is_locked(e)):
-                raise
-            # sqlite stayed locked past busy_timeout: retry the whole block once on a fresh session.
-            db = maker()
-            yield db
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
+        yield db
+        _commit_with_retry(db)
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
