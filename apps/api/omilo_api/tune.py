@@ -1,9 +1,11 @@
 """Self-tuning harness: AI seam and candidate-job proposal for helper self-improvement."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
@@ -85,3 +87,56 @@ async def propose(db: Session, staff: Staff, k: int = DEFAULT_K) -> list[str]:
         if len(result) >= k:
             break
     return result
+
+
+# ---------------------------------------------------------------------------
+# ProbeResult — result of running a brief under one candidate job description
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ProbeResult:
+    job: str
+    text: str
+    tokens: int
+    cost_usd: float
+    error: str
+
+
+# ---------------------------------------------------------------------------
+# probe — run a brief once per candidate job description, errors don't abort
+# ---------------------------------------------------------------------------
+
+async def probe(db: Session, staff: Staff, brief: str, jobs: list[str]) -> list[ProbeResult]:
+    """Run *brief* under each candidate job description; return one ProbeResult per job in
+    the same order. A run that raises or returns EngineResult.error yields a ProbeResult
+    with that error and empty text — the batch never aborts."""
+    mcp_url = get_settings().mcp_url()
+    mcp_token = decrypt(staff.mcp_token_enc)
+    results: list[ProbeResult] = []
+    for job in jobs:
+        ctx = ChatContext(
+            staff_id=staff.id,
+            staff_name=staff.name,
+            job=job,
+            is_chief=staff.is_chief,
+            thread_id="tune",
+            scope="staff",
+            history=[{"role": "owner", "text": brief}],
+            context_note="",
+            mcp_url=mcp_url,
+            mcp_token=mcp_token,
+            engine_config=staff.engine or {},
+            emit=lambda kind, **d: None,
+            resources=None,
+            shared=True,
+        )
+        try:
+            res = await asyncio.wait_for(get_engine(ctx.engine_config).chat(ctx), timeout=600)
+            if res.error:
+                results.append(ProbeResult(job=job, text="", tokens=res.tokens, cost_usd=res.cost_usd, error=res.error))
+            else:
+                results.append(ProbeResult(job=job, text=res.text, tokens=res.tokens, cost_usd=res.cost_usd, error=""))
+        except Exception as e:  # noqa: BLE001
+            log.warning("tune.probe failed for job %r: %s", job, e)
+            results.append(ProbeResult(job=job, text="", tokens=0, cost_usd=0.0, error=f"{type(e).__name__}: {e}"))
+    return results

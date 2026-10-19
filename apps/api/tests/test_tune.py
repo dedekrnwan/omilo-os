@@ -20,3 +20,14 @@ async def test_propose_returns_k_candidates(owner, monkeypatch):
         st = db.get(Staff, "sales")
         out = await T.propose(db, st, k=2)
     assert out == ["JOB A", "JOB B"]
+
+
+async def test_probe_runs_once_per_job(owner, base_url):
+    from omilo_api.db import session_scope
+    from omilo_api.models import Staff
+    import omilo_api.tune as T
+    with session_scope() as db:
+        st = db.get(Staff, "sales")
+        st.mcp_token_enc = __import__("omilo_api.security", fromlist=["encrypt"]).encrypt(owner.mcp_tokens["sales"])
+        res = await T.probe(db, st, "Find 3 catering leads", ["JOB ONE", "JOB TWO"])
+    assert len(res) == 2 and all(r.text and not r.error for r in res)
