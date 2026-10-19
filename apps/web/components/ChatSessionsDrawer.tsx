@@ -20,10 +20,6 @@ function threadLabel(th: Thread | FullThread, staff: Staff[]): string {
   return th.title;
 }
 
-function hasMessages(th: Thread): boolean {
-  return !!th.messages?.length;
-}
-
 export default function ChatSessionsDrawer({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
   const router = useRouter();
   const panelRef = useRef<HTMLElement>(null);
@@ -58,11 +54,10 @@ export default function ChatSessionsDrawer({ open, onClose }: { open: boolean; o
           (b.updated_at || "").localeCompare(a.updated_at || "")
         );
         setThreads(sorted);
-        // Pick active: most recent with messages
-        const withMsgs = sorted.find(hasMessages);
-        if (withMsgs) {
-          setActiveId(withMsgs.id);
-          setActiveLabel(threadLabel(withMsgs, st));
+        // Pick active: first thread (most recent by updated_at)
+        if (sorted.length > 0) {
+          setActiveId(sorted[0].id);
+          setActiveLabel(threadLabel(sorted[0], st));
         } else {
           // Fall back to Chief of Staff thread
           try {
@@ -85,9 +80,9 @@ export default function ChatSessionsDrawer({ open, onClose }: { open: boolean; o
   /* Called by ChatThread when the thread loads — update the header label */
   const updateActiveLabel = (th: FullThread | null) => {
     if (!th) return;
-    setActiveLabel(threadLabel(th as unknown as Thread, staff));
+    setActiveLabel(threadLabel(th, staff));
     // Also refresh this thread in the list (updated_at may have changed after a send)
-    setThreads((prev) => prev.map((t) => t.id === th.id ? { ...t, updated_at: (th as any).updated_at || t.updated_at } : t));
+    setThreads((prev) => prev.map((t) => t.id === th.id ? { ...t, updated_at: th.updated_at || t.updated_at } : t));
   };
 
   /* Called when the user clicks a chip or ChatThread opens another thread */
