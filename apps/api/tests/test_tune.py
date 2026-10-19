@@ -106,3 +106,20 @@ async def test_refine_applies_winner_when_on(owner, base_url, monkeypatch):
     assert imp is not None and imp.kind == "job"
     with session_scope() as db:
         assert db.get(Staff, "sales").job == "NEW JOB TEXT"
+
+
+def test_tune_helper_tool_chief_only(owner, base_url, monkeypatch):
+    import httpx, omilo_api.tune as T
+    from omilo_api.db import session_scope
+    from omilo_api import services as S
+    async def fake_propose(db, staff, k=2): return ["NEW JOB"]
+    async def fake_compose(db, staff, brief, probes): return len(probes) - 1
+    monkeypatch.setattr(T, "propose", fake_propose); monkeypatch.setattr(T, "compose", fake_compose)
+    with session_scope() as db: S.set_setting(db, "self_tuning", True)
+    def call(tok):
+        return httpx.post(f"{base_url}/mcp", headers={"Authorization": f"Bearer {tok}"}, json={
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "tune_helper", "arguments": {"staff_id": "sales", "brief": "Find 3 leads"}}}).json()
+    assert call(owner.mcp_tokens["sales"])["result"]["isError"]        # non-chief rejected
+    r = call(owner.mcp_tokens["chief-of-staff"])
+    assert not r["result"]["isError"] and r["result"]["structuredContent"]

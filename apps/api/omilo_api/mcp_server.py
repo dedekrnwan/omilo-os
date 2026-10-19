@@ -157,6 +157,10 @@ TOOLS: list[dict] = [
                                                       "change": _s("string", "the new text (for lessons: one lesson per line)"), "shift_id": _s("string", "for shift_* kinds"),
                                                       "reason": _s("string", "why, with the evidence from review_week"),
                                                       "task_id": _s("string", "your retro task id")}, "required": ["staff_id", "kind", "change", "reason"]}},
+    {"name": "tune_helper", "description": "Chief of Staff: tune a helper's instructions by trying variants on one task and keeping the best; off unless the owner enabled self-tuning.",
+     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "the helper to tune"),
+                                                      "brief": _s("string", "the task brief to use for probing (optional; falls back to the helper's last task)")},
+                     "required": ["staff_id"]}},
     {"name": "share_file", "description": "Show the founder a file you made or found (report, image, CSV, code, PDF) as a card they can preview and download, "
                                            "in the current chat or task thread. The file must be in your workspace or a shared folder (25 MB max).",
      "inputSchema": {"type": "object", "properties": {"path": _s("string", "absolute path, or relative to your workspace"), "note": _s("string", "one line about it"),
@@ -199,7 +203,7 @@ def _proposal_view(p: Proposal) -> dict:
             "founder_note": p.decision_note}
 
 
-def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
+async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
     """Returns (decision, result). Raises S.DomainError for refusals the agent should read."""
     if name == "whoami":
         levels = {a: policy.describe(policy.level_for(a, st.permissions, S.strict_mode(db))) for a in sorted(policy.DEFAULTS)}
@@ -351,6 +355,15 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         except L.LoopError as e:
             raise S.DomainError(str(e), e.status) from e
         return "allowed", {"improvement_id": imp.id, "message": "Applied. It will be measured after a week and rolled back if results get worse."}
+    if name == "tune_helper":
+        from . import tune
+
+        if not st.is_chief:
+            raise S.DomainError("only the Chief of Staff tunes helpers", 403)
+        imp = await tune.refine(db, args["staff_id"], brief=args.get("brief"))
+        if imp is not None:
+            return "allowed", {"improvement_id": imp.id}
+        return "allowed", {"message": "no change"}
     if name == "share_file":
         from pathlib import Path as _P
 
@@ -527,7 +540,7 @@ def _rpc_error(id_, code, message):
     return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
 
 
-def _handle(db, st: Staff, msg: dict) -> dict | None:
+async def _handle(db, st: Staff, msg: dict) -> dict | None:
     method, id_ = msg.get("method"), msg.get("id")
     if id_ is None:  # notification
         return None
@@ -548,7 +561,7 @@ def _handle(db, st: Staff, msg: dict) -> dict | None:
         try:
             if name not in TOOL_NAMES:
                 raise S.DomainError(f"unknown tool {name}", 404)
-            decision, payload = call_tool(db, st, name, args)
+            decision, payload = await call_tool(db, st, name, args)
             is_error = False
         except S.DomainError as e:
             decision, payload = ("refused" if e.code in (403, 409, 429) else "error"), {"error": str(e)}
@@ -589,9 +602,10 @@ async def mcp_post(request: Request):
         except Exception:
             return JSONResponse(_rpc_error(None, -32700, "parse error"), status_code=400)
         if isinstance(body, list):
-            out = [r for r in (_handle(db, st, m) for m in body) if r is not None]
+            results = [await _handle(db, st, m) for m in body]
+            out = [r for r in results if r is not None]
             return JSONResponse(out) if out else Response(status_code=202)
-        res = _handle(db, st, body)
+        res = await _handle(db, st, body)
         return JSONResponse(res) if res is not None else Response(status_code=202)
     finally:
         db.close()
