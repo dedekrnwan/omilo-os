@@ -374,6 +374,14 @@ def validate_manifest(data: dict) -> list[str]:
     if not description or not isinstance(description, str):
         errors.append("Missing or invalid 'description': must be a non-empty string.")
 
+    # Validate 'runtime' (optional; absent ⇒ treated as "http")
+    if "runtime" in data:
+        runtime_val = data["runtime"]
+        if runtime_val not in ("http", "engine"):
+            errors.append(
+                f"Invalid 'runtime' '{runtime_val}': must be 'http' or 'engine'."
+            )
+
     # Validate 'auth'
     auth = data.get("auth")
     if not isinstance(auth, dict):

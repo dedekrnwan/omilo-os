@@ -346,3 +346,27 @@ def test_validate_manifest_non_dict_input_returns_errors_not_raises(bad_input):
     assert isinstance(result, list), f"Should return a list for input {bad_input!r}"
     assert len(result) > 0, f"Should return non-empty error list for input {bad_input!r}"
     # Should not raise an exception
+
+
+# ---------------------------------------------------------------------------
+# Task 1: runtime field validation
+# ---------------------------------------------------------------------------
+
+def test_runtime_absent_defaults_valid():
+    # GMAIL_MANIFEST has no 'runtime' — must stay valid (back-compat).
+    assert validate_manifest(GMAIL_MANIFEST) == []
+
+
+def test_runtime_engine_is_valid():
+    m = {**GMAIL_MANIFEST, "runtime": "engine"}
+    assert validate_manifest(m) == []
+
+
+def test_runtime_invalid_value_reported():
+    m = {**GMAIL_MANIFEST, "runtime": "grpc"}
+    assert any("runtime" in e for e in validate_manifest(m))
+
+
+def test_runtime_non_string_reported():
+    m = {**GMAIL_MANIFEST, "runtime": ["engine"]}
+    assert any("runtime" in e for e in validate_manifest(m))
