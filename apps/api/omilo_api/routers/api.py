@@ -1050,6 +1050,7 @@ def ai_state(db: Session = Depends(get_db), user: User = Depends(current_user)):
             "claude_key_hint": S.ai_key_hint(db, "claude"),
             "claude_code": {"installed": bool(cli), "path": cli, "install": H.installer.snapshot()},
             "local_login": H.local_login_status(),
+            "pool_consent": H.pool_consent_status(db),
             "staff": {st.id: {"provider": _provider_of(st.engine or {})} for st in staff}}
 
 
@@ -1149,7 +1150,7 @@ def harness_state(db: Session = Depends(get_db), user: User = Depends(current_us
     from .. import harness as H
 
     users = [st.id for st in db.scalars(select(Staff)) if (st.engine or {}).get("type") == "claude-code"]
-    return {**H.pool_summary(), "helpers_on_pool": users}
+    return {**H.pool_summary(), "helpers_on_pool": users, "pool_consent": H.pool_consent_status(db)}
 
 
 def _vendor_key_set(db: Session, provider: str) -> bool:
@@ -1240,6 +1241,26 @@ def harness_add(body: HarnessAccountIn, db: Session = Depends(get_db), user: Use
     S.audit(db, user.id, "harness.account_add", a.id, label=a.label)
     db.commit()
     return H.serialize(a)
+
+
+@router.post("/harness/pool-consent")
+def harness_pool_consent(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import harness as H
+
+    H.grant_pool_consent(db)
+    db.commit()
+    S.audit(db, user.id, "harness.pool_consent", "grant")
+    db.commit()
+    return H.pool_consent_status(db)
+
+
+@router.post("/harness/pool-consent/dismiss")
+def harness_pool_consent_dismiss(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    from .. import harness as H
+
+    H.dismiss_pool_notice(db)
+    db.commit()
+    return H.pool_consent_status(db)
 
 
 class HarnessPatch(BaseModel):

@@ -149,8 +149,62 @@ class _Install:
 installer = _Install()
 
 
+# ------------------------------------------------------------------ pool consent gate
+def pool_consent_status(db) -> dict:
+    """Return {"consented": bool, "notice_pending": bool}.
+
+    Idempotent grandfather side-effect: if pool_consent is falsy AND at least one HarnessAccount
+    row exists, set pool_consent = True (grandfathered) and pool_consent_notice = "pending".
+    """
+    consent = db.get(Setting, "pool_consent")
+    consented = bool(consent and consent.value)
+    if not consented:
+        # check for pre-existing accounts (grandfather check)
+        has_account = db.scalars(select(HarnessAccount)).first() is not None
+        if has_account:
+            # grandfather: mark consented + set one-time notice
+            if consent is None:
+                db.add(Setting(key="pool_consent", value=True))
+            else:
+                consent.value = True
+            notice = db.get(Setting, "pool_consent_notice")
+            if notice is None:
+                db.add(Setting(key="pool_consent_notice", value="pending"))
+            elif not notice.value or notice.value == "dismissed":
+                notice.value = "pending"
+            db.flush()
+            consented = True
+    notice_row = db.get(Setting, "pool_consent_notice")
+    notice_pending = bool(notice_row and notice_row.value == "pending")
+    return {"consented": consented, "notice_pending": notice_pending}
+
+
+def grant_pool_consent(db) -> None:
+    """Explicit fresh-install consent: set pool_consent = True. No notice (user just read the disclosure)."""
+    s = db.get(Setting, "pool_consent")
+    if s is None:
+        db.add(Setting(key="pool_consent", value=True))
+    else:
+        s.value = True
+    db.flush()
+
+
+def dismiss_pool_notice(db) -> None:
+    """Dismiss the one-time grandfather notice: set pool_consent_notice = 'dismissed'."""
+    s = db.get(Setting, "pool_consent_notice")
+    if s is None:
+        db.add(Setting(key="pool_consent_notice", value="dismissed"))
+    else:
+        s.value = "dismissed"
+    db.flush()
+
+
 # ------------------------------------------------------------------ accounts
 def add_account(db, label: str, token: str) -> HarnessAccount:
+    if not pool_consent_status(db)["consented"]:
+        raise ValueError(
+            "Enabling the Claude Code subscription pool requires accepting the disclosure first (Settings → Harness)."
+        )
     token = token.strip()
     if not TOKEN_RE.match(token):
         raise ValueError("That does not look like a Claude Code token. It starts with sk-ant- (run `claude setup-token`).")

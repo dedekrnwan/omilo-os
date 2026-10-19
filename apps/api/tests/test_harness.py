@@ -10,6 +10,113 @@ from conftest import wait_for
 FAKE = Path(__file__).parent / "bin" / "fake_claude.py"
 OK1, LIMITED, OK2 = "sk-ant-oat01-" + "a" * 30 + "LIMITED", "sk-ant-oat01-" + "b" * 30 + "GOOD01", "sk-ant-oat01-" + "c" * 30 + "GOOD02"
 
+# A token that matches TOKEN_RE for consent gate tests (no collision risk from unique suffix).
+CONSENT_TOK = "sk-ant-consent01-" + "z" * 30 + "GATE1"
+
+
+def test_fresh_install_requires_consent_to_enable_pool():
+    """Task 5: no accounts + no consent → add_account raises ValueError; after grant_pool_consent it succeeds."""
+    from omilo_api import harness as H
+    from omilo_api.db import session_scope
+    from omilo_api.models import HarnessAccount, Setting
+    from sqlalchemy import select
+
+    with session_scope() as db:
+        # clean any pre-existing consent state for a clean test
+        for key in ("pool_consent", "pool_consent_notice"):
+            s = db.get(Setting, key)
+            if s is not None:
+                db.delete(s)
+        # ensure no harness accounts exist (use a temporary disable rather than delete to avoid cascade issues;
+        # we cannot delete accounts that other tests depend on, but we CAN check count before acting)
+        existing = db.scalars(select(HarnessAccount)).first()
+        if existing is not None:
+            pytest.skip("DB has pre-existing HarnessAccount rows (shared session); skipping fresh-install test")
+        db.commit()
+
+    with session_scope() as db:
+        # fresh install: no accounts, no consent → must raise
+        with pytest.raises(ValueError, match="disclosure"):
+            H.add_account(db, "consent-gate-test", CONSENT_TOK)
+
+    with session_scope() as db:
+        # grant consent, then add_account must succeed
+        H.grant_pool_consent(db)
+        db.commit()
+
+    with session_scope() as db:
+        a = H.add_account(db, "consent-gate-test", CONSENT_TOK)
+        db.commit()
+        assert a.token_hint == CONSENT_TOK[-4:]
+        assert H.pool_consent_status(db)["consented"] is True
+
+        # cleanup
+        db.delete(a)
+        for key in ("pool_consent", "pool_consent_notice"):
+            s = db.get(Setting, key)
+            if s is not None:
+                db.delete(s)
+        db.commit()
+
+
+def test_existing_accounts_are_grandfathered():
+    """Task 5: accounts already exist (pre-upgrade) → grandfathered consented=True + notice_pending=True."""
+    from omilo_api import harness as H
+    from omilo_api.db import session_scope
+    from omilo_api.models import HarnessAccount, Setting
+    from omilo_api.security import encrypt
+
+    GRAND_TOK = "sk-ant-grand01-" + "x" * 30 + "GRD1"
+    GRAND_TOK2 = "sk-ant-grand02-" + "y" * 30 + "GRD2"
+
+    with session_scope() as db:
+        # ensure pool_consent is unset
+        for key in ("pool_consent", "pool_consent_notice"):
+            s = db.get(Setting, key)
+            if s is not None:
+                db.delete(s)
+        # pre-seed a HarnessAccount directly (bypass the gate)
+        acct = HarnessAccount(label="grandfathered-account", token_enc=encrypt(GRAND_TOK), token_hint=GRAND_TOK[-4:])
+        db.add(acct)
+        db.commit()
+        acct_id = acct.id
+
+    with session_scope() as db:
+        # grandfather side-effect fires: consented=True, notice_pending=True
+        status = H.pool_consent_status(db)
+        assert status["consented"] is True
+        assert status["notice_pending"] is True
+
+    with session_scope() as db:
+        # second call is idempotent
+        status2 = H.pool_consent_status(db)
+        assert status2["consented"] is True
+
+    with session_scope() as db:
+        H.dismiss_pool_notice(db)
+        db.commit()
+
+    with session_scope() as db:
+        status3 = H.pool_consent_status(db)
+        assert status3["notice_pending"] is False
+
+    with session_scope() as db:
+        # grandfathered: add_account now works
+        a2 = H.add_account(db, "grandfathered-add", GRAND_TOK2)
+        db.commit()
+        assert a2.token_hint == GRAND_TOK2[-4:]
+
+        # cleanup
+        for aid in (acct_id, a2.id):
+            row = db.get(HarnessAccount, aid)
+            if row:
+                db.delete(row)
+        for key in ("pool_consent", "pool_consent_notice"):
+            s = db.get(Setting, key)
+            if s is not None:
+                db.delete(s)
+        db.commit()
+
 
 @pytest.fixture()
 def fake_cli(tmp_path):
@@ -34,6 +141,8 @@ def test_pool_wait_cap_constant_defined():
 
 
 def test_accounts_validation_and_test(owner, fake_cli):
+    # Task 5: grant pool consent before adding accounts (required on a fresh install)
+    assert owner.post("/api/harness/pool-consent").status_code == 200
     assert owner.post("/api/harness/accounts", json={"label": "x", "token": "hello"}).status_code == 400
     a = owner.post("/api/harness/accounts", json={"label": "Sub #1", "token": OK2}).json()
     assert a["token_hint"] == OK2[-4:] and a["state"] == "new"
