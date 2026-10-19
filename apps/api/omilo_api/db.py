@@ -77,6 +77,7 @@ _COLUMNS = [
     ("notice", "item_id", "VARCHAR(32)"),
     ("notice", "who", "VARCHAR(120) NOT NULL DEFAULT ''"),
     ("thread", "pending", "JSON"),
+    ("inbox_item", "thread_id", "VARCHAR(32)"),
     ("staff", "access", "JSON"),
     ("staff", "brain", "VARCHAR(16) NOT NULL DEFAULT 'single_engine'"),
     ("staff", "autonomy", "VARCHAR(16) NOT NULL DEFAULT 'standard'"),
