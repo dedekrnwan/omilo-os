@@ -12,14 +12,40 @@ What is pinned here:
 - a graph whose worker never satisfies review (empty output) terminates with the
   ``MAX_GRAPH_STEPS`` error instead of looping forever (proven under a wall-clock
   timeout).
+
+Hermeticity
+-----------
+All async tests patch ``open_checkpointer`` to a ``MemorySaver`` so no Postgres
+checkpoint rows accumulate between runs.  A hardcoded ``task_id`` would let a prior
+run's stale checkpoint change how LangGraph resumes on the NEXT run (e.g. doubling
+worker calls when the graph sees it previously ran N steps). Unique task_ids + an
+in-memory saver eliminate both sources of cross-run contamination.
 """
 import asyncio
+import uuid
+from contextlib import asynccontextmanager
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
 
 from omilo_api.engines import Engine, EngineResult, TaskContext, get_engine
 from omilo_api.graph import engine as graph_engine_mod
 from omilo_api.graph.engine import MAX_GRAPH_STEPS, GraphEngine
+
+
+# ---------------------------------------------------------------------------
+# In-memory checkpointer: drops-in for open_checkpointer so graph runs in these
+# tests never touch Postgres and never leave stale state across test runs.
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def _memory_checkpointer():
+    yield MemorySaver()
+
+
+async def _noop_ensure_setup(_cp) -> None:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Stub underlying engines (no network) — stand in for exec_engine={"type":"fake"}
@@ -43,13 +69,18 @@ class _StubEngine(Engine):
 
 
 def _ctx(exec_cfg: dict | None, **overrides) -> TaskContext:
-    """Build a minimal valid TaskContext (mirrors worker._task_context fields)."""
+    """Build a minimal valid TaskContext (mirrors worker._task_context fields).
+
+    Uses a unique task_id per call so each test's graph run gets a fresh Postgres
+    (or MemorySaver) thread with no prior checkpoint state.
+    """
     engine_config = {"type": "graph"}
     if exec_cfg is not None:
         engine_config["exec_engine"] = exec_cfg
     base = dict(
         staff_id="st_test", staff_name="Tester", job="writer", is_chief=False,
-        task_id="tk_test", origin="task", brief="write a short note",
+        task_id="tk_engine_" + uuid.uuid4().hex[:8], origin="task",
+        brief="write a short note",
         founder_note="", checkpoint=None, proposal=None,
         mcp_url="http://127.0.0.1:0/mcp", mcp_token="unused-in-stub",
         engine_config=engine_config, emit=lambda *a, **k: None,
@@ -65,6 +96,8 @@ def _ctx(exec_cfg: dict | None, **overrides) -> TaskContext:
 async def test_graph_run_task_returns_result(monkeypatch):
     stub = _StubEngine(text="the worker did the thing", cost=0.012, tokens=345)
     monkeypatch.setattr(graph_engine_mod, "get_engine", lambda cfg: stub)
+    monkeypatch.setattr(graph_engine_mod, "open_checkpointer", _memory_checkpointer)
+    monkeypatch.setattr(graph_engine_mod, "ensure_setup", _noop_ensure_setup)
 
     eng = get_engine({"type": "graph", "exec_engine": {"type": "fake"}})
     assert isinstance(eng, GraphEngine)
@@ -89,6 +122,8 @@ async def test_graph_depth_cap(monkeypatch):
     # Empty worker output → review never sets done → supervisor↔worker loops.
     stub = _StubEngine(text="", cost=0.001, tokens=1)
     monkeypatch.setattr(graph_engine_mod, "get_engine", lambda cfg: stub)
+    monkeypatch.setattr(graph_engine_mod, "open_checkpointer", _memory_checkpointer)
+    monkeypatch.setattr(graph_engine_mod, "ensure_setup", _noop_ensure_setup)
 
     eng = GraphEngine()
 
@@ -123,6 +158,8 @@ async def test_graph_missing_exec_engine_defaults_to_fake(monkeypatch):
         return _StubEngine(text="fallback output")
 
     monkeypatch.setattr(graph_engine_mod, "get_engine", _capture)
+    monkeypatch.setattr(graph_engine_mod, "open_checkpointer", _memory_checkpointer)
+    monkeypatch.setattr(graph_engine_mod, "ensure_setup", _noop_ensure_setup)
     eng = GraphEngine()
     res = await eng.run_task(_ctx(None))  # engine_config has no exec_engine
 

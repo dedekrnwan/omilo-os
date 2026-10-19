@@ -127,6 +127,15 @@ def test_graph_staff_routes_through_graph(owner):
     sid = _make_staff("graph")
     task_id = _make_task(sid)
 
+    # Immediately cancel the queued task so the embedded server worker cannot pick it
+    # up and race against later tests.  The test only needs _task_context, not a run.
+    with session_scope() as db:
+        from omilo_api.models import Task as _Task
+        t = db.get(_Task, task_id)
+        if t is not None and t.status == "queued":
+            t.status = "cancelled"
+            db.commit()
+
     w = Worker()
     ctx, engine_cfg, _minutes = w._task_context(task_id)
 
