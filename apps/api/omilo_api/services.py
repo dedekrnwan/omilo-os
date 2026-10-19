@@ -893,6 +893,46 @@ def latest_kpis(db: Session) -> dict:
 
 
 # ---------------------------------------------------------------- policy gate for direct actions
+def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
+    """For a graph-brain staff, let the Chief of Staff rule on an ASK-level proposal ``p``.
+
+    This is the REAL seam the Claude Code engine hits: it escalates outward actions by
+    calling ``request_action`` (and ``propose``) mid-run, which files an ASK-level
+    ``Proposal``. For a ``brain="graph"`` staff the CoS should rule on that proposal
+    synchronously instead of bothering the owner with every low/medium one.
+
+    Returns an ``"allowed"`` result dict if the CoS auto-approved ``p`` (the agent may
+    proceed), or ``None`` to leave the proposal PENDING for the owner (the default and
+    the non-graph path).
+
+    Rules (mirrors the graph node-gate in ``graph/delegation.py``):
+      - only engage for ``brain == "graph"`` (single_engine is byte-for-byte unchanged);
+      - re-derive risk structurally (the worker's "medium" ASK default is only a hint);
+      - no CoS, or the CoS acting on its OWN action → escalate (never self-approve);
+      - ``high`` risk → escalate to the owner;
+      - ``low``/``medium`` → the CoS approves via the existing ``decide_proposal`` path
+        (audited as the CoS, lesson recorded, execution task spawned — the owner-approve
+        path, exactly once).
+    """
+    if st.brain != "graph":
+        return None
+    from .graph import delegation
+    from .graph.risk import classify_risk
+
+    # p.type is the action; p.title is the summary; "medium" is the ASK default hint.
+    risk = classify_risk(p.type, p.title, "medium")
+    cos = delegation.cos_id(db)
+    if cos is None or cos == st.id:
+        return None  # no delegation authority, or the CoS can't approve its own action
+    if risk == "high":
+        return None  # hard-rule categories always reach the owner
+    # low/medium: the CoS auto-approves. decide_proposal commits, audits as the CoS,
+    # records the lesson, and spawns the execution task — the owner-approve path.
+    decide_proposal(db, p, "approve", delegation.AUTO_APPROVE_NOTE, by=cos)
+    return {"decision": "allowed", "level": "cos",
+            "message": "The Chief of Staff approved this. Go ahead, and mention it in your report."}
+
+
 def request_action(db: Session, st: Staff, task_id: str | None, action: str, summary: str, details: str) -> dict:
     """An agent wants to do something with a side effect. Decide by policy: refuse, ask, or allow."""
     level = policy.level_for(action, st.permissions, strict_mode(db))
@@ -902,6 +942,9 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
         return {"decision": "refused", "level": "off", "message": f"'{action}' is not allowed for {st.name}."}
     if level == policy.ASK:
         p = create_proposal(db, st, task_id, summary, action, "medium", details)
+        ruled = _cos_rule(db, st, p)
+        if ruled is not None:  # a graph staff's low/medium action: the CoS handled it inline
+            return ruled
         return {"decision": "needs_approval", "level": "ask", "proposal_id": p.id,
                 "message": "Filed for the founder's approval. Do not do it now; it will come back as an execution task if approved."}
     audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])

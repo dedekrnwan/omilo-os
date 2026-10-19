@@ -238,6 +238,12 @@ def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             db, st, task_id_arg, args["title"], args["type"], args.get("risk", "medium"), args["body"],
             thread_id=th.id if th else None, th=th,
         )
+        # Graph-brain staff: the Chief of Staff rules low/medium proposals inline (same
+        # seam as request_action). high / no-CoS / the CoS's own action fall through to
+        # the owner. single_engine is byte-for-byte unchanged (returns None).
+        ruled = S._cos_rule(db, st, p)
+        if ruled is not None:
+            return "allowed", {"proposal_id": p.id, "message": "The Chief of Staff approved this."}
         return "proposal", {"proposal_id": p.id, "message": "In the founder's Inbox. Do not act on it until it comes back approved."}
     if name == "revise_proposal":
         p = db.get(Proposal, args["proposal_id"])
