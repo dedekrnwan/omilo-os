@@ -3,7 +3,7 @@ import datetime as dt
 import secrets
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, event
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -576,10 +576,37 @@ class KbChunk(Base):
     ord: Mapped[int] = mapped_column(Integer, default=0)
     heading: Mapped[str] = mapped_column(String(300), default="")
     text: Mapped[str] = mapped_column(Text)
-    embedding = mapped_column(Vector(), nullable=True)  # any size: each row records its dim; search casts to that dim
+    # Dialect-neutral: Vector() on PostgreSQL, LargeBinary (BLOB) on SQLite.
+    # Blob format: little-endian float32 contiguous bytes (struct.pack("<Nf", *vector)).
+    # Task 5 reads/writes this format to populate sqlite-vec's external FTS5 table.
+    embedding = mapped_column(Vector().with_variant(LargeBinary(), "sqlite"), nullable=True)
     dim: Mapped[int] = mapped_column(Integer, default=0, index=True)
     model: Mapped[str] = mapped_column(String(120), default="")
-    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('simple', coalesce(heading, '') || ' ' || text)", persisted=True))
+    # pg_only=True: this column is excluded from SQLite DDL (see _kbchunk_before_create below).
+    # Task 5 builds an external FTS5 table for full-text search on SQLite instead.
+    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('simple', coalesce(heading, '') || ' ' || text)", persisted=True),
+                        info={"pg_only": True})
+
+
+# Temporarily remove pg_only columns from KbChunk before create_all on non-Postgres dialects,
+# then restore them so the in-memory Table object remains complete for Postgres use.
+_kbchunk_pg_only_removed: list = []
+
+
+@event.listens_for(KbChunk.__table__, "before_create")
+def _kbchunk_before_create(target, connection, **kw):
+    if connection.dialect.name != "postgresql":
+        for col in list(target.columns):
+            if col.info.get("pg_only"):
+                _kbchunk_pg_only_removed.append(col)
+                target._columns.remove(col)
+
+
+@event.listens_for(KbChunk.__table__, "after_create")
+def _kbchunk_after_create(target, connection, **kw):
+    for col in _kbchunk_pg_only_removed:
+        target.append_column(col)
+    _kbchunk_pg_only_removed.clear()
 
 
 class KbQuery(Base):
