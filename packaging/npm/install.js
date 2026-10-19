@@ -24,7 +24,9 @@ function fail(msg) {
       `Download a binary from https://github.com/${REPO}/releases/tag/v${VERSION}\n` +
       `or install another way: https://github.com/${REPO}#install\n`
   );
-  process.exit(1);
+  // Exit 0 so a failed postinstall never breaks `npm i -g` / `bun add -g`; the launcher
+  // (bin/omilo.js) re-checks for the binary and is the authoritative gate.
+  process.exit(0);
 }
 
 if (!GOOS || !GOARCH) fail(`unsupported platform ${process.platform}/${process.arch}`);

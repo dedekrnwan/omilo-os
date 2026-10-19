@@ -1,17 +1,34 @@
 #!/usr/bin/env node
-// Thin launcher: exec the platform binary that install.js placed next to this file,
-// passing through all args, stdio, and the exit code.
+// Launcher: exec the platform binary. If it isn't here yet (e.g. bun skips postinstall
+// scripts, or `npm --ignore-scripts`), download it now via install.js, then run it.
+const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawnSync, execFileSync } = require("child_process");
 
 const exe = process.platform === "win32" ? ".exe" : "";
 const bin = path.join(__dirname, "omilo" + exe);
 
+if (!fs.existsSync(bin)) {
+  // postinstall may not have run — fetch the binary now (one time).
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, "..", "install.js")], { stdio: "inherit" });
+  } catch {
+    /* install.js prints its own reason; the existence re-check below is authoritative */
+  }
+  if (!fs.existsSync(bin)) {
+    console.error(
+      "omilo: could not download the CLI binary for this platform.\n" +
+        "See https://github.com/dedekrnwan/omilo-os#install for other install options."
+    );
+    process.exit(1);
+  }
+}
+
 const res = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
 if (res.error) {
   console.error(
-    `omilo: binary not found or failed to start (${res.error.message}).\n` +
-      `Try reinstalling: npm i -g omilo  —  or see https://github.com/dedekrnwan/omilo-os#install`
+    `omilo: failed to start (${res.error.message}).\n` +
+      "Reinstall, or see https://github.com/dedekrnwan/omilo-os#install"
   );
   process.exit(1);
 }
