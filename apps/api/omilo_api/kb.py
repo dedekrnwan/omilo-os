@@ -45,6 +45,13 @@ def ensure_indexes(eng) -> None:
     if eng.dialect.name == "sqlite":
         return  # SQLite KB indexing (FTS5 + sqlite-vec) is wired in Task 5
     with eng.begin() as c:
+        # `tsv` is a Postgres-only generated column (not ORM-mapped, not in create_all DDL).
+        # Add it here so full-text search / the GIN index below work. Postgres 12+ allows adding
+        # a GENERATED ... STORED column via ALTER TABLE.
+        c.exec_driver_sql(
+            "ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS tsv tsvector "
+            "GENERATED ALWAYS AS (to_tsvector('simple', coalesce(heading, '') || ' ' || text)) STORED"
+        )
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_chunk_tsv ON kb_chunk USING gin (tsv)")
         c.exec_driver_sql("CREATE INDEX IF NOT EXISTS kb_source_kind_ref ON kb_source (kind, ref)")
 

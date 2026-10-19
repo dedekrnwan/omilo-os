@@ -3,8 +3,7 @@ import datetime as dt
 import secrets
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, BigInteger, Boolean, Computed, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, event
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -571,7 +570,9 @@ class KbSource(Base):
 
 class KbChunk(Base):
     __tablename__ = "kb_chunk"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BIGINT on Postgres; INTEGER PRIMARY KEY on SQLite so it aliases rowid (autoincrement works
+    # and can back a sqlite-vec vec0 content_rowid mapping in Task 5).
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     source_id: Mapped[str] = mapped_column(ForeignKey("kb_source.id", ondelete="CASCADE"), index=True)
     ord: Mapped[int] = mapped_column(Integer, default=0)
     heading: Mapped[str] = mapped_column(String(300), default="")
@@ -584,36 +585,11 @@ class KbChunk(Base):
     embedding = mapped_column(Vector().with_variant(LargeBinary(), "sqlite"), nullable=True)
     dim: Mapped[int] = mapped_column(Integer, default=0, index=True)
     model: Mapped[str] = mapped_column(String(120), default="")
-    # pg_only=True: this column is excluded from SQLite DDL (see _kbchunk_before_create below).
-    # Task 5 builds an external FTS5 table for full-text search on SQLite instead.
-    tsv = mapped_column(TSVECTOR, Computed("to_tsvector('simple', coalesce(heading, '') || ' ' || text)", persisted=True),
-                        info={"pg_only": True})
-
-
-# Capture the canonical pg_only Column objects ONCE at import time.
-# before_create removes them for non-Postgres dialects; after_create unconditionally
-# restores them from this stable reference (idempotent: skips if already present).
-# This makes the restore stateless — safe across multiple create_all calls in one
-# process (e.g. Task 8 runs sqlite create_all then postgres DDL in the same process).
-_kbchunk_pg_only_cols: list = [
-    col for col in KbChunk.__table__.columns if col.info.get("pg_only")
-]
-
-
-@event.listens_for(KbChunk.__table__, "before_create")
-def _kbchunk_before_create(target, connection, **kw):
-    if connection.dialect.name != "postgresql":
-        for col in list(target.columns):
-            if col.info.get("pg_only"):
-                target._columns.remove(col)
-
-
-@event.listens_for(KbChunk.__table__, "after_create")
-def _kbchunk_after_create(target, connection, **kw):
-    present = {c.name for c in target.columns}
-    for col in _kbchunk_pg_only_cols:
-        if col.name not in present:
-            target.append_column(col)
+    # The Postgres full-text column `tsv` is NOT ORM-mapped: nothing in Python reads a `.tsv`
+    # attribute (full-text search references the DB column by name in raw SQL). It is added to the
+    # Postgres DB as a generated STORED column by kb.ensure_indexes(), so it never appears in the
+    # dialect-neutral create_all DDL and never breaks SQLite INSERT/SELECT. Task 5 builds an
+    # external FTS5 table for full-text search on SQLite instead.
 
 
 class KbQuery(Base):
