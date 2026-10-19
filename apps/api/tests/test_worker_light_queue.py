@@ -10,10 +10,8 @@ import asyncio
 
 import pytest
 
-from omilo_api import bus
+from omilo_api import bus, db, harness
 from omilo_api import company as C
-from omilo_api import db
-from omilo_api import harness
 from omilo_api.config import get_settings
 
 

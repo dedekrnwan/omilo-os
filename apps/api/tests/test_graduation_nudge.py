@@ -10,9 +10,8 @@ The full-tier tests rely on the global conftest Postgres env; no fixture is need
 """
 import pytest
 
-from omilo_api import bus
+from omilo_api import bus, db
 from omilo_api import company as C
-from omilo_api import db
 from omilo_api.config import get_settings
 
 

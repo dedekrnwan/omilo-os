@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 
 def test_kbchunk_create_all_on_sqlite(tmp_path):
-    from omilo_api.db import Base
     from omilo_api import models  # noqa: F401
+    from omilo_api.db import Base
 
     eng = create_engine(f"sqlite:///{tmp_path}/t.db")
     Base.metadata.create_all(eng)          # must not raise
@@ -41,11 +41,13 @@ def test_tsv_absent_from_create_all_added_by_ensure_indexes():
     be the generated column that kb.ensure_indexes installs on Postgres. embedding stays VECTOR on PG."""
     import inspect as _inspect
 
-    from sqlalchemy.schema import CreateTable
     from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateTable
 
-    from omilo_api import kb
-    from omilo_api import models  # noqa: F401
+    from omilo_api import (
+        kb,
+        models,  # noqa: F401
+    )
 
     ddl = str(CreateTable(models.KbChunk.__table__).compile(dialect=postgresql.dialect()))
     assert "tsv" not in ddl.lower(), "tsv must no longer be emitted by create_all — it's added by ensure_indexes"

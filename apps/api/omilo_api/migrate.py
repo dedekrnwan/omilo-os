@@ -27,11 +27,8 @@ import argparse
 import os
 import sys
 
-from . import bus
+from . import bus, db, import_sqlite, kb
 from . import company as C
-from . import db
-from . import import_sqlite
-from . import kb
 from .config import get_settings
 
 # The env keys migrate overrides, so the finally-block can restore exactly what was there before.

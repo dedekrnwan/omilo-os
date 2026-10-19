@@ -30,8 +30,7 @@ def _kb_chunk_total() -> int:
     """Sum of kb_chunk rows across ALL companies. Cached for _CACHE_TTL_S seconds."""
     from sqlalchemy import func, select
 
-    from . import bus
-    from . import company
+    from . import bus, company
     from .db import session_scope
     from .models import KbChunk
 

@@ -14,9 +14,7 @@ import pytest
 import sqlalchemy as sa
 
 from omilo_api import company as C
-from omilo_api import db
-from omilo_api import import_sqlite
-from omilo_api import migrate
+from omilo_api import db, import_sqlite, migrate
 from omilo_api.config import get_settings
 from omilo_api.models import Setting, Staff
 

@@ -13,10 +13,8 @@ They assert the public kb.* functions return the SAME shapes on sqlite as on Pos
 """
 import pytest
 
-from omilo_api import bus
+from omilo_api import bus, db, kb
 from omilo_api import company as C
-from omilo_api import db
-from omilo_api import kb
 from omilo_api.config import get_settings
 
 

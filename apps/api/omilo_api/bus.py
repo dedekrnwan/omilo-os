@@ -23,14 +23,9 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
 
 from . import company as C
 from .config import get_settings
-
-if TYPE_CHECKING:  # type hints only; never imported at runtime in the light tier
-    import redis
-    import redis.asyncio as aredis
 
 log = logging.getLogger("omilo.bus")
 _client = None  # redis.Redis | None

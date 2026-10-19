@@ -3,6 +3,7 @@ import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic import Json, model_validator
 from pydantic_settings import BaseSettings, DotEnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
