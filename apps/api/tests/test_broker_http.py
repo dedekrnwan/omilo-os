@@ -258,7 +258,8 @@ def test_stash_token_stores_complex_token():
 # ---------------------------------------------------------------------------
 
 def test_revoke_posts_to_revoke_url(monkeypatch):
-    """revoke must POST to the provider's revoke_url (best-effort)."""
+    """revoke must POST to the provider's revoke_url with the token in the request
+    body (RFC 7009 §2.1), NOT as a query parameter."""
     from omilo_api import broker
     from omilo_api.config import get_settings
 
@@ -269,12 +270,12 @@ def test_revoke_posts_to_revoke_url(monkeypatch):
         raising=False,
     )
 
-    calls = []
+    captured = []
 
     import httpx as _httpx
 
     def fake_post(url, **kwargs):
-        calls.append(url)
+        captured.append({"url": url, "kwargs": kwargs})
 
         class R:
             def raise_for_status(self):
@@ -287,8 +288,20 @@ def test_revoke_posts_to_revoke_url(monkeypatch):
     b = broker.HttpBroker()
     b.revoke({"access_token": "AT", "provider": "google"})
 
-    assert any("google" in c or "oauth2.googleapis.com" in c for c in calls), (
-        f"Expected a POST to Google's revoke URL, got: {calls}"
+    assert len(captured) == 1, f"Expected exactly one POST call, got: {captured}"
+    call = captured[0]
+
+    # Token must be in the body (data=), not in query params
+    assert call["kwargs"].get("data") == {"token": "AT"}, (
+        f"Expected data={{'token': 'AT'}}, got: {call['kwargs'].get('data')}"
+    )
+    assert "params" not in call["kwargs"] or call["kwargs"].get("params") is None, (
+        f"Token must NOT be sent as query param, but got params={call['kwargs'].get('params')}"
+    )
+
+    # URL must be Google's revoke endpoint
+    assert "google" in call["url"] or "oauth2.googleapis.com" in call["url"], (
+        f"Expected a POST to Google's revoke URL, got: {call['url']}"
     )
 
 

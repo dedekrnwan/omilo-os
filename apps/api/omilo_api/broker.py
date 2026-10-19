@@ -230,7 +230,7 @@ class HttpBroker:
         auth_url = cfg["authorize_url"] + "?" + urllib.parse.urlencode(params)
 
         self._store_state(state, slug)
-        logger.info("start_connect: provider=%s slug=%s state=%s", provider, slug, state)
+        logger.info("start_connect: provider=%s slug=%s", provider, slug)
 
         return {"auth_url": auth_url, "state": state}
 
@@ -285,7 +285,7 @@ class HttpBroker:
         try:
             httpx.post(
                 revoke_url,
-                params={"token": token.get("access_token", "")},
+                data={"token": token.get("access_token", "")},
                 timeout=10,
             )
         except Exception:
