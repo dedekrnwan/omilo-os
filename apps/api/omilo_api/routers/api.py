@@ -2338,7 +2338,7 @@ def _engine_from_onboarding(db: Session) -> tuple[str, dict]:
         _need_claude_key(db)
     elif pid in _LITELLM_PROVIDER_IDS:
         _need_vendor_key(db, pid)
-    elif pid not in ("claude-code", "fake"):
+    elif pid not in ("claude-code", "local", "fake"):
         pid = "fake"
     return pid, _engine_for(pid, pick.get("model"), None)
 

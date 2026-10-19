@@ -53,3 +53,18 @@ def test_apply_ai_local_requires_no_key(owner, monkeypatch):
 
     # Reset to fake
     owner.post("/api/ai", json={"provider": "fake"})
+
+
+def test_engine_from_onboarding_local(base_url):
+    """_engine_from_onboarding returns provider=='local' + engine {type:claude-code,auth:local}
+    when onboarding_ai is stored as {provider:'local'}, not silently degraded to 'fake'."""
+    from omilo_api import services as S
+    from omilo_api.db import session_scope
+    from omilo_api.routers.api import _engine_from_onboarding
+
+    with session_scope() as db:
+        S.set_setting(db, "onboarding_ai", {"provider": "local"})
+        pid, engine = _engine_from_onboarding(db)
+
+    assert pid == "local", f"Expected pid=='local', got {pid!r}"
+    assert engine == {"type": "claude-code", "auth": "local"}, f"Unexpected engine: {engine}"
