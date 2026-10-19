@@ -5,3 +5,5 @@ def test_self_tuning_setting_defaults_off_and_toggles(owner):
     assert owner.get("/api/system").json()["self_tuning"] is False
     owner.post("/api/system", json={"self_tuning": True})
     assert owner.get("/api/system").json()["self_tuning"] is True
+    owner.post("/api/system", json={"self_tuning": False})  # restore shared state for later tests
+    assert owner.get("/api/system").json()["self_tuning"] is False
