@@ -8,7 +8,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 log = logging.getLogger("omilo.tune")
@@ -185,10 +185,9 @@ def _tunes_this_week(db: Session) -> int:
     """Count Improvement rows created in the last 6 days whose reason starts with 'Self-tuned:'."""
     since = now() - dt.timedelta(days=6)
     return db.scalar(
-        select(Improvement)
+        select(func.count()).select_from(Improvement)
         .where(Improvement.created_at >= since)
         .where(Improvement.reason.startswith("Self-tuned:"))
-        .with_only_columns(__import__("sqlalchemy").func.count())
     ) or 0
 
 
