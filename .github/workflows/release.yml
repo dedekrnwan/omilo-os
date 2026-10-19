@@ -1,0 +1,106 @@
+name: release
+# Publishes on a version tag (e.g. git tag v0.5.0 && git push origin v0.5.0):
+#   - multi-arch Docker image  -> ghcr.io/<owner>/omilo:<version> and :latest
+#   - CLI binaries (6 targets) -> GitHub Release assets + checksums.txt
+#   - npm package 'omilo'      -> npmjs (needs secret NPM_TOKEN)
+#   - Homebrew formula         -> tap repo (needs secret HOMEBREW_TAP_TOKEN)
+# The macOS .dmg is built separately by desktop.yml (also triggered on v* tags).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
+      - id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/omilo:${{ steps.v.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/omilo:latest
+
+  cli:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+          - {goos: windows, goarch: arm64}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: "1.24"}
+      - name: build + archive
+        working-directory: cli
+        env: {GOOS: "${{ matrix.goos }}", GOARCH: "${{ matrix.goarch }}", CGO_ENABLED: "0"}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          base="omilo_${{ matrix.goos }}_${{ matrix.goarch }}"
+          ext=""; [ "${{ matrix.goos }}" = "windows" ] && ext=".exe"
+          go build -trimpath -ldflags "-s -w -X main.version=$V" -o "${base}${ext}" .
+          if [ "${{ matrix.goos }}" = "windows" ]; then zip "${base}.zip" "${base}${ext}"; else tar czf "${base}.tar.gz" "${base}${ext}"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "cli-${{ matrix.goos }}-${{ matrix.goarch }}"
+          path: |
+            cli/omilo_*.tar.gz
+            cli/omilo_*.zip
+          if-no-files-found: ignore
+
+  release:
+    needs: [cli]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: dist, pattern: "cli-*", merge-multiple: true}
+      - name: checksums + publish release
+        env: {GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}"}
+        run: |
+          cd dist
+          sha256sum omilo_* > checksums.txt
+          gh release create "$GITHUB_REF_NAME" --title "omilo $GITHUB_REF_NAME" --generate-notes 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" omilo_* checksums.txt --clobber
+
+  npm:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22", registry-url: "https://registry.npmjs.org"}
+      - name: publish (skips cleanly if NPM_TOKEN is unset)
+        working-directory: packaging/npm
+        env: {NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}"}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then echo "NPM_TOKEN not set — skipping npm publish"; exit 0; fi
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+          npm publish --access public
+
+  homebrew:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: update tap (skips cleanly if HOMEBREW_TAP_TOKEN is unset)
+        env: {GH_TOKEN: "${{ secrets.HOMEBREW_TAP_TOKEN }}"}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then echo "HOMEBREW_TAP_TOKEN not set — skipping tap update"; exit 0; fi
+          bash packaging/homebrew/update-tap.sh "${GITHUB_REF_NAME#v}"

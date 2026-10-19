@@ -48,7 +48,7 @@ cli:
 	cd cli && go build -o omilo .
 
 image:
-	docker build -t ghcr.io/super-saga/saga-os:dev .
+	docker build -t ghcr.io/dedekrnwan/omilo:dev .
 
 # Omilo for macOS: one app with everything inside (Postgres, Valkey, Python, Node), no Docker. Run on a Mac with
 # Xcode Command Line Tools, Rust (rustup.rs), uv and Node. The .dmg lands in apps/desktop/src-tauri/target/release/

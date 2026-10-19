@@ -9,7 +9,7 @@ name: desktop
 on:
   workflow_dispatch:
   push:
-    tags: ["desktop-v*"]
+    tags: ["desktop-v*", "v*"]
   pull_request:
     paths: ["apps/desktop/**", "scripts/desktop/**", "apps/api/omilo_api/desktop.py", ".github/workflows/desktop.yml"]
 
@@ -88,7 +88,13 @@ jobs:
           ls -la out
       - uses: actions/upload-artifact@v4
         with: {name: "omilo-mac-${{ matrix.arch }}", path: out/*.dmg}
-      - name: Publish (tags only)
-        if: startsWith(github.ref, 'refs/tags/desktop-v')
+      - name: Publish (tags only — desktop-v* makes a Mac-only release, v* uploads to the main release)
+        if: startsWith(github.ref, 'refs/tags/desktop-v') || startsWith(github.ref, 'refs/tags/v')
         env: {GH_TOKEN: "${{ github.token }}"}
-        run: gh release create "$GITHUB_REF_NAME" --title "Omilo for Mac ${GITHUB_REF_NAME#desktop-v}" --generate-notes 2>/dev/null || true; gh release upload "$GITHUB_REF_NAME" out/*.dmg --clobber
+        run: |
+          case "$GITHUB_REF_NAME" in
+            desktop-v*) title="Omilo for Mac ${GITHUB_REF_NAME#desktop-v}" ;;
+            *)          title="omilo $GITHUB_REF_NAME" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" --title "$title" --generate-notes 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" out/*.dmg --clobber

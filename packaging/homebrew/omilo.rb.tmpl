@@ -1,0 +1,36 @@
+class Omilo < Formula
+  desc "Install, run and talk to your Omilo gateway from the terminal"
+  homepage "https://github.com/dedekrnwan/omilo-os"
+  version "__VERSION__"
+  license "AGPL-3.0-or-later"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/dedekrnwan/omilo-os/releases/download/v__VERSION__/omilo_darwin_arm64.tar.gz"
+      sha256 "__SHA_DARWIN_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/dedekrnwan/omilo-os/releases/download/v__VERSION__/omilo_darwin_amd64.tar.gz"
+      sha256 "__SHA_DARWIN_AMD64__"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/dedekrnwan/omilo-os/releases/download/v__VERSION__/omilo_linux_arm64.tar.gz"
+      sha256 "__SHA_LINUX_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/dedekrnwan/omilo-os/releases/download/v__VERSION__/omilo_linux_amd64.tar.gz"
+      sha256 "__SHA_LINUX_AMD64__"
+    end
+  end
+
+  def install
+    bin.install Dir["omilo_*"].first => "omilo"
+  end
+
+  test do
+    assert_match "omilo", shell_output("#{bin}/omilo version")
+  end
+end

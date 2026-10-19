@@ -21,7 +21,7 @@ services:
     healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 10}
 
   omilo-api:
-    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    image: ${OMILO_IMAGE:-ghcr.io/dedekrnwan/omilo:latest}
     restart: unless-stopped
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
     environment: &env
@@ -46,7 +46,7 @@ services:
       - traefik.http.services.omilo.loadbalancer.server.port=7700
 
   omilo-worker:
-    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    image: ${OMILO_IMAGE:-ghcr.io/dedekrnwan/omilo:latest}
     restart: unless-stopped
     command: ["omilo-worker"]
     depends_on: {omilo-api: {condition: service_started}}

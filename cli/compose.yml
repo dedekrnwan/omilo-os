@@ -1,5 +1,5 @@
 # Laptop mode (FULL TIER): Omilo (API + worker + web) with Postgres (pgvector) and Redis, on localhost. Written by `omilo up`.
-# For a single-container light tier (SQLite, no sibling services), run the image directly: docker run -p 7700:7700 -v omilo-data:/data ghcr.io/super-saga/saga-os
+# For a single-container light tier (SQLite, no sibling services), run the image directly: docker run -p 7700:7700 -v omilo-data:/data ghcr.io/dedekrnwan/omilo
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -18,7 +18,7 @@ services:
     healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 30}
 
   omilo:
-    image: ${OMILO_IMAGE:-ghcr.io/super-saga/saga-os:latest}
+    image: ${OMILO_IMAGE:-ghcr.io/dedekrnwan/omilo:latest}
     restart: unless-stopped
     depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
     ports:

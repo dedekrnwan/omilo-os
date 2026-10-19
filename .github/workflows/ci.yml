@@ -51,4 +51,4 @@ jobs:
       - uses: docker/login-action@v3
         with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}"}
       - uses: docker/build-push-action@v6
-        with: {context: ., push: true, tags: "ghcr.io/${{ github.repository_owner }}/saga-os:latest"}
+        with: {context: ., push: true, tags: "ghcr.io/${{ github.repository_owner }}/omilo:latest"}
