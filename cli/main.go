@@ -234,6 +234,75 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
+// ------------------------------------------------------------------ start (light tier, no Docker)
+
+// startCommand is a pure, testable constructor.  It assembles the *exec.Cmd
+// that launches omilo-api with the light-tier environment; it has no side
+// effects and never calls compose.
+func startCommand(apiBin, dir, port string) *exec.Cmd {
+	dbURL := "sqlite:///" + filepath.ToSlash(filepath.Join(dir, "omilo.db"))
+	env := append(os.Environ(),
+		"OMILO_DATA_DIR="+dir,
+		"OMILO_DATABASE_URL="+dbURL,
+		"OMILO_EMBEDDED_WORKER=true",
+		"OMILO_PORT="+port,
+		"OMILO_PUBLIC_URL=http://localhost:"+port,
+	)
+	cmd := exec.Command(apiBin)
+	cmd.Env = env
+	return cmd
+}
+
+// lookupApiBin resolves the omilo-api binary: first via PATH, then next to
+// the running CLI binary.  Returns "" if not found.
+func lookupApiBin() string {
+	if p, err := exec.LookPath("omilo-api"); err == nil {
+		return p
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "omilo-api")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func cmdStart(args []string) {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	dir := fs.String("data-dir", dataDir(), "data directory")
+	port := fs.String("port", "7700", "port on this machine")
+	noOpen := fs.Bool("no-open", false, "don't open the browser")
+	_ = fs.Parse(args)
+
+	apiBin := lookupApiBin()
+	if apiBin == "" {
+		die(errors.New("omilo-api is not installed. Install the Omilo app, or use `omilo up` to run with Docker."))
+	}
+
+	cmd := startCommand(apiBin, *dir, *port)
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+
+	if err := cmd.Start(); err != nil {
+		die(fmt.Errorf("failed to start omilo-api: %w", err))
+	}
+
+	url := "http://localhost:" + *port
+	fmt.Print("Waiting for Omilo to start")
+	if !waitHealthy(url) {
+		die(errors.New("omilo-api did not become healthy in 60s; check its logs above"))
+	}
+	fmt.Println(" ready:", url)
+
+	c := loadConfig()
+	c.URL = url
+	must(saveConfig(c))
+
+	if !*noOpen {
+		openBrowser(url)
+	}
+}
+
 // ------------------------------------------------------------------ commands
 func cmdUp(args []string) {
 	fs := flag.NewFlagSet("up", flag.ExitOnError)
@@ -549,6 +618,7 @@ const usage = `omilo — run your company of AI staff agents
 
 Run it
   up [-port 7700]        start Omilo (Docker) and open it in the browser
+  start [-port 7700]     run Omilo on this machine (SQLite, no Docker)
   down                   stop it          logs      follow the logs
   login [-url URL]       sign in from this terminal
   doctor                 check Docker, the gateway, your login and the engines
@@ -579,6 +649,8 @@ func main() {
 	switch cmd {
 	case "up":
 		cmdUp(args)
+	case "start":
+		cmdStart(args)
 	case "down":
 		must(compose("down"))
 	case "logs":

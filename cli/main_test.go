@@ -1,0 +1,49 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestStartBuildsLightEnv(t *testing.T) {
+	cmd := startCommand("omilo-api", "/tmp/omilodata", "7700")
+
+	// cmd.Path / cmd.Args[0] must end with omilo-api
+	if !strings.HasSuffix(cmd.Path, "omilo-api") {
+		t.Errorf("cmd.Path = %q; want suffix omilo-api", cmd.Path)
+	}
+	if len(cmd.Args) == 0 || !strings.HasSuffix(cmd.Args[0], "omilo-api") {
+		t.Errorf("cmd.Args[0] = %q; want suffix omilo-api", cmd.Args[0])
+	}
+
+	// Build a map of env vars for easy lookup
+	envMap := make(map[string]string)
+	for _, e := range cmd.Env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Assert required env vars
+	checks := map[string]string{
+		"OMILO_DATABASE_URL":      "sqlite:////tmp/omilodata/omilo.db",
+		"OMILO_EMBEDDED_WORKER":   "true",
+		"OMILO_PORT":              "7700",
+		"OMILO_DATA_DIR":          "/tmp/omilodata",
+		"OMILO_PUBLIC_URL":        "http://localhost:7700",
+	}
+	for k, want := range checks {
+		if got, ok := envMap[k]; !ok {
+			t.Errorf("env missing %s", k)
+		} else if got != want {
+			t.Errorf("env %s = %q; want %q", k, got, want)
+		}
+	}
+
+	// Structural: startCommand must not reference compose — verified by the
+	// fact that it returns a cmd pointing at omilo-api, not docker.
+	if strings.Contains(cmd.Path, "docker") {
+		t.Errorf("cmd.Path %q references docker; start should not call compose", cmd.Path)
+	}
+}
