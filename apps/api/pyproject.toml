@@ -52,6 +52,9 @@ omilo_api = ["templates/*.yaml", "templates/workflows/*.json"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Put apps/api on sys.path so `from tests.test_pieces import ...` resolves under plain
+# `pytest` (CI), not only `python -m pytest`.
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 140
