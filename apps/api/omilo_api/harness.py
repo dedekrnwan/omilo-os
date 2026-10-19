@@ -117,7 +117,21 @@ def serialize(a: HarnessAccount, busy: int = 0) -> dict:
 
 # Leases live in Redis, so every worker process sees the same counts: one sorted set per account, a member per lease
 # with its expiry time (a crashed process can't keep an account busy forever).
+#
+# Light tier: one process, no Redis. `_LEASES` is an in-process stand-in that mirrors the Redis
+# sorted-set semantics exactly — {lease_key: {token: expiry_epoch}} guarded by `_lease_lock`.
+# _busy_of prunes expired members then counts; _take adds one member; _give_back pops the member
+# with the smallest expiry (zpopmin). This keeps the pool's concurrency limit correct in a single
+# process and ensures _take never raises.
 _lock = threading.Lock()
+_lease_lock = threading.Lock()
+_LEASES: dict[str, dict[str, float]] = {}
+
+
+def reset_leases() -> None:
+    """Tests: clear the in-process lease store."""
+    with _lease_lock:
+        _LEASES.clear()
 
 
 def _lease_key(account_id: str) -> str:
@@ -131,8 +145,20 @@ def _busy_of(account_id: str) -> int:
 
     from . import bus
 
+    k = _lease_key(account_id)
+    if bus._light():
+        now_s = time.time()
+        with _lease_lock:
+            members = _LEASES.get(k)
+            if not members:
+                return 0
+            for tok in [t for t, exp in members.items() if exp <= now_s]:  # prune expired (zremrangebyscore)
+                members.pop(tok, None)
+            if not members:
+                _LEASES.pop(k, None)
+                return 0
+            return len(members)
     try:
-        k = _lease_key(account_id)
         bus.r().zremrangebyscore(k, 0, time.time())
         return int(bus.r().zcard(k))
     except Exception:  # noqa: BLE001
@@ -151,8 +177,14 @@ def busy_counts() -> dict[str, int]:
     from . import bus
 
     out: dict[str, int] = {}
+    prefix = bus.key("pool:lease:")
+    if bus._light():
+        with _lease_lock:
+            keys = [k for k in _LEASES if k.startswith(prefix)]
+        for k in keys:
+            out[k[len(prefix):]] = _busy_of(k[len(prefix):])
+        return out
     try:
-        prefix = bus.key("pool:lease:")
         for k in bus.r().scan_iter(prefix + "*", count=200):
             aid = k[len(prefix):]
             out[aid] = _busy_of(aid)
@@ -169,15 +201,29 @@ def _take(account_id: str) -> None:
     from .config import get_settings
 
     k = _lease_key(account_id)
-    bus.r().zadd(k, {uuid.uuid4().hex: time.time() + get_settings().task_timeout_s + 120})
+    expiry = time.time() + get_settings().task_timeout_s + 120
+    if bus._light():
+        with _lease_lock:
+            _LEASES.setdefault(k, {})[uuid.uuid4().hex] = expiry
+        return
+    bus.r().zadd(k, {uuid.uuid4().hex: expiry})
     bus.r().expire(k, get_settings().task_timeout_s + 300)
 
 
 def _give_back(account_id: str) -> None:
     from . import bus
 
+    k = _lease_key(account_id)
+    if bus._light():
+        with _lease_lock:
+            members = _LEASES.get(k)
+            if members:
+                members.pop(min(members, key=members.get), None)  # pop smallest-expiry token (zpopmin)
+                if not members:
+                    _LEASES.pop(k, None)
+        return
     try:
-        bus.r().zpopmin(_lease_key(account_id), 1)
+        bus.r().zpopmin(k, 1)
     except Exception:  # noqa: BLE001
         pass
 

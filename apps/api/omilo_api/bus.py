@@ -100,7 +100,8 @@ class _LocalBus:
     - `kv`: {key: (value, expiry_monotonic|None)} backs get_json/set_json/throttle/claim.
     - `sets`: {key: set[str]} backs the pending/marks queues.
     - `locks`: {key: threading.Lock} backs lock() (a real lock => exact exclusion in one process).
-    - `subs`: {token: (channels, queue, loop)} backs publish fan-out to the WebSocket layer.
+    - `subs`: {token: (channels, queue, loop)} backs publish fan-out to the WebSocket layer;
+      `loop` is the consumer's event loop so a worker-thread publish can wake it thread-safely.
     """
 
     def __init__(self) -> None:
@@ -108,7 +109,7 @@ class _LocalBus:
         self.kv: dict[str, tuple[object, float | None]] = {}
         self.sets: dict[str, set[str]] = {}
         self.locks: dict[str, threading.Lock] = {}
-        self.subs: dict[int, tuple[set[str], object]] = {}
+        self.subs: dict[int, tuple[set[str], object, object]] = {}
 
     def reset(self) -> None:
         with self._guard:
@@ -191,10 +192,13 @@ class _LocalBus:
             return out
 
     # -- live events / subscriptions --
-    def subscribe(self, channels, queue) -> int:
+    def subscribe(self, channels, queue, loop=None) -> int:
+        """Register an asyncio.Queue subscriber. `loop` is the consumer's running event loop,
+        captured at subscribe time so publish (which may run on a worker thread or a sync DB
+        commit) can wake the queue safely via loop.call_soon_threadsafe."""
         token = id(queue)
         with self._guard:
-            self.subs[token] = (set(channels), queue)
+            self.subs[token] = (set(channels), queue, loop)
         return token
 
     def unsubscribe(self, token: int) -> None:
@@ -204,18 +208,30 @@ class _LocalBus:
     def publish(self, chan_key: str, data: dict) -> None:
         """Enqueue {channel, data} to every subscriber listening on chan_key. Never raises.
 
-        May run on a worker thread while the queue is consumed in asyncio; put_nowait is
-        thread-safe enough for the handoff and we tolerate (drop on) a full queue. The WS layer
-        (Task 6) can wrap the queue's loop with call_soon_threadsafe if it needs wake-ups.
-        """
+        publish may run on a worker thread (the KB loop) or a sync DB-commit event while the
+        queue is consumed on the asyncio event loop. We hand the item across that boundary with
+        loop.call_soon_threadsafe(queue.put_nowait, msg) when we captured the consumer's loop,
+        falling back to a direct put_nowait otherwise. A full/closed queue is tolerated (dropped)
+        — a missed wake-up is caught by the WS's periodic DB re-read."""
         with self._guard:
-            targets = [q for chans, q in self.subs.values() if chan_key in chans]
+            targets = [(q, loop) for chans, q, loop in self.subs.values() if chan_key in chans]
         msg = {"channel": chan_key, "data": data}
-        for q in targets:
+        for q, loop in targets:
             try:
-                q.put_nowait(msg)
+                if loop is not None and not loop.is_closed():
+                    loop.call_soon_threadsafe(_safe_put, q, msg)
+                else:
+                    q.put_nowait(msg)
             except Exception:  # full queue or closed loop: a missed wake-up is caught by the next poll
                 pass
+
+
+def _safe_put(queue, msg) -> None:
+    """put_nowait on the consumer's loop thread; drop on a full queue (missed wakes are re-read)."""
+    try:
+        queue.put_nowait(msg)
+    except Exception:
+        pass
 
 
 _LOCAL = _LocalBus()
@@ -242,7 +258,11 @@ def subscribe(cid: str, channels):  # -> asyncio.Queue
     import asyncio
 
     q: asyncio.Queue = asyncio.Queue()
-    q._omilo_token = _LOCAL.subscribe([key(c, cid) for c in channels], q)  # type: ignore[attr-defined]
+    try:  # the consumer's loop: publish may run on a worker thread and must wake it safely
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    q._omilo_token = _LOCAL.subscribe([key(c, cid) for c in channels], q, loop)  # type: ignore[attr-defined]
     return q
 
 

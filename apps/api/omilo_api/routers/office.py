@@ -109,9 +109,24 @@ async def office_ws(ws: WebSocket):
     rd = asyncio.create_task(reader())
     wake = asyncio.Event()
 
-    async def listen():  # Redis: a message means "new events"; the database is still what we send
+    async def listen():  # a message means "new events"; the database is still what we send
         from .. import bus
 
+        if bus._light():
+            # Light tier: no Redis. office.py's after_commit bus.publish("office", cid=...)
+            # delivers into this in-process asyncio.Queue (waking us via call_soon_threadsafe).
+            q = bus.subscribe(cid, ["ch:office"])
+            try:
+                while True:
+                    await q.get()
+                    wake.set()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - the stream falls back to the periodic DB re-read
+                log.warning("office stream without live wake-ups: %s", e)
+            finally:
+                bus.unsubscribe(q)
+            return
         try:
             ps = bus.ar().pubsub()
             await ps.subscribe(bus.key("ch:office", cid))
