@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { mascotSoundOn, playMascot, setMascotSound } from "./mascotSound";
 import { ago, api, when } from "@/lib/api";
@@ -55,6 +56,17 @@ export default function NotifySettings({ embedded = false }: { embedded?: boolea
       {perm === "insecure" && <p className="small">Browsers only allow notifications on https or on localhost. Open Omilo at http://localhost:7700, or put it behind https.</p>}
       {!cfg.push && <p className="small">Background notifications (when no tab is open) need the <code>pywebpush</code> package on the server.</p>}
 
+      {"email" in cfg.channels && (
+        <div className="set-card" style={{ marginTop: 14 }}>
+          <i className="ri-mail-send-line set-card-ic idle" />
+          <div className="t">
+            <b>Email delivery</b>
+            <span>Omilo writes the emails, but you choose the server that sends them. Add your SMTP details and the Email column turns on.</span>
+          </div>
+          <Link className="btn" href="/settings/?s=email">Set up SMTP</Link>
+        </div>
+      )}
+
       <label>Focus</label>
       <div className="nrow">
         <div className="seg" role="group" aria-label="Focus">
@@ -80,7 +92,7 @@ export default function NotifySettings({ embedded = false }: { embedded?: boolea
 
       <label>Tell me about</label>
       <table className="ntable">
-        <thead><tr><th>What</th>{Object.entries(cfg.channels).map(([c, l]) => <th key={c} title={l}>{c === "push" ? "Notification" : "In the app"}</th>)}</tr></thead>
+        <thead><tr><th>What</th>{Object.entries(cfg.channels).map(([c, l]) => <th key={c} title={l}>{c === "push" ? "Notification" : c === "email" ? "Email" : "In the app"}</th>)}</tr></thead>
         <tbody>
           {Object.entries(cfg.kinds).map(([k, label]) => (
             <tr key={k}>

@@ -403,6 +403,22 @@ function Account() {
       {msg && <div className="callout ok">{msg}</div>}
       <Err error={err} />
       <p className="small set-foot">Forgot it? On the computer that runs Omilo: <span className="mono">make reset-password</span></p>
+
+      <div className="set-sub" style={{ marginTop: 20 }}><b>Your Persona</b><span className="soon-tag">Soon</span></div>
+      <div className="set-blk-soon">
+        <p className="small" style={{ margin: 0, color: "var(--muted)" }}>Turn your experience into staff other teams can hire. About 5 minutes.</p>
+      </div>
+
+      <div className="set-sub" style={{ marginTop: 20 }}><b>Danger zone</b></div>
+      <div className="set-blk-danger">
+        <div className="set-blk-danger-t">
+          <b>Delete account</b>
+          <span className="small">Removes you from Omilo. The company and its helpers stay with the other owners.</span>
+        </div>
+        <button className="btn danger" disabled tabIndex={-1} aria-disabled="true">
+          <i className="ri-delete-bin-line" />Delete<span className="soon-tag" style={{ marginLeft: 6 }}>Soon</span>
+        </button>
+      </div>
     </>
   );
 }
