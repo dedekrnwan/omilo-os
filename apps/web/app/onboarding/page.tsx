@@ -75,7 +75,7 @@ function showField(a: Answers, f: string, o: Options): string {
   const v = a[f];
   if (f === "offers") return (v || []).filter((x: any) => x.name).map((x: any) => x.price ? `${x.name} (${x.price})` : x.name).join(", ");
   if (f === "goal_notes") return Object.values(v || {}).filter(Boolean).join("; ");
-  if (ENUM[f]) return Array.isArray(v) ? v.map((k: string) => label(o[ENUM[f]][k] as any) || k).join(", ") : label(o[ENUM[f]][v] as any) || "";
+  if (ENUM[f]) return Array.isArray(v) ? v.map((k: string) => label(o[ENUM[f]]?.[k] as any) || k).join(", ") : label(o[ENUM[f]]?.[v] as any) || "";
   return String(v || "");
 }
 
