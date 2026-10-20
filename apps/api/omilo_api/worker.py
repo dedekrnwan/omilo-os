@@ -132,6 +132,11 @@ class Worker:
                     await notify.push_pending(session_scope, lambda: session_scope(C.MAIN), label, cid if many else "")
                 except Exception:
                     log.exception("web push failed for %s", cid)
+                try:
+                    label = C.summary(cid)["name"] if many else ""
+                    await notify.email_pending(session_scope, lambda: session_scope(C.MAIN), label, cid if many else "")
+                except Exception:
+                    log.exception("email notify failed for %s", cid)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=3)
             except TimeoutError:

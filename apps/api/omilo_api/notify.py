@@ -27,9 +27,11 @@ log = logging.getLogger("omilo.notify")
 
 KINDS = {"inbox": "Inbox: approvals, questions and alerts", "reply": "Replies from helpers in chat",
          "job_failed": "A job failed", "job_done": "A job finished", "doc": "A helper changed a doc"}
-CHANNELS = {"push": "Notification on this computer or phone", "app": "Pop-up while Omilo is open"}
-DEFAULT_KINDS = {"inbox": {"push": True, "app": True}, "reply": {"push": True, "app": True}, "job_failed": {"push": True, "app": True},
-                 "job_done": {"push": False, "app": True}, "doc": {"push": False, "app": True}}
+CHANNELS = {"push": "Notification on this computer or phone", "app": "Pop-up while Omilo is open",
+            "email": "Email to your account address"}
+DEFAULT_KINDS = {"inbox": {"push": True, "app": True, "email": False}, "reply": {"push": True, "app": True, "email": False},
+                 "job_failed": {"push": True, "app": True, "email": False},
+                 "job_done": {"push": False, "app": True, "email": False}, "doc": {"push": False, "app": True, "email": False}}
 DEFAULT_QUIET = {"on": True, "start": "22:00", "end": "07:00"}
 MAX_PER_HOUR = 6
 PREF_KEY = {"nudge": "inbox", "digest": "inbox"}  # reminders follow the Inbox setting
@@ -465,4 +467,75 @@ async def push_pending(db_factory, auth_factory=None, label: str = "", company: 
             else:
                 log.warning("web push failed: %s", res)
         adb.commit()
+    return sent
+
+
+async def email_pending(db_factory, auth_factory=None, label: str = "", company: str = "") -> int:  # noqa: ARG001
+    """Send email notifications for fresh Notice rows whose owner has email enabled, honouring quiet/focus/cap.
+
+    Gracefully returns 0 (no exception) when SMTP is not configured.
+    Returns the number of emails sent."""
+    from . import smtp
+    from .models import User
+
+    auth_factory = auth_factory or db_factory
+    sent = 0
+    with db_factory() as db, auth_factory() as adb:
+        # Guard: bail early if SMTP is not usable (no host configured)
+        try:
+            cfg = smtp.get_config(db)
+            if not cfg.get("host"):
+                return 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+        cur = db.get(Setting, "email_cursor")
+        last = int(cur.value) if cur and cur.value is not None else None
+        if last is None:  # first run: set cursor and do nothing this tick
+            db.add(Setting(key="email_cursor", value=latest_id(db)))
+            db.commit()
+            return 0
+
+        notices = list(db.scalars(select(Notice).where(Notice.id > last).order_by(Notice.id).limit(50)))
+        if not notices:
+            return 0
+
+        # Find all unique user ids that have email prefs (stored in the company DB)
+        # We mirror push_pending: iterate the auth DB for known users
+        from sqlalchemy import select as _sel
+        users = list(adb.scalars(_sel(User)))
+        if not users:
+            # advance cursor so we don't replay
+            cur.value = notices[-1].id
+            db.commit()
+            return 0
+
+        for u in users:
+            if is_present(db, u.id):
+                continue  # tab is open: skip email (same logic as push)
+            p = prefs(db, u.id)
+            fresh = [n for n in notices if wants(p, n.kind, "email")]
+            now_ok = [n for n in fresh if not held(db, p, n.level)]
+            for n in now_ok:
+                payload = serialize(n)
+                subject = payload["title"]
+                if label:
+                    subject = f"{label} · {subject}"
+                body = payload.get("body") or payload["title"]
+                try:
+                    smtp.send_email(db, u.email, subject, body)
+                except smtp.SmtpError:
+                    return 0
+                db.add(Notification(
+                    inbox_item_id=n.item_id,
+                    notice_id=n.id,
+                    user_id=u.id,
+                    channel="email",
+                    level=n.level,
+                    action="sent",
+                ))
+                sent += 1
+
+        cur.value = notices[-1].id
+        db.commit()
     return sent
