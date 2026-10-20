@@ -9,6 +9,7 @@ import { helperItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { visibleThreads } from "@/lib/open";
 import { kick, usePoll } from "@/lib/poll";
+import { Reply } from "@/components/chat/Reply";
 
 /* A conversation with a helper: messages, live run cards and clickable choices. Used by the Workspace and by the
    job / chat drawers that open from anywhere. */
@@ -381,19 +382,19 @@ export function Conversation({ th, staff, events, onSend, busy, onDecide, onProp
         row.m.role === "owner" ? <div key={row.m.id} className="bubble" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} people={people} /><Attachments blocks={row.m.blocks} /></div>
           : row.m.role === "system" ? <div key={row.m.id} className="sysmsg" onContextMenu={menu(() => msgItems(th, row.m, "", staff))}><Markdown text={row.m.text} /></div>
           : (
-            <div key={row.m.id} className="agentmsg" onContextMenu={menu(() => msgItems(th, row.m, name(row.m.author), staff))}>
-              <Avatar who={staff.find((x) => x.id === row.m.author) || { id: row.m.author, name: name(row.m.author) }} size={30} />
-              <div className="body">
-                <div className="who">{name(row.m.author)} · {when(row.m.at)}</div>
-                <Markdown text={row.m.text} people={people} />
-                <Attachments blocks={row.m.blocks} />
-                <Choices m={row.m} messages={th.messages} busy={busy} onPick={onSend} />
-                {onDecide && <AccessRequest m={row.m} onDecide={onDecide} />}
-                {onProposal && <ProposalRequest m={row.m} onProposal={onProposal} />}
-                {onAnswer && <QuestionRequest m={row.m} onAnswer={onAnswer} />}
-                <JobProposal m={row.m} />
-              </div>
-            </div>
+            <Reply
+              key={row.m.id}
+              m={row.m}
+              th={th}
+              staff={staff}
+              messages={th.messages}
+              busy={busy}
+              onPick={onSend}
+              onDecide={onDecide}
+              onProposal={onProposal}
+              onAnswer={onAnswer}
+              contextMenuItems={() => msgItems(th, row.m, name(row.m.author), staff)}
+            />
           )
       ))}
       {th.awaiting_reply && !runs.some((r) => r.state === "running") && (
