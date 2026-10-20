@@ -83,6 +83,14 @@ export type WfPattern = { staff: { id: string; name: string }; title: string; co
 export type Message = { id: string; role: string; author: string; text: string; at: string };
 export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[];
   pending?: string[]; updated_at?: string };
+export type AskResult = {
+  answer: string;
+  sources: { title: string; ref: string; url?: string; surface: "kb" | "inbox" | "plan" | "docs"; score: number }[];
+  tokens: number;
+  cost_usd: number;
+  ms: number;
+};
+
 export type Overview = {
   company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
   budget_company?: { budget_usd: number; cost_usd: number; pct: number | null };
@@ -91,6 +99,7 @@ export type Overview = {
   staff: { id: string; name: string; status: string; is_chief: boolean; running: number }[];
   kpis: Record<string, { value: number; period: string; source: string; at: string }>;
   cost_7d_usd: number;
+  ai_status?: { ok: boolean; label: string; detail?: string };
 };
 
 export function ago(iso?: string | null): string {
