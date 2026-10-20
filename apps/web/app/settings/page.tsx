@@ -9,7 +9,7 @@ import KnowledgeSettings from "@/components/KnowledgeSettings";
 import NotifySettings from "@/components/NotifySettings";
 import { useOverview } from "@/components/Shell";
 import { Err } from "@/components/ui";
-import { BASE, api } from "@/lib/api";
+import { BASE, ApiError, api } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import { usePoll } from "@/lib/poll";
 
@@ -23,6 +23,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   { label: "Company", items: [
     { id: "general", label: "General", icon: "ri-building-2-line", words: "name company timezone time zone", desc: "Your company's name and time zone." },
     { id: "safety", label: "Safety & limits", icon: "ri-shield-check-line", words: "strict mode approvals pause stop concurrency parallel limits budget spend money cost", desc: "What needs your approval, how many helpers work at once, the company budget and the stop button." },
+    { id: "email", label: "Email (SMTP)", icon: "ri-mail-send-line", words: "smtp email mail server host port tls ssl username password from send notifications", desc: "The mail server Omilo uses to send email notifications." },
   ] },
   { label: "AI", items: [
     { id: "ai", label: "AI engine", icon: "ri-sparkling-2-line", words: "claude api key model practice mode engine", desc: "The AI your helpers think with." },
@@ -564,6 +565,117 @@ function System() {
   );
 }
 
+// ------------------------------------------------------------------ email smtp
+type SmtpConfig = { host: string; port: number; security: "none" | "tls" | "ssl"; username: string; from_addr: string; has_password: boolean };
+type SmtpForm = { host: string; port: string; security: "none" | "tls" | "ssl"; username: string; password: string; from_addr: string };
+
+function EmailSmtp() {
+  const [form, setForm] = useState<SmtpForm>({ host: "", port: "587", security: "tls", username: "", password: "", from_addr: "" });
+  const [hasPassword, setHasPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testTo, setTestTo] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testErr, setTestErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api<SmtpConfig>("/settings/smtp").then((d) => {
+      setForm({ host: d.host || "", port: String(d.port || 587), security: d.security || "tls", username: d.username || "", password: "", from_addr: d.from_addr || "" });
+      setHasPassword(d.has_password);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const f = (k: keyof SmtpForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const save = async () => {
+    setSaving(true); setMsg(null); setErr(null);
+    try {
+      const body: Record<string, unknown> = { host: form.host, port: Number(form.port) || 587, security: form.security, username: form.username, from_addr: form.from_addr };
+      if (form.password) body.password = form.password;
+      const d = await api<SmtpConfig>("/settings/smtp", { method: "PUT", body });
+      setHasPassword(d.has_password);
+      setForm((prev) => ({ ...prev, password: "" }));
+      setMsg("Saved.");
+    } catch (e: any) { setErr(e.message); } finally { setSaving(false); }
+  };
+
+  const sendTest = async () => {
+    setTesting(true); setTestMsg(null); setTestErr(null);
+    try {
+      await api("/settings/smtp/test", { body: testTo.trim() ? { to: testTo.trim() } : {} });
+      setTestMsg("Test email sent successfully.");
+    } catch (e: any) {
+      if (e instanceof ApiError && e.status === 400) setTestErr(e.message);
+      else setTestErr(e.message);
+    } finally { setTesting(false); }
+  };
+
+  return (
+    <>
+      <p className="small" style={{ margin: "0 0 18px", color: "var(--muted)" }}>
+        Omilo writes the emails; your own mail server sends them. Until it&apos;s connected, everything stays in the app.
+      </p>
+
+      <Row title="Host" desc="The SMTP server hostname, e.g. smtp.yourdomain.com.">
+        <input value={form.host} onChange={f("host")} placeholder="smtp.yourdomain.com" autoComplete="off" style={{ width: "100%" }} />
+      </Row>
+
+      <Row title="Port" desc="Common: 587 for STARTTLS, 465 for SSL/TLS, 25 for plain.">
+        <input value={form.port} onChange={f("port")} inputMode="numeric" placeholder="587" style={{ width: 90 }} />
+      </Row>
+
+      <Row title="Security" desc="How the connection to the mail server is encrypted.">
+        <select value={form.security} onChange={f("security")} style={{ width: "auto" }}>
+          <option value="tls">STARTTLS</option>
+          <option value="ssl">SSL / TLS</option>
+          <option value="none">None</option>
+        </select>
+      </Row>
+
+      <Row title="Username" desc="The login name for your SMTP server (usually an email address).">
+        <input value={form.username} onChange={f("username")} placeholder="you@yourdomain.com" autoComplete="username" style={{ width: "100%" }} />
+      </Row>
+
+      <Row title="Password" desc={hasPassword ? "A password is saved. Enter a new one to replace it, or leave blank to keep the current one." : "SMTP password for the account above."}>
+        <input
+          type="password"
+          autoComplete="new-password"
+          value={form.password}
+          onChange={f("password")}
+          placeholder={hasPassword ? "Leave blank to keep saved password" : "Password"}
+          style={{ width: "100%" }}
+        />
+        {hasPassword && !form.password && <span className="set-ok"><i className="ri-lock-line" />Password saved</span>}
+      </Row>
+
+      <Row title="From address" desc="The email address that appears in the From field of sent emails.">
+        <input value={form.from_addr} onChange={f("from_addr")} placeholder="omilo@yourdomain.com" autoComplete="off" style={{ width: "100%" }} />
+      </Row>
+
+      <div className="acts" style={{ marginTop: 4, marginBottom: 4 }}>
+        <button className="btn primary" disabled={saving || !form.host.trim()} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+        {msg && <span className="set-ok"><i className="ri-check-line" />{msg}</span>}
+      </div>
+      {err && <div className="callout" style={{ borderColor: "var(--bad-line)", background: "var(--bad-tint)", marginTop: 8 }}>{err}</div>}
+
+      <div className="set-sub" style={{ marginTop: 20 }}>
+        <i className="ri-mail-check-line" /><b>Send a test email</b>
+      </div>
+      <p className="small" style={{ margin: "0 0 10px" }}>Send a test to confirm the connection and credentials are working.</p>
+      <div className="acts">
+        <input value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="Recipient (optional — defaults to your account email)" style={{ flex: 1, minWidth: 0 }} />
+        <button className="btn" disabled={testing} onClick={sendTest}>{testing ? "Sending…" : "Send test"}</button>
+      </div>
+      {testMsg && <div className="callout ok" style={{ marginTop: 8 }}><i className="ri-check-line" /> {testMsg}</div>}
+      {testErr && <div className="callout" style={{ borderColor: "var(--bad-line)", background: "var(--bad-tint)", marginTop: 8 }}>{testErr}</div>}
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ page
 function SettingsInner() {
   const { overview, refresh } = useOverview();
@@ -617,6 +729,7 @@ function SettingsInner() {
           <Err error={err} />
           {s === "general" && <General set={set} />}
           {s === "safety" && <Safety set={set} />}
+          {s === "email" && <EmailSmtp />}
           {s === "ai" && <AiEngine />}
           {s === "health" && <Health />}
           {s === "knowledge" && <><KnowledgeSettings /><p className="small set-foot">See what helpers know, and how they search it, in <Link href="/docs/?kb=1">Docs → Knowledge</Link>.</p></>}
