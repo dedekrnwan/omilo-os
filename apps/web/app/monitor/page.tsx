@@ -13,6 +13,7 @@ import { helperItems, jobLinkItems } from "@/lib/actions";
 import { copy, menu, sep } from "@/lib/menu";
 import { useOffice } from "@/lib/office";
 import OfficeView, { Freshness, StatusChip } from "@/components/office/OfficeView";
+import { usePageActions } from "@/components/PageActions";
 
 /* Monitor: how the company of helpers is doing. Tokens and spend, jobs, what waits on you, who is working,
    the Claude Code pool and Omilo's tools, over one time range. */
@@ -122,7 +123,7 @@ function DigestCard() {
   usePoll(load, 120000, [load]);
   if (!d) return null;
   return (
-    <section className="paper mcard" style={{ marginTop: 16 }}>
+    <section className="paper mcard">
       <div className="mhead"><h2>Weekly digest</h2><span className="sp" />
         <div className="togrow" style={{ padding: 0, border: 0 }} onClick={async () => { await api("/digest", { method: "PUT", body: { enabled: !d.enabled } }); load(); }}>
           <span className="small">{d.enabled ? `Mondays at ${String(d.send_hour).padStart(2, "0")}:00` : "Off"}</span>
@@ -171,6 +172,8 @@ export default function Monitor() {
   const [updated, setUpdated] = useState<Date | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  usePageActions(null, []);
+
   usePoll(async () => {
     if (mode === "office") return;
     setLoading(true);
@@ -210,15 +213,34 @@ export default function Monitor() {
 
   if (mode === "office") return (
     <div className="monitor office">
-      <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 12 }}>
-        <div><h1 style={{ marginBottom: 4 }}>Monitor</h1>
-          <p className="sub" style={{ margin: 0 }}>Your helpers at their desks, live. Only real events move them: jobs, tools, handoffs, approvals.</p></div>
-        <span className="sp" /><ModeSwitch mode={mode} setMode={setMode} />
+      {/* Page Header v2 — office mode */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Monitor</h1>
+          <p className="ph2-sub">Your helpers at their desks, live. Only real events move them: jobs, tools, handoffs, approvals.</p>
+        </div>
+        <div className="ph2-actions">
+          <Freshness compact />
+          <ModeSwitch mode={mode} setMode={setMode} />
+        </div>
       </div>
       <OfficeView />
     </div>
   );
-  if (!data) return <div><h1>Monitor</h1>{err ? <Err error={err} /> : <p className="small">Loading…</p>}</div>;
+
+  if (!data) return (
+    <div className="monitor">
+      {/* Page Header v2 — loading state */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Monitor</h1>
+          <p className="ph2-sub">How your helpers are doing: usage, jobs, what waits on you, and the pool.</p>
+        </div>
+      </div>
+      {err ? <Err error={err} /> : <p className="small">Loading…</p>}
+    </div>
+  );
+
   const k = data.kpi;
   const jobsTotal = k.jobs_done + k.jobs_failed;
   const success = jobsTotal ? Math.round((k.jobs_done / jobsTotal) * 100) : null;
@@ -226,40 +248,57 @@ export default function Monitor() {
 
   return (
     <div className={`monitor ${loading ? "refetch" : ""}`}>
-      <div className="sechead" style={{ alignItems: "flex-end" }}>
-        <div><h1 style={{ marginBottom: 4 }}>Monitor</h1>
-          <p className="sub" style={{ margin: 0 }}>How your helpers are doing: usage, jobs, what waits on you, and the pool. Times in {data.timezone}.</p></div>
-        <span className="sp" />
-        <span className="ms-simple-live"><Freshness compact /><ModeSwitch mode={mode} setMode={setMode} /></span>
-      </div>
-      <div className="sechead" style={{ marginTop: -8 }}>
-        <span className="sp" />
-        <span className="small">{updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
-      </div>
-      <div className="filters">
-        <div className="seg" role="tablist" aria-label="Time range">
-          {RANGES.map(([r, l]) => <button key={r} role="tab" aria-selected={range === r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{l}</button>)}
+
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Monitor</h1>
+          <p className="ph2-sub">How your helpers are doing: usage, jobs, what waits on you, and the pool. Times in {data.timezone}.</p>
         </div>
-        {k.paused && <span className="chip warn"><i className="ri-pause-line" />All helpers paused</span>}
+        <div className="ph2-actions">
+          <ModeSwitch mode={mode} setMode={setMode} />
+        </div>
       </div>
+
+      {/* Toolbar: period / jump / updated */}
+      <div className="mn-toolbar">
+        <div className="mn-toolbar-left">
+          <div className="seg" role="tablist" aria-label="Time range">
+            {RANGES.map(([r, l]) => <button key={r} role="tab" aria-selected={range === r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{l}</button>)}
+          </div>
+          {k.paused && <span className="chip warn"><i className="ri-pause-line" />All helpers paused</span>}
+        </div>
+        <div className="mn-toolbar-jump">
+          <a href="#overview" className="mn-jump">Overview</a>
+          <a href="#helpers" className="mn-jump">Helpers</a>
+          <a href="#loops" className="mn-jump">Loops</a>
+          <a href="#reliability" className="mn-jump">Reliability</a>
+          <a href="#pool" className="mn-jump">Pool</a>
+          <a href="#activity" className="mn-jump">Activity</a>
+        </div>
+        <span className="mn-toolbar-updated small">{updated ? `Updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
+      </div>
+
       <Err error={err} />
 
-      <div className="mtiles">
-        <Tile label="Tokens" value={fmtNum(k.tokens)} sub={<Delta cur={k.tokens} prev={k.tokens_prev} good="down" />} />
-        <Tile label="Spend" value={money(k.cost_usd)} sub={<span title="At API prices. Runs on the Claude Code pool are covered by your subscriptions."><Delta cur={k.cost_usd} prev={k.cost_prev} good="down" /></span>} />
-        <Tile label="Jobs finished" value={<>{k.jobs_done}{k.jobs_failed ? <span className="num-sub"> · {k.jobs_failed} failed</span> : null}</>}
-          sub={success == null ? <span className="delta flat">none yet</span> : <span className={`delta ${success >= 90 ? "good" : success >= 70 ? "flat" : "bad"}`}>{success}% succeeded</span>} href="/chat/?view=work" />
+      {/* Stats tiles */}
+      <div className="mtiles" id="overview">
         <Tile label="Waiting on you" value={<>{k.waiting}{k.waiting_critical ? <span className="num-sub crit"> · {k.waiting_critical} urgent</span> : null}</>}
           sub={<span className="small">{k.oldest_waiting ? `oldest ${ago(k.oldest_waiting)}` : "all clear"}{k.avg_decision_minutes != null ? ` · you answer in ~${mins(k.avg_decision_minutes)}` : ""}</span>} href="/" />
         <Tile label="Working now" value={<>{live.state ? live.state.agents.filter((a) => a.status === "working").length : k.working}<span className="num-sub"> of {live.state ? live.state.agents.length : k.helpers}</span></>}
           sub={<span className="small">{k.awake} ready{k.queued ? ` · ${k.queued} queued` : ""} · {k.runs} runs{k.avg_run_seconds ? ` (${Math.round(k.avg_run_seconds)}s avg)` : ""}</span>} />
+        <Tile label="Jobs finished" value={<>{k.jobs_done}{k.jobs_failed ? <span className="num-sub"> · {k.jobs_failed} failed</span> : null}</>}
+          sub={success == null ? <span className="delta flat">none yet</span> : <span className={`delta ${success >= 90 ? "good" : success >= 70 ? "flat" : "bad"}`}>{success}% succeeded</span>} href="/chat/?view=work" />
+        <Tile label="Tokens" value={fmtNum(k.tokens)} sub={<Delta cur={k.tokens} prev={k.tokens_prev} good="down" />} />
+        <Tile label="Spend" value={money(k.cost_usd)} sub={<span title="At API prices. Runs on the Claude Code pool are covered by your subscriptions."><Delta cur={k.cost_usd} prev={k.cost_prev} good="down" /></span>} />
         <Tile label="Claude Code pool" value={data.pool.total ? <>{data.pool.ready}<span className="num-sub"> / {data.pool.total} ready</span></> : "–"} href="/harness/"
           sub={data.pool.total ? <span className="small">{data.pool.avg_pct != null ? `avg ${data.pool.avg_pct}% used (5 h)` : "use not reported yet"}</span> : <span className="small">No accounts yet</span>}>
           {data.pool.total > 0 && <div style={{ marginTop: 8 }}><Segments m={data.pool as any} big /></div>}
         </Tile>
       </div>
 
-      <div className="mgrid two">
+      {/* Charts */}
+      <div className="mgrid two mn-charts">
         <section className="paper mcard">
           <div className="mhead"><h2>Tokens by helper</h2><span className="sp" />
             <button className="btn sm quiet" onClick={() => setAsTable(!asTable)}><i className={asTable ? "ri-bar-chart-2-line" : "ri-table-line"} />{asTable ? "Chart" : "Table"}</button></div>
@@ -273,7 +312,8 @@ export default function Monitor() {
         </section>
       </div>
 
-      <section className="paper mcard" style={{ marginTop: 16 }}>
+      {/* Helpers table */}
+      <section className="paper mcard mn-section" id="helpers">
         <div className="mhead"><h2>Helpers</h2><span className="sp" /><Link className="small" href="/staff/">Manage team</Link></div>
         <div className="tw"><table className="mtable">
           <thead><tr><th>Helper</th><th>Now</th><th className="hide-sm">Doing</th><th className="num-cell">Jobs</th><th>Tokens</th><th className="num-cell hide-sm">Spend</th><th className="hide-sm">Budget (month)</th><th className="hide-sm">Last active</th></tr></thead>
@@ -300,122 +340,142 @@ export default function Monitor() {
         </table></div>
       </section>
 
-      <div className="mgrid two">
-        <section className="paper mcard">
-          <div className="mhead"><h2>Why jobs failed</h2><span className="sp" /><span className="small">{data.failures.reduce((n, f) => n + f.count, 0)} failed</span></div>
-          {data.failures.length === 0 ? <p className="small">No failed jobs in this period.</p> : (
-            <div className="fails">{data.failures.map((f) => {
-              const max = data.failures[0].count;
-              return (
-                <details key={f.key} className="fail">
-                  <summary>
-                    <span className="fail-l"><i className="ri-close-circle-fill" style={{ color: STATUS.critical }} />{f.label}</span>
-                    <span className="bl-track"><span className="bl-bar" style={{ width: `${(f.count / max) * 100}%`, background: STATUS.critical }} /></span>
-                    <span className="bl-v">{f.count}</span>
-                  </summary>
-                  <div className="fail-b">
-                    <div className="small"><b>What to do:</b> {f.fix}.</div>
-                    {f.example && <div className="fail-ex mono">{f.example}</div>}
-                    {f.jobs.map((j) => <Link key={j.task_id} href={`/chat/?view=work&task=${j.task_id}`} className="fail-j" onContextMenu={menu(() => jobLinkItems(j.task_id, j.brief))}><span>{j.brief}</span><span className="small">{j.staff} · {ago(j.at)}</span></Link>)}
-                  </div>
-                </details>
-              );
-            })}</div>
-          )}
-        </section>
-        <section className="paper mcard">
-          <div className="mhead"><h2>Run time</h2><span className="sp" /><span className="small">median · slowest 10%</span></div>
-          {data.timing.engines.length === 0 ? <p className="small">No finished jobs in this period.</p> : (
-            <>
+      {/* Loops */}
+      <div className="mn-section" id="loops">
+        <LoopsCard days={range === "30d" || range === "90d" ? 30 : 14} />
+      </div>
+
+      {/* Columns: Main + Side */}
+      <div className="mn-cols" id="reliability">
+        <div className="mn-main">
+
+          {/* Reliability: Why jobs failed + Run time */}
+          <div className="mgrid two">
+            <section className="paper mcard">
+              <div className="mhead"><h2>Why jobs failed</h2><span className="sp" /><span className="small">{data.failures.reduce((n, f) => n + f.count, 0)} failed</span></div>
+              {data.failures.length === 0 ? <p className="small">No failed jobs in this period.</p> : (
+                <div className="fails">{data.failures.map((f) => {
+                  const max = data.failures[0].count;
+                  return (
+                    <details key={f.key} className="fail">
+                      <summary>
+                        <span className="fail-l"><i className="ri-close-circle-fill" style={{ color: STATUS.critical }} />{f.label}</span>
+                        <span className="bl-track"><span className="bl-bar" style={{ width: `${(f.count / max) * 100}%`, background: STATUS.critical }} /></span>
+                        <span className="bl-v">{f.count}</span>
+                      </summary>
+                      <div className="fail-b">
+                        <div className="small"><b>What to do:</b> {f.fix}.</div>
+                        {f.example && <div className="fail-ex mono">{f.example}</div>}
+                        {f.jobs.map((j) => <Link key={j.task_id} href={`/chat/?view=work&task=${j.task_id}`} className="fail-j" onContextMenu={menu(() => jobLinkItems(j.task_id, j.brief))}><span>{j.brief}</span><span className="small">{j.staff} · {ago(j.at)}</span></Link>)}
+                      </div>
+                    </details>
+                  );
+                })}</div>
+              )}
+            </section>
+            <section className="paper mcard">
+              <div className="mhead"><h2>Run time</h2><span className="sp" /><span className="small">median · slowest 10%</span></div>
+              {data.timing.engines.length === 0 ? <p className="small">No finished jobs in this period.</p> : (
+                <>
+                  <div className="tw"><table className="mtable compact">
+                    <thead><tr><th>Engine</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="num-cell">Failed</th></tr></thead>
+                    <tbody>{data.timing.engines.map((e) => (
+                      <tr key={e.engine}><td>{e.engine}</td><td className="num-cell">{e.jobs}</td><td className="num-cell mono">{durS(e.median_s)}</td><td className="num-cell mono">{durS(e.p90_s)}</td>
+                        <td className={`num-cell ${e.fail_rate >= 20 ? "crit" : ""}`}>{e.fail_rate}%</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                  <div className="tw" style={{ marginTop: 10 }}><table className="mtable compact">
+                    <thead><tr><th>Helper</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="hide-sm">Slowest</th></tr></thead>
+                    <tbody>{data.timing.helpers.slice(0, 8).map((h) => (
+                      <tr key={h.staff_id}><td>{h.name}</td><td className="num-cell">{h.jobs}</td><td className="num-cell mono">{durS(h.median_s)}</td><td className="num-cell mono">{durS(h.p90_s)}</td>
+                        <td className="hide-sm small">{h.slowest ? <Link href={`/chat/?view=work&task=${h.slowest.task_id}`} onContextMenu={menu(() => jobLinkItems(h.slowest!.task_id, h.slowest!.brief))}>{durS(h.slowest.seconds)} · {h.slowest.brief}</Link> : "–"}</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                </>
+              )}
+            </section>
+          </div>
+
+          {/* Value per helper */}
+          <section className="paper mcard mn-section-item">
+            <div className="mhead"><h2>Value per helper</h2><span className="sp" /><span className="small">proposals you decided, and what they cost</span></div>
+            {data.value.length === 0 ? <p className="small">No proposals or usage in this period.</p> : (
               <div className="tw"><table className="mtable compact">
-                <thead><tr><th>Engine</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="num-cell">Failed</th></tr></thead>
-                <tbody>{data.timing.engines.map((e) => (
-                  <tr key={e.engine}><td>{e.engine}</td><td className="num-cell">{e.jobs}</td><td className="num-cell mono">{durS(e.median_s)}</td><td className="num-cell mono">{durS(e.p90_s)}</td>
-                    <td className={`num-cell ${e.fail_rate >= 20 ? "crit" : ""}`}>{e.fail_rate}%</td></tr>
+                <thead><tr><th>Helper</th><th className="num-cell">Proposals</th><th>Approved</th><th className="num-cell hide-sm">Rejected</th><th className="num-cell">Spend</th><th className="num-cell">Per approved</th></tr></thead>
+                <tbody>{data.value.map((v) => (
+                  <tr key={v.staff_id}>
+                    <td>{v.name}</td><td className="num-cell">{v.proposals}{v.pending ? <span className="small"> ({v.pending} open)</span> : ""}</td>
+                    <td style={{ minWidth: 120 }}>{v.approval_rate == null ? <span className="small">none decided</span> : (
+                      <div className="inl"><span className="inl-bar"><i style={{ width: `${v.approval_rate}%`, background: STATUS.good }} /></span><span className="small">{v.approved} · {v.approval_rate}%</span></div>)}</td>
+                    <td className="num-cell hide-sm">{v.rejected + v.changes || "–"}</td>
+                    <td className="num-cell mono small">{money(v.cost_usd)}</td>
+                    <td className="num-cell mono small">{v.cost_per_approved != null ? money(v.cost_per_approved) : "–"}</td>
+                  </tr>
                 ))}</tbody>
               </table></div>
-              <div className="tw" style={{ marginTop: 10 }}><table className="mtable compact">
-                <thead><tr><th>Helper</th><th className="num-cell">Jobs</th><th className="num-cell">Median</th><th className="num-cell">p90</th><th className="hide-sm">Slowest</th></tr></thead>
-                <tbody>{data.timing.helpers.slice(0, 8).map((h) => (
-                  <tr key={h.staff_id}><td>{h.name}</td><td className="num-cell">{h.jobs}</td><td className="num-cell mono">{durS(h.median_s)}</td><td className="num-cell mono">{durS(h.p90_s)}</td>
-                    <td className="hide-sm small">{h.slowest ? <Link href={`/chat/?view=work&task=${h.slowest.task_id}`} onContextMenu={menu(() => jobLinkItems(h.slowest!.task_id, h.slowest!.brief))}>{durS(h.slowest.seconds)} · {h.slowest.brief}</Link> : "–"}</td></tr>
-                ))}</tbody>
-              </table></div>
-            </>
-          )}
-        </section>
+            )}
+          </section>
+
+          {/* Pool row: Pool history + Claude Code pool */}
+          <div className="mgrid two mn-section-item" id="pool">
+            <section className="paper mcard">
+              <div className="mhead"><h2>Pool, last 24 hours</h2><span className="sp" /><span className="small">{data.pool_history.hits_7d} limit hit{data.pool_history.hits_7d === 1 ? "" : "s"} in 7 days</span></div>
+              {data.pool_history.accounts.length === 0 ? <p className="small">No pool accounts yet.</p> : <PoolHistory h={data.pool_history} />}
+              <p className="small" style={{ marginBottom: 0 }}>{data.pool_history.hits_7d >= 3 ? "Accounts hit their limits often: add a subscription, or move regular jobs to quieter hours." : "Each square is one hour. Dark squares are busy hours; a red mark means the account reached its limit then."}</p>
+            </section>
+            <section className="paper mcard">
+              <div className="mhead"><h2>Claude Code pool</h2><span className="sp" /><Link className="small" href="/harness/">Harness</Link></div>
+              {data.pool.total === 0 ? <p className="small">No subscriptions in the pool. Add them on the Harness page to run helpers on Claude Code.</p> : (
+                <div className="pool-rows">{data.pool.accounts.map((a) => {
+                  const p = a.state === "cooling" ? 100 : a.five_hour.pct;
+                  const lv = a.state === "cooling" ? "rest" : a.state === "error" ? "err" : a.state === "disabled" ? "off" : p == null ? "unknown" : p >= 90 ? "high" : p >= 70 ? "mid" : "low";
+                  return (
+                    <div key={a.id} className="pm-row" onContextMenu={menu(() => [{ heading: a.label }, { label: "Manage on the Harness page", icon: "ri-stack-line", href: "/harness/" },
+                      a.state === "cooling" && { label: "Use it again now", icon: "ri-restart-line", onSelect: async () => { await api(`/harness/accounts/${a.id}`, { method: "PATCH", body: { clear_cooldown: true } }); kick("/monitor"); } }])}>
+                      <span className="pm-name">{a.label}{a.busy ? <span className="chip run" style={{ marginLeft: 6 }}>{a.busy} working</span> : null}</span>
+                      <span className={`pseg wide ${lv}`}><i style={{ width: `${p ?? 0}%` }} /></span>
+                      <span className="small">{a.state === "cooling" ? "Resting until its limit resets" : a.state === "error" ? "Needs sign-in" : p == null ? "5-hour use not reported" : `${p}% of 5-hour limit`} · {fmtNum(a.tokens_range)} tokens this period</span>
+                    </div>
+                  );
+                })}</div>
+              )}
+            </section>
+          </div>
+
+          {/* Omilo tools used */}
+          <section className="paper mcard mn-section-item">
+            <div className="mhead"><h2>Omilo tools used</h2></div>
+            {data.tools.length === 0 ? <p className="small">No tool calls in this period.</p> : (
+              <BarList rows={data.tools.map((t) => ({ label: t.name.replace(/_/g, " "), value: t.calls,
+                note: t.errors ? `${t.errors} failed` : t.blocked ? `${t.blocked} blocked` : `${t.avg_ms} ms`, warn: !!(t.errors || t.blocked) }))} />
+            )}
+            <p className="small" style={{ marginBottom: 0 }}>Calls helpers made to Omilo (reports, proposals, questions). Blocked means a rule stopped it.</p>
+          </section>
+
+          {/* Self-improvement */}
+          <div className="mn-section-item">
+            <ImproveCard />
+          </div>
+        </div>
+
+        {/* Side column */}
+        <div className="mn-side">
+          <DigestCard />
+          <section className="paper mcard mn-side-item" id="activity">
+            <div className="mhead"><h2>Latest</h2></div>
+            {data.activity.length === 0 ? <p className="small">Nothing yet.</p> : (
+              <div className="feed">{data.activity.map((n) => (
+                <Link key={n.id} href={n.url} className="feed-i" onContextMenu={menu(() => [{ label: "Open", icon: "ri-arrow-right-up-line", href: n.url }, { label: "Copy link", icon: "ri-link", onSelect: () => copy(location.origin + n.url) }])}>
+                  <i className={ICON[n.kind] || "ri-notification-3-line"} style={n.kind === "job_failed" ? { color: STATUS.critical } : undefined} />
+                  <span className="t"><b>{n.title}</b>{n.body && <span>{n.body}</span>}</span>
+                  <span className="small">{ago(n.at)}</span>
+                </Link>
+              ))}</div>
+            )}
+          </section>
+        </div>
       </div>
 
-      <div className="mgrid two">
-        <section className="paper mcard">
-          <div className="mhead"><h2>Value per helper</h2><span className="sp" /><span className="small">proposals you decided, and what they cost</span></div>
-          {data.value.length === 0 ? <p className="small">No proposals or usage in this period.</p> : (
-            <div className="tw"><table className="mtable compact">
-              <thead><tr><th>Helper</th><th className="num-cell">Proposals</th><th>Approved</th><th className="num-cell hide-sm">Rejected</th><th className="num-cell">Spend</th><th className="num-cell">Per approved</th></tr></thead>
-              <tbody>{data.value.map((v) => (
-                <tr key={v.staff_id}>
-                  <td>{v.name}</td><td className="num-cell">{v.proposals}{v.pending ? <span className="small"> ({v.pending} open)</span> : ""}</td>
-                  <td style={{ minWidth: 120 }}>{v.approval_rate == null ? <span className="small">none decided</span> : (
-                    <div className="inl"><span className="inl-bar"><i style={{ width: `${v.approval_rate}%`, background: STATUS.good }} /></span><span className="small">{v.approved} · {v.approval_rate}%</span></div>)}</td>
-                  <td className="num-cell hide-sm">{v.rejected + v.changes || "–"}</td>
-                  <td className="num-cell mono small">{money(v.cost_usd)}</td>
-                  <td className="num-cell mono small">{v.cost_per_approved != null ? money(v.cost_per_approved) : "–"}</td>
-                </tr>
-              ))}</tbody>
-            </table></div>
-          )}
-        </section>
-        <section className="paper mcard" id="pool">
-          <div className="mhead"><h2>Pool, last 24 hours</h2><span className="sp" /><span className="small">{data.pool_history.hits_7d} limit hit{data.pool_history.hits_7d === 1 ? "" : "s"} in 7 days</span></div>
-          {data.pool_history.accounts.length === 0 ? <p className="small">No pool accounts yet.</p> : <PoolHistory h={data.pool_history} />}
-          <p className="small" style={{ marginBottom: 0 }}>{data.pool_history.hits_7d >= 3 ? "Accounts hit their limits often: add a subscription, or move regular jobs to quieter hours." : "Each square is one hour. Dark squares are busy hours; a red mark means the account reached its limit then."}</p>
-        </section>
-      </div>
-
-      <DigestCard />
-
-      <LoopsCard days={range === "30d" || range === "90d" ? 30 : 14} />
-      <ImproveCard />
-
-      <div className="mgrid three">
-        <section className="paper mcard">
-          <div className="mhead"><h2>Claude Code pool</h2><span className="sp" /><Link className="small" href="/harness/">Harness</Link></div>
-          {data.pool.total === 0 ? <p className="small">No subscriptions in the pool. Add them on the Harness page to run helpers on Claude Code.</p> : (
-            <div className="pool-rows">{data.pool.accounts.map((a) => {
-              const p = a.state === "cooling" ? 100 : a.five_hour.pct;
-              const lv = a.state === "cooling" ? "rest" : a.state === "error" ? "err" : a.state === "disabled" ? "off" : p == null ? "unknown" : p >= 90 ? "high" : p >= 70 ? "mid" : "low";
-              return (
-                <div key={a.id} className="pm-row" onContextMenu={menu(() => [{ heading: a.label }, { label: "Manage on the Harness page", icon: "ri-stack-line", href: "/harness/" },
-                  a.state === "cooling" && { label: "Use it again now", icon: "ri-restart-line", onSelect: async () => { await api(`/harness/accounts/${a.id}`, { method: "PATCH", body: { clear_cooldown: true } }); kick("/monitor"); } }])}>
-                  <span className="pm-name">{a.label}{a.busy ? <span className="chip run" style={{ marginLeft: 6 }}>{a.busy} working</span> : null}</span>
-                  <span className={`pseg wide ${lv}`}><i style={{ width: `${p ?? 0}%` }} /></span>
-                  <span className="small">{a.state === "cooling" ? "Resting until its limit resets" : a.state === "error" ? "Needs sign-in" : p == null ? "5-hour use not reported" : `${p}% of 5-hour limit`} · {fmtNum(a.tokens_range)} tokens this period</span>
-                </div>
-              );
-            })}</div>
-          )}
-        </section>
-        <section className="paper mcard">
-          <div className="mhead"><h2>Omilo tools used</h2></div>
-          {data.tools.length === 0 ? <p className="small">No tool calls in this period.</p> : (
-            <BarList rows={data.tools.map((t) => ({ label: t.name.replace(/_/g, " "), value: t.calls,
-              note: t.errors ? `${t.errors} failed` : t.blocked ? `${t.blocked} blocked` : `${t.avg_ms} ms`, warn: !!(t.errors || t.blocked) }))} />
-          )}
-          <p className="small" style={{ marginBottom: 0 }}>Calls helpers made to Omilo (reports, proposals, questions). Blocked means a rule stopped it.</p>
-        </section>
-        <section className="paper mcard">
-          <div className="mhead"><h2>Latest</h2></div>
-          {data.activity.length === 0 ? <p className="small">Nothing yet.</p> : (
-            <div className="feed">{data.activity.map((n) => (
-              <Link key={n.id} href={n.url} className="feed-i" onContextMenu={menu(() => [{ label: "Open", icon: "ri-arrow-right-up-line", href: n.url }, { label: "Copy link", icon: "ri-link", onSelect: () => copy(location.origin + n.url) }])}>
-                <i className={ICON[n.kind] || "ri-notification-3-line"} style={n.kind === "job_failed" ? { color: STATUS.critical } : undefined} />
-                <span className="t"><b>{n.title}</b>{n.body && <span>{n.body}</span>}</span>
-                <span className="small">{ago(n.at)}</span>
-              </Link>
-            ))}</div>
-          )}
-        </section>
-      </div>
     </div>
   );
 }
