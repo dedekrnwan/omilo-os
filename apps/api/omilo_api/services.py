@@ -96,6 +96,37 @@ def ai_key_hint(db: Session, provider: str) -> str | None:
     return k["hint"] if k else None
 
 
+# ---------------------------------------------------------------- autonomy policy
+
+_DEFAULT_ESCALATE_TIERS: list[str] = ["send_external", "payment", "destructive", "publish"]
+
+
+def autonomy_policy(db: Session, staff: "Staff | None" = None) -> dict:
+    """Resolve the effective autonomy policy for the company (staff=None) or a specific helper.
+
+    Precedence (highest → lowest):
+      1. Per-helper: staff.autonomy maps guided → strict; standard|trusted → permissive.
+      2. Company:    Setting rows keyed autonomy_mode, autonomy_budget_stop_usd, autonomy_escalate_tiers.
+      3. Default:    permissive, no budget cap, the four irreversible/outside-world tiers.
+
+    Returns a fresh dict every call; no shared mutable state.
+    """
+    # --- company layer ---
+    company_mode = get_setting(db, "autonomy_mode", None)
+    company_budget = get_setting(db, "autonomy_budget_stop_usd", None)
+    company_tiers = get_setting(db, "autonomy_escalate_tiers", None)
+
+    mode: str = company_mode if company_mode is not None else "permissive"
+    budget_stop_usd: float | None = float(company_budget) if company_budget is not None else None
+    escalate_tiers: list[str] = list(company_tiers) if company_tiers is not None else list(_DEFAULT_ESCALATE_TIERS)
+
+    # --- per-helper layer (wins over company for mode only) ---
+    if staff is not None:
+        mode = "strict" if staff.autonomy == "guided" else "permissive"
+
+    return {"mode": mode, "budget_stop_usd": budget_stop_usd, "escalate_tiers": escalate_tiers}
+
+
 IDLE_MINUTES = 10
 
 
