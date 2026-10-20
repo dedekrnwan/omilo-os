@@ -30,21 +30,6 @@ export const SECTIONS: { id: string; label: string; icon: string; pages: Page[] 
 const PAGES = SECTIONS.flatMap((sec) => sec.pages.map(([h, l, i]) => ({ href: h, label: l, icon: i, section: sec })));
 const pageFor = (path: string) =>
   PAGES.filter((p) => (p.href === "/" ? path === "/" : path.startsWith(p.href))).sort((a, b) => b.href.length - a.href.length)[0] || PAGES[0];
-const LAST = "omilo.nav.last"; // the page you last opened in each section, so a section opens where you left it
-const lastIn = (id: string) => { try { return (JSON.parse(localStorage.getItem(LAST) || "{}") as Record<string, string>)[id]; } catch { return undefined; } };
-const remember = (id: string, href: string) => { try { localStorage.setItem(LAST, JSON.stringify({ ...JSON.parse(localStorage.getItem(LAST) || "{}"), [id]: href })); } catch { /* ignore */ } };
-
-function SectionTabs({ page }: { page: (typeof PAGES)[number] }) {
-  const sec = page.section;
-  if (sec.pages.length < 2) return <span className="crumb"><i className={page.icon} />{page.label}</span>;
-  return (
-    <nav className="tabs" aria-label={sec.label}>
-      {sec.pages.map(([h, l, ic]) => (
-        <Link key={h} href={h} className={`tab ${h === page.href ? "on" : ""}`} aria-current={h === page.href ? "page" : undefined}><i className={ic} />{l}</Link>
-      ))}
-    </nav>
-  );
-}
 
 type Ctx = { overview: Overview | null; refresh: () => void };
 const OverviewCtx = createContext<Ctx>({ overview: null, refresh: () => {} });
@@ -115,7 +100,6 @@ export default function Shell({ children }: { children: ReactNode }) {
     setFaviconDot(n ? (overview?.inbox.critical ? "#dc2626" : "#f59e0b") : null);
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
-  useEffect(() => { remember(pageFor(path).section.id, path); }, [path]);
 
   if (bare) return <>{children}</>;
   if (!ready) return null;
@@ -170,27 +154,24 @@ export default function Shell({ children }: { children: ReactNode }) {
           <div className="head brand"><Mark /><div><b>Omilo</b></div></div>
           <CompanySwitcher overview={overview} />
           <nav className="sections">
-            {SECTIONS.map((sec) => {
-              const on = sec.id === page.section.id;
-              const last = lastIn(sec.id);
-              const go = last && pageFor(last.split("?")[0]).section.id === sec.id ? last : sec.pages[0][0];
-              const count = sec.id === "home" ? overview?.inbox.open || 0 : 0;
-              return (
-                <div key={sec.id} className={`secblock ${on ? "on" : ""}`}>
-                  <Link href={go} className={`navlink ${on ? "on" : ""}`} onContextMenu={ctxMenu(() => [{ heading: sec.label },
-                    ...sec.pages.map(([h, l, ic]) => ({ label: l, icon: ic, href: h }))])}>
-                    <i className={sec.icon} />{sec.label}
-                    {count ? <span className="count">{count}</span> : null}
-                  </Link>
-                  {on && sec.pages.length > 1 && (
-                    <div className="subnav">{sec.pages.map(([h, l, ic]) => (
-                      <Link key={h} href={h} className={`sublink ${h === page.href ? "on" : ""}`}><i className={ic} />{l}
-                        {h === "/" && overview?.inbox.open ? <span className="count sm">{overview.inbox.open}</span> : null}</Link>
-                    ))}</div>
-                  )}
-                </div>
-              );
-            })}
+            {SECTIONS.map((sec) => (
+              <div key={sec.id} className="secblock">
+                <div className="seclabel">{sec.label}</div>
+                {sec.pages.map(([h, l, ic]) => {
+                  const on = page.href === h;
+                  const count = h === "/" ? overview?.inbox.open || 0 : 0;
+                  return (
+                    <Link key={h} href={h} className={`navlink ${on ? "on" : ""}`} onContextMenu={ctxMenu(() => [{ heading: l },
+                      { label: "Open", icon: ic, href: h },
+                      { label: "Open in a new tab", icon: "ri-external-link-line", onSelect: () => window.open(h, "_blank", "noopener") },
+                      { label: "Copy link", icon: "ri-link", onSelect: () => copy(location.origin + h) }])}>
+                      <i className={ic} />{l}
+                      {count ? <span className="count">{count}</span> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
             <div className="secblock" style={{ marginTop: "auto" }}>
               <button className="navlink" style={{ border: 0, background: "transparent", width: "100%" }} onClick={togglePause}>
                 <i className={overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line"} />{overview?.paused ? "Resume all helpers" : "Pause all helpers"}
@@ -207,13 +188,12 @@ export default function Shell({ children }: { children: ReactNode }) {
           <div className="inset">
             {own ? (
               <>
-                {page.section.pages.length > 1 && <div className="topbar slim"><SectionTabs page={page} /></div>}
                 {children}
               </>
             ) : (
               <>
                 <div className="topbar">
-                  <SectionTabs page={page} />
+                  <span className="crumb"><i className={page.icon} />{page.label}</span>
                   <span className="sp" />
                   {overview?.paused && <span className="chip warn"><i className="ri-pause-line" />Paused</span>}
                   <PageActionsBar spec={actions} extra={global} />
