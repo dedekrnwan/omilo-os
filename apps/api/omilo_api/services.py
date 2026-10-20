@@ -27,6 +27,7 @@ from .models import (
     Setting,
     Shift,
     Staff,
+    StaffRelation,
     Task,
     Thread,
     now,
@@ -189,6 +190,26 @@ def rotate_mcp_token(db: Session, st: Staff, actor: str) -> str:
 
 def chief(db: Session) -> Staff | None:
     return db.scalar(select(Staff).where(Staff.is_chief.is_(True)))
+
+
+def seed_relations(db: Session) -> None:
+    """Idempotent: create delegates_to + reviews edges from the CoS to every active non-chief.
+
+    Safe to call repeatedly — edges that already exist are skipped via the composite PK
+    (from_staff, to_staff, kind). If there is no CoS the function is a no-op.
+    """
+    cos = chief(db)
+    if cos is None:
+        return
+    non_chiefs = list(db.scalars(
+        select(Staff).where(Staff.status == "active", Staff.is_chief.is_(False))
+    ))
+    for kind in ("delegates_to", "reviews"):
+        for st in non_chiefs:
+            existing = db.get(StaffRelation, (cos.id, st.id, kind))
+            if existing is None:
+                db.add(StaffRelation(from_staff=cos.id, to_staff=st.id, kind=kind))
+    db.commit()
 
 
 def staff_by_role(db: Session, role: str) -> "Staff | None":

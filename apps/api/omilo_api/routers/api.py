@@ -2476,7 +2476,7 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
     d.update(answers=a, step=0)
     S.set_setting(db, "onboarding_draft", d, actor=user.id)
     S.set_setting(db, "onboarded", True, actor=user.id)
-    db.commit()
+    S.seed_relations(db)
     practice = None
     if body.practice_task:
         who = next((r for r in ("grower", "marketing") if db.get(Staff, r)), "chief-of-staff")

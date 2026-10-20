@@ -1,10 +1,17 @@
 """Task B1 — Role resolution + role-based delegation.
+Task B2 — seed_relations: populate StaffRelation org chart.
 
 Tests:
   1. staff_by_role resolves a role to its first active staff (by id order).
   2. staff_by_role returns None for an unknown role.
   3. create_task MCP tool (role=...) routes to the resolved staff.
   4. create_task MCP tool (unresolved role) raises a clear DomainError.
+
+  B2:
+  5. seed_relations creates delegates_to + reviews edges from CoS to each active non-chief.
+  6. seed_relations is idempotent: calling it twice adds no duplicates.
+  7. seed_relations no-ops when there is no CoS.
+  8. seed_relations skips retired staff.
 
 All rows are self-contained: each test creates its own Staff with a
 distinct role so there is no cross-test bleed.
@@ -16,7 +23,7 @@ from sqlalchemy import func, select
 
 from omilo_api import services as S
 from omilo_api.db import session_scope
-from omilo_api.models import Staff, Task
+from omilo_api.models import Staff, StaffRelation, Task
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +188,127 @@ def test_create_task_staff_id_still_works(owner):
         t = db.get(Task, result["task_id"])
         assert t is not None
         assert t.staff_id == target_sid
+
+
+# ---------------------------------------------------------------------------
+# Task B2 — seed_relations
+# ---------------------------------------------------------------------------
+# Each test uses its own isolated company (unique cid) so there is exactly
+# one CoS per test and DB-state from other tests never bleeds in.
+
+from omilo_api import company as C  # noqa: E402
+
+
+def _isolated_cid() -> str:
+    """Return a fresh, unique company-id for one test's isolated schema."""
+    return "b2test-" + uuid.uuid4().hex[:10]
+
+
+def _make_b2_team(cid: str) -> tuple[str, list[str]]:
+    """Create a CoS + 2 active helpers in *cid*; return (cos_id, [helper_ids])."""
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b2-cos-" + prefix
+    h1_id = "b2-h1-" + prefix
+    h2_id = "b2-h2-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.add(Staff(id=h1_id, name="Helper1 " + prefix, role="marketing",
+                     is_chief=False, status="active", engine={"type": "fake"}))
+        db.add(Staff(id=h2_id, name="Helper2 " + prefix, role="sales",
+                     is_chief=False, status="active", engine={"type": "fake"}))
+        db.commit()
+    return cos_id, [h1_id, h2_id]
+
+
+def _count_relations(cid: str, cos_id: str, to_id: str, kind: str) -> int:
+    with C.use(cid), session_scope(cid) as db:
+        return db.scalar(
+            select(func.count()).select_from(StaffRelation).where(
+                StaffRelation.from_staff == cos_id,
+                StaffRelation.to_staff == to_id,
+                StaffRelation.kind == kind,
+            )
+        ) or 0
+
+
+def test_seed_relations_creates_edges():
+    """seed_relations creates a delegates_to and a reviews edge from the CoS to each active non-chief."""
+    cid = _isolated_cid()
+    cos_id, helpers = _make_b2_team(cid)
+
+    with C.use(cid), session_scope(cid) as db:
+        S.seed_relations(db)
+
+    for hid in helpers:
+        assert _count_relations(cid, cos_id, hid, "delegates_to") == 1, \
+            f"expected 1 delegates_to edge to {hid}"
+        assert _count_relations(cid, cos_id, hid, "reviews") == 1, \
+            f"expected 1 reviews edge to {hid}"
+
+
+def test_seed_relations_idempotent():
+    """Calling seed_relations twice must not create duplicate edges."""
+    cid = _isolated_cid()
+    cos_id, helpers = _make_b2_team(cid)
+
+    with C.use(cid), session_scope(cid) as db:
+        S.seed_relations(db)
+    with C.use(cid), session_scope(cid) as db:
+        S.seed_relations(db)
+
+    for hid in helpers:
+        assert _count_relations(cid, cos_id, hid, "delegates_to") == 1, \
+            f"expected exactly 1 delegates_to edge to {hid} after two calls"
+        assert _count_relations(cid, cos_id, hid, "reviews") == 1, \
+            f"expected exactly 1 reviews edge to {hid} after two calls"
+
+
+def test_seed_relations_no_cos_noop():
+    """seed_relations is a no-op when there is no Chief of Staff."""
+    cid = _isolated_cid()
+    prefix = uuid.uuid4().hex[:8]
+    h_id = "b2-nocoshelper-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=h_id, name="Loner " + prefix, role="ops",
+                     is_chief=False, status="active", engine={"type": "fake"}))
+        db.commit()
+
+    with C.use(cid), session_scope(cid) as db:
+        # Must not raise; no CoS means nothing seeded
+        S.seed_relations(db)
+
+    # No StaffRelation rows pointing to or from h_id should exist
+    with C.use(cid), session_scope(cid) as db:
+        count = db.scalar(
+            select(func.count()).select_from(StaffRelation).where(
+                StaffRelation.to_staff == h_id,
+            )
+        ) or 0
+    assert count == 0
+
+
+def test_seed_relations_skips_retired_staff():
+    """seed_relations does not create edges to retired staff."""
+    cid = _isolated_cid()
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b2-cos-ret-" + prefix
+    active_id = "b2-active-" + prefix
+    retired_id = "b2-retired-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.add(Staff(id=active_id, name="Active " + prefix, role="ops",
+                     is_chief=False, status="active", engine={"type": "fake"}))
+        db.add(Staff(id=retired_id, name="Retired " + prefix, role="former",
+                     is_chief=False, status="retired", engine={"type": "fake"}))
+        db.commit()
+
+    with C.use(cid), session_scope(cid) as db:
+        S.seed_relations(db)
+
+    # Active helper gets edges; retired one does not
+    assert _count_relations(cid, cos_id, active_id, "delegates_to") == 1
+    assert _count_relations(cid, cos_id, active_id, "reviews") == 1
+    assert _count_relations(cid, cos_id, retired_id, "delegates_to") == 0
+    assert _count_relations(cid, cos_id, retired_id, "reviews") == 0

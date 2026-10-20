@@ -73,6 +73,8 @@ def _node(t: Task, names: dict, reps: dict, props: dict, kids: dict) -> dict:
 
 def tree(db: Session, days: int = 30) -> dict:
     seed_from_onboarding(db)
+    from .services import seed_relations
+    seed_relations(db)
     since = now() - dt.timedelta(days=days)
     tasks = list(db.scalars(select(Task).where(Task.created_at >= since).order_by(Task.created_at)))
     ids = {t.id for t in tasks}
