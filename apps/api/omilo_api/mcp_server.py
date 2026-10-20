@@ -521,9 +521,9 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         if g is None:
             raise S.DomainError(f"unknown goal '{goal_id}'", 404)
         # Idempotent: if already done (or dropped), return ok without overwriting.
-        if g.status != "done":
+        if g.status not in ("done", "dropped"):
             g.status = "done"
-        S.audit(db, f"staff:{st.id}", "goal.complete", goal_id, outcome=outcome)
+            S.audit(db, f"staff:{st.id}", "goal.complete", goal_id, outcome=outcome)
         db.commit()
         return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
     raise S.DomainError(f"unknown tool {name}", 404)

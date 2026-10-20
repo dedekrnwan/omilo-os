@@ -917,6 +917,78 @@ def test_b6_complete_goal_already_done_is_idempotent():
         assert g.status == "done"
 
 
+def test_b6_complete_goal_dropped_left_untouched():
+    """complete_goal on a dropped goal leaves it dropped (not overwritten to done)."""
+    import asyncio
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    goal_id = _make_b6_goal(cid, status="dropped")
+
+    result = asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "cannot complete a dropped goal")
+    )
+
+    assert result.get("ok") is True
+
+    with C.use(cid), session_scope(cid) as db:
+        g = db.get(Goal, goal_id)
+        assert g.status == "dropped", "dropped goal must remain dropped after complete_goal"
+
+
+def test_b6_complete_goal_non_cos_rejected():
+    """complete_goal called by non-CoS staff without staff.delegate permission is rejected (403)."""
+    import asyncio
+
+    cid = _isolated_b6_cid()
+    # Create a non-CoS staff with no staff.delegate permission
+    staff_id = "b6-staff-" + uuid.uuid4().hex[:8]
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=staff_id, name="Regular Staff", role="engineer",
+                     is_chief=False, status="active", engine={"type": "fake"},
+                     permissions={}))  # no staff.delegate permission
+        db.commit()
+
+    goal_id = _make_b6_goal(cid)
+
+    with pytest.raises(S.DomainError) as exc_info:
+        asyncio.get_event_loop().run_until_complete(
+            _call_complete_goal(cid, staff_id, goal_id, "attempt to complete")
+        )
+
+    assert exc_info.value.code == 403
+
+
+def test_b6_complete_goal_idempotent_no_duplicate_audit():
+    """complete_goal called twice on the same goal writes only one audit row (idempotent)."""
+    import asyncio
+    from omilo_api.models import AuditEvent
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    goal_id = _make_b6_goal(cid)
+
+    # First call: completes the goal and writes one audit row
+    asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "First completion.")
+    )
+
+    # Second call: idempotent, should not write another audit row
+    asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "Second completion (idempotent).")
+    )
+
+    with C.use(cid), session_scope(cid) as db:
+        audit_count = db.scalar(
+            select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "goal.complete",
+                AuditEvent.ref == goal_id,
+            )
+        ) or 0
+
+    assert audit_count == 1, f"exactly one audit row should exist after two complete_goal calls, got {audit_count}"
+
+
 def test_b6_done_goal_start_planning_is_noop():
     """After complete_goal, start_planning enqueues NO plan task (loop terminates)."""
     import asyncio
