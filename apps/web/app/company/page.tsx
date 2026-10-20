@@ -1,17 +1,39 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
-import KpiBoard from "@/components/KpiBoard";
+import KpiBoard, { Kpi } from "@/components/KpiBoard";
+import { usePageActions } from "@/components/PageActions";
 import { ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 
 type File = { name: string; bytes: number; updated_at: string };
 
+/* Derive folder name from filename: "company/overview.md" → "company", "overview.md" → root */
+function folder(name: string): string {
+  const parts = name.split("/");
+  return parts.length > 1 ? parts[0] : "";
+}
+
+function fileLabel(name: string): string {
+  const base = name.split("/").pop() || name;
+  return base.replace(/\.md$/, "").replace(/[-_]/g, " ");
+}
+
+/* Ghost KPI cards shown when board is empty */
+const GHOST_KPIS = [
+  { label: "Monthly revenue", hint: "e.g. Rp 25 jt by December" },
+  { label: "Paying customers", hint: "e.g. 100 by December" },
+  { label: "Churn", hint: "e.g. under 3% a month" },
+  { label: "Support reply time", hint: "e.g. under 1 hour" },
+];
+
 export default function Company() {
   const { overview } = useOverview();
   const [files, setFiles] = useState<File[]>([]);
+  const [kpis, setKpis] = useState<Kpi[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [editing, setEditing] = useState(false);
@@ -20,6 +42,12 @@ export default function Company() {
 
   const load = useCallback(async () => setFiles(await api<File[]>("/knowledge")), []);
   usePoll(load, 60000, [load]);
+
+  /* Load KPI count for the knowledge progress meter */
+  useEffect(() => {
+    api<Kpi[]>("/kpis/board").then(setKpis).catch(() => setKpis([]));
+  }, []);
+
   const open = async (name: string) => {
     setSel(name); setEditing(false);
     try { setContent((await api<{ content: string }>(`/knowledge/${name}`)).content); } catch (e: any) { setErr(e.message); }
@@ -32,38 +60,131 @@ export default function Company() {
     try { await api(`/knowledge/${n}`, { method: "PUT", body: { content: `# ${newName}\n` } }); setNewName(""); await load(); open(n); } catch (e: any) { setErr(e.message); }
   };
 
+  /* Register "New KPI" as the topbar primary action (KpiBoard registers its own edit(); we mirror it here) */
+  usePageActions(null, []);
+
+  /* Knowledge completeness: count files with meaningful content (> 50 bytes) */
+  const filledCount = files.filter((f) => f.bytes > 50).length;
+  const totalCount = files.length;
+  const pct = totalCount > 0 ? Math.round((filledCount / totalCount) * 100) : 0;
+
   return (
-    <div>
-      <h1>{overview?.company_name || "Company"}</h1>
-      <KpiBoard />
-      <div className="sec">
-        <h2>Knowledge</h2>
-        <div className="grid2" style={{ gridTemplateColumns: "240px 1fr", marginTop: 12 }}>
-          <div className="threads">
-            {files.map((f) => (
-              <button key={f.name} className={sel === f.name ? "on" : ""} onClick={() => open(f.name)}>{f.name}<div className="small">{ago(f.updated_at)}</div></button>
-            ))}
-            <div style={{ padding: "10px 0" }}>
-              <input placeholder="new-file" value={newName} onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-"))} />
-              <button className="btn" style={{ marginTop: 6 }} disabled={!newName} onClick={create}>Add file</button>
-            </div>
-          </div>
-          <div>
-            {!sel ? <Empty title="Pick a file" text="Agents read these before every task." /> : editing ? (
-              <>
-                <textarea rows={24} value={content} onChange={(e) => setContent(e.target.value)} />
-                <div className="acts" style={{ marginTop: 8 }}><button className="btn primary" onClick={save}>Save</button><button className="btn" onClick={() => open(sel)}>Cancel</button></div>
-              </>
-            ) : (
-              <>
-                <div className="acts" style={{ marginBottom: 8 }}><b>{sel}</b><span className="sp" /><button className="btn" onClick={() => setEditing(true)}>Edit</button></div>
-                <div className="paper"><Markdown text={content} /></div>
-              </>
-            )}
-            <Err error={err} />
-          </div>
+    <div className="company-v2">
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">{overview?.company_name || "Company"}</h1>
+          <p className="ph2-sub">The numbers, context and rules your helpers need to do good work for your company.</p>
+        </div>
+        <div className="ph2-actions">
+          <Link href="/settings" className="btn"><i className="ri-settings-3-line" />Company settings</Link>
         </div>
       </div>
+
+      {/* KPI Board — unchanged behavior, v2 layout via KpiBoard component */}
+      <KpiBoard />
+
+      {/* KPI Ghosts — shown only when kpis loaded and empty */}
+      {kpis !== null && kpis.length === 0 && (
+        <div className="co2-ghosts">
+          {GHOST_KPIS.map((g) => (
+            <div key={g.label} className="co2-ghost">
+              <div className="co2-ghost-top">
+                <span className="co2-ghost-label">{g.label}</span>
+                <span className="co2-ghost-dash">—</span>
+              </div>
+              <div className="co2-ghost-hint">{g.hint}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Section: What your helpers know */}
+      <div className="sec">
+        <div className="co2-know-head">
+          <div className="co2-know-title-row">
+            <h2>What your helpers know</h2>
+            {totalCount > 0 && (
+              <span className="co2-know-count small">{filledCount} of {totalCount} filled in</span>
+            )}
+          </div>
+          {totalCount > 0 && (
+            <div className="co2-know-meter">
+              <div className="co2-know-fill" style={{ width: `${pct}%` }} />
+            </div>
+          )}
+          <Link href="/docs" className="btn sm quiet co2-docs-link"><i className="ri-external-link-line" />Open in Docs</Link>
+        </div>
+
+        {/* Knowledge tiles grid */}
+        <div className="co2-know-grid">
+          {files.map((f) => {
+            const label = fileLabel(f.name);
+            const isFilled = f.bytes > 50;
+            return (
+              <button
+                key={f.name}
+                className={`co2-tile${sel === f.name ? " on" : ""}${!isFilled ? " co2-tile-empty" : ""}`}
+                onClick={() => open(f.name)}
+              >
+                <div className="co2-tile-top">
+                  <span className="co2-tile-label">{label}</span>
+                  {!isFilled && <span className="chip idle co2-tile-chip">Fill in</span>}
+                </div>
+                <div className="co2-tile-meta small">{isFilled ? ago(f.updated_at) : folder(f.name) || "—"}</div>
+              </button>
+            );
+          })}
+
+          {/* Add a knowledge note */}
+          <div className="co2-tile-add">
+            <div className="co2-tile-add-field">
+              <i className="ri-add-line" />
+              <input
+                placeholder="Add a knowledge note"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value.toLowerCase().replace(/[^a-z0-9/_-]/g, "-"))}
+                onKeyDown={(e) => { if (e.key === "Enter" && newName) create(); }}
+              />
+            </div>
+            {newName && (
+              <button className="btn sm primary" style={{ marginTop: 6 }} onClick={create}>Add file</button>
+            )}
+          </div>
+        </div>
+
+        {files.length === 0 && (
+          <div className="empty" style={{ marginTop: 12 }}>
+            <b>No knowledge files yet</b>
+            <span>Add notes for your helpers: company context, rules, offer, customer profiles.</span>
+          </div>
+        )}
+      </div>
+
+      {/* Knowledge editor / viewer (shown below grid when a file is selected) */}
+      {sel && (
+        <div className="sec co2-editor">
+          <div className="co2-editor-head acts">
+            <b>{sel}</b>
+            <span className="sp" />
+            {!editing && <button className="btn sm" onClick={() => setEditing(true)}><i className="ri-edit-line" />Edit</button>}
+            <button className="btn sm quiet" onClick={() => { setSel(null); setEditing(false); }}><i className="ri-close-line" /></button>
+          </div>
+          {editing ? (
+            <>
+              <textarea rows={24} value={content} onChange={(e) => setContent(e.target.value)} style={{ marginTop: 8 }} />
+              <div className="acts" style={{ marginTop: 8 }}>
+                <button className="btn primary" onClick={save}>Save</button>
+                <button className="btn" onClick={() => open(sel)}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <div className="paper" style={{ marginTop: 8 }}><Markdown text={content} /></div>
+          )}
+          <Err error={err} />
+        </div>
+      )}
+      {!sel && err && <Err error={err} />}
     </div>
   );
 }

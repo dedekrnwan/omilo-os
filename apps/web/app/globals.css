@@ -2798,3 +2798,54 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .dwrite textarea { padding: 14px; }
   .dread { padding: 14px; }
 }
+
+/* ---------------------------------------------------------------- Company v2 (pen uNzlj) */
+
+/* KPI ghost cards — shown when board is empty */
+.co2-ghosts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
+.co2-ghost { background: var(--soft); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.co2-ghost-top { display: flex; align-items: center; gap: 8px; }
+.co2-ghost-label { font-size: 13px; font-weight: 500; color: var(--muted); flex: 1; }
+.co2-ghost-dash { font: 400 24px/28px var(--font-mono); color: var(--faint); }
+.co2-ghost-hint { font-size: 12px; color: var(--faint); }
+
+/* "What your helpers know" section header */
+.co2-know-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.co2-know-title-row { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.co2-know-title-row h2 { flex-shrink: 0; }
+.co2-know-count { flex-shrink: 0; }
+.co2-know-meter { flex: 1; min-width: 80px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
+.co2-know-fill { height: 100%; border-radius: 2px; background: var(--ink); transition: width .4s ease; }
+.co2-docs-link { flex-shrink: 0; }
+
+/* Knowledge tile grid */
+.co2-know-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+
+/* Individual tile button */
+.co2-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); text-align: left; cursor: pointer; transition: border-color .15s, background .15s; }
+.co2-tile:hover { border-color: var(--line-strong); background: var(--soft); }
+.co2-tile.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.co2-tile-empty { background: var(--soft); border-style: dashed; }
+.co2-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.co2-tile-label { font-size: 13px; font-weight: 500; color: var(--ink); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co2-tile-chip { font-size: 11px; height: 20px; padding: 0 6px; flex-shrink: 0; }
+.co2-tile-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* "Add a knowledge note" tile */
+.co2-tile-add { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; background: transparent; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); }
+.co2-tile-add-field { display: flex; align-items: center; gap: 6px; }
+.co2-tile-add-field > i { font-size: 15px; color: var(--faint); flex-shrink: 0; }
+.co2-tile-add-field input { flex: 1; min-width: 0; height: 28px; min-height: 28px; border: 0; background: transparent; box-shadow: none; padding: 0; font-size: 13px; color: var(--ink); }
+.co2-tile-add-field input:focus { box-shadow: none; border: 0; outline: none; }
+.co2-tile-add-field input::placeholder { color: var(--faint); }
+
+/* Knowledge editor section */
+.co2-editor { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 8px; }
+.co2-editor-head { padding-bottom: 0; }
+
+@media (max-width: 640px) {
+  .co2-ghosts { grid-template-columns: repeat(2, 1fr); }
+  .co2-know-grid { grid-template-columns: repeat(2, 1fr); }
+  .co2-know-head { gap: 8px; }
+  .co2-know-meter { min-width: 60px; }
+}
