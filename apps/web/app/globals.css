@@ -342,11 +342,6 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
 .browser .bar .url { flex: 1; min-width: 0; height: 26px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); padding: 0 10px; font: 12px/24px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .browser .view { min-height: 220px; display: grid; place-items: center; color: var(--muted); font-size: 13px; padding: 16px; text-align: center; }
 .browser .view img { max-width: 100%; display: block; }
-@media (max-width: 1100px) {
-  .ws-body.panel { grid-template-columns: 220px minmax(0, 1fr); }
-  .ws-body.panel .ws-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); z-index: 35;
-    border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 24px 48px -16px rgba(0, 0, 0, .3); }
-}
 @media (max-width: 760px) {
   .ws-body, .ws-body.panel { grid-template-columns: 1fr; }
   .ws-list { display: none; }
@@ -2628,68 +2623,12 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   color: var(--muted); padding: 12px 8px 4px; font-weight: 500;
 }
 
-/* Chat messages area: 24px side padding, 32px top, 18px gap */
-.ws-messages {
-  flex: 1; overflow-y: auto; min-height: 0;
-  padding: 32px 24px 0;
-  display: flex; flex-direction: column; gap: 18px;
-}
-
-/* Composer wrap: 0 top, 32px sides, 16px bottom, 8px gap */
-.ws-composer-wrap {
-  padding: 0 32px 16px; display: flex; flex-direction: column; gap: 8px;
-}
-@media (max-width: 760px) {
-  .ws-messages { padding: 16px 12px 0; }
-  .ws-composer-wrap { padding: 0 10px 12px; }
-}
-
-/* Agent message v2: name + timestamp header row */
-.agentmsg-v2 { display: flex; gap: 12px; align-items: flex-start; }
-.agentmsg-v2 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.agentmsg-v2 .who-row { display: flex; align-items: center; gap: 8px; }
-.agentmsg-v2 .who-row .name { font-size: 13px; font-weight: 500; color: var(--ink); }
-.agentmsg-v2 .who-row .ts { font-size: 12px; color: var(--muted); }
-.agentmsg-v2 .text { font-size: 14px; color: var(--ink-2); line-height: 1.5; }
-
-/* Owner bubble v2: soft bg, correct border-radius */
-.msg-owner-v2 {
-  align-self: flex-end; max-width: 80%;
-  background: var(--soft); border: 1px solid var(--line);
-  border-radius: 14px 14px 4px 14px; padding: 10px 14px;
-  font-size: 14px; color: var(--ink);
-}
-
-/* Run summary chip inside agent message */
-.run-summary {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--soft); border: 1px solid var(--line);
-  border-radius: var(--r); padding: 6px 10px;
-  font-size: 12px; color: var(--ink-2); align-self: flex-start;
-}
-.run-summary i { font-size: 14px; color: var(--ok); }
-.run-summary .link { color: var(--link); cursor: pointer; margin-left: 4px; }
-
-/* Error card v2 */
-.error-card-v2 {
-  background: var(--bad-tint); border: 1px solid var(--bad-line);
-  border-radius: var(--r-lg); padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.error-card-v2 .top {
-  display: flex; align-items: center; gap: 8px;
-}
-.error-card-v2 .top i { font-size: 16px; color: var(--bad); flex-shrink: 0; }
-.error-card-v2 .top .label { font-size: 14px; color: var(--bad); font-weight: 500; flex: 1; min-width: 0; }
-.error-card-v2 .top .since { font-size: 12px; color: var(--bad); white-space: nowrap; }
-.error-card-v2 .desc { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
-
 /* Run panel v2 (pen: fill=$soft, border-left, w=300, p=16, gap=14) */
 .ws-panel-v2 {
   border-left: 1px solid var(--line);
   display: flex; flex-direction: column; min-height: 0;
   background: var(--soft); padding: 16px; gap: 14px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .ws-panel-v2 .ptabs { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
 .ws-panel-v2 .panel-section-head {
