@@ -9,7 +9,6 @@ import NotifyHost from "./Notify";
 import TaskDrawerLazy from "./TaskDrawerLazy";
 import ContextMenuHost from "./ContextMenu";
 import CompanySwitcher from "./CompanySwitcher";
-import { StepPage } from "./StepCard";
 import { PageActionsCtx, PageActionsSpec } from "./PageActions";
 import ChatLauncher from "./ChatLauncher";
 import { NAV, NavItem, navItemFor } from "./nav";
@@ -99,17 +98,10 @@ export default function Shell({ children }: { children: ReactNode }) {
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
   const who = (me?.name || me?.email || "Owner").trim();
 
-  if (path === "/onboarding/") {  // focused setup: a quiet page with the step card in the middle
+  if (path === "/onboarding/") {  // v2 onboarding: full-screen layout; the page owns all chrome
     return (
       <OverviewCtx.Provider value={{ overview, refresh }}>
-        <StepPage top={<>
-          <Mark /><span className="crumb">Omilo<span className="small" style={{ fontWeight: 400 }}> · Setting up {overview?.company_name || "your company"}</span></span>
-          <span className="sp" style={{ flex: 1 }} />
-          <div className="cosw-top"><CompanySwitcher overview={overview} /></div>
-          <button className="btn quiet sm" onClick={logout}><i className="ri-logout-box-r-line" />Log out</button>
-        </>}>
-          {children}
-        </StepPage>
+        {children}
         <PreviewHost />
       </OverviewCtx.Provider>
     );

@@ -3546,6 +3546,9 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 
 /* ------------------------------------------------------------------ G. Onboarding v2 refresh */
 
+/* Full-screen shell for onboarding v2 */
+.ob2-page { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; background: var(--surface); }
+
 /* Top bar (Mark + "Omilo · Setting up {Company}" + "Saved as you go" + Log out) */
 .ob2-bar {
   display: flex; align-items: center; gap: 12px;
