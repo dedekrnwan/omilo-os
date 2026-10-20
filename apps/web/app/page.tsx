@@ -79,15 +79,6 @@ function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
   );
 }
 
-function Column({ title, icon, count, children, empty }: { title: string; icon: React.ReactNode; count: number; children: React.ReactNode; empty: string }) {
-  return (
-    <section className="bcol" aria-label={title}>
-      <div className="bcol-h">{icon}<span>{title}</span><span className="bcol-n">{count}</span></div>
-      <div className="bcol-b">{count === 0 ? <div className="bcol-empty">{empty}</div> : children}</div>
-    </section>
-  );
-}
-
 function BoardView({ onCount }: { onCount: () => void }) {
   const router = useRouter();
   const [b, setB] = useState<Board | null>(null);
@@ -260,7 +251,44 @@ function BoardView({ onCount }: { onCount: () => void }) {
                 <div className="inbox2-bulk-hint">
                   <button className="btn sm quiet" onClick={selectAll}><i className="ri-checkbox-multiple-line" />Select all approvals and permissions</button>
                   <span className="sp" />
-                  <button className="btn sm primary" onClick={() => { selectAll(); }}>
+                  <button className="btn sm primary" onClick={() => {
+                    const allIds = new Set(eligibleNeeds.map((c) => c.id));
+                    setSelectedIds(allIds);
+                    // Approve immediately against the full eligible set (don't wait for state flush)
+                    const ids = Array.from(allIds);
+                    if (!bulkBusy && ids.length > 0) {
+                      setBulkBusy(true);
+                      setErr(null);
+                      api<BulkResult>("/inbox/bulk", { body: { ids, decision: "approve" } }).then(async (res) => {
+                        if (res.needs_confirm.length > 0) {
+                          const ok = await confirmDialog({
+                            title: `${res.needs_confirm.length} item${res.needs_confirm.length === 1 ? "" : "s"} need a second look`,
+                            body: (
+                              <div>
+                                <p style={{ margin: "0 0 8px" }}>
+                                  {res.needs_confirm.length === 1 ? "This item" : "These items"} spend money or send messages externally.
+                                  Confirm to approve everything you selected.
+                                </p>
+                                <ul style={{ margin: 0, paddingLeft: 18, textAlign: "left", fontSize: 13 }}>
+                                  {res.needs_confirm.map((x) => <li key={x.id}>{x.why}</li>)}
+                                </ul>
+                              </div>
+                            ),
+                            confirm: "Approve everything",
+                            danger: true,
+                          });
+                          if (!ok) return;
+                          const res2 = await api<BulkResult>("/inbox/bulk", { body: { ids, decision: "approve", confirm_high_risk: true } });
+                          if (res2.skipped.length > 0) setErr(`${res2.skipped.length} item${res2.skipped.length === 1 ? "" : "s"} could not be decided.`);
+                        } else if (res.skipped.length > 0) {
+                          setErr(`${res.skipped.length} item${res.skipped.length === 1 ? "" : "s"} could not be decided.`);
+                        }
+                        clearSelection();
+                        await load();
+                        onCount();
+                      }).catch((e: any) => setErr(e.message)).finally(() => setBulkBusy(false));
+                    }
+                  }}>
                     <i className="ri-check-double-line" />Approve all {eligibleNeeds.length}
                   </button>
                 </div>

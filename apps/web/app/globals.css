@@ -95,6 +95,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 .soon-tag { margin-left: auto; font-size: 10px; font-weight: 500; color: var(--muted); background: var(--disabled-bg); border-radius: var(--r-pill); padding: 0 6px; line-height: 18px; }
 .nav-footer { display: flex; flex-direction: column; margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
 .nav-footer .navlink { border: 0; background: transparent; width: 100%; text-align: left; font-size: 14px; }
+.nav-footer .navlink:hover { background: var(--hover); }
 .side .foot { padding: 8px 16px 0; display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .avatar { width: 22px; height: 22px; border-radius: 50%; background: #fed7aa; color: #9a3412; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .side .foot .grow { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

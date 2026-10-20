@@ -272,6 +272,15 @@ function TopbarV2({
       </div>
       {overview?.paused && <span className="chip warn tb-paused"><i className="ri-pause-line" />Paused</span>}
       <span className="sp" />
+      {actions?.primary && (
+        actions.primary.href
+          ? <Link className={`btn primary sm${actions.primary.danger ? " danger" : ""}`} href={actions.primary.href}>
+              {actions.primary.icon && <i className={actions.primary.icon} />}{actions.primary.label}
+            </Link>
+          : <button className={`btn primary sm${actions.primary.danger ? " danger" : ""}`} disabled={actions.primary.disabled} onClick={() => actions.primary?.onSelect?.()}>
+              {actions.primary.icon && <i className={actions.primary.icon} />}{actions.primary.label}
+            </button>
+      )}
       <AskBar onOpen={openCommand} />
       <button
         ref={moreRef}

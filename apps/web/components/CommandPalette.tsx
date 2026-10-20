@@ -221,7 +221,8 @@ export default function CommandPalette() {
       }
 
       // ⌘↵ / Ctrl+↵ — "continue in chat" shortcut (checked BEFORE plain Enter)
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      // No-op in command mode: don't route a command string into the CoS ask
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && mode !== "command") {
         e.preventDefault();
         submitAsk(mode === "ask" ? query : displayQuery(query, mode));
         return;
@@ -277,12 +278,7 @@ export default function CommandPalette() {
     ? "Paused · helpers stopped"
     : "AI on · Claude Code pool";
 
-  const inputValue =
-    mode === "ask"
-      ? query
-      : mode === "command"
-      ? query // includes leading ">"
-      : query;
+  const inputValue = query;
 
   const inputPlaceholder =
     mode === "ask"
