@@ -13,7 +13,7 @@
  * Consumed by Reply.tsx (Tasks 2), and will be imported directly by Tasks 5 and 7.
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Markdown, Attachments, fileUrl, fileIcon, renderMarkdown } from "@/components/Markdown";
 import { when } from "@/lib/api";
 import type { Msg } from "@/components/Conversation";
@@ -185,6 +185,7 @@ function AccessRequestBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [denyOpen, setDenyOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const requestId = block.request_id || "";
   const kind = block.kind || "";
   const target = (block.target as Record<string, unknown>) || {};
@@ -195,6 +196,8 @@ function AccessRequestBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     setBusy(true);
     try { await ctx.onDecide?.(requestId, scope, n); } finally { setBusy(false); }
   };
+
+  const openDeny = () => { setDenyOpen(true); setTimeout(() => noteRef.current?.focus(), 0); };
 
   if (decided) {
     return (
@@ -219,11 +222,11 @@ function AccessRequestBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
         <div className="acts" style={{ gap: 6, flexWrap: "wrap" }}>
           <button className="btn sm" type="button" disabled={busy} onClick={() => decide("once")}>Allow once</button>
           <button className="btn sm" type="button" disabled={busy} onClick={() => decide("always")} title="This helper keeps it; change it later on Team → the helper → Access">Always allow this helper</button>
-          <button className="btn sm danger" type="button" disabled={busy} onClick={() => { setDenyOpen(true); }}>Deny</button>
+          <button className="btn sm danger" type="button" disabled={busy} onClick={openDeny}>Deny</button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)}
+          <textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder="Optional: why you're denying this (the helper will see it)" rows={2}
             aria-label="Reason for denying (optional, visible to the helper)"
             style={{ resize: "vertical", fontSize: 13 }}
@@ -308,6 +311,7 @@ function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [note, setNote] = useState("");
   const [decided, setDecided] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const proposalId = block.proposal_id || "";
   const title = block.title || "";
   const risk = block.risk || "low";
@@ -317,6 +321,8 @@ function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     setBusy(true);
     try { await ctx.onProposal?.(proposalId, decision, n); setDecided(decision); } finally { setBusy(false); }
   };
+
+  const openNote = (kind: "reject" | "changes") => { setNoteOpen(kind); setTimeout(() => noteRef.current?.focus(), 0); };
 
   const riskChip = risk === "high"
     ? <span className="chip down">High risk</span>
@@ -345,12 +351,12 @@ function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
       {!noteOpen ? (
         <div className="acts" style={{ gap: 6, flexWrap: "wrap" }}>
           <button className="btn sm" type="button" disabled={busy} onClick={() => act("approve")}><i className="ri-check-line" />Approve</button>
-          <button className="btn sm" type="button" disabled={busy} onClick={() => setNoteOpen("changes")}><i className="ri-edit-line" />Request changes</button>
-          <button className="btn sm danger" type="button" disabled={busy} onClick={() => setNoteOpen("reject")}><i className="ri-close-line" />Reject</button>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => openNote("changes")}><i className="ri-edit-line" />Request changes</button>
+          <button className="btn sm danger" type="button" disabled={busy} onClick={() => openNote("reject")}><i className="ri-close-line" />Reject</button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)}
+          <textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)}
             placeholder={noteOpen === "changes" ? "What should change? (the helper will see this)" : "Why are you rejecting this? (the helper will see this)"}
             rows={2}
             aria-label={noteOpen === "changes" ? "Reason for requesting changes (visible to the helper)" : "Reason for rejecting (visible to the helper)"}
@@ -387,7 +393,7 @@ function ReasoningBlock({ block }: { block: Block }) {
         <span className="sp" />
         <i className="ri-arrow-down-s-line chev" />
       </summary>
-      <div className="reply-reasoning-body">{content}</div>
+      <div className="reply-reasoning-body"><Markdown text={content} /></div>
     </details>
   );
 }
@@ -815,7 +821,7 @@ export function renderBlocks(blocks: Block[] | undefined, ctx: BlockCtx): React.
     .filter((b): b is Block => !!b)
     .map((b, i) => {
       const el = renderBlock(b, ctx);
-      // inject array key from index if the switch's key is already set (prevents React warnings)
-      return React.cloneElement(el, { key: el.key ?? `block-${i}` });
+      // always use index-based key so same-type blocks within one message never clash
+      return React.cloneElement(el, { key: `block-${i}` });
     });
 }

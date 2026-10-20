@@ -16,7 +16,7 @@ import { Markdown, Attachments } from "@/components/Markdown";
 import { when, api, type Staff } from "@/lib/api";
 import { menu, copy, sep } from "@/lib/menu";
 import { helperItems } from "@/lib/actions";
-import { quote } from "@/components/Conversation";
+import { quote, plain } from "@/components/Conversation";
 import type { FullThread, Msg } from "@/components/Conversation";
 import { renderBlocks, type Block, type BlockCtx } from "./blocks";
 import type { MenuItem } from "@/lib/menu";
@@ -227,7 +227,7 @@ export function Reply({
         return [
           { heading: helperName },
           { label: "Quote in reply", icon: "ri-double-quotes-l", onSelect: () => quote(th.id, m.text) },
-          { label: "Copy text", icon: "ri-file-copy-line", onSelect: () => copy(m.text) },
+          { label: "Copy text", icon: "ri-file-copy-line", onSelect: () => copy(plain(m.text)) },
           { label: "Copy as Markdown", icon: "ri-markdown-line", onSelect: () => copy(m.text) },
           { label: "Ask again", icon: "ri-restart-line", hint: "puts your question back in the box", onSelect: reAsk },
           ...(h ? [sep, ...helperItems(h)] : []),
@@ -262,8 +262,8 @@ export function Reply({
             </div>
           )}
 
-          {/* File attachments (upload blocks) */}
-          <Attachments blocks={m.blocks as { type: string; id?: string; name?: string; mime?: string; size?: number }[] | undefined} />
+          {/* File attachments (upload blocks) — only for messages without typed blocks */}
+          {!hasTypedBlocks && <Attachments blocks={m.blocks as { type: string; id?: string; name?: string; mime?: string; size?: number }[] | undefined} />}
         </div>
 
         {/* Hover row: hover actions + feedback bar */}

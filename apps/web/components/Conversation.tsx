@@ -328,7 +328,7 @@ export function QuestionRequest({ m, onAnswer }: { m: Msg; onAnswer: (itemId: st
   );
 }
 
-const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/```\w*\n?/g, "")).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+export const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/```\w*\n?/g, "")).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/[*_`~]+/g, "").replace(/^#+\s*/gm, "").replace(/^>\s?/gm, "").trim();
 
 /** Put a quote of a message into the reply box of the chat that shows it. */
