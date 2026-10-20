@@ -1,4 +1,5 @@
 "use client";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Markdown } from "@/components/Markdown";
 
@@ -68,24 +69,26 @@ Your reply goes directly to the helper's chat. It reads your message and comes b
 `,
   },
   "approve-by-email": {
-    title: "Approve by email",
+    title: "Email notifications",
     category: "Inbox & Approvals",
-    md: `# Approve by email
+    md: `# Email notifications
 
-If your company has SMTP configured, helpers can send approval requests to your email. You reply directly to approve or reject — no need to open Omilo.
+If your company has SMTP configured, Omilo sends you email notifications when a helper needs your attention — approvals, questions, and alerts.
 
 ## Requirements
 
 - A company SMTP configuration (Settings → Email → SMTP).
-- The **Email notifications** channel enabled in Settings → Notifications.
+- The **Email** channel enabled for the relevant kinds in Settings → Notifications.
 
-## How to approve
+## How it works
 
-Reply to the notification email with **yes**, **approve**, or **ok** (case-insensitive) to approve the job. Reply with **no**, **reject**, or **stop** to reject it. The helper acts immediately.
+Omilo sends you an outbound email describing what needs your attention. Open Omilo in your browser to approve, reply, or take any action. Replying to the email itself is not supported.
 
-## Security
+## Tips
 
-Only replies from your registered email address are accepted. If the reply comes from a different address, the helper ignores it and keeps the job in Inbox.
+- Quiet hours and Focus pause email delivery just like push notifications.
+- Critical items (production down, budget cap) bypass quiet hours.
+- Adjust which events trigger emails in Settings → Notifications → Tell me about.
 `,
   },
   "helpers-and-jobs": {
@@ -205,7 +208,7 @@ Welcome to Omilo help. Find answers below or search guides to get the most from 
 - [How the Inbox works](?a=how-inbox-works)
 - [Approve many jobs at once](?a=approve-many)
 - [Reply instead of approving](?a=reply-instead-of-approving)
-- [Approve by email](?a=approve-by-email)
+- [Email notifications](?a=approve-by-email)
 
 ## Helpers & Jobs
 
@@ -234,7 +237,7 @@ Welcome to Omilo help. Find answers below or search guides to get the most from 
 
 /* ------------------------------------------------------------------ page */
 
-export default function HelpPage() {
+function HelpInner() {
   const params = useSearchParams();
   const slug = params?.get("a") || null;
   const article = slug ? GUIDES[slug] : null;
@@ -255,5 +258,13 @@ export default function HelpPage() {
     <div className="help-page">
       <Markdown text={HELP_MD} />
     </div>
+  );
+}
+
+export default function HelpPage() {
+  return (
+    <Suspense fallback={<div className="help-page"><p className="small">Loading…</p></div>}>
+      <HelpInner />
+    </Suspense>
   );
 }

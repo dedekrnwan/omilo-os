@@ -625,8 +625,7 @@ function EmailSmtp() {
       await api("/settings/smtp/test", { body: testTo.trim() ? { to: testTo.trim() } : {} });
       setTestMsg("Test email sent successfully.");
     } catch (e: any) {
-      if (e instanceof ApiError && e.status === 400) setTestErr(e.message);
-      else setTestErr(e.message);
+      setTestErr(e.message);
     } finally { setTesting(false); }
   };
 
@@ -673,7 +672,7 @@ function EmailSmtp() {
       </Row>
 
       <div className="acts" style={{ marginTop: 4, marginBottom: 4 }}>
-        <button className="btn primary" disabled={saving || !form.host.trim()} onClick={save}>{saving ? "Saving…" : "Save"}</button>
+        <button className="btn primary" disabled={saving || !form.host.trim() || !form.from_addr.trim()} onClick={save}>{saving ? "Saving…" : "Save"}</button>
         {msg && <span className="set-ok"><i className="ri-check-line" />{msg}</span>}
       </div>
       {err && <div className="callout" style={{ borderColor: "var(--bad-line)", background: "var(--bad-tint)", marginTop: 8 }}>{err}</div>}

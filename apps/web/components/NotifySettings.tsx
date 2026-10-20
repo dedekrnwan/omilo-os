@@ -100,7 +100,7 @@ export default function NotifySettings({ embedded = false }: { embedded?: boolea
               {Object.keys(cfg.channels).map((c) => (
                 <td key={c}>
                   <button type="button" className={`switch ${p.kinds[k]?.[c] ? "on" : ""}`} role="switch" aria-checked={!!p.kinds[k]?.[c]}
-                    aria-label={`${label}: ${c === "push" ? "notification" : "in the app"}`} onClick={() => flip(k, c)}><i /></button>
+                    aria-label={`${label}: ${c === "push" ? "notification" : c === "email" ? "email" : "in the app"}`} onClick={() => flip(k, c)}><i /></button>
                 </td>
               ))}
             </tr>

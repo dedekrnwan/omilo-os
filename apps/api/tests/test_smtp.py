@@ -244,6 +244,71 @@ def test_email_pending_sends_when_enabled_and_configured(owner, monkeypatch):
         assert row is not None, "Notification(channel='email', action='sent') not found"
 
 
+def test_email_pending_defers_held_then_sends(owner, monkeypatch):
+    """Quiet-hours hold: email_pending sends 0 but backlogs the notice; clear quiet → sends it."""
+    import asyncio
+
+    import smtplib
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
+
+    _seed_smtp(owner)
+
+    from omilo_api import company as C
+    from omilo_api import notify as N
+    from omilo_api import smtp
+    from omilo_api.db import session_scope
+    from omilo_api.models import Notice, Setting
+
+    uid = _owner_user_id(owner)
+
+    # Enable email for inbox and set quiet hours covering the full day (00:00–23:59)
+    with session_scope() as db:
+        N.set_prefs(db, uid, {"kinds": {"inbox": {"email": True}}, "quiet": {"on": True, "start": "00:00", "end": "23:59"}})
+
+    sent_calls = []
+
+    def _record(db, to, subject, body):
+        sent_calls.append({"to": to, "subject": subject})
+
+    monkeypatch.setattr(smtp, "send_email", _record)
+
+    # Seed cursor and a fresh notice
+    with session_scope() as db:
+        from omilo_api.notify import latest_id
+        cur = db.get(Setting, "email_cursor")
+        if cur:
+            cur.value = latest_id(db)
+        else:
+            db.add(Setting(key="email_cursor", value=latest_id(db)))
+        n = Notice(kind="inbox", title="Held approval request", body="body", url="/", tag="test-held-1", level="decision", who="bot")
+        db.add(n)
+
+    # First call: user is in quiet hours → 0 sent, notice deferred to backlog
+    count1 = asyncio.run(N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", ""))
+    assert count1 == 0, f"expected 0 while quiet, got {count1}"
+    assert sent_calls == [], f"no email should be sent during quiet hours; calls={sent_calls}"
+
+    with session_scope() as db:
+        ob = db.get(Setting, f"email_overflow:{uid}")
+        assert ob is not None and ob.value, f"notice must be in email_overflow backlog; ob={ob}"
+        backlog_ids = ob.value
+
+    # Clear quiet hours
+    with session_scope() as db:
+        N.set_prefs(db, uid, {"quiet": {"on": False}})
+
+    # Second call: quiet is off → backlogged notice is sent
+    count2 = asyncio.run(N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", ""))
+    assert count2 >= 1, f"expected at least 1 sent after quiet cleared, got {count2}"
+    assert len(sent_calls) >= 1, f"send_email should be called after quiet ends; calls={sent_calls}"
+
+    # Backlog must be drained
+    with session_scope() as db:
+        ob2 = db.get(Setting, f"email_overflow:{uid}")
+        assert not (ob2 and ob2.value), f"backlog should be empty after send; value={ob2.value if ob2 else None}"
+
+
 def test_email_pending_noop_when_smtp_unconfigured(owner, monkeypatch):
     """email pref True but NO SMTP config → email_pending returns 0, send_email NOT called, no exception."""
     import asyncio

@@ -473,6 +473,9 @@ async def push_pending(db_factory, auth_factory=None, label: str = "", company: 
 async def email_pending(db_factory, auth_factory=None, label: str = "", company: str = "") -> int:  # noqa: ARG001
     """Send email notifications for fresh Notice rows whose owner has email enabled, honouring quiet/focus/cap.
 
+    Held notices (quiet-hours / focus) are deferred to an email_overflow:{uid} backlog and delivered
+    once the window ends — mirroring push_pending's push_overflow:{uid} mechanism.
+    Stale/decided items are skipped via _still_relevant (same guard as push_pending).
     Gracefully returns 0 (no exception) when SMTP is not configured.
     Returns the number of emails sent."""
     from . import smtp
@@ -497,24 +500,43 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
             return 0
 
         notices = list(db.scalars(select(Notice).where(Notice.id > last).order_by(Notice.id).limit(50)))
-        if not notices:
-            return 0
 
         # Find all unique user ids that have email prefs (stored in the company DB)
         # We mirror push_pending: iterate the auth DB for known users
         users = list(adb.scalars(select(User)))
         if not users:
-            # advance cursor so we don't replay
-            cur.value = notices[-1].id
-            db.commit()
+            if notices:
+                cur.value = notices[-1].id
+                db.commit()
+            return 0
+
+        # Load backlogs for all users up front (mirrors push's backlog dict)
+        backlog = {u.id: db.get(Setting, f"email_overflow:{u.id}") for u in users}
+
+        if not notices and not any(b and b.value for b in backlog.values()):
             return 0
 
         for u in users:
             if is_present(db, u.id):
-                continue  # tab is open: skip email (same logic as push)
+                ob = backlog.get(u.id)
+                if ob and ob.value:
+                    ob.value = []  # they are looking at Omilo: clear backlog (same as push)
+                continue
             p = prefs(db, u.id)
-            fresh = [n for n in notices if wants(p, n.kind, "email")]
-            now_ok = [n for n in fresh if not held(db, p, n.level)]
+            ob = backlog.get(u.id)
+            # Restore backlogged notices that are still relevant (Finding B: relevance guard)
+            waiting = [n for n in (db.get(Notice, i) for i in ((ob.value if ob else None) or [])) if n and _still_relevant(db, n)]
+            # Fresh notices this user wants via email, also filtered by relevance (Finding B)
+            fresh = [n for n in notices if wants(p, n.kind, "email") and _still_relevant(db, n)]
+            # Split into sendable now vs held by quiet/focus
+            now_ok = [n for n in waiting + fresh if not held(db, p, n.level)]
+            # Held notices go to backlog (Finding A: defer, don't drop)
+            wait_ids = [n.id for n in waiting + fresh if held(db, p, n.level)]
+            keep = list(dict.fromkeys(wait_ids))  # dedup, preserve order
+            if ob:
+                ob.value = keep
+            elif keep:
+                db.add(Setting(key=f"email_overflow:{u.id}", value=keep))
             # Per-hour cap: mirror push_pending's MAX_PER_HOUR enforcement
             since = now() - dt.timedelta(hours=1)
             emails_this_hour = db.scalar(select(func.count()).select_from(Notification).where(
@@ -545,6 +567,7 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
                 sent += 1
                 emails_this_hour += 1
 
-        cur.value = notices[-1].id
+        if notices:
+            cur.value = notices[-1].id
         db.commit()
     return sent
