@@ -228,3 +228,169 @@ def test_exec_tools_does_not_contain_web_search():
 def test_exec_tools_does_not_contain_web_fetch():
     """WebFetch is NOT an exec-class tool — it must not be in _EXEC_TOOLS."""
     assert "WebFetch" not in _EXEC_TOOLS
+
+
+# ===========================================================================
+# D4: self-directed learning into the KB
+# ===========================================================================
+# These tests use session_scope() (shared Postgres test DB, same as test_creation.py).
+# They are intentionally isolated: every staff id is UUID-based; refs/kinds are unique per run.
+
+import asyncio
+import uuid as _uuid
+
+from omilo_api import mcp_server as _mcp
+from omilo_api import services as _S
+from omilo_api import kb as _kb
+from omilo_api.db import session_scope as _ss
+from omilo_api.models import KbSource, Staff as _Staff
+from sqlalchemy import select as _select
+
+
+def _make_learner() -> str:
+    sid = "lrn-" + _uuid.uuid4().hex[:10]
+    with _ss() as db:
+        db.add(_Staff(
+            id=sid,
+            name="Learner Bot",
+            role="researcher",
+            is_chief=False,
+            permissions={},
+            autonomy="standard",
+            status="active",
+            engine={"type": "fake"},
+        ))
+        db.commit()
+    return sid
+
+
+async def _learn(staff_id: str, **args) -> dict:
+    with _ss() as db:
+        st = db.get(_Staff, staff_id)
+        _, data = await _mcp.call_tool(db, st, "learn", args)
+        return data
+
+
+def _run(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+# ---------------------------------------------------------------------------
+# D4-1: learn writes a KB entry with correct meta (source, confidence, learned_by)
+# ---------------------------------------------------------------------------
+
+def test_learn_writes_kb_entry_with_meta():
+    """learn() persists a finding to the KB and stores source+confidence+learned_by in meta."""
+    sid = _make_learner()
+    summary = "Python asyncio event loops must not be shared across threads in production code."
+    url = f"https://docs.example.com/asyncio-{_uuid.uuid4().hex[:6]}"
+
+    result = _run(_learn(sid, summary=summary, source_url=url, confidence="high"))
+    assert result.get("ok") is True
+
+    with _ss() as db:
+        src = db.scalar(_select(KbSource).where(KbSource.ref == url))
+    assert src is not None, "KbSource row should exist for the learned URL"
+    assert src.meta["source"] == url
+    assert src.meta["confidence"] == "high"
+    assert src.meta["learned_by"] == sid
+
+
+# ---------------------------------------------------------------------------
+# D4-2: a second learn() with the same source_url UPSERTS (no duplicate row)
+# ---------------------------------------------------------------------------
+
+def test_learn_same_url_upserts_not_duplicates():
+    """Calling learn() twice with the same source_url must not create two KbSource rows."""
+    sid = _make_learner()
+    url = f"https://example.com/upsert-{_uuid.uuid4().hex[:6]}"
+    summary_v1 = "First version of the finding: Python GIL limits multi-core CPU use in CPython."
+    summary_v2 = "Updated finding: Python GIL limits multi-core CPU use in CPython; use multiprocessing."
+
+    _run(_learn(sid, summary=summary_v1, source_url=url, confidence="medium"))
+    _run(_learn(sid, summary=summary_v2, source_url=url, confidence="high"))
+
+    with _ss() as db:
+        rows = list(db.scalars(_select(KbSource).where(KbSource.ref == url)))
+    assert len(rows) == 1, f"Expected exactly 1 KbSource for ref={url!r}, got {len(rows)}"
+    # Latest meta survives
+    assert rows[0].meta["confidence"] == "high"
+
+
+# ---------------------------------------------------------------------------
+# D4-3: too-short summary is rejected
+# ---------------------------------------------------------------------------
+
+def test_learn_rejects_short_summary():
+    """A summary shorter than MIN_LEARN_CHARS must be rejected."""
+    from omilo_api.mcp_server import MIN_LEARN_CHARS
+    sid = _make_learner()
+    short = "x" * (MIN_LEARN_CHARS - 1)  # one char below the gate
+    url = f"https://example.com/short-{_uuid.uuid4().hex[:6]}"
+
+    with pytest.raises(_S.DomainError):
+        _run(_learn(sid, summary=short, source_url=url))
+
+
+# ---------------------------------------------------------------------------
+# D4-4: web-sourced finding without source_url is rejected
+# ---------------------------------------------------------------------------
+
+def test_learn_rejects_web_finding_without_url():
+    """A summary that references web content but has no source_url must be rejected."""
+    sid = _make_learner()
+    # Summary contains "https://" or web-indicative phrasing — gate checks source_url absent.
+    summary = "According to the page at https://example.com, TLS 1.0 is deprecated and should be disabled on all servers."
+
+    with pytest.raises(_S.DomainError):
+        _run(_learn(sid, summary=summary))
+
+
+# ---------------------------------------------------------------------------
+# D4-5: internal reflection (no URL) is accepted and stored as note kind
+# ---------------------------------------------------------------------------
+
+def test_learn_internal_reflection_accepted_without_url():
+    """A sufficiently long internal finding with no source_url must succeed and be stored as note kind."""
+    sid = _make_learner()
+    summary = "After running three A/B tests on subject lines, personalization tokens increased open rates by 12 percent."
+
+    result = _run(_learn(sid, summary=summary, confidence="medium"))
+    assert result.get("ok") is True
+
+    with _ss() as db:
+        rows = list(db.scalars(_select(KbSource).where(
+            KbSource.staff_id == sid,
+            KbSource.kind == "note",
+        )))
+    assert len(rows) >= 1
+    matching = [r for r in rows if summary[:60] in r.title or summary[:60] in (r.meta or {}).get("source", "")]
+    assert matching, "stored note not found"
+
+
+# ---------------------------------------------------------------------------
+# D4-6: web-sourced entry with URL is stored as web kind
+# ---------------------------------------------------------------------------
+
+def test_learn_web_finding_stored_as_web_kind():
+    """A finding with a source_url is stored with kind='web'."""
+    sid = _make_learner()
+    url = f"https://example.com/web-kind-{_uuid.uuid4().hex[:6]}"
+    summary = "Cloudflare Workers can serve responses in under 50ms globally due to edge colocation."
+
+    _run(_learn(sid, summary=summary, source_url=url, confidence="unverified"))
+
+    with _ss() as db:
+        src = db.scalar(_select(KbSource).where(KbSource.ref == url))
+    assert src is not None
+    assert src.kind == "web"
+
+
+# ---------------------------------------------------------------------------
+# D4-7: learn is in TOOLS list (tool is declared)
+# ---------------------------------------------------------------------------
+
+def test_learn_tool_is_declared():
+    """The 'learn' tool must appear in the MCP TOOLS list."""
+    names = {t["name"] for t in _mcp.TOOLS}
+    assert "learn" in names, f"'learn' missing from TOOLS: {sorted(names)}"

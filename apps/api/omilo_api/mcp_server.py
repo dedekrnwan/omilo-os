@@ -32,6 +32,10 @@ INSTRUCTIONS = (
 )
 
 
+# Minimum summary length for the learn tool's structural quality gate (no LLM call).
+MIN_LEARN_CHARS = 40
+
+
 def _s(type_, desc, **extra):
     return {"type": type_, "description": desc, **extra}
 
@@ -149,6 +153,15 @@ TOOLS: list[dict] = [
                                                       "kind": _s("string", "web | connector | note (default: web when url is given, else note)",
                                                                  enum=["web", "connector", "note"]),
                                                       "task_id": _s("string", "your task id")}, "required": ["title", "text"]}},
+    {"name": "learn", "description": "Capture a researched finding into the team knowledge base so every helper can recall it. "
+                                     "Requires at least 40 characters. Web-sourced findings (from a URL) require source_url. "
+                                     "Same source_url = update (no duplicates). "
+                                     "Stores source, confidence and who learned it in metadata.",
+     "inputSchema": {"type": "object", "properties": {
+         "summary": _s("string", "the finding (minimum 40 chars), plain text or Markdown"),
+         "source_url": _s("string", "URL where the finding came from (required when the summary is from a web source)"),
+         "confidence": _s("string", "how sure you are: high | medium | low | unverified (default: unverified)"),
+     }, "required": ["summary"]}},
     {"name": "review_week", "description": "Chief of Staff, for the weekly retro: every loop's scorecard, each helper's jobs, your decisions "
                                             "and notes, their lessons and schedules, and recent improvements with their measured effect.",
      "inputSchema": {"type": "object", "properties": {"days": _s("integer", "how many days back (default 7)")}, "required": []}},
@@ -353,6 +366,58 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         src = kb.put(db, kind, ref, str(args["title"]), str(args["text"])[:200_000], url=str(args.get("url") or ""), staff_id=st.id,
                      meta={"added_by": st.id, "task_id": args.get("task_id")})
         return "allowed", {"source_id": src.id, "chunks": src.chunks}
+
+    if name == "learn":
+        import hashlib as _hl
+        import re as _re
+        from . import kb
+
+        summary = str(args.get("summary") or "").strip()
+        source_url = str(args.get("source_url") or "").strip() or None
+        confidence = str(args.get("confidence") or "unverified").strip() or "unverified"
+
+        # --- Structural gate 1: minimum length ---
+        if len(summary) < MIN_LEARN_CHARS:
+            raise S.DomainError(
+                f"summary is too short ({len(summary)} chars); minimum is {MIN_LEARN_CHARS} — "
+                "please provide a complete finding"
+            )
+
+        # --- Structural gate 2: web-sourced content requires source_url ---
+        # Detect a URL reference in the summary text (http:// or https://).
+        _has_web_ref = bool(_re.search(r"https?://", summary, _re.I))
+        if _has_web_ref and not source_url:
+            raise S.DomainError(
+                "the summary references a URL but no source_url was provided; "
+                "web-sourced findings require a source_url for attribution"
+            )
+
+        # --- Choose kind and ref ---
+        if source_url:
+            kind = "web"
+            ref = source_url  # normalized dedup key: same URL → same ref → upsert
+        else:
+            kind = "note"
+            # Stable slug from the first 200 chars of summary so repeated calls with the
+            # same wording upsert; different wording creates a new entry.
+            slug = _hl.sha256(summary[:200].encode()).hexdigest()[:32]
+            ref = f"learning:{st.id}:{slug}"
+
+        # --- Title: first line of summary (truncated) ---
+        title = (summary.splitlines()[0] or summary)[:200]
+
+        # --- Store with attribution meta ---
+        meta = {
+            "source": source_url or "internal",
+            "confidence": confidence,
+            "learned_by": st.id,
+        }
+        src = kb.put(db, kind, ref, title, summary[:200_000],
+                     url=source_url or "", staff_id=st.id, meta=meta)
+        S.audit(db, f"staff:{st.id}", "learn", src.id,
+                kind=kind, confidence=confidence, source=source_url or "internal")
+        return "allowed", {"ok": True, "source_id": src.id, "kind": kind, "chunks": src.chunks}
+
     if name in ("remember", "recall"):
         from . import docs as D
         from . import memory as M
