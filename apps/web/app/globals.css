@@ -1701,8 +1701,6 @@ main.page:has(> .monitor.office) { max-width: none; }
 @media (prefers-reduced-motion: reduce) { .mascot .m-tear { animation: none !important; } }
 .btn.danger-text { color: #b91c1c; }
 .btn.danger-text:hover { background: #fef2f2; }
-.card.former { background: #fafaf9; }
-.card.former .mascot { filter: saturate(.7); }
 
 /* ---------------------------------------------------------------- the office lobby on the sign-in pages */
 .au-side .au-glass { top: auto; bottom: 28px; transform: none; left: 24px; width: min(360px, calc(100% - 48px)); padding: 22px 24px 18px; background: rgba(255,255,255,.84); }
@@ -2991,4 +2989,75 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 @media (max-width: 640px) {
   .hrn2-head { flex-direction: column; align-items: flex-start; }
   .hrn2-prov-head { flex-direction: column; }
+}
+
+/* ---------------------------------------------------------------- Team v2 (pen b3nYgQ) */
+
+/* Tab strip */
+.team2-tabs { display: flex; align-items: center; gap: 2px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.team2-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px 10px; font-size: 14px; font-weight: 500; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; cursor: pointer; white-space: nowrap; transition: color .15s; }
+.team2-tab:hover { color: var(--ink); text-decoration: none; }
+.team2-tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.team2-tab i { font-size: 15px; }
+.team2-tab-count { min-width: 18px; height: 16px; padding: 0 5px; border-radius: 4px; background: var(--line-strong);
+  color: var(--ink-2); font: 500 11px/16px var(--font-mono); letter-spacing: 0; text-align: center; }
+
+/* Helper list */
+.team2-list { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.team2-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface); transition: background .12s; }
+.team2-row:last-child { border-bottom: 0; }
+.team2-row:hover { background: var(--soft); }
+.team2-row-former { opacity: .7; }
+
+/* Identity cell */
+.team2-id { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; }
+.team2-id:hover { text-decoration: none; }
+.team2-id-text { display: flex; flex-direction: column; min-width: 0; }
+.team2-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team2-chief { font-weight: 400; color: var(--muted); }
+.team2-role { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Status cell */
+.team2-status { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.team2-next { color: var(--muted); white-space: nowrap; }
+
+/* Meta pillbox */
+.team2-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.team2-pill { display: flex; flex-direction: column; align-items: flex-start; }
+.team2-pill-label { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
+.team2-pill-val { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+
+/* Actions cell */
+.team2-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Former helpers sub-list */
+.team2-list-former { margin-top: 8px; }
+
+/* Suggested specialists */
+.team2-suggest-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
+.team2-suggest { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.team2-spec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px;
+  display: flex; flex-direction: column; gap: 8px; }
+.team2-spec-top { display: flex; align-items: flex-start; gap: 10px; }
+.team2-spec-icon { width: 36px; height: 36px; border-radius: var(--r-md); background: var(--soft); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.team2-spec-icon i { font-size: 18px; color: var(--muted); }
+.team2-spec-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.team2-spec-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.team2-spec-cat { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.team2-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.team2-spec-desc { color: var(--ink-2); margin: 0; line-height: 1.5; }
+.team2-spec-foot { display: flex; align-items: center; }
+
+@media (max-width: 700px) {
+  .team2-row { grid-template-columns: 1fr auto; }
+  .team2-status { display: none; }
+  .team2-meta { display: none; }
+  .team2-suggest { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .team2-tabs { overflow-x: auto; scrollbar-width: none; }
+  .team2-tabs::-webkit-scrollbar { display: none; }
 }

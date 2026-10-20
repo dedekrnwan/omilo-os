@@ -241,6 +241,12 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
   );
 }
 
+function engineLabel(s: Staff) {
+  if (s.engine?.type === "claude-code") return s.engine?.auth === "api" ? "Claude Code · API key" : "Shared pool";
+  if (s.engine?.type === "claude") return "Built-in Claude";
+  return "Practice mode";
+}
+
 function StaffList() {
   usePageActions({ primary: { label: "Hire a helper", icon: "ri-user-add-line", href: "/talent/" } }, []);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -250,44 +256,131 @@ function StaffList() {
     setStaff(a); setFormer(f);
   }, []);
   usePoll(load, 30000, [load]);
+
   return (
     <div>
-      <h1>Your team</h1>
-      <p className="sub">Your AI helpers. Open one to change its job, schedule or what it may do without asking.</p>
-      {staff.length === 0 ? <Empty title="No helpers yet" text="Finish onboarding, or hire one from the Hire page." /> : (
-        <div className="cards">{staff.map((s) => (
-          <Link key={s.id} href={`/staff/?id=${s.id}`} className="card" style={{ color: "inherit", textDecoration: "none" }}
-            onContextMenu={menu(() => [{ heading: s.name }, ...helperItems(s, load), sep,
-              { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
-              { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}>
-            <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
-              <Avatar who={s} size={40} state={(s as any).state === "working" ? "working" : null} />
-              <span style={{ display: "flex", flexDirection: "column" }}><b>{s.name}</b><span className="fn small">{s.is_chief ? "Chief of Staff" : s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>
-            </span>
-            <span className="acts"><HelperState h={s as any} /><span className="small">{s.engine?.type === "claude" ? "Built-in Claude" : s.engine?.type === "claude-code" ? (s.engine?.auth === "api" ? "Claude Code · API key" : "Claude Code pool") : "Practice"} · {s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span></span>
-          </Link>
-        ))}</div>
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Team</h1>
+          <p className="ph2-sub">Your AI helpers. Open one to change their job, schedule or what they may do without asking.</p>
+        </div>
+        <div className="ph2-actions">
+          <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a helper</Link>
+        </div>
+      </div>
+
+      {/* Tab strip */}
+      <div className="team2-tabs">
+        <span className="team2-tab on">
+          <i className="ri-group-line" />Helpers
+          {staff.length > 0 && <span className="team2-tab-count">{staff.length}</span>}
+        </span>
+        <Link href="/talent/" className="team2-tab">
+          <i className="ri-store-2-line" />Hire specialists
+        </Link>
+      </div>
+
+      {/* Helper list */}
+      {staff.length === 0 ? (
+        <Empty title="No helpers yet" text="Finish onboarding, or hire one from the Hire page." />
+      ) : (
+        <div className="team2-list">
+          {staff.map((s) => (
+            <div
+              key={s.id}
+              className="team2-row"
+              onContextMenu={menu(() => [{ heading: s.name }, ...helperItems(s, load), sep,
+                { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
+                { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}
+            >
+              {/* Identity */}
+              <Link href={`/staff/?id=${s.id}`} className="team2-id">
+                <Avatar who={s} size={40} state={(s as any).state === "working" ? "working" : null} />
+                <span className="team2-id-text">
+                  <b className="team2-name">{s.name}{s.is_chief ? <span className="team2-chief"> · Chief of Staff</span> : null}</b>
+                  <span className="team2-role small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span>
+                </span>
+              </Link>
+              {/* Status */}
+              <span className="team2-status">
+                <HelperState h={s as any} />
+                {s.shifts.length > 0 && (
+                  <span className="team2-next small">next {s.shifts[0].when || s.shifts[0].cron}</span>
+                )}
+              </span>
+              {/* Meta pillbox */}
+              <span className="team2-meta">
+                <span className="team2-pill">
+                  <span className="team2-pill-label">Jobs</span>
+                  <span className="team2-pill-val">{s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span>
+                </span>
+                <span className="team2-pill">
+                  <span className="team2-pill-label">Engine</span>
+                  <span className="team2-pill-val">{engineLabel(s)}</span>
+                </span>
+              </span>
+              {/* Actions */}
+              <span className="team2-actions">
+                <Link href={`/staff/?id=${s.id}`} className="btn sm">Open</Link>
+                <Link href={`/chat/?view=work&task=new&staff=${s.id}&full=1`} className="btn sm quiet"><i className="ri-chat-3-line" />Chat</Link>
+              </span>
+            </div>
+          ))}
+        </div>
       )}
+
+      {/* Former helpers */}
       {former.length > 0 && (
         <div className="sec">
           <h2>Former helpers</h2>
           <p className="small" style={{ marginTop: 4 }}>You let them go. Their past work is kept; hire one back any time.</p>
-          <div className="cards">{former.map((s) => (
-            <div key={s.id} className="card former">
-              <span className="acts" style={{ flexWrap: "nowrap", gap: 10 }}>
-                <Avatar who={s} size={36} mood="sad" />
-                <span style={{ display: "flex", flexDirection: "column", flex: 1 }}><b>{s.name}</b><span className="small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span></span>
-              </span>
-              <span className="acts"><Link className="btn sm quiet" href={`/staff/?id=${s.id}`}>History</Link><button className="btn sm" onClick={() => hireBack(s, load)}><i className="ri-user-add-line" />Hire back</button></span>
-            </div>
-          ))}</div>
+          <div className="team2-list team2-list-former">
+            {former.map((s) => (
+              <div key={s.id} className="team2-row team2-row-former">
+                <Link href={`/staff/?id=${s.id}`} className="team2-id">
+                  <Avatar who={s} size={36} mood="sad" />
+                  <span className="team2-id-text">
+                    <b className="team2-name">{s.name}</b>
+                    <span className="team2-role small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span>
+                  </span>
+                </Link>
+                <span className="team2-status" />
+                <span className="team2-meta" />
+                <span className="team2-actions">
+                  <Link className="btn sm quiet" href={`/staff/?id=${s.id}`}>History</Link>
+                  <button className="btn sm" onClick={() => hireBack(s, load)}><i className="ri-user-add-line" />Hire back</button>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Suggested specialists */}
       <div className="sec">
-        <div className="soft acts" style={{ justifyContent: "space-between" }}>
-          <div><b style={{ fontWeight: 500 }}>Need a specialist?</b>
-            <div className="small">Browse about 280 specialists from The Agency: SEO, ads, sales, design, engineering, finance and more.</div></div>
-          <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a specialist</Link>
+        <p className="team2-suggest-head small">Suggested for your team</p>
+        <div className="team2-suggest">
+          {[
+            { role: "Support Responder", cat: "Support", desc: "Answers customer messages in your voice and hands anything unusual to you." },
+            { role: "Paid Media Buyer", cat: "Paid Media", desc: "Plans small ad tests on Instagram and Facebook. Every spend waits for your OK." },
+            { role: "Bookkeeper", cat: "Finance", desc: "Matches payments to invoices each week and flags anything that does not add up." },
+          ].map((sp) => (
+            <div key={sp.role} className="team2-spec">
+              <div className="team2-spec-top">
+                <span className="team2-spec-icon"><i className="ri-robot-2-line" /></span>
+                <span className="team2-spec-text">
+                  <b className="team2-spec-name">{sp.role}</b>
+                  <span className="team2-spec-cat small"><span className="team2-dot" />{sp.cat}</span>
+                </span>
+              </div>
+              <p className="team2-spec-desc small">{sp.desc}</p>
+              <div className="team2-spec-foot">
+                <span className="sp" />
+                <Link href="/talent/" className="btn sm primary">Hire</Link>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
