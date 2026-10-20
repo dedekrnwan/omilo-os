@@ -66,51 +66,79 @@ export default function Computer() {
   usePageActions({ primary: { label: "Share a folder", icon: "ri-folder-add-line", onSelect: startNew } }, []);
   return (
     <div>
-      <div className="sechead" style={{ alignItems: "flex-start" }}>
-        <div><h1>Computer</h1>
-          <p className="sub" style={{ marginBottom: 0 }}>Share folders on this computer with your helpers, for example a code project they develop in. The settings here are the team default;
-            give one helper more or less on its own page (Team → the helper → Access).</p></div>
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Folders</h1>
+          <p className="ph2-sub">Share folders on this computer with your helpers — a code project they develop in, for example. These are the team defaults; give one helper more or less on its own page (Team → the helper → Access).</p>
+        </div>
+        <div className="ph2-actions">
+          <button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button>
+        </div>
       </div>
 
-      <div className="sec" style={{ marginTop: 20 }}>
-        {list === null ? <p className="small">Loading…</p> : list.length === 0 ? (
-          <div className="empty"><b>No folders shared</b><span>Share one and helpers can work in it like a developer on this machine.</span>
-            <div style={{ marginTop: 12 }}><button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button></div></div>
-        ) : (
-          <div className="grid2">
-            {list.map((f) => (
-              <div key={f.id} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }} onContextMenu={menu(() => items(f))}>
-                <b style={{ fontWeight: 500 }}><i className="ri-folder-3-line" /> {f.label}</b>
-                <div className="small mono" style={{ wordBreak: "break-all" }}>{f.path}</div>
-                <div className="acts" style={{ gap: 6 }}>
-                  <span className="chip">{f.access === "write" ? "Read and edit" : "Read only"}</span>
-                  {f.commands && <span className="chip">Runs commands</span>}
-                  <span className="chip idle">{f.default_on ? "Every helper" : "Per chat"}</span>
-                  {!f.exists && <span className="chip down">Missing</span>}
-                </div>
-                {!!f.helpers?.length && (
-                  <div className="small" style={{ marginTop: 6 }}>Own setting: {f.helpers.map((h, i) => (
-                    <span key={h.id}>{i > 0 && ", "}<Link href={`/staff/?id=${h.id}#access`} onClick={(e) => e.stopPropagation()}>{h.name}</Link>{" "}
-                      ({h.access === "none" ? "no access" : h.commands ? "edit + commands" : h.access === "write" ? "read and edit" : "read"})</span>
-                  ))}</div>
-                )}
-              </div>
-            ))}
+      {/* Two-column layout: main (shared folders) + side (blocked actions info) */}
+      <div className="fol2-cols">
+        <div className="fol2-main">
+          {/* Section header */}
+          <div className="fol2-sec">
+            <span className="fol2-sec-label">Shared</span>
+            {list !== null && list.length > 0 && <span className="chip fol2-count">{list.length}</span>}
           </div>
-        )}
-      </div>
 
-      <div className="soft" style={{ marginTop: 24 }}>
-        <b style={{ fontWeight: 500 }}>Good to know</b>
-        <ul style={{ paddingLeft: 18, margin: "8px 0 0", fontSize: 14, lineHeight: 1.7 }}>
-          <li>Helpers on <b>Claude Code</b> (your API key or the pool) get exactly these folders: reading, editing only where you allow it, and commands only where you tick it.
-            One helper can get more or less on its own page: <b>Team → the helper → Access</b>.</li>
-          <li>Helpers on <b>built-in Claude</b> can't open files at all; use Claude Code (your key or the pool) for folder work.</li>
-          <li>Even with commands on, deleting files, pushing code, publishing and deploying are blocked: helpers ask you in the Inbox instead.</li>
-          <li>Running Omilo in Docker? Only folders mounted into the container can be shared.</li>
-        </ul>
+          {list === null ? <p className="small">Loading…</p> : list.length === 0 ? (
+            <div className="empty"><b>No folders shared</b><span>Share one and helpers can work in it like a developer on this machine.</span>
+              <div style={{ marginTop: 12 }}><button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button></div></div>
+          ) : (
+            <div className="fol2-list">
+              {list.map((f) => (
+                <div key={f.id} className="card fol2-card" role="button" tabIndex={0} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }} onContextMenu={menu(() => items(f))}>
+                  <div className="fol2-card-top">
+                    <i className="ri-folder-3-line fol2-card-icon" />
+                    <div className="fol2-card-text">
+                      <b className="fol2-card-name">{f.label}</b>
+                      <span className="small mono fol2-card-path">{f.path}</span>
+                    </div>
+                  </div>
+                  <div className="acts" style={{ gap: 6 }}>
+                    <span className="chip">{f.access === "write" ? "Read and edit files" : "Read only"}</span>
+                    {f.commands && <span className="chip">Run commands</span>}
+                    <span className="chip idle">{f.default_on ? "Every helper" : "Per chat"}</span>
+                    {!f.exists && <span className="chip down">Missing</span>}
+                  </div>
+                  {!!f.helpers?.length && (
+                    <div className="small fol2-own">Who can use it: {f.helpers.map((h, i) => (
+                      <span key={h.id}>{i > 0 && ", "}<Link href={`/staff/?id=${h.id}#access`} onClick={(e) => e.stopPropagation()}>{h.name}</Link>{" "}
+                        ({h.access === "none" ? "no access" : h.commands ? "edit + commands" : h.access === "write" ? "read and edit" : "read"})</span>
+                    ))}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!form && <Err error={err} />}
+        </div>
+
+        {/* Side column — "Always asks you first" */}
+        <div className="fol2-side">
+          <div className="fol2-sec">
+            <span className="fol2-sec-label">Always asks you first</span>
+          </div>
+          <div className="fol2-blocked">
+            <div className="fol2-blocked-item"><i className="ri-lock-line" /><span>Deleting files</span></div>
+            <div className="fol2-blocked-item"><i className="ri-lock-line" /><span>Pushing code</span></div>
+            <div className="fol2-blocked-item"><i className="ri-lock-line" /><span>Publishing anything</span></div>
+            <div className="fol2-blocked-item"><i className="ri-lock-line" /><span>Deploying</span></div>
+            <p className="fol2-blocked-note">Even with commands on, these wait for you in Inbox.</p>
+          </div>
+          <div className="fol2-note soft">
+            <p>Use your own API key and pick per helper which engine it runs on (<b>Team › helper › Engine</b>).</p>
+          </div>
+          <div className="fol2-note soft">
+            <p>Running Omilo in Docker? Only folders mounted into the container can be shared.</p>
+          </div>
+        </div>
       </div>
-      {!form && <Err error={err} />}
 
       <Drawer open={!!form} onClose={close} icon={<i className={form?.id ? "ri-folder-3-line" : "ri-folder-add-line"} />}
         title={form?.id ? form.label || name(form.path) : "Share a folder"} sub={form?.id ? <span className="mono">{form.path}</span> : "Pick a folder, then choose what helpers may do in it."}

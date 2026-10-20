@@ -2925,3 +2925,42 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .sk2-empty-icon { width: 36px; height: 36px; font-size: 18px; }
   .sk2-hiw { grid-template-columns: 1fr; gap: 12px; }
 }
+
+/* ---------------------------------------------------------------- Folders v2 (pen SAbte) */
+
+/* Two-column layout: main (shared folder list) + side (blocked-actions info) */
+.fol2-cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; align-items: start; }
+
+/* Section label row (e.g. "Shared 1", "Always asks you first") */
+.fol2-sec { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.fol2-sec-label { font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing: .01em; }
+.fol2-count { background: var(--soft); border-color: var(--line-strong); color: var(--muted); }
+
+/* Folder card list */
+.fol2-list { display: flex; flex-direction: column; gap: 10px; }
+
+/* Individual folder card */
+.fol2-card { cursor: pointer; gap: 10px; }
+.fol2-card:hover { border-color: var(--line-strong); background: var(--soft); }
+.fol2-card-top { display: flex; align-items: flex-start; gap: 10px; }
+.fol2-card-icon { font-size: 18px; color: var(--muted); margin-top: 1px; flex-shrink: 0; }
+.fol2-card-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.fol2-card-name { font-size: 14px; font-weight: 500; color: var(--ink); }
+.fol2-card-path { display: block; word-break: break-all; }
+.fol2-own { margin-top: 4px; color: var(--muted); }
+
+/* Side column: blocked-actions list */
+.fol2-main { display: flex; flex-direction: column; }
+.fol2-side { display: flex; flex-direction: column; gap: 14px; }
+.fol2-blocked { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.fol2-blocked-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--ink); }
+.fol2-blocked-item:last-of-type { border-bottom: 0; }
+.fol2-blocked-item i { font-size: 15px; color: var(--muted); flex-shrink: 0; }
+.fol2-blocked-note { font-size: 12.5px; color: var(--muted); padding: 10px 14px 12px; margin: 0; }
+.fol2-note { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.fol2-note p { margin: 0; }
+
+@media (max-width: 860px) {
+  .fol2-cols { grid-template-columns: 1fr; gap: 20px; }
+  .fol2-side { order: -1; }
+}
