@@ -544,6 +544,7 @@ class Worker:
                     text = (res.text or "(no output)").strip()
                     db.add(Report(task_id=t.id, staff_id=t.staff_id, headline=text.splitlines()[0][:300], body_md=text))
                 S.finish_task(db, t, "done", result_text=res.text)
+                self._enqueue_review(db, t)  # loop-closure: child done -> CoS review (idempotent, loop-safe)
             if t.proposal_id and t.origin == "execution":
                 p = db.get(Proposal, t.proposal_id)
                 if p and p.status == "executing":
@@ -560,6 +561,62 @@ class Worker:
                 memory.log_run(db, t)
             except Exception:
                 log.exception("run log failed")
+
+    def _enqueue_review(self, db, child: Task) -> None:
+        """Loop-closure (B5): on a child's terminal SUCCESS, enqueue ONE CoS review task.
+
+        Called only from the success branch of ``_finish`` — a defer/transient-retry/suspended
+        finish returns earlier and never reaches here. Enqueues at most one review per child and
+        only for real delegated/execution work, so the orchestration loop always terminates.
+
+        Guards (all must hold):
+          1. goal-linked — the child has a TaskGoal row;
+          2. origin NOT in ("review", "plan") — THE INFINITE-LOOP GUARD: a review (or planner)
+             finishing must not spawn another review;
+          3. the goal is still active — a done/dropped goal gets no review;
+          4. idempotency (no double-fire) — no open review already exists for this child.
+        Reviewer = the ``from_staff`` of a reviews edge to the child's staff, else the CoS; if
+        neither exists, skip without crashing.
+        """
+        from .models import Goal, StaffRelation
+
+        try:
+            if child.origin in ("review", "plan"):  # (2) loop guard
+                return
+            tg = db.get(TaskGoal, child.id)  # (1) goal-linked
+            if tg is None:
+                return
+            goal = db.get(Goal, tg.goal_id)  # (3) goal still active
+            if goal is None or goal.status != "active":
+                return
+            existing = db.scalar(select(Task.id).where(  # (4) idempotency / no double-fire
+                Task.origin == "review",
+                Task.parent_task_id == child.id,
+                Task.status.not_in(("done", "cancelled")),
+            ))
+            if existing is not None:
+                return
+            reviewer_id = db.scalar(select(StaffRelation.from_staff).where(
+                StaffRelation.kind == "reviews",
+                StaffRelation.to_staff == child.staff_id,
+            ))
+            if reviewer_id is None:
+                cos = S.chief(db)
+                reviewer_id = cos.id if cos else None
+            if reviewer_id is None:  # no reviewer and no CoS — skip, don't crash
+                return
+            brief = (
+                f"Review the completed work for goal '{goal.title}'.\n\n"
+                f"Target: {goal.target}\n\n"
+                f"Validate the child task's result against the goal target and decide what happens "
+                f"next: continue with the next step, send it back for revision, or mark the goal done."
+            )
+            S.create_task(
+                db, staff_id=reviewer_id, origin="review", brief=brief,
+                created_by="system", parent_task_id=child.id, goal_id=goal.id,
+            )
+        except Exception:  # a review-enqueue failure must never break finishing the child
+            log.exception("review enqueue failed for task %s", child.id)
 
     # ------------------------------------------------------------ chats
     async def answer_thread(self, thread_id: str):

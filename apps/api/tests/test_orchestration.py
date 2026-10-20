@@ -599,3 +599,219 @@ def test_b4_task_context_goal_delivery_false_for_cos_admin_task():
         ctx, _, _ = worker._task_context(task_id)
 
     assert ctx.goal_delivery is False, "goal_delivery must be False for a CoS admin/chat run"
+
+
+# ---------------------------------------------------------------------------
+# Task B5 — Loop-closure: child-complete -> CoS review
+# ---------------------------------------------------------------------------
+# Each test runs in its own isolated company (unique cid) so there is exactly
+# one CoS and no cross-test bleed. The hook under test lives on the terminal
+# SUCCESS path of Worker._finish.
+
+def _isolated_b5_cid() -> str:
+    return "b5test-" + uuid.uuid4().hex[:10]
+
+
+def _make_b5_cos(cid: str) -> str:
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b5-cos-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.commit()
+    return cos_id
+
+
+def _make_b5_worker_staff(cid: str) -> str:
+    prefix = uuid.uuid4().hex[:8]
+    sid = "b5-worker-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=sid, name="Worker " + prefix, role="ic-" + prefix,
+                     is_chief=False, status="active", engine={"type": "fake"}))
+        db.commit()
+    return sid
+
+
+def _make_b5_goal(cid: str, status: str = "active") -> str:
+    with C.use(cid), session_scope(cid) as db:
+        g = Goal(title="B5 goal " + uuid.uuid4().hex[:6],
+                 target="Ship it with numbers", status=status)
+        db.add(g)
+        db.commit()
+        return g.id
+
+
+def _make_b5_child(cid: str, staff_id: str, goal_id: str | None, origin: str = "delegation") -> str:
+    """Create a goal-linked (unless goal_id is None) running child task; return its id."""
+    with C.use(cid), session_scope(cid) as db:
+        t = S.create_task(db, staff_id=staff_id, origin=origin, brief="Do the real work",
+                          created_by="system", goal_id=goal_id)
+        t.status = "running"
+        db.commit()
+        return t.id
+
+
+def _count_review_tasks(cid: str, child_id: str) -> int:
+    with C.use(cid), session_scope(cid) as db:
+        return db.scalar(
+            select(func.count()).select_from(Task).where(
+                Task.origin == "review", Task.parent_task_id == child_id
+            )
+        ) or 0
+
+
+def _finish_success(cid: str, task_id: str):
+    """Drive the terminal SUCCESS path of _finish inside the company context."""
+    from omilo_api.engines import EngineResult
+    from omilo_api.worker import Worker
+
+    w = Worker()
+    with C.use(cid):
+        w._finish(task_id, EngineResult(text="result of the work"), {})
+    return w
+
+
+def test_b5_success_enqueues_one_review_to_reviewer():
+    """A goal-linked child finishing successfully enqueues exactly one review task,
+    assigned to the reviewing staff (the from_staff of a reviews edge)."""
+    cid = _isolated_b5_cid()
+    cos_id = _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    # CoS reviews the worker (B2-style edge).
+    with C.use(cid), session_scope(cid) as db:
+        db.add(StaffRelation(from_staff=cos_id, to_staff=worker_sid, kind="reviews"))
+        db.commit()
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 1
+    with C.use(cid), session_scope(cid) as db:
+        rev = db.scalar(select(Task).where(Task.origin == "review", Task.parent_task_id == child_id))
+        assert rev is not None
+        assert rev.staff_id == cos_id, "review goes to the reviewing staff (reviews-edge from_staff)"
+        tg = db.get(TaskGoal, rev.id)
+        assert tg is not None and tg.goal_id == goal_id, "review is linked to the child's goal"
+
+
+def test_b5_review_falls_back_to_cos_when_no_reviews_edge():
+    """With no reviews edge for the child's staff, the review is assigned to the CoS."""
+    cid = _isolated_b5_cid()
+    cos_id = _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 1
+    with C.use(cid), session_scope(cid) as db:
+        rev = db.scalar(select(Task).where(Task.origin == "review", Task.parent_task_id == child_id))
+        assert rev is not None and rev.staff_id == cos_id
+
+
+def test_b5_idempotent_no_double_fire():
+    """Calling _finish twice for the same child must not create a second review."""
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    _finish_success(cid, child_id)
+    _finish_success(cid, child_id)  # second finish — must be a no-op for the review
+
+    assert _count_review_tasks(cid, child_id) == 1, "no double-fire: exactly one review across two finishes"
+
+
+def test_b5_review_origin_child_enqueues_no_review():
+    """Loop guard: a finished task whose origin is 'review' spawns no further review."""
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="review")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 0, "a review completing must not enqueue another review"
+
+
+def test_b5_plan_origin_child_enqueues_no_review():
+    """Loop guard: a finished task whose origin is 'plan' spawns no review."""
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="plan")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 0
+
+
+def test_b5_non_goal_linked_child_enqueues_no_review():
+    """A successful child with no TaskGoal link enqueues no review."""
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id=None, origin="delegation")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 0
+
+
+def test_b5_defer_finish_enqueues_no_review():
+    """A defer=True finish returns before the hook — no review."""
+    from omilo_api.engines import EngineResult
+    from omilo_api.worker import Worker
+
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    w = Worker()
+    with C.use(cid):
+        # mimic dispatch: attempts bumped so the defer path can undo it
+        with session_scope(cid) as db:
+            db.get(Task, child_id).attempts = 1
+            db.commit()
+        w._finish(child_id, EngineResult(defer=True, error="No Claude Code account is free right now..."), {})
+
+    assert _count_review_tasks(cid, child_id) == 0
+
+
+def test_b5_failed_finish_enqueues_no_review():
+    """A failed (res.error) terminal finish enqueues no review."""
+    from omilo_api.engines import EngineResult
+    from omilo_api.worker import Worker
+
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid)
+    # origin="execution" so the transient-retry path never applies — this is a terminal failure.
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="execution")
+
+    w = Worker()
+    with C.use(cid):
+        w._finish(child_id, EngineResult(error="hard failure, not transient"), {})
+
+    assert _count_review_tasks(cid, child_id) == 0
+
+
+def test_b5_done_goal_enqueues_no_review():
+    """A goal-linked child whose goal is already done enqueues no review."""
+    cid = _isolated_b5_cid()
+    _make_b5_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)
+    goal_id = _make_b5_goal(cid, status="done")
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    _finish_success(cid, child_id)
+
+    assert _count_review_tasks(cid, child_id) == 0
