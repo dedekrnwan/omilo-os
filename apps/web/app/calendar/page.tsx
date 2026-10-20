@@ -295,22 +295,24 @@ function Upcoming({ tz, staffId, color, onOpen, stamp, tick }: { tz: string; sta
     return () => io.disconnect();
   }, [load, failed]);
 
-  let last = "";
+  // group items by their day label for v2 grouped display
+  const groups: { head: string; evs: Ev[] }[] = [];
+  for (const e of items) {
+    const head = e.now ? "Now" : dayLabel(dayOf(e.start, tz), tz);
+    const last = groups[groups.length - 1];
+    if (last && last.head === head) last.evs.push(e);
+    else groups.push({ head, evs: [e] });
+  }
   return (
     <aside className="cal-side" aria-label="Coming up">
       <div className="cal-side-h"><b>Coming up</b><span className="small">{tz}</span></div>
       <div className="cal-side-b" ref={box}>
-        {items.map((e) => {
-          const head = e.now ? "Now" : dayLabel(dayOf(e.start, tz), tz);
-          const show = head !== last;
-          last = head;
-          return (
-            <div key={e.id + (e.now ? ":now" : "")}>
-              {show && <div className="cal-side-day">{head}</div>}
-              <UpItem e={e} tz={tz} color={color(e)} onOpen={onOpen} />
-            </div>
-          );
-        })}
+        {groups.map((g) => (
+          <div key={g.head} className="cal-side-group">
+            <div className="cal-side-day">{g.head}</div>
+            {g.evs.map((e) => <UpItem key={e.id + (e.now ? ":now" : "")} e={e} tz={tz} color={color(e)} onOpen={onOpen} />)}
+          </div>
+        ))}
         {!items.length && !busy && !failed && (
           <div className="cal-empty"><Avatar who={{ id: staffId || "omilo", name: "Omilo" }} size={48} state="sleeping" />
             <p className="small">Nothing scheduled. Give a helper a regular job in Team.</p></div>
@@ -472,7 +474,7 @@ export default function CalendarPage() {
           <h2 className="cal-title">{title(view, anchor, tz)}{focus && <span className="cal-focus"> · {focus.name}</span>}</h2>
           <span className="sp" />
           <div className="cal-team" role="group" aria-label="Whose schedule">
-            <button className={`cal-all ${staffId ? "" : "on"}`} onClick={() => setStaffId("")} aria-pressed={!staffId}>All</button>
+            <button className={`cal-all ${staffId ? "" : "on"}`} onClick={() => setStaffId("")} aria-pressed={!staffId}>All helpers</button>
             {(overview?.staff || []).map((s) => (
               <button key={s.id} className={`cal-who ${staffId === s.id ? "on" : ""} ${staffId && staffId !== s.id ? "dim" : ""}`}
                 aria-pressed={staffId === s.id} title={staffId === s.id ? `${s.name}: show everyone again` : `Only ${s.name}`}
@@ -493,12 +495,14 @@ export default function CalendarPage() {
             {(["month", "week", "day"] as View[]).map((v) => <button key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v[0].toUpperCase() + v.slice(1)}</button>)}
           </div>
         </div>
-        <Err error={err} />
-        {view === "month"
-          ? <MonthGrid start={start} anchor={anchor} events={shown} tz={tz} color={color} onOpen={open} onDay={(d) => { setAnchor(d); pick("day"); }} />
-          : <TimeGrid days={days} events={shown} tz={tz} color={color} onOpen={open} now={now} />}
+        <div className="cal-body">
+          <Err error={err} />
+          {view === "month"
+            ? <MonthGrid start={start} anchor={anchor} events={shown} tz={tz} color={color} onOpen={open} onDay={(d) => { setAnchor(d); pick("day"); }} />
+            : <TimeGrid days={days} events={shown} tz={tz} color={color} onOpen={open} now={now} />}
+          <Upcoming tz={tz} staffId={staffId} color={color} onOpen={open} stamp={stamp} tick={tick} />
+        </div>
       </div>
-      <Upcoming tz={tz} staffId={staffId} color={color} onOpen={open} stamp={stamp} tick={tick} />
       <Detail e={sel} tz={tz} onClose={() => setSel(null)} onChanged={changed} />
       {!sel && <HoverCard h={hover} tz={tz} color={color} />}
     </div>
