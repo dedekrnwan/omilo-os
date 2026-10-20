@@ -14,6 +14,7 @@ import { PageActionsCtx, PageActionsSpec } from "./PageActions";
 import ChatLauncher from "./ChatLauncher";
 import { NAV, NavItem, navItemFor } from "./nav";
 import { CommandProvider, useCommand } from "./command";
+import CommandPalette from "./CommandPalette";
 import { MenuItem, openMenu } from "@/lib/menu";
 
 type Ctx = { overview: Overview | null; refresh: () => void };
@@ -127,6 +128,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {ready && !bare && <TaskDrawerLazy />}
         {ready && !bare && <ContextMenuHost />}
         {ready && !bare && <ChatLauncher />}
+        <CommandPalette />
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Omilo"}</b>
           <span className="sp" />
