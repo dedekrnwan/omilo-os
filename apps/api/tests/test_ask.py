@@ -109,7 +109,7 @@ def test_retrieve_empty_surfaces_no_crash(owner):
 def test_retrieve_capped_and_sorted(owner):
     """retrieve() returns at most k results and the scores are non-increasing."""
     with session_scope() as db:
-        results = ask.retrieve(db, "the", k=4)
+        results = ask.retrieve(db, KEYWORD, k=4)
 
     assert len(results) <= 4, f"Expected ≤4 results (k=4), got {len(results)}"
 

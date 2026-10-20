@@ -31,3 +31,6 @@ apps/api/build/
 
 # Superpowers SDD scratch workspace (ledger, briefs, reports, review diffs)
 .superpowers/
+
+# uv lockfile — generated locally, not committed
+apps/api/uv.lock

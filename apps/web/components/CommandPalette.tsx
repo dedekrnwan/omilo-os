@@ -257,7 +257,7 @@ export default function CommandPalette() {
 
   /** ⌘↵ / Ctrl+↵ escalation — open Chief of Staff thread and navigate there */
   const continueInChat = useCallback(
-    async (text: string) => {
+    async () => {
       if (busy) return;
       setBusy(true);
       try {
@@ -367,7 +367,7 @@ export default function CommandPalette() {
       // No-op in command / helper / chat modes
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && mode !== "command" && mode !== "helper" && mode !== "chat") {
         e.preventDefault();
-        continueInChat(mode === "ask" ? query : displayQuery(query, mode));
+        continueInChat();
         return;
       }
 
@@ -549,8 +549,8 @@ export default function CommandPalette() {
               <div className="cmd-ask-sources">
                 <span className="cmd-ask-sources-label">Sources</span>
                 <div className="cmd-ask-sources-list">
-                  {askResult.sources.map((src) => (
-                    <span key={src.ref} className="cmd-ask-source-item">
+                  {askResult.sources.map((src, i) => (
+                    <span key={`${src.surface}-${src.ref}-${i}`} className="cmd-ask-source-item">
                       {src.url ? (
                         <a
                           href={src.url}
@@ -584,7 +584,7 @@ export default function CommandPalette() {
             <div className="cmd-ask-actions">
               <button
                 className="btn sm"
-                onClick={() => continueInChat(askQuery)}
+                onClick={() => continueInChat()}
                 disabled={busy}
               >
                 <i className="ri-chat-3-line" aria-hidden />
@@ -606,7 +606,7 @@ export default function CommandPalette() {
           <div className="cmd-results" role="listbox">
             {rows.length === 0 && !confirmPause && (
               <div className="cmd-empty">
-                {(mode === "helper" || mode === "chat") && threads === null && staffList === null
+                {((mode === "helper" && staffList === null) || (mode === "chat" && threads === null))
                   ? "Loading…"
                   : `No results for "${displayQuery(query, mode)}"`}
               </div>

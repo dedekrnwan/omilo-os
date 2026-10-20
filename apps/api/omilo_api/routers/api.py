@@ -3360,6 +3360,7 @@ class AskIn(BaseModel):
 async def ask(body: AskIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Synchronous grounded answer: retrieve sources then ask the engine. Returns answer + sources."""
     S.audit(db, user.id, "ask", "", q=body.q)
+    db.commit()
     try:
         return await ask_mod.answer(db, body.q)
     except ask_mod.NoEngineError:

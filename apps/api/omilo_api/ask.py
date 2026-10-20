@@ -14,9 +14,12 @@ surface never prevents the others from returning results.
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import TypedDict
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -157,22 +160,22 @@ def retrieve(db: Session, q: str, k: int = 8) -> list[Source]:
     try:
         all_sources.extend(_kb_sources(db, q, k))
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("ask retrieve: kb failed", exc_info=True)
 
     try:
         all_sources.extend(_inbox_sources(db, q))
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("ask retrieve: inbox failed", exc_info=True)
 
     try:
         all_sources.extend(_plan_sources(db, q))
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("ask retrieve: plan failed", exc_info=True)
 
     try:
         all_sources.extend(_docs_sources(db, q, k))
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("ask retrieve: docs failed", exc_info=True)
 
     all_sources.sort(key=lambda s: s["score"], reverse=True)
     return all_sources[:k]
