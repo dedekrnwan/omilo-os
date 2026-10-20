@@ -512,7 +512,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         # --- Step 4: Depth cap (configurable, defaults to MAX_DELEGATION_DEPTH). ---
         max_depth = int(S.get_setting(db, "delegation_max_depth", None) or MAX_DELEGATION_DEPTH)
         depth, parent = 0, args.get("parent_task_id")
-        while parent and depth < max_depth + 3:  # +3 sentinel to avoid an infinite scan
+        while parent and depth < min(max_depth + 3, 20):  # +3 sentinel, capped at 20 to protect against cyclic parent_task_id
             pt = db.get(Task, parent)
             parent = pt.parent_task_id if pt and pt.origin == "delegation" else None
             depth += 1
