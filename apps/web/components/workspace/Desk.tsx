@@ -5,6 +5,7 @@ import Avatar from "@/components/Avatar";
 import PoolMeter from "@/components/PoolMeter";
 import { useOverview } from "@/components/Shell";
 import { Thread, api, ago } from "@/lib/api";
+import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -38,7 +39,7 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
-function DeskComposer({ cosId, onSent }: { cosId: string | null; onSent: (threadId: string) => void }) {
+function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -289,12 +290,16 @@ function TeamNow({ staffMap, threads }: {
               </span>
             </div>
             <a
-              href="/chat/?thread=master"
+              href="#"
               className="team-card-link"
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.preventDefault();
-                // will be resolved to the actual master thread by the chat page
-                window.location.href = "/chat/";
+                try {
+                  const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
+                  window.location.href = `/chat/?thread=${th.id}`;
+                } catch {
+                  window.location.href = "/chat/";
+                }
               }}
             >
               <i className="ri-chat-3-line" />
@@ -319,13 +324,14 @@ export default function Desk() {
   const { overview } = useOverview();
   const [me, setMe] = useState<{ name?: string; email?: string } | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [railFilter, setRailFilter] = useState<"all" | "needs_you" | "active">("all");
 
   /* load user name */
   useEffect(() => {
     api<{ name?: string; email?: string }>("/auth/me").then(setMe).catch(() => {});
   }, []);
 
-  /* load threads for recent work + CoS latest message */
+  /* load threads for recent work + CoS latest message + rail */
   useEffect(() => {
     api<Thread[]>("/threads").then(setThreads).catch(() => {});
   }, []);
@@ -341,8 +347,13 @@ export default function Desk() {
 
   return (
     <div className="desk">
-      {/* Left rail placeholder — Task 5 fills this with the threads rail */}
-      <div className="threads-rail" />
+      {/* Left rail — the threads rail shared with the focus session */}
+      <ThreadsRail
+        threads={threads as RailThread[]}
+        activeThreadId={null}
+        filter={railFilter}
+        onFilterChange={setRailFilter}
+      />
 
       {/* Center column */}
       <div className="desk-center">
@@ -359,7 +370,6 @@ export default function Desk() {
 
             {/* Composer */}
             <DeskComposer
-              cosId={chief?.id ?? null}
               onSent={() => {}}
             />
 

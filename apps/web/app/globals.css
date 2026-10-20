@@ -3413,6 +3413,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 }
 
 
+/* ------------------------------------------------------------------ C2. Focus session container (three-column wrapper) */
+
+/* Full-height three-column focus session grid: threads rail + thread + details */
+.ws-focus { display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; height: 100%; min-height: 0; }
+@media (max-width: 1100px) {
+  .ws-focus { grid-template-columns: 220px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .ws-focus { grid-template-columns: 1fr; }
+  .ws-focus .threads-rail { display: none; }
+}
+
+
 /* ------------------------------------------------------------------ E. Chat FAB + nudge bubble */
 
 /* FAB wrapper: extends existing .chat-launcher — use .chat-fab alongside .chat-launcher for v2 styling */
