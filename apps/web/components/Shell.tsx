@@ -2,7 +2,7 @@
 import { usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, createContext, useCallback, useContext, useEffect, useState } from "react";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ApiError, BASE, Overview, api } from "@/lib/api";
 import PreviewHost from "./PreviewLazy";
 import NotifyHost from "./Notify";
@@ -10,37 +10,11 @@ import TaskDrawerLazy from "./TaskDrawerLazy";
 import ContextMenuHost from "./ContextMenu";
 import CompanySwitcher from "./CompanySwitcher";
 import { StepPage } from "./StepCard";
-import { PageActionsBar, PageActionsCtx, PageActionsSpec } from "./PageActions";
+import { PageActionsCtx, PageActionsSpec } from "./PageActions";
 import ChatLauncher from "./ChatLauncher";
-import { NAV, navItemFor } from "./nav";
-
-/* ---- legacy section model kept for the topbar (Task 3 will replace it) ---- */
-type Page = [string, string, string]; // href, label, icon
-export const SECTIONS: { id: string; label: string; icon: string; pages: Page[] }[] = [
-  { id: "home", label: "Home", icon: "ri-home-5-line", pages: [["/", "Inbox", "ri-inbox-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
-  { id: "work", label: "Work", icon: "ri-briefcase-4-line", pages: [["/chat/", "Workspace", "ri-chat-3-line"], ["/plan/", "Plan", "ri-node-tree"],
-    ["/calendar/", "Calendar", "ri-calendar-line"], ["/workflows/", "Workflows", "ri-flow-chart"], ["/docs/", "Docs", "ri-book-2-line"]] },
-  { id: "team", label: "Team", icon: "ri-team-line", pages: [["/staff/", "Helpers", "ri-team-line"], ["/talent/", "Hire", "ri-user-add-line"],
-    ["/company/", "Company", "ri-building-2-line"]] },
-  { id: "tools", label: "Tools", icon: "ri-tools-line", pages: [["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
-    ["/computer/", "Computer", "ri-computer-line"], ["/harness/", "AI accounts", "ri-stack-line"]] },
-  { id: "settings", label: "Settings", icon: "ri-settings-3-line", pages: [["/settings/", "Settings", "ri-settings-3-line"]] },
-];
-const PAGES = SECTIONS.flatMap((sec) => sec.pages.map(([h, l, i]) => ({ href: h, label: l, icon: i, section: sec })));
-const pageFor = (path: string) =>
-  PAGES.filter((p) => (p.href === "/" ? path === "/" : path.startsWith(p.href))).sort((a, b) => b.href.length - a.href.length)[0] || PAGES[0];
-
-function SectionTabs({ page }: { page: (typeof PAGES)[number] }) {
-  const sec = page.section;
-  if (sec.pages.length < 2) return <span className="crumb"><i className={page.icon} />{page.label}</span>;
-  return (
-    <nav className="tabs" aria-label={sec.label}>
-      {sec.pages.map(([h, l, ic]) => (
-        <Link key={h} href={h} className={`tab ${h === page.href ? "on" : ""}`} aria-current={h === page.href ? "page" : undefined}><i className={ic} />{l}</Link>
-      ))}
-    </nav>
-  );
-}
+import { NAV, NavItem, navItemFor } from "./nav";
+import { CommandProvider, useCommand } from "./command";
+import { MenuItem, openMenu } from "@/lib/menu";
 
 type Ctx = { overview: Overview | null; refresh: () => void };
 const OverviewCtx = createContext<Ctx>({ overview: null, refresh: () => {} });
@@ -140,15 +114,13 @@ export default function Shell({ children }: { children: ReactNode }) {
     );
   }
 
-  const page = pageFor(path);
+  const navItem = navItemFor(path);
   const own = path === "/chat/" || path.startsWith("/chat/") || path.startsWith("/docs/");  // pages with their own top bar
-  const global = [
-    { label: overview?.paused ? "Resume all helpers" : "Pause all helpers", icon: overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line", onSelect: togglePause },
-  ];
 
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
       <PageActionsCtx.Provider value={{ set: setActions }}>
+      <CommandProvider>
       <div className="frame">
         <PreviewHost />
         {ready && !bare && <NotifyHost onNotice={refresh} />}
@@ -228,24 +200,97 @@ export default function Shell({ children }: { children: ReactNode }) {
           <div className="inset">
             {own ? (
               <>
-                {page.section.pages.length > 1 && <div className="topbar slim"><SectionTabs page={page} /></div>}
                 {children}
               </>
             ) : (
               <>
-                <div className="topbar">
-                  <SectionTabs page={page} />
-                  <span className="sp" />
-                  {overview?.paused && <span className="chip warn"><i className="ri-pause-line" />Paused</span>}
-                  <PageActionsBar spec={actions} extra={global} />
-                </div>
+                <TopbarV2
+                  navItem={navItem}
+                  path={path}
+                  overview={overview}
+                  togglePause={togglePause}
+                  actions={actions}
+                />
                 <div className="scroll"><main className="page">{children}</main></div>
               </>
             )}
           </div>
         </div>
       </div>
+      </CommandProvider>
       </PageActionsCtx.Provider>
     </OverviewCtx.Provider>
+  );
+}
+
+/* ---- Topbar v2: crumb + Ask bar + More menu ---- */
+function TopbarV2({
+  navItem,
+  path,
+  overview,
+  togglePause,
+  actions,
+}: {
+  navItem: NavItem;
+  path: string;
+  overview: Overview | null;
+  togglePause: () => void;
+  actions: PageActionsSpec | null;
+}) {
+  const { open: openCommand } = useCommand();
+  const moreRef = useRef<HTMLButtonElement>(null);
+
+  const inboxCount = overview?.inbox.open || 0;
+  const meta = path === "/" && inboxCount > 0 ? `${inboxCount} needs you` : null;
+
+  const moreItems: MenuItem[] = [
+    {
+      label: overview?.paused ? "Resume all helpers" : "Pause all helpers",
+      icon: overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line",
+      onSelect: togglePause,
+    },
+    ...((actions?.more || []).filter(Boolean) as MenuItem[]).flatMap<MenuItem>((item, i) =>
+      i === 0 ? [{ sep: true }, item] : [item]
+    ),
+  ];
+
+  const handleMore = () => {
+    const el = moreRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    openMenu(Math.max(8, r.right - 220), r.bottom + 6, moreItems);
+  };
+
+  return (
+    <div className="topbar topbar-v2">
+      <div className="crumb">
+        <i className={navItem.icon} aria-hidden />
+        <span className="crumb-title">{navItem.label}</span>
+        {meta && <span className="meta">{meta}</span>}
+      </div>
+      {overview?.paused && <span className="chip warn tb-paused"><i className="ri-pause-line" />Paused</span>}
+      <span className="sp" />
+      <AskBar onOpen={openCommand} />
+      <button
+        ref={moreRef}
+        className="iconbtn topbar-more"
+        aria-label="More actions"
+        title="More actions"
+        aria-haspopup="menu"
+        onClick={handleMore}
+      >
+        <i className="ri-more-2-fill" />
+      </button>
+    </div>
+  );
+}
+
+function AskBar({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button className="ask" onClick={onOpen} aria-label="Ask Chief of Staff or search" type="button">
+      <i className="ri-search-line ask-icon" aria-hidden />
+      <span className="ask-placeholder">Ask Chief of Staff or search…</span>
+      <kbd className="ask-kbd">⌘K</kbd>
+    </button>
   );
 }
