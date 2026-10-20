@@ -227,7 +227,7 @@ function List() {
                       {m.steps > 1 && <><i className="ri-arrow-right-line wf2-tpl-arrow" /><span className="wf2-tpl-step">{m.uses_ai ? "AI step" : "Step"}</span></>}
                     </div>
                     <div className="wf2-tpl-foot">
-                      <span className="small">{m.steps} step{m.steps === 1 ? "" : "s"}{m.uses_ai ? ` · ${m.uses_ai ? "1 AI" : ""}` : " · free"}</span>
+                      <span className="small">{m.steps} step{m.steps === 1 ? "" : "s"}{m.uses_ai ? " · 1 AI" : " · free"}</span>
                       <span className="sp" />
                       <button className="btn sm primary" disabled={busy === m.slug} onClick={(e) => { e.stopPropagation(); install(m); }}>{busy === m.slug ? "Adding…" : "Use"}</button>
                     </div>

@@ -256,6 +256,7 @@ export default function Monitor() {
           <p className="ph2-sub">How your helpers are doing: usage, jobs, what waits on you, and the pool. Times in {data.timezone}.</p>
         </div>
         <div className="ph2-actions">
+          <Freshness compact />
           <ModeSwitch mode={mode} setMode={setMode} />
         </div>
       </div>
