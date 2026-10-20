@@ -609,21 +609,23 @@ function SettingsInner() {
         </div>
       </nav>
       <section className="set-main" aria-labelledby="set-title">
-        <div className="set-head">
-          <h1 id="set-title"><i className={cur.icon} />{cur.label}</h1>
-          <p>{cur.desc}</p>
+        <div className="set-body">
+          <div className="set-head">
+            <h1 id="set-title"><i className={cur.icon} />{cur.label}</h1>
+            <p>{cur.desc}</p>
+          </div>
+          <Err error={err} />
+          {s === "general" && <General set={set} />}
+          {s === "safety" && <Safety set={set} />}
+          {s === "ai" && <AiEngine />}
+          {s === "health" && <Health />}
+          {s === "knowledge" && <><KnowledgeSettings /><p className="small set-foot">See what helpers know, and how they search it, in <Link href="/docs/?kb=1">Docs → Knowledge</Link>.</p></>}
+          {s === "account" && <Account />}
+          {s === "devices" && <Devices />}
+          {s === "notifications" && <NotifySettings embedded />}
+          {s === "activity" && <Activity />}
+          {s === "system" && <System />}
         </div>
-        <Err error={err} />
-        {s === "general" && <General set={set} />}
-        {s === "safety" && <Safety set={set} />}
-        {s === "ai" && <AiEngine />}
-        {s === "health" && <Health />}
-        {s === "knowledge" && <><KnowledgeSettings /><p className="small set-foot">See what helpers know, and how they search it, in <Link href="/docs/?kb=1">Docs → Knowledge</Link>.</p></>}
-        {s === "account" && <Account />}
-        {s === "devices" && <Devices />}
-        {s === "notifications" && <NotifySettings embedded />}
-        {s === "activity" && <Activity />}
-        {s === "system" && <System />}
       </section>
     </div>
   );
