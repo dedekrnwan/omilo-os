@@ -966,19 +966,19 @@ def latest_kpis(db: Session) -> dict:
 
 # ---------------------------------------------------------------- policy gate for direct actions
 def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
-    """For a graph-brain staff, let the Chief of Staff rule on an ASK-level proposal ``p``.
+    """Let the Chief of Staff rule on an ASK-level proposal ``p`` for any brain when permissive.
 
     This is the REAL seam the Claude Code engine hits: it escalates outward actions by
     calling ``request_action`` (and ``propose``) mid-run, which files an ASK-level
-    ``Proposal``. For a ``brain="graph"`` staff the CoS should rule on that proposal
-    synchronously instead of bothering the owner with every low/medium one.
+    ``Proposal``. When the resolved autonomy mode is ``"permissive"`` the CoS should rule
+    on that proposal synchronously instead of bothering the owner with every low/medium one.
 
     Returns an ``"allowed"`` result dict if the CoS auto-approved ``p`` (the agent may
     proceed), or ``None`` to leave the proposal PENDING for the owner (the default and
-    the non-graph path).
+    the strict-mode path).
 
     Rules (mirrors the graph node-gate in ``graph/delegation.py``):
-      - only engage for ``brain == "graph"`` (single_engine is byte-for-byte unchanged);
+      - if autonomy_policy mode is ``"strict"`` → escalate to owner (return None);
       - re-derive risk structurally (the worker's "medium" ASK default is only a hint);
       - no CoS, or the CoS acting on its OWN action → escalate (never self-approve);
       - ``high`` risk → escalate to the owner;
@@ -986,7 +986,7 @@ def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
         (audited as the CoS, lesson recorded, execution task spawned — the owner-approve
         path, exactly once).
     """
-    if st.brain != "graph":
+    if autonomy_policy(db, st)["mode"] == "strict":
         return None
     from .graph import delegation
     from .graph.risk import classify_risk
