@@ -83,7 +83,11 @@ export type WfPattern = { staff: { id: string; name: string }; title: string; co
   last_at: string; task_ids: string[]; per_week: number };
 export type Message = { id: string; role: string; author: string; text: string; at: string };
 export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[];
-  pending?: string[]; updated_at?: string };
+  pending?: string[]; updated_at?: string;
+  /* Task 3 enrichment fields */
+  group?: "needs_you" | "active" | "earlier"; subtitle?: string; participants?: string[];
+  last_at?: string | null; task_id?: string | null; task_status?: string | null;
+};
 export type AskResult = {
   answer: string;
   sources: { title: string; ref: string; url?: string; surface: "kb" | "inbox" | "plan" | "docs"; score: number }[];
@@ -91,7 +95,6 @@ export type AskResult = {
   cost_usd: number;
   ms: number;
 };
-
 export type Overview = {
   company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
   budget_company?: { budget_usd: number; cost_usd: number; pct: number | null };

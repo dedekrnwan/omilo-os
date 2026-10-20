@@ -2,19 +2,22 @@
 import { kick, usePoll } from "@/lib/poll";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { Meter, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/components/Run";
 import Avatar from "@/components/Avatar";
 import BrowserView from "@/components/BrowserView";
 import Lineage from "@/components/Lineage";
 import { AccessRequest, Choices, FullThread, Msg } from "@/components/Conversation";
-import ChatThread from "@/components/ChatThread";
-import { helperItems, taskItems } from "@/lib/actions";
-import { MenuItem, copy, menu, sep } from "@/lib/menu";
+import { taskItems } from "@/lib/actions";
+import { menu } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
-import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
+import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
+import Desk from "@/components/workspace/Desk";
+import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
+import FocusThread from "@/components/workspace/FocusThread";
+import FocusDetails from "@/components/workspace/FocusDetails";
 
 /* The workspace: chat and work on one page (toggle top right), with a side panel for progress, output and the browser. */
 
@@ -175,17 +178,6 @@ function NewTask({ staff, onDone, who }: { staff: Staff[]; onDone: (id: string) 
   );
 }
 
-/* naming a team chat, in place in the list */
-function NameBox({ value, onChange, onDone, onCancel }: { value: string; onChange: (v: string) => void; onDone: () => void; onCancel: () => void }) {
-  return (
-    <form className="ws-item ws-name" onSubmit={(e) => { e.preventDefault(); onDone(); }}>
-      <span className="hash">#</span>
-      <input autoFocus value={value} maxLength={80} placeholder="Name, e.g. Launch week" aria-label="Chat name" onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }} onBlur={() => (value.trim() ? onDone() : onCancel())} />
-    </form>
-  );
-}
-
 /* ------------------------------------------------------------------ page */
 function WorkspaceInner() {
   const params = useSearchParams();
@@ -193,6 +185,12 @@ function WorkspaceInner() {
   const view = params.get("view") === "work" ? "work" : "chat";
   const tid = params.get("thread");
   const taskId = params.get("task");
+
+  /* ---- Desk: default /chat view with no thread/task/view params ---- */
+  const isDesk = view === "chat" && !tid && !taskId;
+  /* ---- Focus session: chat view with a thread id ---- */
+  const isFocus = view === "chat" && !!tid;
+
   const [panel, setPanel] = useLocal("omilo.panel", true);
   const [listOpen, setListOpen] = useState(false);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -200,6 +198,8 @@ function WorkspaceInner() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [current, setCurrent] = useState<FullThread | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /* filter state for the threads rail */
+  const [railFilter, setRailFilter] = useState<"all" | "needs_you" | "active">("all");
 
   const loadLists = useCallback(async () => {
     try {
@@ -213,15 +213,11 @@ function WorkspaceInner() {
   const openThread = useCallback(async (body: Record<string, string>) => {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
-  useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "group" }); }, [view, tid, openThread]); // the team's General chat
-  // ChatThread owns its composer text now; the side-list menus reach it over a window event (same idiom as omilo:quote)
-  const setComposer = (t: string) => window.dispatchEvent(new CustomEvent("omilo:settext", { detail: { text: t } }));
   // ChatThread only reports its thread while mounted (chat view with a thread); clear it otherwise so the topbar/panel don't show stale info
   useEffect(() => { if (view !== "chat" || !tid) setCurrent(null); }, [view, tid]);
 
   const threadEvents = useEvents(view === "chat" && tid ? { thread_id: tid } : null);
   const taskEvents = useEvents(view === "work" && taskId && taskId !== "new" ? { task_id: taskId } : null);
-  const events = view === "chat" ? threadEvents : taskEvents;
 
   const startJob = async (brief: string) => {
     const who = staff.find((x) => x.is_chief) || staff[0];
@@ -231,108 +227,75 @@ function WorkspaceInner() {
       go({ view: "work", task: t.id });
     } catch (e: any) { setErr(e.message); }
   };
-  const [naming, setNaming] = useState<{ id: string | null; title: string } | null>(null); // new team chat / rename
-  const saveName = async () => {
-    const n = naming;
-    setNaming(null);
-    if (!n || !n.title.trim()) return;
-    try {
-      if (n.id) { await api(`/threads/${n.id}`, { method: "PATCH", body: { title: n.title } }); loadLists(); }
-      else { const th = await api<Thread>("/threads", { body: { scope: "group", title: n.title } }); await loadLists(); go({ thread: th.id }); }
-    } catch (e: any) { setErr(e.message); }
-  };
-  const removeGroup = async (t: Thread) => {
-    if (!(await confirmDialog({ title: `Delete “${t.title}”?`, body: "The chat and its messages go away. Helpers keep what they learned.", confirm: "Delete", danger: true }))) return;
-    try { await api(`/threads/${t.id}`, { method: "DELETE" }); await loadLists(); if (current?.id === t.id) go({}); } catch (e: any) { setErr(e.message); }
-  };
 
-  const chief = staff.find((s) => s.is_chief);
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
-  const threadLabel = (th: Thread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.scope === "group" ? `# ${th.title}` : th.title;
-  const groups = threads.filter((t) => t.scope === "group").sort((a, b) => (a.ref_id === "general" ? -1 : b.ref_id === "general" ? 1 : a.title.localeCompare(b.title)));
-  const title = view === "chat" ? (current ? threadLabel(current) : "Chat") : taskId === "new" ? "New job" : tasks.find((t) => t.id === taskId)?.brief.slice(0, 60) || "Work";
-  const lastAgentText = useMemo(() => [...(current?.messages || [])].reverse().find((m) => m.role === "agent")?.text, [current]);
   const selTask = tasks.find((t) => t.id === taskId);
 
-  const output = view === "chat"
-    ? (lastAgentText ? <Markdown text={lastAgentText} /> : null)
-    : selTask?.report ? <div><div className="small" style={{ marginBottom: 6 }}>Report</div><div className="paper md"><Markdown text={selTask.report.body_md} /></div></div> : null;
+  /* Desk: full-page three-column layout (threads rail + desk center + team now) */
+  if (isDesk) return <Desk />;
+
+  /* ---- Focus session: three-column layout (threads rail + thread + details) ---- */
+  if (isFocus) {
+    /* Cast threads to RailThread — the /threads endpoint may carry group/subtitle/last_at from Task 3 */
+    const railThreads = threads as RailThread[];
+    return (
+      <div className="ws-focus">
+        <ThreadsRail
+          threads={railThreads}
+          activeThreadId={tid}
+          filter={railFilter}
+          onFilterChange={setRailFilter}
+        />
+        <FocusThread
+          threadId={tid}
+          staff={staff}
+          events={threadEvents}
+          onThread={setCurrent}
+          onStartJob={startJob}
+          onOpenThread={openThread}
+        />
+        <FocusDetails threadId={tid} />
+      </div>
+    );
+  }
+
+  /* ---- Work view: old .ws shell with task list + TaskView/NewTask ---- */
+  const title = taskId === "new" ? "New job" : selTask?.brief.slice(0, 60) || "Work";
+
+  const output = selTask?.report
+    ? <div><div className="small" style={{ marginBottom: 6 }}>Report</div><div className="paper md"><Markdown text={selTask.report.body_md} /></div></div>
+    : null;
 
   return (
     <div className="ws">
       <div className="topbar">
         <button className="iconbtn hide-lg" aria-label="Show list" onClick={() => setListOpen(!listOpen)}><i className="ri-menu-2-line" /></button>
-        <span className="crumb"><i className={view === "chat" ? "ri-chat-3-line" : "ri-list-check-3"} />Workspace<span className="small" style={{ fontWeight: 400 }}>· {title}</span></span>
+        <span className="crumb"><i className="ri-list-check-3" />Workspace<span className="small" style={{ fontWeight: 400 }}>· {title}</span></span>
         <span className="sp" />
-        <div className="seg" role="tablist" aria-label="View">
-          <button className={view === "chat" ? "on" : ""} onClick={() => go({})}><i className="ri-chat-3-line" /> Chat</button>
-          <button className={view === "work" ? "on" : ""} onClick={() => go({ view: "work" })}><i className="ri-list-check-3" /> Work</button>
-        </div>
+        <button className="btn sm" onClick={() => go({})}><i className="ri-arrow-left-line" />Desk</button>
         <button className="iconbtn" aria-label={panel ? "Hide side panel" : "Show side panel"} title="Progress, output and browser" onClick={() => setPanel(!panel)}>
           <i className={panel ? "ri-side-bar-fill" : "ri-side-bar-line"} />
         </button>
       </div>
-      <div className={`ws-body ${panel ? "panel" : ""}`}>
-        <nav className={`ws-list ${listOpen ? "open" : ""}`}>
-          {view === "chat" ? (
-            <>
-              <div className="ws-threads-head">
-                <span>Chats</span>
-                <span className="sp" />
-                <button className="iconbtn" aria-label="New team chat" title="New team chat" onClick={() => setNaming({ id: null, title: "" })}><i className="ri-add-line" /></button>
-              </div>
-              {groups.length === 0 && !naming && <button className="ws-item" onClick={() => openThread({ scope: "group" })}><span className="hash">#</span><span className="t"><b>General</b><span>The whole team</span></span></button>}
-              {groups.map((t) => naming?.id === t.id ? (
-                <NameBox key={t.id} value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />
-              ) : (
-                <button key={t.id} className={`ws-item ${current?.id === t.id ? "on" : ""}`} onClick={() => go({ thread: t.id })}
-                  onContextMenu={menu(() => [{ heading: `# ${t.title}` }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => go({ thread: t.id }) },
-                    { label: "Rename", icon: "ri-edit-line", onSelect: () => setNaming({ id: t.id, title: t.title }) },
-                    t.ref_id !== "general" && { label: "Delete chat", icon: "ri-delete-bin-line", danger: true, onSelect: () => removeGroup(t) }].filter(Boolean) as MenuItem[])}>
-                  <span className="hash">#</span><span className="t"><b>{t.title}</b><span>{t.ref_id === "general" ? "The whole team · @ to mention" : "Team chat"}</span></span>
-                  {t.awaiting_reply && <span className="spin" style={{ width: 10, height: 10 }} />}
-                </button>
-              ))}
-              {naming && !naming.id && <NameBox value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />}
-              <div className="grp-direct">DIRECT</div>
-              {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}
-                onContextMenu={menu(() => [{ heading: "Chief of Staff" }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "master" }) },
-                  { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setComposer("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
-                <Avatar who={chief} size={24} /><span className="t"><b>Chief of Staff</b><span>Routes work to the team</span></span></button>}
-              {staff.filter((s) => !s.is_chief).map((s) => (
-                <button key={s.id} className={`ws-item ${current?.scope === "staff" && current.staff_id === s.id ? "on" : ""}`} onClick={() => openThread({ scope: "staff", staff_id: s.id })}
-                  onContextMenu={menu(() => [{ heading: s.name }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "staff", staff_id: s.id }) },
-                    { label: `Mention ${s.name} in General`, icon: "ri-at-line", onSelect: async () => { await openThread({ scope: "group" }); setComposer(`@${s.name} `); } },
-                    { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", onSelect: () => go({ view: "work", task: "new", staff: s.id }) }, sep, ...helperItems(s, loadLists).slice(1)])}>
-                  <Avatar who={s} size={24} state={(s as any).state === "working" ? "working" : null} /><span className="t"><b>{s.name}</b></span></button>
-              ))}
-            </>
-          ) : (
-            <>
-              <button className="btn primary" style={{ margin: "2px 2px 8px" }} onClick={() => go({ view: "work", task: "new" })}><i className="ri-add-line" />New job</button>
-              {tasks.length === 0 && <p className="small" style={{ padding: 10 }}>No jobs yet.</p>}
-              {tasks.map((t) => (
-                <button key={t.id} className={`ws-item ${taskId === t.id ? "on" : ""}`} onClick={() => go({ view: "work", task: t.id })}
-                  onContextMenu={menu(() => taskItems(t, name(t.staff_id), loadLists, () => go({ view: "work", task: t.id })))}>
-                  <span className={`sdot ${t.status}`} /><span className="t"><Lineage l={(t as any).lineage} plain /><b>{t.report?.headline || t.brief}</b><span>{name(t.staff_id)} · {ago(t.created_at)}</span></span></button>
-              ))}
-            </>
-          )}
+      <div className={`ws-body${panel ? " panel" : ""}`}>
+        <nav className={`ws-list${listOpen ? " open" : ""}`}>
+          <button className="btn primary" style={{ margin: "2px 2px 8px" }} onClick={() => go({ view: "work", task: "new" })}><i className="ri-add-line" />New job</button>
+          {tasks.length === 0 && <p className="small" style={{ padding: 10 }}>No jobs yet.</p>}
+          {tasks.map((t) => (
+            <button key={t.id} className={`ws-item ${taskId === t.id ? "on" : ""}`} onClick={() => go({ view: "work", task: t.id })}
+              onContextMenu={menu(() => taskItems(t, name(t.staff_id), loadLists, () => go({ view: "work", task: t.id })))}>
+              <span className={`sdot ${t.status}`} /><span className="t"><Lineage l={(t as any).lineage} plain /><b>{t.report?.headline || t.brief}</b><span>{name(t.staff_id)} · {ago(t.created_at)}</span></span></button>
+          ))}
         </nav>
         <section className="ws-main">
-          {view === "chat" ? (tid ? (
-            <ChatThread threadId={tid} staff={staff} events={threadEvents}
-              onThread={setCurrent} onStartJob={startJob} onOpenThread={openThread} onNavigate={(h) => router.push(h)} onExpand={() => {}} />
-          ) : <div className="ws-scroll"><div className="ws-inner"><p className="small">Loading…</p></div></div>) : (
-            <div className="ws-scroll">
-              {taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
-                : taskId ? <TaskView id={taskId} staff={staff} />
-                : <div className="ws-inner"><div className="empty"><b>Pick a job on the left</b><span>Or start a new one. Every step shows up live.</span>
-                    <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => go({ view: "work", task: "new" })}>New job</button></div></div></div>}
-            </div>
-          )}
+          <div className="ws-scroll">
+            {taskId === "new" ? <NewTask key={params.get("staff") || ""} who={params.get("staff") || ""} staff={staff} onDone={(id) => go({ view: "work", task: id })} />
+              : taskId ? <TaskView id={taskId} staff={staff} />
+              : <div className="ws-inner"><div className="empty"><b>Pick a job on the left</b><span>Or start a new one. Every step shows up live.</span>
+                  <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => go({ view: "work", task: "new" })}>New job</button></div></div></div>}
+          </div>
         </section>
-        {panel && <Panel events={events} output={output} onClose={() => setPanel(false)} />}
+        {panel && <Panel events={taskEvents} output={output} onClose={() => setPanel(false)} />}
       </div>
     </div>
   );
