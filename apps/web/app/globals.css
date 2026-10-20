@@ -2805,14 +2805,6 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 /* ---------------------------------------------------------------- Company v2 (pen uNzlj) */
 
-/* KPI ghost cards — shown when board is empty */
-.co2-ghosts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 12px; }
-.co2-ghost { background: var(--soft); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-.co2-ghost-top { display: flex; align-items: center; gap: 8px; }
-.co2-ghost-label { font-size: 13px; font-weight: 500; color: var(--muted); flex: 1; }
-.co2-ghost-dash { font: 400 24px/28px var(--font-mono); color: var(--faint); }
-.co2-ghost-hint { font-size: 12px; color: var(--faint); }
-
 /* "What your helpers know" section header */
 .co2-know-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .co2-know-title-row { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
@@ -2848,7 +2840,6 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .co2-editor-head { padding-bottom: 0; }
 
 @media (max-width: 640px) {
-  .co2-ghosts { grid-template-columns: repeat(2, 1fr); }
   .co2-know-grid { grid-template-columns: repeat(2, 1fr); }
   .co2-know-head { gap: 8px; }
   .co2-know-meter { min-width: 60px; }
