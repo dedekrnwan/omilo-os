@@ -15,6 +15,7 @@ import { Err, StatusChip } from "@/components/ui";
 import { Attachments, Markdown } from "@/components/Markdown";
 import { BASE, Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
+import Desk from "@/components/workspace/Desk";
 
 /* The workspace: chat and work on one page (toggle top right), with a side panel for progress, output and the browser. */
 
@@ -193,6 +194,9 @@ function WorkspaceInner() {
   const view = params.get("view") === "work" ? "work" : "chat";
   const tid = params.get("thread");
   const taskId = params.get("task");
+
+  /* ---- Desk: default /chat view with no thread/task/view params ---- */
+  const isDesk = view === "chat" && !tid && !taskId;
   const [panel, setPanel] = useLocal("omilo.panel", true);
   const [listOpen, setListOpen] = useState(false);
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -213,7 +217,8 @@ function WorkspaceInner() {
   const openThread = useCallback(async (body: Record<string, string>) => {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
-  useEffect(() => { if (view === "chat" && !tid) openThread({ scope: "group" }); }, [view, tid, openThread]); // the team's General chat
+  /* auto-open General only when we are in threaded chat mode, not on the desk */
+  useEffect(() => { if (view === "chat" && !tid && !isDesk) openThread({ scope: "group" }); }, [view, tid, isDesk, openThread]);
   // ChatThread owns its composer text now; the side-list menus reach it over a window event (same idiom as omilo:quote)
   const setComposer = (t: string) => window.dispatchEvent(new CustomEvent("omilo:settext", { detail: { text: t } }));
   // ChatThread only reports its thread while mounted (chat view with a thread); clear it otherwise so the topbar/panel don't show stale info
@@ -257,6 +262,9 @@ function WorkspaceInner() {
   const output = view === "chat"
     ? (lastAgentText ? <Markdown text={lastAgentText} /> : null)
     : selTask?.report ? <div><div className="small" style={{ marginBottom: 6 }}>Report</div><div className="paper md"><Markdown text={selTask.report.body_md} /></div></div> : null;
+
+  /* Desk: full-page two-column layout, no ws shell needed */
+  if (isDesk) return <Desk />;
 
   return (
     <div className="ws">
