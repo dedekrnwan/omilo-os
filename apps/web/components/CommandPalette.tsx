@@ -3,9 +3,11 @@
  * CommandPalette — ⌘K palette for Omilo v2.
  *
  * Modes
- *   default   — ASK suggestions / JUMP TO / ACTIONS
+ *   default   — ASK suggestions / RECENT / JUMP TO / ACTIONS
  *   command   — ">" prefix: HELPERS with inline Pause-all confirm
  *   ask       — Tab or selecting an ASK suggestion; calls POST /ask and renders inline answer
+ *   helper    — "@" prefix: filter staff helpers, select → open that helper's chat
+ *   chat      — "#" prefix: filter recent threads by title, select → open thread
  *
  * Ask-mode states
  *   idle      — input ready, hint bar shown
@@ -22,14 +24,14 @@ import {
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, AskResult, Thread } from "@/lib/api";
+import { ago, api, ApiError, AskResult, Staff, Thread } from "@/lib/api";
 import { useCommand } from "./command";
 import { useOverview } from "./Shell";
 import { NAV, NavItem } from "./nav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Mode = "default" | "command" | "ask";
+type Mode = "default" | "command" | "ask" | "helper" | "chat";
 type AskState = "idle" | "loading" | "answer" | "unavailable";
 
 interface Row {
@@ -57,6 +59,9 @@ const NAV_ITEMS: NavItem[] = NAV.flatMap((g) =>
   g.items.filter((it): it is NavItem & { href: string } => !!it.href && !it.soon)
 );
 
+/** Max recent threads shown in RECENT group (default mode, no query) */
+const RECENT_MAX = 4;
+
 // ─── CommandPalette ───────────────────────────────────────────────────────────
 
 export default function CommandPalette() {
@@ -78,7 +83,44 @@ export default function CommandPalette() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus input on open; reset all state
+  // ── Lazy data caches for RECENT / @helper / #chat ─────────────────────────
+  // Threads: used by RECENT group (default mode) and # mode
+  const [threads, setThreads] = useState<Thread[] | null>(null); // null = not yet fetched
+  const threadsFetchedRef = useRef(false);
+
+  // Staff: used by @ mode
+  const [staffList, setStaffList] = useState<Staff[] | null>(null);
+  const staffFetchedRef = useRef(false);
+
+  /** Fetch threads once (lazy, cached). Degrade silently on failure. */
+  const ensureThreads = useCallback(async () => {
+    if (threadsFetchedRef.current) return;
+    threadsFetchedRef.current = true;
+    try {
+      const ths = await api<Thread[]>("/threads");
+      // Sort most-recent first
+      const sorted = [...ths].sort((a, b) =>
+        (b.updated_at || "").localeCompare(a.updated_at || "")
+      );
+      setThreads(sorted);
+    } catch {
+      setThreads([]); // empty on error — degrade gracefully
+    }
+  }, []);
+
+  /** Fetch staff once (lazy, cached). Degrade silently on failure. */
+  const ensureStaff = useCallback(async () => {
+    if (staffFetchedRef.current) return;
+    staffFetchedRef.current = true;
+    try {
+      const st = await api<Staff[]>("/staff");
+      setStaffList(st);
+    } catch {
+      setStaffList([]); // empty on error
+    }
+  }, []);
+
+  // Focus input on open; reset all state; prefetch threads for RECENT group
   useEffect(() => {
     if (!isOpen) return;
     setQuery("");
@@ -92,9 +134,11 @@ export default function CommandPalette() {
     // Cancel any in-flight ask on reopen
     abortRef.current?.abort();
     abortRef.current = null;
+    // Lazily prefetch threads on first open (RECENT group + # mode)
+    ensureThreads();
     const t = setTimeout(() => inputRef.current?.focus(), 30);
     return () => clearTimeout(t);
-  }, [isOpen]);
+  }, [isOpen, ensureThreads]);
 
   // Reset highlight when rows change
   useEffect(() => {
@@ -122,6 +166,34 @@ export default function CommandPalette() {
       router.push(href);
     },
     [doClose, router]
+  );
+
+  /** Open an existing thread directly (RECENT / # mode). */
+  const openThread = useCallback(
+    (id: string) => {
+      doClose();
+      router.push(`/chat/?thread=${id}`);
+    },
+    [doClose, router]
+  );
+
+  /** Open (or create) a staff chat thread, then navigate to it (@ mode). */
+  const openStaffChat = useCallback(
+    async (staffId: string) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const th = await api<Thread>("/threads", { body: { scope: "staff", staff_id: staffId } });
+        doClose();
+        router.push(`/chat/?thread=${th.id}`);
+      } catch {
+        doClose();
+        router.push("/chat/");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, doClose, router]
   );
 
   const enterAskMode = useCallback((suggestion?: string) => {
@@ -242,6 +314,10 @@ export default function CommandPalette() {
     pauseAll,
     resumeAll,
     paused: overview?.paused ?? false,
+    threads,
+    staffList,
+    openThread,
+    openStaffChat,
   });
 
   // ── Keyboard handling ─────────────────────────────────────────────────────
@@ -259,7 +335,7 @@ export default function CommandPalette() {
           setAskResult(null);
           setAskQuery("");
         } else if (mode !== "default") {
-          // Step back one mode
+          // Step back one mode (covers command, ask, helper, chat)
           setMode("default");
           setQuery("");
           setConfirmPause(false);
@@ -269,7 +345,7 @@ export default function CommandPalette() {
         return;
       }
 
-      if (e.key === "Tab" && mode !== "ask") {
+      if (e.key === "Tab" && mode !== "ask" && mode !== "helper" && mode !== "chat") {
         e.preventDefault();
         enterAskMode();
         return;
@@ -288,8 +364,8 @@ export default function CommandPalette() {
       }
 
       // ⌘↵ / Ctrl+↵ — "continue in chat" escalation (checked BEFORE plain Enter)
-      // No-op in command mode
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && mode !== "command") {
+      // No-op in command / helper / chat modes
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && mode !== "command" && mode !== "helper" && mode !== "chat") {
         e.preventDefault();
         continueInChat(mode === "ask" ? query : displayQuery(query, mode));
         return;
@@ -300,6 +376,7 @@ export default function CommandPalette() {
         if (mode === "ask" && askState === "idle") {
           submitAsk(query);
         } else if (mode !== "ask") {
+          // covers default, command, helper, chat
           const row = rows[highlighted];
           if (row) row.action();
         }
@@ -320,8 +397,22 @@ export default function CommandPalette() {
         setQuery(v);
         return;
       }
-      if (mode === "command" && v === "") {
-        // Backspace cleared the ">" prefix — leave command mode
+      if (v.startsWith("@")) {
+        // Helper mode — lazy-fetch staff on first use
+        ensureStaff();
+        setMode("helper");
+        setQuery(v);
+        return;
+      }
+      if (v.startsWith("#")) {
+        // Chat mode — threads already fetched on open; ensure anyway
+        ensureThreads();
+        setMode("chat");
+        setQuery(v);
+        return;
+      }
+      if ((mode === "command" || mode === "helper" || mode === "chat") && v === "") {
+        // Backspace cleared the prefix — leave special mode
         setMode("default");
         setQuery("");
         setConfirmPause(false);
@@ -330,7 +421,7 @@ export default function CommandPalette() {
       setMode("default");
       setQuery(v);
     },
-    [mode]
+    [mode, ensureStaff, ensureThreads]
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -356,6 +447,10 @@ export default function CommandPalette() {
       ? "What do you want to ask?"
       : mode === "command"
       ? "Type a command…"
+      : mode === "helper"
+      ? "Filter helpers…"
+      : mode === "chat"
+      ? "Filter chats…"
       : "Search, or ask Chief of Staff anything…";
 
   return (
@@ -378,6 +473,8 @@ export default function CommandPalette() {
 
           {mode === "ask" && <span className="cmd-mode-chip">Ask</span>}
           {mode === "command" && <span className="cmd-mode-chip cmd-mode-cmd">{">"}</span>}
+          {mode === "helper" && <span className="cmd-mode-chip">@</span>}
+          {mode === "chat" && <span className="cmd-mode-chip">#</span>}
 
           <input
             ref={inputRef}
@@ -508,7 +605,11 @@ export default function CommandPalette() {
         {mode !== "ask" && (
           <div className="cmd-results" role="listbox">
             {rows.length === 0 && !confirmPause && (
-              <div className="cmd-empty">No results for "{displayQuery(query, mode)}"</div>
+              <div className="cmd-empty">
+                {(mode === "helper" || mode === "chat") && threads === null && staffList === null
+                  ? "Loading…"
+                  : `No results for "${displayQuery(query, mode)}"`}
+              </div>
             )}
 
             {groups.map(({ group, items }) => (
@@ -585,7 +686,7 @@ export default function CommandPalette() {
           <span className="cmd-hints">
             <kbd>↑↓</kbd> move
             <kbd>↵</kbd> open
-            {mode !== "ask" && <><kbd>Tab</kbd> ask CoS</>}
+            {mode !== "ask" && mode !== "helper" && mode !== "chat" && <><kbd>Tab</kbd> ask CoS</>}
             <kbd>⌘↵</kbd> chat
           </span>
           <span className="cmd-ai-status">
@@ -602,6 +703,8 @@ export default function CommandPalette() {
 
 function displayQuery(raw: string, mode: Mode): string {
   if (mode === "command") return raw.replace(/^>/, "").trimStart();
+  if (mode === "helper") return raw.replace(/^@/, "").trimStart();
+  if (mode === "chat") return raw.replace(/^#/, "").trimStart();
   return raw;
 }
 
@@ -615,6 +718,10 @@ function buildRows(opts: {
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
   paused: boolean;
+  threads: Thread[] | null;
+  staffList: Staff[] | null;
+  openThread: (id: string) => void;
+  openStaffChat: (staffId: string) => void;
 }): Row[] {
   const {
     query,
@@ -626,9 +733,46 @@ function buildRows(opts: {
     pauseAll,
     resumeAll,
     paused,
+    threads,
+    staffList,
+    openThread,
+    openStaffChat,
   } = opts;
 
   const q = displayQuery(query, mode).toLowerCase().trim();
+
+  // ── Helper mode (@) ──────────────────────────────────────────────────────
+  if (mode === "helper") {
+    if (!staffList || staffList.length === 0) return [];
+    const filtered = staffList.filter(
+      (s) => !q || s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q)
+    );
+    return filtered.map((s): Row => ({
+      id: `helper-${s.id}`,
+      group: "HELPERS",
+      label: s.name,
+      sub: s.role,
+      icon: s.is_chief ? "ri-robot-2-line" : "ri-user-line",
+      action: () => openStaffChat(s.id),
+    }));
+  }
+
+  // ── Chat mode (#) ────────────────────────────────────────────────────────
+  if (mode === "chat") {
+    if (!threads || threads.length === 0) return [];
+    // Show group/chat/staff/master scoped threads
+    const filtered = threads.filter(
+      (t) => !q || t.title.toLowerCase().includes(q) || t.scope.toLowerCase().includes(q)
+    );
+    return filtered.map((t): Row => ({
+      id: `chat-${t.id}`,
+      group: "CHATS",
+      label: t.scope === "master" ? "Chief of Staff" : t.scope === "group" ? `# ${t.title}` : t.title,
+      sub: t.updated_at ? ago(t.updated_at) : undefined,
+      icon: t.scope === "group" ? "ri-hashtag" : t.scope === "master" ? "ri-robot-2-line" : "ri-chat-3-line",
+      action: () => openThread(t.id),
+    }));
+  }
 
   // ── Command mode ─────────────────────────────────────────────────────────
   if (mode === "command") {
@@ -689,6 +833,19 @@ function buildRows(opts: {
     })
   );
   rows.push(...askRows);
+
+  // RECENT group — most-recent N threads (only when no query and threads are loaded)
+  if (!q && threads && threads.length > 0) {
+    const recentRows = threads.slice(0, RECENT_MAX).map((t): Row => ({
+      id: `recent-${t.id}`,
+      group: "RECENT",
+      label: t.scope === "master" ? "Chief of Staff" : t.scope === "group" ? `# ${t.title}` : t.title,
+      sub: t.updated_at ? ago(t.updated_at) : undefined,
+      icon: t.scope === "group" ? "ri-hashtag" : t.scope === "master" ? "ri-robot-2-line" : "ri-chat-3-line",
+      action: () => openThread(t.id),
+    }));
+    rows.push(...recentRows);
+  }
 
   // JUMP TO group — NAV items, filtered
   const jumpRows = NAV_ITEMS.filter((it) => !q || it.label.toLowerCase().includes(q)).map(
