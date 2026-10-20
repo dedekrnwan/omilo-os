@@ -2849,3 +2849,44 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .co2-know-head { gap: 8px; }
   .co2-know-meter { min-width: 60px; }
 }
+
+/* ---------------------------------------------------------------- Connectors v2 (pen rwISc) */
+
+/* Filters bar: search + category picks + connected counter */
+.cn2-filters {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 20px;
+}
+
+/* Search field */
+.cn2-search {
+  position: relative; flex-shrink: 0; width: 280px; max-width: 100%;
+}
+.cn2-search-ic {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 15px; color: var(--faint); pointer-events: none;
+}
+.cn2-search-input {
+  width: 100%; padding-left: 34px; height: 34px; min-height: 34px;
+  font-size: 13px; background: var(--soft);
+}
+
+/* Category picks strip */
+.cn2-picks { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; }
+.cn2-picks::-webkit-scrollbar { display: none; }
+
+/* "N of M connected" pill — right-side summary */
+.cn2-connected-pick { white-space: nowrap; }
+
+/* Callout at the bottom of the marketplace (pen MY64n) */
+.cn2-callout {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 20px; font-size: 13px; color: var(--ink-2);
+}
+.cn2-callout > i { font-size: 16px; color: var(--muted); flex-shrink: 0; margin-top: 1px; }
+
+@media (max-width: 640px) {
+  .cn2-filters { gap: 8px; }
+  .cn2-search { width: 100%; }
+  .cn2-picks { flex-wrap: wrap; }
+}

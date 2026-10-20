@@ -498,10 +498,12 @@ export default function Connectors() {
       .sort((x, y) => Number(y.connected) - Number(x.connected) || x.label.localeCompare(y.label));
   }, [catalog, q, cat]);
   const appOpen = openApp ? (catalog || []).find((e) => e.slug === openApp) || null : null;
-  usePageActions({ more: [
-    { label: refreshing ? "Updating the list of apps…" : "Update the list of apps", icon: "ri-refresh-line", disabled: refreshing, onSelect: refreshCatalog },
-    { label: "Add a custom server (MCP)", icon: "ri-code-s-slash-line", hint: "advanced", onSelect: startNew },
-  ] }, [refreshing]);
+  usePageActions({
+    primary: { label: "Custom integration", icon: "ri-code-s-slash-line", onSelect: startNew },
+    more: [
+      { label: refreshing ? "Updating the list of apps…" : "Update the list of apps", icon: "ri-refresh-line", disabled: refreshing, onSelect: refreshCatalog },
+    ],
+  }, [refreshing, startNew]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -509,34 +511,44 @@ export default function Connectors() {
 
   return (
     <div>
-      {/* Page header */}
-      <h1>App connections</h1>
-      <p className="sub">
-        Give your helpers the apps your business already uses. Connect an app and they can read, plan and act in it;
-        anything that posts, sends or spends still waits for your OK.
-      </p>
-      <div className="acts" style={{ marginBottom: 12 }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
-          <i className="ri-search-line" style={{ position: "absolute", left: 10, top: 10 }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: Instagram, email, calendar, sheets…" style={{ paddingLeft: 32 }}
-            aria-label="Search apps" />
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Connectors</h1>
+          <p className="ph2-sub">Give helpers the apps you already use. Anything that posts, sends or spends still waits for your OK.</p>
         </div>
+        <div className="ph2-actions" />
       </div>
-      {catalog && catalog.length > 0 && (
-        <div className="picks" style={{ marginBottom: 16 }}>
-          <button className={`pick ${cat === "" ? "on" : ""}`} onClick={() => setCat("")}>All <span className="mono" style={{ opacity: .6 }}>{catalog.length}</span></button>
-          {nConnected > 0 && (
-            <button className={`pick ${cat === "@connected" ? "on" : ""}`} onClick={() => setCat(cat === "@connected" ? "" : "@connected")}>
-              <span className="dot" style={{ background: "var(--ok)" }} />Connected <span className="mono" style={{ opacity: .6 }}>{nConnected}</span>
-            </button>
-          )}
-          {cats.map(([c, n]) => (
-            <button key={c} className={`pick ${cat === c ? "on" : ""}`} onClick={() => setCat(cat === c ? "" : c)}>
-              <span className="dot" style={{ background: catColor(c) }} />{c} <span className="mono" style={{ opacity: .6 }}>{n}</span>
-            </button>
-          ))}
+
+      {/* Filters v2: search + category picks + connected counter */}
+      <div className="cn2-filters">
+        <div className="cn2-search">
+          <i className="ri-search-line cn2-search-ic" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search apps"
+            className="cn2-search-input" aria-label="Search apps" />
         </div>
-      )}
+        {catalog && catalog.length > 0 && (
+          <div className="picks cn2-picks">
+            <button className={`pick ${cat === "" ? "on" : ""}`} onClick={() => setCat("")}>All <span className="mono" style={{ opacity: .6 }}>{catalog.length}</span></button>
+            {cats.map(([c, n]) => (
+              <button key={c} className={`pick ${cat === c ? "on" : ""}`} onClick={() => setCat(cat === c ? "" : c)}>
+                <span className="dot" style={{ background: catColor(c) }} />{c} <span className="mono" style={{ opacity: .6 }}>{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="sp" />
+        {catalog && (
+          <button
+            className={`pick cn2-connected-pick ${cat === "@connected" ? "on" : ""}`}
+            onClick={() => setCat(cat === "@connected" ? "" : "@connected")}
+            title="Show only connected apps"
+          >
+            <span className="dot" style={{ background: nConnected > 0 ? "var(--ok)" : "var(--faint)" }} />
+            {nConnected} of {catalog.length} connected
+          </button>
+        )}
+      </div>
 
       {/* Restorable connectors banner */}
       {old && (
@@ -579,6 +591,14 @@ export default function Connectors() {
             <ConnectorCard key={entry.slug} entry={entry} onOpen={(e) => setOpenApp(e.slug)} onConnect={startConnect}
               connectState={connectStates[entry.slug] ?? "idle"} />
           ))}
+        </div>
+      )}
+
+      {/* Callout (pen MY64n) */}
+      {catalog !== null && (
+        <div className="callout cn2-callout">
+          <i className="ri-shield-check-line" />
+          Need something else? Add an MCP server or a webhook under Custom integration. Helpers only act inside the tools you connect.
         </div>
       )}
 
