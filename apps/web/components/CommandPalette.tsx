@@ -161,7 +161,7 @@ export default function CommandPalette() {
       setAskQuery(q);
 
       try {
-        const result = await api<AskResult>("/ask", { body: { q } });
+        const result = await api<AskResult>("/ask", { body: { q }, signal: ac.signal });
         if (ac.signal.aborted) return;
         setAskResult(result);
         setAskState("answer");

@@ -11,13 +11,14 @@ export class ApiError extends Error {
 // writes that change nothing anyone else shows (or that fire constantly) don't refresh every view
 const QUIET = ["/vault/write", "/onboarding/assist", "/ai/check", "/connectors/check", "/notify/test", "/fs", "/presence"];
 
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const method = opts.method || (opts.body !== undefined ? "POST" : "GET");
   const res = await fetch(`${BASE}/api${path}`, {
     method,
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", ...(method !== "GET" ? { "X-Omilo": "1" } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
   });
   if (!res.ok) {
     let msg = res.statusText;
