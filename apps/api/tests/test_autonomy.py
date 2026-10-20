@@ -281,3 +281,136 @@ def test_graph_permissive_still_auto_approves(db):
     assert result["level"] == "cos"
     assert len(decide_calls) == 1
     assert decide_calls[0] == ("approve", _COS_ID)
+
+
+# ---------------------------------------------------------------------------
+# C3: should_escalate gate
+# ---------------------------------------------------------------------------
+
+from omilo_api.autonomy import should_escalate  # noqa: E402
+
+
+def _plain_action(**overrides) -> dict:
+    """A minimal internal action dict with no escalation triggers."""
+    base = {
+        "tier": "internal",
+        "task_id": None,
+        "goal_id": None,
+        "spend_usd": None,
+        "note": None,
+    }
+    base.update(overrides)
+    return base
+
+
+# C3-1: explicit pause/stop → escalate("stopped")
+def test_escalate_when_paused(db):
+    """is_paused → (True, 'stopped') regardless of action content."""
+    db.add(Setting(key="paused", value=True))
+    db.flush()
+    escalate, reason = should_escalate(db, None, _plain_action())
+    assert escalate is True
+    assert reason == "stopped"
+
+
+# C3-2: owner note in action dict → escalate("note")
+def test_escalate_when_action_note_present(db):
+    """A truthy 'note' key on the action signals an owner note → escalate."""
+    escalate, reason = should_escalate(db, None, _plain_action(note="please review this"))
+    assert escalate is True
+    assert reason == "note"
+
+
+# C3-3: task has a founder_note → escalate("note")
+def test_escalate_when_task_has_founder_note(db):
+    """When the task referenced by the action has a non-empty founder_note → escalate."""
+    from omilo_api.models import Task, Staff
+    st = Staff(id="helper-fn", name="H", engine={"type": "fake"}, autonomy="standard")
+    db.add(st)
+    task = Task(id="tsk-fn-001234567890", staff_id="helper-fn", origin="shift", founder_note="owner says: stop here")
+    db.add(task)
+    db.flush()
+    escalate, reason = should_escalate(db, None, _plain_action(task_id=task.id))
+    assert escalate is True
+    assert reason == "note"
+
+
+# C3-4: critical tier → escalate("critical")
+def test_escalate_when_tier_critical(db):
+    """action['tier'] == 'critical' → escalate."""
+    escalate, reason = should_escalate(db, None, _plain_action(tier="critical"))
+    assert escalate is True
+    assert reason == "critical"
+
+
+# C3-5: classify_risk returns "high" for the action → escalate("critical")
+def test_escalate_when_classify_risk_high(db):
+    """When classify_risk maps the action to 'high', should_escalate raises critical."""
+    # "content.publish" is known-high via classify_risk
+    escalate, reason = should_escalate(db, None, _plain_action(tier="content.publish"))
+    assert escalate is True
+    assert reason == "critical"
+
+
+# C3-6 (PINNED — outside action must not slip): send_external in escalate_tiers → escalate
+def test_escalate_send_external_must_not_slip(db):
+    """send_external is in the default escalate_tiers; it MUST be stopped (pinned review focus)."""
+    escalate, reason = should_escalate(db, None, _plain_action(tier="send_external"))
+    assert escalate is True
+    assert reason == "send_external"
+
+
+# C3-7: destructive tier → escalate via tier check (classify_risk rates it "low", so tier wins)
+def test_escalate_destructive_tier(db):
+    """destructive is in the default escalate_tiers; classify_risk rates it 'low',
+    so the tier check fires and reason is 'destructive'."""
+    escalate, reason = should_escalate(db, None, _plain_action(tier="destructive"))
+    assert escalate is True
+    assert reason == "destructive"
+
+
+# C3-7b: payment is high-risk → escalate as "critical" (fires before tier check)
+def test_escalate_payment_via_critical(db):
+    """payment is classified 'high' by classify_risk → escalates as 'critical'
+    (critical check precedes the tier check in the precedence order)."""
+    escalate, reason = should_escalate(db, None, _plain_action(tier="payment"))
+    assert escalate is True
+    assert reason == "critical"
+
+
+# C3-8: spend over budget_stop_usd → escalate("budget")
+def test_escalate_spend_over_budget(db):
+    """When spend_usd >= budget_stop_usd → escalate('budget')."""
+    db.add(Setting(key="autonomy_budget_stop_usd", value=10.0))
+    db.flush()
+    escalate, reason = should_escalate(db, None, _plain_action(tier="internal", spend_usd=10.01))
+    assert escalate is True
+    assert reason == "budget"
+
+
+# C3-9: spend exactly at threshold → escalate("budget")
+def test_escalate_spend_exactly_at_budget(db):
+    """Spend exactly equal to budget_stop_usd also triggers escalation."""
+    db.add(Setting(key="autonomy_budget_stop_usd", value=5.0))
+    db.flush()
+    escalate, reason = should_escalate(db, None, _plain_action(tier="internal", spend_usd=5.0))
+    assert escalate is True
+    assert reason == "budget"
+
+
+# C3-10: strict mode → plain internal action escalates("strict")
+def test_escalate_strict_mode_plain_action(db):
+    """In strict mode, even a plain internal action must escalate."""
+    db.add(Setting(key="autonomy_mode", value="strict"))
+    db.flush()
+    escalate, reason = should_escalate(db, None, _plain_action())
+    assert escalate is True
+    assert reason == "strict"
+
+
+# C3-11: permissive mode, no triggers → (False, "")
+def test_no_escalate_plain_internal_permissive(db):
+    """A plain internal action with no triggers in permissive mode must NOT escalate."""
+    escalate, reason = should_escalate(db, None, _plain_action())
+    assert escalate is False
+    assert reason == ""
