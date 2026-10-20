@@ -15,7 +15,7 @@ interface FocusFile {
 }
 
 interface FocusCost {
-  cost_usd: number;
+  usd: number;
   tokens: number;
   minutes: number;
 }
@@ -62,7 +62,7 @@ export default function FocusDetails({
   const hasFiles = (data?.files?.length ?? 0) > 0;
   const hasCost =
     data?.cost &&
-    (data.cost.cost_usd > 0 || data.cost.tokens > 0 || data.cost.minutes > 0);
+    (data.cost.usd > 0 || data.cost.tokens > 0 || data.cost.minutes > 0);
 
   const isEmpty = !hasSteps && !hasFiles && !hasCost;
 
@@ -173,9 +173,9 @@ export default function FocusDetails({
             <div className="focus-cost">
               <div className="focus-cost-item">
                 <b>
-                  ${data!.cost!.cost_usd < 0.01
-                    ? data!.cost!.cost_usd.toFixed(4)
-                    : data!.cost!.cost_usd.toFixed(2)}
+                  ${data!.cost!.usd < 0.01
+                    ? data!.cost!.usd.toFixed(4)
+                    : data!.cost!.usd.toFixed(2)}
                 </b>
                 <span>cost</span>
               </div>
