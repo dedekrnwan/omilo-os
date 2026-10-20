@@ -6,6 +6,7 @@ import csv
 import datetime as dt
 import io
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .. import serialize as X
 from .. import services as S
+from .. import smtp
 from ..db import get_auth_db, get_db
 from ..models import AuditEvent, AuthToken, Staff, User, now
 from ..security import COOKIE, _bearer, current_user, hash_password, sha256, verify_password
@@ -280,3 +282,43 @@ def system_info(db: Session = Depends(get_db), user: User = Depends(current_user
     except Exception:  # noqa: BLE001
         out["files"] = {"path": str(cfg.data_dir), "size_bytes": None}
     return out
+
+
+# ------------------------------------------------------------------ SMTP config
+class SmtpIn(BaseModel):
+    host: str
+    port: int = 587
+    security: Literal["none", "tls", "ssl"] = "tls"
+    username: str = ""
+    password: str | None = None
+    from_addr: str
+
+
+class SmtpTestIn(BaseModel):
+    to: str | None = None
+
+
+@router.get("/settings/smtp")
+def get_smtp(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    return smtp.get_config(db)
+
+
+@router.put("/settings/smtp")
+def put_smtp(body: SmtpIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    try:
+        smtp.set_config(db, body.model_dump())
+    except smtp.SmtpError as exc:
+        raise HTTPException(400, str(exc))
+    S.audit(db, user.id, "smtp.set", "")
+    db.commit()
+    return smtp.get_config(db)
+
+
+@router.post("/settings/smtp/test")
+def smtp_test(body: SmtpTestIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    to = body.to or user.email
+    try:
+        smtp.test_send(db, to)
+    except smtp.SmtpError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
