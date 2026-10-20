@@ -7,6 +7,7 @@ Run with:
     cd apps/api && pytest tests/test_board.py -v
 """
 import datetime as dt
+import threading
 
 import pytest
 
@@ -172,3 +173,44 @@ def test_board_idle_thread_not_in_running(owner):
     assert not any(c.get("id") == thread_id for c in b["running"]), (
         "Idle thread (awaiting_reply=False) should not appear in RUNNING"
     )
+
+
+def test_board_stream_emits_on_commit(owner, base_url):
+    """GET /api/board/stream emits a tick when the bus publishes for the company."""
+    import httpx
+
+    ticks: list[str] = []
+    done = threading.Event()
+
+    def _stream():
+        # Use the owner's auth (bearer token from the Authorization header)
+        tok = owner.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        with httpx.Client(timeout=10) as c:
+            with c.stream(
+                "GET",
+                f"{base_url}/api/board/stream",
+                headers={"Authorization": f"Bearer {tok}"},
+            ) as resp:
+                for line in resp.iter_lines():
+                    if line.startswith("event: tick"):
+                        ticks.append(line)
+                        done.set()
+                        return  # got what we needed
+
+    t = threading.Thread(target=_stream, daemon=True)
+    t.start()
+
+    # Give the SSE connection time to establish
+    import time; time.sleep(0.3)
+
+    # Commit a Task that touches the database — triggers the office bus publish
+    with session_scope() as db:
+        sf = _staff("stream_test")
+        db.add(sf)
+        db.flush()
+        task = _task(sf.id, "running")
+        db.add(task)
+        db.commit()
+
+    assert done.wait(timeout=8), "board/stream did not emit a tick within 8 seconds after a commit"
+    assert ticks, "Expected at least one tick event"

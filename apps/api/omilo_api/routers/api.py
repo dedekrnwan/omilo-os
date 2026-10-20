@@ -2764,6 +2764,62 @@ def inbox_board(db: Session = Depends(get_db), user: User = Depends(current_user
     return B.build(db, prefs=N.prefs(db, user.id))
 
 
+@router.get("/board/stream")
+async def board_stream(request: Request):
+    """Server-sent events: emits a 'tick' whenever the office bus fires for this company.
+    The web board refetches /api/board on each tick — no more poll-only.
+    Auth uses the same cookie/bearer as /api/stream. Subscribes to ch:office (light tier
+    in-process queue or Redis pubsub) exactly like the office WebSocket."""
+    import asyncio as _a
+
+    from fastapi.responses import StreamingResponse
+
+    from .. import bus
+    from .. import company as C
+    from ..db import session_scope
+
+    with session_scope() as db:
+        current_user(request, db)  # raises 401 if not authenticated
+
+    cid = C.current()
+    HEARTBEAT_S = 30
+    FALLBACK_S = 5
+
+    async def gen():
+        yield "retry: 3000\nevent: hello\ndata: {}\n\n"
+
+        if bus._light():
+            q = bus.subscribe(cid, ["ch:office"])
+            try:
+                while not await request.is_disconnected():
+                    try:
+                        await _a.wait_for(q.get(), timeout=HEARTBEAT_S)
+                        yield "event: tick\ndata: {}\n\n"
+                    except _a.TimeoutError:
+                        yield ": ping\n\n"
+            finally:
+                bus.unsubscribe(q)
+            return
+
+        # Full tier: Redis pubsub
+        try:
+            ps = bus.ar().pubsub()
+            await ps.subscribe(bus.key("ch:office", cid))
+            beat = 0
+            while not await request.is_disconnected():
+                msg = await _a.wait_for(ps.get_message(ignore_subscribe_messages=True), timeout=FALLBACK_S)
+                if msg and msg.get("type") == "message":
+                    yield "event: tick\ndata: {}\n\n"
+                else:
+                    beat += 1
+                    if beat % (HEARTBEAT_S // FALLBACK_S) == 0:
+                        yield ": ping\n\n"
+        except Exception:  # noqa: BLE001 – stream closes gracefully
+            pass
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.get("/digest")
 def digest_get(db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import digest as D
