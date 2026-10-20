@@ -1409,7 +1409,7 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
 
     c = _404(db.get(Connector, cid), "unknown connector")
     if c.kind in ("piece", "mcp"):
-        raise HTTPException(400, "piece connectors are managed from the marketplace")
+        raise HTTPException(400, "piece/mcp connectors are managed from the marketplace")
     _connector_apply(c, body)
     S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
     db.commit()

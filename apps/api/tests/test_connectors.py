@@ -131,37 +131,37 @@ def mcp_connector_in_db():
 
 
 @pytest.fixture()
-def seeded_repliz_catalog(tmp_path):
-    """Seed a repliz piece into the catalog so P.catalog() returns it."""
+def seeded_repliz_catalog(tmp_path, monkeypatch):
+    """Seed a repliz MCP entry into the catalog so P.catalog() returns it.
+
+    Uses a type:mcp manifest (the real threat shape) and adds mcp.repliz.com to
+    MCP_HOSTS so validate_manifest passes and the entry indexes as status=ok.
+    Tears down env/MCP_HOSTS state so the seeded catalog doesn't leak.
+    """
     import omilo_api.pieces as pieces
     from omilo_api.config import get_settings
 
-    # Use a fully valid manifest (must pass validate_manifest) — same shape as GMAIL_MANIFEST
+    # Monkeypatch MCP_HOSTS so the mcp.url host passes the allowlist check
+    monkeypatch.setattr(pieces, "MCP_HOSTS", pieces.MCP_HOSTS | {"mcp.repliz.com"})
+
+    # Valid type:mcp manifest (must pass validate_manifest's mcp-branch checks)
     manifest = {
+        "type": "mcp",
         "id": "repliz",
         "label": "Repliz",
         "category": "development",
         "description": "Repliz remote MCP server",
-        "auth": {
-            "type": "oauth2",
-            "provider": "repliz",
-            "scopes": ["repliz.access"],
-        },
-        "actions": [
-            {
-                "name": "run-code",
-                "label": "Run code",
-                "approval": "auto",
-                "http": {
-                    "method": "POST",
-                    "url": "https://api.repliz.com/run",
-                    "auth": "bearer",
-                },
-                "inputs": [
-                    {"name": "code", "type": "string", "required": True},
+        "mcp": {
+            "url": "https://mcp.repliz.com/mcp",
+            "auth": {
+                "scheme": "header",
+                "fields": [
+                    {"name": "access_key", "label": "Access Key"},
+                    {"name": "secret_key", "label": "Secret Key"},
                 ],
-            }
-        ],
+                "attach": {"X-Repliz-Access-Key": "{access_key}"},
+            },
+        },
     }
 
     source = tmp_path / "pieces-src"
@@ -169,13 +169,20 @@ def seeded_repliz_catalog(tmp_path):
     piece_dir.mkdir(parents=True, exist_ok=True)
     (piece_dir / "piece.yaml").write_text(yaml.dump(manifest))
 
-    os.environ["PIECES_SOURCE"] = str(source)
+    monkeypatch.setenv("PIECES_SOURCE", str(source))
     get_settings.cache_clear()
     pieces.reindex()
 
     yield
 
-    os.environ.pop("PIECES_SOURCE", None)
+    # Clear the seeded index so later tests don't see the repliz entry
+    index = pieces.index_path()
+    if index.exists():
+        import json as _json
+        data = _json.loads(index.read_text())
+        data["pieces"] = [e for e in data.get("pieces", []) if e.get("slug") != "repliz"]
+        index.write_text(_json.dumps(data))
+
     get_settings.cache_clear()
 
 
@@ -194,7 +201,7 @@ class TestMcpConnectorCrud:
         )
 
     def test_post_connector_rejects_mcp_kind(self, owner):
-        """POST /connectors with kind='mcp' must return 400."""
+        """POST /connectors with kind='mcp' must return 400 and must NOT insert a row."""
         r = owner.post("/api/connectors", json={
             "id": "x-mcp-test",
             "kind": "mcp",
@@ -206,9 +213,14 @@ class TestMcpConnectorCrud:
         assert "marketplace" in r.text.lower(), (
             f"Expected 'marketplace' in error body, got: {r.text}"
         )
+        # Confirm no row was created: the id must be absent from the list
+        ids = [c["id"] for c in owner.get("/api/connectors").json()]
+        assert "x-mcp-test" not in ids, (
+            f"kind=mcp POST must not create a DB row, but 'x-mcp-test' appeared in GET /connectors: {ids}"
+        )
 
     def test_post_connector_rejects_catalog_slug_id(self, owner, seeded_repliz_catalog):
-        """POST /connectors whose id matches a catalog slug must return 400."""
+        """POST /connectors whose id matches a catalog slug must return 400 and must NOT insert a row."""
         r = owner.post("/api/connectors", json={
             "id": "repliz",
             "kind": "http",
@@ -219,6 +231,11 @@ class TestMcpConnectorCrud:
         )
         assert "reserved" in r.text.lower() or "marketplace" in r.text.lower(), (
             f"Expected 'reserved' or 'marketplace' in error body, got: {r.text}"
+        )
+        # Confirm no http connector with the evil url was created
+        ids = [c["id"] for c in owner.get("/api/connectors").json()]
+        assert "repliz" not in ids, (
+            f"Anti-squat POST must not create a DB row, but 'repliz' appeared in GET /connectors: {ids}"
         )
 
     def test_put_connector_rejects_mcp(self, owner, mcp_connector_in_db):
