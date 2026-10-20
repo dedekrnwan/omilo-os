@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { usePageActions } from "@/components/PageActions";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -69,61 +70,117 @@ export default function Talent() {
 
   return (
     <div>
-      <h1>Hire a specialist</h1>
-      <p className="sub">
-        {lib?.source.count ? `${lib.source.count} specialists` : "Specialists"} from The Agency, each with its own personality, process and deliverables.
-        Hired specialists sleep until they get work, so they cost nothing while idle.
-      </p>
-
-      <div className="acts" style={{ marginBottom: 12 }}>
-        <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
-          <i className="ri-search-line" style={{ position: "absolute", left: 10, top: 10 }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: content, SEO, sales, React, finance…" style={{ paddingLeft: 32 }} autoFocus />
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Hire a specialist</h1>
+          <p className="ph2-sub">
+            {lib?.source.count ? `${lib.source.count} specialists` : "Specialists"} from The Agency — each with its own personality, process and deliverables.
+            Hired specialists sleep until they get work, so they cost nothing while idle.
+          </p>
         </div>
       </div>
 
-      {lib && lib.divisions.length > 0 && (
-        <div className="picks" style={{ marginBottom: 16 }}>
-          <button className={`pick ${div === "" ? "on" : ""}`} onClick={() => setDiv("")}>All</button>
-          {lib.divisions.map((d) => (
-            <button key={d.key} className={`pick ${div === d.key ? "on" : ""}`} onClick={() => setDiv(div === d.key ? "" : d.key)}>
-              <span className="dot" style={{ background: d.color }} />{d.label} <span className="mono" style={{ opacity: .6 }}>{d.count}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Tab strip — mirrors Team's tabs; Hire specialists is the active tab */}
+      <div className="team2-tabs">
+        <Link href="/staff/" className="team2-tab">
+          <i className="ri-group-line" />Helpers
+        </Link>
+        <span className="team2-tab on">
+          <i className="ri-store-2-line" />Hire specialists
+        </span>
+      </div>
 
       <Err error={err && !open ? err : null} />
-      {!lib ? <p className="small">Loading…</p> : lib.source.count === 0 ? (
-        <div className="empty">
-          <b>{syncing ? "Getting the roster from GitHub…" : lib.source.sync.state === "failed" ? "Could not download the roster" : "The roster is not loaded yet"}</b>
-          <span>{syncing ? "This takes a few seconds the first time." : lib.source.sync.message}</span>
-          {!syncing && <div style={{ marginTop: 12 }}><button className="btn primary" onClick={update}>Download the roster</button></div>}
-        </div>
-      ) : lib.agents.length === 0 ? (
-        <div className="empty"><b>No specialist matches</b><span>Try another word or division.</span></div>
-      ) : (
-        <div className="cards">
-          {lib.agents.map((a) => (
-            <button key={a.slug} className="card talent" onClick={() => show(a)} onContextMenu={menu(() => items(a))}>
-              <div className="acts" style={{ gap: 10, flexWrap: "nowrap" }}>
-                <span className="emoji">{a.emoji || "✦"}</span>
-                <div style={{ minWidth: 0 }}>
-                  <b style={{ fontWeight: 500, display: "block" }}>{a.name}</b>
-                  <span className="small"><span className="dot" style={{ background: divColor(a.division) }} />{divLabel(a.division)}</span>
-                </div>
-                {a.hired_as && <span className="chip up" style={{ marginLeft: "auto" }}>Hired</span>}
-              </div>
-              <span className="clamp small" style={{ color: "var(--ink-2)" }}>{a.description}</span>
+
+      {/* Two-column layout: categories sidebar + main content */}
+      <div className="hire2-body">
+        {/* Left: category filter */}
+        {lib && lib.divisions.length > 0 && (
+          <nav className="hire2-cats" aria-label="Division filter">
+            <button className={`hire2-cat${div === "" ? " on" : ""}`} onClick={() => setDiv("")}>
+              <span className="dot" style={{ background: "var(--faint)" }} />
+              <span className="hire2-cat-label">All</span>
+              <span className="hire2-cat-count mono">{lib.source.count}</span>
             </button>
-          ))}
+            {lib.divisions.map((d) => (
+              <button key={d.key} className={`hire2-cat${div === d.key ? " on" : ""}`} onClick={() => setDiv(div === d.key ? "" : d.key)}>
+                <span className="dot" style={{ background: d.color }} />
+                <span className="hire2-cat-label">{d.label}</span>
+                <span className="hire2-cat-count mono">{d.count}</span>
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {/* Right: search + agent grid */}
+        <div className="hire2-main">
+          {/* Search bar */}
+          <div className="hire2-search">
+            <i className="ri-search-line hire2-search-icon" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search: content, SEO, sales, React, finance…"
+              className="hire2-search-input"
+              autoFocus
+            />
+          </div>
+
+          {!lib ? (
+            <p className="small">Loading…</p>
+          ) : lib.source.count === 0 ? (
+            <div className="empty">
+              <b>{syncing ? "Getting the roster from GitHub…" : lib.source.sync.state === "failed" ? "Could not download the roster" : "The roster is not loaded yet"}</b>
+              <span>{syncing ? "This takes a few seconds the first time." : lib.source.sync.message}</span>
+              {!syncing && <div style={{ marginTop: 12 }}><button className="btn primary" onClick={update}>Download the roster</button></div>}
+            </div>
+          ) : lib.agents.length === 0 ? (
+            <div className="empty"><b>No specialist matches</b><span>Try another word or division.</span></div>
+          ) : (
+            <>
+              {/* All specialists */}
+              <div className="hire2-section-head">
+                <span className="hire2-section-title">{div ? divLabel(div) : "All specialists"}</span>
+                <span className="hire2-section-count mono">{lib.agents.length}</span>
+              </div>
+              <div className="hire2-grid">
+                {lib.agents.map((a) => (
+                  <button
+                    key={a.slug}
+                    className="hire2-card"
+                    onClick={() => show(a)}
+                    onContextMenu={menu(() => items(a))}
+                  >
+                    <div className="hire2-card-top">
+                      <span className="emoji">{a.emoji || "✦"}</span>
+                      <span className="hire2-card-text">
+                        <b className="hire2-card-name">{a.name}</b>
+                        <span className="hire2-card-cat small">
+                          <span className="dot" style={{ background: divColor(a.division) }} />
+                          {divLabel(a.division)}
+                        </span>
+                      </span>
+                      {a.hired_as && <span className="chip up" style={{ marginLeft: "auto", flexShrink: 0 }}>Hired</span>}
+                    </div>
+                    <p className="hire2-card-desc small">{a.description}</p>
+                    <div className="hire2-card-foot">
+                      <span className="sp" />
+                      <span className="btn sm primary hire2-hire-btn"><i className="ri-user-add-line" />Hire</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <p className="small" style={{ marginTop: 24, color: "var(--muted)" }}>
+            Specialists from <a href={lib?.source.repo || "https://github.com/msitarzewski/agency-agents"} target="_blank" rel="noopener noreferrer">The Agency</a> by msitarzewski and contributors, MIT License.
+          </p>
         </div>
-      )}
+      </div>
 
-      <p className="small" style={{ marginTop: 24 }}>
-        Specialists from <a href={lib?.source.repo || "https://github.com/msitarzewski/agency-agents"} target="_blank" rel="noopener noreferrer">The Agency</a> by msitarzewski and contributors, MIT License.
-      </p>
-
+      {/* Agent drawer */}
       {open && (
         <>
           <div className="scrim" onClick={() => setOpen(null)} />
@@ -148,6 +205,18 @@ export default function Talent() {
               <div className="acts" style={{ flexWrap: "nowrap" }}>
                 <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Name on your team" placeholder="Name on your team" />
                 <button className="btn primary" onClick={hire} disabled={busy}><i className="ri-user-add-line" />{busy ? "Hiring…" : "Hire"}</button>
+              </div>
+              <div className="acts" style={{ marginTop: 8 }}>
+                <button
+                  className="btn quiet"
+                  onClick={async () => {
+                    if (!open) return;
+                    try { await api(`/skills/from-talent/${open.slug}`, { body: {} }); router.push("/skills/"); }
+                    catch (e: any) { setErr(e.message); }
+                  }}
+                >
+                  <i className="ri-magic-line" />Turn into a skill
+                </button>
               </div>
               <Err error={err} />
             </div>
