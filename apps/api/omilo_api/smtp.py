@@ -101,14 +101,14 @@ def send_email(db: Session, to: str, subject: str, body: str) -> None:
     """
     raw: dict = get_setting(db, _SMTP_KEY) or {}
     host = raw.get("host", "")
+
+    if not host:
+        raise SmtpError("SMTP not configured")
+
     password_enc = raw.get("password_enc")
-
-    if not host or not password_enc:
-        raise SmtpError("SMTP not configured")
-
-    pw = security.decrypt(password_enc)
-    if not pw:
-        raise SmtpError("SMTP not configured")
+    pw: str | None = None
+    if password_enc:
+        pw = security.decrypt(password_enc)
 
     sec = raw.get("security", "tls")
     port = raw.get("port", 587)
@@ -123,16 +123,17 @@ def send_email(db: Session, to: str, subject: str, body: str) -> None:
 
     try:
         if sec == "ssl":
-            conn = smtplib.SMTP_SSL(host, port, timeout=10)
+            with smtplib.SMTP_SSL(host, port, timeout=10) as conn:
+                if username and pw:
+                    conn.login(username, pw)
+                conn.send_message(msg)
         else:
-            conn = smtplib.SMTP(host, port, timeout=10)
-            if sec == "tls":
-                conn.starttls()
-
-        if username:
-            conn.login(username, pw)
-
-        conn.send_message(msg)
+            with smtplib.SMTP(host, port, timeout=10) as conn:
+                if sec == "tls":
+                    conn.starttls()
+                if username and pw:
+                    conn.login(username, pw)
+                conn.send_message(msg)
     except SmtpError:
         raise
     except Exception as exc:
