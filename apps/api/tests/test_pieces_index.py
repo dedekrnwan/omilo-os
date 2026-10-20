@@ -81,7 +81,7 @@ def test_parse_source_entry_shape(tmp_path):
     assert len(results) == 1
     entry = results[0]
 
-    required_keys = {"slug", "label", "category", "description", "logo_rel", "manifest", "status", "error"}
+    required_keys = {"slug", "label", "category", "description", "logo_rel", "type", "manifest", "status", "error"}
     assert required_keys == set(entry.keys())
 
 
@@ -192,7 +192,7 @@ def test_catalog_public_fields_only(tmp_path, monkeypatch):
     cat = pieces.catalog()
     assert len(cat) == 1
 
-    public_fields = {"slug", "label", "category", "description", "logo_rel"}
+    public_fields = {"slug", "label", "category", "description", "logo_rel", "type"}
     for entry in cat:
         assert set(entry.keys()) == public_fields
 

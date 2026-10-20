@@ -415,3 +415,59 @@ def test_trigger_bad_name_reported():
 def test_trigger_mapping_must_be_dict_if_present():
     m = {**GMAIL_MANIFEST, "triggers": [{**_VALID_TRIGGER, "mapping": "nope"}]}
     assert any("mapping" in e for e in validate_manifest(m))
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (catalog v2): type: mcp manifest validation + MCP host allowlist
+# ---------------------------------------------------------------------------
+
+_MCP_MANIFEST = {
+    "id": "repliz", "type": "mcp", "label": "Repliz", "category": "Social",
+    "description": "Post and reply across social platforms via Repliz.",
+    "mcp": {
+        "url": "https://mcp.repliz.com/mcp",
+        "auth": {
+            "scheme": "header",
+            "fields": [{"name": "access_key", "label": "Access Key", "secret": True},
+                       {"name": "secret_key", "label": "Secret Key", "secret": True}],
+            "attach": {"X-Repliz-Access-Key": "{{ access_key }}", "X-Repliz-Secret-Key": "{{ secret_key }}"},
+        },
+    },
+}
+
+
+def test_type_absent_defaults_piece_still_valid():
+    assert validate_manifest(GMAIL_MANIFEST) == []  # no type => piece, unchanged
+
+
+def test_valid_mcp_manifest_accepted(monkeypatch):
+    monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", {"mcp.repliz.com"})
+    assert validate_manifest(_MCP_MANIFEST) == []
+
+
+def test_mcp_rejected_when_host_not_allowed(monkeypatch):
+    monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", set())
+    assert any("host" in e.lower() for e in validate_manifest(_MCP_MANIFEST))
+
+
+def test_mcp_requires_https_url(monkeypatch):
+    monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", {"mcp.repliz.com"})
+    m = {**_MCP_MANIFEST, "mcp": {**_MCP_MANIFEST["mcp"], "url": "http://mcp.repliz.com/mcp"}}
+    assert any("url" in e.lower() or "https" in e.lower() for e in validate_manifest(m))
+
+
+def test_mcp_requires_scheme_fields_attach(monkeypatch):
+    monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", {"mcp.repliz.com"})
+    m = {**_MCP_MANIFEST, "mcp": {"url": "https://mcp.repliz.com/mcp", "auth": {"scheme": "nope", "fields": [], "attach": {}}}}
+    errs = validate_manifest(m)
+    assert any("scheme" in e for e in errs) and any("fields" in e for e in errs) and any("attach" in e for e in errs)
+
+
+def test_bad_type_value_reported():
+    assert any("type" in e for e in validate_manifest({**GMAIL_MANIFEST, "type": "grpc"}))
+
+
+def test_mcp_does_not_require_actions_or_scopes(monkeypatch):
+    monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", {"mcp.repliz.com"})
+    # _MCP_MANIFEST has no actions/auth.scopes -- must still be valid
+    assert validate_manifest(_MCP_MANIFEST) == []

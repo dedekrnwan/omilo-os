@@ -1376,16 +1376,22 @@ def connectors_list(db: Session = Depends(get_db), user: User = Depends(current_
     from .. import capabilities as C
     from ..models import Connector
 
-    return [C.connector_public(c) for c in db.scalars(select(Connector).order_by(Connector.created_at))]
+    return [C.connector_public(c) for c in db.scalars(select(Connector).order_by(Connector.created_at))
+            if c.kind != "mcp"]
 
 
 @router.post("/connectors")
 def connector_add(body: ConnectorIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import capabilities as C
+    from .. import pieces as P
     from ..models import Connector
 
     if not C.SLUG.match(body.id) or body.id == "omilo":
         raise HTTPException(400, "id: lowercase letters, digits and dashes (and not omilo)")
+    if body.kind == "mcp":
+        raise HTTPException(400, "mcp connectors are managed from the marketplace")
+    if body.id in {p["slug"] for p in P.catalog()}:
+        raise HTTPException(400, "id is reserved by a marketplace connector")
     if db.get(Connector, body.id):
         raise HTTPException(409, "a connector with this id exists")
     c = Connector(id=body.id)
@@ -1402,8 +1408,8 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
     from ..models import Connector
 
     c = _404(db.get(Connector, cid), "unknown connector")
-    if c.kind == "piece":
-        raise HTTPException(400, "piece connectors are managed from the marketplace")
+    if c.kind in ("piece", "mcp"):
+        raise HTTPException(400, "piece/mcp connectors are managed from the marketplace")
     _connector_apply(c, body)
     S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
     db.commit()
@@ -1568,6 +1574,73 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
     return {"status": "connected"}
 
 
+@router.post("/connectors/mcp/{slug}/connect")
+def mcp_connect(slug: str, body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Broker-less connect: enter API keys for a type='mcp' catalog card.
+
+    Validates the catalog entry, renders auth headers from the manifest template, and
+    upserts a locked kind='mcp' Connector row.  Field values are NEVER logged.
+
+    Trust boundary: attach header NAMES come from the trusted, server-controlled manifest;
+    only the VALUES are rendered from the request body — body input can never become a header name.
+
+    Body: {field_name: value, ...} — every declared field is required and must be non-empty.
+    Returns: {"status": "connected"}
+    """
+    from .. import capabilities as C
+    from .. import pieces as P
+    from ..models import Connector
+
+    # 1. Load and validate the catalog entry
+    entry = P.get_piece(slug)
+    if entry is None:
+        raise HTTPException(404, f"piece '{slug}' not found in catalog")
+    manifest = entry["manifest"]
+    if manifest.get("type") != "mcp":
+        raise HTTPException(404, f"piece '{slug}' is not an mcp connector")
+
+    mcp_cfg = manifest.get("mcp") or {}
+
+    # 2. Host re-check (defense in depth)
+    mcp_url = mcp_cfg.get("url", "")
+    if not P.mcp_host_allowed(mcp_url):
+        raise HTTPException(400, f"mcp host not allowed for '{slug}'")
+
+    # 3. Require every declared field — reject with 400 before creating anything
+    auth = mcp_cfg.get("auth") or {}
+    fields = auth.get("fields") or []
+    for f in fields:
+        name = f["name"]
+        if not body.get(name):
+            raise HTTPException(400, f"missing required field: {name}")
+
+    # 4. Render headers from the attach templates (never log the values)
+    attach = auth.get("attach") or {}
+    headers: dict[str, str] = {}
+    for header_name, tpl in attach.items():
+        headers[header_name] = P._render_str(tpl, body)
+
+    # 5. Upsert the Connector row
+    c = db.get(Connector, slug)
+    if c is None:
+        c = Connector(id=slug)
+        db.add(c)
+
+    c.kind = "mcp"
+    c.url = mcp_url
+    c.label = manifest.get("label", slug)
+    c.approval = "ask"
+    c.default_on = True
+    c.enabled = True
+
+    C.set_connector_secrets(c, headers, None)
+
+    S.audit(db, user.id, "connector.mcp.connect", slug)
+    db.commit()
+
+    return {"status": "connected"}
+
+
 @router.delete("/connectors/{cid}")
 def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import broker as B
@@ -1625,7 +1698,24 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
         connected = conn is not None
         needs_reconnect = bool(conn and C.connector_secrets(conn).get("needs_reconnect"))
         man = manifests.get(slug) or {}
-        result.append({
+        entry_type = piece.get("type", "piece")
+        if entry_type == "mcp":
+            mcp_auth_fields = (man.get("mcp") or {}).get("auth", {}).get("fields") or []
+            card_actions: list = []
+            card_provider: str = ""
+            card_connect_fields: list = [
+                {"name": f["name"], "label": f.get("label", f["name"]), "secret": f.get("secret", False)}
+                for f in mcp_auth_fields
+                if isinstance(f, dict) and "name" in f
+            ]
+        else:
+            card_actions = [
+                {"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
+                for a in (man.get("actions") or []) if isinstance(a, dict)
+            ]
+            card_provider = (man.get("auth") or {}).get("provider") or ""
+            card_connect_fields = []
+        card: dict = {
             "slug": slug,
             "label": piece["label"],
             "category": piece["category"],
@@ -1633,11 +1723,14 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
             "logo_url": logo_url,
             "connected": connected,
             "needs_reconnect": needs_reconnect,
+            "type": entry_type,
             # what a helper can do with it, and which of those wait for your OK (shown on the card and its details)
-            "actions": [{"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
-                        for a in (man.get("actions") or []) if isinstance(a, dict)],
-            "provider": ((man.get("auth") or {}).get("provider") or ""),
-        })
+            "actions": card_actions,
+            "provider": card_provider,
+        }
+        if entry_type == "mcp":
+            card["connect_fields"] = card_connect_fields
+        result.append(card)
 
     return result
 

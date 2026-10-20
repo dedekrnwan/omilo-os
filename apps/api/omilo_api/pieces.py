@@ -209,6 +209,7 @@ def _parse_source(path: Path) -> list[dict]:
                 "category": raw.get("category", "") if isinstance(raw, dict) else "",
                 "description": raw.get("description", "") if isinstance(raw, dict) else "",
                 "logo_rel": logo_rel,
+                "type": raw.get("type", "piece") if isinstance(raw, dict) else "piece",
                 "manifest": raw if isinstance(raw, dict) else {},
                 "status": "invalid",
                 "error": "; ".join(errors),
@@ -220,6 +221,7 @@ def _parse_source(path: Path) -> list[dict]:
                 "category": raw.get("category", ""),
                 "description": raw.get("description", ""),
                 "logo_rel": logo_rel,
+                "type": raw.get("type", "piece"),
                 "manifest": raw,
                 "status": "ok",
                 "error": "",
@@ -315,7 +317,7 @@ def catalog() -> list[dict]:
     """Return only 'ok' pieces with public fields (no manifest internals)."""
     public = ("slug", "label", "category", "description", "logo_rel")
     return [
-        {k: e[k] for k in public}
+        {**{k: e[k] for k in public}, "type": e.get("type", "piece")}
         for e in _load_index()
         if e.get("status") == "ok"
     ]
@@ -349,6 +351,15 @@ def validate_manifest(data: dict) -> list[str]:
         errors.append("Manifest must be a dictionary.")
         return errors
 
+    # Validate 'type' (optional; absent ⇒ "piece")
+    manifest_type = data.get("type", "piece")
+    if manifest_type not in {"piece", "mcp"}:
+        errors.append(
+            f"Invalid 'type' '{manifest_type}': must be 'piece' or 'mcp'."
+        )
+        # Fall through to collect any other errors but skip type-specific checks
+        manifest_type = None
+
     # Validate 'id'
     id_val = data.get("id")
     if not id_val or not isinstance(id_val, str):
@@ -358,6 +369,93 @@ def validate_manifest(data: dict) -> list[str]:
             f"Invalid 'id' '{id_val}': must start with lowercase alphanumeric, "
             "allow hyphens, max 41 characters."
         )
+
+    if manifest_type == "mcp":
+        # -----------------------------------------------------------------------
+        # MCP manifest validation — requires label/category/description + mcp block
+        # -----------------------------------------------------------------------
+
+        # Validate 'label'
+        label = data.get("label")
+        if not label or not isinstance(label, str):
+            errors.append("Missing or invalid 'label': must be a non-empty string.")
+
+        # Validate 'category'
+        category = data.get("category")
+        if not category or not isinstance(category, str):
+            errors.append("Missing or invalid 'category': must be a non-empty string.")
+
+        # Validate 'description'
+        description = data.get("description")
+        if not description or not isinstance(description, str):
+            errors.append("Missing or invalid 'description': must be a non-empty string.")
+
+        # Validate 'mcp' block
+        mcp_block = data.get("mcp")
+        if not isinstance(mcp_block, dict):
+            errors.append("Missing or invalid 'mcp': must be a dictionary.")
+        else:
+            # Validate mcp.url
+            mcp_url = mcp_block.get("url")
+            if not mcp_url or not isinstance(mcp_url, str):
+                errors.append("Missing or invalid 'mcp.url': must be a non-empty string.")
+            elif not mcp_url.startswith("https://"):
+                errors.append(
+                    f"Invalid 'mcp.url' '{mcp_url}': must start with https://."
+                )
+            elif not mcp_host_allowed(mcp_url):
+                errors.append(
+                    f"Invalid 'mcp.url' host: host is not in the MCP host allowlist."
+                )
+
+            # Validate mcp.auth
+            mcp_auth = mcp_block.get("auth")
+            if not isinstance(mcp_auth, dict):
+                errors.append("Missing or invalid 'mcp.auth': must be a dictionary.")
+            else:
+                # Validate mcp.auth.scheme
+                scheme = mcp_auth.get("scheme")
+                if scheme not in {"header", "basic"}:
+                    errors.append(
+                        f"Invalid 'mcp.auth.scheme' '{scheme}': must be 'header' or 'basic'."
+                    )
+
+                # Validate mcp.auth.fields
+                fields = mcp_auth.get("fields")
+                if not isinstance(fields, list) or len(fields) == 0:
+                    errors.append(
+                        "Missing or invalid 'mcp.auth.fields': must be a non-empty list."
+                    )
+                else:
+                    # MCP field names allow underscores (credential identifiers like access_key).
+                    _FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
+                    for i, field in enumerate(fields):
+                        if not isinstance(field, dict):
+                            errors.append(f"mcp.auth.fields[{i}]: must be a dictionary.")
+                            continue
+                        f_name = field.get("name")
+                        if not f_name or not isinstance(f_name, str) or not _FIELD_NAME_RE.match(f_name):
+                            errors.append(
+                                f"mcp.auth.fields[{i}]: 'name' must be a non-empty slug string."
+                            )
+                        f_label = field.get("label")
+                        if not f_label or not isinstance(f_label, str):
+                            errors.append(
+                                f"mcp.auth.fields[{i}]: 'label' must be a non-empty string."
+                            )
+
+                # Validate mcp.auth.attach
+                attach = mcp_auth.get("attach")
+                if not isinstance(attach, dict) or len(attach) == 0:
+                    errors.append(
+                        "Missing or invalid 'mcp.auth.attach': must be a non-empty dictionary."
+                    )
+
+        return errors
+
+    # -----------------------------------------------------------------------
+    # piece manifest validation (type == "piece" or absent) — existing checks
+    # -----------------------------------------------------------------------
 
     # Validate 'label'
     label = data.get("label")
@@ -609,6 +707,31 @@ def _has_template(value: str) -> bool:
 # entries without review. Any connector whose provider is absent from this registry will
 # have provider_hosts() return an empty set, which blocks every outbound request.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# MCP host allowlist (security boundary — seed empty; Task 5 adds mcp.repliz.com).
+#
+# A URL's host passes iff it equals a host in MCP_HOSTS or is a dotted-left-subdomain
+# of one (same rule as _check_host / PROVIDER_DOMAINS).
+# ---------------------------------------------------------------------------
+MCP_HOSTS: set[str] = {"mcp.repliz.com"}
+
+
+def mcp_host_allowed(url: str) -> bool:
+    """Return True iff the URL's host equals or is a dotted subdomain of an MCP_HOSTS entry.
+
+    All comparisons are case-insensitive.  Returns False for unparseable URLs.
+    """
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower().strip()
+    if not hostname:
+        return False
+    for h in MCP_HOSTS:
+        d = h.lower()
+        if hostname == d or hostname.endswith("." + d):
+            return True
+    return False
+
+
 PROVIDER_DOMAINS: dict[str, set[str]] = {
     "google": {"googleapis.com", "google.com"},
     "meta": {"facebook.com", "instagram.com", "whatsapp.com"},
