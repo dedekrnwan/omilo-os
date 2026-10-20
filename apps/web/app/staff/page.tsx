@@ -242,7 +242,7 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
 }
 
 function engineLabel(s: Staff) {
-  if (s.engine?.type === "claude-code") return s.engine?.auth === "api" ? "Claude Code · API key" : "Shared pool";
+  if (s.engine?.type === "claude-code") return s.engine?.auth === "api" ? "Claude Code · API key" : "Claude Code pool";
   if (s.engine?.type === "claude") return "Built-in Claude";
   return "Practice mode";
 }
@@ -281,36 +281,36 @@ function StaffList() {
         </Link>
       </div>
 
-      {/* Helper list */}
+      {/* Helper grid — 3-col cards per pen b3nYgQ */}
       {staff.length === 0 ? (
         <Empty title="No helpers yet" text="Finish onboarding, or hire one from the Hire page." />
       ) : (
-        <div className="team2-list">
+        <div className="team2-grid">
           {staff.map((s) => (
             <div
               key={s.id}
-              className="team2-row"
+              className="team2-card"
               onContextMenu={menu(() => [{ heading: s.name }, ...helperItems(s, load), sep,
                 { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
                 { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}
             >
-              {/* Identity */}
-              <Link href={`/staff/?id=${s.id}`} className="team2-id">
+              {/* Top: avatar + name + role */}
+              <Link href={`/staff/?id=${s.id}`} className="team2-card-top">
                 <Avatar who={s} size={40} state={(s as any).state === "working" ? "working" : null} />
                 <span className="team2-id-text">
                   <b className="team2-name">{s.name}{s.is_chief ? <span className="team2-chief"> · Chief of Staff</span> : null}</b>
                   <span className="team2-role small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span>
                 </span>
               </Link>
-              {/* Status */}
-              <span className="team2-status">
+              {/* Status: chip + next-job line */}
+              <div className="team2-card-status">
                 <HelperState h={s as any} />
                 {s.shifts.length > 0 && (
                   <span className="team2-next small">next {s.shifts[0].when || s.shifts[0].cron}</span>
                 )}
-              </span>
-              {/* Meta pillbox */}
-              <span className="team2-meta">
+              </div>
+              {/* Meta: jobs count + engine pill */}
+              <div className="team2-card-meta">
                 <span className="team2-pill">
                   <span className="team2-pill-label">Jobs</span>
                   <span className="team2-pill-val">{s.shifts.length} regular job{s.shifts.length === 1 ? "" : "s"}</span>
@@ -319,12 +319,12 @@ function StaffList() {
                   <span className="team2-pill-label">Engine</span>
                   <span className="team2-pill-val">{engineLabel(s)}</span>
                 </span>
-              </span>
-              {/* Actions */}
-              <span className="team2-actions">
+              </div>
+              {/* Actions: Open / Chat */}
+              <div className="team2-card-actions">
                 <Link href={`/staff/?id=${s.id}`} className="btn sm">Open</Link>
                 <Link href={`/chat/?view=work&task=new&staff=${s.id}&full=1`} className="btn sm quiet"><i className="ri-chat-3-line" />Chat</Link>
-              </span>
+              </div>
             </div>
           ))}
         </div>
@@ -345,8 +345,6 @@ function StaffList() {
                     <span className="team2-role small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span>
                   </span>
                 </Link>
-                <span className="team2-status" />
-                <span className="team2-meta" />
                 <span className="team2-actions">
                   <Link className="btn sm quiet" href={`/staff/?id=${s.id}`}>History</Link>
                   <button className="btn sm" onClick={() => hireBack(s, load)}><i className="ri-user-add-line" />Hire back</button>

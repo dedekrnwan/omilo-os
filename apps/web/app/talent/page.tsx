@@ -68,7 +68,6 @@ export default function Talent() {
   const syncing = lib?.source.sync.state === "running";
   usePageActions({
     primary: { label: syncing ? "Updating…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, onSelect: update },
-    more: [{ label: syncing ? "Updating the roster…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, hint: "from GitHub", onSelect: update }],
   }, [syncing]);
 
   return (
