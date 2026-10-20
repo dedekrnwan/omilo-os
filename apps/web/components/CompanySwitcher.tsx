@@ -69,6 +69,11 @@ export default function CompanySwitcher({ overview }: { overview: Overview | nul
     window.addEventListener("mousedown", close); window.addEventListener("keydown", esc);
     return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", esc); };
   }, [open]);
+  useEffect(() => {
+    const on = () => setOpen(true);
+    window.addEventListener("omilo:open-company-switcher", on);
+    return () => window.removeEventListener("omilo:open-company-switcher", on);
+  }, []);
 
   const me = list?.find((c) => c.id === current);
   const label = overview?.company_name || me?.name || "Your company";

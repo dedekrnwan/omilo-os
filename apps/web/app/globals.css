@@ -98,7 +98,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 .nav-footer .navlink:hover { background: var(--hover); }
 .side .foot { padding: 8px 16px 0; display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .avatar { width: 22px; height: 22px; border-radius: 50%; background: #fed7aa; color: #9a3412; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
-.side .foot .grow { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foot-trigger { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 3px 4px; border-radius: var(--r-sm); cursor: pointer; text-align: left; }
+.foot-trigger:hover { background: var(--hover); }
+.foot-trigger .grow { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--ink); }
 .iconbtn { width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: var(--r-sm); border: 0; background: transparent; }
 .iconbtn:hover { background: var(--hover); }
 
@@ -3794,3 +3796,8 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
   .ob2-form .ob2-inner { padding: 20px 16px 60px; }
   .ob2-nav { padding: 10px 14px; }
 }
+
+/* ------------------------------------------------------------------ Help & guides page */
+.help-page { max-width: 720px; }
+.help-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.help-cat { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }

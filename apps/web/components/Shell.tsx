@@ -98,6 +98,26 @@ export default function Shell({ children }: { children: ReactNode }) {
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
   const who = (me?.name || me?.email || "Owner").trim();
 
+  const footRef = useRef<HTMLDivElement>(null);
+  const openProfileMenu = () => {
+    const el = footRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const profileItems: MenuItem[] = [
+      { heading: who },
+      { label: "Your Persona", icon: "ri-user-heart-line", disabled: true, hint: "Soon" },
+      { label: "Persona Studio", icon: "ri-magic-line", disabled: true, hint: "Soon" },
+      { sep: true },
+      { label: "Account", icon: "ri-account-circle-line", href: "/settings/?s=account" },
+      { label: "Notifications", icon: "ri-notification-3-line", href: "/settings/?s=notifications" },
+      { label: "Switch company", icon: "ri-arrow-left-right-line", onSelect: () => window.dispatchEvent(new CustomEvent("omilo:open-company-switcher")) },
+      { label: "Help & guides", icon: "ri-question-line", href: "/help/" },
+      { sep: true },
+      { label: "Log out", icon: "ri-logout-box-r-line", danger: true, onSelect: logout },
+    ];
+    openMenu(Math.max(8, r.left), r.top - 8, profileItems);
+  };
+
   if (path === "/onboarding/") {  // v2 onboarding: full-screen layout; the page owns all chrome
     return (
       <OverviewCtx.Provider value={{ overview, refresh }}>
@@ -184,9 +204,11 @@ export default function Shell({ children }: { children: ReactNode }) {
               </button>
             </div>
           </nav>
-          <div className="foot">
-            <span className="avatar">{who.slice(0, 1).toUpperCase()}</span>
-            <span className="grow">{who}</span>
+          <div className="foot" ref={footRef}>
+            <button className="foot-trigger" aria-label="Profile menu" aria-haspopup="menu" onClick={openProfileMenu}>
+              <span className="avatar">{who.slice(0, 1).toUpperCase()}</span>
+              <span className="grow">{who}</span>
+            </button>
             <button className="iconbtn" aria-label="Log out" title="Log out" onClick={logout}><i className="ri-logout-box-r-line" /></button>
           </div>
         </aside>
