@@ -1015,7 +1015,7 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     if level == policy.ASK:
         p = create_proposal(db, st, task_id, summary, action, "medium", details)
         ruled = _cos_rule(db, st, p)
-        if ruled is not None:  # a graph staff's low/medium action: the CoS handled it inline
+        if ruled is not None:  # the CoS ruled this low/medium action inline (any brain, permissive mode)
             return ruled
         return {"decision": "needs_approval", "level": "ask", "proposal_id": p.id,
                 "message": "Filed for the founder's approval. Do not do it now; it will come back as an execution task if approved."}
