@@ -136,14 +136,19 @@ function List() {
 
   return (
     <div>
-      <div className="sechead" style={{ alignItems: "flex-start" }}>
-        <div><h1>Workflows</h1>
-          <p className="sub" style={{ marginBottom: 0, maxWidth: 640 }}>Work that repeats, as steps that run on their own: connectors, web requests and data steps cost nothing; AI only where thinking is needed. Helpers can suggest workflows too. Nothing they suggest runs until you approve it.</p></div>
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Workflows</h1>
+          <p className="ph2-sub">Work that repeats, as steps that run on their own. Connectors, web requests and data steps cost nothing; AI only where thinking is needed. Nothing a helper suggests runs until you approve it.</p>
+        </div>
+        <div className="ph2-actions"></div>
       </div>
 
-      <div className="sechead" style={{ marginTop: 16 }}>
+      {/* Tabs row */}
+      <div className="wf2-tabs">
         <div className="seg" role="tablist">
-          {([["mine", "Your workflows", "ri-flow-chart"], ["repeat", "What helpers repeat", "ri-repeat-line"], ["market", "Marketplace", "ri-store-2-line"], ["runs", "Runs", "ri-history-line"]] as [Tab, string, string][]).map(([k, l, ic]) => (
+          {([["mine", "Yours", "ri-flow-chart"], ["repeat", "Suggested by helpers", "ri-repeat-line"], ["market", "Templates", "ri-store-2-line"], ["runs", "Runs", "ri-history-line"]] as [Tab, string, string][]).map(([k, l, ic]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}><i className={ic} /> {l}{k === "mine" && pending.length ? <span className="wf-dot">{pending.length}</span> : null}</button>
           ))}
         </div>
@@ -156,12 +161,15 @@ function List() {
       {tab === "mine" && (
         <div className="sec" style={{ marginTop: 16 }}>
           {list === null ? <p className="small">Loading…</p> : list.length === 0 ? (
-            <div className="wf-empty">
-              <b>No workflows yet</b>
-              <span>Start from the marketplace, draw one yourself, or ask a helper to turn something they do every week into a workflow.</span>
-              <div className="acts" style={{ justifyContent: "center", marginTop: 8 }}>
-                <button className="btn" onClick={() => setTab("market")}><i className="ri-store-2-line" />Browse the marketplace</button>
-                <button className="btn" onClick={() => setTab("repeat")}><i className="ri-repeat-line" />See what helpers repeat</button>
+            <div className="wf2-empty">
+              <div className="wf2-empty-icon"><i className="ri-flow-chart" /></div>
+              <div className="wf2-empty-body">
+                <b>Automate something you do every week</b>
+                <span>Start from a template, draw one yourself, or let a helper turn a job it repeats into a workflow. Anything a helper suggests waits for your OK before it runs.</span>
+                <div className="wf2-empty-actions">
+                  <button className="btn primary" onClick={() => setTab("market")}><i className="ri-store-2-line" />Browse templates</button>
+                  <button className="btn" onClick={() => setTab("repeat")}><i className="ri-repeat-line" />See what helpers repeat</button>
+                </div>
               </div>
             </div>
           ) : (
@@ -203,25 +211,30 @@ function List() {
 
       {tab === "market" && (
         <div className="sec" style={{ marginTop: 16 }}>
-          <div className="seg" style={{ marginBottom: 12 }}>{cats.map((c) => <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}</div>
+          <div className="seg" style={{ marginBottom: 16 }}>{cats.map((c) => <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}</div>
           {market === null ? <p className="small">Loading…</p> : (
-            <div className="grid2">
-              {market.filter((m) => cat === "All" || m.category === cat).map((m) => (
-                <div key={m.slug} className="card wf-tpl" role="button" tabIndex={0} onClick={() => setPeek(m)} onKeyDown={(e) => { if (e.key === "Enter") setPeek(m); }}>
-                  <div className="acts" style={{ flexWrap: "nowrap" }}>
-                    <span className="wf-tpl-ic"><i className={m.icon} /></span>
-                    <div className="t"><b>{m.name}</b><span className="small">{m.category} · {m.trigger} · {m.steps} steps</span></div>
+            <>
+              <h3 className="wf2-sec-label">Popular templates</h3>
+              <div className="wf2-tpl-grid">
+                {market.filter((m) => cat === "All" || m.category === cat).map((m) => (
+                  <div key={m.slug} className="wf2-tpl-card" role="button" tabIndex={0} onClick={() => setPeek(m)} onKeyDown={(e) => { if (e.key === "Enter") setPeek(m); }}>
+                    <div className="wf2-tpl-head">
+                      <span className="wf2-tpl-ic"><i className={m.icon} /></span>
+                      <b className="wf2-tpl-name">{m.name}</b>
+                    </div>
+                    <div className="wf2-tpl-flow">
+                      {m.trigger && <span className="wf2-tpl-step">{m.trigger}</span>}
+                      {m.steps > 1 && <><i className="ri-arrow-right-line wf2-tpl-arrow" /><span className="wf2-tpl-step">{m.uses_ai ? "AI step" : "Step"}</span></>}
+                    </div>
+                    <div className="wf2-tpl-foot">
+                      <span className="small">{m.steps} step{m.steps === 1 ? "" : "s"}{m.uses_ai ? ` · ${m.uses_ai ? "1 AI" : ""}` : " · free"}</span>
+                      <span className="sp" />
+                      <button className="btn sm primary" disabled={busy === m.slug} onClick={(e) => { e.stopPropagation(); install(m); }}>{busy === m.slug ? "Adding…" : "Use"}</button>
+                    </div>
                   </div>
-                  <div className="small clamp">{m.description}</div>
-                  <div className="wf-card-f">
-                    <span className={`chip ${m.uses_ai ? "run" : "up"}`}><i className={m.uses_ai ? "ri-sparkling-2-line" : "ri-leaf-line"} />{m.uses_ai ? "AI" : "No AI"}</span>
-                    {m.needs.map((n) => <span key={n} className="chip outline"><i className="ri-plug-line" />{n}</span>)}
-                    <span className="sp" />
-                    <button className="btn sm" disabled={busy === m.slug} onClick={(e) => { e.stopPropagation(); install(m); }}>{busy === m.slug ? "Adding…" : "Use it"}</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
           <p className="small" style={{ marginTop: 16 }}>Share your own: open a workflow → ⋯ → Copy as JSON. Anyone can import it here.</p>
         </div>
