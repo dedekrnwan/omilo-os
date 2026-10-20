@@ -22,18 +22,23 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        // GUARD: ignore when user is typing in a field
         const el = document.activeElement;
-        if (
+        const isInputLike =
           el instanceof HTMLInputElement ||
           el instanceof HTMLTextAreaElement ||
-          (el instanceof HTMLElement && el.isContentEditable)
-        ) {
-          // The palette's own input is the only exception: it closes the palette via Esc,
-          // so ⌘K from inside the palette input is fine to re-toggle.
-          // We detect the palette input by checking if isOpen — if already open, let it close.
-          if (!isOpen) return; // typing in an unrelated field, do nothing
+          (el instanceof HTMLElement && el.isContentEditable);
+
+        if (isOpen) {
+          // While the palette is open, ⌘K only toggles closed when focus is in
+          // the palette's own input (cmd-field). Any other input is left alone.
+          if (isInputLike && !(el instanceof HTMLInputElement && el.classList.contains("cmd-field"))) {
+            return;
+          }
+        } else {
+          // While the palette is closed, ignore ⌘K when typing in any input/textarea/contenteditable.
+          if (isInputLike) return;
         }
+
         e.preventDefault();
         setIsOpen((v) => !v);
       }

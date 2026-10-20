@@ -220,6 +220,13 @@ export default function CommandPalette() {
         return;
       }
 
+      // ⌘↵ / Ctrl+↵ — "continue in chat" shortcut (checked BEFORE plain Enter)
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        submitAsk(mode === "ask" ? query : displayQuery(query, mode));
+        return;
+      }
+
       if (e.key === "Enter") {
         e.preventDefault();
         if (mode === "ask") {
@@ -228,13 +235,6 @@ export default function CommandPalette() {
           const row = rows[highlighted];
           if (row) row.action();
         }
-        return;
-      }
-
-      // ⌘↵ / Ctrl+↵ — "continue in chat" shortcut (ask-mode submit)
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        submitAsk(mode === "ask" ? query : displayQuery(query, mode));
         return;
       }
     },
@@ -256,6 +256,7 @@ export default function CommandPalette() {
         // Backspace cleared the ">" prefix — leave command mode
         setMode("default");
         setQuery("");
+        setConfirmPause(false);
         return;
       }
       setMode("default");

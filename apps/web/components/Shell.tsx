@@ -128,7 +128,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         {ready && !bare && <TaskDrawerLazy />}
         {ready && !bare && <ContextMenuHost />}
         {ready && !bare && <ChatLauncher />}
-        <CommandPalette />
+        {ready && !bare && <CommandPalette />}
         <div className="mobilebar">
           <Mark /><b style={{ fontWeight: 600 }}>{overview?.company_name || "Omilo"}</b>
           <span className="sp" />
