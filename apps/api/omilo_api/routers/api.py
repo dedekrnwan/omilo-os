@@ -1376,16 +1376,22 @@ def connectors_list(db: Session = Depends(get_db), user: User = Depends(current_
     from .. import capabilities as C
     from ..models import Connector
 
-    return [C.connector_public(c) for c in db.scalars(select(Connector).order_by(Connector.created_at))]
+    return [C.connector_public(c) for c in db.scalars(select(Connector).order_by(Connector.created_at))
+            if c.kind != "mcp"]
 
 
 @router.post("/connectors")
 def connector_add(body: ConnectorIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import capabilities as C
+    from .. import pieces as P
     from ..models import Connector
 
     if not C.SLUG.match(body.id) or body.id == "omilo":
         raise HTTPException(400, "id: lowercase letters, digits and dashes (and not omilo)")
+    if body.kind == "mcp":
+        raise HTTPException(400, "mcp connectors are managed from the marketplace")
+    if body.id in {p["slug"] for p in P.catalog()}:
+        raise HTTPException(400, "id is reserved by a marketplace connector")
     if db.get(Connector, body.id):
         raise HTTPException(409, "a connector with this id exists")
     c = Connector(id=body.id)
@@ -1402,7 +1408,7 @@ def connector_update(cid: str, body: ConnectorIn, db: Session = Depends(get_db),
     from ..models import Connector
 
     c = _404(db.get(Connector, cid), "unknown connector")
-    if c.kind == "piece":
+    if c.kind in ("piece", "mcp"):
         raise HTTPException(400, "piece connectors are managed from the marketplace")
     _connector_apply(c, body)
     S.audit(db, user.id, "connector.update", c.id, approval=c.approval, enabled=c.enabled)
