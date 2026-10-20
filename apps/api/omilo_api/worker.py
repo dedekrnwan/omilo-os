@@ -96,13 +96,27 @@ class Worker:
             log.exception("nudge ladder failed")
 
     def _budget(self, staff_id: str) -> None:
-        """Monthly budget: alert at 80%, pause the helper at 100%."""
+        """Monthly budget: alert at 80%, pause the helper at 100%.
+
+        Also runs the autonomy budget stop (C4): if the helper's month-to-date spend
+        crosses the effective autonomy threshold (explicit policy OR fraction of
+        budget_usd_month), the helper is paused and an owner alert is filed.  This
+        fires BEFORE the hard 100% cap and is guarded to alert at most once per month.
+        """
         from . import budgets
+        from .autonomy import check_autonomy_budget_stop
+        from .models import Staff
 
         try:
             with session_scope() as db:
-                budgets.check(db, staff_id)
+                hard_result = budgets.check(db, staff_id)
                 budgets.check_company(db)
+                # Autonomy budget stop: only run when the hard cap did NOT already
+                # pause the helper this cycle (avoids double-alert on same run).
+                if hard_result != "paused":
+                    st = db.get(Staff, staff_id)
+                    if st is not None:
+                        check_autonomy_budget_stop(db, st)
         except Exception:
             log.exception("budget check failed")
 

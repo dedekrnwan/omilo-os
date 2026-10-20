@@ -414,3 +414,132 @@ def test_no_escalate_plain_internal_permissive(db):
     escalate, reason = should_escalate(db, None, _plain_action())
     assert escalate is False
     assert reason == ""
+
+
+# ---------------------------------------------------------------------------
+# C4: effective_budget_stop + budget stop condition wired into the run path
+# ---------------------------------------------------------------------------
+
+from omilo_api.autonomy import effective_budget_stop  # noqa: E402
+
+
+def _staff_with_budget(db: Session, budget_usd_month: float | None = None) -> Staff:
+    """Insert a Staff with an optional monthly budget and return it."""
+    st = Staff(
+        id="helper-budget-test",
+        name="Budget Helper",
+        engine={"type": "fake"},
+        autonomy="standard",
+        budget_usd_month=budget_usd_month or 0,
+    )
+    db.add(st)
+    db.flush()
+    return st
+
+
+# C4-1: effective_budget_stop returns explicit policy value when set
+def test_effective_budget_stop_explicit_policy(db):
+    """When autonomy_budget_stop_usd is set, effective_budget_stop returns that value."""
+    db.add(Setting(key="autonomy_budget_stop_usd", value=42.0))
+    db.flush()
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    result = effective_budget_stop(db, st)
+    assert result == 42.0
+
+
+# C4-2: effective_budget_stop falls back to fraction of budget_usd_month
+def test_effective_budget_stop_fraction_fallback(db):
+    """With no explicit policy, effective_budget_stop returns DEFAULT_BUDGET_STOP_FRACTION * budget_usd_month."""
+    from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    result = effective_budget_stop(db, st)
+    assert result == pytest.approx(100.0 * DEFAULT_BUDGET_STOP_FRACTION)
+
+
+# C4-3: effective_budget_stop returns None when no policy and no budget_usd_month
+def test_effective_budget_stop_none_when_no_budget(db):
+    """With no policy and budget_usd_month=0 (unset), effective_budget_stop returns None."""
+    st = _staff_with_budget(db, budget_usd_month=0)
+    result = effective_budget_stop(db, st)
+    assert result is None
+
+
+# C4-4: helper with budget_usd_month but NO explicit stop escalates once spend crosses the fraction
+def test_should_escalate_budget_via_fraction(db):
+    """A helper with budget_usd_month but no explicit autonomy_budget_stop_usd escalates
+    when spend >= DEFAULT_BUDGET_STOP_FRACTION * budget_usd_month."""
+    from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    spend = 100.0 * DEFAULT_BUDGET_STOP_FRACTION  # exactly at threshold
+    escalate, reason = should_escalate(db, st, _plain_action(spend_usd=spend))
+    assert escalate is True
+    assert reason == "budget"
+
+
+# C4-5: spend below the effective threshold → no escalation
+def test_should_escalate_budget_below_fraction(db):
+    """Spend below DEFAULT_BUDGET_STOP_FRACTION * budget_usd_month must NOT escalate."""
+    from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    spend = 100.0 * DEFAULT_BUDGET_STOP_FRACTION - 0.01  # just under
+    escalate, reason = should_escalate(db, st, _plain_action(spend_usd=spend))
+    assert escalate is False
+    assert reason == ""
+
+
+# C4-6: when budget stop fires, the worker pauses the helper and files an owner alert
+def test_worker_budget_stop_pauses_helper_and_alerts(db):
+    """When month-to-date spend crosses the autonomy stop, the helper is paused and an alert is filed."""
+    from unittest.mock import patch, MagicMock
+    from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
+    from omilo_api.models import InboxItem, RunEvent
+    import datetime as dt
+
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    threshold = 100.0 * DEFAULT_BUDGET_STOP_FRACTION
+
+    # Simulate month-to-date spend above the threshold via a RunEvent
+    db.add(RunEvent(
+        staff_id=st.id,
+        kind="usage",
+        data={"tokens": 1000, "cost_usd": threshold + 1.0},
+    ))
+    db.flush()
+
+    # Guard: helper starts active
+    assert st.status == "active"
+
+    # Import and run the autonomy budget check as the worker would
+    from omilo_api.autonomy import check_autonomy_budget_stop
+    check_autonomy_budget_stop(db, st)
+
+    db.refresh(st)
+    assert st.status == "paused", "helper must be paused when autonomy budget stop fires"
+
+    alerts = db.query(InboxItem).filter(InboxItem.staff_id == st.id).all()
+    assert len(alerts) >= 1, "an owner alert must be filed"
+    assert "budget" in alerts[0].title.lower() or "autonomy" in alerts[0].title.lower()
+
+
+# C4-7: check_autonomy_budget_stop is idempotent — fires alert only once per month
+def test_worker_budget_stop_no_double_alert(db):
+    """A second call when the helper is already paused must NOT file another alert."""
+    from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
+    from omilo_api.models import InboxItem, RunEvent
+
+    st = _staff_with_budget(db, budget_usd_month=100.0)
+    threshold = 100.0 * DEFAULT_BUDGET_STOP_FRACTION
+
+    db.add(RunEvent(
+        staff_id=st.id,
+        kind="usage",
+        data={"tokens": 1000, "cost_usd": threshold + 5.0},
+    ))
+    db.flush()
+
+    from omilo_api.autonomy import check_autonomy_budget_stop
+    check_autonomy_budget_stop(db, st)
+    check_autonomy_budget_stop(db, st)  # second call
+
+    alerts = db.query(InboxItem).filter(InboxItem.staff_id == st.id).all()
+    assert len(alerts) == 1, "alert must fire exactly once, not on every call"
