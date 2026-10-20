@@ -223,6 +223,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
     <>
       <Err error={err} />
 
+      {/* Bulk action bar — appears when items are selected */}
       {selectedIds.size > 0 && (
         <div className="bulk-bar" role="toolbar" aria-label="Bulk actions">
           <span className="bulk-bar-count">{selectedIds.size} selected</span>
@@ -241,56 +242,126 @@ function BoardView({ onCount }: { onCount: () => void }) {
         </div>
       )}
 
-      {selectedIds.size === 0 && eligibleNeeds.length > 1 && (
-        <div className="bulk-hint">
-          <button className="btn sm quiet" onClick={selectAll}><i className="ri-checkbox-multiple-line" />Select all approvals and permissions</button>
-        </div>
-      )}
+      {/* Main + Side two-column layout */}
+      <div className="inbox2">
+        {/* Main: Needs you */}
+        <div className="inbox2-main">
+          <div className="inbox2-sec">
+            <span className="inbox2-sec-label"><i className="ri-user-voice-line" /> Needs you</span>
+            <span className="inbox2-sec-count">{b.needs.length}</span>
+          </div>
 
-      <div className="board">
-        <Column title="Needs you" count={b.needs.length} icon={<i className="ri-user-voice-line bcol-i needs" />} empty="Nothing waiting on you.">
-          {b.needs.map((c) => {
-            const eligible = BULK_ELIGIBLE.has(c.kind);
-            const checked = selectedIds.has(c.id);
-            return (
-              <div key={c.id} className={`bcard-wrap${eligible ? " has-check" : ""}${checked ? " bcard-wrap-sel" : ""}`}>
-                {eligible && (
-                  <input
-                    type="checkbox"
-                    className="bcard-check"
-                    checked={checked}
-                    readOnly
-                    aria-label={`Select ${c.title}`}
-                    onClick={(e) => toggleSelect(c.id, e)}
-                    onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleSelect(c.id, e); } }}
-                  />
-                )}
-                <Card c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
-                  items={() => needItems(c)}
-                  indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
-                  time={dur(since(c.since, now))}
-                  tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
-                    {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
-              </div>
-            );
-          })}
-        </Column>
-        <Column title="Running" count={b.running.length} icon={<span className="spin bcol-i" />} empty="No helper is working right now.">
-          {b.running.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
-              items={() => taskItems({ id: c.id, staff_id: c.staff.id, brief: `${c.title}\n${c.summary}`, status: c.status }, c.staff.name, load)}
-              indicator={c.status === "queued" ? <i className="ri-hourglass-line bc-ind wait" title="Waiting for a free spot" /> : <span className="spin bc-ind" />}
-              time={c.status === "queued" ? "queued" : dur(since(c.started_at, now))} />
-          ))}
-        </Column>
-        <Column title="Done" count={b.done.length} icon={<i className="ri-checkbox-circle-line bcol-i done" />} empty="Finished jobs from the last two days show here.">
-          {b.done.map((c) => (
-            <Card key={c.id} c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => openTask(c.id)}
-              items={() => taskItems({ id: c.id, staff_id: c.staff.id, brief: c.title, status: c.status }, c.staff.name, load)}
-              indicator={<span className={`bc-dot ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "off"}`} title={c.status} />}
-              time={dur(c.seconds)} />
-          ))}
-        </Column>
+          {b.needs.length === 0 ? (
+            <div className="inbox2-empty">Nothing waiting on you.</div>
+          ) : (
+            <>
+              {/* Bulk-select hint shown above cards when eligible items exist and none selected */}
+              {selectedIds.size === 0 && eligibleNeeds.length > 1 && (
+                <div className="inbox2-bulk-hint">
+                  <button className="btn sm quiet" onClick={selectAll}><i className="ri-checkbox-multiple-line" />Select all approvals and permissions</button>
+                  <span className="sp" />
+                  <button className="btn sm primary" onClick={() => { selectAll(); }}>
+                    <i className="ri-check-double-line" />Approve all {eligibleNeeds.length}
+                  </button>
+                </div>
+              )}
+
+              {b.needs.map((c) => {
+                const eligible = BULK_ELIGIBLE.has(c.kind);
+                const checked = selectedIds.has(c.id);
+                return (
+                  <div key={c.id} className={`bcard-wrap${eligible ? " has-check" : ""}${checked ? " bcard-wrap-sel" : ""}`}>
+                    {eligible && (
+                      <input
+                        type="checkbox"
+                        className="bcard-check"
+                        checked={checked}
+                        readOnly
+                        aria-label={`Select ${c.title}`}
+                        onClick={(e) => toggleSelect(c.id, e)}
+                        onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleSelect(c.id, e); } }}
+                      />
+                    )}
+                    <Card c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
+                      items={() => needItems(c)}
+                      indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
+                      time={dur(since(c.since, now))}
+                      tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
+                        {c.blocking && <span className="chip warn">Blocking</span>}{c.item.proposal && c.item.proposal.risk === "high" && <span className="chip down">High risk</span>}</div>} />
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+
+        {/* Side: Running now + Done today */}
+        <div className="inbox2-side">
+          {/* Running now section */}
+          <div className="inbox2-sec">
+            <span className="inbox2-sec-label"><span className="spin inbox2-spin" />Running now</span>
+            <span className="inbox2-sec-count">{b.running.length}</span>
+          </div>
+
+          {b.running.length === 0 ? (
+            <div className="inbox2-empty inbox2-idle">No helper is working right now.</div>
+          ) : (
+            <div className="inbox2-run-list">
+              {b.running.map((c) => (
+                <div key={c.id} className="side-item" role="button" tabIndex={0}
+                  onClick={() => openTask(c.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(c.id); } }}
+                  onContextMenu={menu(() => taskItems({ id: c.id, staff_id: c.staff.id, brief: `${c.title}\n${c.summary}`, status: c.status }, c.staff.name, load))}>
+                  <div className="side-item-lead">
+                    <Avatar who={c.staff} size={24} />
+                    {c.status === "queued"
+                      ? <i className="ri-hourglass-line side-status-icon wait" title="Queued" />
+                      : <span className="spin side-status-spin" />}
+                  </div>
+                  <div className="side-item-body">
+                    <span className="side-item-title">{c.title}</span>
+                    <span className="side-item-meta">
+                      {c.staff.name} · {c.status === "queued" ? "queued" : dur(since(c.started_at, now))}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Done today section */}
+          <div className="inbox2-sec inbox2-sec-done">
+            <span className="inbox2-sec-label"><i className="ri-checkbox-circle-line inbox2-done-icon" /> Done today</span>
+            <span className="inbox2-sec-count">{b.done.length}</span>
+          </div>
+
+          {b.done.length === 0 ? (
+            <div className="inbox2-empty">Finished jobs from the last two days show here.</div>
+          ) : (
+            <div className="inbox2-done-list">
+              {b.done.map((c) => (
+                <div key={c.id} className="side-item side-item-done" role="button" tabIndex={0}
+                  onClick={() => openTask(c.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(c.id); } }}
+                  onContextMenu={menu(() => taskItems({ id: c.id, staff_id: c.staff.id, brief: c.title, status: c.status }, c.staff.name, load))}>
+                  <div className="side-item-lead">
+                    <Avatar who={c.staff} size={22} />
+                  </div>
+                  <div className="side-item-body">
+                    <span className="side-item-title">{c.title}</span>
+                    <span className="side-item-meta">
+                      <span className={`bc-dot ${c.status === "done" ? "ok" : c.status === "failed" ? "bad" : "off"}`} style={{ display: "inline-block", marginRight: 4, verticalAlign: "1px" }} />
+                      {dur(c.seconds)}{c.searches ? ` · ${c.searches} sources` : ""}{c.steps.length ? ` · ${c.steps.length} steps` : ""}
+                    </span>
+                  </div>
+                  <span className={`chip ${c.status === "done" ? "up" : c.status === "failed" ? "down" : "outline"} side-done-chip`}>
+                    {c.status === "done" ? "Done" : c.status === "failed" ? "Failed" : c.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {denyDialogOpen && (
@@ -378,14 +449,18 @@ export default function Inbox() {
   const pick = (v: "board" | "list" | "map") => { setView(v); try { localStorage.setItem("omilo.inbox.view", v); } catch { /* ignore */ } };
   return (
     <div className="inbox-page">
-      <div className="sechead" style={{ alignItems: "flex-end", marginBottom: 16 }}>
-        <div><h1 style={{ marginBottom: 4 }}>Inbox</h1>
-          <p className="sub" style={{ margin: 0 }}>Your helpers propose, you decide. Whatever you approve is done exactly as written.</p></div>
-        <span className="sp" />
-        <div className="seg" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-layout-column-line" /> Board</button>
-          <button role="tab" aria-selected={view === "list"} className={view === "list" ? "on" : ""} onClick={() => pick("list")}><i className="ri-list-unordered" /> List</button>
-          <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => pick("map")}><i className="ri-node-tree" /> Map</button>
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Inbox</h1>
+          <p className="ph2-sub">Your helpers propose, you decide.</p>
+        </div>
+        <div className="ph2-actions">
+          <div className="seg" role="tablist" aria-label="View">
+            <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-layout-column-line" /> Board</button>
+            <button role="tab" aria-selected={view === "list"} className={view === "list" ? "on" : ""} onClick={() => pick("list")}><i className="ri-list-unordered" /> List</button>
+            <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => pick("map")}><i className="ri-node-tree" /> Map</button>
+          </div>
         </div>
       </div>
       {view === "board" ? <BoardView onCount={refresh} /> : view === "list" ? <ListView onCount={refresh} /> : <WorkMap />}

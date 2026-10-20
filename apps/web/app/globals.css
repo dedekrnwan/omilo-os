@@ -917,6 +917,70 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 .bc-open { display: flex; justify-content: flex-end; margin-top: 8px; }
 .itemdetail .paper { margin-bottom: 8px; }
 @media (max-width: 900px) { .board { grid-template-columns: 1fr; } }
+
+/* ---- Inbox v2: Page Header ---- */
+.ph2 { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.ph2-text { flex: 1; min-width: 0; }
+.ph2-title { font: 600 26px/1.2 var(--font-display); letter-spacing: -.02em; margin: 0 0 4px; color: var(--ink); }
+.ph2-sub { font-size: 14px; color: var(--muted); margin: 0; }
+.ph2-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+@media (max-width: 560px) {
+  .ph2 { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .ph2-title { font-size: 22px; }
+}
+
+/* ---- Inbox v2: Main + Side two-column layout ---- */
+.inbox2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.inbox2-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.inbox2-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* Section header row (label + count badge) */
+.inbox2-sec { display: flex; align-items: center; gap: 8px; padding: 6px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.inbox2-sec-done { margin-top: 20px; }
+.inbox2-sec-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; flex: 1; }
+.inbox2-sec-label i { font-size: 14px; color: var(--muted); }
+.inbox2-sec-label .inbox2-done-icon { color: #16a34a; }
+.inbox2-sec-count { min-width: 20px; height: 18px; padding: 0 6px; border-radius: 5px; background: var(--line-strong);
+  color: var(--ink-2); font: 500 11px/18px var(--font-mono); letter-spacing: 0; text-align: center; }
+.inbox2-spin { display: inline-block; width: 11px; height: 11px; border: 1.5px solid var(--line-strong); border-top-color: var(--ink); border-radius: 50%;
+  animation: spin .8s linear infinite; flex-shrink: 0; }
+
+/* Empty / idle states */
+.inbox2-empty { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 18px 12px; text-align: center; font-size: 13px; color: var(--muted); }
+.inbox2-idle { border-style: dashed; background: transparent; }
+
+/* Bulk-hint bar above the needs list */
+.inbox2-bulk-hint { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+  background: var(--soft); border: 1px solid var(--line); border-radius: var(--r-md); }
+.inbox2-bulk-hint .sp { flex: 1; }
+
+/* Running now list */
+.inbox2-run-list { display: flex; flex-direction: column; gap: 6px; }
+.inbox2-done-list { display: flex; flex-direction: column; gap: 4px; }
+
+/* Compact side item (running / done) */
+.side-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s, background .15s; }
+.side-item:hover { border-color: var(--line-strong); background: var(--soft); }
+.side-item:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+.side-item-done { opacity: .85; }
+.side-item-done:hover { opacity: 1; }
+.side-item-lead { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.side-status-icon { font-size: 13px; color: var(--muted); }
+.side-status-spin { display: inline-block; width: 10px; height: 10px; border: 1.5px solid var(--line-strong); border-top-color: var(--info); border-radius: 50%;
+  animation: spin .8s linear infinite; }
+.side-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.side-item-title { font-size: 13px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item-meta { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-done-chip { flex-shrink: 0; height: 18px; font-size: 11px; padding: 0 6px; }
+
+/* Responsive: collapse to single column at <760px */
+@media (max-width: 760px) {
+  .inbox2 { grid-template-columns: 1fr; }
+  .inbox2-side { order: 2; }
+  .inbox2-main { order: 1; }
+}
+
 /* ---- bulk-select bar & card wrappers ---- */
 .bulk-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); }
 .bulk-bar-count { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
