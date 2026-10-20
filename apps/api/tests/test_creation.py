@@ -32,10 +32,22 @@ import uuid
 
 import pytest
 
+from conftest import cleanup_main_company_non_terminal_tasks
 from omilo_api import mcp_server as mcp
 from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.models import Goal, Setting, Staff, StaffRelation, Task
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_creation_tasks():
+    """At module teardown, purge non-terminal Task rows (and open threads/inbox items)
+    created by this module in the shared MAIN company so the background worker's
+    dispatch slots stay free for later test modules (e.g. test_harness).
+    Covers all staff id prefixes used by this module's helpers."""
+    yield
+    for prefix in ("test-", "d2cos-", "d2st-", "d2noperm-"):
+        cleanup_main_company_non_terminal_tasks(prefix)
 
 
 # ---------------------------------------------------------------------------

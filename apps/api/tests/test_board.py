@@ -11,9 +11,19 @@ import threading
 
 import pytest
 
+from conftest import cleanup_main_company_non_terminal_tasks
 from omilo_api import board
 from omilo_api.db import session_scope
 from omilo_api.models import Staff, Task, Thread
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_board_tasks():
+    """At module teardown, purge non-terminal rows created by this module from the
+    shared MAIN company so the background worker's dispatch slots stay free for
+    later test modules (e.g. test_harness)."""
+    yield
+    cleanup_main_company_non_terminal_tasks("bd_staff_")
 
 
 # ---------------------------------------------------------------------------

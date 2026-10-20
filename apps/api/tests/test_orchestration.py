@@ -41,9 +41,20 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
+from conftest import cleanup_main_company_non_terminal_tasks
 from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.models import Goal, Staff, StaffRelation, Task, TaskGoal
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_orchestration_tasks():
+    """At module teardown, purge non-terminal Task rows (and open threads/inbox items)
+    created by this module's B1 tests in the shared MAIN company so the background
+    worker's dispatch slots stay free for later test modules (e.g. test_harness).
+    B2-B6 tests use isolated cids and clean up themselves."""
+    yield
+    cleanup_main_company_non_terminal_tasks("test-")
 
 
 # ---------------------------------------------------------------------------

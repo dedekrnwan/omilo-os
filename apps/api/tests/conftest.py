@@ -89,3 +89,56 @@ def wait_for(fn, timeout=15.0, every=0.1):
             return v
         time.sleep(every)
     raise AssertionError("condition not met in time")
+
+
+def cleanup_main_company_non_terminal_tasks(staff_id_prefix: str) -> None:
+    """Delete non-terminal Task rows (and their synthetic Staff/Thread/InboxItem rows)
+    whose staff_id starts with *staff_id_prefix* from the shared MAIN company.
+
+    Called at module teardown by autouse fixtures in test_worklog, test_board,
+    test_orchestration, and test_creation to prevent slot saturation in the shared
+    worker that later causes test_harness dispatch timeouts.
+
+    Only deletes rows created by the feature-test modules (identified by prefix) so
+    we never interfere with tasks that test_harness / test_pool_wait are waiting on.
+    """
+    from sqlalchemy import delete, select
+
+    from omilo_api.db import session_scope
+    from omilo_api.models import InboxItem, Staff, Task, Thread
+
+    NON_TERMINAL = ("queued", "running", "waiting")
+
+    with session_scope() as db:
+        # Find all staff rows whose id starts with the given prefix
+        staff_ids = list(db.scalars(
+            select(Staff.id).where(Staff.id.like(staff_id_prefix + "%"))
+        ))
+        if not staff_ids:
+            return
+
+        # Delete non-terminal tasks for these staff
+        db.execute(
+            delete(Task).where(
+                Task.staff_id.in_(staff_ids),
+                Task.status.in_(NON_TERMINAL),
+            )
+        )
+
+        # Also delete any awaiting-reply threads (live work) these staff left open
+        db.execute(
+            delete(Thread).where(
+                Thread.staff_id.in_(staff_ids),
+                Thread.awaiting_reply.is_(True),
+            )
+        )
+
+        # Delete any open InboxItems for these staff
+        db.execute(
+            delete(InboxItem).where(
+                InboxItem.staff_id.in_(staff_ids),
+                InboxItem.status == "open",
+            )
+        )
+
+        db.commit()
