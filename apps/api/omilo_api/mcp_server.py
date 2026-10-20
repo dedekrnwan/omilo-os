@@ -197,6 +197,13 @@ TOOLS: list[dict] = [
                                                       "task_id": _s("string", "your task id")}, "required": ["workflow_id"]}},
     {"name": "get_workflow_run", "description": "Status and step outputs of a workflow run.",
      "inputSchema": {"type": "object", "properties": {"run_id": _s("string", "run id")}, "required": ["run_id"]}},
+    {"name": "complete_goal", "description": "Mark a goal as done after reviewing all work against its target. "
+                                             "Writes an audit trail with the outcome. Available to the Chief of Staff "
+                                             "and any reviewing staff (staff with staff.delegate permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "goal_id": _s("string", "id of the goal to complete"),
+         "outcome": _s("string", "one or two sentences summarising what was achieved"),
+     }, "required": ["goal_id", "outcome"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -502,6 +509,23 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         return "allowed", {"ok": True}
     if name in ("list_workflows", "workflow_blocks", "propose_workflow", "run_workflow", "get_workflow_run"):
         return _workflow_tool(db, st, name, args)
+    if name == "complete_goal":
+        from .models import Goal
+
+        # Permission: CoS or reviewing staff (staff.delegate >= DO_AND_TELL).
+        if not st.is_chief and policy.level_for("staff.delegate", st.permissions) < policy.DO_AND_TELL:
+            raise S.DomainError("only the Chief of Staff or a reviewing staff member may complete a goal", 403)
+        goal_id = str(args.get("goal_id") or "")
+        outcome = str(args.get("outcome") or "").strip()
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise S.DomainError(f"unknown goal '{goal_id}'", 404)
+        # Idempotent: if already done (or dropped), return ok without overwriting.
+        if g.status != "done":
+            g.status = "done"
+        S.audit(db, f"staff:{st.id}", "goal.complete", goal_id, outcome=outcome)
+        db.commit()
+        return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
     raise S.DomainError(f"unknown tool {name}", 404)
 
 

@@ -815,3 +815,158 @@ def test_b5_done_goal_enqueues_no_review():
     _finish_success(cid, child_id)
 
     assert _count_review_tasks(cid, child_id) == 0
+
+
+# ---------------------------------------------------------------------------
+# Task B6 — Goal termination: complete_goal MCP tool + loop-termination guards
+# ---------------------------------------------------------------------------
+# Each test uses its own isolated company so there is no cross-test bleed.
+
+def _isolated_b6_cid() -> str:
+    return "b6test-" + uuid.uuid4().hex[:10]
+
+
+def _make_b6_cos(cid: str) -> str:
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b6-cos-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.commit()
+    return cos_id
+
+
+def _make_b6_goal(cid: str, status: str = "active") -> str:
+    with C.use(cid), session_scope(cid) as db:
+        g = Goal(title="B6 goal " + uuid.uuid4().hex[:6],
+                 target="Ship it with numbers", status=status)
+        db.add(g)
+        db.commit()
+        return g.id
+
+
+async def _call_complete_goal(cid: str, cos_id: str, goal_id: str, outcome: str) -> dict:
+    from omilo_api import mcp_server as mcp
+
+    with C.use(cid), session_scope(cid) as db:
+        cos = db.get(Staff, cos_id)
+        _decision, result = await mcp.call_tool(db, cos, "complete_goal",
+                                                {"goal_id": goal_id, "outcome": outcome})
+    return result
+
+
+def test_b6_complete_goal_sets_status_done():
+    """complete_goal sets the goal status to 'done' and writes an audit row."""
+    import asyncio
+    from omilo_api.models import AuditEvent
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    goal_id = _make_b6_goal(cid)
+
+    result = asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "All targets met — shipped.")
+    )
+
+    assert result.get("ok") is True
+
+    with C.use(cid), session_scope(cid) as db:
+        g = db.get(Goal, goal_id)
+        assert g is not None
+        assert g.status == "done"
+        audit_row = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "goal.complete",
+                AuditEvent.ref == goal_id,
+            )
+        )
+        assert audit_row is not None, "an audit row for goal.complete must exist"
+
+
+def test_b6_complete_goal_unknown_raises():
+    """complete_goal with an unknown goal_id raises DomainError(404)."""
+    import asyncio
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+
+    with pytest.raises(S.DomainError) as exc_info:
+        asyncio.get_event_loop().run_until_complete(
+            _call_complete_goal(cid, cos_id, "gol-nonexistent-xxxx", "done")
+        )
+
+    assert exc_info.value.code == 404
+
+
+def test_b6_complete_goal_already_done_is_idempotent():
+    """complete_goal on an already-done goal returns ok without error (idempotent)."""
+    import asyncio
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    goal_id = _make_b6_goal(cid, status="done")
+
+    result = asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "already done")
+    )
+
+    assert result.get("ok") is True
+
+    with C.use(cid), session_scope(cid) as db:
+        g = db.get(Goal, goal_id)
+        assert g.status == "done"
+
+
+def test_b6_done_goal_start_planning_is_noop():
+    """After complete_goal, start_planning enqueues NO plan task (loop terminates)."""
+    import asyncio
+    from omilo_api import plan as P
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    goal_id = _make_b6_goal(cid)
+
+    # Complete the goal via the MCP tool
+    asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "All done.")
+    )
+
+    # Now try to start planning — should be a no-op
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)
+
+    with C.use(cid), session_scope(cid) as db:
+        plan_count = db.scalar(
+            select(func.count()).select_from(Task).join(
+                TaskGoal, TaskGoal.task_id == Task.id
+            ).where(TaskGoal.goal_id == goal_id, Task.origin == "plan")
+        ) or 0
+
+    assert plan_count == 0, f"start_planning must not enqueue a plan task for a done goal, got {plan_count}"
+
+
+def test_b6_done_goal_enqueue_review_is_noop():
+    """After complete_goal, _enqueue_review for a child of that goal creates no review task
+    (the orchestration loop terminates — the B5 guard on goal.status != 'active' holds)."""
+    import asyncio
+
+    cid = _isolated_b6_cid()
+    cos_id = _make_b6_cos(cid)
+    worker_sid = _make_b5_worker_staff(cid)  # reuse B5 helper to create a worker
+    goal_id = _make_b6_goal(cid)
+    child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
+
+    # Complete the goal, then finish the child — no review should be enqueued
+    asyncio.get_event_loop().run_until_complete(
+        _call_complete_goal(cid, cos_id, goal_id, "Goal completed before child finished.")
+    )
+    _finish_success(cid, child_id)
+
+    with C.use(cid), session_scope(cid) as db:
+        review_count = db.scalar(
+            select(func.count()).select_from(Task).where(
+                Task.origin == "review", Task.parent_task_id == child_id
+            )
+        ) or 0
+
+    assert review_count == 0, f"_enqueue_review must not create a review for a done goal, got {review_count}"
