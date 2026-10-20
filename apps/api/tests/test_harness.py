@@ -155,6 +155,7 @@ def test_accounts_validation_and_test(owner, fake_cli):
 
 
 def test_pool_failover_resumes_session(owner, fake_cli):
+    owner.post("/api/harness/pool-consent")  # idempotent; the Task-5 consent tests may have cleared it in a shared session
     lim = owner.post("/api/harness/accounts", json={"label": "Limited", "token": OK1}).json()
     good = owner.post("/api/harness/accounts", json={"label": "Good", "token": LIMITED}).json()
     # make the limited one the least recently used, so it is tried first
@@ -216,6 +217,7 @@ def test_auto_mode_spills_over_to_api_key_when_pool_empty(owner, fake_cli, monke
     """Provider 'claude-code' is the hybrid 'auto' mode: with no pool account free it must fall back to the
     company's API key (same CLI) rather than erroring, so work still runs."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-" + "z" * 24 + "APIKEY")
+    owner.post("/api/harness/pool-consent")  # idempotent; the Task-5 consent tests may have cleared it in a shared session
     # guarantee an empty effective pool regardless of accounts other tests left behind
     for a in owner.get("/api/harness").json()["accounts"]:
         if a["enabled"]:

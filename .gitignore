@@ -28,3 +28,6 @@ Claude outputs/
 # setuptools scratch (scripts/desktop/build-runtime.sh)
 apps/api/build/
 .superpowers/
+
+# Superpowers SDD scratch workspace (ledger, briefs, reports, review diffs)
+.superpowers/

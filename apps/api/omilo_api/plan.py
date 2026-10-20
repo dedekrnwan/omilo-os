@@ -35,6 +35,57 @@ def _link_goals(session: Session, flush_context, instances) -> None:  # noqa: AR
             session.add(TaskGoal(task_id=o.id, goal_id=gid))
 
 
+def start_planning(db: Session, goal_id: str) -> None:
+    """Enqueue exactly one planner Task for *goal_id*.
+
+    - No-op if the goal is not active (done / dropped / missing).
+    - No-op if a plan-origin task already exists for this goal (open or done).
+    - No-op if there is no Chief of Staff.
+
+    The created task instructs the CoS to read the goal's target and create one
+    role-assigned sub-task per spec needed to achieve it via ``create_task``.
+    """
+    from sqlalchemy import select
+
+    from .services import chief, create_task
+
+    g = db.get(Goal, goal_id)
+    if g is None or g.status != "active":
+        return
+
+    cos = chief(db)
+    if cos is None:
+        return
+
+    # Idempotency guard: don't create a second plan task if one already exists.
+    existing = db.scalar(
+        select(Task).join(TaskGoal, TaskGoal.task_id == Task.id).where(
+            TaskGoal.goal_id == goal_id,
+            Task.origin == "plan",
+        )
+    )
+    if existing is not None:
+        return
+
+    brief = (
+        f"PLANNER RUN — Goal: {g.title}\n\n"
+        f"Target: {g.target or '(no target set)'}\n\n"
+        "Read the goal target above and decompose it into the minimum set of "
+        "role-assigned sub-tasks needed to achieve it. For each spec, call "
+        "`create_task(role=<role>, brief=<detailed spec>, goal_id=<goal_id>)`. "
+        "Assign each task to the staff best suited by role. "
+        "Do NOT execute the tasks yourself — your job is to plan and delegate."
+    )
+    create_task(
+        db,
+        staff_id=cos.id,
+        origin="plan",
+        brief=brief,
+        created_by="system",
+        goal_id=goal_id,
+    )
+
+
 def goals_for_prompt(db: Session) -> list[dict]:
     return [{"id": g.id, "title": g.title, "target": g.target, "due": g.due}
             for g in db.scalars(select(Goal).where(Goal.status == "active").order_by(Goal.position, Goal.created_at))]
@@ -73,6 +124,8 @@ def _node(t: Task, names: dict, reps: dict, props: dict, kids: dict) -> dict:
 
 def tree(db: Session, days: int = 30) -> dict:
     seed_from_onboarding(db)
+    from .services import seed_relations
+    seed_relations(db)
     since = now() - dt.timedelta(days=days)
     tasks = list(db.scalars(select(Task).where(Task.created_at >= since).order_by(Task.created_at)))
     ids = {t.id for t in tasks}

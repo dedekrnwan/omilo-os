@@ -13,7 +13,7 @@ import { InboxItem, ago, api } from "@/lib/api";
 import { chatWith, helperItems, taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { openTask, openThread } from "@/lib/open";
-import { usePoll } from "@/lib/poll";
+import { useBoardStream, usePoll } from "@/lib/poll";
 import { confirmDialog } from "@/lib/dialog";
 
 /* The Inbox: a board of what needs you, what is running and what just finished (or the classic list with history). */
@@ -100,6 +100,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
   const [denyNote, setDenyNote] = useState("");
   const load = useCallback(async () => { try { setB(await api<Board>("/board")); setErr(null); } catch (e: any) { setErr(e.message); } }, []);
   usePoll(load, () => (b?.running.length ? 4000 : 20000), [load], (n) => n?.kind === "inbox" || n?.kind === "nudge" || n?.kind?.startsWith("job") || n?.kind === "local");
+  useBoardStream(load);
   const now = useNow(!!b?.running.length || !!b?.needs.length);
   const seenIds = useRef<Set<string>>(new Set());
   useEffect(() => {

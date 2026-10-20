@@ -23,6 +23,7 @@ DEFAULTS: dict[str, int] = {
     "staff.change": ASK,
     "staff.delegate": OFF,  # Chief of Staff gets AUTO
     "kpi.write": OFF,  # Finance gets AUTO
+    "goal.create": OFF,  # Chief of Staff and planning-capable staff get DO_AND_TELL+
     "connector.install": ASK,
     "connector.grant": ASK,
     "skill.change": ASK,

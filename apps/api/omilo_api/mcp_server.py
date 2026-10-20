@@ -14,8 +14,11 @@ from sqlalchemy import select
 from . import policy
 from . import services as S
 from .db import get_db
-from .models import Proposal, Staff, Task, ToolCall
+from .models import Proposal, Staff, StaffRelation, Task, ToolCall
 from .security import staff_from_mcp_token
+
+# Maximum delegation chain depth.  Configurable via Setting("delegation_max_depth"); falls back to this.
+MAX_DELEGATION_DEPTH = 2
 
 router = APIRouter()
 SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
@@ -27,6 +30,10 @@ INSTRUCTIONS = (
     "Work you repeat (same steps every day or week) should become a workflow: check list_workflows and run one if it fits; "
     "otherwise suggest one with propose_workflow (the founder approves it)."
 )
+
+
+# Minimum summary length for the learn tool's structural quality gate (no LLM call).
+MIN_LEARN_CHARS = 40
 
 
 def _s(type_, desc, **extra):
@@ -146,6 +153,15 @@ TOOLS: list[dict] = [
                                                       "kind": _s("string", "web | connector | note (default: web when url is given, else note)",
                                                                  enum=["web", "connector", "note"]),
                                                       "task_id": _s("string", "your task id")}, "required": ["title", "text"]}},
+    {"name": "learn", "description": "Capture a researched finding into the team knowledge base so every helper can recall it. "
+                                     "Requires at least 40 characters. Web-sourced findings (from a URL) require source_url. "
+                                     "Same source_url = update (no duplicates). "
+                                     "Stores source, confidence and who learned it in metadata.",
+     "inputSchema": {"type": "object", "properties": {
+         "summary": _s("string", "the finding (minimum 40 chars), plain text or Markdown"),
+         "source_url": _s("string", "URL where the finding came from (required when the summary is from a web source)"),
+         "confidence": _s("string", "how sure you are: high | medium | low | unverified (default: unverified)"),
+     }, "required": ["summary"]}},
     {"name": "review_week", "description": "Chief of Staff, for the weekly retro: every loop's scorecard, each helper's jobs, your decisions "
                                             "and notes, their lessons and schedules, and recent improvements with their measured effect.",
      "inputSchema": {"type": "object", "properties": {"days": _s("integer", "how many days back (default 7)")}, "required": []}},
@@ -168,10 +184,13 @@ TOOLS: list[dict] = [
     {"name": "update_kpi", "description": "Record a KPI value with its source (Finance only unless permitted).",
      "inputSchema": {"type": "object", "properties": {"name": _s("string", "kpi name"), "value": _s("number", "value"),
                      "period": _s("string", "e.g. 2026-W42"), "source": _s("string", "where the number comes from")}, "required": ["name", "value", "source"]}},
-    {"name": "create_task", "description": "Delegate a task to another staff agent (Chief of Staff only unless permitted).",
-     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "who should do it"), "brief": _s("string", "what to do and why"),
+    {"name": "create_task", "description": "Delegate a task to another staff agent (Chief of Staff only unless permitted). "
+                                           "Specify the assignee via staff_id (exact id) or role (e.g. 'marketing'); one of the two is required.",
+     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "who should do it (exact id); alternative to role"),
+                     "role": _s("string", "the role to delegate to, e.g. 'marketing'; alternative to staff_id"),
+                     "brief": _s("string", "what to do and why"),
                      "parent_task_id": _s("string", "your task id"),
-                     "goal_id": _s("string", "the founder's goal this serves (ids from get_context → goals); sub-jobs inherit it")}, "required": ["staff_id", "brief"]}},
+                     "goal_id": _s("string", "the founder's goal this serves (ids from get_context → goals); sub-jobs inherit it")}, "required": ["brief"]}},
     {"name": "log_usage", "description": "Report tokens and cost spent on a task (for the budget meter).",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id"), "tokens": _s("integer", "tokens"),
                      "cost_usd": _s("number", "cost in USD")}, "required": ["task_id"]}},
@@ -194,6 +213,30 @@ TOOLS: list[dict] = [
                                                       "task_id": _s("string", "your task id")}, "required": ["workflow_id"]}},
     {"name": "get_workflow_run", "description": "Status and step outputs of a workflow run.",
      "inputSchema": {"type": "object", "properties": {"run_id": _s("string", "run id")}, "required": ["run_id"]}},
+    {"name": "complete_goal", "description": "Mark a goal as done after reviewing all work against its target. "
+                                             "Writes an audit trail with the outcome. Available to the Chief of Staff "
+                                             "and any reviewing staff (staff with staff.delegate permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "goal_id": _s("string", "id of the goal to complete"),
+         "outcome": _s("string", "one or two sentences summarising what was achieved"),
+     }, "required": ["goal_id", "outcome"]}},
+    {"name": "create_goal", "description": "Create a new company goal and immediately start decomposing it into tasks. "
+                                           "The goal enters active status at once and the planner is enqueued. "
+                                           "Available to the Chief of Staff and planning-capable staff (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "title": _s("string", "short goal title"),
+         "target": _s("string", "what success looks like, with numbers"),
+         "due": _s("string", "optional deadline, e.g. 2026-12-31"),
+     }, "required": ["title", "target"]}},
+    {"name": "update_goal", "description": "Update one or more fields of an existing goal (title, target, status). "
+                                           "status must be active, done or dropped. Available to the Chief of Staff "
+                                           "and planning-capable staff (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "goal_id": _s("string", "id of the goal to update"),
+         "status": _s("string", "new status: active | done | dropped", enum=["active", "done", "dropped"]),
+         "title": _s("string", "new title"),
+         "target": _s("string", "new target description"),
+     }, "required": ["goal_id"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -242,9 +285,9 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             db, st, task_id_arg, args["title"], args["type"], args.get("risk", "medium"), args["body"],
             thread_id=th.id if th else None, th=th,
         )
-        # Graph-brain staff: the Chief of Staff rules low/medium proposals inline (same
-        # seam as request_action). high / no-CoS / the CoS's own action fall through to
-        # the owner. single_engine is byte-for-byte unchanged (returns None).
+        # Under permissive autonomy mode, the Chief of Staff rules low/medium proposals inline
+        # for any brain. high / no-CoS / the CoS's own action / strict mode fall through to
+        # the owner.
         ruled = S._cos_rule(db, st, p)
         if ruled is not None:
             return "allowed", {"proposal_id": p.id, "message": "The Chief of Staff approved this."}
@@ -323,6 +366,58 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         src = kb.put(db, kind, ref, str(args["title"]), str(args["text"])[:200_000], url=str(args.get("url") or ""), staff_id=st.id,
                      meta={"added_by": st.id, "task_id": args.get("task_id")})
         return "allowed", {"source_id": src.id, "chunks": src.chunks}
+
+    if name == "learn":
+        import hashlib as _hl
+        import re as _re
+        from . import kb
+
+        summary = str(args.get("summary") or "").strip()
+        source_url = str(args.get("source_url") or "").strip() or None
+        confidence = str(args.get("confidence") or "unverified").strip() or "unverified"
+
+        # --- Structural gate 1: minimum length ---
+        if len(summary) < MIN_LEARN_CHARS:
+            raise S.DomainError(
+                f"summary is too short ({len(summary)} chars); minimum is {MIN_LEARN_CHARS} — "
+                "please provide a complete finding"
+            )
+
+        # --- Structural gate 2: web-sourced content requires source_url ---
+        # Detect a URL reference in the summary text (http:// or https://).
+        _has_web_ref = bool(_re.search(r"https?://", summary, _re.I))
+        if _has_web_ref and not source_url:
+            raise S.DomainError(
+                "the summary references a URL but no source_url was provided; "
+                "web-sourced findings require a source_url for attribution"
+            )
+
+        # --- Choose kind and ref ---
+        if source_url:
+            kind = "web"
+            ref = source_url  # normalized dedup key: same URL → same ref → upsert
+        else:
+            kind = "note"
+            # Stable slug from the first 200 chars of summary so repeated calls with the
+            # same wording upsert; different wording creates a new entry.
+            slug = _hl.sha256(summary[:200].encode()).hexdigest()[:32]
+            ref = f"learning:{st.id}:{slug}"
+
+        # --- Title: first line of summary (truncated) ---
+        title = (summary.splitlines()[0] or summary)[:200]
+
+        # --- Store with attribution meta ---
+        meta = {
+            "source": source_url or "internal",
+            "confidence": confidence,
+            "learned_by": st.id,
+        }
+        src = kb.put(db, kind, ref, title, summary[:200_000],
+                     url=source_url or "", staff_id=st.id, meta=meta)
+        S.audit(db, f"staff:{st.id}", "learn", src.id,
+                kind=kind, confidence=confidence, source=source_url or "internal")
+        return "allowed", {"ok": True, "source_id": src.id, "kind": kind, "chunks": src.chunks}
+
     if name in ("remember", "recall"):
         from . import docs as D
         from . import memory as M
@@ -465,19 +560,48 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         k = S.record_kpi(db, st, args["name"], args["value"], args.get("period", ""), args["source"])
         return "allowed", {"kpi_id": k.id}
     if name == "create_task":
-        level = policy.level_for("staff.delegate", st.permissions) if not st.is_chief else policy.AUTO
-        if level < policy.DO_AND_TELL:
-            raise S.DomainError("only the Chief of Staff may delegate tasks", 403)
-        if args["staff_id"] == st.id:
+        # --- Step 1: Resolve target staff (B1 path; must happen before the scope check). ---
+        target_id = args.get("staff_id")
+        if target_id:
+            pass  # use as-is; downstream create_task validates existence
+        elif args.get("role"):
+            resolved = S.staff_by_role(db, str(args["role"]))
+            if resolved is None:
+                raise S.DomainError(f"no active staff holds the role '{args['role']}'")
+            target_id = resolved.id
+        else:
+            raise S.DomainError("provide staff_id or role to specify who should do it")
+
+        # --- Step 2: Self-delegation guard (before scope check so the message is accurate). ---
+        if target_id == st.id:
             raise S.DomainError("delegate to someone else")
+
+        # --- Step 3: Scope check — any one of three paths grants access. ---
+        # (a) Caller is the Chief of Staff.
+        # (b) A delegates_to edge from caller → target exists.
+        # (c) Permissive mode AND caller holds staff.delegate >= DO_AND_TELL.
+        if not st.is_chief:
+            has_edge = db.get(StaffRelation, (st.id, target_id, "delegates_to")) is not None
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("staff.delegate", st.permissions)
+            has_permission = ap["mode"] == "permissive" and level >= policy.DO_AND_TELL
+            if not has_edge and not has_permission:
+                raise S.DomainError(
+                    "no delegation scope: add a delegates_to edge or grant staff.delegate permission in permissive mode",
+                    403,
+                )
+
+        # --- Step 4: Depth cap (configurable, defaults to MAX_DELEGATION_DEPTH). ---
+        max_depth = int(S.get_setting(db, "delegation_max_depth", None) or MAX_DELEGATION_DEPTH)
         depth, parent = 0, args.get("parent_task_id")
-        while parent and depth < 5:
+        while parent and depth < min(max_depth + 3, 20):  # +3 sentinel, capped at 20 to protect against cyclic parent_task_id
             pt = db.get(Task, parent)
             parent = pt.parent_task_id if pt and pt.origin == "delegation" else None
             depth += 1
-        if depth >= 2:
-            raise S.DomainError("delegation is limited to 2 levels")
-        t = S.create_task(db, args["staff_id"], "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
+        if depth >= max_depth:
+            raise S.DomainError(f"delegation is limited to {max_depth} levels")
+
+        t = S.create_task(db, target_id, "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
                           goal_id=args.get("goal_id") or None)
         return "allowed", {"task_id": t.id}
     if name == "log_usage":
@@ -488,6 +612,96 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         return "allowed", {"ok": True}
     if name in ("list_workflows", "workflow_blocks", "propose_workflow", "run_workflow", "get_workflow_run"):
         return _workflow_tool(db, st, name, args)
+    if name == "complete_goal":
+        from .models import Goal
+
+        # Permission: CoS or reviewing staff (staff.delegate >= DO_AND_TELL).
+        if not st.is_chief and policy.level_for("staff.delegate", st.permissions) < policy.DO_AND_TELL:
+            raise S.DomainError("only the Chief of Staff or a reviewing staff member may complete a goal", 403)
+        goal_id = str(args.get("goal_id") or "")
+        outcome = str(args.get("outcome") or "").strip()
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise S.DomainError(f"unknown goal '{goal_id}'", 404)
+        # Idempotent: if already done (or dropped), return ok without overwriting.
+        if g.status not in ("done", "dropped"):
+            g.status = "done"
+            S.audit(db, f"staff:{st.id}", "goal.complete", goal_id, outcome=outcome)
+        db.commit()
+        return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
+    if name == "create_goal":
+        from .models import Goal, Setting
+        from . import plan
+
+        # Permission: CoS (is_chief) OR goal.create >= DO_AND_TELL in permissive mode.
+        if not st.is_chief:
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("goal.create", st.permissions)
+            if ap["mode"] != "permissive" or level < policy.DO_AND_TELL:
+                raise S.DomainError("only the Chief of Staff or a planning-capable staff member (goal.create permission) may create goals", 403)
+
+        title = str(args.get("title") or "").strip()
+        target = str(args.get("target") or "").strip()
+        due = str(args.get("due") or "").strip()
+        if not title:
+            raise S.DomainError("title is required")
+
+        g = Goal(title=title, target=target, due=due, status="active", created_by=f"staff:{st.id}")
+        db.add(g)
+        db.flush()  # populate g.id
+
+        S.audit(db, f"staff:{st.id}", "goal.create", g.id, title=title, target=target)
+
+        # Non-blocking informational notice for the owner: an agent created a goal.
+        notice = db.get(Setting, "agent_goal_notice")
+        if notice is None:
+            db.add(Setting(key="agent_goal_notice", value="pending"))
+        else:
+            # Reset to pending if previously dismissed so each new agent-created goal surfaces.
+            notice.value = "pending"
+
+        db.commit()
+
+        # Trigger planner immediately (idempotent, only for active goals).
+        plan.start_planning(db, g.id)
+        db.commit()
+
+        return "allowed", {"goal_id": g.id}
+
+    if name == "update_goal":
+        from .models import Goal
+
+        # Permission: same gate as create_goal.
+        if not st.is_chief:
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("goal.create", st.permissions)
+            if ap["mode"] != "permissive" or level < policy.DO_AND_TELL:
+                raise S.DomainError("only the Chief of Staff or a planning-capable staff member (goal.create permission) may update goals", 403)
+
+        goal_id = str(args.get("goal_id") or "")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise S.DomainError(f"unknown goal '{goal_id}'", 404)
+
+        changed: dict = {}
+        if args.get("status") is not None:
+            new_status = str(args["status"]).strip()
+            if new_status not in ("active", "done", "dropped"):
+                raise S.DomainError("status must be active, done or dropped")
+            g.status = new_status
+            changed["status"] = new_status
+        if args.get("title") is not None:
+            g.title = str(args["title"]).strip()
+            changed["title"] = g.title
+        if args.get("target") is not None:
+            g.target = str(args["target"]).strip()
+            changed["target"] = g.target
+
+        S.audit(db, f"staff:{st.id}", "goal.update", goal_id, **changed)
+        db.commit()
+        return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
     raise S.DomainError(f"unknown tool {name}", 404)
 
 

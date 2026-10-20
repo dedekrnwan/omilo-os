@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { BASE } from "./api";
 
 /** Run `fn` now and then every `ms` (a number, or a function re-read after each run so pages can poll fast only while
  *  something is happening). Pauses while the tab is hidden and runs at once when it comes back. Returns nothing;
@@ -41,6 +42,19 @@ export function usePoll(fn: () => unknown, ms: number | (() => number), deps: un
 
 /** Ask pollers watching `url` (a thread or task id works too) to refresh now, e.g. right after sending a message. */
 export const kick = (url: string) => window.dispatchEvent(new CustomEvent("omilo:notice", { detail: { kind: "local", url } }));
+
+/** Subscribe to /api/board/stream (SSE, ch:office) and call `onTick` each time the server emits a 'tick'.
+ *  Reconnects automatically on disconnect (browser EventSource handles retry). */
+export function useBoardStream(onTick: () => void) {
+  const cb = useRef(onTick); cb.current = onTick;
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return; // SSR or old browser
+    const es = new EventSource(`${BASE}/api/board/stream`, { withCredentials: true });
+    es.addEventListener("tick", () => cb.current());
+    return () => es.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
 
 /* Every successful change made through api() (and changes in other tabs) is announced as "omilo:changed". */
 let chan: BroadcastChannel | null = null;
