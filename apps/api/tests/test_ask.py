@@ -79,8 +79,8 @@ def test_retrieve_includes_other_surfaces(owner):
 
     assert isinstance(results, list)
     surfaces = {s["surface"] for s in results}
-    assert "inbox" in surfaces or "plan" in surfaces, (
-        f"Expected 'inbox' or 'plan' in surfaces for '{unique}', got: {surfaces}\nresults={results}"
+    assert "inbox" in surfaces and "plan" in surfaces, (
+        f"Expected 'inbox' and 'plan' in surfaces for '{unique}', got: {surfaces}\nresults={results}"
     )
 
     inbox_hits = [s for s in results if s["surface"] == "inbox"]
