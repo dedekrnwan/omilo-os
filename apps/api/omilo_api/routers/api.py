@@ -1574,6 +1574,70 @@ def piece_connect_poll(state: str, db: Session = Depends(get_db), user: User = D
     return {"status": "connected"}
 
 
+@router.post("/connectors/mcp/{slug}/connect")
+def mcp_connect(slug: str, body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Broker-less connect: enter API keys for a type='mcp' catalog card.
+
+    Validates the catalog entry, renders auth headers from the manifest template, and
+    upserts a locked kind='mcp' Connector row.  Field values are NEVER logged.
+
+    Body: {field_name: value, ...} — every declared field is required and must be non-empty.
+    Returns: {"status": "connected"}
+    """
+    from .. import capabilities as C
+    from .. import pieces as P
+    from ..models import Connector
+
+    # 1. Load and validate the catalog entry
+    entry = P.get_piece(slug)
+    if entry is None:
+        raise HTTPException(404, f"piece '{slug}' not found in catalog")
+    manifest = entry["manifest"]
+    if manifest.get("type") != "mcp":
+        raise HTTPException(404, f"piece '{slug}' is not an mcp connector")
+
+    mcp_cfg = manifest.get("mcp") or {}
+
+    # 2. Host re-check (defense in depth)
+    mcp_url = mcp_cfg.get("url", "")
+    if not P.mcp_host_allowed(mcp_url):
+        raise HTTPException(400, f"mcp host not allowed for '{slug}'")
+
+    # 3. Require every declared field — reject with 400 before creating anything
+    auth = mcp_cfg.get("auth") or {}
+    fields = auth.get("fields") or []
+    for f in fields:
+        name = f["name"]
+        if not body.get(name):
+            raise HTTPException(400, f"missing required field: {name}")
+
+    # 4. Render headers from the attach templates (never log the values)
+    attach = auth.get("attach") or {}
+    headers: dict[str, str] = {}
+    for header_name, tpl in attach.items():
+        headers[header_name] = P._render_str(tpl, body)
+
+    # 5. Upsert the Connector row
+    c = db.get(Connector, slug)
+    if c is None:
+        c = Connector(id=slug)
+        db.add(c)
+
+    c.kind = "mcp"
+    c.url = mcp_url
+    c.label = manifest.get("label", slug)
+    c.approval = "ask"
+    c.default_on = True
+    c.enabled = True
+
+    C.set_connector_secrets(c, headers, None)
+
+    S.audit(db, user.id, "connector.mcp.connect", slug)
+    db.commit()
+
+    return {"status": "connected"}
+
+
 @router.delete("/connectors/{cid}")
 def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import broker as B
