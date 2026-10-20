@@ -18,9 +18,16 @@ from ..config import get_settings
 from . import ChatContext, Engine, EngineResult, TaskContext
 from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
+# D3: WebSearch and WebFetch are governed-read tools — permitted to all agents by
+# default (low-risk tier; classify_action_tier returns None for them).  Outbound
+# web-WRITE actions are not a built-in tool; they arrive via MCP connectors /
+# request_action and are classified as "send_external" by classify_action_tier,
+# routing through should_escalate → True.
 SAFE_TOOLS = ["mcp__omilo", "WebSearch", "WebFetch", "Read", "Glob", "Grep", "TodoWrite", "Edit", "Write"]
 
 # Execution tools the CoS must NOT use during goal-delivery runs: it must delegate, not do.
+# WebSearch and WebFetch are intentionally NOT in this set — they are read-only and the
+# CoS may use them to monitor/validate progress.  Only write/exec-class tools are excluded.
 _EXEC_TOOLS = frozenset(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"])
 
 

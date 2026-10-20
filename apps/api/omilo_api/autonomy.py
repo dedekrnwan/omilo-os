@@ -1,5 +1,6 @@
 """C3: Stop/escalate gate — pure decision function, no side effects.
 C4: Budget stop condition — autonomy-level stop that fires BELOW the hard 100% cap.
+D3: classify_action_tier — maps an action/tool name to an escalation tier.
 
 Callers (action boundary, proposal boundary) check ``should_escalate`` BEFORE
 dispatching any action to an external service, spending money, or running an
@@ -18,11 +19,100 @@ Precedence (first match wins):
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from sqlalchemy.orm import Session
 
 from .services import autonomy_policy, is_paused
 from .graph.risk import classify_risk
+
+
+# ---------------------------------------------------------------------------
+# D3: Web-action tier classifier
+#
+# Governed-read tools (WebSearch, WebFetch) are low-risk and permitted by
+# default — they return None (no escalation needed).
+#
+# Outbound web-WRITE actions (send, post, publish, submit, email, message to
+# an external service) map to "send_external" which is in the default
+# escalate_tiers, so they route through should_escalate → True.
+# ---------------------------------------------------------------------------
+
+# Exact tool names that are governed-read (not escalated).
+_WEB_READ_TOOLS: frozenset[str] = frozenset({"WebSearch", "WebFetch"})
+
+# Keyword stems that indicate an outbound/write action toward an external target.
+_SEND_EXTERNAL_KEYWORDS: tuple[str, ...] = (
+    "send",
+    "post",
+    "publish",
+    "submit",
+    "email",
+    "message_external",
+    "notify_external",
+    "broadcast",
+    "tweet",
+    "dm",
+    "outreach",
+    "webhook",
+    "webpost",
+    "webwrite",
+)
+
+# Match at word boundaries OR at underscore/dot/hyphen boundaries (action names often
+# use snake_case, dot.notation, or kebab-case: send_email, post.social, post-to-twitter).
+_SEND_EXTERNAL_RE: re.Pattern[str] = re.compile(
+    r"(?:^|[_.\-])(?:" + "|".join(re.escape(k) for k in _SEND_EXTERNAL_KEYWORDS) + r")(?:[_.\-]|$)"
+    r"|"
+    r"\b(?:" + "|".join(re.escape(k) for k in _SEND_EXTERNAL_KEYWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def classify_action_tier(action: str | dict) -> str | None:
+    """Map an action name / tool call descriptor to an escalation tier.
+
+    Returns
+    -------
+    "send_external"
+        The action is an outbound write (post, send, publish, submit …).
+        Callers should set ``action["tier"] = "send_external"`` before
+        passing the action dict to ``should_escalate``.
+    None
+        The action is a governed read (WebSearch, WebFetch) or has no
+        outbound-write signal.  No escalation tier is assigned.
+
+    Parameters
+    ----------
+    action:
+        Either a plain string (tool name or action type), or a dict with at
+        least one of ``"name"``, ``"type"``, or ``"tool"`` keys that carries
+        the action identifier.
+    """
+    # ---- resolve the identifying string ----
+    if isinstance(action, str):
+        identifier = action
+    else:
+        # dict: try common key names in order
+        identifier = (
+            action.get("name")
+            or action.get("type")
+            or action.get("tool")
+            or ""
+        )
+
+    if not identifier:
+        return None
+
+    # ---- governed-read: WebSearch / WebFetch → not escalated ----
+    if identifier in _WEB_READ_TOOLS:
+        return None
+
+    # ---- outbound-write pattern match → send_external ----
+    if _SEND_EXTERNAL_RE.search(identifier):
+        return "send_external"
+
+    return None
 
 # ---------------------------------------------------------------------------
 # C4 constant: fraction of budget_usd_month used as the autonomy stop when no
