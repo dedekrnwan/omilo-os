@@ -11,7 +11,7 @@ import { ago, api } from "@/lib/api";
 import { taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { openTask } from "@/lib/open";
-import { usePoll } from "@/lib/poll";
+import { useBoardStream, usePoll } from "@/lib/poll";
 import { confirmDialog } from "@/lib/dialog";
 
 /* The plan: the goals you set at the top, the work that serves each goal under it. The Chief of Staff hands work out
@@ -71,6 +71,7 @@ export default function PlanPage() {
   const load = useCallback(async () => { try { setPlan(await api<Plan>(`/plan?days=${days}`)); setErr(null); } catch (e: any) { setErr(e.message); } }, [days]);
   usePoll(load, () => (plan?.goals.some((g) => (g.progress.running || 0) + (g.progress.queued || 0) > 0) ? 5000 : 30000), [load],
     (n) => n?.kind?.startsWith("job") || n?.kind === "inbox");
+  useBoardStream(load);
 
   const move = async (taskId: string, goalId: string | null) => { try { await api(`/tasks/${taskId}/goal`, { method: "PUT", body: { goal_id: goalId } }); } catch (e: any) { setErr(e.message); } };
   const edit = (g?: PGoal) => setForm(g ? { id: g.id, title: g.title, target: g.target, due: g.due, status: g.status, shift_ids: g.jobs.map((j) => j.id) }

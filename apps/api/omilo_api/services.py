@@ -27,6 +27,7 @@ from .models import (
     Setting,
     Shift,
     Staff,
+    StaffRelation,
     Task,
     Thread,
     now,
@@ -93,6 +94,37 @@ def ai_api_key(db: Session, provider: str) -> str | None:
 def ai_key_hint(db: Session, provider: str) -> str | None:
     k = (get_setting(db, "ai_keys", None) or {}).get(provider)
     return k["hint"] if k else None
+
+
+# ---------------------------------------------------------------- autonomy policy
+
+_DEFAULT_ESCALATE_TIERS: list[str] = ["send_external", "payment", "destructive", "publish"]
+
+
+def autonomy_policy(db: Session, staff: "Staff | None" = None) -> dict:
+    """Resolve the effective autonomy policy for the company (staff=None) or a specific helper.
+
+    Precedence (highest → lowest):
+      1. Per-helper: staff.autonomy maps guided → strict; standard|trusted → permissive.
+      2. Company:    Setting rows keyed autonomy_mode, autonomy_budget_stop_usd, autonomy_escalate_tiers.
+      3. Default:    permissive, no budget cap, the four irreversible/outside-world tiers.
+
+    Returns a fresh dict every call; no shared mutable state.
+    """
+    # --- company layer ---
+    company_mode = get_setting(db, "autonomy_mode", None)
+    company_budget = get_setting(db, "autonomy_budget_stop_usd", None)
+    company_tiers = get_setting(db, "autonomy_escalate_tiers", None)
+
+    mode: str = company_mode if company_mode is not None else "permissive"
+    budget_stop_usd: float | None = float(company_budget) if company_budget is not None else None
+    escalate_tiers: list[str] = list(company_tiers) if company_tiers is not None else list(_DEFAULT_ESCALATE_TIERS)
+
+    # --- per-helper layer (wins over company for mode only) ---
+    if staff is not None:
+        mode = "strict" if staff.autonomy == "guided" else "permissive"
+
+    return {"mode": mode, "budget_stop_usd": budget_stop_usd, "escalate_tiers": escalate_tiers}
 
 
 IDLE_MINUTES = 10
@@ -189,6 +221,42 @@ def rotate_mcp_token(db: Session, st: Staff, actor: str) -> str:
 
 def chief(db: Session) -> Staff | None:
     return db.scalar(select(Staff).where(Staff.is_chief.is_(True)))
+
+
+def seed_relations(db: Session) -> None:
+    """Idempotent: create delegates_to + reviews edges from the CoS to every active non-chief.
+
+    Safe to call repeatedly — edges that already exist are skipped via the composite PK
+    (from_staff, to_staff, kind). If there is no CoS the function is a no-op.
+    """
+    cos = chief(db)
+    if cos is None:
+        return
+    non_chiefs = list(db.scalars(
+        select(Staff).where(Staff.status == "active", Staff.is_chief.is_(False))
+    ))
+    for kind in ("delegates_to", "reviews"):
+        for st in non_chiefs:
+            existing = db.get(StaffRelation, (cos.id, st.id, kind))
+            if existing is None:
+                db.add(StaffRelation(from_staff=cos.id, to_staff=st.id, kind=kind))
+    db.commit()
+
+
+def staff_by_role(db: Session, role: str) -> "Staff | None":
+    """Return the first active Staff whose role matches *role* (case-insensitive).
+
+    Deterministic when multiple holders exist: ordered by Staff.id ascending.
+    Returns None if no active staff holds the role.
+    """
+    from sqlalchemy import func as sa_func
+
+    return db.scalar(
+        select(Staff)
+        .where(Staff.status == "active")
+        .where(sa_func.lower(Staff.role) == role.lower())
+        .order_by(Staff.id)
+    )
 
 
 # ---------------------------------------------------------------- shifts
@@ -898,19 +966,19 @@ def latest_kpis(db: Session) -> dict:
 
 # ---------------------------------------------------------------- policy gate for direct actions
 def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
-    """For a graph-brain staff, let the Chief of Staff rule on an ASK-level proposal ``p``.
+    """Let the Chief of Staff rule on an ASK-level proposal ``p`` for any brain when permissive.
 
     This is the REAL seam the Claude Code engine hits: it escalates outward actions by
     calling ``request_action`` (and ``propose``) mid-run, which files an ASK-level
-    ``Proposal``. For a ``brain="graph"`` staff the CoS should rule on that proposal
-    synchronously instead of bothering the owner with every low/medium one.
+    ``Proposal``. When the resolved autonomy mode is ``"permissive"`` the CoS should rule
+    on that proposal synchronously instead of bothering the owner with every low/medium one.
 
     Returns an ``"allowed"`` result dict if the CoS auto-approved ``p`` (the agent may
     proceed), or ``None`` to leave the proposal PENDING for the owner (the default and
-    the non-graph path).
+    the strict-mode path).
 
     Rules (mirrors the graph node-gate in ``graph/delegation.py``):
-      - only engage for ``brain == "graph"`` (single_engine is byte-for-byte unchanged);
+      - if autonomy_policy mode is ``"strict"`` → escalate to owner (return None);
       - re-derive risk structurally (the worker's "medium" ASK default is only a hint);
       - no CoS, or the CoS acting on its OWN action → escalate (never self-approve);
       - ``high`` risk → escalate to the owner;
@@ -918,7 +986,7 @@ def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
         (audited as the CoS, lesson recorded, execution task spawned — the owner-approve
         path, exactly once).
     """
-    if st.brain != "graph":
+    if autonomy_policy(db, st)["mode"] == "strict":
         return None
     from .graph import delegation
     from .graph.risk import classify_risk
@@ -947,7 +1015,7 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     if level == policy.ASK:
         p = create_proposal(db, st, task_id, summary, action, "medium", details)
         ruled = _cos_rule(db, st, p)
-        if ruled is not None:  # a graph staff's low/medium action: the CoS handled it inline
+        if ruled is not None:  # the CoS ruled this low/medium action inline (any brain, permissive mode)
             return ruled
         return {"decision": "needs_approval", "level": "ask", "proposal_id": p.id,
                 "message": "Filed for the founder's approval. Do not do it now; it will come back as an execution task if approved."}

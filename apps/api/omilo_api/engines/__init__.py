@@ -22,6 +22,7 @@ class TaskContext:
     emit: Callable[..., None] = field(default=lambda kind, **d: None)  # live progress (events.Emitter)
     resources: Any = None  # capabilities.Resources: folders, connectors, skills, files
     memory: str = ""  # lessons, last runs of this job, recent decisions (memory.brief_for)
+    goal_delivery: bool = False  # True when this CoS run is goal-delivery work (must delegate, not execute)
 
 
 @dataclass

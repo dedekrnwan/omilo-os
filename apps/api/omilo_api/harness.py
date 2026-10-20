@@ -338,6 +338,13 @@ def _give_back(account_id: str) -> None:
         pass
 
 
+def _lease_order(a, busy_count: int) -> tuple[int, dt.datetime]:
+    """Sort key for lease(): least busy first, then least-recently-used.
+    last_used_at comes back naive from SQLite (tz stripped on read), so normalize it before it is
+    compared against the aware epoch fallback — mixing naive and aware datetimes raises TypeError."""
+    return (busy_count, _aware(a.last_used_at) or dt.datetime.min.replace(tzinfo=dt.UTC))
+
+
 def lease(exclude: set[str] | None = None) -> tuple[str, str, str] | None:
     """Pick an account: enabled, not cooling, not in error, under the parallel limit, least recently used.
     Returns (account_id, label, token) and counts it busy until release()."""
@@ -352,7 +359,7 @@ def lease(exclude: set[str] | None = None) -> tuple[str, str, str] | None:
               and busy[a.id] < MAX_PARALLEL_PER_ACCOUNT]
         if not ok:
             return None
-        ok.sort(key=lambda a: (busy[a.id], a.last_used_at or dt.datetime.min.replace(tzinfo=dt.UTC)))
+        ok.sort(key=lambda a: _lease_order(a, busy[a.id]))
         a = ok[0]
         a.last_used_at = t
         _take(a.id)

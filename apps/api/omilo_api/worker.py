@@ -15,7 +15,7 @@ from .config import get_settings
 from .db import init_db, session_scope
 from .engines import ChatContext, EngineResult, TaskContext, get_engine
 from .events import Emitter
-from .models import Proposal, Report, Shift, Staff, Task, Thread, now
+from .models import Proposal, Report, Shift, Staff, Task, TaskGoal, Thread, now
 from .security import decrypt
 
 log = logging.getLogger("omilo.worker")
@@ -96,13 +96,27 @@ class Worker:
             log.exception("nudge ladder failed")
 
     def _budget(self, staff_id: str) -> None:
-        """Monthly budget: alert at 80%, pause the helper at 100%."""
+        """Monthly budget: alert at 80%, pause the helper at 100%.
+
+        Also runs the autonomy budget stop (C4): if the helper's month-to-date spend
+        crosses the effective autonomy threshold (explicit policy OR fraction of
+        budget_usd_month), the helper is paused and an owner alert is filed.  This
+        fires BEFORE the hard 100% cap and is guarded to alert at most once per month.
+        """
         from . import budgets
+        from .autonomy import check_autonomy_budget_stop
+        from .models import Staff
 
         try:
             with session_scope() as db:
-                budgets.check(db, staff_id)
+                hard_result = budgets.check(db, staff_id)
                 budgets.check_company(db)
+                # Autonomy budget stop: only run when the hard cap did NOT already
+                # pause the helper this cycle (avoids double-alert on same run).
+                if hard_result != "paused":
+                    st = db.get(Staff, staff_id)
+                    if st is not None:
+                        check_autonomy_budget_stop(db, st)
         except Exception:
             log.exception("budget check failed")
 
@@ -437,12 +451,21 @@ class Worker:
             # to the real engine. The staff's SOUL (voice/autonomy) rides along so the graph's
             # node prompts reflect it without changing the TaskContext signature.
             engine_cfg = _effective_engine(st)
+            # A CoS "goal-delivery" run must delegate, not execute: strip exec tools.
+            # goal_delivery = is_chief AND (origin in plan/review OR a TaskGoal row links this task to a goal).
+            goal_delivery = False
+            if st.is_chief:
+                if t.origin in ("plan", "review"):
+                    goal_delivery = True
+                else:
+                    goal_delivery = db.get(TaskGoal, t.id) is not None
             ctx = TaskContext(
                 staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, task_id=t.id, origin=t.origin,
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=engine_cfg,
                 emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop, staff=st), memory=_memory(db, st, t),
+                goal_delivery=goal_delivery,
             )
             return ctx, dict(engine_cfg), int(st.max_task_minutes or 30)
 
@@ -535,6 +558,7 @@ class Worker:
                     text = (res.text or "(no output)").strip()
                     db.add(Report(task_id=t.id, staff_id=t.staff_id, headline=text.splitlines()[0][:300], body_md=text))
                 S.finish_task(db, t, "done", result_text=res.text)
+                self._enqueue_review(db, t)  # loop-closure: child done -> CoS review (idempotent, loop-safe)
             if t.proposal_id and t.origin == "execution":
                 p = db.get(Proposal, t.proposal_id)
                 if p and p.status == "executing":
@@ -551,6 +575,62 @@ class Worker:
                 memory.log_run(db, t)
             except Exception:
                 log.exception("run log failed")
+
+    def _enqueue_review(self, db, child: Task) -> None:
+        """Loop-closure (B5): on a child's terminal SUCCESS, enqueue ONE CoS review task.
+
+        Called only from the success branch of ``_finish`` — a defer/transient-retry/suspended
+        finish returns earlier and never reaches here. Enqueues at most one review per child and
+        only for real delegated/execution work, so the orchestration loop always terminates.
+
+        Guards (all must hold):
+          1. goal-linked — the child has a TaskGoal row;
+          2. origin NOT in ("review", "plan") — THE INFINITE-LOOP GUARD: a review (or planner)
+             finishing must not spawn another review;
+          3. the goal is still active — a done/dropped goal gets no review;
+          4. idempotency (no double-fire) — no open review already exists for this child.
+        Reviewer = the ``from_staff`` of a reviews edge to the child's staff, else the CoS; if
+        neither exists, skip without crashing.
+        """
+        from .models import Goal, StaffRelation
+
+        try:
+            if child.origin in ("review", "plan"):  # (2) loop guard
+                return
+            tg = db.get(TaskGoal, child.id)  # (1) goal-linked
+            if tg is None:
+                return
+            goal = db.get(Goal, tg.goal_id)  # (3) goal still active
+            if goal is None or goal.status != "active":
+                return
+            existing = db.scalar(select(Task.id).where(  # (4) idempotency / no double-fire
+                Task.origin == "review",
+                Task.parent_task_id == child.id,
+                Task.status.not_in(("done", "cancelled")),
+            ))
+            if existing is not None:
+                return
+            reviewer_id = db.scalar(select(StaffRelation.from_staff).where(
+                StaffRelation.kind == "reviews",
+                StaffRelation.to_staff == child.staff_id,
+            ))
+            if reviewer_id is None:
+                cos = S.chief(db)
+                reviewer_id = cos.id if cos else None
+            if reviewer_id is None:  # no reviewer and no CoS — skip, don't crash
+                return
+            brief = (
+                f"Review the completed work for goal '{goal.title}'.\n\n"
+                f"Target: {goal.target}\n\n"
+                f"Validate the child task's result against the goal target and decide what happens "
+                f"next: continue with the next step, send it back for revision, or mark the goal done."
+            )
+            S.create_task(
+                db, staff_id=reviewer_id, origin="review", brief=brief,
+                created_by="system", parent_task_id=child.id, goal_id=goal.id,
+            )
+        except Exception:  # a review-enqueue failure must never break finishing the child
+            log.exception("review enqueue failed for task %s", child.id)
 
     # ------------------------------------------------------------ chats
     async def answer_thread(self, thread_id: str):

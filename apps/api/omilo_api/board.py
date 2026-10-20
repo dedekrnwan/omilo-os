@@ -129,6 +129,30 @@ def build(db: Session, done_hours: int = 48, prefs: dict | None = None) -> dict:
                           "started_at": X.iso(t.started_at), "created_at": X.iso(t.created_at), "searches": f["searches"], "tools": f["tools"],
                           "engine": f["engine"], "steps": steps, "origin": t.origin})
 
+    # Merge chat-kind items from the unified live-state read model (Task A1).
+    # This is the single source of truth: re-querying chats here would create a
+    # second source and risk diverging from what the Monitor shows.
+    from . import worklog
+
+    live = worklog.live_state(db)
+    chat_items = [item for item in live["items"] if item["kind"] == "chat"]
+    # Stable order so the board doesn't flicker between refreshes (controller note).
+    chat_items.sort(key=lambda item: (item["since"] or "", item["id"]))
+    for item in chat_items:
+        run_cards.append({
+            "id": item["id"],
+            "kind": "chat",
+            "title": item["title"] or "Replying in chat",
+            "summary": "Replying in chat",
+            "staff": who(item["staff_id"]),
+            "status": item["status"],
+            "since": item["since"],
+            "searches": 0,
+            "tools": 0,
+            "engine": "",
+            "steps": [],
+        })
+
     done_cards = []
     for t in done:
         f = facts.get(t.id) or {"searches": 0, "tools": 0, "engine": "", "steps": [], "last_text": ""}
