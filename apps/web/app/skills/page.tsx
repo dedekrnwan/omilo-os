@@ -151,7 +151,7 @@ export default function Skills() {
             </div>
 
             {/* Starter skills section */}
-            <h2 className="sk2-sec-label">Starter skills for Sahabat Warga</h2>
+            <p className="sk2-sec-label">Starter skills for Sahabat Warga</p>
             <div className="sk2-starters">
               <div className="sk2-starter">
                 <div className="sk2-starter-text">

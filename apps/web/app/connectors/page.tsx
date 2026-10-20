@@ -394,7 +394,7 @@ export default function Connectors() {
 
   const close = useCallback(() => { setForm(null); setErr(null); }, []);
 
-  const startNew = () => { setErr(null); setForm({ ...blank }); setShowAdvanced(true); };
+  const startNew = useCallback(() => { setErr(null); setForm({ ...blank }); setShowAdvanced(true); }, []);
   const pick = (t: Tpl) => setForm((f) => ({
     ...blank, ...t.form, tpl: t.key,
     secrets: withBlankRow(t.form.secrets || []),

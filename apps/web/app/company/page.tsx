@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useOverview } from "@/components/Shell";
-import { Empty, Err } from "@/components/ui";
+import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
-import KpiBoard, { Kpi } from "@/components/KpiBoard";
+import KpiBoard from "@/components/KpiBoard";
 import { usePageActions } from "@/components/PageActions";
 import { ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
@@ -22,18 +22,9 @@ function fileLabel(name: string): string {
   return base.replace(/\.md$/, "").replace(/[-_]/g, " ");
 }
 
-/* Ghost KPI cards shown when board is empty */
-const GHOST_KPIS = [
-  { label: "Monthly revenue", hint: "e.g. Rp 25 jt by December" },
-  { label: "Paying customers", hint: "e.g. 100 by December" },
-  { label: "Churn", hint: "e.g. under 3% a month" },
-  { label: "Support reply time", hint: "e.g. under 1 hour" },
-];
-
 export default function Company() {
   const { overview } = useOverview();
   const [files, setFiles] = useState<File[]>([]);
-  const [kpis, setKpis] = useState<Kpi[] | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [editing, setEditing] = useState(false);
@@ -42,11 +33,6 @@ export default function Company() {
 
   const load = useCallback(async () => setFiles(await api<File[]>("/knowledge")), []);
   usePoll(load, 60000, [load]);
-
-  /* Load KPI count for the knowledge progress meter */
-  useEffect(() => {
-    api<Kpi[]>("/kpis/board").then(setKpis).catch(() => setKpis([]));
-  }, []);
 
   const open = async (name: string) => {
     setSel(name); setEditing(false);
@@ -60,7 +46,10 @@ export default function Company() {
     try { await api(`/knowledge/${n}`, { method: "PUT", body: { content: `# ${newName}\n` } }); setNewName(""); await load(); open(n); } catch (e: any) { setErr(e.message); }
   };
 
-  /* Register "New KPI" as the topbar primary action (KpiBoard registers its own edit(); we mirror it here) */
+  /* Company has no single topbar primary action. The pen shows "New KPI" as the primary
+     button but KpiBoard owns that trigger via its own internal edit() state; there is no
+     external ref to call it from here. The inline button inside KpiBoard is the canonical
+     entry point. Clear any stale page actions so the topbar is empty for this page. */
   usePageActions(null, []);
 
   /* Knowledge completeness: count files with meaningful content (> 50 bytes) */
@@ -83,21 +72,6 @@ export default function Company() {
 
       {/* KPI Board — unchanged behavior, v2 layout via KpiBoard component */}
       <KpiBoard />
-
-      {/* KPI Ghosts — shown only when kpis loaded and empty */}
-      {kpis !== null && kpis.length === 0 && (
-        <div className="co2-ghosts">
-          {GHOST_KPIS.map((g) => (
-            <div key={g.label} className="co2-ghost">
-              <div className="co2-ghost-top">
-                <span className="co2-ghost-label">{g.label}</span>
-                <span className="co2-ghost-dash">—</span>
-              </div>
-              <div className="co2-ghost-hint">{g.hint}</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Section: What your helpers know */}
       <div className="sec">

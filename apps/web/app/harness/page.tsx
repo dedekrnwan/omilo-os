@@ -357,11 +357,6 @@ export default function Harness() {
             <b className="hrn2-prov-title">Direct AI providers</b>
             <p className="small hrn2-prov-sub">Use your own API key, and pick per helper which engine it runs on (Team › helper › Engine).</p>
           </div>
-          {vendors.length > 0 && (
-            <div className="acts" style={{ flexShrink: 0 }}>
-              {/* "Connect a provider" action: opening the first vendor without a key is the connect flow */}
-            </div>
-          )}
         </div>
 
         {vendors.length === 0 ? (
