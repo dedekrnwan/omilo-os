@@ -807,7 +807,10 @@ class ThreadIn(BaseModel):
 
 @router.get("/threads")
 def list_threads(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    return [X.thread(t) for t in db.scalars(select(Thread).order_by(Thread.updated_at.desc()).limit(200))]
+    from .. import thread_extras as TE
+
+    rows = list(db.scalars(select(Thread).order_by(Thread.updated_at.desc()).limit(200)))
+    return [{**X.thread(t), **TE.enrich(db, t)} for t in rows]
 
 
 @router.post("/threads")
@@ -859,8 +862,10 @@ def thread_get(thid: str, request: Request, db: Session = Depends(get_db), user:
 
 
 def thread_detail(thid: str, db: Session, user: User) -> dict:
+    from .. import thread_extras as TE
+
     th = _404(db.get(Thread, thid))
-    return {**X.thread(th), "messages": [X.message(m) for m in S.thread_messages(db, th)]}
+    return {**X.thread(th), **TE.enrich(db, th), "messages": [X.message(m) for m in S.thread_messages(db, th)]}
 
 
 class MessageIn(BaseModel):
@@ -921,6 +926,54 @@ def delete_thread(thid: str, db: Session = Depends(get_db), user: User = Depends
     db.delete(th)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/threads/{thid}/focus")
+def thread_focus(thid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Return aggregated focus details for the Focus panel right column.
+
+    { progress: [{label, status}], files: [{title, kind, ref}],
+      cost: {usd, tokens, minutes} }
+
+    Populated from the linked task (scope='task', ref_id=task_id).
+    If no linked task exists, returns empty arrays and zeroed cost.
+    """
+    from .. import thread_extras as TE
+
+    th = _404(db.get(Thread, thid))
+    return TE.focus(db, th)
+
+
+class AddHelperIn(BaseModel):
+    staff_id: str
+
+
+@router.post("/threads/{thid}/add-helper")
+def add_helper(thid: str, body: AddHelperIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Promote a helper into a thread's participant set by writing a system @mention turn.
+
+    Idempotent: if the helper is already a participant (appears in past agent messages
+    or is in pending), no additional message is written.
+    Returns the updated thread detail (same shape as GET /threads/{id}).
+    """
+    from .. import thread_extras as TE
+
+    th = _404(db.get(Thread, thid))
+    staff = _404(db.get(Staff, body.staff_id), "unknown staff")
+
+    current_participants = TE.participants(db, th)
+    if staff.id not in current_participants:
+        # Write a system join event so the helper's author record appears.
+        S.post_message(
+            db, th,
+            role="system",
+            author=staff.id,
+            text=f"@{staff.name} joined the thread",
+            blocks=[{"type": "text", "text": f"@{staff.name} joined the thread"}],
+        )
+        S.audit(db, user.id, "chat.add_helper", th.id, staff_id=staff.id)
+
+    return thread_detail(thid, db, user)
 
 
 # ------------------------------------------------------------------ company knowledge & KPIs
@@ -2888,7 +2941,7 @@ async def board_stream(request: Request):
                     try:
                         await _a.wait_for(q.get(), timeout=HEARTBEAT_S)
                         yield "event: tick\ndata: {}\n\n"
-                    except _a.TimeoutError:
+                    except TimeoutError:
                         yield ": ping\n\n"
             finally:
                 bus.unsubscribe(q)
