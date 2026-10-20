@@ -15,10 +15,13 @@ surface never prevents the others from returning results.
 from __future__ import annotations
 
 import re
+import time
 from typing import TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from .engines import ChatContext, get_engine
 
 
 class Source(TypedDict):
@@ -173,3 +176,87 @@ def retrieve(db: Session, q: str, k: int = 8) -> list[Source]:
 
     all_sources.sort(key=lambda s: s["score"], reverse=True)
     return all_sources[:k]
+
+
+# ---------------------------------------------------------------------------
+# answer — grounded chat over retrieved sources (Task 2)
+# ---------------------------------------------------------------------------
+
+class NoEngineError(Exception):
+    """Raised when no usable engine config is available for the company."""
+
+
+def _render_sources(sources: list[Source]) -> str:
+    """Render sources into a grounding block appended to the owner message."""
+    if not sources:
+        return ""
+    lines = ["\n\n[Context — retrieved sources]\n"]
+    for i, s in enumerate(sources, 1):
+        lines.append(f"[{i}] {s['title']} ({s['surface']}): {s['text'][:400]}")
+    return "\n".join(lines)
+
+
+async def answer(db: Session, q: str) -> dict:
+    """Retrieve sources, build a synthetic ChatContext, call the engine, return a grounded answer.
+
+    Returns::
+
+        {"answer": str, "sources": list[Source], "tokens": int, "cost_usd": float, "ms": int}
+
+    Raises ``NoEngineError`` when no usable engine config can be resolved so the
+    HTTP route can map it cleanly to a 503.
+    """
+    from . import services as S
+    from .config import get_settings
+    from .security import decrypt
+
+    # --- Resolve the engine config the same way tune.py does: use the Chief of Staff ---
+    staff = S.chief(db)
+    engine_config: dict = (staff.engine or {}) if staff else {}
+
+    if not engine_config or not engine_config.get("type"):
+        raise NoEngineError("No AI engine configured for this company")
+
+    mcp_url = get_settings().mcp_url()
+    mcp_token = decrypt(staff.mcp_token_enc) if staff and staff.mcp_token_enc else None
+
+    # --- Retrieve grounding sources ---
+    sources = retrieve(db, q)
+
+    # --- Build the grounded owner message ---
+    grounded_text = q + _render_sources(sources)
+
+    ctx = ChatContext(
+        staff_id=staff.id if staff else "ask",
+        staff_name=staff.name if staff else "Assistant",
+        job="You are a helpful assistant. Answer the user's question based on the provided context.",
+        is_chief=True,
+        thread_id="ask",
+        scope="staff",
+        history=[{"role": "owner", "text": grounded_text}],
+        context_note="",
+        mcp_url=mcp_url,
+        mcp_token=mcp_token,
+        engine_config=engine_config,
+        emit=lambda kind, **d: None,
+        resources=None,
+        shared=True,
+    )
+
+    t0 = time.monotonic()
+    try:
+        res = await get_engine(engine_config).chat(ctx)
+    except Exception as exc:  # noqa: BLE001
+        raise NoEngineError(f"Engine unavailable: {exc}") from exc
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+    if res.error:
+        raise NoEngineError(f"Engine returned an error: {res.error}")
+
+    return {
+        "answer": res.text,
+        "sources": list(sources),
+        "tokens": res.tokens,
+        "cost_usd": res.cost_usd,
+        "ms": elapsed_ms,
+    }

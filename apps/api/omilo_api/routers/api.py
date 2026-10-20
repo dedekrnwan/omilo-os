@@ -7,10 +7,11 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import ask as ask_mod
 from .. import budgets as _budgets
 from .. import catalog, policy
 from .. import onboarding as OB
@@ -3331,3 +3332,26 @@ def kpi_ask(name: str, db: Session = Depends(get_db), user: User = Depends(curre
              + (f"\nWhat it means: {row['note']}" if row["note"] else ""))
     t = S.create_task(db, who, "manual", brief, user.id, goal_id=row["goal_id"])
     return {"task_id": t.id, "staff_id": who}
+
+# ------------------------------------------------------------------ /ask (⌘K)
+
+class AskIn(BaseModel):
+    q: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("q", mode="before")
+    @classmethod
+    def strip_and_reject_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("q must not be blank")
+        return v
+
+
+@router.post("/ask")
+async def ask(body: AskIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Synchronous grounded answer: retrieve sources then ask the engine. Returns answer + sources."""
+    S.audit(db, user.id, "ask", "", q=body.q)
+    try:
+        return await ask_mod.answer(db, body.q)
+    except ask_mod.NoEngineError:
+        raise HTTPException(503, "AI is unavailable")
