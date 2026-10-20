@@ -90,28 +90,99 @@ export default function Skills() {
   ];
   const set = (patch: Partial<Form>) => setForm((f) => (f ? { ...f, ...patch } : f));
 
+  const addStarter = (name: string, description: string, body: string) => {
+    setErr(null); setTab("write"); setForm({ slug: slugify(name), name, description, body, default_on: false, editing: false });
+  };
+
   usePageActions({
     primary: { label: "New skill", icon: "ri-add-line", onSelect: () => { setErr(null); setTab("write"); setForm({ ...blank, body: STARTER }); } },
     more: [{ label: "Get one from The Agency", icon: "ri-download-2-line", onSelect: () => { setImporting(true); setFound(null); } }],
   }, []);
   return (
     <div>
-      <div className="sechead" style={{ alignItems: "flex-start" }}>
-        <div><h1>Skills</h1>
-          <p className="sub" style={{ marginBottom: 0 }}>Know-how your helpers follow: a checklist, a house style, a process. Switch skills on per chat with + or by typing /, or make one standard for everyone.</p></div>
-
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Skills</h1>
+          <p className="ph2-sub">Know-how your helpers follow: a checklist, a house style, a process. Switch skills on per chat with + or by typing /, or make one standard for everyone.</p>
+        </div>
+        <div className="ph2-actions" />
       </div>
 
-      <div className="sec" style={{ marginTop: 20 }}>
+      <div className="sec" style={{ marginTop: 0 }}>
         {list === null ? <p className="small">Loading…</p> : list.length === 0 ? (
-          <div className="empty"><b>No skills yet</b><span>Write one, or start from a specialist's playbook from The Agency.</span></div>
+          <>
+            {/* Empty state — "Teach your helpers how you like things done" */}
+            <div className="sk2-empty">
+              <div className="sk2-empty-icon"><i className="ri-magic-line" /></div>
+              <div className="sk2-empty-body">
+                <b>Teach your helpers how you like things done</b>
+                <span>Write a skill once. Switch it on in any chat with + or by typing /, or make it standard for every helper, every time.</span>
+                <div className="sk2-empty-actions">
+                  <button className="btn primary" onClick={() => { setErr(null); setTab("write"); setForm({ ...blank, body: STARTER }); }}><i className="ri-add-line" />Write a skill</button>
+                  <button className="btn" onClick={() => { setImporting(true); setFound(null); }}><i className="ri-download-2-line" />Start from a specialist&apos;s playbook</button>
+                </div>
+              </div>
+            </div>
+
+            {/* How it works */}
+            <div className="sk2-hiw">
+              <div className="sk2-hiw-step">
+                <div className="sk2-hiw-num">1</div>
+                <div className="sk2-hiw-text">
+                  <b>Write it</b>
+                  <span>Plain words, like a note to a new teammate.</span>
+                </div>
+              </div>
+              <div className="sk2-hiw-step">
+                <div className="sk2-hiw-num">2</div>
+                <div className="sk2-hiw-text">
+                  <b>Use it in a chat</b>
+                  <span>Type / and pick the skill for that one job.</span>
+                </div>
+              </div>
+              <div className="sk2-hiw-step">
+                <div className="sk2-hiw-num">3</div>
+                <div className="sk2-hiw-text">
+                  <b>Make it standard</b>
+                  <span>Every helper follows it, every time.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Starter skills section */}
+            <h2 className="sk2-sec-label">Starter skills for Sahabat Warga</h2>
+            <div className="sk2-starters">
+              <div className="sk2-starter">
+                <div className="sk2-starter-text">
+                  <b>House voice</b>
+                  <span>Bahasa first, warm and short. No jargon with customers.</span>
+                </div>
+                <button className="btn sm" onClick={() => addStarter("House voice", "Bahasa first, warm and short. No jargon with customers.", "## When to use\n- Writing anything customer-facing\n\n## Rules\n- Bahasa Indonesia first\n- Warm and short — no more than 3 sentences per point\n- No technical jargon\n- Use ‘kamu’ not ‘Anda’ for casual, ‘Anda’ for formal\n")}><i className="ri-add-line" />Add</button>
+              </div>
+              <div className="sk2-starter">
+                <div className="sk2-starter-text">
+                  <b>Before you reply to a customer</b>
+                  <span>A 5-point check: name, order, promise, tone, next step.</span>
+                </div>
+                <button className="btn sm" onClick={() => addStarter("Before you reply to a customer", "A 5-point check: name, order, promise, tone, next step.", "## Checklist before every customer reply\n1. **Name** — use their name in the opening\n2. **Order** — reference their order or issue number\n3. **Promise** — state what you will do and by when\n4. **Tone** — warm, calm, never defensive\n5. **Next step** — end with a clear action for them\n")}><i className="ri-add-line" />Add</button>
+              </div>
+              <div className="sk2-starter">
+                <div className="sk2-starter-text">
+                  <b>Weekly report format</b>
+                  <span>One page: what moved, what is stuck, what you need to decide.</span>
+                </div>
+                <button className="btn sm" onClick={() => addStarter("Weekly report format", "One page: what moved, what is stuck, what you need to decide.", "## Weekly Report\n\n### What moved\n- \n\n### What is stuck\n- \n\n### What we need to decide\n- \n")}><i className="ri-add-line" />Add</button>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="grid2">
             {list.map((s) => (
               <div key={s.slug} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }} onContextMenu={menu(() => items(s))}>
                 <div className="acts" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
                   <b style={{ fontWeight: 500 }}><i className="ri-magic-line" /> {s.name}</b>
-                  {s.owner ? <span className="chip idle" title="Only this helper uses it"><i className="ri-user-line" /> {who(s.owner)}’s own</span>
+                  {s.owner ? <span className="chip idle" title="Only this helper uses it"><i className="ri-user-line" /> {who(s.owner)}&apos;s own</span>
                     : s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}
                 </div>
                 <div className="small clamp">{s.description || "No description"}</div>

@@ -2890,3 +2890,38 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .cn2-search { width: 100%; }
   .cn2-picks { flex-wrap: wrap; }
 }
+
+/* ---------------------------------------------------------------- Skills v2 (pen q7NyU) */
+
+/* Empty state — "Teach your helpers how you like things done" */
+.sk2-empty { display: flex; align-items: flex-start; gap: 16px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); padding: 32px 28px; background: var(--soft); }
+.sk2-empty-icon { width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, #fdf4ff, #ede9fe); color: #7c3aed; font-size: 22px; display: grid; place-items: center; flex-shrink: 0; margin-top: 2px; border: 1px solid var(--line); }
+.sk2-empty-body { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.sk2-empty-body b { font: 600 16px/1.3 var(--font-display); letter-spacing: -.01em; color: var(--ink); }
+.sk2-empty-body > span { font-size: 14px; color: var(--muted); line-height: 1.5; }
+.sk2-empty-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* How it works — 3 numbered steps */
+.sk2-hiw { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+.sk2-hiw-step { display: flex; align-items: flex-start; gap: 12px; }
+.sk2-hiw-num { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--surface); font-size: 12px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; margin-top: 1px; }
+.sk2-hiw-text { display: flex; flex-direction: column; gap: 3px; }
+.sk2-hiw-text b { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.sk2-hiw-text span { font-size: 13px; color: var(--muted); line-height: 1.4; }
+
+/* Section label — "Starter skills for Sahabat Warga" */
+.sk2-sec-label { font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; margin: 28px 0 10px; }
+
+/* Starter skill rows */
+.sk2-starters { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.sk2-starter { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.sk2-starter:last-child { border-bottom: 0; }
+.sk2-starter-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sk2-starter-text b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.sk2-starter-text span { font-size: 13px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .sk2-empty { flex-direction: column; padding: 24px 16px; }
+  .sk2-empty-icon { width: 36px; height: 36px; font-size: 18px; }
+  .sk2-hiw { grid-template-columns: 1fr; gap: 12px; }
+}
