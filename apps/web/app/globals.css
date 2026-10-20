@@ -2964,3 +2964,36 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .fol2-cols { grid-template-columns: 1fr; gap: 20px; }
   .fol2-side { order: -1; }
 }
+
+/* ---------------------------------------------------------------- AI accounts v2 (pen KktHp) */
+
+/* Page root — provides vertical rhythm */
+.hrn2 { display: flex; flex-direction: column; gap: 28px; }
+
+/* Stats row — reuses .stats + .stat; no new sizing needed */
+.hrn2-stats { margin: 0; }
+
+/* Accounts section wrapper */
+.hrn2-accounts { display: flex; flex-direction: column; gap: 14px; }
+
+/* Head row: "Claude Code pool" title + sub + CLI version (pen SqJeA) */
+.hrn2-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.hrn2-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hrn2-head-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.hrn2-head-sub { color: var(--muted); }
+.hrn2-head-cli { flex-shrink: 0; }
+
+/* Pool meter paper */
+.hrn2-meter { margin-bottom: 0; }
+
+/* Direct providers section (pen J8eZZ) */
+.hrn2-providers { display: flex; flex-direction: column; gap: 14px; }
+.hrn2-prov-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.hrn2-prov-title { font-size: 15px; font-weight: 600; color: var(--ink); display: block; margin-bottom: 2px; }
+.hrn2-prov-sub { margin: 0; }
+.hrn2-prov-list { display: flex; flex-direction: column; gap: 0; }
+
+@media (max-width: 640px) {
+  .hrn2-head { flex-direction: column; align-items: flex-start; }
+  .hrn2-prov-head { flex-direction: column; }
+}
