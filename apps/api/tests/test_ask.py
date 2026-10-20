@@ -163,3 +163,67 @@ def test_ask_ai_unavailable_503(owner, monkeypatch):
     monkeypatch.setattr(ask_mod, "get_engine", lambda cfg: type("E", (), {"chat": staticmethod(_boom)})())
     r = owner.post("/api/ask", json={"q": "what is waiting on me"})
     assert r.status_code == 503, f"Expected 503, got {r.status_code}: {r.text}"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: ai_status on GET /api/overview
+# ---------------------------------------------------------------------------
+
+def test_overview_has_ai_status(owner):
+    """GET /api/overview returns 200 and includes an ai_status key with ok and label."""
+    r = owner.get("/api/overview")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "ai_status" in body, f"Missing 'ai_status' key in overview response: {list(body.keys())}"
+    ai_status = body["ai_status"]
+    assert isinstance(ai_status, dict), f"ai_status must be a dict, got: {type(ai_status)}"
+    assert "ok" in ai_status, f"ai_status missing 'ok' key: {ai_status}"
+    assert "label" in ai_status, f"ai_status missing 'label' key: {ai_status}"
+    assert isinstance(ai_status["ok"], bool), f"ai_status.ok must be bool, got: {type(ai_status['ok'])}"
+    assert isinstance(ai_status["label"], str), f"ai_status.label must be str, got: {type(ai_status['label'])}"
+
+
+def test_ai_status_reflects_pool(owner):
+    """ai_status.ok is a bool consistent with the seeded company's harness readiness.
+
+    The conftest seeds with the 'small' preset on the fake engine and adds NO
+    harness accounts, so ready==0 and ok must be False.
+    """
+    r = owner.get("/api/overview")
+    assert r.status_code == 200, r.text
+    ai_status = r.json()["ai_status"]
+
+    # Shape checks
+    assert isinstance(ai_status["ok"], bool)
+    assert isinstance(ai_status["label"], str) and ai_status["label"]
+    assert "detail" in ai_status  # key must exist; value may be None or str
+
+    # The conftest seeds NO harness accounts, so the pool is empty → ok must be False.
+    assert ai_status["ok"] is False, (
+        f"Expected ok=False (no harness accounts seeded), got: {ai_status}"
+    )
+
+
+def test_ai_status_is_cheap(owner, monkeypatch):
+    """Computing ai_status on /overview must NOT call cli_version() or find_cli().
+
+    We monkeypatch both to raise AssertionError; if the overview path is
+    correct (cheap DB-only count) the request still returns 200 with ai_status.
+    """
+    import omilo_api.harness as H
+
+    def _no_cli_version():
+        raise AssertionError("cli_version should not be called on the overview path")
+
+    def _no_find_cli():
+        raise AssertionError("find_cli should not be called on the overview path")
+
+    monkeypatch.setattr(H, "cli_version", _no_cli_version)
+    monkeypatch.setattr(H, "find_cli", _no_find_cli)
+
+    r = owner.get("/api/overview")
+    assert r.status_code == 200, f"Expected 200 even with cli_version/find_cli patched out, got {r.status_code}: {r.text}"
+    body = r.json()
+    assert "ai_status" in body, "ai_status missing from overview response"
+    ai_status = body["ai_status"]
+    assert "ok" in ai_status and "label" in ai_status

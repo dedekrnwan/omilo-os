@@ -493,6 +493,40 @@ def pool_summary() -> dict:
             "parallel_per_account": MAX_PARALLEL_PER_ACCOUNT}
 
 
+def ai_status(db) -> dict:
+    """Cheap DB-only readiness signal for the /overview hot path.
+
+    Returns {"ok": bool, "label": str, "detail": str|None}.
+    Does NOT call cli_version() or find_cli() — it only runs a single DB query.
+    ready = count of HarnessAccount rows whose effective state is 'ready' or 'new'
+    (enabled, not cooling, not in error).
+    """
+    rows = list(db.scalars(select(HarnessAccount)))
+    t = now()
+    ready = 0
+    for a in rows:
+        if not a.enabled:
+            continue
+        if a.status == "error":
+            continue
+        cooling = a.cooldown_until and a.cooldown_until.replace(tzinfo=a.cooldown_until.tzinfo or dt.UTC) > t
+        if cooling:
+            continue
+        ready += 1
+    total = len(rows)
+    ok = ready > 0
+    if ok:
+        label = "Claude Code pool"
+        detail = f"{ready} of {total} account{'s' if total != 1 else ''} ready"
+    elif total == 0:
+        label = "No AI accounts"
+        detail = None
+    else:
+        label = "AI unavailable"
+        detail = f"0 of {total} account{'s' if total != 1 else ''} ready"
+    return {"ok": ok, "label": label, "detail": detail}
+
+
 def parse_reset(text: str) -> dt.datetime | None:
     """'…limit reached|1760000000' (epoch) or 'resets in 2h' style hints; None when unknown."""
     if m := re.search(r"\|(\d{10})\b", text or ""):

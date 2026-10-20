@@ -53,6 +53,14 @@ def _run(fn, *a, **kw):
         raise HTTPException(e.code, str(e)) from e
 
 
+# ------------------------------------------------------------------ ai_status helper (cheap, no subprocess)
+def _harness_ai_status(db) -> dict:
+    """Thin wrapper: defers the harness import to avoid circular imports at module load."""
+    from .. import harness as H
+
+    return H.ai_status(db)
+
+
 # ------------------------------------------------------------------ overview
 @router.get("/overview")
 def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
@@ -79,6 +87,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "cost_7d_usd": round(db.scalar(select(func.coalesce(func.sum(Task.cost_usd), 0)).where(
             Task.created_at >= now() - dt.timedelta(days=7))) or 0, 2),
         "self_tuning": S.is_self_tuning(db),
+        "ai_status": _harness_ai_status(db),
     }
 
 
