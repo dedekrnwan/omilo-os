@@ -227,7 +227,7 @@ def test_email_pending_sends_when_enabled_and_configured(owner, monkeypatch):
         db.add(n)
 
     # Run email_pending
-    count = asyncio.get_event_loop().run_until_complete(
+    count = asyncio.run(
         N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", "")
     )
 
@@ -283,7 +283,7 @@ def test_email_pending_noop_when_smtp_unconfigured(owner, monkeypatch):
         n = Notice(kind="inbox", title="Unconfigured SMTP test", body="body", url="/", tag="test-noop", level="decision", who="bot")
         db.add(n)
 
-    count = asyncio.get_event_loop().run_until_complete(
+    count = asyncio.run(
         N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", "")
     )
 
@@ -330,9 +330,69 @@ def test_email_pending_respects_pref_off(owner, monkeypatch):
         n = Notice(kind="inbox", title="Pref-off test", body="body", url="/", tag="test-pref-off", level="decision", who="bot")
         db.add(n)
 
-    count = asyncio.get_event_loop().run_until_complete(
+    count = asyncio.run(
         N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", "")
     )
 
     assert count == 0, f"expected 0, got {count}"
     assert sent_calls == [], f"send_email must NOT be called; calls={sent_calls}"
+
+
+def test_email_pending_send_failure_advances_cursor_no_duplicate(owner, monkeypatch):
+    """SmtpError during send → cursor still advances; second call does NOT replay the same notice."""
+    import asyncio
+
+    import smtplib
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
+
+    _seed_smtp(owner)
+
+    from omilo_api import company as C
+    from omilo_api import notify as N
+    from omilo_api import smtp
+    from omilo_api.db import session_scope
+    from omilo_api.models import Notice, Setting
+
+    uid = _owner_user_id(owner)
+
+    # Enable email for inbox
+    with session_scope() as db:
+        N.set_prefs(db, uid, {"kinds": {"inbox": {"email": True}}})
+
+    # Patch send_email to always raise SmtpError
+    call_count = []
+
+    def _always_fail(db, to, subject, body):
+        call_count.append(1)
+        raise smtp.SmtpError("simulated SMTP failure")
+
+    monkeypatch.setattr(smtp, "send_email", _always_fail)
+
+    # Place cursor just before a fresh notice
+    with session_scope() as db:
+        from omilo_api.notify import latest_id
+        cur = db.get(Setting, "email_cursor")
+        if cur:
+            cur.value = latest_id(db)
+        else:
+            db.add(Setting(key="email_cursor", value=latest_id(db)))
+        n = Notice(kind="inbox", title="Failure advance test", body="body", url="/", tag="test-fail-advance", level="decision", who="bot")
+        db.add(n)
+
+    # First call: send_email raises, but email_pending must return 0 (not raise) and advance cursor
+    count1 = asyncio.run(
+        N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", "")
+    )
+    assert count1 == 0, f"expected 0 sent (all failed), got {count1}"
+    assert len(call_count) >= 1, "send_email should have been attempted at least once"
+
+    # Second call: cursor already advanced, so the same notice must NOT be retried
+    calls_before_2nd = len(call_count)
+    count2 = asyncio.run(
+        N.email_pending(session_scope, lambda: session_scope(C.MAIN), "", "")
+    )
+    assert count2 == 0, f"expected 0 on 2nd call (no new notices), got {count2}"
+    assert len(call_count) == calls_before_2nd, (
+        f"send_email was called again on 2nd run — cursor was NOT advanced: {call_count}"
+    )

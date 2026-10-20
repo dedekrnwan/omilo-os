@@ -502,8 +502,7 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
 
         # Find all unique user ids that have email prefs (stored in the company DB)
         # We mirror push_pending: iterate the auth DB for known users
-        from sqlalchemy import select as _sel
-        users = list(adb.scalars(_sel(User)))
+        users = list(adb.scalars(select(User)))
         if not users:
             # advance cursor so we don't replay
             cur.value = notices[-1].id
@@ -516,7 +515,15 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
             p = prefs(db, u.id)
             fresh = [n for n in notices if wants(p, n.kind, "email")]
             now_ok = [n for n in fresh if not held(db, p, n.level)]
+            # Per-hour cap: mirror push_pending's MAX_PER_HOUR enforcement
+            since = now() - dt.timedelta(hours=1)
+            emails_this_hour = db.scalar(select(func.count()).select_from(Notification).where(
+                Notification.user_id == u.id, Notification.channel == "email",
+                Notification.action == "sent", Notification.sent_at >= since)) or 0
+            cap = p["max_per_hour"]
             for n in now_ok:
+                if emails_this_hour >= cap:
+                    break
                 payload = serialize(n)
                 subject = payload["title"]
                 if label:
@@ -525,7 +532,8 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
                 try:
                     smtp.send_email(db, u.email, subject, body)
                 except smtp.SmtpError:
-                    return 0
+                    log.warning("email send failed", exc_info=True)
+                    continue
                 db.add(Notification(
                     inbox_item_id=n.item_id,
                     notice_id=n.id,
@@ -535,6 +543,7 @@ async def email_pending(db_factory, auth_factory=None, label: str = "", company:
                     action="sent",
                 ))
                 sent += 1
+                emails_this_hour += 1
 
         cur.value = notices[-1].id
         db.commit()
