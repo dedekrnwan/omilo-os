@@ -1631,7 +1631,24 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
         connected = conn is not None
         needs_reconnect = bool(conn and C.connector_secrets(conn).get("needs_reconnect"))
         man = manifests.get(slug) or {}
-        result.append({
+        entry_type = piece.get("type", "piece")
+        if entry_type == "mcp":
+            mcp_auth_fields = (man.get("mcp") or {}).get("auth", {}).get("fields") or []
+            card_actions: list = []
+            card_provider: str = ""
+            card_connect_fields: list = [
+                {"name": f["name"], "label": f.get("label", f["name"]), "secret": f.get("secret", False)}
+                for f in mcp_auth_fields
+                if isinstance(f, dict) and "name" in f
+            ]
+        else:
+            card_actions = [
+                {"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
+                for a in (man.get("actions") or []) if isinstance(a, dict)
+            ]
+            card_provider = (man.get("auth") or {}).get("provider") or ""
+            card_connect_fields = []
+        card: dict = {
             "slug": slug,
             "label": piece["label"],
             "category": piece["category"],
@@ -1639,11 +1656,14 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
             "logo_url": logo_url,
             "connected": connected,
             "needs_reconnect": needs_reconnect,
+            "type": entry_type,
             # what a helper can do with it, and which of those wait for your OK (shown on the card and its details)
-            "actions": [{"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
-                        for a in (man.get("actions") or []) if isinstance(a, dict)],
-            "provider": ((man.get("auth") or {}).get("provider") or ""),
-        })
+            "actions": card_actions,
+            "provider": card_provider,
+        }
+        if entry_type == "mcp":
+            card["connect_fields"] = card_connect_fields
+        result.append(card)
 
     return result
 

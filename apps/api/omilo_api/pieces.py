@@ -209,6 +209,7 @@ def _parse_source(path: Path) -> list[dict]:
                 "category": raw.get("category", "") if isinstance(raw, dict) else "",
                 "description": raw.get("description", "") if isinstance(raw, dict) else "",
                 "logo_rel": logo_rel,
+                "type": raw.get("type", "piece") if isinstance(raw, dict) else "piece",
                 "manifest": raw if isinstance(raw, dict) else {},
                 "status": "invalid",
                 "error": "; ".join(errors),
@@ -220,6 +221,7 @@ def _parse_source(path: Path) -> list[dict]:
                 "category": raw.get("category", ""),
                 "description": raw.get("description", ""),
                 "logo_rel": logo_rel,
+                "type": raw.get("type", "piece"),
                 "manifest": raw,
                 "status": "ok",
                 "error": "",
@@ -315,7 +317,7 @@ def catalog() -> list[dict]:
     """Return only 'ok' pieces with public fields (no manifest internals)."""
     public = ("slug", "label", "category", "description", "logo_rel")
     return [
-        {k: e[k] for k in public}
+        {**{k: e[k] for k in public}, "type": e.get("type", "piece")}
         for e in _load_index()
         if e.get("status") == "ok"
     ]
