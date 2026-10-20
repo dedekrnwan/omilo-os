@@ -713,7 +713,7 @@ def _has_template(value: str) -> bool:
 # A URL's host passes iff it equals a host in MCP_HOSTS or is a dotted-left-subdomain
 # of one (same rule as _check_host / PROVIDER_DOMAINS).
 # ---------------------------------------------------------------------------
-MCP_HOSTS: set[str] = set()
+MCP_HOSTS: set[str] = {"mcp.repliz.com"}
 
 
 def mcp_host_allowed(url: str) -> bool:
