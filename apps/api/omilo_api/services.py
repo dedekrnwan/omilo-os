@@ -191,6 +191,22 @@ def chief(db: Session) -> Staff | None:
     return db.scalar(select(Staff).where(Staff.is_chief.is_(True)))
 
 
+def staff_by_role(db: Session, role: str) -> "Staff | None":
+    """Return the first active Staff whose role matches *role* (case-insensitive).
+
+    Deterministic when multiple holders exist: ordered by Staff.id ascending.
+    Returns None if no active staff holds the role.
+    """
+    from sqlalchemy import func as sa_func
+
+    return db.scalar(
+        select(Staff)
+        .where(Staff.status == "active")
+        .where(sa_func.lower(Staff.role) == role.lower())
+        .order_by(Staff.id)
+    )
+
+
 # ---------------------------------------------------------------- shifts
 def timezone_name(db: Session | None = None) -> str:
     """The owner's timezone: chosen in onboarding/Settings, else OMILO_TIMEZONE."""

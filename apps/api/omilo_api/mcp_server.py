@@ -168,10 +168,13 @@ TOOLS: list[dict] = [
     {"name": "update_kpi", "description": "Record a KPI value with its source (Finance only unless permitted).",
      "inputSchema": {"type": "object", "properties": {"name": _s("string", "kpi name"), "value": _s("number", "value"),
                      "period": _s("string", "e.g. 2026-W42"), "source": _s("string", "where the number comes from")}, "required": ["name", "value", "source"]}},
-    {"name": "create_task", "description": "Delegate a task to another staff agent (Chief of Staff only unless permitted).",
-     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "who should do it"), "brief": _s("string", "what to do and why"),
+    {"name": "create_task", "description": "Delegate a task to another staff agent (Chief of Staff only unless permitted). "
+                                           "Specify the assignee via staff_id (exact id) or role (e.g. 'marketing'); one of the two is required.",
+     "inputSchema": {"type": "object", "properties": {"staff_id": _s("string", "who should do it (exact id); alternative to role"),
+                     "role": _s("string", "the role to delegate to, e.g. 'marketing'; alternative to staff_id"),
+                     "brief": _s("string", "what to do and why"),
                      "parent_task_id": _s("string", "your task id"),
-                     "goal_id": _s("string", "the founder's goal this serves (ids from get_context → goals); sub-jobs inherit it")}, "required": ["staff_id", "brief"]}},
+                     "goal_id": _s("string", "the founder's goal this serves (ids from get_context → goals); sub-jobs inherit it")}, "required": ["brief"]}},
     {"name": "log_usage", "description": "Report tokens and cost spent on a task (for the budget meter).",
      "inputSchema": {"type": "object", "properties": {"task_id": _s("string", "task id"), "tokens": _s("integer", "tokens"),
                      "cost_usd": _s("number", "cost in USD")}, "required": ["task_id"]}},
@@ -468,7 +471,18 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         level = policy.level_for("staff.delegate", st.permissions) if not st.is_chief else policy.AUTO
         if level < policy.DO_AND_TELL:
             raise S.DomainError("only the Chief of Staff may delegate tasks", 403)
-        if args["staff_id"] == st.id:
+        # Resolve target staff: staff_id takes priority; fall back to role resolution.
+        target_id = args.get("staff_id")
+        if target_id:
+            pass  # use as-is; downstream create_task validates existence
+        elif args.get("role"):
+            resolved = S.staff_by_role(db, str(args["role"]))
+            if resolved is None:
+                raise S.DomainError(f"no active staff holds the role '{args['role']}'")
+            target_id = resolved.id
+        else:
+            raise S.DomainError("provide staff_id or role to specify who should do it")
+        if target_id == st.id:
             raise S.DomainError("delegate to someone else")
         depth, parent = 0, args.get("parent_task_id")
         while parent and depth < 5:
@@ -477,7 +491,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             depth += 1
         if depth >= 2:
             raise S.DomainError("delegation is limited to 2 levels")
-        t = S.create_task(db, args["staff_id"], "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
+        t = S.create_task(db, target_id, "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
                           goal_id=args.get("goal_id") or None)
         return "allowed", {"task_id": t.id}
     if name == "log_usage":
