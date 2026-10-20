@@ -15,7 +15,7 @@ from .config import get_settings
 from .db import init_db, session_scope
 from .engines import ChatContext, EngineResult, TaskContext, get_engine
 from .events import Emitter
-from .models import Proposal, Report, Shift, Staff, Task, Thread, now
+from .models import Proposal, Report, Shift, Staff, Task, TaskGoal, Thread, now
 from .security import decrypt
 
 log = logging.getLogger("omilo.worker")
@@ -437,12 +437,21 @@ class Worker:
             # to the real engine. The staff's SOUL (voice/autonomy) rides along so the graph's
             # node prompts reflect it without changing the TaskContext signature.
             engine_cfg = _effective_engine(st)
+            # A CoS "goal-delivery" run must delegate, not execute: strip exec tools.
+            # goal_delivery = is_chief AND (origin in plan/review OR a TaskGoal row links this task to a goal).
+            goal_delivery = False
+            if st.is_chief:
+                if t.origin in ("plan", "review"):
+                    goal_delivery = True
+                else:
+                    goal_delivery = db.get(TaskGoal, t.id) is not None
             ctx = TaskContext(
                 staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, task_id=t.id, origin=t.origin,
                 brief=t.brief, founder_note=t.founder_note,
                 checkpoint=ck and {"plan": ck.plan, "done": ck.done, "next": ck.next, "notes": ck.notes},
                 proposal=prop, mcp_url=_mcp_url(), mcp_token=decrypt(st.mcp_token_enc), engine_config=engine_cfg,
                 emit=Emitter(st.id, task_id=t.id), resources=resolve(db, proposal=prop, staff=st), memory=_memory(db, st, t),
+                goal_delivery=goal_delivery,
             )
             return ctx, dict(engine_cfg), int(st.max_task_minutes or 30)
 

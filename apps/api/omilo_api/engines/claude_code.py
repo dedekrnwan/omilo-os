@@ -20,6 +20,22 @@ from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 SAFE_TOOLS = ["mcp__omilo", "WebSearch", "WebFetch", "Read", "Glob", "Grep", "TodoWrite", "Edit", "Write"]
 
+# Execution tools the CoS must NOT use during goal-delivery runs: it must delegate, not do.
+_EXEC_TOOLS = frozenset(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"])
+
+
+def manager_tool_filter(tools: list[str], *, is_chief: bool, goal_delivery: bool) -> list[str]:
+    """Return the filtered tool list for one run.
+
+    For a Chief-of-Staff goal-delivery run (is_chief AND goal_delivery), execution tools
+    (Bash, Write, Edit, MultiEdit, NotebookEdit) are removed so the CoS must delegate
+    rather than act directly.  All other runs — CoS admin runs, non-CoS staff — are
+    returned unchanged.
+    """
+    if not (is_chief and goal_delivery):
+        return tools
+    return [t for t in tools if t not in _EXEC_TOOLS]
+
 
 def plan(cfg: dict, resources) -> tuple[dict, list[str], list[str]]:
     """MCP servers, allowed tools and extra flags for one run, from the helper's settings and what this run may use.
@@ -220,6 +236,7 @@ class ClaudeCodeEngine(Engine):
             return EngineResult(error="Claude Code is not installed. Settings → Harness → Install Claude Code.")
         config, runs, cwd = _dirs(staff_id)
         servers, tools, extra = plan(cfg, resources)
+        tools = manager_tool_filter(tools, is_chief=bool(cfg.get("_is_chief")), goal_delivery=bool(cfg.get("_goal_delivery")))
         if resources is not None and resources.folders:
             first_rw = next((f for f in resources.folders if f["access"] == "write"), None)
             if first_rw:
@@ -351,7 +368,8 @@ class ClaudeCodeEngine(Engine):
     async def run_task(self, ctx: TaskContext) -> EngineResult:
         if not ctx.mcp_token:
             return EngineResult(error="no MCP token for this helper: rotate it in Team")
-        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token}
+        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token,
+               "_is_chief": ctx.is_chief, "_goal_delivery": ctx.goal_delivery}
         system = with_resources(CONSTITUTION.format(name=ctx.staff_name, job=ctx.job or "(no job description yet)").replace(
             "(tools from the `omilo` MCP server)", "(tools from the `omilo` MCP server, named mcp__omilo__*)"), ctx.resources)
         session = _task_session(ctx.task_id)

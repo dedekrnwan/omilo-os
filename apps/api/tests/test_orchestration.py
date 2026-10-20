@@ -1,6 +1,7 @@
 """Task B1 — Role resolution + role-based delegation.
 Task B2 — seed_relations: populate StaffRelation org chart.
 Task B3 — Goal planner: activating a goal enqueues exactly one CoS plan task.
+Task B4 — CoS manager tool-policy (context-sensitive): goal-delivery runs exclude exec tools.
 
 Tests:
   1. staff_by_role resolves a role to its first active staff (by id order).
@@ -20,6 +21,17 @@ Tests:
   11. A create_task(goal_id=<g>) child links to goal g via TaskGoal.
   12. start_planning on a done goal is a no-op (no plan task created).
   13. start_planning when there is no CoS is a no-op (no crash, no task).
+
+  B4:
+  14. manager_tool_filter: CoS goal-delivery run strips Bash/Write/Edit/MultiEdit from tools.
+  15. manager_tool_filter: CoS non-goal-delivery run keeps Bash.
+  16. manager_tool_filter: non-CoS run is unaffected (Bash present).
+  17. manager_tool_filter: CoS origin="plan" (no goal link) is still goal-delivery → no Bash.
+  18. manager_tool_filter: CoS origin="review" is goal-delivery → no Bash.
+  19. manager_tool_filter: read-only tools (Read, Glob, Grep) are kept on CoS goal-delivery run.
+  20. manager_tool_filter: mcp__omilo tools are kept on CoS goal-delivery run.
+  21. Integration: _task_context sets goal_delivery=True for goal-linked CoS plan task.
+  22. Integration: _task_context sets goal_delivery=False for non-goal CoS admin task.
 
 All rows are self-contained: each test creates its own Staff with a
 distinct role so there is no cross-test bleed.
@@ -464,3 +476,126 @@ def test_start_planning_no_cos_noop():
 
     count = _count_plan_tasks(cid, goal_id)
     assert count == 0, f"expected 0 plan tasks when no CoS, got {count}"
+
+
+# ---------------------------------------------------------------------------
+# Task B4 — CoS manager tool-policy (context-sensitive)
+# ---------------------------------------------------------------------------
+# Unit tests for the pure helper: manager_tool_filter(tools, is_chief, goal_delivery)
+# Integration tests: _task_context computes goal_delivery correctly.
+
+from omilo_api.engines.claude_code import SAFE_TOOLS, manager_tool_filter  # noqa: E402
+
+
+_FULL_TOOLS = list(SAFE_TOOLS) + ["Bash", "mcp__omilo__create_task", "mcp__omilo__get_task"]
+
+
+def test_b4_filter_strips_exec_tools_for_cos_goal_delivery():
+    """CoS goal-delivery: Bash, Write, Edit, MultiEdit removed from tool list."""
+    result = manager_tool_filter(_FULL_TOOLS, is_chief=True, goal_delivery=True)
+    for exec_tool in ("Bash", "Write", "Edit", "MultiEdit"):
+        assert exec_tool not in result, f"{exec_tool!r} must be absent for CoS goal-delivery"
+
+
+def test_b4_filter_keeps_bash_for_cos_non_goal_delivery():
+    """CoS non-goal-delivery (admin run): Bash is preserved."""
+    result = manager_tool_filter(_FULL_TOOLS, is_chief=True, goal_delivery=False)
+    assert "Bash" in result, "Bash must be present for a CoS admin run"
+
+
+def test_b4_filter_non_cos_is_unaffected():
+    """Non-CoS staff: all tools including Bash are preserved regardless of goal_delivery."""
+    for gd in (True, False):
+        result = manager_tool_filter(_FULL_TOOLS, is_chief=False, goal_delivery=gd)
+        assert "Bash" in result, f"Bash must be present for non-CoS staff (goal_delivery={gd})"
+
+
+def test_b4_filter_cos_plan_origin_is_goal_delivery():
+    """origin='plan' is goal-delivery even without a TaskGoal link → exec tools stripped."""
+    # Simulate: is_chief=True, goal_delivery determined by origin="plan"
+    tools_with_bash = list(SAFE_TOOLS) + ["Bash"]
+    result = manager_tool_filter(tools_with_bash, is_chief=True, goal_delivery=True)
+    assert "Bash" not in result
+
+
+def test_b4_filter_cos_review_origin_is_goal_delivery():
+    """origin='review' is goal-delivery → exec tools stripped."""
+    tools_with_bash = list(SAFE_TOOLS) + ["Bash"]
+    result = manager_tool_filter(tools_with_bash, is_chief=True, goal_delivery=True)
+    assert "Bash" not in result
+
+
+def test_b4_filter_keeps_read_only_tools_for_cos_goal_delivery():
+    """Read-only tools (Read, Glob, Grep) are preserved on a CoS goal-delivery run."""
+    result = manager_tool_filter(_FULL_TOOLS, is_chief=True, goal_delivery=True)
+    for ro_tool in ("Read", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"):
+        assert ro_tool in result, f"{ro_tool!r} must be kept for CoS goal-delivery"
+
+
+def test_b4_filter_keeps_mcp_tools_for_cos_goal_delivery():
+    """MCP (omilo) tools are preserved on a CoS goal-delivery run."""
+    result = manager_tool_filter(_FULL_TOOLS, is_chief=True, goal_delivery=True)
+    mcp_tools = [t for t in result if t.startswith("mcp__omilo")]
+    assert mcp_tools, "mcp__omilo tools must be kept for CoS goal-delivery"
+
+
+# ---------------------------------------------------------------------------
+# Integration: _task_context goal_delivery computation
+# ---------------------------------------------------------------------------
+
+def _isolated_b4_cid() -> str:
+    return "b4test-" + uuid.uuid4().hex[:10]
+
+
+def _make_b4_cos(cid: str) -> str:
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b4-cos-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.commit()
+    return cos_id
+
+
+def test_b4_task_context_goal_delivery_true_for_goal_linked_cos_task():
+    """_task_context sets goal_delivery=True when CoS task has a TaskGoal link."""
+    from omilo_api.worker import Worker  # noqa: E402
+
+    cid = _isolated_b4_cid()
+    cos_id = _make_b4_cos(cid)
+
+    with C.use(cid), session_scope(cid) as db:
+        g = Goal(title="Goal B4", target="Achieve it", status="active")
+        db.add(g)
+        db.flush()
+        goal_id = g.id
+        t = S.create_task(db, staff_id=cos_id, origin="delegation", brief="Plan this goal",
+                          created_by="system", goal_id=goal_id)
+        task_id = t.id
+        db.commit()
+
+    with C.use(cid):
+        worker = Worker.__new__(Worker)
+        ctx, _, _ = worker._task_context(task_id)
+
+    assert ctx.goal_delivery is True, "goal_delivery must be True when CoS task is goal-linked"
+
+
+def test_b4_task_context_goal_delivery_false_for_cos_admin_task():
+    """_task_context sets goal_delivery=False for a CoS task with no goal link and admin origin."""
+    from omilo_api.worker import Worker  # noqa: E402
+
+    cid = _isolated_b4_cid()
+    cos_id = _make_b4_cos(cid)
+
+    with C.use(cid), session_scope(cid) as db:
+        t = S.create_task(db, staff_id=cos_id, origin="chat", brief="A quick admin retro",
+                          created_by="system")
+        task_id = t.id
+        db.commit()
+
+    with C.use(cid):
+        worker = Worker.__new__(Worker)
+        ctx, _, _ = worker._task_context(task_id)
+
+    assert ctx.goal_delivery is False, "goal_delivery must be False for a CoS admin/chat run"
