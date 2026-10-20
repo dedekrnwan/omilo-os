@@ -59,26 +59,44 @@ function Tree({ docs, current, q, onOpen, noteMenu, folderMenu }: { docs: TreeDo
     return keys.map((k) => ({ folder: k, docs: m.get(k)!.sort((a, b) => a.title.localeCompare(b.title)) }));
   }, [shown]);
   const toggle = (f: string) => setClosed((s) => { const x = new Set(s); if (x.has(f)) x.delete(f); else x.add(f); return x; });
+  const sectionLabel = (f: string) => f === "Company" ? "COMPANY" : f === "Memory" ? "WHAT HELPERS LEARNED" : f.split("/")[0].toUpperCase();
+  const folderIcon = (f: string) => f === "Company" ? "ri-building-2-line" : f === "Memory" ? "ri-brain-line" : "ri-folder-3-line";
   return (
     <div className="dtree">
-      {groups.map((g) => (
-        <div key={g.folder || "(root)"}>
-          {g.folder && (
-            <button className="dt-f" onClick={() => toggle(g.folder)} onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))} style={{ paddingLeft: 8 + (g.folder.split("/").length - 1) * 12 }}>
-              <i className={closed.has(g.folder) && !ql ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line"} />
-              <i className={g.folder === "Company" ? "ri-building-2-line" : g.folder === "Memory" ? "ri-brain-line" : "ri-folder-3-line"} />
-              <span>{g.folder === "Company" ? "Company knowledge" : g.folder === "Memory" ? "Memory (what helpers learned)" : g.folder.split("/").pop()}</span>
-            </button>
-          )}
-          {(!closed.has(g.folder) || ql) && g.docs.map((d) => (
-            <button key={d.path} className={`dt-d ${d.path === current ? "on" : ""}`} onClick={() => onOpen(d.path)} onContextMenu={menu(() => noteMenu(d))}
-              style={{ paddingLeft: (g.folder ? 30 + (g.folder.split("/").length - 1) * 12 : 12) }} title={d.path}>
-              <i className="ri-file-text-line" /><span>{d.title}</span>
-              {d.updated_by?.kind === "agent" && <span className="dt-by" title={`Last changed by ${d.updated_by.name}`}><Avatar who={{ id: d.updated_by.id, name: d.updated_by.name }} size={14} /></span>}
-            </button>
-          ))}
-        </div>
-      ))}
+      {groups.map((g) => {
+        const depth = g.folder ? g.folder.split("/").length - 1 : 0;
+        const isTopFolder = g.folder && depth === 0;
+        return (
+          <div key={g.folder || "(root)"}>
+            {g.folder && isTopFolder && (
+              <div className="dt-section" onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))}>
+                <span className="dt-section-label">{sectionLabel(g.folder)}</span>
+              </div>
+            )}
+            {g.folder && !isTopFolder && (
+              <button className="dt-f" onClick={() => toggle(g.folder)} onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))} style={{ paddingLeft: 8 + depth * 12 }}>
+                <i className={closed.has(g.folder) && !ql ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line"} />
+                <i className={folderIcon(g.folder)} />
+                <span>{g.folder.split("/").pop()}</span>
+              </button>
+            )}
+            {g.folder && isTopFolder && (
+              <button className="dt-f dt-f-top" onClick={() => toggle(g.folder)} onContextMenu={menu(() => folderMenu(g.folder, closed.has(g.folder), () => toggle(g.folder)))} style={{ paddingLeft: 8 }}>
+                <i className={closed.has(g.folder) && !ql ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line"} />
+                <i className={folderIcon(g.folder)} />
+                <span>{g.folder === "Company" ? "Company knowledge" : g.folder === "Memory" ? "Memory (what helpers learned)" : g.folder}</span>
+              </button>
+            )}
+            {(!closed.has(g.folder) || ql) && g.docs.map((d) => (
+              <button key={d.path} className={`dt-d ${d.path === current ? "on" : ""}`} onClick={() => onOpen(d.path)} onContextMenu={menu(() => noteMenu(d))}
+                style={{ paddingLeft: (g.folder ? 30 + depth * 12 : 12) }} title={d.path}>
+                <i className="ri-file-text-line" /><span>{d.title}</span>
+                {d.updated_by?.kind === "agent" && <span className="dt-by" title={`Last changed by ${d.updated_by.name}`}><Avatar who={{ id: d.updated_by.id, name: d.updated_by.name }} size={14} /></span>}
+              </button>
+            ))}
+          </div>
+        );
+      })}
       {shown.length === 0 && <p className="small" style={{ padding: "8px 12px" }}>No notes match.</p>}
     </div>
   );
@@ -336,17 +354,17 @@ function DocsInner() {
 
   return (
     <div className="ws docs">
-      <div className="topbar">
+      <div className="topbar topbar-v2">
         <button className="iconbtn hide-lg" aria-label="Show notes" onClick={() => setListOpen(!listOpen)}><i className="ri-menu-2-line" /></button>
-        <span className="crumb"><i className="ri-book-2-line" />Docs{doc && !graphMode && <span className="small" style={{ fontWeight: 400 }}>· {doc.path.replace(/\.md$/, "").split("/").join(" / ")}</span>}{graphMode && <span className="small" style={{ fontWeight: 400 }}>· {kbMode ? "Knowledge" : "Graph"}</span>}</span>
+        <span className="crumb">
+          <i className="ri-book-2-line" />
+          <span className="crumb-title">Docs</span>
+          {doc && !graphMode && <span className="meta">· {doc.path.replace(/\.md$/, "").split("/").join(" / ")}</span>}
+          {graphMode && <span className="meta">· {kbMode ? "Knowledge" : "Graph"}</span>}
+        </span>
         <span className="sp" />
         {!graphMode && doc && (
-          <>
-            <span className={`dsave ${save}`}><i className={save === "saved" ? "ri-check-line" : save === "saving" ? "ri-loader-4-line" : save === "conflict" || save === "error" ? "ri-error-warning-line" : "ri-edit-line"} />{saveLabel}</span>
-            <div className="seg hide-sm" role="tablist" aria-label="Editor view">
-              {(["edit", "split", "preview"] as const).map((m) => <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m === "edit" ? "Write" : m === "split" ? "Both" : "Read"}</button>)}
-            </div>
-          </>
+          <span className={`dsave ${save}`}><i className={save === "saved" ? "ri-check-line" : save === "saving" ? "ri-loader-4-line" : save === "conflict" || save === "error" ? "ri-error-warning-line" : "ri-edit-line"} />{saveLabel}</span>
         )}
         <div className="seg" role="tablist" aria-label="Docs view">
           <button role="tab" aria-selected={!graphMode} className={!graphMode ? "on" : ""} onClick={() => go(doc ? { path: doc.path } : {})}><i className="ri-file-text-line" /> Notes</button>
@@ -357,14 +375,15 @@ function DocsInner() {
       </div>
 
       <div className={`ws-body docs-body ${side && !graphMode && doc ? "panel" : ""}`}>
-        <nav className={`ws-list ${listOpen ? "open" : ""}`} onContextMenu={menu(() => [{ label: "New note", icon: "ri-file-add-line", onSelect: () => setCreating({ name: "", folder: "" }) },
+        <nav className={`ws-list docs-list-v2 ${listOpen ? "open" : ""}`} onContextMenu={menu(() => [{ label: "New note", icon: "ri-file-add-line", onSelect: () => setCreating({ name: "", folder: "" }) },
           { label: "Graph", icon: "ri-share-circle-line", onSelect: () => go({ graph: "1" }) }])}>
-          <div className="dt-top">
+          <div className="dt-top dt-top-v2">
+            <i className="ri-search-line dt-search-ic" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a note…" aria-label="Find a note" />
             <button className="iconbtn" aria-label="New note" title="New note" onClick={() => setCreating({ name: "", folder: doc?.path.includes("/") && !doc.company ? doc.path.slice(0, doc.path.lastIndexOf("/")) : "" })}><i className="ri-file-add-line" /></button>
           </div>
           {tree ? <Tree docs={tree.docs} current={doc?.path || null} q={q} onOpen={(p) => go({ path: p })} noteMenu={(d) => noteMenu(d.path, d.company)} folderMenu={folderMenu} /> : <p className="small" style={{ padding: 12 }}>Loading…</p>}
-          {tree && <div className="dt-foot small" title={tree.vault}><i className="ri-folder-open-line" />Vault folder: <span className="mono">{tree.vault.split("/").slice(-2).join("/")}</span> · open it in Obsidian too</div>}
+          {tree && <div className="dt-foot small" title={tree.vault}><i className="ri-folder-open-line" /><span className="mono">{tree.vault.split("/").slice(-2).join("/")}</span> · Obsidian</div>}
         </nav>
 
         <section className="ws-main docs-main">
@@ -384,17 +403,22 @@ function DocsInner() {
               <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => setCreating({ name: path ? title(path) : "", folder: "" })}><i className="ri-file-add-line" />New note</button></div></div></div>
           ) : (
             <div className="deditor">
-              <div className="dhead">
+              <div className="dhead dhead-v2">
+                <div className="dhead-meta">
+                  <div className="dmeta small">
+                    <WhoBadge w={doc.updated_by} /><span>· {ago(doc.updated_at)}</span>
+                    {doc.company && <span className="chip" style={{ marginLeft: 6 }}><i className="ri-building-2-line" />Company knowledge</span>}
+                  </div>
+                  <span className="sp" />
+                  <div className="seg hide-sm dhead-seg" role="tablist" aria-label="Editor view">
+                    {(["edit", "split", "preview"] as const).map((m) => <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m === "edit" ? "Edit" : m === "split" ? "Both" : "Read"}</button>)}
+                  </div>
+                  {!doc.company && <button className="iconbtn" aria-label="Delete note" title="Delete" onClick={remove}><i className="ri-delete-bin-line" /></button>}
+                </div>
                 {renaming !== null ? (
                   <input className="dtitle-in" autoFocus value={renaming} onChange={(e) => setRenaming(e.target.value)} onBlur={() => rename(renaming)}
                     onKeyDown={(e) => { if (e.key === "Enter") rename(renaming); if (e.key === "Escape") setRenaming(null); }} />
                 ) : <h1 className="dtitle" title="Click to rename" onClick={() => !doc.company && setRenaming(doc.title)} onContextMenu={menu(() => noteMenu(doc.path, doc.company))}>{doc.title}</h1>}
-                <div className="dmeta small">
-                  <WhoBadge w={doc.updated_by} /><span>· {ago(doc.updated_at)}</span>
-                  {doc.company && <span className="chip" style={{ marginLeft: 6 }}><i className="ri-building-2-line" />Company knowledge · every helper reads it</span>}
-                  <span className="sp" />
-                  {!doc.company && <button className="iconbtn" aria-label="Delete note" title="Delete" onClick={remove}><i className="ri-delete-bin-line" /></button>}
-                </div>
                 {conflict && (
                   <div className="callout warn dbanner"><i className="ri-error-warning-line" /><span><b>{whoLabel(conflict.updated_by)}</b> changed this note while you were editing.</span><span className="sp" />
                     <button className="btn sm" onClick={() => { setText(conflict.content); setBase(conflict.version); setConflict(null); setSave("saved"); }}>Use theirs</button>
@@ -442,28 +466,28 @@ function DocsInner() {
         </section>
 
         {side && !graphMode && doc && (
-          <aside className="ws-panel dside">
-            <div className="ptabs">
+          <aside className="ws-panel dside docs-context-v2">
+            <div className="ptabs docs-ptabs-v2">
               <div className="seg">
                 <button className={tab === "links" ? "on" : ""} onClick={() => setTab("links")}>Links</button>
-                <button className={tab === "related" ? "on" : ""} onClick={() => setTab("related")} title="Knowledge close in meaning">Related</button>
                 <button className={tab === "outline" ? "on" : ""} onClick={() => setTab("outline")}>Outline</button>
+                <button className={tab === "related" ? "on" : ""} onClick={() => setTab("related")} title="Knowledge close in meaning">Related</button>
                 <button className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>History</button>
               </div>
             </div>
             <div className="pbody">
               {tab === "links" && (
                 <>
-                  <div className="ds-h">Linked here <span className="bcol-n" style={{ position: "static" }}>{doc.backlinks.length}</span></div>
-                  {doc.backlinks.length === 0 ? <p className="small">No other note links here yet. Link to it with [[{doc.title}]].</p> : doc.backlinks.map((b) => (
-                    <button key={b.path} className="ds-link" onClick={() => go({ path: b.path })} onContextMenu={menu(() => noteMenu(b.path))}><b><i className="ri-file-text-line" />{b.title}</b><span>{b.snippet}</span></button>
-                  ))}
-                  <div className="ds-h" style={{ marginTop: 16 }}>Links from here <span className="bcol-n" style={{ position: "static" }}>{doc.links.length}</span></div>
+                  <div className="ds-h">Links from here <span className="bcol-n" style={{ position: "static" }}>{doc.links.length}</span></div>
                   {doc.links.length === 0 ? <p className="small">No links yet. Type [[ in the note.</p> : doc.links.map((l) => (
                     <button key={l.target} className={`ds-link ${l.path ? "" : "missing"}`} onClick={() => go(l.path ? { path: l.path } : { path: l.target, new: "1" })}
                       onContextMenu={menu(() => (l.path ? noteMenu(l.path) : missingMenu(l.target)))}>
-                      <b><i className={l.path ? "ri-file-text-line" : "ri-file-add-line"} />{l.path ? title(l.path) : l.target}</b>{!l.path && <span>Not written yet: click to create it</span>}
+                      <b><i className={l.path ? "ri-file-text-line" : "ri-file-add-line"} />{l.path ? title(l.path) : l.target}</b>{!l.path && <span>Not written yet — click to create</span>}
                     </button>
+                  ))}
+                  <div className="ds-h" style={{ marginTop: 16 }}>Linked here <span className="bcol-n" style={{ position: "static" }}>{doc.backlinks.length}</span></div>
+                  {doc.backlinks.length === 0 ? <p className="small">No other note links here yet. Type [[{doc.title}]] in any note.</p> : doc.backlinks.map((b) => (
+                    <button key={b.path} className="ds-link" onClick={() => go({ path: b.path })} onContextMenu={menu(() => noteMenu(b.path))}><b><i className="ri-file-text-line" />{b.title}</b><span>{b.snippet}</span></button>
                   ))}
                 </>
               )}

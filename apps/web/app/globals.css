@@ -2762,3 +2762,54 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .wf2-empty-icon { width: 36px; height: 36px; font-size: 18px; }
   .wf2-tpl-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- Docs v2 (pen S7MKc1) */
+
+/* Three-pane grid: tree 240px / editor fill / context 280px */
+.docs-body.panel { grid-template-columns: 240px minmax(0, 1fr) 280px; }
+
+/* Tree nav v2 */
+.docs-list-v2 { padding: 10px 8px; gap: 0; }
+
+/* Search bar v2 — icon + input + new-note button */
+.dt-top-v2 { display: flex; gap: 4px; align-items: center; padding: 0 2px 10px; }
+.dt-top-v2 .dt-search-ic { font-size: 14px; color: var(--muted); flex-shrink: 0; margin-left: 4px; }
+.dt-top-v2 input { min-height: 32px; height: 32px; font-size: 13px; flex: 1; background: var(--soft); }
+
+/* Section divider (e.g. "COMPANY", "WHAT HELPERS LEARNED") */
+.dt-section { padding: 12px 8px 4px; }
+.dt-section-label { font-size: 10.5px; font-weight: 600; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+
+/* Top-level folder toggle row (sits right after its section label) */
+.dt-f-top { font-weight: 500; }
+
+/* Editor head v2: meta row (avatar + timestamp + seg + delete) above the title */
+.dhead-v2 { padding: 14px 56px 10px; }
+.dhead-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dhead-meta .sp { flex: 1; }
+.dhead-seg { flex-shrink: 0; }
+
+/* Widen editor horizontal padding to 56px (pen: pad=[28,56]) */
+.dwrite textarea { padding: 18px 56px 60px; }
+.dread { padding: 18px 56px 60px; }
+
+/* Context panel v2 */
+.docs-context-v2 { border-left: 1px solid var(--line); background: var(--soft); }
+.docs-context-v2 .pbody { padding: 14px 16px; }
+
+/* Tabs row — tighter */
+.docs-ptabs-v2 { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+
+@media (max-width: 1100px) {
+  .docs-body.panel { grid-template-columns: 220px minmax(0, 1fr); }
+  .docs-body.panel .docs-context-v2 { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(320px, calc(100vw - 16px)); z-index: 35; border-radius: var(--r-lg); box-shadow: 0 24px 48px -16px rgba(0, 0, 0, .3); }
+  .dhead-v2 { padding: 14px 28px 10px; }
+  .dwrite textarea { padding: 18px 28px 60px; }
+  .dread { padding: 18px 28px 60px; }
+}
+@media (max-width: 760px) {
+  .docs-body.panel { grid-template-columns: 1fr; }
+  .dhead-v2 { padding: 14px 14px 8px; }
+  .dwrite textarea { padding: 14px; }
+  .dread { padding: 14px; }
+}
