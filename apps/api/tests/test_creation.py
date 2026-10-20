@@ -1,6 +1,7 @@
 """Task D1 — Open create_task beyond the Chief of Staff.
+Task D2 — create_goal / update_goal MCP tools.
 
-Scope rule:
+Scope rule (D1):
   A staff may create_task (delegate) to a target if ANY:
     (a) the caller is_chief; OR
     (b) a StaffRelation(kind="delegates_to", from_staff=caller, to_staff=target) exists; OR
@@ -17,7 +18,14 @@ Tests:
   D1-6. Depth cap (2 levels) is still enforced.
   D1-7. Strict mode + permission present is refused (permission alone not enough in strict mode).
 
-All rows are self-contained: each test seeds its own Staff and StaffRelation rows.
+D2 tests:
+  D2-1. create_goal creates an active goal with created_by=staff:<id>, enqueues one plan task, sets agent_goal_notice flag.
+  D2-2. Created goal appears in worklog.live_state (planner task queued) and goals_for_prompt.
+  D2-3. update_goal(status="done") closes the goal.
+  D2-4. update_goal with an invalid status raises DomainError.
+  D2-5. create_goal is permissioned: a staff without goal.create permission is refused (403).
+
+All rows are self-contained: each test seeds its own Staff rows.
 """
 import asyncio
 import uuid
@@ -27,7 +35,7 @@ import pytest
 from omilo_api import mcp_server as mcp
 from omilo_api import services as S
 from omilo_api.db import session_scope
-from omilo_api.models import Staff, StaffRelation, Task
+from omilo_api.models import Goal, Setting, Staff, StaffRelation, Task
 
 
 # ---------------------------------------------------------------------------
@@ -233,5 +241,222 @@ def test_strict_mode_permission_alone_insufficient(owner):
 
     with pytest.raises(S.DomainError) as exc_info:
         _call(caller_id, staff_id=target_id, brief="strict mode should refuse permission path")
+
+    assert exc_info.value.code == 403
+
+
+# ---------------------------------------------------------------------------
+# D2 helpers
+# ---------------------------------------------------------------------------
+
+def _make_cos_staff(permissions: dict | None = None) -> str:
+    """CoS with is_chief=True (can create goals without extra permissions)."""
+    sid = "d2cos-" + uuid.uuid4().hex[:10]
+    with session_scope() as db:
+        db.add(Staff(
+            id=sid,
+            name=f"CoS {sid}",
+            role="chief-of-staff",
+            is_chief=True,
+            permissions=permissions or {},
+            autonomy="standard",
+            status="active",
+            engine={"type": "fake"},
+        ))
+        db.commit()
+    return sid
+
+
+def _make_planning_staff(permissions: dict | None = None) -> str:
+    """A non-CoS planning staff with staff.delegate >= DO_AND_TELL (permissive mode)."""
+    sid = "d2st-" + uuid.uuid4().hex[:10]
+    with session_scope() as db:
+        db.add(Staff(
+            id=sid,
+            name=f"Planner {sid}",
+            role="planning-" + uuid.uuid4().hex[:4],
+            is_chief=False,
+            permissions=permissions or {"actions": {"staff.delegate": 2}},
+            autonomy="standard",
+            status="active",
+            engine={"type": "fake"},
+        ))
+        db.commit()
+    return sid
+
+
+async def _call_create_goal(caller_id: str, **args) -> dict:
+    async def _inner():
+        with session_scope() as db:
+            caller = db.get(Staff, caller_id)
+            _, data = await mcp.call_tool(db, caller, "create_goal", args)
+            return data
+    return await _inner()
+
+
+async def _call_update_goal(caller_id: str, **args) -> dict:
+    async def _inner():
+        with session_scope() as db:
+            caller = db.get(Staff, caller_id)
+            _, data = await mcp.call_tool(db, caller, "update_goal", args)
+            return data
+    return await _inner()
+
+
+# ---------------------------------------------------------------------------
+# D2-1: create_goal creates active goal, enqueues one plan task, sets notice flag
+# ---------------------------------------------------------------------------
+
+def test_d2_create_goal_active_with_plan_task_and_notice(owner):
+    """create_goal creates a Goal(status=active, created_by=staff:<id>), enqueues exactly one
+    origin=plan task (via start_planning), and sets Setting(agent_goal_notice='pending')."""
+    from omilo_api.models import AuditEvent, TaskGoal
+    from sqlalchemy import select
+
+    cos_id = _make_cos_staff()
+
+    result = asyncio.get_event_loop().run_until_complete(
+        _call_create_goal(cos_id, title="Launch product v2", target="10 signups in first week", due="2026-12-31")
+    )
+    assert "goal_id" in result
+    goal_id = result["goal_id"]
+
+    with session_scope() as db:
+        g = db.get(Goal, goal_id)
+        assert g is not None
+        assert g.status == "active"
+        assert g.created_by == f"staff:{cos_id}"
+        assert g.title == "Launch product v2"
+
+        # Exactly one plan task linked to the goal
+        plan_tasks = db.scalars(
+            select(Task).join(TaskGoal, TaskGoal.task_id == Task.id).where(
+                TaskGoal.goal_id == goal_id,
+                Task.origin == "plan",
+            )
+        ).all()
+        assert len(plan_tasks) == 1, "start_planning must have enqueued exactly one plan task"
+
+        # Agent-goal notice flag must be pending
+        notice = db.get(Setting, "agent_goal_notice")
+        assert notice is not None
+        assert notice.value == "pending"
+
+        # Audit trail
+        audit_row = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "goal.create",
+                AuditEvent.ref == goal_id,
+            )
+        )
+        assert audit_row is not None, "audit row for goal.create must exist"
+
+
+# ---------------------------------------------------------------------------
+# D2-2: Created goal appears in worklog.live_state and goals_for_prompt
+# ---------------------------------------------------------------------------
+
+def test_d2_goal_appears_in_live_state_and_prompt(owner):
+    """The planner task for the created goal shows up in worklog.live_state and
+    the goal itself appears in plan.goals_for_prompt."""
+    from omilo_api import worklog
+    from omilo_api.plan import goals_for_prompt
+
+    cos_id = _make_cos_staff()
+
+    result = asyncio.get_event_loop().run_until_complete(
+        _call_create_goal(cos_id, title="D2 prompt goal " + uuid.uuid4().hex[:6], target="hit 5 signups")
+    )
+    goal_id = result["goal_id"]
+
+    with session_scope() as db:
+        # live_state should contain the queued planner task for this goal
+        state = worklog.live_state(db)
+        goal_task_items = [i for i in state["items"] if i.get("goal_id") == goal_id]
+        assert len(goal_task_items) >= 1, "at least one live-state item must reference the new goal"
+
+        # goals_for_prompt must list the goal (it is active)
+        prompts = goals_for_prompt(db)
+        ids = [g["id"] for g in prompts]
+        assert goal_id in ids, "active goal must appear in goals_for_prompt"
+
+
+# ---------------------------------------------------------------------------
+# D2-3: update_goal(status="done") closes the goal
+# ---------------------------------------------------------------------------
+
+def test_d2_update_goal_sets_done(owner):
+    """update_goal with status='done' sets the goal to done."""
+    from omilo_api.models import AuditEvent
+    from sqlalchemy import select
+
+    cos_id = _make_cos_staff()
+
+    res = asyncio.get_event_loop().run_until_complete(
+        _call_create_goal(cos_id, title="Goal to close " + uuid.uuid4().hex[:6], target="some target")
+    )
+    goal_id = res["goal_id"]
+
+    update_res = asyncio.get_event_loop().run_until_complete(
+        _call_update_goal(cos_id, goal_id=goal_id, status="done")
+    )
+    assert update_res.get("ok") is True
+
+    with session_scope() as db:
+        g = db.get(Goal, goal_id)
+        assert g.status == "done"
+
+        audit_row = db.scalar(
+            select(AuditEvent).where(
+                AuditEvent.action == "goal.update",
+                AuditEvent.ref == goal_id,
+            )
+        )
+        assert audit_row is not None, "audit row for goal.update must exist"
+
+
+# ---------------------------------------------------------------------------
+# D2-4: update_goal with an invalid status raises DomainError
+# ---------------------------------------------------------------------------
+
+def test_d2_update_goal_invalid_status_raises(owner):
+    """update_goal with an unrecognised status raises DomainError."""
+    cos_id = _make_cos_staff()
+
+    res = asyncio.get_event_loop().run_until_complete(
+        _call_create_goal(cos_id, title="Goal invalid status " + uuid.uuid4().hex[:6], target="t")
+    )
+    goal_id = res["goal_id"]
+
+    with pytest.raises(S.DomainError):
+        asyncio.get_event_loop().run_until_complete(
+            _call_update_goal(cos_id, goal_id=goal_id, status="flying")
+        )
+
+
+# ---------------------------------------------------------------------------
+# D2-5: create_goal is permissioned — staff without goal.create is refused
+# ---------------------------------------------------------------------------
+
+def test_d2_create_goal_permission_gate(owner):
+    """A staff member without goal.create permission (OFF by default) is refused 403."""
+    sid = "d2noperm-" + uuid.uuid4().hex[:10]
+    with session_scope() as db:
+        db.add(Staff(
+            id=sid,
+            name=f"NoPerm {sid}",
+            role="generic-" + uuid.uuid4().hex[:4],
+            is_chief=False,
+            permissions={},  # no goal.create permission
+            autonomy="standard",
+            status="active",
+            engine={"type": "fake"},
+        ))
+        db.commit()
+
+    with pytest.raises(S.DomainError) as exc_info:
+        asyncio.get_event_loop().run_until_complete(
+            _call_create_goal(sid, title="Unauthorised goal", target="shouldn't create")
+        )
 
     assert exc_info.value.code == 403

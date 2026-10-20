@@ -207,6 +207,23 @@ TOOLS: list[dict] = [
          "goal_id": _s("string", "id of the goal to complete"),
          "outcome": _s("string", "one or two sentences summarising what was achieved"),
      }, "required": ["goal_id", "outcome"]}},
+    {"name": "create_goal", "description": "Create a new company goal and immediately start decomposing it into tasks. "
+                                           "The goal enters active status at once and the planner is enqueued. "
+                                           "Available to the Chief of Staff and planning-capable staff (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "title": _s("string", "short goal title"),
+         "target": _s("string", "what success looks like, with numbers"),
+         "due": _s("string", "optional deadline, e.g. 2026-12-31"),
+     }, "required": ["title", "target"]}},
+    {"name": "update_goal", "description": "Update one or more fields of an existing goal (title, target, status). "
+                                           "status must be active, done or dropped. Available to the Chief of Staff "
+                                           "and planning-capable staff (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "goal_id": _s("string", "id of the goal to update"),
+         "status": _s("string", "new status: active | done | dropped", enum=["active", "done", "dropped"]),
+         "title": _s("string", "new title"),
+         "target": _s("string", "new target description"),
+     }, "required": ["goal_id"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -547,6 +564,79 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             S.audit(db, f"staff:{st.id}", "goal.complete", goal_id, outcome=outcome)
         db.commit()
         return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
+    if name == "create_goal":
+        from .models import Goal, Setting
+        from . import plan
+
+        # Permission: CoS (is_chief) OR goal.create >= DO_AND_TELL in permissive mode.
+        if not st.is_chief:
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("goal.create", st.permissions)
+            if ap["mode"] != "permissive" or level < policy.DO_AND_TELL:
+                raise S.DomainError("only the Chief of Staff or a planning-capable staff member (goal.create permission) may create goals", 403)
+
+        title = str(args.get("title") or "").strip()
+        target = str(args.get("target") or "").strip()
+        due = str(args.get("due") or "").strip()
+        if not title:
+            raise S.DomainError("title is required")
+
+        g = Goal(title=title, target=target, due=due, status="active", created_by=f"staff:{st.id}")
+        db.add(g)
+        db.flush()  # populate g.id
+
+        S.audit(db, f"staff:{st.id}", "goal.create", g.id, title=title, target=target)
+
+        # Non-blocking informational notice for the owner: an agent created a goal.
+        notice = db.get(Setting, "agent_goal_notice")
+        if notice is None:
+            db.add(Setting(key="agent_goal_notice", value="pending"))
+        else:
+            # Reset to pending if previously dismissed so each new agent-created goal surfaces.
+            notice.value = "pending"
+
+        db.commit()
+
+        # Trigger planner immediately (idempotent, only for active goals).
+        plan.start_planning(db, g.id)
+        db.commit()
+
+        return "allowed", {"goal_id": g.id}
+
+    if name == "update_goal":
+        from .models import Goal
+
+        # Permission: same gate as create_goal.
+        if not st.is_chief:
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("goal.create", st.permissions)
+            if ap["mode"] != "permissive" or level < policy.DO_AND_TELL:
+                raise S.DomainError("only the Chief of Staff or a planning-capable staff member (goal.create permission) may update goals", 403)
+
+        goal_id = str(args.get("goal_id") or "")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise S.DomainError(f"unknown goal '{goal_id}'", 404)
+
+        changed: dict = {}
+        if args.get("status") is not None:
+            new_status = str(args["status"]).strip()
+            if new_status not in ("active", "done", "dropped"):
+                raise S.DomainError("status must be active, done or dropped")
+            g.status = new_status
+            changed["status"] = new_status
+        if args.get("title") is not None:
+            g.title = str(args["title"]).strip()
+            changed["title"] = g.title
+        if args.get("target") is not None:
+            g.target = str(args["target"]).strip()
+            changed["target"] = g.target
+
+        S.audit(db, f"staff:{st.id}", "goal.update", goal_id, **changed)
+        db.commit()
+        return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
     raise S.DomainError(f"unknown tool {name}", 404)
 
 
