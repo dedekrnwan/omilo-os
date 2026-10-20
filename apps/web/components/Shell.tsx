@@ -8,14 +8,13 @@ import PreviewHost from "./PreviewLazy";
 import NotifyHost from "./Notify";
 import TaskDrawerLazy from "./TaskDrawerLazy";
 import ContextMenuHost from "./ContextMenu";
-import { copy, menu as ctxMenu } from "@/lib/menu";
 import CompanySwitcher from "./CompanySwitcher";
 import { StepPage } from "./StepCard";
 import { PageActionsBar, PageActionsCtx, PageActionsSpec } from "./PageActions";
 import ChatLauncher from "./ChatLauncher";
+import { NAV, navItemFor } from "./nav";
 
-/* Five sections in the sidebar; each section's pages are tabs along the top. New pages join a section, so the
-   sidebar stays short however much Omilo grows. */
+/* ---- legacy section model kept for the topbar (Task 3 will replace it) ---- */
 type Page = [string, string, string]; // href, label, icon
 export const SECTIONS: { id: string; label: string; icon: string; pages: Page[] }[] = [
   { id: "home", label: "Home", icon: "ri-home-5-line", pages: [["/", "Inbox", "ri-inbox-2-line"], ["/monitor/", "Monitor", "ri-dashboard-3-line"]] },
@@ -30,9 +29,6 @@ export const SECTIONS: { id: string; label: string; icon: string; pages: Page[] 
 const PAGES = SECTIONS.flatMap((sec) => sec.pages.map(([h, l, i]) => ({ href: h, label: l, icon: i, section: sec })));
 const pageFor = (path: string) =>
   PAGES.filter((p) => (p.href === "/" ? path === "/" : path.startsWith(p.href))).sort((a, b) => b.href.length - a.href.length)[0] || PAGES[0];
-const LAST = "omilo.nav.last"; // the page you last opened in each section, so a section opens where you left it
-const lastIn = (id: string) => { try { return (JSON.parse(localStorage.getItem(LAST) || "{}") as Record<string, string>)[id]; } catch { return undefined; } };
-const remember = (id: string, href: string) => { try { localStorage.setItem(LAST, JSON.stringify({ ...JSON.parse(localStorage.getItem(LAST) || "{}"), [id]: href })); } catch { /* ignore */ } };
 
 function SectionTabs({ page }: { page: (typeof PAGES)[number] }) {
   const sec = page.section;
@@ -115,7 +111,6 @@ export default function Shell({ children }: { children: ReactNode }) {
     setFaviconDot(n ? (overview?.inbox.critical ? "#dc2626" : "#f59e0b") : null);
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
-  useEffect(() => { remember(pageFor(path).section.id, path); }, [path]);
 
   if (bare) return <>{children}</>;
   if (!ready) return null;
@@ -167,33 +162,59 @@ export default function Shell({ children }: { children: ReactNode }) {
           <button className="iconbtn" aria-label="Menu" onClick={() => setMenu(!menu)}><i className={menu ? "ri-close-line" : "ri-menu-line"} /></button>
         </div>
         <aside className={`side ${menu ? "open" : ""}`}>
-          <div className="head brand"><Mark /><div><b>Omilo</b></div></div>
+          <div className="head brand">
+            <Mark />
+            <div>
+              <b>Omilo</b>
+              <small>Saga OS</small>
+            </div>
+          </div>
           <CompanySwitcher overview={overview} />
-          <nav className="sections">
-            {SECTIONS.map((sec) => {
-              const on = sec.id === page.section.id;
-              const last = lastIn(sec.id);
-              const go = last && pageFor(last.split("?")[0]).section.id === sec.id ? last : sec.pages[0][0];
-              const count = sec.id === "home" ? overview?.inbox.open || 0 : 0;
-              return (
-                <div key={sec.id} className={`secblock ${on ? "on" : ""}`}>
-                  <Link href={go} className={`navlink ${on ? "on" : ""}`} onContextMenu={ctxMenu(() => [{ heading: sec.label },
-                    ...sec.pages.map(([h, l, ic]) => ({ label: l, icon: ic, href: h }))])}>
-                    <i className={sec.icon} />{sec.label}
-                    {count ? <span className="count">{count}</span> : null}
-                  </Link>
-                  {on && sec.pages.length > 1 && (
-                    <div className="subnav">{sec.pages.map(([h, l]) => (
-                      <Link key={h} href={h} className={`sublink ${h === page.href ? "on" : ""}`}>{l}
-                        {h === "/" && overview?.inbox.open ? <span className="count sm">{overview.inbox.open}</span> : null}</Link>
-                    ))}</div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="secblock" style={{ marginTop: "auto" }}>
-              <button className="navlink" style={{ border: 0, background: "transparent", width: "100%" }} onClick={togglePause}>
-                <i className={overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line"} />{overview?.paused ? "Resume all helpers" : "Pause all helpers"}
+          <nav aria-label="Main navigation">
+            {NAV.map((group) => (
+              <div key={group.id} className="group">
+                <p>{group.label}</p>
+                {group.items.map((item) => {
+                  if (item.soon) {
+                    return (
+                      <span
+                        key={item.label}
+                        className="navlink soon"
+                        aria-disabled="true"
+                        tabIndex={-1}
+                      >
+                        <i className={item.icon} />{item.label}
+                        <span className="soon-tag">Soon</span>
+                      </span>
+                    );
+                  }
+                  const active = navItemFor(path).href === item.href;
+                  const inboxCount = item.count === "inbox" ? (overview?.inbox.open || 0) : 0;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href!}
+                      className={`navlink${active ? " on" : ""}`}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <i className={item.icon} />{item.label}
+                      {inboxCount > 0 && <span className="count">{inboxCount}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="nav-footer">
+              <Link
+                href="/settings/"
+                className={`navlink${navItemFor(path).href === "/settings/" ? " on" : ""}`}
+                aria-current={navItemFor(path).href === "/settings/" ? "page" : undefined}
+              >
+                <i className="ri-settings-3-line" />Settings
+              </Link>
+              <button className="navlink" onClick={togglePause}>
+                <i className={overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line"} />
+                {overview?.paused ? "Resume all helpers" : "Pause all helpers"}
               </button>
             </div>
           </nav>
