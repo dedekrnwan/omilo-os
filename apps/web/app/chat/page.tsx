@@ -36,11 +36,13 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
   const trail = browserTrail(events);
   const last = runs[runs.length - 1];
   const usage = [...events].reverse().find((e) => e.kind === "usage")?.data;
+  const failedCount = runs.filter((r) => r.state === "failed").length;
   useEffect(() => { if (trail.length && tab === "progress" && last?.state === "running") setTab("browser"); /* follow the agent */ },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trail.length]);
   return (
-    <aside className="ws-panel">
+    <aside className="ws-panel-v2">
+      {/* Tabs row */}
       <div className="ptabs">
         <div className="seg">
           <button className={tab === "progress" ? "on" : ""} onClick={() => setTab("progress")}><i className="ri-pulse-line" /> Progress</button>
@@ -51,15 +53,41 @@ function Panel({ events, output, onClose }: { events: RunEvent[]; output: React.
         {/* hidden on wide screens (the top bar has the toggle); on phones the panel covers the chat, so it needs its own close */}
         <button className="iconbtn ws-panel-close" aria-label="Close panel" onClick={onClose}><i className="ri-close-line" /></button>
       </div>
-      <div className="pbody">
-        {tab === "progress" && (runs.length ? (
-          <div className="conv" style={{ gap: 10 }}>
-            {runs.slice().reverse().map((r) => <RunCard key={r.id} run={r} compact />)}
+
+      {/* Progress tab content */}
+      {tab === "progress" && (
+        <>
+          {runs.length > 0 && <div className="panel-section-head">Last run</div>}
+          <div className="panel-runs">
+            {runs.length ? (
+              runs.slice().reverse().map((r) => <RunCard key={r.id} run={r} compact />)
+            ) : (
+              <div className="empty"><b>Nothing running</b><span>Steps appear here while a helper works.</span></div>
+            )}
           </div>
-        ) : <div className="empty"><b>Nothing running</b><span>Steps appear here while a helper works.</span></div>)}
-        {tab === "output" && (output || <div className="empty"><b>No output yet</b><span>Reports and drafts show up here.</span></div>)}
-        {tab === "browser" && <BrowserView trail={trail} />}
-      </div>
+          {failedCount >= 3 && (
+            <div className="panel-hint">
+              <i className="ri-information-line" />
+              <span>The {failedCount} failed runs are folded into one card in the chat. Open it for the full error detail.</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Output tab content */}
+      {tab === "output" && (
+        <div className="panel-runs">
+          {output || <div className="empty"><b>No output yet</b><span>Reports and drafts show up here.</span></div>}
+        </div>
+      )}
+
+      {/* Browser tab content */}
+      {tab === "browser" && (
+        <div className="panel-runs">
+          <BrowserView trail={trail} />
+        </div>
+      )}
+
       {usage && <Meter u={usage} />}
     </aside>
   );
@@ -248,8 +276,11 @@ function WorkspaceInner() {
         <nav className={`ws-list ${listOpen ? "open" : ""}`}>
           {view === "chat" ? (
             <>
-              <div className="grp grp-act"><span>Team chats</span>
-                <button className="iconbtn" aria-label="New team chat" title="New team chat" onClick={() => setNaming({ id: null, title: "" })}><i className="ri-add-line" /></button></div>
+              <div className="ws-threads-head">
+                <span>Chats</span>
+                <span className="sp" />
+                <button className="iconbtn" aria-label="New team chat" title="New team chat" onClick={() => setNaming({ id: null, title: "" })}><i className="ri-add-line" /></button>
+              </div>
               {groups.length === 0 && !naming && <button className="ws-item" onClick={() => openThread({ scope: "group" })}><span className="hash">#</span><span className="t"><b>General</b><span>The whole team</span></span></button>}
               {groups.map((t) => naming?.id === t.id ? (
                 <NameBox key={t.id} value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />
@@ -263,7 +294,7 @@ function WorkspaceInner() {
                 </button>
               ))}
               {naming && !naming.id && <NameBox value={naming.title} onChange={(v) => setNaming({ ...naming, title: v })} onDone={saveName} onCancel={() => setNaming(null)} />}
-              <div className="grp">Direct</div>
+              <div className="grp-direct">DIRECT</div>
               {chief && <button className={`ws-item ${current?.scope === "master" ? "on" : ""}`} onClick={() => openThread({ scope: "master" })}
                 onContextMenu={menu(() => [{ heading: "Chief of Staff" }, { label: "Open chat", icon: "ri-chat-3-line", onSelect: () => openThread({ scope: "master" }) },
                   { label: "Brief me", icon: "ri-sun-line", onSelect: async () => { await openThread({ scope: "master" }); setComposer("/brief"); } }, sep, ...helperItems(chief, loadLists).slice(1)])}>
