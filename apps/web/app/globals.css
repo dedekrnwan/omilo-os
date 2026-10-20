@@ -3066,6 +3066,7 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 /* Two-column layout: category sidebar + main content */
 .hire2-body { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: start; }
+.hire2-body-solo { grid-template-columns: 1fr; }
 
 /* Category sidebar */
 .hire2-cats { display: flex; flex-direction: column; gap: 2px; }

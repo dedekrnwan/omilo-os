@@ -66,7 +66,10 @@ export default function Talent() {
   const divLabel = (k: string) => lib?.divisions.find((d) => d.key === k)?.label || k;
   const divColor = (k: string) => lib?.divisions.find((d) => d.key === k)?.color || "var(--faint)";
   const syncing = lib?.source.sync.state === "running";
-  usePageActions({ more: [{ label: syncing ? "Updating the roster…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, hint: "from GitHub", onSelect: update }] }, [syncing]);
+  usePageActions({
+    primary: { label: syncing ? "Updating…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, onSelect: update },
+    more: [{ label: syncing ? "Updating the roster…" : "Update the roster", icon: "ri-refresh-line", disabled: syncing, hint: "from GitHub", onSelect: update }],
+  }, [syncing]);
 
   return (
     <div>
@@ -78,6 +81,11 @@ export default function Talent() {
             {lib?.source.count ? `${lib.source.count} specialists` : "Specialists"} from The Agency — each with its own personality, process and deliverables.
             Hired specialists sleep until they get work, so they cost nothing while idle.
           </p>
+        </div>
+        <div className="ph2-actions">
+          <button className="btn primary" onClick={update} disabled={syncing}>
+            <i className="ri-refresh-line" />{syncing ? "Updating…" : "Update the roster"}
+          </button>
         </div>
       </div>
 
@@ -94,7 +102,7 @@ export default function Talent() {
       <Err error={err && !open ? err : null} />
 
       {/* Two-column layout: categories sidebar + main content */}
-      <div className="hire2-body">
+      <div className={`hire2-body${lib && lib.divisions.length > 0 ? "" : " hire2-body-solo"}`}>
         {/* Left: category filter */}
         {lib && lib.divisions.length > 0 && (
           <nav className="hire2-cats" aria-label="Division filter">
