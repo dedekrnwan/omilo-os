@@ -1581,6 +1581,9 @@ def mcp_connect(slug: str, body: dict, db: Session = Depends(get_db), user: User
     Validates the catalog entry, renders auth headers from the manifest template, and
     upserts a locked kind='mcp' Connector row.  Field values are NEVER logged.
 
+    Trust boundary: attach header NAMES come from the trusted, server-controlled manifest;
+    only the VALUES are rendered from the request body — body input can never become a header name.
+
     Body: {field_name: value, ...} — every declared field is required and must be non-empty.
     Returns: {"status": "connected"}
     """
