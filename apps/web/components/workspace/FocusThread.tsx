@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import ChatThread from "@/components/ChatThread";
 import { FullThread } from "@/components/Conversation";
@@ -171,6 +172,7 @@ export default function FocusThread({
   onStartJob?: (brief: string) => void;
   onOpenThread?: (body: Record<string, string>) => void;
 }) {
+  const router = useRouter();
   const [current, setCurrent] = useState<FullThread | null>(null);
 
   const handleThread = (th: FullThread | null) => {
@@ -199,7 +201,7 @@ export default function FocusThread({
         onThread={handleThread}
         onStartJob={onStartJob}
         onOpenThread={onOpenThread}
-        onNavigate={(h) => { window.location.href = h; }}
+        onNavigate={(h) => { router.push(h); }}
         onExpand={() => {}}
       />
     </div>
