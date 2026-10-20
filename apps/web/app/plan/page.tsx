@@ -96,20 +96,43 @@ export default function PlanPage() {
   usePageActions({ primary: { label: "New goal", icon: "ri-add-line", onSelect: () => edit() } }, []);
   return (
     <div className="plan">
-      <div className="sechead" style={{ alignItems: "flex-end" }}>
-        <div><h1 style={{ marginBottom: 4 }}>Plan</h1>
-          <p className="sub" style={{ margin: 0 }}>Your goals at the top. Under each: what the Chief of Staff handed out for it, what helpers passed on, and what is being done with your approval.</p></div>
-        <span className="sp" />
-        <div className="seg"><button className={!asMap ? "on" : ""} onClick={() => setAsMap(false)}><i className="ri-list-check-3" /> Tree</button>
-          <button className={asMap ? "on" : ""} onClick={() => setAsMap(true)}><i className="ri-node-tree" /> Map</button></div>
-        <div className="seg">{[[7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d as number)}>{l}</button>)}</div>
+      {/* Page Header v2 */}
+      <div className="ph2">
+        <div className="ph2-text">
+          <h1 className="ph2-title">Plan</h1>
+          <p className="ph2-sub">Set your goals. Under each: what the Chief of Staff handed out, what helpers passed on, and what is being done with your approval.</p>
+        </div>
+        <div className="ph2-actions">
+          <div className="seg">
+            <button className={!asMap ? "on" : ""} onClick={() => setAsMap(false)}><i className="ri-list-check-3" /> Tree</button>
+            <button className={asMap ? "on" : ""} onClick={() => setAsMap(true)}><i className="ri-node-tree" /> Map</button>
+          </div>
+          <div className="seg">{[[7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d as number)}>{l}</button>)}</div>
+          <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button>
+        </div>
       </div>
       <Err error={err} />
       {asMap ? <div style={{ marginTop: 18 }}><WorkMap days={days} defaultOnlyNeeds={false} /></div> : !plan ? <p className="small">Loading…</p> : (
         <>
           {plan.goals.length === 0 && (
-            <div className="empty"><b>No goals yet</b><span>Add what you want to reach. The Chief of Staff links the work it hands out to these goals.</span>
-              <div style={{ marginTop: 12 }}><button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button></div></div>
+            <div className="plan-empty">
+              <div className="plan-empty-icon"><i className="ri-flag-2-line" /></div>
+              <div className="plan-empty-body">
+                <b>Set your first goal</b>
+                <span>Tell your helpers what you want to reach. Chief of Staff links every job it hands out to a goal, so you can see the work behind each one.</span>
+                <div className="plan-empty-actions">
+                  <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button>
+                </div>
+                <div className="plan-empty-examples">
+                  <span className="plan-empty-try">Try:</span>
+                  {["100 paying customers by December", "Launch WhatsApp onboarding", "Reply to support within 1 hour"].map((ex) => (
+                    <button key={ex} className="plan-suggest" onClick={() => setForm({ title: ex, target: "", due: "", status: "active", shift_ids: [] })}>
+                      <i className="ri-lightbulb-line" />{ex}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
           <div className="plan-goals">
             {plan.goals.map((g) => {
@@ -147,10 +170,14 @@ export default function PlanPage() {
             })}
           </div>
           {plan.unlinked.length > 0 && (
-            <section className="paper pg" style={{ marginTop: 16 }}>
+            <section className="paper pg plan-unlinked" style={{ marginTop: 16 }}>
               <button className="pg-head pg-loose" onClick={() => setShowLoose(!showLoose)}>
-                <span className="pg-flag"><i className="ri-question-line" /></span>
-                <div className="pg-t"><b>Not linked to a goal</b><span className="small">{plan.unlinked.length} job{plan.unlinked.length === 1 ? "" : "s"}. Right-click one to move it under a goal.</span></div>
+                <span className="pg-flag plan-unlinked-flag"><i className="ri-question-line" /></span>
+                <div className="pg-t">
+                  <b>Not linked to a goal</b>
+                  <span className="small">{plan.unlinked.length} job{plan.unlinked.length === 1 ? "" : "s"} · Right-click one to move it under a goal.</span>
+                </div>
+                <span className="plan-unlinked-count">{plan.unlinked.length}</span>
                 <i className={showLoose ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
               </button>
               {showLoose && <ul className="pn-root">{plan.unlinked.map((n) => <Node key={n.id} n={n} depth={0} goals={plan.goals} onMove={move} />)}</ul>}
