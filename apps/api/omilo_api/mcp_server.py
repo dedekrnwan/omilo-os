@@ -14,8 +14,11 @@ from sqlalchemy import select
 from . import policy
 from . import services as S
 from .db import get_db
-from .models import Proposal, Staff, Task, ToolCall
+from .models import Proposal, Staff, StaffRelation, Task, ToolCall
 from .security import staff_from_mcp_token
+
+# Maximum delegation chain depth.  Configurable via Setting("delegation_max_depth"); falls back to this.
+MAX_DELEGATION_DEPTH = 2
 
 router = APIRouter()
 SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
@@ -475,10 +478,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         k = S.record_kpi(db, st, args["name"], args["value"], args.get("period", ""), args["source"])
         return "allowed", {"kpi_id": k.id}
     if name == "create_task":
-        level = policy.level_for("staff.delegate", st.permissions) if not st.is_chief else policy.AUTO
-        if level < policy.DO_AND_TELL:
-            raise S.DomainError("only the Chief of Staff may delegate tasks", 403)
-        # Resolve target staff: staff_id takes priority; fall back to role resolution.
+        # --- Step 1: Resolve target staff (B1 path; must happen before the scope check). ---
         target_id = args.get("staff_id")
         if target_id:
             pass  # use as-is; downstream create_task validates existence
@@ -489,15 +489,36 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             target_id = resolved.id
         else:
             raise S.DomainError("provide staff_id or role to specify who should do it")
+
+        # --- Step 2: Self-delegation guard (before scope check so the message is accurate). ---
         if target_id == st.id:
             raise S.DomainError("delegate to someone else")
+
+        # --- Step 3: Scope check — any one of three paths grants access. ---
+        # (a) Caller is the Chief of Staff.
+        # (b) A delegates_to edge from caller → target exists.
+        # (c) Permissive mode AND caller holds staff.delegate >= DO_AND_TELL.
+        if not st.is_chief:
+            has_edge = db.get(StaffRelation, (st.id, target_id, "delegates_to")) is not None
+            ap = S.autonomy_policy(db, st)
+            level = policy.level_for("staff.delegate", st.permissions)
+            has_permission = ap["mode"] == "permissive" and level >= policy.DO_AND_TELL
+            if not has_edge and not has_permission:
+                raise S.DomainError(
+                    "no delegation scope: add a delegates_to edge or grant staff.delegate permission in permissive mode",
+                    403,
+                )
+
+        # --- Step 4: Depth cap (configurable, defaults to MAX_DELEGATION_DEPTH). ---
+        max_depth = int(S.get_setting(db, "delegation_max_depth", None) or MAX_DELEGATION_DEPTH)
         depth, parent = 0, args.get("parent_task_id")
-        while parent and depth < 5:
+        while parent and depth < max_depth + 3:  # +3 sentinel to avoid an infinite scan
             pt = db.get(Task, parent)
             parent = pt.parent_task_id if pt and pt.origin == "delegation" else None
             depth += 1
-        if depth >= 2:
-            raise S.DomainError("delegation is limited to 2 levels")
+        if depth >= max_depth:
+            raise S.DomainError(f"delegation is limited to {max_depth} levels")
+
         t = S.create_task(db, target_id, "delegation", args["brief"], f"staff:{st.id}", parent_task_id=args.get("parent_task_id"),
                           goal_id=args.get("goal_id") or None)
         return "allowed", {"task_id": t.id}
