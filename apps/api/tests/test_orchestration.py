@@ -1,5 +1,6 @@
 """Task B1 — Role resolution + role-based delegation.
 Task B2 — seed_relations: populate StaffRelation org chart.
+Task B3 — Goal planner: activating a goal enqueues exactly one CoS plan task.
 
 Tests:
   1. staff_by_role resolves a role to its first active staff (by id order).
@@ -13,6 +14,13 @@ Tests:
   7. seed_relations no-ops when there is no CoS.
   8. seed_relations skips retired staff.
 
+  B3:
+  9.  Activating a goal creates exactly one origin="plan" CoS task linked to the goal.
+  10. Calling start_planning twice does not create a second plan task (idempotency).
+  11. A create_task(goal_id=<g>) child links to goal g via TaskGoal.
+  12. start_planning on a done goal is a no-op (no plan task created).
+  13. start_planning when there is no CoS is a no-op (no crash, no task).
+
 All rows are self-contained: each test creates its own Staff with a
 distinct role so there is no cross-test bleed.
 """
@@ -23,7 +31,7 @@ from sqlalchemy import func, select
 
 from omilo_api import services as S
 from omilo_api.db import session_scope
-from omilo_api.models import Staff, StaffRelation, Task
+from omilo_api.models import Goal, Staff, StaffRelation, Task, TaskGoal
 
 
 # ---------------------------------------------------------------------------
@@ -312,3 +320,147 @@ def test_seed_relations_skips_retired_staff():
     assert _count_relations(cid, cos_id, active_id, "reviews") == 1
     assert _count_relations(cid, cos_id, retired_id, "delegates_to") == 0
     assert _count_relations(cid, cos_id, retired_id, "reviews") == 0
+
+
+# ---------------------------------------------------------------------------
+# Task B3 — Goal planner: start_planning
+# ---------------------------------------------------------------------------
+# Each test uses its own isolated company (unique cid) so there is exactly
+# one CoS per test and DB-state from other tests never bleeds in.
+
+
+def _isolated_b3_cid() -> str:
+    """Return a fresh, unique company-id for one B3 test's isolated schema."""
+    return "b3test-" + uuid.uuid4().hex[:10]
+
+
+def _make_b3_cos(cid: str) -> str:
+    """Create a CoS staff in the given cid schema; return its id."""
+    prefix = uuid.uuid4().hex[:8]
+    cos_id = "b3-cos-" + prefix
+    with C.use(cid), session_scope(cid) as db:
+        db.add(Staff(id=cos_id, name="CoS " + prefix, role="chief-of-staff",
+                     is_chief=True, status="active", engine={"type": "fake"}))
+        db.commit()
+    return cos_id
+
+
+def _make_b3_goal(cid: str, status: str = "active") -> str:
+    """Create a Goal in the given cid schema; return its id."""
+    with C.use(cid), session_scope(cid) as db:
+        g = Goal(title="Test goal " + uuid.uuid4().hex[:6],
+                 target="Achieve the test objective", status=status)
+        db.add(g)
+        db.commit()
+        return g.id
+
+
+def _count_plan_tasks(cid: str, goal_id: str) -> int:
+    """Count plan-origin TaskGoal-linked tasks for the given goal."""
+    from sqlalchemy import func, select
+    with C.use(cid), session_scope(cid) as db:
+        return db.scalar(
+            select(func.count()).select_from(Task).join(
+                TaskGoal, TaskGoal.task_id == Task.id
+            ).where(
+                TaskGoal.goal_id == goal_id,
+                Task.origin == "plan",
+            )
+        ) or 0
+
+
+def test_start_planning_creates_one_plan_task():
+    """Activating a goal enqueues exactly one origin='plan' CoS task linked to the goal."""
+    from omilo_api import plan as P
+
+    cid = _isolated_b3_cid()
+    cos_id = _make_b3_cos(cid)
+    goal_id = _make_b3_goal(cid, status="active")
+
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)
+
+    count = _count_plan_tasks(cid, goal_id)
+    assert count == 1, f"expected 1 plan task, got {count}"
+
+    # The task is assigned to the CoS
+    with C.use(cid), session_scope(cid) as db:
+        tg = db.scalar(
+            select(TaskGoal).where(TaskGoal.goal_id == goal_id)
+        )
+        assert tg is not None
+        task = db.get(Task, tg.task_id)
+        assert task is not None
+        assert task.origin == "plan"
+        assert task.staff_id == cos_id
+
+
+def test_start_planning_idempotent_no_double_plan():
+    """Calling start_planning twice for the same active goal must not create a second plan task."""
+    from omilo_api import plan as P
+
+    cid = _isolated_b3_cid()
+    _make_b3_cos(cid)
+    goal_id = _make_b3_goal(cid, status="active")
+
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)
+
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)
+
+    count = _count_plan_tasks(cid, goal_id)
+    assert count == 1, f"expected exactly 1 plan task after two calls, got {count}"
+
+
+def test_child_task_links_to_goal_via_task_goal():
+    """create_task(goal_id=<g>) links the task to the goal via TaskGoal (simulates the agent)."""
+    cid = _isolated_b3_cid()
+    cos_id = _make_b3_cos(cid)
+    goal_id = _make_b3_goal(cid, status="active")
+
+    with C.use(cid), session_scope(cid) as db:
+        t = S.create_task(
+            db,
+            staff_id=cos_id,
+            origin="delegation",
+            brief="Simulate child task created by the planner agent",
+            created_by="system",
+            goal_id=goal_id,
+        )
+        task_id = t.id
+
+    with C.use(cid), session_scope(cid) as db:
+        tg = db.get(TaskGoal, task_id)
+        assert tg is not None, "TaskGoal row missing"
+        assert tg.goal_id == goal_id
+
+
+def test_start_planning_done_goal_noop():
+    """start_planning on a done goal must not create any plan task."""
+    from omilo_api import plan as P
+
+    cid = _isolated_b3_cid()
+    _make_b3_cos(cid)
+    goal_id = _make_b3_goal(cid, status="done")
+
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)
+
+    count = _count_plan_tasks(cid, goal_id)
+    assert count == 0, f"expected 0 plan tasks for a done goal, got {count}"
+
+
+def test_start_planning_no_cos_noop():
+    """start_planning when there is no CoS must not raise and must not create any task."""
+    from omilo_api import plan as P
+
+    cid = _isolated_b3_cid()
+    # Intentionally no CoS created
+    goal_id = _make_b3_goal(cid, status="active")
+
+    with C.use(cid), session_scope(cid) as db:
+        P.start_planning(db, goal_id)  # must not raise
+
+    count = _count_plan_tasks(cid, goal_id)
+    assert count == 0, f"expected 0 plan tasks when no CoS, got {count}"

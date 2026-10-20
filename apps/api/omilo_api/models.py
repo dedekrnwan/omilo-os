@@ -111,7 +111,7 @@ class Task(Base):
     __tablename__ = "task"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("tsk"))
     staff_id: Mapped[str] = mapped_column(ForeignKey("staff.id", ondelete="CASCADE"), index=True)
-    origin: Mapped[str] = mapped_column(String(16))  # shift | manual | chat | delegation | execution
+    origin: Mapped[str] = mapped_column(String(16))  # shift | manual | chat | delegation | execution | plan
     brief: Mapped[str] = mapped_column(Text, default="")
     founder_note: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|waiting|done|failed|cancelled

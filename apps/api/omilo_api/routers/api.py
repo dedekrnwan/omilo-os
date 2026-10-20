@@ -3027,6 +3027,7 @@ def _goal_apply(db: Session, g, body: GoalIn) -> None:
 @router.post("/goals")
 def goal_create(body: GoalIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from ..models import Goal
+    from ..plan import start_planning
 
     if not (body.title or "").strip():
         raise HTTPException(400, "give the goal a title")
@@ -3036,6 +3037,7 @@ def goal_create(body: GoalIn, db: Session = Depends(get_db), user: User = Depend
     _goal_apply(db, g, body)
     S.audit(db, user.id, "goal.create", g.id, title=g.title)
     db.commit()
+    start_planning(db, g.id)
     return {"id": g.id}
 
 
