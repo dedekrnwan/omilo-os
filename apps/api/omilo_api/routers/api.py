@@ -2441,6 +2441,23 @@ def _draft(db: Session) -> dict:
 class InterviewIn(BaseModel):
     message: str = ""
     restart: bool = False
+    file_ids: list[str] | None = None
+    website: str | None = None
+
+
+def _save_interview_turn(db: Session, user: User, d: dict, hist: list[dict], r: dict) -> dict:
+    """Persist one interview turn (AI reply) to the draft and return the full response dict."""
+    from .. import interview as _I
+
+    answers = {**d["answers"], **r["patch"]}
+    hist.append({"role": "ai", "text": r["reply"], "options": r.get("options") or [], **({"field": r.get("field")} if r.get("field") else {}),
+                 **({"multi": True} if r.get("multi") else {}), **({"saved": sorted(r["patch"])} if r.get("patch") else {})})
+    d.update(answers=answers, interview={"history": hist[-80:], "topic": r["topic"]})
+    S.set_setting(db, "onboarding_draft", d, actor=user.id)
+    if str(answers.get("company_name") or "").strip():
+        S.set_setting(db, "company_name", answers["company_name"].strip(), actor=user.id)
+    db.commit()
+    return {"history": hist, "topic": r["topic"], "answers": answers, "coverage": _I.coverage(answers), "ai": _onb_ai_view(db)}
 
 
 @router.post("/onboarding/interview")
@@ -2456,18 +2473,78 @@ async def onboarding_interview(body: InterviewIn, db: Session = Depends(get_db),
     elif hist and hist[-1]["role"] == "ai":  # reopened the page: show where we were
         return {"history": hist, "topic": iv.get("topic"), "answers": d["answers"], "coverage": I.coverage(d["answers"]), "ai": _onb_ai_view(db)}
     try:
-        r = await I.turn(I.ai_config(db), d["answers"], hist, iv.get("topic") or "business")
+        r = await I.turn(I.ai_config(db), d["answers"], hist, iv.get("topic") or "business",
+                         file_ids=body.file_ids, website=body.website)
     except I.AiError as e:
         raise HTTPException(502, str(e)) from e
-    answers = {**d["answers"], **r["patch"]}
-    hist.append({"role": "ai", "text": r["reply"], "options": r.get("options") or [], **({"field": r["field"]} if r.get("field") else {}),
-                 **({"multi": True} if r.get("multi") else {}), **({"saved": sorted(r["patch"])} if r["patch"] else {})})
-    d.update(answers=answers, interview={"history": hist[-80:], "topic": r["topic"]})
-    S.set_setting(db, "onboarding_draft", d, actor=user.id)
-    if str(answers.get("company_name") or "").strip():
-        S.set_setting(db, "company_name", answers["company_name"].strip(), actor=user.id)
-    db.commit()
-    return {"history": hist, "topic": r["topic"], "answers": answers, "coverage": I.coverage(answers), "ai": _onb_ai_view(db)}
+    return _save_interview_turn(db, user, d, hist, r)
+
+
+@router.post("/onboarding/interview/stream")
+async def onboarding_interview_stream(body: InterviewIn, request: Request,
+                                      db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Streaming interview turn — SSE.
+
+    Body: {message, file_ids?, website?, restart?}
+
+    Events:
+      event: tool  data: {"label": str}   — activity (reading file/website, saving profile)
+      event: text  data: {"delta": str}   — streamed reply chunk
+      event: done  data: {"reply", "options", "topic", "answers", "coverage", "ai"}
+      event: error data: {"message": str}
+    """
+    from fastapi.responses import StreamingResponse
+
+    from .. import interview as I
+
+    d = _draft(db)
+    iv = d["interview"] if not body.restart else {"history": [], "topic": "business"}
+    hist = list(iv.get("history") or [])
+    if body.message.strip():
+        hist.append({"role": "owner", "text": body.message.strip()[:4000]})
+    elif hist and hist[-1]["role"] == "ai":
+        # Reopened: return current state as a single done event
+        state = {"history": hist, "topic": iv.get("topic"), "answers": d["answers"],
+                 "coverage": I.coverage(d["answers"]), "ai": _onb_ai_view(db)}
+
+        async def _replay():
+            yield f"event: done\ndata: {json.dumps(state)}\n\n"
+
+        return StreamingResponse(_replay(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    cfg = I.ai_config(db)
+
+    async def gen():
+        final_patch: dict = {}
+        final_topic = iv.get("topic") or "business"
+        final_reply = ""
+        final_options: list = []
+        try:
+            async for ev in I.stream_turn(cfg, d["answers"], hist, iv.get("topic") or "business",
+                                          file_ids=body.file_ids, website=body.website):
+                event_name = ev["event"]
+                data = ev["data"]
+                if event_name == "done":
+                    final_patch = data.get("patch") or {}
+                    final_topic = data.get("topic") or final_topic
+                    final_reply = data.get("reply") or ""
+                    final_options = data.get("options") or []
+                    # Persist the turn
+                    result = {"reply": final_reply, "patch": final_patch, "options": final_options,
+                              "topic": final_topic}
+                    saved = _save_interview_turn(db, user, d, hist, result)
+                    done_data = {**saved}
+                    yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
+                else:
+                    yield f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
+        except I.AiError as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {json.dumps({'message': f'Unexpected error: {str(e)[:200]}'})}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/onboarding/team-plan")

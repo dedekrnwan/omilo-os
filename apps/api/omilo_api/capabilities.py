@@ -233,6 +233,48 @@ def file_path(fid: str) -> Path | None:
     return items[0] if items else None
 
 
+def extract_file_text(fid: str, max_chars: int = 10000) -> tuple[str, str]:
+    """Return (name, text) for an uploaded file id.
+
+    Plain-text and code files are decoded directly.  PDFs are extracted with
+    pypdf (already installed).  Everything else returns a short note so the
+    AI knows the file was shared without hallucinating its content.
+    """
+    p = file_path(fid)
+    if p is None:
+        return ("(unknown)", f"(file {fid!r} not found)")
+    name = p.name
+    suffix = p.suffix.lower()
+    mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    # Plain-text formats — read directly
+    if suffix in TEXT_EXT or mime.startswith("text/"):
+        try:
+            return (name, p.read_text(errors="replace")[:max_chars])
+        except Exception:  # noqa: BLE001
+            return (name, f"(could not read {name})")
+    # PDF — extract with pypdf
+    if suffix == ".pdf" or mime == "application/pdf":
+        try:
+            import pypdf  # already in venv
+
+            reader = pypdf.PdfReader(str(p))
+            pages = []
+            total = 0
+            for pg in reader.pages:
+                t = (pg.extract_text() or "").strip()
+                if t:
+                    pages.append(t)
+                    total += len(t)
+                if total >= max_chars:
+                    break
+            text = "\n\n".join(pages)[:max_chars]
+            return (name, text or f"(PDF {name} had no extractable text)")
+        except Exception:  # noqa: BLE001
+            return (name, f"(PDF {name} — could not extract text)")
+    # Anything else
+    return (name, f"(uploaded {name}, type {mime} — text not extractable)")
+
+
 # files a browser may display inline; anything that could run script (html, svg, xml) is shown as text
 INLINE_OK = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf", "audio/", "video/")
 TEXT_EXT = {".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv", ".log", ".yaml", ".yml", ".toml", ".ini", ".env.example",

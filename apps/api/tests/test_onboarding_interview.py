@@ -113,7 +113,7 @@ def test_ai_interview_with_tools(co, monkeypatch):
                 {"base": "dev", "name": "Dev", "focus": "x", "why": "y"}]})])
         if kw["messages"][-1]["role"] == "tool":
             return _resp("Nice. Who buys from you most?")
-        assert "Interview plan" in sys and "Current topic" in sys
+        assert ("Private mental checklist" in sys or "Still to learn" in sys) and ("Right now you're on" in sys or "Currently on" in sys or "profile captured" in sys.lower())
         return _resp("", [("update_profile", {"one_liner": "Sambal for busy families", "industry": "food", "made_up": 1}),
                           ("suggest_replies", {"options": ["Working parents", "Students", "Offices"]}),
                           ("set_topic", {"topic": "customers"})])
