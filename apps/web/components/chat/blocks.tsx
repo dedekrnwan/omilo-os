@@ -593,7 +593,7 @@ function TaskBlock({ block }: { block: Block }) {
           {stepsTotal > 0 && <> · {stepsDone}/{stepsTotal} steps</>}
         </span>
         {stepsTotal > 0 && (
-          <div className="reply-usage-bar" style={{ marginTop: 4, height: 3, borderRadius: 2, background: "var(--line-strong)", overflow: "hidden" }}>
+          <div style={{ marginTop: 4, height: 3, borderRadius: 2, background: "var(--line-strong)", overflow: "hidden" }}>
             <i style={{ display: "block", height: "100%", background: "var(--info)", borderRadius: 2, width: `${pct}%` }} />
           </div>
         )}
@@ -655,22 +655,36 @@ function UsageMeterBlock({ block }: { block: Block }) {
   const tokOut = block.tokens_out ?? 0;
   const cost = block.cost_usd;
   const dur = block.duration_s;
-  const pct = Math.min(100, block.budget_pct ?? 0);
+  const pct = block.budget_pct != null ? Math.min(100, block.budget_pct) : null;
   const account = block.account || "";
 
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  const hasTok = tokIn > 0 || tokOut > 0;
 
   return (
     <div className="reply-usage">
-      {account && <><span>{account}</span><span>·</span></>}
-      <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>
-      {cost != null && <><span>·</span><span>${cost.toFixed(4)}</span></>}
-      {dur != null && <><span>·</span><span>{dur.toFixed(1)}s</span></>}
-      {pct > 0 && (
+      {/* Account: green dot + "Claude Code pool · cloud" */}
+      {account && (
+        <>
+          <span className="reply-usage-account">
+            <span className="reply-usage-dot" aria-hidden="true" />
+            {account}
+          </span>
+          <span className="reply-usage-sep" aria-hidden="true">·</span>
+        </>
+      )}
+      {/* Tokens: "1.2k in / 860 out" */}
+      {hasTok && <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>}
+      {/* Cost */}
+      {cost != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>${cost.toFixed(4)}</span></>}
+      {/* Duration */}
+      {dur != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>{dur.toFixed(1)}s</span></>}
+      {/* Spacer + "of today" + track */}
+      {pct != null && pct > 0 && (
         <>
           <span className="sp" />
-          <span style={{ fontSize: 11, color: "var(--faint)" }}>of today</span>
-          <div className="reply-usage-bar">
+          <span className="reply-usage-today">of today</span>
+          <div className="reply-usage-track">
             <i style={{ width: `${pct}%` }} />
           </div>
         </>

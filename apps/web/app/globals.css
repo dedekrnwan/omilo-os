@@ -3241,13 +3241,15 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 /* ------------------------------------------------------------------ A. Agentic reply shell + blocks */
 
 /* Shell: wraps one helper's reply (avatar + who row + block stack + hover row) */
-.reply-shell { display: flex; gap: 10px; align-items: flex-start; }
+/* pen U2Lljm: Chat/Message gap=12; Body gap=8; Who gap=8 */
+.reply-shell { display: flex; gap: 12px; align-items: flex-start; }
 .reply-shell .reply-av { flex-shrink: 0; margin-top: 2px; }
-.reply-shell .reply-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.reply-who { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.reply-shell .reply-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+/* Who row: name 13/600 $ink · role 12 $muted · time 12 $faint */
+.reply-who { display: flex; align-items: center; gap: 8px; }
 .reply-who b { font-weight: 600; color: var(--ink); font-size: 13px; }
-.reply-who .reply-role { color: var(--faint); }
-.reply-who .reply-time { margin-left: auto; white-space: nowrap; }
+.reply-who .reply-role { font-size: 12px; color: var(--muted); }
+.reply-who .reply-time { font-size: 12px; color: var(--faint); margin-left: auto; white-space: nowrap; }
 
 /* Blocks stack: each block is a self-contained chunk within a reply */
 .reply-blocks { display: flex; flex-direction: column; gap: 8px; }
@@ -3330,33 +3332,107 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .reply-task .reply-task-t b { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reply-task .reply-task-t span { font-size: 12px; color: var(--muted); }
 
-/* Usage meter block */
-.reply-usage { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--line); font: 11px var(--font-mono); color: var(--muted); flex-wrap: wrap; }
-.reply-usage .reply-usage-bar { flex: 1; min-width: 80px; height: 3px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
-.reply-usage .reply-usage-bar i { display: block; height: 100%; background: var(--ink); border-radius: 2px; transition: width .4s ease; }
-.reply-usage .reply-usage-cost { margin-left: auto; font-variant-numeric: tabular-nums; }
+/* Usage meter block — pen lrtjv: top 1px --line, pad-top 8, gap 10, 11px mono $muted */
+.reply-usage { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); font: 11px var(--font-mono); color: var(--muted); flex-wrap: wrap; }
+/* Account segment: 6px $ok dot + label */
+.reply-usage .reply-usage-account { display: inline-flex; align-items: center; gap: 6px; }
+.reply-usage .reply-usage-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+.reply-usage .reply-usage-sep { color: var(--faint); }
+.reply-usage .reply-usage-today { color: var(--faint); font-size: 11px; }
+/* Track: 48×4px, --line-strong bg, --helper-brand fill */
+.reply-usage .reply-usage-track { width: 48px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; flex-shrink: 0; }
+.reply-usage .reply-usage-track i { display: block; height: 100%; background: var(--helper-brand); border-radius: 2px; transition: width .4s ease; }
 
 /* Streaming block (in-progress text with cursor) */
 .reply-streaming { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .reply-streaming::after { content: "▋"; display: inline-block; animation: blink-cursor .9s step-end infinite; color: var(--ink); vertical-align: -1px; }
 @keyframes blink-cursor { 50% { opacity: 0; } }
 
-/* Hover actions row (appears on hover over reply shell) */
-.reply-hover { display: flex; align-items: center; gap: 2px; padding: 2px 0; opacity: 0; transition: opacity .15s; }
-.reply-shell:hover .reply-hover, .reply-shell:focus-within .reply-hover { opacity: 1; }
-.reply-hover button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--muted); }
-.reply-hover button:hover { background: var(--hover); color: var(--ink); }
-.reply-hover button i { font-size: 14px; }
+/* ---- Hover row: outer wrapper shown on shell hover ---- */
+/* pen B0Ksmn: floating bar — surface bg, line-strong border, soft shadow, r-md, pad 3, gap 2 */
+.reply-hover-row { display: flex; align-items: center; gap: 8px; opacity: 0; transition: opacity .15s; }
+.reply-shell:hover .reply-hover-row,
+.reply-shell:focus-within .reply-hover-row { opacity: 1; }
 
-/* Feedback bar (thumbs + expand) */
-.reply-feedback { display: flex; align-items: center; gap: 4px; }
-.reply-feedback button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--muted); }
+/* Floating action bar */
+.reply-hover-bar {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+/* Icon button inside hover bar */
+.reply-hbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  border: 0; background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--muted); cursor: pointer;
+}
+.reply-hbtn:hover { background: var(--hover); color: var(--ink); }
+.reply-hbtn i { font-size: 14px; }
+/* Separator between Share and More */
+.reply-hbar-sep { width: 1px; height: 16px; background: var(--line-strong); margin: 0 2px; flex-shrink: 0; }
+
+/* ---- Feedback bar: idle + expanded ---- */
+/* Idle: "Was this useful?" + thumbs */
+.reply-feedback-wrap { display: flex; flex-direction: column; gap: 0; }
+.reply-feedback { display: flex; align-items: center; gap: 8px; }
+.reply-feedback-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.reply-feedback button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
 .reply-feedback button:hover { background: var(--hover); color: var(--ink); }
 .reply-feedback button.on { color: var(--primary); background: var(--hover); }
 .reply-feedback button i { font-size: 13px; color: inherit; }
-/* Expanded feedback (comment box) */
-.reply-feedback-expanded { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--soft); margin-top: 4px; }
-.reply-feedback-expanded textarea { min-height: 64px; font-size: 13px; }
+
+/* Expanded: card — pen MJprW: surface bg, line-strong border, r-md, pad 14, gap 10 */
+.reply-feedback-expanded {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  margin-top: 6px;
+}
+/* Top row */
+.reply-fbe-top { display: flex; align-items: center; gap: 8px; }
+.reply-fbe-top > i { font-size: 13px; color: var(--ink-2); flex-shrink: 0; }
+.reply-fbe-title { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; }
+.reply-fbe-close { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; background: transparent; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
+.reply-fbe-close:hover { background: var(--hover); color: var(--ink); }
+.reply-fbe-close i { font-size: 13px; }
+
+/* Reason pills: pen — r-pill, pad 5/10; unselected line-strong border; selected primary bg + primary-ink */
+.reply-fbe-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.reply-fbe-pill {
+  display: inline-flex; align-items: center;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+.reply-fbe-pill:hover { background: var(--hover); }
+.reply-fbe-pill.selected { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+
+/* Note row: input + "Save as lesson" button — pen: line-strong border, r-btn radius */
+.reply-fbe-note { display: flex; align-items: center; gap: 8px; }
+.reply-fbe-input {
+  flex: 1; min-width: 0;
+  height: 32px; padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-btn);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+.reply-fbe-input::placeholder { color: var(--faint); }
+
+/* Saved state */
+.reply-fbe-saved { font-size: 12px; color: var(--ok); margin-top: 4px; }
 
 
 /* ------------------------------------------------------------------ B. Workspace desk */
