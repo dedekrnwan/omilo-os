@@ -108,6 +108,7 @@ export default function Composer({
   mentionedRef.current = mention.mentioned;
 
   /* Expose a handle so ChatThread (and any future caller) can setText / focus / read jobBrief. */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!handleRef) return;
     handleRef.current = {

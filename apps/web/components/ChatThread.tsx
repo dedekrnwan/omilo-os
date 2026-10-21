@@ -170,7 +170,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
           error={err}
           onSend={send}
           onSlash={onSlash}
-          onStop={async () => { await api(`/threads/${current.id}/cancel`, { body: {} }); }}
+          onStop={async () => { try { await api(`/threads/${current.id}/cancel`, { body: {} }); } catch (e: any) { setErr(e.message); } }}
         />
       </div>
     </DropCatcher>

@@ -46,6 +46,7 @@ type OverviewStaff = { id: string; name: string; status: string; is_chief: boole
 
 function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
   const [err, setErr] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const router = useRouter();
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -53,6 +54,7 @@ function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
     const trimmed = text.trim();
     if (!trimmed && !files.length) return;
     setErr(null);
+    setSending(true);
     try {
       /* get-or-create the master (Chief of Staff) thread */
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
@@ -63,6 +65,8 @@ function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
       router.push(`/chat/?thread=${th.id}`);
     } catch (e: any) {
       setErr(e.message ?? "Failed to send");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -72,6 +76,7 @@ function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
         staff={staff as unknown as import("@/lib/api").Staff[]}
         threadId={null}
         placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
+        awaitingReply={sending}
         error={err}
         onSend={handleSend}
       />
