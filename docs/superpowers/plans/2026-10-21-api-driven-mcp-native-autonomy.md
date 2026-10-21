@@ -277,3 +277,43 @@ async def test_manage_goal_strict_files_proposal(): ...
 - Tasks 1→2→3 are a dependency chain (gate → toggle API → toggle UI). Tasks 4, 5, 6 each depend on Task 1 but are independent of each other (can be reviewed/accepted per domain). Tasks 7, 8 are independent of everything.
 - Run backend tests with the project venv: `cd apps/api && .venv/bin/python -m pytest <file> -v` (Postgres + Redis must be up: `docker compose -f docker-compose.dev.yml up -d --wait postgres redis`, DB `omilo_test` with the `vector` extension).
 - For any new datetime handling, normalize tz (see `_lease_order`/`_aware`) — SQLite returns naive datetimes.
+
+---
+
+## Phase 2 — UI unification + response components + calendar (folded in 2026-10-21)
+
+Audit findings that scope these tasks: the session composer is `MentionBox`+`SlashMenu`+`ComposerTools` inside `ChatThread.tsx` (not yet a standalone `<Composer>`); the start screen "Good evening" composer is in `components/workspace/Desk.tsx`. Response rendering (`components/chat/blocks.tsx`) ALREADY has reasoning/todos(Plan)/markdown/code/sources/usage_meter/streaming_approval(Paused) — **missing only** a PR-card block, code-**diff** with Copy/Apply, and a fuller per-message action bar (`Reply.tsx` has copy+feedback+menu today). `/calendar` frontend route exists; `SlashMenu.tsx` has no `/goal` or `/calendar`. Backend calendar ops live in `agenda.py` (`skip`/`unskip`/`run_now`/`events`/`upcoming`); `manage_goal` MCP tool already exists as the pattern.
+
+### Task 9: Unify the start composer with the session composer
+**Files:** `apps/web/components/ChatThread.tsx` (extract the composer into a reusable `<Composer>` — MentionBox+SlashMenu+ComposerTools+send), `apps/web/components/workspace/Desk.tsx` (render it on the start screen).
+- [ ] Extract `<Composer>` so both the session and the start screen render the same control (rich: `+`, folder chip, `@`-mention, `/`-commands, Enter-to-send). On the start screen, first send creates/opens the Chief-of-Staff thread then sends (reuse ChatThread's auto-create-on-send at line ~102). Pass `staff` from the overview context.
+- [ ] Verify: `npm run build` clean; the start screen composer shows the same toolbar as a session; sending starts a thread. (Interactive check → consolidated smoke test.)
+- [ ] Commit `feat(web): unify start + session composer`.
+
+### Task 10: Response blocks — PR card + code-diff with Copy/Apply
+**Files:** `apps/web/components/chat/blocks.tsx` (add `pr_card`; extend `code` for diff rendering + Copy/Apply); block TYPE defs wherever v2 block types are declared (blocks.tsx ~772-798). No backend emission required to render (fixtures drive the tests); note engine-emission as follow-on.
+- [ ] Add `pr_card` block: repo · branch → base, files changed (+N −M), tests summary, "Needs you" badge, actions `Open PR / Change something / Not now`. Match the pen.dev visual (read the design via the pencil MCP `browser`/`.pen` if needed for exact spacing/labels).
+- [ ] Extend `code` block to render a unified diff (added/removed line styling) with `Copy` and `Apply` buttons (Apply dispatches an action/event; wire to a no-op-safe handler if no apply target).
+- [ ] Verify: `npm run build` clean; a fixture message containing `pr_card` and a `code` diff renders per design.
+- [ ] Commit `feat(web): PR-card + code-diff blocks for chat replies`.
+
+### Task 11: Per-message action bar
+**Files:** `apps/web/components/chat/Reply.tsx` (extend the existing hover/action row — copy + `FeedbackBar` already present).
+- [ ] Round out the action bar to the pen.dev set: copy, retry, edit, pin, share, plus the existing "Was this useful?" feedback. Reuse existing handlers where present (copy exists); wire retry/edit/pin/share to the existing message-action events/menu (don't invent new backends — map to what `Reply.tsx`'s menu already offers, add UI affordances).
+- [ ] Verify: `npm run build` clean; the action row shows the full set on an assistant message.
+- [ ] Commit `feat(web): fuller per-message action bar`.
+
+### Task 12: `/goal` and `/calendar` slash-commands
+**Files:** `apps/web/components/SlashMenu.tsx` (QUICK/GO arrays).
+- [ ] Add `/goal` → `{ kind: "insert", text: "Create this goal: " }` (user completes the prompt); `/calendar` → `{ kind: "go", href: "/calendar/" }` (route exists). Icons/labels consistent with existing entries.
+- [ ] Verify: `npm run build` clean; typing `/` surfaces Goal + Calendar.
+- [ ] Commit `feat(web): /goal and /calendar slash-commands`.
+
+### Task 13: Native calendar MCP tool
+**Files:** `apps/api/omilo_api/services.py` (`manage_calendar_svc`), `apps/api/omilo_api/mcp_server.py` (`manage_calendar` tool + optional read `list_upcoming`), `apps/api/omilo_api/policy.py` (new action, e.g. `calendar.manage` = ASK), test `apps/api/tests/test_mcp_calendar_tools.py`.
+- [ ] `services.manage_calendar_svc(db, actor, op, *, shift_id, at=None) -> dict` wrapping `agenda.skip`/`unskip`/`run_now` (raise `DomainError` on bad op/missing shift). Add a read-only `list_upcoming` tool (gate `knowledge.read` → runs inline) returning `agenda.upcoming(...)`.
+- [ ] MCP tools via `gated_execute` + `_DECISION` (Ruling-1 return contract). Add `"calendar.manage": ASK` to `policy.DEFAULTS`.
+- [ ] Tests (follow `test_mcp_ops_tools.py`): Auto→`done` (runs the op), Strict→`needs_approval`; unknown shift → `DomainError`; `list_upcoming` returns events. RED→GREEN. Re-run calendar REST tests for regression.
+- [ ] Commit `feat(mcp): native calendar tool (skip/unskip/run_now/list_upcoming)`.
+
+**Dependencies:** Tasks 9-12 are independent frontend; Task 13 is independent backend (reuses the Task-1 gate). All build on the completed Phase-1 foundation. Note: PR-card/code-diff blocks (Task 10) only *appear* in real chats once the engine emits them — emission wiring is a follow-on, out of this plan's scope (the rendering + fixtures are the deliverable).
