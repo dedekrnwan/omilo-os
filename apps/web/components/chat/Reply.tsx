@@ -137,10 +137,14 @@ function HoverActions({
   };
 
   // Share: copy a deep-link to the message if derivable, else dispatch event (no-op until backend wired)
-  const handleShare = () => {
+  const handleShare = async () => {
     const url = `${window.location.href.split("#")[0]}#msg-${message.id}`;
+    if (!navigator.clipboard?.writeText) {
+      window.dispatchEvent(new CustomEvent("omilo:share", { detail: { messageId: message.id } }));
+      return;
+    }
     try {
-      navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(url);
     } catch {
       window.dispatchEvent(new CustomEvent("omilo:share", { detail: { messageId: message.id } }));
     }
