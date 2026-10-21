@@ -70,6 +70,14 @@ function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
   };
 
+  /* auto-grow the textarea with its content (capped so it never takes over the desk) */
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, [text]);
+
   return (
     <div className="desk-composer">
       <form
@@ -85,6 +93,7 @@ function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
           placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
           disabled={busy}
           aria-label="Message the Chief of Staff"
+          style={{ resize: "none", maxHeight: 200, overflowY: "auto" }}
         />
         <div className="row">
           <span className="sp" />
