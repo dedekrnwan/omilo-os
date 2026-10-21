@@ -246,6 +246,11 @@ class ClaudeCodeEngine(Engine):
         config, runs, cwd = _dirs(staff_id)
         servers, tools, extra = plan(cfg, resources)
         tools = manager_tool_filter(tools, is_chief=bool(cfg.get("_is_chief")), goal_delivery=bool(cfg.get("_goal_delivery")))
+        if cfg.get("_chat"):  # a chat turn is conversational: Omilo's own tools + read-only web only, never the dev
+            # toolset. Without this (esp. on the local sign-in, which inherits the user's skills/hooks) the helper runs
+            # off building — invoking Skill/Bash in the real repo — and never writes a reply. Real work goes via Tasks.
+            tools = ["mcp__omilo", "WebSearch", "WebFetch"]
+            extra = ["--disallowedTools", "Bash", "Skill", "Task", "Agent", "Edit", "Write", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep"]
         if resources is not None and resources.folders:
             first_rw = next((f for f in resources.folders if f["access"] == "write"), None)
             if first_rw:
@@ -293,7 +298,7 @@ class ClaudeCodeEngine(Engine):
                 emit("status", state="harness", account=label)
                 args = ["-p", prompt if not session else (prompt if not tried - {acc_id} else "Continue exactly where you left off."),
                         "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
                         "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
                 if cfg.get("model"):
                     args += ["--model", cfg["model"]]
@@ -339,7 +344,7 @@ class ClaudeCodeEngine(Engine):
         # shares the pool's config dir on purpose, so "auto" can resume a pool session on the API key and back
         emit("status", state="harness", account="your API key")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
@@ -359,7 +364,7 @@ class ClaudeCodeEngine(Engine):
         # ~/.claude login resolves. The credential never leaves the machine — the compliant, load-bearing path.
         emit("status", state="harness", account="your Claude sign-in")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
@@ -386,7 +391,7 @@ class ClaudeCodeEngine(Engine):
                                float(cfg.get("timeout_s") or 1800), lambda s: ctx.emit("session", session_id=s), ctx.resources)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
-        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or ""}
+        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or "", "_chat": True, "_is_chief": ctx.is_chief}
         system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
         # a chat with several helpers: each turn starts fresh with the conversation so far (one helper's session would
         # not have seen the others' replies, and must not be resumed by another helper)
