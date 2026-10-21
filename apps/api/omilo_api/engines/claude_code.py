@@ -267,15 +267,27 @@ class ClaudeCodeEngine(Engine):
             finally:
                 mcp_file.unlink(missing_ok=True)
         if auth == "local":  # your OWN locally-logged-in claude: the credential never leaves your machine
-            try:
-                if H.local_login_status(cli)["logged_in"]:
-                    return await self._run_local(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
-                if api_key():  # not signed in locally, but a company API key is set — fall back to it
+            if H.local_login_status(cli)["logged_in"]:
+                res = await self._run_local(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
+                if not (res.error and H.LIMIT_RE.search(res.error)):
+                    mcp_file.unlink(missing_ok=True)
+                    return res
+                # your sign-in hit its usage limit — fall back to the pool (then your API key) as overflow
+                emit("status", state="switching", account="the pool", reason="your Claude sign-in hit its limit")
+                total.tokens += res.tokens
+                total.cost_usd += res.cost_usd
+                if res.text:
+                    total.text = res.text
+                # fall through to the pool loop below (mcp_file is cleaned up there)
+            elif api_key():  # not signed in locally, but a company API key is set — fall back to it
+                try:
                     emit("status", state="switching", account="your API key", reason="not signed in to Claude Code")
                     return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
-                return EngineResult(error="Sign in to Claude Code (run `claude`), or add a Claude API key in Settings → AI.")
-            finally:
+                finally:
+                    mcp_file.unlink(missing_ok=True)
+            else:
                 mcp_file.unlink(missing_ok=True)
+                return EngineResult(error="Sign in to Claude Code (run `claude`), or add a Claude API key in Settings → AI.")
         try:
             while True:
                 picked = H.lease(exclude=tried)
@@ -314,7 +326,7 @@ class ClaudeCodeEngine(Engine):
                 if run.session and run.session != session:
                     session = run.session
                     remember(session)
-                problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+                problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
                 rejected = H.rejected_reset(run.limits)
                 if problem and rejected is not None and not H.LIMIT_RE.search(problem):
                     problem = f"usage limit reached ({problem[:200]})"
@@ -353,7 +365,7 @@ class ClaudeCodeEngine(Engine):
         run, code, err = await self._once(cli, key, args, cwd, config, emit, timeout, token_env="ANTHROPIC_API_KEY")
         if run.session and run.session != session:
             remember(run.session)
-        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
         res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
         if problem:
             res.error = f"Claude Code: {problem[:400]}"
@@ -373,7 +385,7 @@ class ClaudeCodeEngine(Engine):
         run, code, err = await self._once(cli, "", args, cwd, None, emit, timeout, token_env=None)
         if run.session and run.session != session:
             remember(run.session)
-        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
         res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
         if problem:
             res.error = f"Claude Code: {problem[:400]}"
