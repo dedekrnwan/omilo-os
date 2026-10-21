@@ -3367,10 +3367,40 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   flex: 1;
 }
 
-/* Image block */
+/* Image block — single-image fallback (no options) */
 .reply-image { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--soft); display: inline-block; max-width: 100%; }
 .reply-image img { display: block; max-width: min(100%, 480px); max-height: 340px; object-fit: cover; }
-.reply-image.generating { min-width: 200px; min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+/* Image generating state — pen SQBGY */
+.reply-img-gen { display: flex; flex-direction: column; gap: 10px; }
+.reply-img-gen-top { display: flex; align-items: center; gap: 8px; }
+.reply-img-gen-icon { font-size: 14px; color: var(--ink-2); flex-shrink: 0; }
+.reply-img-gen-label { font-size: 13px; font-weight: 500; color: var(--ink); }
+.reply-img-gen-pct { font-size: 11px; font-family: var(--font-mono); color: var(--muted); flex-shrink: 0; }
+.reply-img-stop { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* Shared tiles grid — 2-up row */
+.reply-img-tiles { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* Each tile — 180×225, r-md, line border */
+.reply-img-tile { width: 180px; height: 225px; border-radius: var(--r-md); border: 1px solid var(--line); overflow: hidden; flex-shrink: 0; position: relative; background: var(--soft); padding: 0; cursor: default; }
+
+/* Shimmer tiles (generating) */
+.shimmer-tile { background: linear-gradient(90deg, var(--soft) 0%, var(--line-strong) 50%, var(--soft) 100%); background-size: 200% 100%; animation: tile-shimmer 1.4s ease-in-out infinite; }
+@keyframes tile-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Option tiles (done) */
+.reply-img-opt { cursor: pointer; border: 1px solid var(--line); }
+.reply-img-opt img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.reply-img-opt.selected { border: 2px solid var(--ink); }
+.reply-img-opt:hover:not(.selected) { border-color: var(--ink-2); }
+
+/* Prompt italic (generating) */
+.reply-img-prompt { font-size: 12px; color: var(--muted); font-style: italic; margin: 0; line-height: 1.5; }
+
+/* Image done — actions row */
+.reply-img-done { display: flex; flex-direction: column; gap: 10px; }
+.reply-img-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* Document block — pen K4wTQ: surface card, line-strong border, --r-lg, gap 14, pad 14; peek 92×116 thumbnail + right body col */
 .reply-document { display: flex; align-items: flex-start; gap: 14px; padding: 14px; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); }
@@ -3522,10 +3552,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .reply-usage .reply-usage-track { width: 48px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; flex-shrink: 0; }
 .reply-usage .reply-usage-track i { display: block; height: 100%; background: var(--helper-brand); border-radius: 2px; transition: width .4s ease; }
 
-/* Streaming block (in-progress text with cursor) */
-.reply-streaming { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
-.reply-streaming::after { content: "▋"; display: inline-block; animation: blink-cursor .9s step-end infinite; color: var(--ink); vertical-align: -1px; }
-@keyframes blink-cursor { 50% { opacity: 0; } }
+/* Streaming block — pen duDp0: partial text 14/1.6 $ink + block caret + status row */
+.reply-streaming-wrap { display: flex; flex-direction: column; gap: 8px; }
+.reply-streaming-text { font-size: 14px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+/* Caret row: last line of text inline with the blinking block caret */
+.reply-streaming-caret-row { display: inline; }
+/* Block caret: 8×18 helper-brand rounded rect, blinks */
+.reply-streaming-caret { display: inline-block; width: 8px; height: 18px; border-radius: 2px; background: var(--helper-brand); vertical-align: -4px; margin-left: 1px; animation: caret-blink .9s step-end infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+/* Status row: spinner + status text + spacer + Stop */
+.reply-streaming-status { display: flex; align-items: center; gap: 8px; }
+.reply-streaming-spin { flex-shrink: 0; }
+.reply-streaming-status-txt { font-size: 12px; color: var(--muted); }
+.reply-streaming-stop { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
 /* ---- Hover row: outer wrapper shown on shell hover ---- */
 /* pen B0Ksmn: floating bar — surface bg, line-strong border, soft shadow, r-md, pad 3, gap 2 */

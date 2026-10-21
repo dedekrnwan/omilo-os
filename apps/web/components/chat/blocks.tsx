@@ -99,6 +99,12 @@ export type Block = {
   pause_steps_left?: string;
   /** Optional diff lines for Code blocks — when present, renders the dark diff view */
   diff?: DiffLine[];
+  /** Optional token count for streaming blocks — when present, shown as "Writing… · N tokens" */
+  tokens?: number;
+  /** Optional multi-image options for image blocks (done state) */
+  image_options?: { url: string }[];
+  /** Selected option index (0-based) for image blocks */
+  selected_option?: number;
   // streaming_approval callbacks live in ctx
   [key: string]: unknown;
 };
@@ -1013,34 +1019,144 @@ function DocumentBlock({ block }: { block: Block }) {
 }
 
 /* ---- image ---- */
-function ImageBlock({ block }: { block: Block }) {
+function ImageBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [selectedIdx, setSelectedIdx] = useState<number>(block.selected_option ?? 0);
   const isGenerating = block.generating;
   const progress = block.progress;
   const prompt = block.prompt || block.title || "";
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
   const name = block.name || block.title || "image";
+  const options: { url: string }[] | undefined = block.image_options;
+  const label = block.text || block.title || "image";
+  // count shown in generating header e.g. "Making 2 Instagram posts…"
+  const countLabel = label;
 
+  /* ---- generating state ---- */
   if (isGenerating) {
     return (
-      <div className="reply-image generating">
-        <i className="ri-image-line" style={{ fontSize: 20 }} />
-        <span>{block.text || block.title || "Generating…"}{progress != null ? ` ${progress}%` : ""}</span>
+      <div className="reply-img-gen">
+        {/* Top row: image icon + label + spacer + progress% + Stop */}
+        <div className="reply-img-gen-top">
+          <i className="ri-image-line reply-img-gen-icon" />
+          <span className="reply-img-gen-label">{countLabel}</span>
+          <span className="sp" />
+          {progress != null && (
+            <span className="reply-img-gen-pct">{progress}%</span>
+          )}
+          <button
+            type="button"
+            className="btn sm quiet reply-img-stop"
+            onClick={() => ctx.onStop?.()}
+            aria-label="Stop generation"
+          >
+            <i className="ri-stop-line" />Stop
+          </button>
+        </div>
+        {/* 2-up shimmer tiles */}
+        <div className="reply-img-tiles">
+          <div className="reply-img-tile shimmer-tile" aria-hidden="true" />
+          <div className="reply-img-tile shimmer-tile" aria-hidden="true" />
+        </div>
+        {/* Prompt italic */}
+        {prompt && <p className="reply-img-prompt">&ldquo;{prompt}&rdquo;</p>}
       </div>
     );
   }
 
+  /* ---- done with options (2-up) ---- */
+  if (options && options.length > 0) {
+    return (
+      <div className="reply-img-done">
+        {/* Option tiles */}
+        <div className="reply-img-tiles">
+          {options.map((opt, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`reply-img-tile reply-img-opt${selectedIdx === i ? " selected" : ""}`}
+              onClick={() => setSelectedIdx(i)}
+              aria-label={`Select option ${i + 1}`}
+            >
+              <img src={opt.url} alt={`Option ${i + 1}`} loading="lazy" />
+            </button>
+          ))}
+        </div>
+        {/* Actions row */}
+        <div className="reply-img-acts">
+          <button
+            type="button"
+            className="btn sm primary"
+            onClick={() => {/* ctx.onUseOption if wired */}}
+          >
+            <i className="ri-check-line" />Use option {selectedIdx + 1}
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => ctx.onStop?.()}
+          >
+            <i className="ri-loop-left-line" />Try again
+          </button>
+          <button
+            type="button"
+            className="btn sm quiet"
+            onClick={() => {/* ctx.onEditPrompt if wired */}}
+          >
+            <i className="ri-pencil-line" />Edit prompt
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- fallback: single image (no options array) ---- */
   if (!url) return null;
   return (
     <div className="reply-image">
-      <img src={url} alt={prompt || name} loading="lazy" style={{ display: "block", maxWidth: "min(100%, 480px)", maxHeight: 340, objectFit: "cover" }} />
+      <img src={url} alt={prompt || name} loading="lazy" />
     </div>
   );
 }
 
 /* ---- streaming ---- */
-function StreamingBlock({ block }: { block: Block }) {
+function StreamingBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const text = block.text || block.content || "";
-  return <div className="reply-streaming">{text}</div>;
+  const tokens = block.tokens as number | undefined;
+
+  // Split text into all-but-last-line and last-line for caret placement
+  const lines = text.split("\n");
+  const lastLine = lines[lines.length - 1];
+  const prevLines = lines.slice(0, lines.length - 1).join("\n");
+
+  return (
+    <div className="reply-streaming-wrap">
+      {/* Partial text — lines before the last */}
+      {prevLines && (
+        <span className="reply-streaming-text">{prevLines}{"\n"}</span>
+      )}
+      {/* Last line + trailing block caret */}
+      <span className="reply-streaming-caret-row">
+        <span className="reply-streaming-text">{lastLine}</span>
+        <span className="reply-streaming-caret" aria-hidden="true" />
+      </span>
+      {/* Status row: spinner + "Writing… · N tokens" + spacer + Stop */}
+      <div className="reply-streaming-status">
+        <span className="spin reply-streaming-spin" aria-hidden="true" />
+        <span className="reply-streaming-status-txt">
+          Writing…{tokens != null ? ` · ${tokens} tokens` : ""}
+        </span>
+        <span className="sp" />
+        <button
+          type="button"
+          className="btn sm quiet reply-streaming-stop"
+          onClick={() => ctx.onStop?.()}
+          aria-label="Stop generation"
+        >
+          <i className="ri-stop-line" />Stop
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /* ---- mentions (inline chip display, not a block per se — render as fallback markdown) ---- */
@@ -1104,9 +1220,9 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
     case "document":
       return <DocumentBlock key={block.id || block.name || block.type} block={block} />;
     case "image":
-      return <ImageBlock key={block.id || block.url || block.type} block={block} />;
+      return <ImageBlock key={block.id || block.url || block.type} block={block} ctx={ctx} />;
     case "streaming":
-      return <StreamingBlock key={block.type} block={block} />;
+      return <StreamingBlock key={block.type} block={block} ctx={ctx} />;
 
     default: {
       /* SAFE FALLBACK — render any unknown/future block as text/markdown.
