@@ -3244,6 +3244,7 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .reply-code { margin: 0; }
 /* Plain-code with header: hide the default .codeblock head (we render our own light header above it) */
 .reply-code-plain .codeblock { margin: 0; border-top: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.reply-code-plain .codeblock .cb-head { display: none; }
 
 /* --- Dark code card (pen Jxjui) — used when block.diff is present --- */
 .reply-code-card { background: var(--ink); border-radius: var(--r-lg); overflow: hidden; }

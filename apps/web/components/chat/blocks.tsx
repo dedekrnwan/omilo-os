@@ -618,7 +618,7 @@ function ActionCardBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
             disabled={busy || !hasHandler}
             onClick={() => decide("approve")}
           >
-            <i className="ri-check-line" />Open PR
+            <i className="ri-check-line" />{block.action_title || block.action || "Open"}
           </button>
           <button
             type="button"
@@ -649,7 +649,12 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const title = block.title || block.action_title || "";
   const body = block.text || block.content || block.summary || "";
   // pen: "Send to N" label and "X asked · time" meta
-  const sendLabel = (block as { confirm_send_label?: string }).confirm_send_label || `Send to ${(block as { confirm_n?: number | string }).confirm_n ?? "recipients"}`;
+  const confirmN = (block as { confirm_n?: number | string }).confirm_n;
+  const isSendAction = block.action === "send" || confirmN != null;
+  const sendLabel = (block as { confirm_send_label?: string }).confirm_send_label
+    || (isSendAction ? `Send to ${confirmN ?? "recipients"}` : "Confirm");
+  const tileIcon = isSendAction ? "ri-send-plane-line" : "ri-error-warning-line";
+  const primaryIcon = isSendAction ? "ri-send-plane-line" : "ri-check-line";
   const asker = (block as { confirm_asker?: string }).confirm_asker || "";
   const askedAt = (block as { confirm_asked_at?: string }).confirm_asked_at || "";
   const approvedText = (block as { confirm_approved_text?: string }).confirm_approved_text || title || "approved";
@@ -687,19 +692,19 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   // Pending: full card (pen T4FR5)
   return (
     <div className="reply-confirm">
-      {/* Top: bad-tint tile + send icon + bold ask */}
+      {/* Top: tile + icon + bold ask; icon/style depends on whether it's a send action */}
       <div className="reply-confirm-top">
         <div className="reply-confirm-tile">
-          <i className="ri-send-plane-line" />
+          <i className={tileIcon} />
         </div>
         <span className="reply-confirm-ask">{title}</span>
       </div>
       {body && <div className="reply-confirm-body">{body}</div>}
-      {/* Actions row: Cancel / Send primary + spacer + "X asked · time" */}
+      {/* Actions row: Cancel / primary + spacer + "X asked · time" */}
       <div className="reply-confirm-acts">
         <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
         <button className="btn sm primary" type="button" disabled={busy} onClick={() => confirm("approve")}>
-          <i className="ri-send-plane-line" />{sendLabel}
+          <i className={primaryIcon} />{sendLabel}
         </button>
         <span className="reply-confirm-sp" />
         {(asker || askedAt) && (
@@ -974,7 +979,7 @@ function DocumentBlock({ block }: { block: Block }) {
   const meta = block.summary
     ? (block.mime ? block.mime.replace(/^application\//, "") + " · " : "") + (block.text ? block.text.slice(0, 80) : "")
     : (block.text || "");
-  const snippet = block.summary || block.text || "";
+  const snippet = block.summary || "";
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
   // Chip label — derive from mime or kind
   const chipLabel = block.kind || (block.mime ? (block.mime.includes("pdf") ? "PDF" : block.mime.includes("markdown") ? "Markdown" : "Docs") : "Docs");
@@ -1003,8 +1008,7 @@ function DocumentBlock({ block }: { block: Block }) {
         {meta && <span className="reply-document-meta">{meta}</span>}
         {snippet && <span className="reply-document-snippet">{snippet}</span>}
         <div className="reply-document-acts">
-          <button type="button" className="btn sm" onClick={open}
-            onKeyDown={(e) => e.key === "Enter" && open()}>
+          <button type="button" className="btn sm" onClick={open}>
             <i className="ri-file-text-line" />Open in Docs
           </button>
           {url && (
@@ -1086,13 +1090,16 @@ function ImageBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
           <button
             type="button"
             className="btn sm primary"
-            onClick={() => {/* ctx.onUseOption if wired */}}
+            disabled
+            aria-disabled="true"
           >
             <i className="ri-check-line" />Use option {selectedIdx + 1}
           </button>
           <button
             type="button"
             className="btn sm"
+            disabled={!ctx.onStop}
+            aria-disabled={!ctx.onStop}
             onClick={() => ctx.onStop?.()}
           >
             <i className="ri-loop-left-line" />Try again
@@ -1100,7 +1107,8 @@ function ImageBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
           <button
             type="button"
             className="btn sm quiet"
-            onClick={() => {/* ctx.onEditPrompt if wired */}}
+            disabled
+            aria-disabled="true"
           >
             <i className="ri-pencil-line" />Edit prompt
           </button>
