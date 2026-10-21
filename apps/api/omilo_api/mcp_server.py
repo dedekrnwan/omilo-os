@@ -1235,9 +1235,14 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
     # ------------------------------------------------------------------ calendar tools (Task 13)
     if name == "manage_calendar":
         actor = f"staff:{st.id}"
-        op = str(args.get("op") or "run_now")
-        shift_id = str(args.get("shift_id") or "")
+        op = str(args.get("op") or "").strip()
+        shift_id = str(args.get("shift_id") or "").strip()
         at_arg = args.get("at")
+
+        if not op:
+            raise S.DomainError("op is required", 400)
+        if not shift_id:
+            raise S.DomainError("shift_id is required", 400)
 
         # PRE-GATE: resolve the shift eagerly so an unknown shift always raises DomainError
         # (in both Auto and Strict modes) rather than filing a proposal for a non-existent shift.

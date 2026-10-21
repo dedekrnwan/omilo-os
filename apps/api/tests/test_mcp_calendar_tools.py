@@ -12,12 +12,13 @@ import datetime as dt
 import uuid
 
 import pytest
+from sqlalchemy import func, select as sa_select
 
 from omilo_api import mcp_server as mcp
 from omilo_api import policy
 from omilo_api import services as S
 from omilo_api.db import session_scope
-from omilo_api.models import Shift, Staff, Task
+from omilo_api.models import Proposal, Shift, Staff, Task
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -256,18 +257,17 @@ def test_manage_calendar_unknown_shift_raises_domain_error_auto(owner):
     assert exc_info.value.code == 404
 
 
+def _count_proposals(agent_id: str) -> int:
+    """Return the number of Proposal rows for the given agent."""
+    with session_scope() as db:
+        return db.scalar(sa_select(func.count()).select_from(Proposal).where(Proposal.staff_id == agent_id))
+
+
 def test_manage_calendar_unknown_shift_raises_domain_error_strict(owner):
     """Unknown shift_id raises DomainError even in Strict mode (no proposal filed)."""
-    from omilo_api.models import Proposal
-    from sqlalchemy import select as _select
-
     _set_strict()
     try:
-        before_count = 0
-        with session_scope() as db:
-            before_count = db.scalar(
-                _select(Proposal).where(Proposal.staff_id == _CAL_ASK_AGENT_ID).exists().select()
-            )
+        before_count = _count_proposals(_CAL_ASK_AGENT_ID)
 
         with pytest.raises(S.DomainError) as exc_info:
             _call(
@@ -277,6 +277,12 @@ def test_manage_calendar_unknown_shift_raises_domain_error_strict(owner):
                 shift_id="shift-does-not-exist-strict",
             )
         assert exc_info.value.code == 404
+
+        after_count = _count_proposals(_CAL_ASK_AGENT_ID)
+        assert after_count == before_count, (
+            f"A proposal was filed for a non-existent shift in Strict mode "
+            f"(before={before_count}, after={after_count})"
+        )
     finally:
         _restore_auto()
 
