@@ -2332,10 +2332,9 @@ def _onb_providers(db: Session) -> list[dict]:
     for o in out:
         if o["id"] in _LITELLM_PROVIDER_IDS:
             o["has_key"] = bool(S.ai_key_hint(db, o["id"]))
-    local = H.local_login_status()
-    if local.get("logged_in"):
-        out.append({"id": "local", "label": "Your Claude Code sign-in", "by": "This machine", "domain": "claude.ai", "kind": "local",
-                    "blurb": "Use the Claude you're already signed into on this machine — your login never leaves it. No key needed."})
+    # The local Claude Code sign-in is intentionally NOT offered: its per-user session limits and global
+    # skills/hooks made it unreliable as the team's engine. Omilo runs on the subscription pool, with the
+    # company API key as a small chat-only fallback. (The engine still supports auth:"local" if set manually.)
     return out
 
 

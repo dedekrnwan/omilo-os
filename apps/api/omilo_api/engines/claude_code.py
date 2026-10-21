@@ -292,9 +292,10 @@ class ClaudeCodeEngine(Engine):
             while True:
                 picked = H.lease(exclude=tried)
                 if not picked:
-                    # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key
-                    # (same config dir, so a session begun on the pool resumes cleanly). Pure pool mode errors instead.
-                    if api_key():
+                    # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key,
+                    # but ONLY for a chat turn (small). Big Tasks must never bill the API key: they defer until a pool
+                    # account is free again. (same config dir, so a chat session begun on the pool resumes cleanly.)
+                    if api_key() and cfg.get("_chat"):
                         emit("status", state="switching", account="your API key", reason="pool busy — using your API key")
                         res = await self._run_api(cli, cfg, system, prompt if not session else "Continue exactly where you left off.",
                                                   session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
