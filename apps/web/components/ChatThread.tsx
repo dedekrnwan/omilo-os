@@ -138,6 +138,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
 
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
   const threadLabel = (th: FullThread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.scope === "group" ? `# ${th.title}` : th.title;
+  const shortLabel = (l: string) => l.length > 28 ? `${l.slice(0, 28).trimEnd()}…` : l;
   const isGroup = current?.scope === "group";
 
   // the helpers tied to this chat: the room's default (Chief in a team chat, the helper in a 1:1),
@@ -182,7 +183,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
           {slash.menu}
           {mention.menu}
           <MentionBox handleRef={box} value={text} onChange={setText} staff={staff}
-            placeholder={isGroup ? `Message ${threadLabel(current)}… (@ to mention a helper, / for commands)` : `Message ${threadLabel(current)}… (@ to bring someone in, / for commands)`}
+            placeholder={`Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
             ariaExpanded={slash.open || mention.open}
             onKeyDown={(e) => { if (mention.onKeyDown(e) || slash.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); } }} />
           <div className="row">

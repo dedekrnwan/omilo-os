@@ -1988,8 +1988,8 @@ main.page:has(> .set) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .set-find input:focus { outline: none; }
 .set-grp { margin-bottom: 10px; }
 .set-grp > p { margin: 8px 2px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
-.set-link { display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r); background: transparent; color: var(--ink-2);
-  font-size: 13.5px; text-align: left; text-decoration: none; cursor: pointer; }
+.set-link { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--r); background: transparent; color: var(--ink-2);
+  font-size: 13.5px; line-height: 1.3; text-align: left; text-decoration: none; cursor: pointer; }
 .set-link:hover { background: var(--hover); color: var(--ink); text-decoration: none; }
 .set-link.on { background: var(--hover); color: var(--ink); font-weight: 500; box-shadow: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(0,0,0,.04); }
 .set-link .chip { margin-left: auto; height: 18px; font-size: 10.5px; }
