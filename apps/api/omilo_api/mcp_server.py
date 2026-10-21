@@ -339,6 +339,62 @@ TOOLS: list[dict] = [
          "value": _s("string", "new value (number or string depending on the key)"),
          "task_id": _s("string", "your task id"),
      }, "required": ["key", "value"]}},
+    # ------------------------------------------------------------------ integration tools (Task 6)
+    {"name": "manage_connector", "description": "Install, configure or remove an http/stdio connector. "
+                                                 "op: install (add new) | configure (update existing) | remove (delete). "
+                                                 "Piece (OAuth) and MCP connectors are managed from the marketplace. "
+                                                 "Requires approval in Strict mode (connector.install permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "install | configure | remove", enum=["install", "configure", "remove"]),
+         "id": _s("string", "connector id: lowercase letters, digits and dashes"),
+         "label": _s("string", "display label"),
+         "kind": _s("string", "http | stdio", enum=["http", "stdio"]),
+         "url": _s("string", "base URL for http connectors (required for http)"),
+         "command": _s("string", "executable for stdio connectors (required for stdio)"),
+         "args": _s("array", "command-line args (stdio)", items={"type": "string"}),
+         "approval": _s("string", "ask | auto", enum=["ask", "auto"]),
+         "default_on": _s("boolean", "on by default for all helpers"),
+         "enabled": _s("boolean", "enable/disable the connector"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "id"]}},
+    {"name": "manage_skill", "description": "Delete a skill. "
+                                            "(To write or improve a skill use skill_save instead.) "
+                                            "op: delete. "
+                                            "Requires approval in Strict mode (skill.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "delete", enum=["delete"]),
+         "slug": _s("string", "skill id to delete"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "slug"]}},
+    {"name": "manage_workflow", "description": "Create, update, delete, activate or pause a workflow automation. "
+                                               "op: create | update | delete | activate | pause. "
+                                               "Requires approval in Strict mode (workflow.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "create | update | delete | activate | pause",
+                  enum=["create", "update", "delete", "activate", "pause"]),
+         "workflow_id": _s("string", "workflow id (update / delete / activate / pause)"),
+         "name": _s("string", "workflow name (create; optional for update)"),
+         "description": _s("string", "what the workflow does (optional)"),
+         "graph": _s("object", "the workflow graph (create; optional for update)"),
+         "autonomy": _s("string", "ask | auto (default: ask)", enum=["ask", "auto"]),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "cancel_workflow_run", "description": "Cancel a running or queued workflow run. "
+                                                   "Requires approval in Strict mode (workflow.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "run_id": _s("string", "the run id to cancel"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["run_id"]}},
+    {"name": "manage_knowledge_file", "description": "Upload or update a company knowledge document. "
+                                                      "op: write (default). "
+                                                      "File names: lowercase letters, digits, - or _, ending in .md or .yaml. "
+                                                      "Requires approval in Strict mode (knowledge.write permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "write", enum=["write"]),
+         "name": _s("string", "file name, e.g. 'company.md' or 'offer.yaml'"),
+         "content": _s("string", "the full new content (Markdown or YAML)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["name", "content"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -1066,6 +1122,96 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             lambda: S.update_system_setting_svc(db, actor, key, value),
             task_id=args.get("task_id"),
             summary=f"update system setting '{key}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ integration tools (Task 6)
+    if name == "manage_connector":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "install")
+        cid = str(args.get("id") or "")
+        gate = S.gated_execute(
+            db, st, "connector.install",
+            lambda: S.manage_connector_svc(
+                db, actor, op,
+                id=cid,
+                label=args.get("label"),
+                kind=str(args.get("kind") or "http"),
+                url=str(args.get("url") or ""),
+                command=str(args.get("command") or ""),
+                args=args.get("args") if isinstance(args.get("args"), list) else None,
+                headers=args.get("headers") if isinstance(args.get("headers"), dict) else None,
+                env=args.get("env") if isinstance(args.get("env"), dict) else None,
+                approval=str(args.get("approval") or "ask"),
+                default_on=bool(args.get("default_on", True)),
+                enabled=bool(args.get("enabled", True)),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage connector op='{op}' id='{cid}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_skill":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "delete")
+        slug = str(args.get("slug") or "")
+        gate = S.gated_execute(
+            db, st, "skill.change",
+            lambda: S.manage_skill_svc(db, actor, op, slug=slug),
+            task_id=args.get("task_id"),
+            summary=f"manage skill op='{op}' slug='{slug}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_workflow":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "create")
+        wid = str(args.get("workflow_id") or "")
+        gate = S.gated_execute(
+            db, st, "workflow.change",
+            lambda: S.manage_workflow_svc(
+                db, actor, op,
+                workflow_id=wid or None,
+                name=args.get("name"),
+                description=args.get("description"),
+                graph=args.get("graph") if isinstance(args.get("graph"), dict) else None,
+                autonomy=args.get("autonomy"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage workflow op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "cancel_workflow_run":
+        actor = f"staff:{st.id}"
+        run_id = str(args.get("run_id") or "")
+        # Pre-gate: check the run exists and is cancellable before filing a proposal.
+        # This ensures a bad run_id is always an error, even in Strict mode.
+        with db.no_autoflush:
+            from .models import WorkflowRun
+            r = db.get(WorkflowRun, run_id)
+            if r is None:
+                raise S.DomainError(f"no such run '{run_id}'", 404)
+            if r.status in ("done", "failed", "cancelled"):
+                raise S.DomainError(f"the run already {r.status}", 409)
+        gate = S.gated_execute(
+            db, st, "workflow.change",
+            lambda: S.cancel_workflow_run_svc(db, actor, run_id),
+            task_id=args.get("task_id"),
+            summary=f"cancel workflow run '{run_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_knowledge_file":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "write")
+        fname = str(args.get("name") or "")
+        content = str(args.get("content") or "")
+        gate = S.gated_execute(
+            db, st, "knowledge.write",
+            lambda: S.manage_knowledge_file_svc(db, actor, op, name=fname, content=content),
+            task_id=args.get("task_id"),
+            summary=f"manage knowledge file op='{op}' name='{fname}'",
         )
         return _DECISION[gate["decision"]], gate
 

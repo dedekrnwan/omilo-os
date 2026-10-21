@@ -1450,6 +1450,310 @@ _SETTING_ALLOWED: frozenset[str] = frozenset({
 })
 
 
+# ------------------------------------------------------------------ connector service extraction (Task 6)
+
+def manage_connector_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    id: str | None = None,
+    label: str | None = None,
+    kind: str = "http",
+    url: str = "",
+    command: str = "",
+    args: list | None = None,
+    headers: dict | None = None,
+    env: dict | None = None,
+    approval: str = "ask",
+    default_on: bool = True,
+    enabled: bool = True,
+) -> dict:
+    """Install, configure or remove a connector.
+
+    op: install | configure | remove
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import capabilities as C
+    from . import pieces as P
+    from .models import Connector
+
+    op = (op or "install").strip().lower()
+
+    if op in ("install", "configure"):
+        cid = (id or "").strip()
+        if not cid:
+            raise DomainError("id is required")
+        if not C.SLUG.match(cid) or cid == "omilo":
+            raise DomainError("id: lowercase letters, digits and dashes (and not omilo)")
+        if kind == "mcp":
+            raise DomainError("mcp connectors are managed from the marketplace")
+        if kind not in ("http", "stdio"):
+            raise DomainError("kind is http or stdio")
+        if approval not in ("auto", "ask"):
+            raise DomainError("approval is auto or ask")
+        if kind == "http" and not (url or "").startswith(("http://", "https://")):
+            raise DomainError("an http connector needs a URL starting with http:// or https://")
+        if kind == "stdio" and not (command or "").strip():
+            raise DomainError("a stdio connector needs a command")
+
+        if op == "install":
+            if cid in {p["slug"] for p in P.catalog()}:
+                raise DomainError("id is reserved by a marketplace connector")
+            if db.get(Connector, cid):
+                raise DomainError(f"a connector with id '{cid}' already exists", 409)
+            c = Connector(id=cid)
+            db.add(c)
+        else:  # configure
+            c = db.get(Connector, cid)
+            if c is None:
+                raise DomainError(f"unknown connector '{cid}'", 404)
+            if c.kind in ("piece", "mcp"):
+                raise DomainError("piece/mcp connectors are managed from the marketplace")
+
+        c.label = label or cid
+        c.kind = kind
+        c.url = url
+        c.command = command
+        c.args = args or []
+        c.approval = approval
+        c.default_on = default_on
+        c.enabled = enabled
+        C.set_connector_secrets(c, headers, env)
+        audit(db, actor, f"connector.{op}", cid, kind=kind, approval=approval)
+        return C.connector_public(c)
+
+    if op == "remove":
+        cid = (id or "").strip()
+        if not cid:
+            raise DomainError("id is required")
+        c = db.get(Connector, cid)
+        if c is None:
+            raise DomainError(f"unknown connector '{cid}'", 404)
+        if c.kind == "piece":
+            try:
+                from . import broker as B
+                secrets = C.connector_secrets(c)
+                token = secrets.get("token")
+                if token:
+                    B.get_broker().revoke(token)
+            except Exception:  # noqa: BLE001
+                pass
+        db.delete(c)
+        audit(db, actor, "connector.remove", cid)
+        return {"ok": True, "id": cid}
+
+    raise DomainError(f"unknown op '{op}'; use install, configure or remove")
+
+
+# ------------------------------------------------------------------ skill-delete service extraction (Task 6)
+
+def manage_skill_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    slug: str | None = None,
+) -> dict:
+    """Delete a skill.
+
+    op: delete
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import capabilities as C
+
+    op = (op or "delete").strip().lower()
+
+    if op == "delete":
+        slug = (slug or "").strip()
+        if not slug:
+            raise DomainError("slug is required")
+        sk = C.get_skill(slug)
+        if sk is None:
+            raise DomainError(f"no skill '{slug}'", 404)
+        C.delete_skill(slug)
+        audit(db, actor, "skill.remove", slug)
+        return {"ok": True, "slug": slug}
+
+    raise DomainError(f"unknown op '{op}'; use delete")
+
+
+# ------------------------------------------------------------------ workflow service extraction (Task 6)
+
+def manage_workflow_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    workflow_id: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+    graph: dict | None = None,
+    autonomy: str | None = None,
+) -> dict:
+    """Create, update, delete, activate or pause a workflow.
+
+    op: create | update | delete | activate | pause
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import workflows as W
+    from .models import InboxItem, Workflow, WorkflowRun, now
+
+    op = (op or "create").strip().lower()
+
+    if op == "create":
+        if not (name or "").strip():
+            raise DomainError("name is required")
+        if not isinstance(graph, dict):
+            raise DomainError("graph must be an object with nodes and edges")
+        try:
+            validated_graph = W.validate(graph)
+        except W.Invalid as e:
+            raise DomainError(f"the workflow is not valid: {e}") from e
+        wf = Workflow(
+            name=(name or "").strip()[:120],
+            description=(description or "")[:2000],
+            graph=validated_graph,
+            autonomy=autonomy or "ask",
+            status="draft",
+            created_by=actor,
+        )
+        db.add(wf)
+        db.flush()
+        audit(db, actor, "workflow.create", wf.id, name=wf.name)
+        return {"workflow_id": wf.id, "status": wf.status}
+
+    if op in ("update", "delete", "activate", "pause"):
+        wid = (workflow_id or "").strip()
+        if not wid:
+            raise DomainError("workflow_id is required")
+        wf = db.get(Workflow, wid)
+        if wf is None:
+            raise DomainError(f"unknown workflow '{wid}'", 404)
+
+        if op == "update":
+            if graph is not None:
+                if not isinstance(graph, dict):
+                    raise DomainError("graph must be an object with nodes and edges")
+                try:
+                    wf.graph = W.validate(graph)
+                except W.Invalid as e:
+                    raise DomainError(f"the workflow is not valid: {e}") from e
+            if name is not None:
+                wf.name = name.strip()[:120]
+            if description is not None:
+                wf.description = description[:2000]
+            if autonomy is not None:
+                if autonomy not in ("ask", "auto"):
+                    raise DomainError("autonomy is ask or auto")
+                wf.autonomy = autonomy
+            from .models import now as _now
+            wf.updated_at = _now()
+            if wf.status == "active":
+                W.activate(db, wf)
+            audit(db, actor, "workflow.update", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+        if op == "delete":
+            # Close any pending inbox items
+            for i in db.scalars(
+                select(InboxItem).where(
+                    InboxItem.kind == "workflow",
+                    InboxItem.ref_id == f"wf:{wf.id}",
+                    InboxItem.status != "done",
+                )
+            ):
+                i.status, i.answer, i.closed_at = "done", "deleted", now()
+            # Cancel queued/waiting runs
+            for r in db.scalars(
+                select(WorkflowRun).where(
+                    WorkflowRun.workflow_id == wf.id,
+                    WorkflowRun.status.in_(["queued", "waiting"]),
+                )
+            ):
+                r.status, r.error, r.ended_at = "cancelled", "the workflow was deleted", now()
+            db.delete(wf)
+            audit(db, actor, "workflow.delete", wid)
+            return {"ok": True, "workflow_id": wid}
+
+        if op == "activate":
+            try:
+                W.validate(wf.graph or {})
+            except W.Invalid as e:
+                raise DomainError(f"the workflow is not valid: {e}") from e
+            W.activate(db, wf)
+            for i in db.scalars(
+                select(InboxItem).where(
+                    InboxItem.kind == "workflow",
+                    InboxItem.ref_id == f"wf:{wf.id}",
+                    InboxItem.status != "done",
+                )
+            ):
+                i.status, i.answer, i.closed_at = "done", "approved", now()
+            audit(db, actor, "workflow.activate", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+        if op == "pause":
+            wf.status, wf.next_at = "paused", None
+            audit(db, actor, "workflow.pause", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+    raise DomainError(f"unknown op '{op}'; use create, update, delete, activate or pause")
+
+
+# ------------------------------------------------------------------ workflow-run cancel service (Task 6)
+
+def cancel_workflow_run_svc(db: Session, actor: str, run_id: str) -> dict:
+    """Cancel a workflow run.
+
+    Raises DomainError (not HTTPException) for unknown or already-terminal runs.
+    Returns the run view dict.
+    """
+    from . import workflows as W
+    from .models import InboxItem, WorkflowRun, now
+
+    run_id = (run_id or "").strip()
+    if not run_id:
+        raise DomainError("run_id is required")
+    r = db.get(WorkflowRun, run_id)
+    if r is None:
+        raise DomainError(f"no such run '{run_id}'", 404)
+    if r.status in ("done", "failed", "cancelled"):
+        raise DomainError(f"the run already {r.status}", 409)
+    r.status, r.error, r.ended_at = "cancelled", "cancelled by agent", now()
+    for i in db.scalars(
+        select(InboxItem).where(
+            InboxItem.kind == "workflow",
+            InboxItem.ref_id.like(f"%:{r.id}:%"),
+            InboxItem.status != "done",
+        )
+    ):
+        i.status, i.answer, i.closed_at = "done", "cancelled", now()
+    audit(db, actor, "workflow.run.cancel", run_id)
+    return W.run_view(r, full=True)
+
+
+# ------------------------------------------------------------------ knowledge file service extraction (Task 6)
+
+def manage_knowledge_file_svc(db: Session, actor: str, op: str, *, name: str, content: str = "") -> dict:
+    """Write (upload/attach) a knowledge doc.
+
+    op: write (default)
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    op = (op or "write").strip().lower()
+
+    if op == "write":
+        write_knowledge(db, name, content, actor)
+        return {"name": name, "bytes": len(content)}
+
+    raise DomainError(f"unknown op '{op}'; use write")
+
+
 def update_system_setting_svc(db: Session, actor: str, key: str, value) -> dict:
     """Set a safe company setting.
 
