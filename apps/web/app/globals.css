@@ -3306,6 +3306,48 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .reply-action-card .reply-ac-t span { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 .reply-action-card .reply-ac-acts { display: flex; gap: 6px; margin-top: 6px; }
 
+/* PR card block */
+.reply-pr-card { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.reply-pr-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.reply-pr-icon { width: 32px; height: 32px; border-radius: var(--r); display: grid; place-items: center; background: var(--soft); border: 1px solid var(--line); flex-shrink: 0; }
+.reply-pr-icon i { font-size: 16px; color: var(--ink-2); }
+.reply-pr-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.reply-pr-t b { font-weight: 600; font-size: 13.5px; }
+.reply-pr-t span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-pr-badge { flex-shrink: 0; margin-left: auto; }
+.reply-pr-rows { display: flex; flex-direction: column; gap: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.reply-pr-row { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); padding: 3px 0; }
+.reply-pr-row i { font-size: 14px; color: var(--faint); flex-shrink: 0; }
+.reply-pr-stat { font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
+.reply-pr-stat.up { color: var(--ok); }
+.reply-pr-stat.down { color: var(--bad); }
+.reply-pr-acts { display: flex; gap: 6px; align-items: center; padding: 10px 14px; flex-wrap: wrap; }
+
+/* Unified diff block */
+.reply-diff { border: 1px solid var(--line-strong); border-radius: var(--r-md); background: #1c1917; overflow: hidden; font-family: var(--font-mono); }
+.reply-diff-head { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 14px; background: #292524; border-bottom: 1px solid rgba(255,255,255,.08); }
+.reply-diff-path { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.reply-diff-file { font-size: 12px; color: #d6d3d1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-diff-lang { font-size: 11px; color: #78716c; background: rgba(255,255,255,.06); border-radius: 4px; padding: 1px 6px; white-space: nowrap; flex-shrink: 0; }
+.reply-diff-acts { display: flex; gap: 4px; flex-shrink: 0; }
+.reply-diff-btn { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid rgba(255,255,255,.12); border-radius: var(--r-sm); background: transparent; color: #a8a29e; font-size: 12px; font-family: var(--font-sans); cursor: pointer; transition: background .15s, color .15s; }
+.reply-diff-btn:hover { background: rgba(255,255,255,.08); color: #e7e5e4; }
+.reply-diff-btn i { font-size: 13px; color: inherit; }
+.reply-diff-body { overflow-x: auto; max-height: 480px; overflow-y: auto; }
+.reply-diff-table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.55; }
+.reply-diff-row td { padding: 0 8px; white-space: pre; }
+.reply-diff-gutter { width: 16px; text-align: center; font-weight: 600; user-select: none; padding-left: 12px !important; }
+.reply-diff-num { width: 36px; text-align: right; color: #57534e; user-select: none; padding-right: 12px !important; }
+.reply-diff-code { color: #d6d3d1; padding-right: 16px !important; }
+.reply-diff-add { background: rgba(21, 128, 61, .18); }
+.reply-diff-add .reply-diff-gutter { color: #4ade80; }
+.reply-diff-add .reply-diff-code { color: #bbf7d0; }
+.reply-diff-remove { background: rgba(185, 28, 28, .18); }
+.reply-diff-remove .reply-diff-gutter { color: #f87171; }
+.reply-diff-remove .reply-diff-code { color: #fecaca; }
+.reply-diff-context .reply-diff-gutter { color: #44403c; }
+.reply-diff-context .reply-diff-code { color: #78716c; }
+
 /* Confirmation block (approval gate — pending / done variants) */
 .reply-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-tint); }
 .reply-confirm.done { border-color: var(--ok-line); background: var(--ok-tint); }

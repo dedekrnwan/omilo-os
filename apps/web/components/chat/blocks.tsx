@@ -41,6 +41,7 @@ export type BlockType =
   | "document"
   | "image"
   | "streaming"
+  | "pr_card"
   | string; // allow unknown/future types — safe fallback
 
 export type Block = {
@@ -97,6 +98,19 @@ export type Block = {
   pause_step?: string;
   pause_quote?: string;
   pause_steps_left?: string;
+  // pr_card fields
+  repo?: string;
+  branch?: string;
+  base?: string;
+  files_changed?: number;
+  additions?: number;
+  deletions?: number;
+  tests?: string;
+  pr_url?: string;
+  reviewer?: string;
+  // code diff fields
+  diff?: boolean;
+  path?: string;
   // streaming_approval callbacks live in ctx
   [key: string]: unknown;
 };
@@ -434,15 +448,175 @@ function MarkdownBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 
 /* ---- code ---- */
 function CodeBlock({ block }: { block: Block }) {
-  // Reuse the codeblock rendered by Markdown (it generates the same .codeblock HTML)
   const code = block.text || block.content || "";
   const lang = block.lang || "";
+  const isDiff = block.diff === true || lang === "diff" || lang === "patch";
+
+  if (isDiff) {
+    return <DiffBlock block={block} />;
+  }
+
+  // Reuse the codeblock rendered by Markdown (it generates the same .codeblock HTML)
   const title = block.name || block.title || "";
   const fence = "```" + (lang || "") + (title ? ` title="${title}"` : "") + "\n" + code + "\n```";
   return (
     <div className="reply-code">
       <div className="reply-md">
         <Markdown text={fence} />
+      </div>
+    </div>
+  );
+}
+
+/* ---- diff (unified diff rendering, used when block.diff===true or lang="diff") ---- */
+type DiffLine = { kind: "add" | "remove" | "context"; text: string; lineNo: number };
+
+function parseDiff(raw: string): DiffLine[] {
+  let lineNo = 0;
+  return raw.split("\n").map((line) => {
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      lineNo++;
+      return { kind: "add" as const, text: line.slice(1), lineNo };
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      return { kind: "remove" as const, text: line.slice(1), lineNo };
+    }
+    if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++")) {
+      return { kind: "context" as const, text: line, lineNo };
+    }
+    lineNo++;
+    return { kind: "context" as const, text: line, lineNo };
+  });
+}
+
+function DiffBlock({ block }: { block: Block }) {
+  const [copied, setCopied] = useState(false);
+  const code = block.text || block.content || "";
+  const filePath = block.path || block.name || block.title || "";
+  const rawLang = block.lang || "diff";
+  const langLabel = rawLang === "diff" || rawLang === "patch" ? "Diff" : rawLang.toUpperCase();
+
+  const lines = parseDiff(code);
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const handleApply = () => {
+    const id = block.id || block.name || "";
+    window.dispatchEvent(new CustomEvent("omilo:apply", { detail: { id, code, path: filePath } }));
+  };
+
+  return (
+    <div className="reply-diff">
+      <div className="reply-diff-head">
+        <div className="reply-diff-path">
+          {filePath && <span className="reply-diff-file">{filePath}</span>}
+          <span className="reply-diff-lang">{langLabel}</span>
+        </div>
+        <div className="reply-diff-acts">
+          <button type="button" className="reply-diff-btn" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button type="button" className="reply-diff-btn" onClick={handleApply}>
+            <i className="ri-code-s-slash-line" />
+            Apply
+          </button>
+        </div>
+      </div>
+      <div className="reply-diff-body">
+        <table className="reply-diff-table" aria-label="Code diff">
+          <tbody>
+            {lines.map((line, i) => (
+              <tr key={i} className={`reply-diff-row reply-diff-${line.kind}`}>
+                <td className="reply-diff-gutter">
+                  {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : ""}
+                </td>
+                <td className="reply-diff-num">{line.kind !== "remove" ? line.lineNo : ""}</td>
+                <td className="reply-diff-code">{line.text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---- pr_card ---- */
+function PrCardBlock({ block }: { block: Block }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  const repo = block.repo || "";
+  const branch = block.branch || "";
+  const base = block.base || "main";
+  const filesChanged = block.files_changed ?? 0;
+  const additions = block.additions ?? 0;
+  const deletions = block.deletions ?? 0;
+  const tests = block.tests || "";
+  const prUrl = block.pr_url || "";
+  const reviewer = block.reviewer || "you";
+
+  const subtitle = [repo, branch && base ? `${branch} → ${base}` : branch || base].filter(Boolean).join(" · ");
+
+  const handleOpenPr = () => {
+    if (prUrl) {
+      window.open(prUrl, "_blank", "noopener,noreferrer");
+    } else {
+      window.dispatchEvent(new CustomEvent("omilo:open-pr", { detail: { block } }));
+    }
+  };
+
+  const handleChangeSomething = () => {
+    window.dispatchEvent(new CustomEvent("omilo:pr-edit", { detail: { block } }));
+  };
+
+  return (
+    <div className="reply-pr-card">
+      <div className="reply-pr-head">
+        <div className="reply-pr-icon">
+          <i className="ri-git-branch-line" />
+        </div>
+        <div className="reply-pr-t">
+          <b>Open a pull request</b>
+          {subtitle && <span>{subtitle}</span>}
+        </div>
+        <span className="chip warn reply-pr-badge">Needs you</span>
+      </div>
+      <div className="reply-pr-rows">
+        <div className="reply-pr-row">
+          <i className="ri-file-list-3-line" />
+          <span>{filesChanged} file{filesChanged !== 1 ? "s" : ""} changed</span>
+          <span className="reply-pr-stat up">+{additions}</span>
+          <span className="reply-pr-stat down">−{deletions}</span>
+        </div>
+        {tests && (
+          <div className="reply-pr-row">
+            <i className="ri-test-tube-line" />
+            <span>{tests}</span>
+          </div>
+        )}
+        <div className="reply-pr-row">
+          <i className="ri-user-line" />
+          <span>Reviewer: {reviewer}</span>
+        </div>
+      </div>
+      <div className="reply-pr-acts">
+        <button type="button" className="btn sm primary" onClick={handleOpenPr}>
+          <i className="ri-external-link-line" />Open PR
+        </button>
+        <button type="button" className="btn sm" onClick={handleChangeSomething}>
+          <i className="ri-edit-line" />Change something
+        </button>
+        <button type="button" className="btn sm quiet" onClick={() => setDismissed(true)}>
+          Not now
+        </button>
       </div>
     </div>
   );
@@ -796,6 +970,8 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
       return <ImageBlock key={block.id || block.url || block.type} block={block} />;
     case "streaming":
       return <StreamingBlock key={block.type} block={block} />;
+    case "pr_card":
+      return <PrCardBlock key={block.id || block.type} block={block} />;
 
     default: {
       /* SAFE FALLBACK — render any unknown/future block as text/markdown.
