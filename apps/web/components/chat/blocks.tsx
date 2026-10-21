@@ -383,18 +383,23 @@ function FileBlock({ block }: { block: Block }) {
 
 /* ---- reasoning (collapsible) ---- */
 function ReasoningBlock({ block }: { block: Block }) {
+  const [open, setOpen] = useState(false);
   const label = block.label || block.title || "Thought";
   const content = block.content || block.text || "";
   return (
-    <details className="reply-reasoning">
-      <summary>
+    <div className={`reply-reasoning${open ? " open" : ""}`}>
+      <button type="button" className="reply-reasoning-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <i className="ri-brain-line" />
-        {label}
+        <span>{label}</span>
         <span className="sp" />
-        <i className="ri-arrow-down-s-line chev" />
-      </summary>
-      <div className="reply-reasoning-body"><Markdown text={content} /></div>
-    </details>
+        <i className={open ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
+      </button>
+      {open && (
+        <div className="reply-reasoning-lines">
+          <Markdown text={content} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -405,16 +410,23 @@ function TodosBlock({ block }: { block: Block }) {
   const label = block.title || block.label || "Plan";
   return (
     <div className="reply-todo">
-      <div className="reply-todo-h" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ flex: 1 }}>{label}</span>
-        {items.length > 0 && <span style={{ fontWeight: 400, textTransform: "none", fontSize: 12 }}>{doneCount} of {items.length} done</span>}
+      <div className="reply-todo-top">
+        <span className="reply-todo-plan">{label}</span>
+        {items.length > 0 && <span className="reply-todo-count">{doneCount} of {items.length} done</span>}
+        <span className="sp" />
+        <button type="button" className="iconbtn reply-todo-add" aria-label="Add step"><i className="ri-add-line" /></button>
       </div>
       {items.map((item, i) => {
         const s = item.status || "pending";
         return (
           <div key={i} className={`reply-todo-item ${s}`}>
-            {s === "done" ? <i className="ri-checkbox-circle-fill" /> : s === "active" ? <i className="ri-loader-4-line" /> : <i className="ri-circle-line" />}
+            {s === "done"
+              ? <i className="ri-checkbox-circle-line" />
+              : s === "active"
+              ? <i className="ri-loader-4-line" />
+              : <i className="ri-circle-line" />}
             <span>{item.text}</span>
+            {s === "pending" && <i className="ri-draggable reply-todo-grip" />}
           </div>
         );
       })}
@@ -610,37 +622,28 @@ function SourcesBlock({ block }: { block: Block }) {
   if (!sources.length) return null;
 
   return (
-    <div>
-      {!expanded ? (
-        <div className="reply-sources">
-          <span className="small" style={{ color: "var(--muted)" }}>Sources</span>
+    <div className="reply-sources-wrap">
+      <div className="reply-sources-pills">
+        <span className="reply-sources-label">Sources</span>
+        {sources.map((s, i) => (
+          <button key={i} type="button" className="reply-source-pill" onClick={() => setExpanded(!expanded)} title={s.title || ""}>
+            <span className="reply-source-pill-n">{s.n ?? i + 1}</span>
+            {s.title && <span className="reply-source-pill-txt">{s.title}</span>}
+          </button>
+        ))}
+      </div>
+      {expanded && (
+        <div className="reply-sources-list">
           {sources.map((s, i) => (
-            <button key={i} type="button" className="chip quiet" style={{ fontSize: 12, cursor: "pointer" }}
-              onClick={() => setExpanded(true)} title={s.title || ""}>
-              {s.n ?? i + 1}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div style={{ border: "1px solid var(--line)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid var(--line)", gap: 6 }}>
-            <span className="small" style={{ fontWeight: 500, flex: 1 }}>Sources</span>
-            <button type="button" className="iconbtn" style={{ width: 24, height: 24 }} onClick={() => setExpanded(false)} aria-label="Collapse sources">
-              <i className="ri-close-line" />
-            </button>
-          </div>
-          {sources.map((s, i) => (
-            <a key={i} className="reply-doc" href={s.url || "#"} target={s.url ? "_blank" : undefined} rel="noopener noreferrer"
-              style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: i > 0 ? "1px solid var(--line)" : "none", borderBottom: "none" }}>
-              <span style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--soft)", border: "1px solid var(--line)", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                {s.n ?? i + 1}
-              </span>
+            <a key={i} className={`reply-sources-row${i > 0 ? " bordered" : ""}`}
+              href={s.url || "#"} target={s.url ? "_blank" : undefined} rel="noopener noreferrer">
+              <span className="reply-sources-n">{s.n ?? i + 1}</span>
               <i className={s.icon || "ri-file-text-line"} />
-              <div className="reply-doc-t">
+              <div className="reply-sources-t">
                 <b>{s.title || "Source"}</b>
                 {s.subtitle && <span>{s.subtitle}</span>}
               </div>
-              {s.url && <i className="ri-arrow-up-right-line" style={{ color: "var(--faint)", flexShrink: 0 }} />}
+              <i className="ri-arrow-right-up-line reply-sources-arrow" />
             </a>
           ))}
         </div>
@@ -696,21 +699,49 @@ function UsageMeterBlock({ block }: { block: Block }) {
 /* ---- document ---- */
 function DocumentBlock({ block }: { block: Block }) {
   const title = block.title || block.name || "Document";
-  const meta = block.summary ? "" : (block.text || "");
+  const meta = block.summary
+    ? (block.mime ? block.mime.replace(/^application\//, "") + " · " : "") + (block.text ? block.text.slice(0, 80) : "")
+    : (block.text || "");
   const snippet = block.summary || block.text || "";
-  const icon = fileIcon(title, block.mime || "");
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
+  // Chip label — derive from mime or kind
+  const chipLabel = block.kind || (block.mime ? (block.mime.includes("pdf") ? "PDF" : block.mime.includes("markdown") ? "Markdown" : "Docs") : "Docs");
+
+  const open = () => url && window.open(url, "_blank", "noopener");
 
   return (
-    <div className="reply-doc" role="button" tabIndex={0}
-      onClick={() => url && window.open(url, "_blank", "noopener")}
-      onKeyDown={(e) => e.key === "Enter" && url && window.open(url, "_blank", "noopener")}>
-      <i className={icon} />
-      <div className="reply-doc-t">
-        <b>{title}</b>
-        <span>{meta || snippet}</span>
+    <div className="reply-document">
+      {/* Peek thumbnail */}
+      <div className="reply-document-peek" aria-hidden="true">
+        <span className="reply-document-peek-title">{title}</span>
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
       </div>
-      {url && <i className="ri-arrow-up-right-line" style={{ color: "var(--faint)", flexShrink: 0 }} />}
+      {/* Right column */}
+      <div className="reply-document-body">
+        <div className="reply-document-top">
+          <span className="reply-document-title">{title}</span>
+          <span className="chip quiet reply-document-chip">{chipLabel}</span>
+        </div>
+        {meta && <span className="reply-document-meta">{meta}</span>}
+        {snippet && <span className="reply-document-snippet">{snippet}</span>}
+        <div className="reply-document-acts">
+          <button type="button" className="btn sm" onClick={open}
+            onKeyDown={(e) => e.key === "Enter" && open()}>
+            <i className="ri-file-text-line" />Open in Docs
+          </button>
+          {url && (
+            <a className="btn sm quiet" href={url} download aria-label="Download">
+              <i className="ri-download-line" />Download
+            </a>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
