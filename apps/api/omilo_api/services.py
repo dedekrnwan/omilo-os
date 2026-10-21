@@ -1759,6 +1759,56 @@ def manage_knowledge_file_svc(db: Session, actor: str, op: str, *, name: str, co
     raise DomainError(f"unknown op '{op}'; use write")
 
 
+# ------------------------------------------------------------------ calendar service (Task 13)
+
+def manage_calendar_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    shift_id: str,
+    at: str | None = None,
+) -> dict:
+    """Skip, unskip or run-now a shift.
+
+    op: skip | unskip | run_now
+    shift_id: the shift to act on (must already be looked up by the caller for pre-gate validation)
+    at: ISO-8601 datetime string (required for skip/unskip)
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import agenda
+
+    op = (op or "run_now").strip().lower()
+
+    sh = db.get(Shift, shift_id)
+    if sh is None:
+        raise DomainError(f"no shift '{shift_id}'", 404)
+
+    if op in ("skip", "unskip"):
+        if not at:
+            raise DomainError(f"'at' (ISO datetime) is required for op='{op}'")
+        try:
+            parsed = dt.datetime.fromisoformat(at)
+        except ValueError as e:
+            raise DomainError(f"'at' is not a valid ISO datetime: {e}") from e
+        # agenda._aware ensures tz-awareness; agenda.skip/unskip normalize internally
+        from .agenda import _aware as _ag_aware
+        parsed = _ag_aware(parsed)
+        if op == "skip":
+            s = agenda.skip(db, sh, parsed, actor)
+            return {"ok": True, "op": "skip", "shift_id": shift_id, "skip_id": s.id, "at": at}
+        else:
+            agenda.unskip(db, sh, parsed, actor)
+            return {"ok": True, "op": "unskip", "shift_id": shift_id, "at": at}
+
+    if op == "run_now":
+        t = agenda.run_now(db, sh, actor)
+        return {"ok": True, "op": "run_now", "shift_id": shift_id, "task_id": t.id}
+
+    raise DomainError(f"unknown op '{op}'; use skip, unskip or run_now")
+
+
 def update_system_setting_svc(db: Session, actor: str, key: str, value) -> dict:
     """Set a safe company setting.
 

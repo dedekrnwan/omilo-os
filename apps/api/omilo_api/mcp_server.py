@@ -397,6 +397,21 @@ TOOLS: list[dict] = [
          "content": _s("string", "the full new content (Markdown or YAML)"),
          "task_id": _s("string", "your task id"),
      }, "required": ["name", "content"]}},
+    # ------------------------------------------------------------------ calendar tools (Task 13)
+    {"name": "manage_calendar", "description": "Skip, unskip or immediately run a helper's scheduled shift. "
+                                               "op: skip (skip one occurrence) | unskip (re-enable a skipped occurrence) | run_now (run outside schedule). "
+                                               "Requires approval in Strict mode (calendar.manage permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "skip | unskip | run_now", enum=["skip", "unskip", "run_now"]),
+         "shift_id": _s("string", "the shift id to act on"),
+         "at": _s("string", "ISO-8601 datetime of the occurrence to skip/unskip (required for skip and unskip)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "shift_id"]}},
+    {"name": "list_upcoming", "description": "List upcoming scheduled events (shifts and workflow runs). Read-only.",
+     "inputSchema": {"type": "object", "properties": {
+         "limit": _s("integer", "max events to return (default 20)"),
+         "staff_id": _s("string", "filter to one helper"),
+     }}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -1214,6 +1229,39 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             lambda: S.manage_knowledge_file_svc(db, actor, op, name=fname, content=content),
             task_id=args.get("task_id"),
             summary=f"manage knowledge file op='{op}' name='{fname}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ calendar tools (Task 13)
+    if name == "manage_calendar":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "run_now")
+        shift_id = str(args.get("shift_id") or "")
+        at_arg = args.get("at")
+
+        # PRE-GATE: resolve the shift eagerly so an unknown shift always raises DomainError
+        # (in both Auto and Strict modes) rather than filing a proposal for a non-existent shift.
+        from .models import Shift as _Shift
+        if not db.get(_Shift, shift_id):
+            raise S.DomainError(f"no shift '{shift_id}'", 404)
+
+        gate = S.gated_execute(
+            db, st, "calendar.manage",
+            lambda: S.manage_calendar_svc(db, actor, op, shift_id=shift_id, at=at_arg),
+            task_id=args.get("task_id"),
+            summary=f"calendar op='{op}' shift='{shift_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "list_upcoming":
+        from . import agenda
+
+        limit = int(args.get("limit") or 20)
+        staff_id_arg = args.get("staff_id") or None
+        gate = S.gated_execute(
+            db, st, "knowledge.read",
+            lambda: agenda.upcoming(db, limit=limit, staff_id=staff_id_arg),
+            summary="list upcoming scheduled events",
         )
         return _DECISION[gate["decision"]], gate
 

@@ -35,6 +35,7 @@ DEFAULTS: dict[str, int] = {
     "folder.grant": ASK,
     "system.config": ASK,
     "workflow.change": DO_AND_TELL,
+    "calendar.manage": ASK,
 }
 
 # Actions that always require owner approval — never auto-run even in permissive/Auto mode.
