@@ -98,6 +98,12 @@ export default function Shell({ children }: { children: ReactNode }) {
     await api("/system", { body: { paused: !overview.paused } });
     refresh();
   };
+  const toggleAutonomy = async () => {
+    if (!overview) return;
+    const next = (overview.autonomy ?? "strict") === "strict" ? "auto" : "strict";
+    await api("/system", { body: { autonomy: next } });
+    refresh();
+  };
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
   const who = (me?.name || me?.email || "Owner").trim();
 
@@ -203,6 +209,14 @@ export default function Shell({ children }: { children: ReactNode }) {
               <button className="navlink" onClick={togglePause}>
                 <i className={overview?.paused ? "ri-play-circle-line" : "ri-pause-circle-line"} />
                 {overview?.paused ? "Resume all helpers" : "Pause all helpers"}
+              </button>
+              <button
+                className={`navlink autonomy-toggle${(overview?.autonomy ?? "strict") === "auto" ? " autonomy-auto" : ""}`}
+                onClick={toggleAutonomy}
+                title={(overview?.autonomy ?? "strict") === "auto" ? "Auto mode — helpers act without asking. Click to switch to Strict." : "Strict mode — helpers ask before acting. Click to switch to Auto."}
+              >
+                <i className={(overview?.autonomy ?? "strict") === "auto" ? "ri-flashlight-line" : "ri-shield-check-line"} />
+                {(overview?.autonomy ?? "strict") === "auto" ? "Auto (YOLO)" : "Strict"}
               </button>
             </div>
           </nav>
