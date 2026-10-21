@@ -35,6 +35,10 @@ INSTRUCTIONS = (
 # Minimum summary length for the learn tool's structural quality gate (no LLM call).
 MIN_LEARN_CHARS = 40
 
+# Map gated_execute decision strings to MCP status strings.
+# Tasks 5/6 reuse this constant; do not inline the dict in new branches.
+_DECISION = {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}
+
 
 def _s(type_, desc, **extra):
     return {"type": type_, "description": desc, **extra}
@@ -250,13 +254,12 @@ TOOLS: list[dict] = [
          "budget_usd_month": _s("number", "monthly budget cap in USD (0 = no cap)"),
          "max_task_minutes": _s("integer", "task time-out in minutes (default 30)"),
      }, "required": ["id", "name", "role", "job"]}},
-    {"name": "update_staff", "description": "Update a helper's name, job, permissions, engine or budget. Requires approval in Strict mode.",
+    {"name": "update_staff", "description": "Update a helper's name, job, role or budget. Requires approval in Strict mode. Permissions are managed by the founder only.",
      "inputSchema": {"type": "object", "properties": {
          "staff_id": _s("string", "the helper to update"),
          "name": _s("string", "new display name"),
          "job": _s("string", "new job description"),
          "role": _s("string", "new role label"),
-         "permissions": _s("object", "new permissions dict"),
          "budget_usd_month": _s("number", "new monthly budget cap in USD"),
          "max_task_minutes": _s("integer", "new task time-out in minutes"),
      }, "required": ["staff_id"]}},
@@ -753,7 +756,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             lambda: [{"id": s.id, "name": s.name, "role": s.role, "status": s.status} for s in S.team(db)],
             summary="list the team roster",
         )
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        return _DECISION[gate["decision"]], gate
 
     if name == "create_staff":
         from . import serialize as X
@@ -776,7 +779,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             lambda: X.staff(S.create_staff(db, data, actor)),
             summary=f"hire new helper '{data['id']}'",
         )
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        return _DECISION[gate["decision"]], gate
 
     if name == "update_staff":
         from . import serialize as X
@@ -785,14 +788,14 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         target = db.get(Staff, target_id)
         if not target:
             raise S.DomainError(f"no staff '{target_id}'", 404)
-        data = {k: args[k] for k in ("name", "job", "role", "permissions", "budget_usd_month", "max_task_minutes") if k in args}
+        data = {k: args[k] for k in ("name", "job", "role", "budget_usd_month", "max_task_minutes") if k in args}
         actor = f"staff:{st.id}"
         gate = S.gated_execute(
             db, st, "staff.change",
             lambda: X.staff(S.update_staff(db, target, data, actor)),
             summary=f"update helper '{target_id}'",
         )
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        return _DECISION[gate["decision"]], gate
 
     if name == "retire_staff":
         target_id = str(args.get("staff_id") or "")
@@ -800,12 +803,15 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         if not target:
             raise S.DomainError(f"no staff '{target_id}'", 404)
         actor = f"staff:{st.id}"
-        gate = S.gated_execute(
-            db, st, "staff.retire",
-            lambda: S.retire_staff(db, target, actor),
-            summary=f"retire helper '{target_id}'",
-        )
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        try:
+            gate = S.gated_execute(
+                db, st, "staff.retire",
+                lambda: S.retire_staff(db, target, actor),
+                summary=f"retire helper '{target_id}'",
+            )
+        except ValueError as e:
+            raise S.DomainError(str(e), 400) from e
+        return _DECISION[gate["decision"]], gate
 
     if name == "grant_staff_access":
         target_id = str(args.get("staff_id") or "")
@@ -838,7 +844,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
             lambda: S.set_staff_access(db, target, change, actor),
             summary=f"grant access to helper '{target_id}'",
         )
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        return _DECISION[gate["decision"]], gate
 
     if name == "manage_shift":
         from . import serialize as X
@@ -914,7 +920,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         else:
             raise S.DomainError(f"unknown op '{op}'; use create, edit or delete")
 
-        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+        return _DECISION[gate["decision"]], gate
 
     raise S.DomainError(f"unknown tool {name}", 404)
 

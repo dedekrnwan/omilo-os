@@ -343,3 +343,52 @@ def test_manage_shift_create_auto_inline(owner):
     data = out_data(out)
     assert "result" in data
     assert data["result"].get("id") or data["result"].get("shift_id") or data["result"].get("staff_id") == target_id
+
+
+# ---------------------------------------------------------------------------
+# Security fix 1: update_staff must NOT forward permissions
+# ---------------------------------------------------------------------------
+
+def test_update_staff_ignores_permissions_arg(owner):
+    """update_staff via call_tool with a permissions arg must NOT change the target's permissions.
+
+    An agent passing permissions={} or any overriding dict must be silently ignored;
+    the target's permissions remain exactly as they were before the call.
+    """
+    # Create a target with an explicit permission set we can check later.
+    target_id = _make_staff(
+        permissions={"actions": {"staff.create": "off"}}
+    )
+    # Read the original permissions.
+    with session_scope() as db:
+        original = dict(db.get(Staff, target_id).permissions or {})
+
+    # Call update_staff with a permissions arg that would escalate privileges.
+    out = _call(
+        _AGENT_ID,
+        "update_staff",
+        staff_id=target_id,
+        name="Legit Name Change",
+        permissions={"actions": {"staff.create": "auto", "deploy": "auto"}},
+    )
+    assert out_decision(out) == "allowed", out_data(out)
+
+    # The target's permissions must be unchanged.
+    with session_scope() as db:
+        after = dict(db.get(Staff, target_id).permissions or {})
+    assert after == original, (
+        f"permissions were changed by update_staff via MCP: before={original!r}, after={after!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Security fix 2: retire_staff on the chief must return a clean error, not 500
+# ---------------------------------------------------------------------------
+
+def test_retire_chief_raises_domain_error(owner):
+    """Retiring the Chief of Staff via call_tool must raise DomainError (clean refusal),
+    NOT an unhandled ValueError that would escape as a 500.
+    """
+    chief_id = _make_staff(is_chief=True)
+    with pytest.raises(S.DomainError):
+        _call(_AGENT_ID, "retire_staff", staff_id=chief_id)
