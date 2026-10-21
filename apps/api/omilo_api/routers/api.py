@@ -2693,7 +2693,9 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         _set_timezone(db, body.timezone, user.id)
     for name, content in OB.render(a).items():
         _run(S.write_knowledge, db, name, content, user.id)
-    S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
+    _strict = bool(modes[body.approval_mode]["strict"])
+    S.set_setting(db, "strict_mode", _strict, actor=user.id)
+    S.set_setting(db, "autonomy_mode", "strict" if _strict else "permissive", actor=user.id)
     if body.engine:  # the older form: an explicit engine
         engine = dict(body.engine)
         # For claude-code engines, auth distinguishes the sub-provider; use _provider_of for correct round-trip.
