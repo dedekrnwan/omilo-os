@@ -9,13 +9,14 @@
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
 
-type Ctx = { isOpen: boolean; open: () => void; close: () => void };
+type Ctx = { isOpen: boolean; seed: string; open: (seed?: string) => void; close: () => void };
 
-const CommandCtx = createContext<Ctx>({ isOpen: false, open: () => {}, close: () => {} });
+const CommandCtx = createContext<Ctx>({ isOpen: false, seed: "", open: () => {}, close: () => {} });
 
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const open = useCallback(() => setIsOpen(true), []);
+  const [seed, setSeed] = useState("");
+  const open = useCallback((s = "") => { setSeed(s); setIsOpen(true); }, []);
   const close = useCallback(() => setIsOpen(false), []);
 
   // Global ⌘K / Ctrl-K shortcut
@@ -47,7 +48,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", handler);
   }, [isOpen]);
 
-  return <CommandCtx.Provider value={{ isOpen, open, close }}>{children}</CommandCtx.Provider>;
+  return <CommandCtx.Provider value={{ isOpen, seed, open, close }}>{children}</CommandCtx.Provider>;
 }
 
 export function useCommand(): Ctx {
