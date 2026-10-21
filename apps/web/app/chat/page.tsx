@@ -7,11 +7,12 @@ import { Meter, RunCard, RunEvent, browserTrail, toRuns, useEvents } from "@/com
 import Avatar from "@/components/Avatar";
 import BrowserView from "@/components/BrowserView";
 import Lineage from "@/components/Lineage";
-import { AccessRequest, Choices, FullThread, Msg } from "@/components/Conversation";
+import { FullThread, Msg } from "@/components/Conversation";
+import { Reply } from "@/components/chat/Reply";
 import { taskItems } from "@/lib/actions";
 import { menu } from "@/lib/menu";
 import { Err, StatusChip } from "@/components/ui";
-import { Attachments, Markdown } from "@/components/Markdown";
+import { Markdown } from "@/components/Markdown";
 import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import Desk from "@/components/workspace/Desk";
@@ -137,10 +138,16 @@ function TaskView({ id, staff }: { id: string; staff: Staff[] }) {
         </div>
         {runs.map((r) => <RunCard key={r.id} run={r} />)}
         {th && (th.messages as Msg[]).filter((m) => m.role === "agent" && m.blocks?.some((b) => b.type === "choices" || b.type === "file" || b.type === "access_request")).map((m) => (
-          <div key={m.id} className="agentmsg"><Avatar who={staff.find((x) => x.id === t.staff_id)} size={30} /><div className="body">
-            <div className="who">{who} · {when(m.at)}</div><Markdown text={m.text} /><Attachments blocks={m.blocks} />
-            <Choices m={m} messages={th.messages as Msg[]} busy={th.awaiting_reply} onPick={answer} />
-            <AccessRequest m={m} onDecide={async (rid, scope, note) => { try { await api(`/access/${rid}/decide`, { body: { scope, note } }); load(); } catch (e: any) { setErr(e.message); } }} /></div></div>
+          <Reply
+            key={m.id}
+            m={m}
+            th={th}
+            staff={staff}
+            messages={th.messages as Msg[]}
+            busy={th.awaiting_reply}
+            onPick={answer}
+            onDecide={async (rid, scope, note) => { try { await api(`/access/${rid}/decide`, { body: { scope, note } }); load(); } catch (e: any) { setErr(e.message); } }}
+          />
         ))}
         {runs.length === 0 && t.status === "queued" && <div className="sysmsg">Waiting for a free spot…</div>}
         {t.report && (

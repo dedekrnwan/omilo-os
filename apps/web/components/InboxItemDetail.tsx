@@ -8,7 +8,7 @@ import { InboxItem, Proposal, ago, api, when } from "@/lib/api";
 import { openInDrawer, openThread } from "@/lib/open";
 import { useBlocks } from "@/components/workflows/blocks";
 import Canvas from "@/components/workflows/Canvas";
-import { accessLabel } from "@/components/Conversation";
+import { accessLabel } from "@/components/chat/blocks";
 
 function WorkflowItem({ i, busy, act }: { i: InboxItem; busy: boolean; act: (fn: () => Promise<unknown>) => void }) {
   const blocks = useBlocks();
