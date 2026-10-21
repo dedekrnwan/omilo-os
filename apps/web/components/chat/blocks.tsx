@@ -544,33 +544,94 @@ function CodeBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 }
 
 /* ---- action_card ---- */
-function ActionCardBlock({ block }: { block: Block }) {
+function ActionCardBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [decided, setDecided] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const title = block.action_title || block.title || "";
   const target = block.action_target || block.summary || "";
-  const icon = block.action_icon || "ri-flashlight-line";
-  const details: string[] = Array.isArray(block.details) ? block.details : [];
+  const icon = block.action_icon || "ri-git-pull-request-line";
+
+  // pen detail rows: icon + text pairs (or fallback to raw details strings)
+  type DetailRow = { icon: string; text: string };
+  const detailRows: DetailRow[] = Array.isArray(block.detail_rows)
+    ? (block.detail_rows as DetailRow[])
+    : (Array.isArray(block.details)
+        ? (block.details as string[]).map((d: string) => ({ icon: "ri-git-commit-line", text: d }))
+        : []);
+
+  const decide = async (decision: string) => {
+    setBusy(true);
+    try {
+      if (block.proposal_id && ctx.onProposal) {
+        await ctx.onProposal(String(block.proposal_id), decision as "approve" | "reject" | "changes", "");
+      } else if (block.request_id && ctx.onDecide) {
+        await ctx.onDecide(String(block.request_id), decision === "approve" ? "once" : "deny", "");
+      }
+      setDecided(decision);
+    } finally { setBusy(false); }
+  };
+
+  const hasHandler = !!(block.proposal_id && ctx.onProposal) || !!(block.request_id && ctx.onDecide);
 
   return (
-    <div className="reply-action-card">
-      <div className="reply-ac-icon"><i className={icon} /></div>
-      <div className="reply-ac-t">
-        <b>{title}</b>
-        {target && <span>{target}</span>}
-        {details.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
-            {details.map((d, i) => (
-              <span key={i} className="small" style={{ color: "var(--ink-2)" }}>{d}</span>
-            ))}
-          </div>
-        )}
-        {block.url && (
-          <div className="reply-ac-acts">
-            <a className="btn sm" href={String(block.url)} target="_blank" rel="noopener noreferrer">
-              <i className="ri-external-link-line" />Open
-            </a>
-          </div>
-        )}
+    <div className="reply-ac">
+      {/* Top row: tile icon + title + target + "Needs you" chip */}
+      <div className="reply-ac-top">
+        <div className="reply-ac-tile">
+          <i className={icon} />
+        </div>
+        <div className="reply-ac-top-t">
+          <span className="reply-ac-title">{title}</span>
+          {target && <span className="reply-ac-target">{target}</span>}
+        </div>
+        <span className="chip reply-ac-chip">Needs you</span>
       </div>
+
+      {/* Details soft box */}
+      {detailRows.length > 0 && (
+        <div className="reply-ac-details">
+          {detailRows.map((row, i) => (
+            <div key={i} className="reply-ac-detail-row">
+              <i className={row.icon} />
+              <span>{row.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Actions — 3-button gap: primary / secondary / quiet */}
+      {decided ? (
+        <div className="reply-ac-decided">
+          {decided === "approve" ? "Opening PR…" : decided === "changes" ? "Noted, revising…" : "Deferred"}
+        </div>
+      ) : (
+        <div className="reply-ac-acts">
+          <button
+            type="button"
+            className="btn sm primary"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("approve")}
+          >
+            <i className="ri-check-line" />Open PR
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("changes")}
+          >
+            <i className="ri-pencil-line" />Change something
+          </button>
+          <button
+            type="button"
+            className="btn sm quiet"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("reject")}
+          >
+            Not now
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,6 +642,12 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [busy, setBusy] = useState(false);
   const title = block.title || block.action_title || "";
   const body = block.text || block.content || block.summary || "";
+  // pen: "Send to N" label and "X asked · time" meta
+  const sendLabel = (block as { confirm_send_label?: string }).confirm_send_label || `Send to ${(block as { confirm_n?: number | string }).confirm_n ?? "recipients"}`;
+  const asker = (block as { confirm_asker?: string }).confirm_asker || "";
+  const askedAt = (block as { confirm_asked_at?: string }).confirm_asked_at || "";
+  const approvedText = (block as { confirm_approved_text?: string }).confirm_approved_text || title || "approved";
+  const approvedAt = (block as { confirm_approved_at?: string }).confirm_approved_at || "";
   const isDone = state === "done";
 
   const confirm = async (decision: "approve" | "deny") => {
@@ -595,21 +662,46 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     } finally { setBusy(false); }
   };
 
+  // Done / cancelled: compact answered row (pen kMvfJ)
+  if (isDone || state === "cancelled") {
+    return (
+      <div className="reply-confirm-answered">
+        <i className={isDone ? "ri-checkbox-circle-line reply-confirm-answered-icon ok" : "ri-close-circle-line reply-confirm-answered-icon bad"} />
+        <span className="reply-confirm-answered-text">
+          {isDone ? `You approved: ${approvedText}` : `You cancelled: ${approvedText}`}
+        </span>
+        <span className="reply-confirm-sp" />
+        <span className="reply-confirm-answered-meta">
+          {approvedAt && <>{approvedAt} · </>}Undo for 5 min
+        </span>
+      </div>
+    );
+  }
+
+  // Pending: full card (pen T4FR5)
   return (
-    <div className={`reply-confirm ${isDone || state === "cancelled" ? "done" : ""}`}>
-      <div className="reply-confirm-head">
-        {isDone ? <i className="ri-checkbox-circle-fill" /> : state === "cancelled" ? <i className="ri-close-circle-line" /> : <i className="ri-send-plane-line" />}
-        <span>{title}</span>
+    <div className="reply-confirm">
+      {/* Top: bad-tint tile + send icon + bold ask */}
+      <div className="reply-confirm-top">
+        <div className="reply-confirm-tile">
+          <i className="ri-send-plane-line" />
+        </div>
+        <span className="reply-confirm-ask">{title}</span>
       </div>
       {body && <div className="reply-confirm-body">{body}</div>}
-      {state === "pending" && (
-        <div className="reply-confirm-acts">
-          <button className="btn sm primary" type="button" disabled={busy} onClick={() => confirm("approve")}>Confirm</button>
-          <button className="btn sm quiet" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
-        </div>
-      )}
-      {isDone && <div className="small" style={{ color: "var(--ok)", fontWeight: 500 }}>Done</div>}
-      {state === "cancelled" && <div className="small" style={{ color: "var(--bad)", fontWeight: 500 }}>Cancelled</div>}
+      {/* Actions row: Cancel / Send primary + spacer + "X asked · time" */}
+      <div className="reply-confirm-acts">
+        <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
+        <button className="btn sm primary" type="button" disabled={busy} onClick={() => confirm("approve")}>
+          <i className="ri-send-plane-line" />{sendLabel}
+        </button>
+        <span className="reply-confirm-sp" />
+        {(asker || askedAt) && (
+          <span className="reply-confirm-meta">
+            {asker && <>{asker} asked</>}{askedAt && <> · {askedAt}</>}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -623,6 +715,8 @@ function StreamingApprovalBlock({ block, ctx }: { block: Block; ctx: BlockCtx })
   const pauseStep = block.pause_step || "";
   const pauseQuote = block.pause_quote || "";
   const stepsLeft = block.pause_steps_left || "";
+  // pen: action labels (defaults match the pen frame)
+  const changeLabel = (block as { pause_change_label?: string }).pause_change_label || "Change something";
 
   const decide = async (decision: "approve" | "reject" | "changes", note = "") => {
     setBusy(true);
@@ -634,31 +728,47 @@ function StreamingApprovalBlock({ block, ctx }: { block: Block; ctx: BlockCtx })
 
   return (
     <div className="reply-approval">
-      {intro && <div className="reply-approval-body">{intro}</div>}
-      <div className="reply-approval-head">
-        <i className="ri-pause-circle-line" />
-        <span>{pauseLabel}</span>
-        {pauseStep && <span className="small" style={{ marginLeft: "auto" }}>{pauseStep}</span>}
+      {/* Intro text — outside the Ask card */}
+      {intro && <div className="reply-approval-intro">{intro}</div>}
+
+      {/* Ask card — helper-brand border */}
+      <div className="reply-approval-ask">
+        {/* Top: circle-pause (helper-brand) + pause label + spacer + step N of M */}
+        <div className="reply-approval-head">
+          <i className="ri-pause-circle-line reply-approval-pause-icon" />
+          <span className="reply-approval-pause-label">{pauseLabel}</span>
+          <span className="reply-approval-sp" />
+          {pauseStep && <span className="reply-approval-step">{pauseStep}</span>}
+        </div>
+
+        {/* Quote box */}
+        {pauseQuote && (
+          <div className="reply-approval-quote">
+            &ldquo;{pauseQuote}&rdquo;
+          </div>
+        )}
+
+        {/* Actions */}
+        {decided ? (
+          <div className="reply-approval-decided">
+            {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
+          </div>
+        ) : (
+          <div className="reply-approval-acts">
+            <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>
+              <i className="ri-play-line" />Looks right, continue
+            </button>
+            <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>{changeLabel}</button>
+            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
+          </div>
+        )}
       </div>
-      {pauseQuote && (
-        <div style={{ padding: "8px 10px", background: "var(--soft)", borderRadius: "var(--r-sm)", fontStyle: "italic", fontSize: 13, color: "var(--ink-2)" }}>
-          &ldquo;{pauseQuote}&rdquo;
-        </div>
-      )}
-      {!decided ? (
-        <div className="reply-approval-acts">
-          <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>Looks right, continue</button>
-          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>Change something</button>
-          <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
-        </div>
-      ) : (
-        <div className="small" style={{ color: decided === "approve" ? "var(--ok)" : "var(--muted)", fontWeight: 500 }}>
-          {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
-        </div>
-      )}
+
+      {/* Rest row — dimmed (pen: opacity .5) */}
       {stepsLeft && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
-          <i className="ri-list-check-3" />{stepsLeft}
+        <div className="reply-approval-rest">
+          <i className="ri-list-check" />
+          <span>{stepsLeft}</span>
         </div>
       )}
     </div>
@@ -674,27 +784,100 @@ function TaskBlock({ block }: { block: Block }) {
   const staffName = block.task_staff || "";
   const taskId = block.task_id || block.id || "";
   const pct = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
+  // pen extra meta fields
+  const taskDue = (block as { task_due?: string }).task_due || "";
+  const taskBranch = (block as { task_branch?: string }).task_branch || "";
+  const taskGoal = (block as { task_goal?: string }).task_goal || "";
 
-  const dotClass = status === "running" ? "running" : status === "done" ? "done" : status === "failed" ? "failed" : "";
-  const statusLabel = status === "running" ? "In progress" : status === "done" ? "Done" : status === "failed" ? "Failed" : "Pending";
+  // chip class for status
+  const chipClass = status === "running" || status === "in_progress"
+    ? "chip run"
+    : status === "done"
+    ? "chip up"
+    : status === "failed"
+    ? "chip down"
+    : "chip";
+  const statusLabel = status === "running" || status === "in_progress"
+    ? "In progress"
+    : status === "done"
+    ? "Done"
+    : status === "failed"
+    ? "Failed"
+    : "Pending";
 
   return (
-    <a className="reply-task" href={taskId ? `/jobs/${taskId}` : undefined} target={taskId ? "_blank" : undefined} rel="noopener noreferrer">
-      <div className={`reply-task-dot ${dotClass}`} />
-      <div className="reply-task-t">
-        <b>{title}</b>
-        <span>
-          {staffName && <>{staffName} · </>}{statusLabel}
-          {stepsTotal > 0 && <> · {stepsDone}/{stepsTotal} steps</>}
+    <div className="reply-task">
+      {/* Top: square-check icon + "Task · handed to X" + spacer + status chip */}
+      <div className="reply-task-top">
+        <i className="ri-checkbox-line reply-task-icon" />
+        <span className="reply-task-eyebrow">
+          Task{staffName ? ` · handed to ${staffName}` : ""}
         </span>
-        {stepsTotal > 0 && (
-          <div style={{ marginTop: 4, height: 3, borderRadius: 2, background: "var(--line-strong)", overflow: "hidden" }}>
-            <i style={{ display: "block", height: "100%", background: "var(--info)", borderRadius: 2, width: `${pct}%` }} />
-          </div>
+        <span className="reply-task-sp" />
+        <span className={chipClass}>{statusLabel}</span>
+      </div>
+
+      {/* Title */}
+      <div className="reply-task-title">{title}</div>
+
+      {/* Meta row: owner / due / branch / goal */}
+      <div className="reply-task-meta">
+        {staffName && (
+          <span className="reply-task-meta-item">
+            <i className="ri-team-line" />{staffName}
+          </span>
+        )}
+        {taskDue && (
+          <span className="reply-task-meta-item">
+            <i className="ri-calendar-line" />{taskDue}
+          </span>
+        )}
+        {taskBranch && (
+          <span className="reply-task-meta-item">
+            <i className="ri-git-branch-line" />{taskBranch}
+          </span>
+        )}
+        {taskGoal && (
+          <span className="reply-task-meta-item">
+            <i className="ri-focus-3-line" />{taskGoal}
+          </span>
         )}
       </div>
-      <i className="ri-arrow-right-s-line" style={{ color: "var(--faint)", flexShrink: 0 }} />
-    </a>
+
+      {/* Progress track + "N of M steps" + Open job */}
+      {stepsTotal > 0 && (
+        <div className="reply-task-progress">
+          <div className="reply-task-track">
+            <div className="reply-task-track-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="reply-task-steps">{stepsDone} of {stepsTotal} steps</span>
+          {taskId && (
+            <a
+              className="btn sm quiet reply-task-open"
+              href={`/jobs/${taskId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open job<i className="ri-arrow-right-up-line" />
+            </a>
+          )}
+        </div>
+      )}
+      {/* If no steps but has taskId, still show Open job */}
+      {stepsTotal === 0 && taskId && (
+        <div className="reply-task-progress">
+          <span className="reply-task-sp" />
+          <a
+            className="btn sm quiet reply-task-open"
+            href={`/jobs/${taskId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open job<i className="ri-arrow-right-up-line" />
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -907,7 +1090,7 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
     case "code":
       return <CodeBlock key={block.type} block={block} ctx={ctx} />;
     case "action_card":
-      return <ActionCardBlock key={block.type} block={block} />;
+      return <ActionCardBlock key={block.type} block={block} ctx={ctx} />;
     case "confirmation":
       return <ConfirmationBlock key={block.id || block.type} block={block} ctx={ctx} />;
     case "streaming_approval":
