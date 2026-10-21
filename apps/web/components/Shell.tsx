@@ -160,7 +160,6 @@ export default function Shell({ children }: { children: ReactNode }) {
             <Mark />
             <div>
               <b>Omilo</b>
-              <small>Saga OS</small>
             </div>
           </div>
           <CompanySwitcher overview={overview} />

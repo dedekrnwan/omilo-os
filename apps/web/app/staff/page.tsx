@@ -265,9 +265,6 @@ function StaffList() {
           <h1 className="ph2-title">Team</h1>
           <p className="ph2-sub">Your AI helpers. Open one to change their job, schedule or what they may do without asking.</p>
         </div>
-        <div className="ph2-actions">
-          <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a helper</Link>
-        </div>
       </div>
 
       {/* Tab strip */}

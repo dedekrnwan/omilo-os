@@ -383,7 +383,7 @@ function DocsInner() {
             <button className="iconbtn" aria-label="New note" title="New note" onClick={() => setCreating({ name: "", folder: doc?.path.includes("/") && !doc.company ? doc.path.slice(0, doc.path.lastIndexOf("/")) : "" })}><i className="ri-file-add-line" /></button>
           </div>
           {tree ? <Tree docs={tree.docs} current={doc?.path || null} q={q} onOpen={(p) => go({ path: p })} noteMenu={(d) => noteMenu(d.path, d.company)} folderMenu={folderMenu} /> : <p className="small" style={{ padding: 12 }}>Loading…</p>}
-          {tree && <div className="dt-foot small" title={tree.vault}><i className="ri-folder-open-line" /><span className="mono">{tree.vault.split("/").slice(-2).join("/")}</span> · Obsidian</div>}
+          {tree && <div className="dt-foot small" title={tree.vault}><i className="ri-folder-open-line" /><span className="mono">{tree.vault.split("/").slice(-2).join("/")}</span></div>}
         </nav>
 
         <section className="ws-main docs-main">

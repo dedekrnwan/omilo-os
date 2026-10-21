@@ -10,6 +10,7 @@ import Composer, { ComposerHandle } from "@/components/Composer";
 import { Staff, api } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import DropCatcher from "@/components/DropCatcher";
+import PoolMeter from "@/components/PoolMeter";
 
 /* Module-level latch: holds the most-recent omilo:settext value dispatched before ChatThread was
    mounted. A module-level listener (below) always captures it; the component drains it on mount. */
@@ -126,6 +127,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
 
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
   const threadLabel = (th: FullThread) => th.scope === "master" ? "Chief of Staff" : th.scope === "staff" ? name(th.staff_id) : th.scope === "group" ? `# ${th.title}` : th.title;
+  const shortLabel = (l: string) => l.length > 28 ? `${l.slice(0, 28).trimEnd()}…` : l;
   const isGroup = current?.scope === "group";
 
   // the helpers tied to this chat: the room's default (Chief in a team chat, the helper in a 1:1),
@@ -172,6 +174,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
           onSlash={onSlash}
           onStop={async () => { try { await api(`/threads/${current.id}/cancel`, { body: {} }); } catch (e: any) { setErr(e.message); } }}
         />
+        <PoolMeter />
       </div>
     </DropCatcher>
   );
