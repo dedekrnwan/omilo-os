@@ -237,6 +237,50 @@ TOOLS: list[dict] = [
          "title": _s("string", "new title"),
          "target": _s("string", "new target description"),
      }, "required": ["goal_id"]}},
+    # ------------------------------------------------------------------ staff-lifecycle tools (Task 4)
+    {"name": "list_team", "description": "List all active helpers: their ids, names, roles and status. Read-only.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "create_staff", "description": "Hire a new helper. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "id": _s("string", "unique id: lowercase letters, digits, dashes"),
+         "name": _s("string", "display name"),
+         "role": _s("string", "short role label"),
+         "job": _s("string", "job description"),
+         "engine": _s("object", "engine config (optional; defaults to the company default)"),
+         "budget_usd_month": _s("number", "monthly budget cap in USD (0 = no cap)"),
+         "max_task_minutes": _s("integer", "task time-out in minutes (default 30)"),
+     }, "required": ["id", "name", "role", "job"]}},
+    {"name": "update_staff", "description": "Update a helper's name, job, permissions, engine or budget. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to update"),
+         "name": _s("string", "new display name"),
+         "job": _s("string", "new job description"),
+         "role": _s("string", "new role label"),
+         "permissions": _s("object", "new permissions dict"),
+         "budget_usd_month": _s("number", "new monthly budget cap in USD"),
+         "max_task_minutes": _s("integer", "new task time-out in minutes"),
+     }, "required": ["staff_id"]}},
+    {"name": "retire_staff", "description": "Let a helper go. Its queued jobs are cancelled; its history stays. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to retire"),
+     }, "required": ["staff_id"]}},
+    {"name": "grant_staff_access", "description": "Set a helper's access to folders, connectors or skills. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to update"),
+         "folders": _s("object", "folder id → {access: none|read|write, commands: bool} or null to reset"),
+         "connectors": _s("object", "connector id → true/false or null to reset"),
+         "skills": _s("object", "skill slug → true/false or null to reset"),
+     }, "required": ["staff_id"]}},
+    {"name": "manage_shift", "description": "Create, edit or delete a helper's regular job (shift). op: create | edit | delete. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper whose shifts to manage"),
+         "op": _s("string", "create | edit | delete", enum=["create", "edit", "delete"]),
+         "name": _s("string", "shift name (create)"),
+         "cron": _s("string", "cron schedule, e.g. '0 9 * * 1' (create or edit)"),
+         "brief": _s("string", "what to do in this shift (create or edit)"),
+         "shift_id": _s("string", "shift id (edit or delete)"),
+         "enabled": _s("boolean", "enable or disable (edit)"),
+     }, "required": ["staff_id", "op"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -701,6 +745,176 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         S.audit(db, f"staff:{st.id}", "goal.update", goal_id, **changed)
         db.commit()
         return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
+    # ------------------------------------------------------------------ staff-lifecycle tools (Task 4)
+    if name == "list_team":
+        gate = S.gated_execute(
+            db, st, "knowledge.read",
+            lambda: [{"id": s.id, "name": s.name, "role": s.role, "status": s.status} for s in S.team(db)],
+            summary="list the team roster",
+        )
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+
+    if name == "create_staff":
+        from . import serialize as X
+
+        data = {
+            "id": str(args.get("id") or ""),
+            "name": str(args.get("name") or ""),
+            "role": str(args.get("role") or ""),
+            "job": str(args.get("job") or ""),
+            "is_chief": False,
+            "engine": args.get("engine") if isinstance(args.get("engine"), dict) else S.default_engine(db),
+            "budget_usd_month": float(args.get("budget_usd_month") or 0),
+            "max_task_minutes": int(args.get("max_task_minutes") or 30),
+            "permissions": {},
+            "shifts": [],
+        }
+        actor = f"staff:{st.id}"
+        gate = S.gated_execute(
+            db, st, "staff.create",
+            lambda: X.staff(S.create_staff(db, data, actor)),
+            summary=f"hire new helper '{data['id']}'",
+        )
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+
+    if name == "update_staff":
+        from . import serialize as X
+
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        data = {k: args[k] for k in ("name", "job", "role", "permissions", "budget_usd_month", "max_task_minutes") if k in args}
+        actor = f"staff:{st.id}"
+        gate = S.gated_execute(
+            db, st, "staff.change",
+            lambda: X.staff(S.update_staff(db, target, data, actor)),
+            summary=f"update helper '{target_id}'",
+        )
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+
+    if name == "retire_staff":
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        actor = f"staff:{st.id}"
+        gate = S.gated_execute(
+            db, st, "staff.retire",
+            lambda: S.retire_staff(db, target, actor),
+            summary=f"retire helper '{target_id}'",
+        )
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+
+    if name == "grant_staff_access":
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        change = {k: args[k] for k in ("folders", "connectors", "skills") if k in args}
+        actor = f"staff:{st.id}"
+        # Validate unknown ids eagerly (raises DomainError before gating — ensures a bad id is
+        # an error even in strict mode, rather than silently filing a proposal that can't execute)
+        from . import capabilities as _C
+        from .models import Connector as _Connector, Folder as _Folder
+
+        known = {
+            "folders": {f.id for f in db.scalars(select(_Folder))},
+            "connectors": {c.id for c in db.scalars(select(_Connector))},
+            "skills": {k["slug"] for k in _C.list_skills()},
+        }
+        for kind, items in change.items():
+            if not isinstance(items, dict):
+                continue
+            for i, v in items.items():
+                if v is not None and i not in known.get(kind, set()):
+                    raise S.DomainError(f"no {kind[:-1]} '{i}'", 404)
+                if kind == "folders" and v is not None and v.get("access") not in _C.ACCESS_LEVELS:
+                    raise S.DomainError("access must be none, read or write")
+
+        gate = S.gated_execute(
+            db, st, "staff.grant",
+            lambda: S.set_staff_access(db, target, change, actor),
+            summary=f"grant access to helper '{target_id}'",
+        )
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
+
+    if name == "manage_shift":
+        from . import serialize as X
+
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        op = str(args.get("op") or "create")
+        actor = f"staff:{st.id}"
+
+        if op == "create":
+            sh_name = str(args.get("name") or "")
+            cron = str(args.get("cron") or "")
+            brief = str(args.get("brief") or "")
+            if not sh_name:
+                raise S.DomainError("name is required for create")
+            if not cron:
+                raise S.DomainError("cron is required for create")
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                lambda: X.shift(S.add_shift(db, target, sh_name, cron, brief)),
+                summary=f"create shift '{sh_name}' for '{target_id}'",
+            )
+        elif op == "edit":
+            from .models import Shift as _Shift
+
+            shift_id = str(args.get("shift_id") or "")
+            sh = db.get(_Shift, shift_id)
+            if not sh or sh.staff_id != target_id:
+                raise S.DomainError(f"no shift '{shift_id}' for '{target_id}'", 404)
+
+            def _edit_shift():
+                if args.get("cron"):
+                    from croniter import croniter as _cron
+                    if not _cron.is_valid(args["cron"]):
+                        raise S.DomainError("invalid cron expression")
+                    sh.cron, sh.next_at = args["cron"], S.next_run(args["cron"], db=db)
+                if args.get("brief") is not None:
+                    sh.brief = args["brief"]
+                if args.get("enabled") is not None:
+                    if args["enabled"] and not sh.enabled:
+                        sh.next_at = S.next_run(sh.cron, db=db)
+                    sh.enabled = bool(args["enabled"])
+                S.audit(db, actor, "shift.update", shift_id)
+                db.commit()
+                return X.shift(sh)
+
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                _edit_shift,
+                summary=f"edit shift '{shift_id}' for '{target_id}'",
+            )
+        elif op == "delete":
+            from .models import Shift as _Shift
+
+            shift_id = str(args.get("shift_id") or "")
+            sh = db.get(_Shift, shift_id)
+            if not sh or sh.staff_id != target_id:
+                raise S.DomainError(f"no shift '{shift_id}' for '{target_id}'", 404)
+
+            def _delete_shift():
+                db.delete(sh)
+                S.audit(db, actor, "shift.delete", shift_id)
+                db.commit()
+                return {"deleted": shift_id}
+
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                _delete_shift,
+                summary=f"delete shift '{shift_id}' from '{target_id}'",
+            )
+        else:
+            raise S.DomainError(f"unknown op '{op}'; use create, edit or delete")
+
+        return {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}[gate["decision"]], gate
 
     raise S.DomainError(f"unknown tool {name}", 404)
 

@@ -317,23 +317,9 @@ def staff_access(sid: str, db: Session = Depends(get_db), user: User = Depends(c
 
 @router.put("/staff/{sid}/access")
 def staff_access_set(sid: str, body: AccessIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    from .. import capabilities as C
-    from ..models import Connector, Folder
-
     st = _404(db.get(Staff, sid))
     change = {k: v for k, v in body.model_dump().items() if v is not None}  # null inside: back to the company default
-    known = {"folders": {f.id for f in db.scalars(select(Folder))}, "connectors": {c.id for c in db.scalars(select(Connector))},
-             "skills": {k["slug"] for k in C.list_skills()}}
-    for kind, items in change.items():
-        for i, v in items.items():
-            if v is not None and i not in known[kind]:
-                raise HTTPException(404, f"no {kind[:-1]} '{i}'")
-            if kind == "folders" and v is not None and v.get("access") not in C.ACCESS_LEVELS:
-                raise HTTPException(400, "access must be none, read or write")
-    C.set_helper_access(st, change)
-    S.audit(db, user.id, "staff.access", sid, change=change)
-    db.commit()
-    return _access_view(db, st)
+    return _run(S.set_staff_access, db, st, change, user.id)
 
 
 @router.delete("/staff/{sid}")

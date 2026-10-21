@@ -1126,3 +1126,62 @@ def team(db: Session):
     """The current team: everyone except helpers you let go."""
     return db.scalars(select(Staff).where(Staff.status != "retired").order_by(Staff.is_chief.desc(), Staff.name))
 
+
+def set_staff_access(db: Session, st: Staff, change: dict, actor: str) -> dict:
+    """Apply access changes (folders/connectors/skills) to a helper.
+
+    Raises DomainError (not HTTPException) for unknown ids or bad access levels.
+    Returns the access view dict (same shape as _access_view in the router).
+    """
+    from . import capabilities as C
+    from .models import Connector, Folder
+
+    # Build the known-id sets
+    known = {
+        "folders": {f.id for f in db.scalars(select(Folder))},
+        "connectors": {c.id for c in db.scalars(select(Connector))},
+        "skills": {k["slug"] for k in C.list_skills()},
+    }
+
+    for kind, items in change.items():
+        if not isinstance(items, dict):
+            continue
+        for i, v in items.items():
+            if v is not None and i not in known.get(kind, set()):
+                raise DomainError(f"no {kind[:-1]} '{i}'", 404)
+            if kind == "folders" and v is not None and v.get("access") not in C.ACCESS_LEVELS:
+                raise DomainError("access must be none, read or write")
+
+    C.set_helper_access(st, change)
+    audit(db, actor, "staff.access", st.id, change=change)
+    db.commit()
+
+    # Build and return the access view (mirrors _access_view in the router)
+    import os as _os
+
+    own = C.helper_access(st)
+    folders_view = []
+    for f in db.scalars(select(Folder).order_by(Folder.created_at)):
+        mine = own["folders"].get(f.id)
+        default = {"access": f.access if f.default_on else "none", "commands": bool(f.commands and f.default_on)}
+        folders_view.append({
+            "id": f.id, "path": f.path, "label": f.label or f.path,
+            "exists": _os.path.isdir(f.path),
+            "company": {"access": f.access, "commands": f.commands, "default_on": f.default_on},
+            "default": default, "own": mine, "effective": mine or default,
+        })
+    from .models import Connector as _Connector
+    conns = [
+        {"id": c.id, "label": c.label, "approval": c.approval, "default": c.default_on,
+         "own": own["connectors"].get(c.id), "effective": own["connectors"].get(c.id, c.default_on)}
+        for c in db.scalars(select(_Connector).where(_Connector.enabled.is_(True)).order_by(_Connector.label))
+    ]
+    skills = [
+        {"id": k["slug"], "label": k["name"], "description": k["description"], "default": k["default_on"],
+         "own": own["skills"].get(k["slug"]), "effective": own["skills"].get(k["slug"], k["default_on"])}
+        for k in C.list_skills() if not k.get("owner") or k["owner"] == st.id
+    ]
+    engine = (st.engine or {}).get("type")
+    return {"staff_id": st.id, "name": st.name, "uses_files": engine == "claude-code",
+            "folders": folders_view, "connectors": conns, "skills": skills}
+
