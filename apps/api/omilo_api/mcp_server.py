@@ -355,6 +355,8 @@ TOOLS: list[dict] = [
          "approval": _s("string", "ask | auto", enum=["ask", "auto"]),
          "default_on": _s("boolean", "on by default for all helpers"),
          "enabled": _s("boolean", "enable/disable the connector"),
+         "headers": _s("object", "connector credential headers (e.g. Authorization); values stored as secrets, never returned"),
+         "env": _s("object", "connector credential env vars (e.g. API_KEY); values stored as secrets, never returned"),
          "task_id": _s("string", "your task id"),
      }, "required": ["op", "id"]}},
     {"name": "manage_skill", "description": "Delete a skill. "

@@ -1521,7 +1521,8 @@ def manage_connector_svc(
         c.default_on = default_on
         c.enabled = enabled
         C.set_connector_secrets(c, headers, env)
-        audit(db, actor, f"connector.{op}", cid, kind=kind, approval=approval)
+        audit_verb = "connector.add" if op == "install" else "connector.update"
+        audit(db, actor, audit_verb, cid, kind=kind, approval=approval)
         return C.connector_public(c)
 
     if op == "remove":
@@ -1693,11 +1694,15 @@ def manage_workflow_svc(
                 )
             ):
                 i.status, i.answer, i.closed_at = "done", "approved", now()
+            from .models import now as _now
+            wf.updated_at = _now()
             audit(db, actor, "workflow.activate", wf.id)
             return {"workflow_id": wf.id, "status": wf.status}
 
         if op == "pause":
             wf.status, wf.next_at = "paused", None
+            from .models import now as _now
+            wf.updated_at = _now()
             audit(db, actor, "workflow.pause", wf.id)
             return {"workflow_id": wf.id, "status": wf.status}
 

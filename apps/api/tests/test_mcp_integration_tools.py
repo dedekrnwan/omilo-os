@@ -385,6 +385,66 @@ def test_manage_workflow_delete_auto(owner):
         assert db.get(Workflow, wid) is None
 
 
+def test_manage_workflow_activate_auto(owner):
+    """manage_workflow(op=activate) in Auto mode activates a draft workflow."""
+    with session_scope() as db:
+        wf = Workflow(name="To Activate WF", description="", graph=_MINIMAL_GRAPH, status="draft", created_by="test")
+        db.add(wf)
+        db.commit()
+        wid = wf.id
+
+    out = _call(
+        _WORKFLOW_AGENT_ID,
+        "manage_workflow",
+        op="activate",
+        workflow_id=wid,
+    )
+    assert out_decision(out) == "allowed", out_data(out)
+    data = out_data(out)
+    assert data.get("decision") == "done"
+    with session_scope() as db:
+        wf2 = db.get(Workflow, wid)
+        assert wf2.status == "active"
+        assert wf2.updated_at is not None
+
+    # cleanup
+    with session_scope() as db:
+        wf = db.get(Workflow, wid)
+        if wf:
+            db.delete(wf)
+            db.commit()
+
+
+def test_manage_workflow_pause_auto(owner):
+    """manage_workflow(op=pause) in Auto mode pauses an active workflow."""
+    with session_scope() as db:
+        wf = Workflow(name="To Pause WF", description="", graph=_MINIMAL_GRAPH, status="active", created_by="test")
+        db.add(wf)
+        db.commit()
+        wid = wf.id
+
+    out = _call(
+        _WORKFLOW_AGENT_ID,
+        "manage_workflow",
+        op="pause",
+        workflow_id=wid,
+    )
+    assert out_decision(out) == "allowed", out_data(out)
+    data = out_data(out)
+    assert data.get("decision") == "done"
+    with session_scope() as db:
+        wf2 = db.get(Workflow, wid)
+        assert wf2.status == "paused"
+        assert wf2.updated_at is not None
+
+    # cleanup
+    with session_scope() as db:
+        wf = db.get(Workflow, wid)
+        if wf:
+            db.delete(wf)
+            db.commit()
+
+
 def test_manage_workflow_strict_files_proposal(owner):
     """manage_workflow with ASK-level permission in Strict mode files a proposal."""
     _set_strict()
