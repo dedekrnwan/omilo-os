@@ -71,6 +71,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "company_name": S.get_setting(db, "company_name", ""),
         "paused": S.is_paused(db),
         "strict_mode": S.strict_mode(db),
+        "autonomy": "strict" if S.get_setting(db, "autonomy_mode") == "strict" else "auto",
         "max_concurrent_tasks": S.max_concurrent(db),
         "budget_company": _budgets.company_status(db),
         "timezone": S.timezone_name(db),
@@ -105,6 +106,7 @@ class SystemIn(BaseModel):
     company_name: str | None = None
     timezone: str | None = None
     self_tuning: bool | None = None
+    autonomy: Literal["strict", "auto"] | None = None
 
 
 def _set_timezone(db: Session, tz: str, actor: str) -> None:
@@ -133,6 +135,14 @@ def update_system(body: SystemIn, db: Session = Depends(get_db), user: User = De
         elif k == "budget_company_usd":
             S.set_setting(db, k, float(v), actor=user.id)
             S.audit(db, user.id, "budget.company", "company", usd=float(v))
+        elif k == "autonomy":
+            # Write both keys coherently: Auto → permissive/False, Strict → strict/True
+            if v == "auto":
+                S.set_setting(db, "strict_mode", False, actor=user.id)
+                S.set_setting(db, "autonomy_mode", "permissive", actor=user.id)
+            else:  # "strict"
+                S.set_setting(db, "strict_mode", True, actor=user.id)
+                S.set_setting(db, "autonomy_mode", "strict", actor=user.id)
         else:
             S.set_setting(db, k, v, actor=user.id)
     db.commit()

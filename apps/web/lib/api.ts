@@ -96,7 +96,7 @@ export type AskResult = {
   ms: number;
 };
 export type Overview = {
-  company_name: string; paused: boolean; strict_mode: boolean; max_concurrent_tasks: number; timezone?: string;
+  company_name: string; paused: boolean; strict_mode: boolean; autonomy?: "strict" | "auto"; max_concurrent_tasks: number; timezone?: string;
   budget_company?: { budget_usd: number; cost_usd: number; pct: number | null };
   inbox: { open: number; critical: number; blocking: number };
   tasks: { running: number; queued: number; done_24h: number; failed_24h: number };
