@@ -10,8 +10,6 @@ needs them.
 """
 import uuid
 
-import pytest
-
 from omilo_api import policy
 from omilo_api import services as S
 from omilo_api.db import session_scope
@@ -117,12 +115,11 @@ def test_always_ask_action_files_proposal_even_in_auto():
     """An action in policy.ALWAYS_ASK must not auto-run even in Auto mode."""
     ran = []
     sid = _make_staff()
-    always_ask_action = next(iter(policy.ALWAYS_ASK))
 
     _set("strict_mode", False)
     _set("autonomy_mode", "permissive")
     try:
-        r = _gated(sid, always_ask_action, do=lambda: ran.append(True) or {"ok": True})
+        r = _gated(sid, "ai.key", do=lambda: ran.append(True) or {"ok": True})
         assert r["decision"] == "needs_approval", f"expected needs_approval for ALWAYS_ASK, got {r}"
         assert not ran, "do() must not be called for ALWAYS_ASK action"
     finally:
@@ -165,7 +162,30 @@ def test_do_and_tell_executes_inline():
 
 
 # ---------------------------------------------------------------------------
-# 7. Policy DEFAULTS contain the new keys with correct levels
+# 7. ALWAYS_ASK is defense-in-depth: AUTO permission grant is overridden
+# ---------------------------------------------------------------------------
+
+def test_always_ask_overrides_auto_permission_grant():
+    """ALWAYS_ASK is defense-in-depth: even if staff.permissions grants 'ai.key'
+    at AUTO level and the system is in Auto (permissive) mode, gated_execute must
+    still return needs_approval and must NOT call do()."""
+    ran = []
+    sid = _make_staff(permissions={"actions": {"ai.key": policy.AUTO}})
+
+    _set("strict_mode", False)
+    _set("autonomy_mode", "permissive")
+    try:
+        r = _gated(sid, "ai.key", do=lambda: ran.append(True) or {"ok": True})
+        assert r["decision"] == "needs_approval", (
+            f"ALWAYS_ASK action must not auto-run even with AUTO permission, got {r}"
+        )
+        assert not ran, "do() must never be called for an ALWAYS_ASK action"
+    finally:
+        _clear("strict_mode", "autonomy_mode")
+
+
+# ---------------------------------------------------------------------------
+# 9. Policy DEFAULTS contain the new keys with correct levels
 # ---------------------------------------------------------------------------
 
 def test_policy_defaults_new_keys():
@@ -178,7 +198,7 @@ def test_policy_defaults_new_keys():
 
 
 # ---------------------------------------------------------------------------
-# 8. ALWAYS_ASK constant is a frozenset with expected members
+# 10. ALWAYS_ASK constant is a frozenset with expected members
 # ---------------------------------------------------------------------------
 
 def test_always_ask_is_frozenset_with_expected_members():
