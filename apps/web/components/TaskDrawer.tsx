@@ -42,7 +42,9 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
     api<{ id: string }>("/threads", { body: { scope: "task", ref_id: id } }).then((th) => setThreadId(th.id)).catch((e) => setErr(e.message));
   }, [tab, threadId, id]);
 
-  if (!t) return <p className="small" style={{ padding: 20 }}>{err || "Loading…"}</p>;
+  if (!t) return err
+    ? <div className="empty" style={{ padding: 28 }}><b>This job isn&apos;t available</b><span>It may have finished and been cleared, or it never started. Close this and check the helper&apos;s chat for the latest.</span></div>
+    : <p className="small" style={{ padding: 20 }}>Loading…</p>;
   const runs = toRuns(events);
   const lines = t.brief.trim().split("\n");
   const ck = t.checkpoints?.[t.checkpoints.length - 1];
