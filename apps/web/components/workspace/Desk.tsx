@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import PoolMeter from "@/components/PoolMeter";
 import { useOverview } from "@/components/Shell";
 import { Thread, api, ago } from "@/lib/api";
 import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
+import Composer from "@/components/Composer";
+import { Attached } from "@/components/ComposerTools";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -39,76 +40,41 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
-function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
+/* DeskComposer: wraps the shared <Composer> and wires the start-screen send path.
+   On send: get-or-create the master thread, post the message, then navigate to /chat. */
+type OverviewStaff = { id: string; name: string; status: string; is_chief: boolean; running: number };
+
+function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const send = useCallback(async (msg: string) => {
-    const trimmed = msg.trim();
-    if (!trimmed || busy) return;
-    setBusy(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSend = async (text: string, files: Attached[], _mentions: string[]) => {
+    const trimmed = text.trim();
+    if (!trimmed && !files.length) return;
     setErr(null);
     try {
       /* get-or-create the master (Chief of Staff) thread */
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
-      /* post the message */
-      await api(`/threads/${th.id}/messages`, { body: { text: trimmed } });
-      setText("");
-      onSent(th.id);
+      /* post the message (files already uploaded by Composer; pass block refs) */
+      const body: Record<string, unknown> = { text: trimmed || `(attached ${files.length} file${files.length > 1 ? "s" : ""})` };
+      if (files.length) body.blocks = files.map((f) => ({ type: "file", ...f }));
+      await api(`/threads/${th.id}/messages`, { body });
       router.push(`/chat/?thread=${th.id}`);
     } catch (e: any) {
       setErr(e.message ?? "Failed to send");
-    } finally {
-      setBusy(false);
     }
-  }, [busy, onSent, router]);
-
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
   };
-
-  /* auto-grow the textarea with its content (capped so it never takes over the desk) */
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  }, [text]);
 
   return (
     <div className="desk-composer">
-      <form
-        className="composer"
-        onSubmit={(e) => { e.preventDefault(); send(text); }}
-      >
-        <textarea
-          ref={inputRef}
-          rows={2}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-          placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
-          disabled={busy}
-          aria-label="Message the Chief of Staff"
-          style={{ resize: "none", maxHeight: 200, overflowY: "auto" }}
-        />
-        <div className="row">
-          <span className="sp" />
-          {busy && <span className="small">Sending…</span>}
-          <button
-            className="btn primary sm"
-            type="submit"
-            disabled={!text.trim() || busy}
-          >
-            <i className="ri-arrow-up-line" />Send
-          </button>
-        </div>
-        {err && <p className="small" style={{ color: "var(--bad)", margin: "4px 0 0" }}>{err}</p>}
-      </form>
-      <PoolMeter />
+      <Composer
+        staff={staff as unknown as import("@/lib/api").Staff[]}
+        threadId={null}
+        placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
+        error={err}
+        onSend={handleSend}
+      />
     </div>
   );
 }
@@ -378,9 +344,7 @@ export default function Desk() {
             </div>
 
             {/* Composer */}
-            <DeskComposer
-              onSent={() => {}}
-            />
+            <DeskComposer staff={overview?.staff ?? []} />
 
             {/* Suggestions */}
             <div className="desk-suggestions">
