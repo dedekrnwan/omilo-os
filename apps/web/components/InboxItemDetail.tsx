@@ -211,8 +211,10 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
   };
   const decide = (pid: string, decision: string) => act(() => api(`/proposals/${pid}/decide`, { body: { decision, note } }));
   const discuss = async (pid: string) => {
-    const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } });
-    if (!openInDrawer(`/chat/?thread=${th.id}`)) router.push(`/chat/?thread=${th.id}`);
+    try {
+      const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } });
+      if (!openInDrawer(`/chat/?thread=${th.id}`)) router.push(`/chat/?thread=${th.id}`);
+    } catch (e: any) { setErr(e.message); }
   };
   return (
     <div className="itemdetail">

@@ -428,7 +428,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
       <Drawer open={!!detail} onClose={closeDetail} wide
         icon={detail ? <Avatar who={detail.staff} size={28} /> : null}
         title={detail?.title || ""} sub={detail ? `${detail.staff.name} · ${KIND[detail.kind] || detail.kind} · waiting ${dur(since(detail.since, now))}` : ""}
-        footer={detail && <>{detail.item.proposal && <button className="btn quiet" onClick={async () => { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: detail.item.proposal!.id } }); openThread(th.id); }}><i className="ri-external-link-line" />Open the chat</button>}<span className="sp" /><button className="btn" onClick={closeDetail}>Close</button></>}>
+        footer={detail && <>{detail.item.proposal ? <button className="btn quiet" onClick={async () => { try { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: detail.item.proposal!.id } }); openThread(th.id); } catch (e: any) { setErr(e.message); } }}><i className="ri-external-link-line" />Open the chat</button> : detail.task_id ? <Link className="btn quiet" href={`/chat/?view=work&task=${detail.task_id}`}><i className="ri-external-link-line" />Open the job</Link> : null}<span className="sp" /><button className="btn" onClick={closeDetail}>Close</button></>}>
         {detail && <div className="dw-sec"><InboxItemDetail item={detail.item} onDone={() => { setDetail(null); load(); onCount(); }} /></div>}
       </Drawer>
     </>
