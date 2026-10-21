@@ -14,8 +14,7 @@
  */
 
 import React, { useRef, useState } from "react";
-import { Markdown, Attachments, fileUrl, fileIcon, renderMarkdown } from "@/components/Markdown";
-import { when } from "@/lib/api";
+import { Markdown, Attachments, fileUrl } from "@/components/Markdown";
 import type { Msg } from "@/components/Conversation";
 
 /* ------------------------------------------------------------------ Block type union */
@@ -97,6 +96,20 @@ export type Block = {
   pause_step?: string;
   pause_quote?: string;
   pause_steps_left?: string;
+  // confirmation extras
+  confirm_label?: string;
+  done_label?: string;
+  who?: string;
+  when?: string;
+  undo_min?: number;
+  // usage meter extras
+  tier?: string;
+  // document extras
+  source?: string;
+  words?: number;
+  written_by?: string;
+  mime_label?: string;
+  doc_path?: string;
   // streaming_approval callbacks live in ctx
   [key: string]: unknown;
 };
@@ -382,15 +395,16 @@ function FileBlock({ block }: { block: Block }) {
 }
 
 /* ---- reasoning (collapsible) ---- */
+/* Collapsed: a compact pill ("Thought for 12s"). Open: inline header + a left-accent body. */
 function ReasoningBlock({ block }: { block: Block }) {
-  const label = block.label || block.title || "Thought";
+  const label = block.label || block.title
+    || (block.duration_s ? `Thought for ${Math.round(block.duration_s)}s` : "Thought");
   const content = block.content || block.text || "";
   return (
     <details className="reply-reasoning">
       <summary>
         <i className="ri-brain-line" />
-        {label}
-        <span className="sp" />
+        <span>{label}</span>
         <i className="ri-arrow-down-s-line chev" />
       </summary>
       <div className="reply-reasoning-body"><Markdown text={content} /></div>
@@ -405,19 +419,26 @@ function TodosBlock({ block }: { block: Block }) {
   const label = block.title || block.label || "Plan";
   return (
     <div className="reply-todo">
-      <div className="reply-todo-h" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ flex: 1 }}>{label}</span>
-        {items.length > 0 && <span style={{ fontWeight: 400, textTransform: "none", fontSize: 12 }}>{doneCount} of {items.length} done</span>}
+      <div className="reply-todo-h">
+        <b>{label}</b>
+        {items.length > 0 && <span className="reply-todo-count">{doneCount} of {items.length} done</span>}
+        <span className="sp" style={{ flex: 1 }} />
+        <i className="ri-list-check-2 reply-todo-add" />
       </div>
-      {items.map((item, i) => {
-        const s = item.status || "pending";
-        return (
-          <div key={i} className={`reply-todo-item ${s}`}>
-            {s === "done" ? <i className="ri-checkbox-circle-fill" /> : s === "active" ? <i className="ri-loader-4-line" /> : <i className="ri-circle-line" />}
-            <span>{item.text}</span>
-          </div>
-        );
-      })}
+      <div className="reply-todo-list">
+        {items.map((item, i) => {
+          const s = item.status || "pending";
+          return (
+            <div key={i} className={`reply-todo-item ${s}`}>
+              {s === "done" ? <i className="ri-checkbox-circle-line" />
+                : s === "active" ? <span className="reply-todo-spin" />
+                : <i className="ri-circle-line" />}
+              <span className="reply-todo-text">{item.text}</span>
+              {s === "pending" && <i className="ri-draggable reply-todo-drag" aria-hidden />}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -500,21 +521,45 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     } finally { setBusy(false); }
   };
 
+  const icon = block.action_icon || "ri-send-plane-fill";
+  const confirmLabel = block.confirm_label || "Confirm";
+  const risky = block.risk !== "low"; // confirmations default to the danger treatment
+  const who = block.who || "";
+  const when = block.when || "";
+
+  // Answered → fold into a one-line record (green check + what you did + undo window).
+  if (state !== "pending") {
+    const approved = isDone;
+    return (
+      <div className={`reply-confirm-done ${approved ? "ok" : "no"}`}>
+        <i className={approved ? "ri-checkbox-circle-line" : "ri-close-circle-line"} />
+        <span>{approved ? `You approved: ${block.done_label || title}` : `You cancelled: ${title}`}</span>
+        {(when || (approved && block.undo_min)) && (
+          <span className="reply-confirm-done-meta">
+            {when}{when && approved && block.undo_min ? " · " : ""}
+            {approved && block.undo_min ? `Undo for ${block.undo_min} min` : ""}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className={`reply-confirm ${isDone || state === "cancelled" ? "done" : ""}`}>
+    <div className="reply-confirm">
       <div className="reply-confirm-head">
-        {isDone ? <i className="ri-checkbox-circle-fill" /> : state === "cancelled" ? <i className="ri-close-circle-line" /> : <i className="ri-send-plane-line" />}
-        <span>{title}</span>
+        <span className={`reply-confirm-ico ${risky ? "danger" : ""}`}><i className={icon} /></span>
+        <b>{title}</b>
       </div>
       {body && <div className="reply-confirm-body">{body}</div>}
-      {state === "pending" && (
+      <div className="reply-confirm-foot">
         <div className="reply-confirm-acts">
-          <button className="btn sm primary" type="button" disabled={busy} onClick={() => confirm("approve")}>Confirm</button>
-          <button className="btn sm quiet" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
+          <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
+          <button className={`btn sm ${risky ? "danger-solid" : "primary"}`} type="button" disabled={busy} onClick={() => confirm("approve")}>
+            <i className={icon} />{confirmLabel}
+          </button>
         </div>
-      )}
-      {isDone && <div className="small" style={{ color: "var(--ok)", fontWeight: 500 }}>Done</div>}
-      {state === "cancelled" && <div className="small" style={{ color: "var(--bad)", fontWeight: 500 }}>Cancelled</div>}
+        {(who || when) && <span className="reply-confirm-who">{who}{who && when ? " · " : ""}{when}</span>}
+      </div>
     </div>
   );
 }
@@ -538,31 +583,31 @@ function StreamingApprovalBlock({ block, ctx }: { block: Block; ctx: BlockCtx })
   };
 
   return (
-    <div className="reply-approval">
-      {intro && <div className="reply-approval-body">{intro}</div>}
-      <div className="reply-approval-head">
-        <i className="ri-pause-circle-line" />
-        <span>{pauseLabel}</span>
-        {pauseStep && <span className="small" style={{ marginLeft: "auto" }}>{pauseStep}</span>}
+    <div className="reply-approval-wrap">
+      {intro && <div className="reply-approval-intro">{intro}</div>}
+      <div className="reply-approval">
+        <div className="reply-approval-head">
+          <i className="ri-pause-circle-line" />
+          <span>{pauseLabel}</span>
+          {pauseStep && <span className="reply-approval-step">{pauseStep}</span>}
+        </div>
+        {pauseQuote && <div className="reply-approval-quote">&ldquo;{pauseQuote}&rdquo;</div>}
+        {!decided ? (
+          <div className="reply-approval-acts">
+            <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>
+              <i className="ri-play-fill" />Looks right, continue
+            </button>
+            <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>Change something</button>
+            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
+          </div>
+        ) : (
+          <div className="small" style={{ color: decided === "approve" ? "var(--ok)" : "var(--muted)", fontWeight: 500 }}>
+            {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
+          </div>
+        )}
       </div>
-      {pauseQuote && (
-        <div style={{ padding: "8px 10px", background: "var(--soft)", borderRadius: "var(--r-sm)", fontStyle: "italic", fontSize: 13, color: "var(--ink-2)" }}>
-          &ldquo;{pauseQuote}&rdquo;
-        </div>
-      )}
-      {!decided ? (
-        <div className="reply-approval-acts">
-          <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>Looks right, continue</button>
-          <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>Change something</button>
-          <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
-        </div>
-      ) : (
-        <div className="small" style={{ color: decided === "approve" ? "var(--ok)" : "var(--muted)", fontWeight: 500 }}>
-          {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
-        </div>
-      )}
       {stepsLeft && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+        <div className="reply-approval-foot">
           <i className="ri-list-check-3" />{stepsLeft}
         </div>
       )}
@@ -658,45 +703,72 @@ function UsageMeterBlock({ block }: { block: Block }) {
   const pct = Math.min(100, block.budget_pct ?? 0);
   const account = block.account || "";
 
+  const tier = block.tier || "";
+
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  const sep = <span className="reply-usage-sep">·</span>;
 
   return (
     <div className="reply-usage">
-      {account && <><span>{account}</span><span>·</span></>}
+      <span className="reply-usage-dot" />
+      {account && <><span className="reply-usage-acct">{account}{tier ? ` · ${tier}` : ""}</span>{sep}</>}
       <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>
-      {cost != null && <><span>·</span><span>${cost.toFixed(4)}</span></>}
-      {dur != null && <><span>·</span><span>{dur.toFixed(1)}s</span></>}
+      {cost != null && <>{sep}<span>${cost < 1 ? cost.toFixed(3) : cost.toFixed(2)}</span></>}
+      {dur != null && <>{sep}<span>{dur.toFixed(1)}s</span></>}
       {pct > 0 && (
-        <>
-          <span className="sp" />
-          <span style={{ fontSize: 11, color: "var(--faint)" }}>of today</span>
-          <div className="reply-usage-bar">
-            <i style={{ width: `${pct}%` }} />
-          </div>
-        </>
+        <span className="reply-usage-today">
+          <span>of today</span>
+          <span className="reply-usage-bar"><i style={{ width: `${pct}%` }} /></span>
+        </span>
       )}
     </div>
   );
 }
 
-/* ---- document ---- */
+/* ---- document / artifact ---- */
+/* A doc a helper wrote or read: thumbnail, title + source chip, meta, snippet, and
+   one action to open it (routes into the Docs page when the doc lives there). */
 function DocumentBlock({ block }: { block: Block }) {
   const title = block.title || block.name || "Document";
-  const meta = block.summary ? "" : (block.text || "");
   const snippet = block.summary || block.text || "";
-  const icon = fileIcon(title, block.mime || "");
+  const source = block.source || "";
+  const writtenBy = block.written_by || "";
+  const when = block.when || "";
+  const mimeLabel = block.mime_label || (block.mime?.includes("markdown") ? "Markdown" : "");
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
+  const docsHref = block.doc_path
+    ? `/docs/?path=${encodeURIComponent(block.doc_path)}`
+    : (source.toLowerCase() === "docs" ? (url || null) : null);
+
+  const words = block.words;
+  const wordLabel = words != null ? `${words >= 1000 ? `${(words / 1000).toFixed(1)}k` : words} words` : "";
+  const meta = [mimeLabel, wordLabel, writtenBy ? `written by ${writtenBy}` : "", when].filter(Boolean).join(" · ");
 
   return (
-    <div className="reply-doc" role="button" tabIndex={0}
-      onClick={() => url && window.open(url, "_blank", "noopener")}
-      onKeyDown={(e) => e.key === "Enter" && url && window.open(url, "_blank", "noopener")}>
-      <i className={icon} />
-      <div className="reply-doc-t">
-        <b>{title}</b>
-        <span>{meta || snippet}</span>
+    <div className="reply-document">
+      <div className="reply-document-thumb" aria-hidden>
+        <span /><span /><span /><span /><span />
       </div>
-      {url && <i className="ri-arrow-up-right-line" style={{ color: "var(--faint)", flexShrink: 0 }} />}
+      <div className="reply-document-main">
+        <div className="reply-document-title">
+          <b>{title}</b>
+          {source && <span className="reply-document-chip">{source}</span>}
+        </div>
+        {meta && <div className="reply-document-meta">{meta}</div>}
+        {snippet && <div className="reply-document-snip">{snippet}</div>}
+        {(docsHref || url) && (
+          <div className="reply-document-acts">
+            {docsHref && (
+              <a className="btn sm" href={docsHref}><i className="ri-book-open-line" />Open in Docs</a>
+            )}
+            {url && (
+              <a className="btn sm quiet" href={url} target="_blank" rel="noopener noreferrer" download>
+                <i className="ri-download-line" />Download
+              </a>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
