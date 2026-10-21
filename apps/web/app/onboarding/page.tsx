@@ -5,10 +5,13 @@ import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
 import Avatar from "@/components/Avatar";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
-import { api } from "@/lib/api";
+import { api, BASE } from "@/lib/api";
 import { Mark } from "@/components/Logo";
 import Stepper from "@/components/onboarding/Stepper";
 import { WelcomeNotes, LiveNotes, EditableNotes, NOTE_DEFS, TOPIC_TO_NOTE, NoteKey } from "@/components/onboarding/Notes";
+import { useFileUpload } from "@/lib/upload";
+import type { Attached } from "@/components/ComposerTools";
+import { streamSSE } from "@/lib/sse";
 
 /* Onboarding v2 — 5 screens, 7-note model, 4-step stepper.
    Steps: 0 Welcome · 1 Your AI · 2 Get to know you · 3 Check · 4 Your team */
@@ -421,19 +424,63 @@ function InterviewScreen({
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Streaming state
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [toolActivity, setToolActivity] = useState<string | null>(null);
+  // File attachment state
+  const [files, setFiles] = useState<Attached[]>([]);
+  const { upload, uploading, err: uploadErr } = useFileUpload(files, setFiles);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Website input state
+  const [website, setWebsite] = useState("");
   const end = useRef<HTMLDivElement>(null);
 
-  const send = useCallback(async (message: string) => {
-    setBusy(true); setErr(null);
+  const send = useCallback(async (message: string, opts?: { file_ids?: string[]; website?: string; restart?: boolean }) => {
+    setBusy(true); setErr(null); setStreamingText(""); setToolActivity(null);
     if (message) setHist((h) => [...h, { role: "owner", text: message }]);
+    // Clear attachments immediately so the UI resets
+    setFiles([]);
+    setWebsite("");
     try {
-      const r = await api<Turn>("/onboarding/interview", { body: { message } });
-      setHist(r.history); setTopic(r.topic); onAnswers(r.answers, r.coverage); setPicked([]);
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      await streamSSE(
+        `${BASE}/api/onboarding/interview/stream`,
+        {
+          message,
+          ...(opts?.file_ids?.length ? { file_ids: opts.file_ids } : {}),
+          ...(opts?.website ? { website: opts.website } : {}),
+          ...(opts?.restart ? { restart: true } : {}),
+        },
+        (event, data: any) => {
+          if (event === "text") {
+            setStreamingText((prev) => (prev ?? "") + (data.delta ?? ""));
+          } else if (event === "tool") {
+            setToolActivity(data.label ?? null);
+          } else if (event === "done") {
+            // Replace streamed placeholder with final history from server
+            setHist(data.history ?? []);
+            setTopic(data.topic ?? "business");
+            onAnswers(data.answers, data.coverage);
+            setPicked([]);
+            setStreamingText(null);
+            setToolActivity(null);
+          } else if (event === "error") {
+            setErr(data.message ?? "Something went wrong");
+            setStreamingText(null);
+            setToolActivity(null);
+          }
+        },
+      );
+    } catch (e: any) {
+      setErr(e.message);
+      setStreamingText(null);
+      setToolActivity(null);
+    } finally {
+      setBusy(false);
+    }
   }, [onAnswers]);
 
   useEffect(() => { if (!hist.length) send(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [hist.length, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [hist.length, busy, streamingText]);
 
   const last = hist[hist.length - 1];
   const finished = topic === "finish";
@@ -444,8 +491,27 @@ function InterviewScreen({
   const currentTopicLabel = st.topics.find((t) => t.id === topic)?.label || topic;
   const pct = (doneCount / Math.max(1, totalTopics)) * 100;
 
-  const submit = () => { const t = text.trim(); if (!t || busy) return; setText(""); send(t); };
+  const submit = () => {
+    const t = text.trim();
+    if (busy) return;
+    if (!t && !files.length && !website.trim()) return;
+    setText("");
+    const fileIds = files.map((f) => f.id);
+    const ws = website.trim();
+    // If only website/files with no message, use a brief filler message
+    const msg = t || (ws ? "Please read my website first." : "");
+    send(msg, { file_ids: fileIds.length ? fileIds : undefined, website: ws || undefined });
+  };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
+
+  const submitWebsite = () => {
+    const ws = website.trim();
+    if (!ws || busy) return;
+    const fileIds = files.map((f) => f.id);
+    setFiles([]);
+    setText("");
+    send("Please read my website first.", { website: ws, file_ids: fileIds.length ? fileIds : undefined });
+  };
 
   const liveNotes = buildLiveNotes(st.answers, st.topics, topic);
 
@@ -512,18 +578,36 @@ function InterviewScreen({
                 </div>
               )
             )}
+            {/* Live streaming AI message */}
             {busy && (
               <div className="iv-ai">
                 <span className="iv-who">
                   <Avatar who={{ id: "chief-of-staff", name: "Omilo", is_chief: true }} size={28} state="working" />
                 </span>
-                <div className="iv-msg small">Thinking…</div>
+                <div className="iv-msg">
+                  {streamingText !== null && streamingText !== "" ? (
+                    <>
+                      <Markdown text={streamingText} />
+                      {toolActivity && (
+                        <div className="ob2-tool-activity">
+                          <i className="ri-loader-4-line ob2-spin" />
+                          {toolActivity}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="ob2-tool-activity">
+                      <i className="ri-loader-4-line ob2-spin" />
+                      {toolActivity || "Thinking…"}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div ref={end} />
           </div>
 
-          <Err error={err} />
+          <Err error={err || uploadErr} />
 
           {finished ? (
             <div style={{ padding: "0 20px 10px" }}>
@@ -532,27 +616,70 @@ function InterviewScreen({
               </div>
             </div>
           ) : (
-            <div className="ob2-iv-composer">
-              <textarea
-                rows={2} value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={onKey}
-                placeholder={last?.multi ? "Pick above, or write your own…" : "Type your answer, or hold space to talk…"}
-                disabled={busy}
-              />
-              <button type="button" className="btn quiet sm" aria-label="Voice">
-                <i className="ri-mic-line" style={{ fontSize: 16 }} />
-              </button>
-              <button
-                type="button"
-                className="ob2-iv-send"
-                disabled={busy || !text.trim()}
-                onClick={submit}
-                aria-label="Send"
-              >
-                <i className="ri-send-plane-2-line" />
-              </button>
-            </div>
+            <>
+              {/* Attachment chips above composer */}
+              {(files.length > 0 || uploading) && (
+                <div className="ob2-attach-chips">
+                  {files.map((f) => (
+                    <span key={f.id} className="ob2-attach-chip">
+                      {f.mime.startsWith("image/") ? (
+                        <img src={`${BASE}/api/files/${f.id}`} alt="" />
+                      ) : (
+                        <i className="ri-file-3-line" />
+                      )}
+                      <span>{f.name}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+                      >
+                        <i className="ri-close-line" />
+                      </button>
+                    </span>
+                  ))}
+                  {uploading && (
+                    <span className="ob2-attach-chip">
+                      <span className="spin" style={{ width: 12, height: 12 }} />
+                      Uploading…
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="ob2-iv-composer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(e) => { upload(e.target.files); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                />
+                <button
+                  type="button"
+                  className="btn quiet sm"
+                  aria-label="Attach a file"
+                  disabled={busy || uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <i className="ri-attachment-line" style={{ fontSize: 16 }} />
+                </button>
+                <textarea
+                  rows={2} value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={onKey}
+                  placeholder={last?.multi ? "Pick above, or write your own…" : "Type your answer, or hold space to talk…"}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="ob2-iv-send"
+                  disabled={busy || uploading || (!text.trim() && !files.length && !website.trim())}
+                  onClick={submit}
+                  aria-label="Send"
+                >
+                  <i className="ri-send-plane-2-line" />
+                </button>
+              </div>
+            </>
           )}
 
           {/* Nav to proceed */}
@@ -586,13 +713,34 @@ function InterviewScreen({
             <span style={{ fontSize: 12, color: "var(--muted)" }}>
               Skip questions: let me read your website or a doc first.
             </span>
-            <input
-              type="url"
-              placeholder="sahabat-warga.id"
-              style={{ marginTop: 6, fontSize: 12, padding: "4px 8px", height: 30 }}
-            />
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input
+                type="url"
+                placeholder="sahabat-warga.id"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitWebsite(); } }}
+                style={{ flex: 1, fontSize: 12, padding: "4px 8px", height: 30 }}
+                disabled={busy}
+              />
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy || !website.trim()}
+                onClick={submitWebsite}
+                style={{ height: 30, fontSize: 12, padding: "0 10px" }}
+              >
+                Read
+              </button>
+            </div>
           </div>
-          <button type="button" className="btn sm" aria-label="Upload a doc">
+          <button
+            type="button"
+            className="btn sm"
+            aria-label="Upload a doc"
+            disabled={busy || uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
             <i className="ri-attachment-line" />
           </button>
         </div>

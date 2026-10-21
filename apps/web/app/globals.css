@@ -3854,6 +3854,35 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .ob2-speedup .ob2-sp-t b { font-weight: 500; font-size: 13.5px; }
 .ob2-speedup .ob2-sp-t span { font-size: 12.5px; color: var(--muted); }
 
+/* ---- Streaming tool activity row ---- */
+.ob2-tool-activity {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted); margin-top: 6px;
+}
+.ob2-tool-activity i { font-size: 13px; flex-shrink: 0; }
+@keyframes ob2-spin { to { transform: rotate(360deg); } }
+.ob2-spin { animation: ob2-spin 0.8s linear infinite; display: inline-block; }
+
+/* ---- File attachment chips above interview composer ---- */
+.ob2-attach-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 6px 14px 0;
+}
+.ob2-attach-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; background: var(--soft); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 8px; max-width: 200px;
+}
+.ob2-attach-chip img { width: 16px; height: 16px; object-fit: cover; border-radius: 3px; }
+.ob2-attach-chip i { font-size: 13px; color: var(--muted); }
+.ob2-attach-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.ob2-attach-chip button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--muted); display: flex; align-items: center; margin-left: 2px;
+}
+.ob2-attach-chip button:hover { color: var(--ink); }
+.ob2-attach-chip button i { font-size: 13px; }
+
 /* ---- Live notes (interview right panel): row list ---- */
 .ob2-livenotes { display: flex; flex-direction: column; }
 .ob2-livenote {
