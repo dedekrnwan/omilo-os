@@ -12,6 +12,8 @@ import uuid
 
 import pytest
 
+from sqlalchemy import func
+
 from omilo_api import mcp_server as mcp
 from omilo_api import policy
 from omilo_api import services as S
@@ -107,7 +109,7 @@ _GOAL_ASK_AGENT_ID: str | None = None   # has goal.create=ASK (files proposal in
 _KPI_AGENT_ID: str | None = None         # has kpi.write=AUTO (runs inline)
 _KPI_ASK_AGENT_ID: str | None = None    # has kpi.write=ASK (files proposal in strict)
 _FOLDER_AGENT_ID: str | None = None      # folder.grant=ASK → inline in permissive
-_SETTING_AGENT_ID: str | None = None     # staff.change=ASK → inline in permissive
+_SETTING_AGENT_ID: str | None = None     # system.config=ASK → inline in permissive
 _WEAK_AGENT_ID: str | None = None        # all off
 
 
@@ -133,12 +135,14 @@ def _ensure_agents():
         )
         # Folder agent: folder.grant defaults to ASK → inline in permissive mode
         _FOLDER_AGENT_ID = _make_staff()
-        # Setting agent: staff.change defaults to ASK → inline in permissive mode
-        _SETTING_AGENT_ID = _make_staff()
+        # Setting agent: system.config=ASK → inline in permissive mode
+        _SETTING_AGENT_ID = _make_staff(
+            permissions={"actions": {"system.config": policy.ASK}}
+        )
         # Weak agent: everything OFF
         _WEAK_AGENT_ID = _make_staff(
             permissions={"actions": {"goal.create": policy.OFF, "kpi.write": policy.OFF,
-                                     "folder.grant": policy.OFF, "staff.change": policy.OFF}}
+                                     "folder.grant": policy.OFF, "system.config": policy.OFF}}
         )
 
 
@@ -496,3 +500,56 @@ def test_update_system_setting_rejects_unknown_key(owner):
             key="some_random_setting",
             value="evil",
         )
+
+
+# ---------------------------------------------------------------------------
+# I1: Strict-mode blocked-key tests (C1 proof)
+# These prove that blocked keys are rejected BEFORE gated_execute —
+# no Proposal row is created even in Strict mode.
+# ---------------------------------------------------------------------------
+
+def _count_proposals(agent_id: str) -> int:
+    """Return the number of Proposal rows for the given agent."""
+    from omilo_api.models import Proposal
+    from sqlalchemy import select as _select
+
+    with session_scope() as db:
+        return db.scalar(_select(func.count()).select_from(Proposal).where(Proposal.staff_id == agent_id))
+
+
+def test_strict_blocked_key_autonomy_mode_raises_and_no_proposal(owner):
+    """In Strict mode, autonomy_mode must raise DomainError and must NOT file a proposal."""
+    _set_strict()
+    try:
+        before = _count_proposals(_SETTING_AGENT_ID)
+        with pytest.raises(S.DomainError) as exc_info:
+            _call(
+                _SETTING_AGENT_ID,
+                "update_system_setting",
+                key="autonomy_mode",
+                value="permissive",
+            )
+        assert exc_info.value.code == 403
+        after = _count_proposals(_SETTING_AGENT_ID)
+        assert after == before, f"A proposal was filed for a blocked key (before={before}, after={after})"
+    finally:
+        _restore_auto()
+
+
+def test_strict_blocked_key_paused_raises_and_no_proposal(owner):
+    """In Strict mode, paused must raise DomainError and must NOT file a proposal."""
+    _set_strict()
+    try:
+        before = _count_proposals(_SETTING_AGENT_ID)
+        with pytest.raises(S.DomainError) as exc_info:
+            _call(
+                _SETTING_AGENT_ID,
+                "update_system_setting",
+                key="paused",
+                value=True,
+            )
+        assert exc_info.value.code == 403
+        after = _count_proposals(_SETTING_AGENT_ID)
+        assert after == before, f"A proposal was filed for a blocked key (before={before}, after={after})"
+    finally:
+        _restore_auto()

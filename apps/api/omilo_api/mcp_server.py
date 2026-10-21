@@ -1044,10 +1044,25 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         actor = f"staff:{st.id}"
         key = str(args.get("key") or "")
         value = args.get("value")
-        # The service raises DomainError BEFORE gated_execute for blocked keys,
-        # so a rejected key is always an error regardless of autonomy mode.
+        # Pre-gate blocked-key check: reject autonomy/paused/strict_mode/budget keys
+        # BEFORE calling gated_execute, so no proposal can ever be filed for them in
+        # Strict mode (gated_execute would otherwise file a proposal without calling do()).
+        if key not in S._SETTING_ALLOWED:
+            if key in S._SETTING_BLOCKED:
+                raise S.DomainError(
+                    f"'{key}' cannot be changed by an agent via MCP — "
+                    "autonomy, pause, and budget settings are founder-only controls",
+                    403,
+                )
+            raise S.DomainError(
+                f"'{key}' is not an agent-accessible setting; "
+                f"allowed keys: {', '.join(sorted(S._SETTING_ALLOWED))}",
+                400,
+            )
+        # Allowed key: gate via system.config (ASK → Strict files a proposal, Auto runs inline).
+        # The service also validates, providing defence-in-depth.
         gate = S.gated_execute(
-            db, st, "staff.change",
+            db, st, "system.config",
             lambda: S.update_system_setting_svc(db, actor, key, value),
             task_id=args.get("task_id"),
             summary=f"update system setting '{key}'",

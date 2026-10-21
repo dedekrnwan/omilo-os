@@ -33,6 +33,7 @@ DEFAULTS: dict[str, int] = {
     "staff.retire": ASK,
     "staff.grant": ASK,
     "folder.grant": ASK,
+    "system.config": ASK,
     "workflow.change": DO_AND_TELL,
 }
 
