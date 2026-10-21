@@ -1185,3 +1185,295 @@ def set_staff_access(db: Session, st: Staff, change: dict, actor: str) -> dict:
     return {"staff_id": st.id, "name": st.name, "uses_files": engine == "claude-code",
             "folders": folders_view, "connectors": conns, "skills": skills}
 
+
+# ------------------------------------------------------------------ goal service extraction (Task 5)
+
+def manage_goal_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    title: str | None = None,
+    target: str | None = None,
+    due: str | None = None,
+    status: str | None = None,
+    goal_id: str | None = None,
+) -> dict:
+    """Create, update, complete or delete a goal.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from .models import Goal, ShiftGoal, TaskGoal
+
+    op = (op or "create").strip().lower()
+
+    if op == "create":
+        if not (title or "").strip():
+            raise DomainError("title is required")
+        from . import plan as _p
+
+        g = Goal(
+            title=title.strip(),
+            target=(target or "").strip(),
+            due=(due or "").strip(),
+            status="active",
+            created_by=actor,
+        )
+        db.add(g)
+        db.flush()
+        audit(db, actor, "goal.create", g.id, title=g.title)
+        _p.start_planning(db, g.id)
+        return {"goal_id": g.id, "status": g.status}
+
+    if op in ("update", "complete"):
+        if not goal_id:
+            raise DomainError("goal_id is required for update/complete")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise DomainError(f"unknown goal '{goal_id}'", 404)
+        if op == "complete":
+            if g.status not in ("done", "dropped"):
+                g.status = "done"
+                audit(db, actor, "goal.complete", goal_id)
+            return {"goal_id": g.id, "status": g.status}
+        # update
+        changed: dict = {}
+        if title is not None:
+            g.title = title.strip()
+            changed["title"] = g.title
+        if target is not None:
+            g.target = target.strip()
+            changed["target"] = g.target
+        if due is not None:
+            g.due = due.strip()
+            changed["due"] = g.due
+        if status is not None:
+            if status not in ("active", "done", "dropped"):
+                raise DomainError("status must be active, done or dropped")
+            g.status = status
+            changed["status"] = g.status
+        audit(db, actor, "goal.update", goal_id, **changed)
+        return {"goal_id": g.id, "status": g.status}
+
+    if op == "delete":
+        if not goal_id:
+            raise DomainError("goal_id is required for delete")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise DomainError(f"unknown goal '{goal_id}'", 404)
+        for o in (
+            list(db.scalars(select(TaskGoal).where(TaskGoal.goal_id == goal_id)))
+            + list(db.scalars(select(ShiftGoal).where(ShiftGoal.goal_id == goal_id)))
+        ):
+            db.delete(o)
+        db.delete(g)
+        audit(db, actor, "goal.delete", goal_id)
+        return {"ok": True, "goal_id": goal_id}
+
+    raise DomainError(f"unknown op '{op}'; use create, update, complete or delete")
+
+
+# ------------------------------------------------------------------ KPI definition service extraction (Task 5)
+
+def set_kpi_def_svc(
+    db: Session,
+    actor: str,
+    name: str,
+    *,
+    op: str = "define",
+    label: str | None = None,
+    unit: str | None = None,
+    target: float | None = None,
+    clear_target: bool = False,
+    direction: str | None = None,
+    goal_id: str | None = None,
+    owner_id: str | None = None,
+    note: str | None = None,
+    position: int | None = None,
+    delete_values: bool = False,
+) -> dict:
+    """Define or undefine a KPI.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import kpis as K
+    from .models import Goal, KpiDef, KpiValue
+
+    op = (op or "define").strip().lower()
+
+    if op == "undefine":
+        d = db.get(KpiDef, name)
+        if d:
+            db.delete(d)
+        if delete_values:
+            for v in db.scalars(select(KpiValue).where(KpiValue.name == name)):
+                db.delete(v)
+        audit(db, actor, "kpi.delete", name, values=delete_values)
+        return {"ok": True, "name": name}
+
+    if op == "define":
+        try:
+            k = K.key(name)
+        except ValueError as e:
+            raise DomainError(str(e)) from e
+
+        d = db.get(KpiDef, k)
+        if not d:
+            from sqlalchemy import func as _func
+
+            d = KpiDef(name=k, position=(db.scalar(select(_func.max(KpiDef.position))) or 0) + 1)
+            db.add(d)
+
+        for f, v in (("label", label), ("unit", unit), ("note", note), ("position", position)):
+            if v is not None:
+                setattr(d, f, v.strip() if isinstance(v, str) else v)
+        if target is not None:
+            d.target = target
+        if clear_target:
+            d.target = None
+        if direction is not None:
+            if direction not in ("up", "down"):
+                raise DomainError("direction is up (higher is better) or down (lower is better)")
+            d.direction = direction
+        if goal_id is not None:
+            if goal_id and not db.get(Goal, goal_id):
+                raise DomainError("unknown goal", 400)
+            d.goal_id = goal_id or None
+        if owner_id is not None:
+            from .models import Staff as _Staff
+
+            if owner_id and not db.get(_Staff, owner_id):
+                raise DomainError("unknown helper", 400)
+            d.owner = owner_id
+
+        audit(db, actor, "kpi.define", k)
+        return {"name": k}
+
+    raise DomainError(f"unknown op '{op}'; use define or undefine")
+
+
+# ------------------------------------------------------------------ folder service extraction (Task 5)
+
+def manage_folder_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    path: str | None = None,
+    label: str | None = None,
+    access: str | None = None,
+    commands: bool = False,
+    default_on: bool = False,
+    folder_id: str | None = None,
+) -> dict:
+    """Add, update or remove a company folder.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    import os as _os
+    from pathlib import Path as _P
+
+    from .models import Folder
+
+    def _apply_folder(f) -> None:
+        if path is None:
+            raise DomainError("path is required")
+        p = _P(_os.path.expanduser(path)).resolve()
+        if not p.is_dir():
+            raise DomainError("that folder does not exist on this computer")
+        if p == _P("/") or p == _P.home():
+            raise DomainError("choose a specific folder, not the whole disk or home folder")
+        eff_access = access or "read"
+        if eff_access not in ("read", "write"):
+            raise DomainError("access is read or write")
+        f.path = str(p)
+        f.label = label or p.name
+        f.access = eff_access
+        f.commands = commands
+        f.default_on = default_on
+
+    op = (op or "add").strip().lower()
+
+    if op == "add":
+        f = Folder()
+        _apply_folder(f)
+        db.add(f)
+        db.flush()
+        audit(db, actor, "folder.add", f.path, access=f.access, commands=f.commands)
+        return {"id": f.id, "path": f.path}
+
+    if op == "update":
+        if not folder_id:
+            raise DomainError("folder_id is required for update")
+        f = db.get(Folder, folder_id)
+        if f is None:
+            raise DomainError(f"unknown folder '{folder_id}'", 404)
+        _apply_folder(f)
+        audit(db, actor, "folder.update", f.path, access=f.access, commands=f.commands)
+        return {"id": f.id, "path": f.path}
+
+    if op == "delete":
+        if not folder_id:
+            raise DomainError("folder_id is required for delete")
+        f = db.get(Folder, folder_id)
+        if f is None:
+            raise DomainError(f"unknown folder '{folder_id}'", 404)
+        db.delete(f)
+        audit(db, actor, "folder.remove", f.path)
+        return {"ok": True, "folder_id": folder_id}
+
+    raise DomainError(f"unknown op '{op}'; use add, update or delete")
+
+
+# ------------------------------------------------------------------ restricted system setting (Task 5)
+
+# Keys an agent is NEVER allowed to touch via MCP.
+# This is the self-escalation guard: an agent must not flip the autonomy toggle,
+# pause the company, or adjust budgets through the MCP interface.
+_SETTING_BLOCKED: frozenset[str] = frozenset({
+    "autonomy",
+    "autonomy_mode",
+    "autonomy_budget_stop_usd",
+    "autonomy_escalate_tiers",
+    "strict_mode",
+    "paused",
+    "self_tuning",
+})
+
+# Only these two safe, non-autonomy keys are exposed via MCP.
+_SETTING_ALLOWED: frozenset[str] = frozenset({
+    "max_concurrent_tasks",
+    "timezone",
+})
+
+
+def update_system_setting_svc(db: Session, actor: str, key: str, value) -> dict:
+    """Set a safe company setting.
+
+    Raises DomainError for any key not in the explicit whitelist, especially
+    autonomy/strict_mode/paused/budget — the self-escalation guard.
+    """
+    key = (key or "").strip()
+
+    # Block first: give a clear message for the most dangerous keys.
+    if key in _SETTING_BLOCKED:
+        raise DomainError(
+            f"'{key}' cannot be changed by an agent via MCP — "
+            "autonomy, pause, and budget settings are founder-only controls",
+            403,
+        )
+
+    # Then check whitelist — reject everything not explicitly allowed.
+    if key not in _SETTING_ALLOWED:
+        raise DomainError(
+            f"'{key}' is not an agent-accessible setting; "
+            f"allowed keys: {', '.join(sorted(_SETTING_ALLOWED))}",
+            400,
+        )
+
+    set_setting(db, key, value, actor=actor)
+    return {"key": key, "value": value}
+

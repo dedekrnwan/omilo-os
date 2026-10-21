@@ -284,6 +284,61 @@ TOOLS: list[dict] = [
          "shift_id": _s("string", "shift id (edit or delete)"),
          "enabled": _s("boolean", "enable or disable (edit)"),
      }, "required": ["staff_id", "op"]}},
+    # ------------------------------------------------------------------ ops tools (Task 5)
+    {"name": "manage_goal", "description": "Create, update, complete or delete a company goal. "
+                                           "op: create | update | complete | delete. "
+                                           "Requires approval in Strict mode (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "create | update | complete | delete", enum=["create", "update", "complete", "delete"]),
+         "goal_id": _s("string", "goal id (update / complete / delete)"),
+         "title": _s("string", "goal title (create; optional for update)"),
+         "target": _s("string", "what success looks like (create; optional for update)"),
+         "due": _s("string", "deadline, e.g. 2026-12-31 (optional)"),
+         "status": _s("string", "new status: active | done | dropped (update only)", enum=["active", "done", "dropped"]),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "set_kpi_def", "description": "Define or undefine a KPI (Finance only unless permitted). "
+                                           "op: define (default) | undefine. "
+                                           "Requires approval in Strict mode (kpi.write permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "name": _s("string", "KPI name, e.g. 'Monthly Revenue'"),
+         "op": _s("string", "define | undefine (default: define)", enum=["define", "undefine"]),
+         "label": _s("string", "display label"),
+         "unit": _s("string", "unit, e.g. 'USD'"),
+         "target": _s("number", "target value"),
+         "clear_target": _s("boolean", "remove the target"),
+         "direction": _s("string", "up | down", enum=["up", "down"]),
+         "goal_id": _s("string", "link to a goal id"),
+         "owner_id": _s("string", "staff id of the owner"),
+         "note": _s("string", "note about this KPI"),
+         "position": _s("integer", "display order"),
+         "delete_values": _s("boolean", "also delete recorded values (undefine only)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["name"]}},
+    {"name": "manage_folder", "description": "Add, update or remove a company folder. "
+                                             "op: add | update | delete. "
+                                             "Requires approval in Strict mode (folder.grant permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "add | update | delete", enum=["add", "update", "delete"]),
+         "folder_id": _s("string", "folder id (update or delete)"),
+         "path": _s("string", "absolute path to the folder on disk (add or update)"),
+         "label": _s("string", "display label"),
+         "access": _s("string", "read | write", enum=["read", "write"]),
+         "commands": _s("boolean", "allow helpers to run commands in this folder"),
+         "default_on": _s("boolean", "default on for all helpers"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "update_system_setting", "description": "Change a safe company setting. "
+                                                     "ONLY max_concurrent_tasks and timezone are allowed. "
+                                                     "Autonomy, paused, strict_mode and budget keys are ALWAYS rejected — "
+                                                     "those are founder-only controls. "
+                                                     "Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "key": _s("string", "setting key: max_concurrent_tasks | timezone",
+                   enum=["max_concurrent_tasks", "timezone"]),
+         "value": _s("string", "new value (number or string depending on the key)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["key", "value"]}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -920,6 +975,83 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         else:
             raise S.DomainError(f"unknown op '{op}'; use create, edit or delete")
 
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ ops tools (Task 5)
+    if name == "manage_goal":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "create")
+        gate = S.gated_execute(
+            db, st, "goal.create",
+            lambda: S.manage_goal_svc(
+                db, actor, op,
+                title=args.get("title"),
+                target=args.get("target"),
+                due=args.get("due"),
+                status=args.get("status"),
+                goal_id=args.get("goal_id"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage goal op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "set_kpi_def":
+        actor = f"staff:{st.id}"
+        kpi_name = str(args.get("name") or "")
+        op = str(args.get("op") or "define")
+        gate = S.gated_execute(
+            db, st, "kpi.write",
+            lambda: S.set_kpi_def_svc(
+                db, actor, kpi_name,
+                op=op,
+                label=args.get("label"),
+                unit=args.get("unit"),
+                target=args.get("target"),
+                clear_target=bool(args.get("clear_target")),
+                direction=args.get("direction"),
+                goal_id=args.get("goal_id"),
+                owner_id=args.get("owner_id"),
+                note=args.get("note"),
+                position=args.get("position"),
+                delete_values=bool(args.get("delete_values")),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"kpi '{kpi_name}' op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_folder":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "add")
+        gate = S.gated_execute(
+            db, st, "folder.grant",
+            lambda: S.manage_folder_svc(
+                db, actor, op,
+                path=args.get("path"),
+                label=args.get("label"),
+                access=args.get("access"),
+                commands=bool(args.get("commands")),
+                default_on=bool(args.get("default_on")),
+                folder_id=args.get("folder_id"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage folder op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "update_system_setting":
+        actor = f"staff:{st.id}"
+        key = str(args.get("key") or "")
+        value = args.get("value")
+        # The service raises DomainError BEFORE gated_execute for blocked keys,
+        # so a rejected key is always an error regardless of autonomy mode.
+        gate = S.gated_execute(
+            db, st, "staff.change",
+            lambda: S.update_system_setting_svc(db, actor, key, value),
+            task_id=args.get("task_id"),
+            summary=f"update system setting '{key}'",
+        )
         return _DECISION[gate["decision"]], gate
 
     raise S.DomainError(f"unknown tool {name}", 404)
