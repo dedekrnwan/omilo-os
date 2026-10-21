@@ -29,7 +29,22 @@ DEFAULTS: dict[str, int] = {
     "skill.change": ASK,
     "docs.write": DO_AND_TELL,  # shared Docs: edit directly, the owner gets a notice and every version is kept
     "knowledge.write": ASK,  # Company knowledge in Docs: a suggestion the owner approves
+    "staff.create": ASK,
+    "staff.retire": ASK,
+    "staff.grant": ASK,
+    "folder.grant": ASK,
+    "workflow.change": DO_AND_TELL,
 }
+
+# Actions that always require owner approval — never auto-run even in permissive/Auto mode.
+# These are credential, auth, and irreversible infra operations.
+ALWAYS_ASK: frozenset[str] = frozenset({
+    "ai.key",
+    "harness.account",
+    "staff.token_rotate",
+    "founder.auth",
+    "company.delete",
+})
 
 # In strict mode (first weeks of an install) anything above ASK that leaves the company drops to ASK.
 EXTERNAL = {"content.publish", "outreach.send", "ops.command", "money.spend", "pricing.change", "code.pr"}

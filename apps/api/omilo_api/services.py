@@ -5,7 +5,9 @@ Every state change writes an audit event. Functions take an open Session and com
 import datetime as dt
 import re
 import secrets
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -1022,6 +1024,66 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])
     db.commit()
     return {"decision": "allowed", "level": policy.describe(level), "message": "Allowed. Go ahead, and mention it in your report."}
+
+
+def gated_execute(
+    db: Session,
+    st: Staff,
+    action: str,
+    do: Callable[[], Any],
+    *,
+    task_id: str | None = None,
+    summary: str = "",
+) -> dict:
+    """Gate an inline callable by the autonomy policy, then run it or file a proposal.
+
+    Modelled on ``request_action`` but executes ``do()`` inline when allowed instead of
+    returning a verdict for the caller to act on.
+
+    Decision matrix:
+    - OFF              → refused (audit action.refused, do NOT call do())
+    - ALWAYS_ASK       → needs_approval (proposal filed, do NOT call do(), even in Auto)
+    - ASK + not auto   → needs_approval (proposal filed, do NOT call do())
+    - ASK + auto       → execute inline → decision "done"
+    - DO_AND_TELL/AUTO → execute inline → decision "done"
+
+    Never routes through _cos_rule or execution tasks.
+    """
+    level = policy.level_for(action, st.permissions, strict_mode(db))
+    auto = autonomy_policy(db)["mode"] == "permissive"
+
+    if level == policy.OFF:
+        audit(db, f"staff:{st.id}", "action.refused", task_id or "", act=action)
+        db.commit()
+        return {
+            "decision": "refused",
+            "level": "off",
+            "message": f"'{action}' is not allowed for {st.name}.",
+        }
+
+    if action in policy.ALWAYS_ASK or (level == policy.ASK and not auto):
+        p = create_proposal(
+            db, st, task_id,
+            summary or f"Agent wants to perform: {action}",
+            action, "medium",
+            summary or f"Action `{action}` requires approval.",
+        )
+        return {
+            "decision": "needs_approval",
+            "level": policy.describe(level),
+            "proposal_id": p.id,
+            "message": "Filed for approval. Do not proceed; it will come back as an execution task if approved.",
+        }
+
+    # ASK-in-auto, DO_AND_TELL, or AUTO: execute inline.
+    result = do()
+    audit(db, f"staff:{st.id}", "action.done", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])
+    db.commit()
+    return {
+        "decision": "done",
+        "result": result,
+        "level": policy.describe(level),
+    }
 
 
 from . import office as _office  # noqa: E402,F401  (registers the hook that writes the live office events)
