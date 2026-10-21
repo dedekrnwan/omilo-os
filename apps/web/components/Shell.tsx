@@ -86,6 +86,9 @@ export default function Shell({ children }: { children: ReactNode }) {
   }, [overview]);
   useEffect(() => setMenu(false), [path]);
 
+  // Hooks must run unconditionally, before any early return (Rules of Hooks).
+  const footRef = useRef<HTMLDivElement>(null);
+
   if (bare) return <>{children}</>;
   if (!ready) return null;
 
@@ -98,7 +101,6 @@ export default function Shell({ children }: { children: ReactNode }) {
   const logout = async () => { await api("/auth/logout", { body: {} }); router.replace("/login/"); };
   const who = (me?.name || me?.email || "Owner").trim();
 
-  const footRef = useRef<HTMLDivElement>(null);
   const openProfileMenu = () => {
     const el = footRef.current;
     if (!el) return;
