@@ -119,8 +119,32 @@ function HoverActions({
   helperName: string;
   onReAsk?: () => void;
 }) {
+  const [pinned, setPinned] = useState(false);
+
   const handleCopy = () => copy(message.text);
   const handleQuote = () => quote(thread.id, message.text);
+
+  // Edit: put the message text back into the composer for editing/re-sending
+  const handleEdit = () => {
+    window.dispatchEvent(new CustomEvent("omilo:edit", { detail: { messageId: message.id, text: message.text } }));
+  };
+
+  // Pin: toggle local state and dispatch event (no-op until backend wired)
+  const handlePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    window.dispatchEvent(new CustomEvent("omilo:pin", { detail: { messageId: message.id, pinned: next } }));
+  };
+
+  // Share: copy a deep-link to the message if derivable, else dispatch event (no-op until backend wired)
+  const handleShare = () => {
+    const url = `${window.location.href.split("#")[0]}#msg-${message.id}`;
+    try {
+      navigator.clipboard.writeText(url);
+    } catch {
+      window.dispatchEvent(new CustomEvent("omilo:share", { detail: { messageId: message.id } }));
+    }
+  };
 
   return (
     <div className="reply-hover">
@@ -135,6 +159,15 @@ function HoverActions({
           <i className="ri-restart-line" />
         </button>
       )}
+      <button type="button" title="Edit &amp; resend" aria-label="Edit and resend" onClick={handleEdit}>
+        <i className="ri-pencil-line" />
+      </button>
+      <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? "Unpin message" : "Pin message"} onClick={handlePin}>
+        <i className={pinned ? "ri-pushpin-fill" : "ri-pushpin-line"} />
+      </button>
+      <button type="button" title="Share link" aria-label="Share link to message" onClick={handleShare}>
+        <i className="ri-share-line" />
+      </button>
       <span style={{ flex: 1 }} />
       <FeedbackBar messageId={message.id} helperName={message.author} />
     </div>
