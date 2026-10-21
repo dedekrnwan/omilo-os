@@ -31,6 +31,8 @@ const QUICK: SlashItem[] = [
     act: { kind: "insert", text: "Draft this for my approval (do not send anything): " } },
   { key: "review", label: "Review", hint: "what to fix, most important first", icon: "ri-search-2-line", group: "Quick actions",
     act: { kind: "insert", text: "Review this and tell me what to fix, most important first: " } },
+  { key: "goal", label: "Set a goal", hint: "finish the prompt", icon: "ri-flag-2-line", group: "Quick actions",
+    act: { kind: "insert", text: "Create this goal: " } },
   { key: "job", label: "Start a job", hint: "type the brief after /job", icon: "ri-play-circle-line", group: "Quick actions", act: { kind: "job" } },
   { key: "attach", label: "Add files or photos", icon: "ri-attachment-2", group: "Add to this chat", act: { kind: "composer", action: "attach" } },
   { key: "folder", label: "Folders on this computer", icon: "ri-folder-3-line", group: "Add to this chat", act: { kind: "composer", action: "open", sub: "folders" } },
@@ -42,6 +44,7 @@ const GO: SlashItem[] = [
   { key: "work", label: "Jobs", icon: "ri-list-check-3", group: "Go to", act: { kind: "go", href: "/chat/?view=work" } },
   { key: "hire", label: "Hire a specialist", icon: "ri-user-add-line", group: "Go to", act: { kind: "go", href: "/talent/" } },
   { key: "pool", label: "Harness (Claude Code pool)", icon: "ri-stack-line", group: "Go to", act: { kind: "go", href: "/harness/" } },
+  { key: "calendar", label: "Calendar", icon: "ri-calendar-line", group: "Go to", act: { kind: "go", href: "/calendar/" } },
   { key: "settings", label: "Settings", icon: "ri-settings-3-line", group: "Go to", act: { kind: "go", href: "/settings/" } },
   { key: "pause", label: "Pause all helpers", hint: "asks first", icon: "ri-pause-circle-line", group: "Go to", act: { kind: "pause" } },
 ];
