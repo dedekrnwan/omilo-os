@@ -3347,6 +3347,8 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .reply-diff-remove .reply-diff-code { color: #fecaca; }
 .reply-diff-context .reply-diff-gutter { color: #44403c; }
 .reply-diff-context .reply-diff-code { color: #78716c; }
+.reply-diff-meta td { padding-top: 2px; padding-bottom: 2px; }
+.reply-diff-meta-text { color: #57534e; font-style: italic; white-space: pre; }
 
 /* Confirmation block (approval gate — pending / done variants) */
 .reply-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-tint); }

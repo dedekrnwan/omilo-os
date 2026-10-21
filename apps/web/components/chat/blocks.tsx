@@ -469,24 +469,47 @@ function CodeBlock({ block }: { block: Block }) {
 }
 
 /* ---- diff (unified diff rendering, used when block.diff===true or lang="diff") ---- */
-type DiffLine = { kind: "add" | "remove" | "context"; text: string; lineNo: number };
+type DiffLine =
+  | { kind: "add" | "remove" | "context"; text: string; lineNo: number }
+  | { kind: "meta"; text: string };
 
 function parseDiff(raw: string): DiffLine[] {
-  let lineNo = 0;
-  return raw.split("\n").map((line) => {
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      lineNo++;
-      return { kind: "add" as const, text: line.slice(1), lineNo };
+  let oldNo = 0;
+  let newNo = 0;
+  const lines: DiffLine[] = [];
+  for (const line of raw.split("\n")) {
+    // Meta / hunk-header lines — no line number, no counter advance
+    if (
+      line.startsWith("@@") ||
+      line.startsWith("---") ||
+      line.startsWith("+++") ||
+      line.startsWith("diff --git")
+    ) {
+      // Parse @@ -a,b +c,d @@ to seed counters
+      if (line.startsWith("@@")) {
+        const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (m) {
+          oldNo = parseInt(m[1], 10) - 1;
+          newNo = parseInt(m[2], 10) - 1;
+        }
+        lines.push({ kind: "meta", text: line });
+      }
+      // Skip ---/+++/diff --git entirely (they carry no user-visible content)
+      continue;
     }
-    if (line.startsWith("-") && !line.startsWith("---")) {
-      return { kind: "remove" as const, text: line.slice(1), lineNo };
+    if (line.startsWith("+")) {
+      newNo++;
+      lines.push({ kind: "add", text: line.slice(1), lineNo: newNo });
+    } else if (line.startsWith("-")) {
+      oldNo++;
+      lines.push({ kind: "remove", text: line.slice(1), lineNo: oldNo });
+    } else {
+      oldNo++;
+      newNo++;
+      lines.push({ kind: "context", text: line.startsWith(" ") ? line.slice(1) : line, lineNo: newNo });
     }
-    if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++")) {
-      return { kind: "context" as const, text: line, lineNo };
-    }
-    lineNo++;
-    return { kind: "context" as const, text: line, lineNo };
-  });
+  }
+  return lines;
 }
 
 function DiffBlock({ block }: { block: Block }) {
@@ -531,15 +554,26 @@ function DiffBlock({ block }: { block: Block }) {
       <div className="reply-diff-body">
         <table className="reply-diff-table" aria-label="Code diff">
           <tbody>
-            {lines.map((line, i) => (
-              <tr key={i} className={`reply-diff-row reply-diff-${line.kind}`}>
-                <td className="reply-diff-gutter">
-                  {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : ""}
-                </td>
-                <td className="reply-diff-num">{line.kind !== "remove" ? line.lineNo : ""}</td>
-                <td className="reply-diff-code">{line.text}</td>
-              </tr>
-            ))}
+            {lines.map((line, i) => {
+              if (line.kind === "meta") {
+                return (
+                  <tr key={i} className="reply-diff-row reply-diff-meta">
+                    <td className="reply-diff-gutter" />
+                    <td className="reply-diff-num" />
+                    <td className="reply-diff-code reply-diff-meta-text">{line.text}</td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={i} className={`reply-diff-row reply-diff-${line.kind}`}>
+                  <td className="reply-diff-gutter">
+                    {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : ""}
+                  </td>
+                  <td className="reply-diff-num">{line.lineNo}</td>
+                  <td className="reply-diff-code">{line.text}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
