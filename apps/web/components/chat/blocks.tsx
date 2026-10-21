@@ -97,6 +97,8 @@ export type Block = {
   pause_step?: string;
   pause_quote?: string;
   pause_steps_left?: string;
+  /** Optional diff lines for Code blocks — when present, renders the dark diff view */
+  diff?: DiffLine[];
   // streaming_approval callbacks live in ctx
   [key: string]: unknown;
 };
@@ -104,6 +106,16 @@ export type Block = {
 export type TodoItem = {
   text: string;
   status?: "done" | "active" | "pending";
+};
+
+/** One line in a code diff (optional field on a `code` block) */
+export type DiffLine = {
+  /** 1-based line number (or display label) */
+  n: number | string;
+  /** " " = context, "+" = added, "-" = removed */
+  sign: " " | "+" | "-";
+  /** raw code text for the line */
+  text: string;
 };
 
 export type SourceItem = {
@@ -126,6 +138,8 @@ export type BlockCtx = {
   onProposal?: (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => void;
   onAnswer?: (itemId: string, answer: string) => void;
   onStop?: () => void;
+  /** Called when user clicks Apply on a code diff block */
+  onApply?: (block: Block) => void;
   people?: { id: string; name: string }[];
 };
 
@@ -445,12 +459,81 @@ function MarkdownBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 }
 
 /* ---- code ---- */
-function CodeBlock({ block }: { block: Block }) {
-  // Reuse the codeblock rendered by Markdown (it generates the same .codeblock HTML)
+function CodeBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [copied, setCopied] = useState(false);
+  const diff = Array.isArray(block.diff) && block.diff.length > 0 ? (block.diff as DiffLine[]) : null;
   const code = block.text || block.content || "";
   const lang = block.lang || "";
-  const title = block.name || block.title || "";
-  const fence = "```" + (lang || "") + (title ? ` title="${title}"` : "") + "\n" + code + "\n```";
+  const filename = block.name || block.title || "";
+
+  function handleCopy() {
+    const text = diff ? diff.map((l) => l.text).join("\n") : code;
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    }).catch(() => {});
+  }
+
+  const onApply = ctx?.onApply;
+
+  // When the block carries diff lines → render the dark code-card with diff view
+  if (diff) {
+    return (
+      <div className="reply-code-card">
+        <div className="reply-code-card-head">
+          <i className="ri-file-code-line reply-code-card-file-icon" />
+          {filename && <span className="reply-code-card-filename">{filename}</span>}
+          {lang && <span className="reply-code-card-lang">{lang}</span>}
+          <span className="reply-code-card-sp" />
+          <button type="button" className="reply-code-card-copy" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          {onApply ? (
+            <button type="button" className="reply-code-card-apply" onClick={() => onApply(block)}>Apply</button>
+          ) : (
+            <button type="button" className="reply-code-card-apply" disabled aria-disabled="true">Apply</button>
+          )}
+        </div>
+        <div className="reply-code-card-lines">
+          {diff.map((line, i) => (
+            <div
+              key={i}
+              className={`reply-code-line${line.sign === "+" ? " added" : line.sign === "-" ? " removed" : ""}`}
+            >
+              <span className="reply-code-ln">{line.n}</span>
+              <span className={`reply-code-sign${line.sign === "+" ? " plus" : line.sign === "-" ? " minus" : ""}`}>{line.sign}</span>
+              <span className="reply-code-text">{line.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // No diff — keep existing highlighted fenced-code rendering via shared Markdown; optionally
+  // show a header row when the block has a filename or lang label.
+  const fence = "```" + (lang || "") + "\n" + code + "\n```";
+  if (filename || lang) {
+    return (
+      <div className="reply-code">
+        <div className="reply-code-card-head reply-code-card-head--light">
+          <i className="ri-file-code-line reply-code-card-file-icon--light" />
+          {filename && <span className="reply-code-card-filename--light">{filename}</span>}
+          {lang && <span className="reply-code-card-lang--light">{lang}</span>}
+          <span className="reply-code-card-sp" />
+          <button type="button" className="reply-code-copy-btn" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="reply-md reply-code-plain">
+          <Markdown text={fence} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="reply-code">
       <div className="reply-md">
@@ -822,7 +905,7 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
     case "markdown":
       return <MarkdownBlock key={block.type} block={block} ctx={ctx} />;
     case "code":
-      return <CodeBlock key={block.type} block={block} />;
+      return <CodeBlock key={block.type} block={block} ctx={ctx} />;
     case "action_card":
       return <ActionCardBlock key={block.type} block={block} />;
     case "confirmation":
