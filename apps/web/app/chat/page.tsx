@@ -16,6 +16,7 @@ import { Markdown } from "@/components/Markdown";
 import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import Desk from "@/components/workspace/Desk";
+import TeamBoard from "@/components/workspace/TeamBoard";
 import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
 import FocusThread from "@/components/workspace/FocusThread";
 import FocusDetails from "@/components/workspace/FocusDetails";
@@ -189,9 +190,14 @@ function NewTask({ staff, onDone, who }: { staff: Staff[]; onDone: (id: string) 
 function WorkspaceInner() {
   const params = useSearchParams();
   const router = useRouter();
-  const view = params.get("view") === "work" ? "work" : "chat";
+  const rawView = params.get("view");
+  const view = rawView === "work" ? "work" : rawView === "board" ? "board" : "chat";
   const tid = params.get("thread");
   const taskId = params.get("task");
+
+  /* ---- Board view: team board at /chat/?view=board ---- */
+  const isBoard = view === "board";
+  const boardGroup = params.get("group") === "goal" ? "goal" : "helper";
 
   /* ---- Desk: default /chat view with no thread/task/view params ---- */
   const isDesk = view === "chat" && !tid && !taskId;
@@ -237,6 +243,9 @@ function WorkspaceInner() {
 
   const name = (id: string) => staff.find((s) => s.id === id)?.name || id;
   const selTask = tasks.find((t) => t.id === taskId);
+
+  /* Board: full-page team board (by helper / by goal) */
+  if (isBoard) return <TeamBoard group={boardGroup} />;
 
   /* Desk: full-page three-column layout (threads rail + desk center + team now) */
   if (isDesk) return <Desk />;
