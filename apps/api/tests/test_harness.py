@@ -197,7 +197,7 @@ def test_pool_failover_resumes_session(owner, fake_cli):
     assert calls[0]["token"] == OK1[-6:] and calls[1]["token"] == LIMITED[-6:]
     assert calls[1]["resume"], "the second account resumes the first account's session"
     assert calls[1]["prompt"].startswith("Continue")
-    assert calls[0]["mode"] == "dontAsk" and "mcp__omilo" in (calls[0]["tools"] or "")
+    assert calls[0]["mode"] == "auto" and "mcp__omilo" in (calls[0]["tools"] or "")
 
     accts = {a["label"]: a for a in owner.get("/api/harness").json()["accounts"]}
     assert accts["Limited"]["state"] == "cooling" and accts["Limited"]["cooldown_until"].startswith("2100")

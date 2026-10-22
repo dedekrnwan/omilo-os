@@ -398,9 +398,17 @@ def resolve(db, thread_id: str | None = None, proposal: dict | None = None, file
         return [i for i in items if mine_.get(key(i), key(i) in on)]
 
     picked_folders = {f.id for f in pick(folders, lambda f: f.id, tt.folders if tt else None, lambda f: f.default_on)}
+    granted = [(f, g) for f in folders if (g := folder_for_helper(f, own["folders"].get(f.id), f.id in picked_folders))]
+    for f, _g in granted:
+        # a folder the helper is actually granted but whose path is missing on this machine is auto-created,
+        # so terminal/edit access works instead of being silently dropped (and leaving the helper without Bash).
+        if f.path:
+            try:
+                Path(f.path).mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
     r = Resources(
-        folders=[x for f in folders if Path(f.path).is_dir()
-                 and (x := folder_for_helper(f, own["folders"].get(f.id), f.id in picked_folders))],
+        folders=[g for f, g in granted if Path(f.path).is_dir()],
         connectors=[connector_runtime(c) for c in mine(conns, lambda c: c.id,
                                                        pick(conns, lambda c: c.id, tt.connectors if tt else None, lambda c: c.default_on),
                                                        own["connectors"])],

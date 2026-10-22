@@ -30,6 +30,13 @@ SAFE_TOOLS = ["mcp__omilo", "WebSearch", "WebFetch", "Read", "Glob", "Grep", "To
 # CoS may use them to monitor/validate progress.  Only write/exec-class tools are excluded.
 _EXEC_TOOLS = frozenset(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"])
 
+# Claude Code's headless permission mode. "dontAsk" was DEPRECATED/REMOVED in CLI v2.1.300+ — passing it now
+# silently falls back to Manual mode, which DENIES approval-gated tools (Bash, etc.) even when they are in
+# --allowedTools (this is why granted terminal access stopped working). "auto" is the modern classifier-backed
+# replacement that still honors our --allowedTools/--disallowedTools sandboxing (unlike bypassPermissions, which
+# ignores the deny-list). Override for older CLIs via OMILO_CLAUDE_PERMISSION_MODE=dontAsk.
+PERMISSION_MODE = os.environ.get("OMILO_CLAUDE_PERMISSION_MODE", "auto")
+
 
 def manager_tool_filter(tools: list[str], *, is_chief: bool, goal_delivery: bool) -> list[str]:
     """Return the filtered tool list for one run.
@@ -311,7 +318,7 @@ class ClaudeCodeEngine(Engine):
                 emit("status", state="harness", account=label)
                 args = ["-p", prompt if not session else (prompt if not tried - {acc_id} else "Continue exactly where you left off."),
                         "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
+                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                         "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
                 if cfg.get("model"):
                     args += ["--model", cfg["model"]]
@@ -357,7 +364,7 @@ class ClaudeCodeEngine(Engine):
         # shares the pool's config dir on purpose, so "auto" can resume a pool session on the API key and back
         emit("status", state="harness", account="your API key")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
@@ -377,7 +384,7 @@ class ClaudeCodeEngine(Engine):
         # ~/.claude login resolves. The credential never leaves the machine — the compliant, load-bearing path.
         emit("status", state="harness", account="your Claude sign-in")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk", "--settings", '{"disableAllHooks": true}',
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
