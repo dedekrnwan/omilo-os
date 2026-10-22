@@ -5,13 +5,12 @@ Uses respx to stub httpx calls.
 """
 from __future__ import annotations
 
+import base64 as _stdlib_base64
 import copy
 
 import httpx
 import pytest
 import respx
-
-import base64 as _stdlib_base64
 
 from omilo_api.pieces import _apply_auth, _render_str, action_tools, provider_hosts, run_action
 

@@ -186,10 +186,14 @@ def test_apikey_connect_does_not_leak_value(owner, seeded_apikey_piece):
 
     Checks:
     - GET /connectors returns acme (kind=piece is visible)
-    - The raw value "K" does not appear anywhere in the connector's public repr
+    - The raw value does not appear anywhere in the connector's public repr
     - The catalog card does not carry the value either
+
+    Uses a distinctive sentinel so the check can't collide with manifest
+    metadata (e.g. a field label like "API Key").
     """
-    owner.post("/api/connectors/apikey/acme/connect", json={"api_key": "K"})
+    SECRET = "sk_live_LEAKSENTINEL_zzz999"
+    owner.post("/api/connectors/apikey/acme/connect", json={"api_key": SECRET})
 
     # piece connectors ARE visible in GET /connectors (kind=piece, not filtered out)
     connectors = owner.get("/api/connectors").json()
@@ -199,9 +203,9 @@ def test_apikey_connect_does_not_leak_value(owner, seeded_apikey_piece):
         f"{[c['id'] for c in connectors]}"
     )
 
-    # The raw value "K" must not appear anywhere in the public connector repr
-    assert "K" not in json.dumps(pub), (
-        f"Field value 'K' must not leak through connector_public: {pub}"
+    # The raw value must not appear anywhere in the public connector repr
+    assert SECRET not in json.dumps(pub), (
+        f"Field value must not leak through connector_public: {pub}"
     )
 
     # connector_public must not expose the raw fields dict
@@ -213,6 +217,6 @@ def test_apikey_connect_does_not_leak_value(owner, seeded_apikey_piece):
     catalog = owner.get("/api/catalog").json()
     card = next((c for c in catalog if c["slug"] == "acme"), None)
     assert card is not None
-    assert "K" not in json.dumps(card), (
-        f"Field value 'K' must not appear in catalog card: {card}"
+    assert SECRET not in json.dumps(card), (
+        f"Field value must not appear in catalog card: {card}"
     )
