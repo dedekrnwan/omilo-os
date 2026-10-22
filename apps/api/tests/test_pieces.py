@@ -480,11 +480,11 @@ def test_mcp_does_not_require_actions_or_scopes(monkeypatch):
 _APIKEY_MANIFEST = {
     "id": "acme", "label": "Acme", "category": "Ops",
     "description": "Acme REST API.",
-    "auth": {"type": "apikey", "scheme": "header",
+    "auth": {"type": "apikey", "scheme": "header", "provider": "stripe",
              "fields": [{"name": "api_key", "label": "API Key", "secret": True}],
              "attach": {"X-Api-Key": "{{ api_key }}"}},
     "actions": [{"name": "ping", "label": "Ping", "approval": "auto",
-                 "http": {"method": "GET", "url": "https://api.acme.com/ping"}}],
+                 "http": {"method": "GET", "url": "https://api.stripe.com/ping"}}],
 }
 
 
@@ -515,3 +515,13 @@ def test_apikey_action_without_http_auth_is_valid():
 def test_oauth2_action_still_requires_bearer():
     bad = {**GMAIL_MANIFEST, "actions": [{**GMAIL_MANIFEST["actions"][0], "http": {**GMAIL_MANIFEST["actions"][0]["http"], "auth": "none"}}]}
     assert any("auth" in e for e in validate_manifest(bad))
+
+
+def test_apikey_requires_provider():
+    """An apikey manifest without auth.provider must fail validation with a 'provider' error."""
+    no_provider = {
+        **_APIKEY_MANIFEST,
+        "auth": {k: v for k, v in _APIKEY_MANIFEST["auth"].items() if k != "provider"},
+    }
+    errs = validate_manifest(no_provider)
+    assert any("provider" in e for e in errs), f"Expected 'provider' error, got: {errs}"

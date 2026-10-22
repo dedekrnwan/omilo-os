@@ -493,6 +493,13 @@ def validate_manifest(data: dict) -> list[str]:
                 f"Invalid 'auth.type' '{auth_type}': must be 'oauth2' or 'apikey'."
             )
         elif auth_type == "apikey":
+            # Validate auth.provider (required — SSRF allowlist is keyed on it)
+            provider = auth.get("provider")
+            if not provider or not isinstance(provider, str):
+                errors.append(
+                    "Missing or invalid 'auth.provider': must be a non-empty string."
+                )
+
             # Validate auth.scheme
             _VALID_APIKEY_SCHEMES = {"bearer", "basic", "header", "query"}
             scheme = auth.get("scheme")
@@ -1019,8 +1026,6 @@ def run_action(
     else:
         # oauth2 (or any other auth type): character-for-character identical to
         # the original implementation — do NOT alter this path.
-        auth_headers = {}
-        auth_query = {}
         headers = {"Authorization": f"Bearer {token}"}
 
     # 3. SSRF guard on the final URL — before issuing the request

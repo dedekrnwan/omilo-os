@@ -391,6 +391,7 @@ _APIKEY_MANIFEST: dict = {
     "auth": {
         "type": "apikey",
         "scheme": "header",
+        "provider": "stripe",
         "fields": [{"name": "api_key", "label": "API Key"}],
         "attach": {"X-Api-Key": "{{ api_key }}"},
     },
@@ -401,7 +402,7 @@ _APIKEY_MANIFEST: dict = {
             "approval": "auto",
             "http": {
                 "method": "GET",
-                "url": "https://api.acme.example/v1/items",
+                "url": "https://api.stripe.com/v1/items",
             },
         }
     ],
