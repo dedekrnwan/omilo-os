@@ -3,6 +3,7 @@ import { usePageActions } from "@/components/PageActions";
 import { useCallback, useEffect, useState } from "react";
 import Drawer from "@/components/Drawer";
 import { Markdown } from "@/components/Markdown";
+import { Mascot, lookFor } from "@/components/Avatar";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
@@ -114,7 +115,7 @@ export default function Skills() {
           <>
             {/* Empty state — "Teach your helpers how you like things done" */}
             <div className="sk2-empty">
-              <div className="sk2-empty-icon"><i className="ri-magic-line" /></div>
+              <div className="sk2-empty-mascot"><Mascot look={lookFor({ id: "grower", name: "Grower" }, { color: "#0ea5e9", shape: "box", prop: "gear" })} size={60} still title="Grower" /></div>
               <div className="sk2-empty-body">
                 <b>Teach your helpers how you like things done</b>
                 <span>Write a skill once. Switch it on in any chat with + or by typing /, or make it standard for every helper, every time.</span>
@@ -154,6 +155,7 @@ export default function Skills() {
             <p className="sk2-sec-label">Starter skills for Sahabat Warga</p>
             <div className="sk2-starters">
               <div className="sk2-starter">
+                <span className="sk2-starter-tile"><i className="ri-chat-voice-line" /></span>
                 <div className="sk2-starter-text">
                   <b>House voice</b>
                   <span>Bahasa first, warm and short. No jargon with customers.</span>
@@ -161,6 +163,7 @@ export default function Skills() {
                 <button className="btn sm" onClick={() => addStarter("House voice", "Bahasa first, warm and short. No jargon with customers.", "## When to use\n- Writing anything customer-facing\n\n## Rules\n- Bahasa Indonesia first\n- Warm and short — no more than 3 sentences per point\n- No technical jargon\n- Use ‘kamu’ not ‘Anda’ for casual, ‘Anda’ for formal\n")}><i className="ri-add-line" />Add</button>
               </div>
               <div className="sk2-starter">
+                <span className="sk2-starter-tile"><i className="ri-checkbox-multiple-line" /></span>
                 <div className="sk2-starter-text">
                   <b>Before you reply to a customer</b>
                   <span>A 5-point check: name, order, promise, tone, next step.</span>
@@ -168,6 +171,7 @@ export default function Skills() {
                 <button className="btn sm" onClick={() => addStarter("Before you reply to a customer", "A 5-point check: name, order, promise, tone, next step.", "## Checklist before every customer reply\n1. **Name** — use their name in the opening\n2. **Order** — reference their order or issue number\n3. **Promise** — state what you will do and by when\n4. **Tone** — warm, calm, never defensive\n5. **Next step** — end with a clear action for them\n")}><i className="ri-add-line" />Add</button>
               </div>
               <div className="sk2-starter">
+                <span className="sk2-starter-tile"><i className="ri-file-list-3-line" /></span>
                 <div className="sk2-starter-text">
                   <b>Weekly report format</b>
                   <span>One page: what moved, what is stuck, what you need to decide.</span>

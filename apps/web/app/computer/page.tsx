@@ -1,8 +1,9 @@
 "use client";
 import { usePageActions } from "@/components/PageActions";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Drawer from "@/components/Drawer";
+import Avatar from "@/components/Avatar";
 import { Err } from "@/components/ui";
 import { api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
@@ -70,7 +71,7 @@ export default function Computer() {
       <div className="ph2">
         <div className="ph2-text">
           <h1 className="ph2-title">Folders</h1>
-          <p className="ph2-sub">Share folders on this computer with your helpers — a code project they develop in, for example. These are the team defaults; give one helper more or less on its own page (Team → the helper → Access).</p>
+          <p className="ph2-sub">Folders on this computer your helpers can work in, such as a code project.</p>
         </div>
         <div className="ph2-actions">
           <button className="btn primary" onClick={startNew}><i className="ri-folder-add-line" />Share a folder</button>
@@ -92,26 +93,32 @@ export default function Computer() {
           ) : (
             <div className="fol2-list">
               {list.map((f) => (
-                <div key={f.id} className="card fol2-card" role="button" tabIndex={0} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }} onContextMenu={menu(() => items(f))}>
-                  <div className="fol2-card-top">
-                    <i className="ri-folder-3-line fol2-card-icon" />
+                <div key={f.id} className="card fol2-card" onContextMenu={menu(() => items(f))}>
+                  <div className="fol2-card-top" role="button" tabIndex={0} onClick={() => edit(f)} onKeyDown={(e) => { if (e.key === "Enter") edit(f); }}>
+                    <span className="fol2-card-tile"><i className="ri-folder-3-line" /></span>
                     <div className="fol2-card-text">
-                      <b className="fol2-card-name">{f.label}</b>
+                      <b className="fol2-card-name">{f.label}{!f.exists && <span className="chip down fol2-missing">Missing</span>}</b>
                       <span className="small mono fol2-card-path">{f.path}</span>
                     </div>
+                    <button className="iconbtn fol2-card-more" aria-label="More" onClick={(e) => { e.stopPropagation(); menu(() => items(f))(e); }}><i className="ri-more-2-fill" /></button>
                   </div>
-                  <div className="acts" style={{ gap: 6 }}>
-                    <span className="chip">{f.access === "write" ? "Read and edit files" : "Read only"}</span>
-                    {f.commands && <span className="chip">Run commands</span>}
-                    <span className="chip idle">{f.default_on ? "Every helper" : "Per chat"}</span>
-                    {!f.exists && <span className="chip down">Missing</span>}
+                  <div className="fol2-row">
+                    <div className="fol2-row-text"><b>Read and edit files</b><span>Helpers can open and change files here.</span></div>
+                    <button className={`switch ${f.access === "write" ? "on" : ""}`} role="switch" aria-checked={f.access === "write"} aria-label="Read and edit files" onClick={() => put(f, { access: f.access === "write" ? "read" : "write" })}><i /></button>
                   </div>
-                  {!!f.helpers?.length && (
-                    <div className="small fol2-own">Who can use it: {f.helpers.map((h, i) => (
-                      <span key={h.id}>{i > 0 && ", "}<Link href={`/staff/?id=${h.id}#access`} onClick={(e) => e.stopPropagation()}>{h.name}</Link>{" "}
-                        ({h.access === "none" ? "no access" : h.commands ? "edit + commands" : h.access === "write" ? "read and edit" : "read"})</span>
-                    ))}</div>
-                  )}
+                  <div className="fol2-row">
+                    <div className="fol2-row-text"><b>Run commands</b><span>Tests, builds and scripts. Risky commands still ask.</span></div>
+                    <button className={`switch ${f.commands ? "on" : ""}`} role="switch" aria-checked={f.commands} aria-label="Run commands" onClick={() => put(f, { commands: !f.commands })}><i /></button>
+                  </div>
+                  <div className="fol2-row fol2-who">
+                    <div className="fol2-row-text"><b>Who can use it</b><span>Change it for one helper on that helper&apos;s page.</span></div>
+                    <div className="fol2-who-right">
+                      {(f.helpers || []).filter((h) => h.access !== "none").slice(0, 4).map((h) => (
+                        <Link key={h.id} href={`/staff/?id=${h.id}#access`} className="fol2-who-av" title={h.name}><Avatar who={{ id: h.id, name: h.name }} size={24} /></Link>
+                      ))}
+                      <span className="small">{f.default_on ? "Every helper" : `${(f.helpers || []).filter((h) => h.access !== "none").length} helper${(f.helpers || []).filter((h) => h.access !== "none").length === 1 ? "" : "s"}`}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -132,9 +139,11 @@ export default function Computer() {
             <p className="fol2-blocked-note">Even with commands on, these wait for you in Inbox.</p>
           </div>
           <div className="fol2-note soft">
-            <p>Use your own API key and pick per helper which engine it runs on (<b>Team › helper › Engine</b>).</p>
+            <i className="ri-information-line" />
+            <p>Only helpers on Claude Code (the pool or your own key) can open folders. Built-in Claude can&apos;t.</p>
           </div>
           <div className="fol2-note soft">
+            <i className="ri-information-line" />
             <p>Running Omilo in Docker? Only folders mounted into the container can be shared.</p>
           </div>
         </div>
