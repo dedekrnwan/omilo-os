@@ -17,7 +17,7 @@ import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import Desk from "@/components/workspace/Desk";
 import TeamBoard from "@/components/workspace/TeamBoard";
-import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
+import { RailThread } from "@/components/workspace/ThreadsRail";
 import FocusThread from "@/components/workspace/FocusThread";
 import FocusDetails from "@/components/workspace/FocusDetails";
 
@@ -211,8 +211,6 @@ function WorkspaceInner() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [current, setCurrent] = useState<FullThread | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  /* filter state for the threads rail */
-  const [railFilter, setRailFilter] = useState<"all" | "needs_you" | "active">("all");
 
   const loadLists = useCallback(async () => {
     try {
@@ -250,9 +248,11 @@ function WorkspaceInner() {
   /* Desk: full-page three-column layout (threads rail + desk center + team now) */
   if (isDesk) return <Desk />;
 
-  /* ---- Focus session: three-column layout (threads rail + thread + details) ---- */
+  /* ---- Focus session: two-column layout (thread + details rail), matching the
+     pen.dev design. Navigation (back / "needs you N of M" / next-prev) lives in the
+     thread's own top bar, so there is no separate left threads rail here. ---- */
   if (isFocus) {
-    /* Cast threads to RailThread — the /threads endpoint may carry group/subtitle/last_at from Task 3 */
+    /* Cast threads to RailThread — the /threads endpoint may carry group/subtitle/last_at */
     const railThreads = threads as RailThread[];
 
     // Use the parent's `current` ONLY when it already carries this thread (and therefore its
@@ -265,12 +265,6 @@ function WorkspaceInner() {
 
     return (
       <div className="ws-focus">
-        <ThreadsRail
-          threads={railThreads}
-          activeThreadId={tid}
-          filter={railFilter}
-          onFilterChange={setRailFilter}
-        />
         <FocusThread
           threadId={tid}
           seed={focusSeed}
