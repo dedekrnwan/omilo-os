@@ -93,7 +93,7 @@ def _call(agent_id: str, tool_name: str, **args):
             agent = db.get(Staff, agent_id)
             return await mcp.call_tool(db, agent, tool_name, args)
 
-    return asyncio.get_event_loop().run_until_complete(_inner())
+    return asyncio.run(_inner())
 
 
 def out_decision(out) -> str:

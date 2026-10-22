@@ -92,7 +92,7 @@ def _call(caller_id: str, **args) -> dict:
             caller = db.get(Staff, caller_id)
             _, data = await mcp.call_tool(db, caller, "create_task", args)
             return data
-    return asyncio.get_event_loop().run_until_complete(_inner())
+    return asyncio.run(_inner())
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +235,7 @@ def test_depth_cap_enforced(owner):
             assert "level" in str(exc).lower() or exc.code in (400, 403)
         assert raised, "expected DomainError for depth cap but none was raised"
 
-    asyncio.get_event_loop().run_until_complete(_build_chain())
+    asyncio.run(_build_chain())
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +328,7 @@ def test_d2_create_goal_active_with_plan_task_and_notice(owner):
 
     cos_id = _make_cos_staff()
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_create_goal(cos_id, title="Launch product v2", target="10 signups in first week", due="2026-12-31")
     )
     assert "goal_id" in result
@@ -377,7 +377,7 @@ def test_d2_goal_appears_in_live_state_and_prompt(owner):
 
     cos_id = _make_cos_staff()
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_create_goal(cos_id, title="D2 prompt goal " + uuid.uuid4().hex[:6], target="hit 5 signups")
     )
     goal_id = result["goal_id"]
@@ -406,12 +406,12 @@ def test_d2_update_goal_sets_done(owner):
 
     cos_id = _make_cos_staff()
 
-    res = asyncio.get_event_loop().run_until_complete(
+    res = asyncio.run(
         _call_create_goal(cos_id, title="Goal to close " + uuid.uuid4().hex[:6], target="some target")
     )
     goal_id = res["goal_id"]
 
-    update_res = asyncio.get_event_loop().run_until_complete(
+    update_res = asyncio.run(
         _call_update_goal(cos_id, goal_id=goal_id, status="done")
     )
     assert update_res.get("ok") is True
@@ -437,13 +437,13 @@ def test_d2_update_goal_invalid_status_raises(owner):
     """update_goal with an unrecognised status raises DomainError."""
     cos_id = _make_cos_staff()
 
-    res = asyncio.get_event_loop().run_until_complete(
+    res = asyncio.run(
         _call_create_goal(cos_id, title="Goal invalid status " + uuid.uuid4().hex[:6], target="t")
     )
     goal_id = res["goal_id"]
 
     with pytest.raises(S.DomainError):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_update_goal(cos_id, goal_id=goal_id, status="flying")
         )
 
@@ -469,7 +469,7 @@ def test_d2_create_goal_permission_gate(owner):
         db.commit()
 
     with pytest.raises(S.DomainError) as exc_info:
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_create_goal(sid, title="Unauthorised goal", target="shouldn't create")
         )
 

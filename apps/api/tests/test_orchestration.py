@@ -165,7 +165,7 @@ def test_create_task_by_role_routes_to_staff(owner):
     target_sid = _make_staff(role=role_slug)
     cos_id = _make_cos()
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_create_task(cos_id, role=role_slug, brief="Plan a campaign")
     )
     assert "task_id" in result
@@ -184,7 +184,7 @@ def test_create_task_unresolved_role_raises_domain_error(owner):
     unknown_role = "nonexistent-role-" + uuid.uuid4().hex
 
     with pytest.raises(S.DomainError) as exc_info:
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_create_task(cos_id, role=unknown_role, brief="Do something")
         )
 
@@ -198,7 +198,7 @@ def test_create_task_neither_staff_id_nor_role_raises_domain_error(owner):
     cos_id = _make_cos()
 
     with pytest.raises(S.DomainError):
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_create_task(cos_id, brief="Do something")
         )
 
@@ -210,7 +210,7 @@ def test_create_task_staff_id_still_works(owner):
     target_sid = _make_staff(role="b1-direct-" + uuid.uuid4().hex[:6])
     cos_id = _make_cos()
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_create_task(cos_id, staff_id=target_sid, brief="Direct delegation")
     )
     assert "task_id" in result
@@ -875,7 +875,7 @@ def test_b6_complete_goal_sets_status_done():
     cos_id = _make_b6_cos(cid)
     goal_id = _make_b6_goal(cid)
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "All targets met — shipped.")
     )
 
@@ -902,7 +902,7 @@ def test_b6_complete_goal_unknown_raises():
     cos_id = _make_b6_cos(cid)
 
     with pytest.raises(S.DomainError) as exc_info:
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_complete_goal(cid, cos_id, "gol-nonexistent-xxxx", "done")
         )
 
@@ -917,7 +917,7 @@ def test_b6_complete_goal_already_done_is_idempotent():
     cos_id = _make_b6_cos(cid)
     goal_id = _make_b6_goal(cid, status="done")
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "already done")
     )
 
@@ -936,7 +936,7 @@ def test_b6_complete_goal_dropped_left_untouched():
     cos_id = _make_b6_cos(cid)
     goal_id = _make_b6_goal(cid, status="dropped")
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "cannot complete a dropped goal")
     )
 
@@ -963,7 +963,7 @@ def test_b6_complete_goal_non_cos_rejected():
     goal_id = _make_b6_goal(cid)
 
     with pytest.raises(S.DomainError) as exc_info:
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             _call_complete_goal(cid, staff_id, goal_id, "attempt to complete")
         )
 
@@ -981,12 +981,12 @@ def test_b6_complete_goal_idempotent_no_duplicate_audit():
     goal_id = _make_b6_goal(cid)
 
     # First call: completes the goal and writes one audit row
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "First completion.")
     )
 
     # Second call: idempotent, should not write another audit row
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "Second completion (idempotent).")
     )
 
@@ -1012,7 +1012,7 @@ def test_b6_done_goal_start_planning_is_noop():
     goal_id = _make_b6_goal(cid)
 
     # Complete the goal via the MCP tool
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "All done.")
     )
 
@@ -1042,7 +1042,7 @@ def test_b6_done_goal_enqueue_review_is_noop():
     child_id = _make_b5_child(cid, worker_sid, goal_id, origin="delegation")
 
     # Complete the goal, then finish the child — no review should be enqueued
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         _call_complete_goal(cid, cos_id, goal_id, "Goal completed before child finished.")
     )
     _finish_success(cid, child_id)
