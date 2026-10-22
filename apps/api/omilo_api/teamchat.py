@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import services as S
-from .models import Message, Staff, Thread
+from .models import Goal, Message, Staff, Thread
 
 GENERAL = "general"
 MAX_REPLIES = 4  # helpers that answer one message of yours, hand-overs included
@@ -47,6 +47,28 @@ def mentions(db: Session, text: str, ids: list[str] | None = None) -> list[str]:
     return out
 
 
+def active_goals(db: Session) -> list[Goal]:
+    return list(db.scalars(select(Goal).where(Goal.status == "active").order_by(Goal.position)))
+
+
+def goal_mentions(db: Session, text: str, ids: list[str] | None = None) -> list[str]:
+    """The active goals named in `text` with @Title (longest titles first, so a longer title beats a prefix of it),
+    in the order they appear, plus any `ids` the composer sent (only active goals)."""
+    goals = active_goals(db)
+    by_key: dict[str, str] = {g.title.lower(): g.id for g in goals}
+    keys = sorted(by_key, key=len, reverse=True)
+    out: list[str] = []
+    if keys:
+        pat = re.compile(r"(?<![\w@])@(" + "|".join(re.escape(k) for k in keys) + r")(?![\w-])", re.IGNORECASE)
+        found = [(m.start(), by_key[m.group(1).lower()]) for m in pat.finditer(text or "")]
+        out = list(dict.fromkeys(gid for _, gid in sorted(found)))
+    known = {g.id for g in goals}
+    for gid in ids or []:
+        if gid in known and gid not in out:
+            out.append(gid)
+    return out
+
+
 def general(db: Session) -> Thread:
     """The team's main room, made on first use."""
     th = db.scalar(select(Thread).where(Thread.scope == "group", Thread.ref_id == GENERAL))
@@ -72,10 +94,15 @@ def create(db: Session, title: str) -> Thread:
     return th
 
 
-def post(db: Session, th: Thread, user_id: str, text: str, blocks: list | None, mention_ids: list[str] | None = None) -> Message:
+def post(db: Session, th: Thread, user_id: str, text: str, blocks: list | None, mention_ids: list[str] | None = None,
+         goal_ids: list[str] | None = None) -> Message:
     """The owner writes: who answers is the people named, else the room's default (the Chief of Staff in a team chat,
-    the helper in a one-to-one chat). In a one-to-one chat the helper you are talking to answers too."""
+    the helper in a one-to-one chat). In a one-to-one chat the helper you are talking to answers too.
+
+    A goal named with @Title (or sent as `goal_ids`) attaches a goal_context block so the goal's title + target come
+    along as context for the session."""
     named = mentions(db, text, mention_ids)
+    goals = goal_mentions(db, text, goal_ids)
     if th.scope == "group":
         who = named or [th.staff_id]
     else:
@@ -83,6 +110,10 @@ def post(db: Session, th: Thread, user_id: str, text: str, blocks: list | None, 
     who = who[:MAX_REPLIES]
     if named:
         blocks = [*(blocks or [{"type": "text", "text": text}]), {"type": "mentions", "ids": named}]
+    if goals:
+        by_id = {g.id: g for g in active_goals(db)}
+        ctx = [{"id": g.id, "title": g.title, "target": g.target} for gid in goals if (g := by_id.get(gid))]
+        blocks = [*(blocks or [{"type": "text", "text": text}]), {"type": "goal_context", "ids": goals, "goals": ctx}]
     th.pending = who
     return S.post_message(db, th, "owner", user_id, text, blocks, awaiting_reply=True)
 

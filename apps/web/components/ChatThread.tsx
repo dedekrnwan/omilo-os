@@ -8,6 +8,7 @@ import { Conversation, FullThread, Msg, useQuote } from "@/components/Conversati
 import { SlashAction } from "@/components/SlashMenu";
 import Composer, { ComposerHandle } from "@/components/Composer";
 import { Staff, api } from "@/lib/api";
+import { type MentionGoal } from "@/components/Mentions";
 import { confirmDialog } from "@/lib/dialog";
 import DropCatcher from "@/components/DropCatcher";
 
@@ -46,10 +47,14 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
   const [files, setFiles] = useState<Attached[]>([]);
   const [stopping, setStopping] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [goals, setGoals] = useState<MentionGoal[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<ComposerHandle>(null);
 
   const chief = staff.find((s) => s.is_chief);
+
+  // active goals for the @-mention picker (resilient: [] on error)
+  useEffect(() => { api<MentionGoal[]>("/goals").then(setGoals).catch(() => setGoals([])); }, []);
 
   // keep the caller's `current` in sync with ours
   const report = useRef(onThread);
@@ -96,12 +101,12 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
     return () => window.removeEventListener("omilo:settext", on);
   }, []);
 
-  const send = async (t: string, files: Attached[], mentions: string[]) => {
+  const send = async (t: string, files: Attached[], mentions: string[], goalIds: string[] = []) => {
     const jobBrief = composer.current?.getJobBrief() ?? null;
     if (jobBrief !== null && t.startsWith("/job")) { onStartJob?.(jobBrief); return; }
     if (!t.trim() && !files.length) return;
     const body = { text: t.trim() || `(attached ${files.length} file${files.length > 1 ? "s" : ""})`,
-      blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined, mentions };
+      blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined, mentions, goal_ids: goalIds };
     // Composer already cleared optimistically; restore on failure
     try { setCurrent(await api<FullThread>(`/threads/${threadId}/messages`, { body })); awaiting.current = true; kick(threadId); } catch (e: any) { setErr(e.message); composer.current?.setText(t); }
   };
@@ -182,6 +187,7 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
         <Composer
           handleRef={composer}
           staff={staff}
+          goals={goals}
           threadId={threadId}
           placeholder={placeholderOverride ?? `Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
           awaitingReply={current.awaiting_reply}

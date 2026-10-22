@@ -217,6 +217,9 @@ function BoardView({ onCount }: { onCount: () => void }) {
   };
 
   if (!b) return err ? <Err error={err} /> : <p className="small">Loading…</p>;
+  // Split the "running" feed: queued tasks get their own group so they don't distract from what is actually running.
+  const running = b.running.filter((c) => c.status !== "queued");
+  const queued = b.running.filter((c) => c.status === "queued");
   return (
     <>
       <Err error={err} />
@@ -335,33 +338,60 @@ function BoardView({ onCount }: { onCount: () => void }) {
           {/* Running now section */}
           <div className="inbox2-sec">
             <span className="inbox2-sec-label"><span className="spin inbox2-spin" />Running now</span>
-            <span className="inbox2-sec-count">{b.running.length}</span>
+            <span className="inbox2-sec-count">{running.length}</span>
           </div>
 
-          {b.running.length === 0 ? (
+          {running.length === 0 ? (
             <div className="inbox2-empty inbox2-idle">No helper is working right now.</div>
           ) : (
             <div className="inbox2-run-list">
-              {b.running.map((c) => (
+              {running.map((c) => (
                 <div key={c.id} className="side-item" role="button" tabIndex={0}
                   onClick={() => openTask(c.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(c.id); } }}
                   onContextMenu={menu(() => taskItems({ id: c.id, staff_id: c.staff.id, brief: `${c.title}\n${c.summary}`, status: c.status }, c.staff.name, load))}>
                   <div className="side-item-lead">
                     <Avatar who={c.staff} size={24} />
-                    {c.status === "queued"
-                      ? <i className="ri-hourglass-line side-status-icon wait" title="Queued" />
-                      : <span className="spin side-status-spin" />}
+                    <span className="spin side-status-spin" />
                   </div>
                   <div className="side-item-body">
                     <span className="side-item-title">{c.title}</span>
                     <span className="side-item-meta">
-                      {c.staff.name} · {c.status === "queued" ? "queued" : dur(since(c.started_at, now))}
+                      {c.staff.name} · {dur(since(c.started_at, now))}
                     </span>
                   </div>
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Queued section — waiting for a free spot, kept apart from what's actually running */}
+          {queued.length > 0 && (
+            <>
+              <div className="inbox2-sec inbox2-sec-queued">
+                <span className="inbox2-sec-label"><i className="ri-hourglass-line" />Queued</span>
+                <span className="inbox2-sec-count">{queued.length}</span>
+              </div>
+              <div className="inbox2-run-list">
+                {queued.map((c) => (
+                  <div key={c.id} className="side-item" role="button" tabIndex={0}
+                    onClick={() => openTask(c.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(c.id); } }}
+                    onContextMenu={menu(() => taskItems({ id: c.id, staff_id: c.staff.id, brief: `${c.title}\n${c.summary}`, status: c.status }, c.staff.name, load))}>
+                    <div className="side-item-lead">
+                      <Avatar who={c.staff} size={24} />
+                      <i className="ri-hourglass-line side-status-icon wait" title="Queued" />
+                    </div>
+                    <div className="side-item-body">
+                      <span className="side-item-title">{c.title}</span>
+                      <span className="side-item-meta">
+                        {c.staff.name} · queued
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Done today section */}

@@ -137,22 +137,23 @@ function helperActivityDotCls(helper: BoardHelper): string {
 
 
 /* ------------------------------------------------------------------ Goal progress % */
+/** Progress bar fill %: prefer the primary-KPI percent, else derive from work progress. */
 function goalPct(goal: PlanGoal): number {
+  if (typeof goal.percent === "number") return Math.max(0, Math.min(100, goal.percent));
   const { total, done = 0 } = goal.progress;
   if (!total) return 0;
   return Math.round((done / total) * 100);
 }
 
-/** Big metric string for a goal. */
-function goalMetric(goal: PlanGoal): string {
-  const pct = goalPct(goal);
-  const { total, done = 0 } = goal.progress;
-  if (total > 0) {
-    const due = goal.due ? ` · by ${goal.due}` : "";
-    return `${done} of ${total} · ${pct}%${due}`;
-  }
-  if (goal.target) return goal.target;
-  return "No metric";
+/** Big metric number for a goal's left panel — e.g. "92%", or null to hide the metric row. */
+function goalMetricNum(goal: PlanGoal): string | null {
+  if (typeof goal.percent === "number") return `${goal.percent}%`;
+  return null;
+}
+
+/** Secondary metric label — e.g. "this week · target 95%", or null. */
+function goalMetricLabel(goal: PlanGoal): string | null {
+  return goal.metric_label ?? null;
 }
 
 /** Goal status dot class + text. */
@@ -269,27 +270,36 @@ function GoalRow({
   goal,
   helpers,
   paused,
-  isLast,
+  onAddWork,
+  onTalk,
 }: {
   goal: PlanGoal;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
   paused: boolean;
-  isLast: boolean;
+  onAddWork: () => void;
+  onTalk: () => void;
 }) {
   const nodes = flattenNodes(goal.work);
   const pct = goalPct(goal);
-  const metric = goalMetric(goal);
+  const metricNum = goalMetricNum(goal);
+  const metricLabel = goalMetricLabel(goal);
   const { dot, text } = goalStatusInfo(goal);
-  const doneCount = nodes.filter(n => n.status === "done" || n.status === "completed").length;
+  const doneCount = typeof goal.done_this_week === "number"
+    ? goal.done_this_week
+    : nodes.filter(n => n.status === "done" || n.status === "completed").length;
 
-  /* Collect unique contributors from this goal's work */
-  const contributors: { id: string; name: string; role?: string; is_chief?: boolean }[] = [];
-  const seen = new Set<string>();
-  for (const node of nodes) {
-    const h = helpers.get(node.staff_id) || nodeHelper(node);
-    if (h && !seen.has(h.id)) {
-      seen.add(h.id);
-      contributors.push(h);
+  /* Team avatars: prefer backend `team`, else derive distinct contributors from work nodes */
+  let contributors: { id: string; name: string; role?: string; is_chief?: boolean }[] = [];
+  if (goal.team && goal.team.length > 0) {
+    contributors = goal.team.map((t) => helpers.get(t.id) ?? { id: t.id, name: t.name });
+  } else {
+    const seen = new Set<string>();
+    for (const node of nodes) {
+      const h = helpers.get(node.staff_id) || nodeHelper(node);
+      if (h && !seen.has(h.id)) {
+        seen.add(h.id);
+        contributors.push(h);
+      }
     }
   }
 
@@ -298,15 +308,17 @@ function GoalRow({
       {/* Left panel */}
       <div className="goal-panel">
         <div className="goal-panel-head">
-          <i className="ri-focus-2-line goal-panel-icon" />
+          <i className="ri-focus-3-line goal-panel-icon" />
           <span className="goal-panel-title">{goal.title}</span>
         </div>
-        <div className="goal-panel-metric">
-          <span className="goal-panel-metric-num">{metric.split(" ")[0]}</span>
-          {metric.split(" ").length > 1 && (
-            <span className="goal-panel-metric-sub">{metric.split(" ").slice(1).join(" ")}</span>
-          )}
-        </div>
+        {metricNum && (
+          <div className="goal-panel-metric">
+            <span className="goal-panel-metric-num">{metricNum}</span>
+            {metricLabel && (
+              <span className="goal-panel-metric-sub">{metricLabel}</span>
+            )}
+          </div>
+        )}
         <div className="goal-panel-bar-wrap">
           <div className="goal-panel-bar">
             <i style={{ width: `${pct}%` }} />
@@ -320,7 +332,7 @@ function GoalRow({
           {contributors.length > 0 && (
             <div className="goal-panel-avatars">
               {contributors.slice(0, 5).map((c) => (
-                <Avatar key={c.id} who={c} size={20} state={null} />
+                <Avatar key={c.id} who={c} size={24} state={null} />
               ))}
             </div>
           )}
@@ -328,6 +340,11 @@ function GoalRow({
             <i className="ri-checkbox-circle-line" />
             {doneCount} done this week
           </span>
+          <span className="sp" />
+          <button className="goal-panel-talk" onClick={onTalk} title="Talk about it">
+            <i className="ri-message-3-line" />
+            Talk about it
+          </button>
         </div>
       </div>
 
@@ -354,13 +371,11 @@ function GoalRow({
             );
           })
         )}
-        {/* Ghost "Give work to this goal" card — only on the last goal row */}
-        {isLast && (
-          <div className="goal-card-ghost">
-            <i className="ri-add-line" />
-            <span>Give work to this goal</span>
-          </div>
-        )}
+        {/* "Add work" card — on every goal row; spawns a seeded Chief chat about this goal */}
+        <button className="goal-add-card" onClick={onAddWork} disabled={paused} title="Give work to this goal">
+          <i className="ri-add-line" />
+          <span>Give work to this goal</span>
+        </button>
       </div>
     </div>
   );
@@ -371,6 +386,7 @@ function RoutinesStrip({ plan, helpers }: {
   plan: PlanTree;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
 }) {
+  const router = useRouter();
   /* Render from plan.shifts that are NOT tied to a goal (goal_id === null) */
   const unlinkedShifts = (plan.shifts || []).filter(s => !s.goal_id);
 
@@ -395,12 +411,17 @@ function RoutinesStrip({ plan, helpers }: {
           const chipLabel = shift.name.length > 28 ? shift.name.slice(0, 28) + "…" : shift.name;
           const agent = shiftAgent(shift.staff);
           return (
-            <span key={shift.id} className="routine-chip routine-chip-idle">
+            <button
+              key={shift.id}
+              className="routine-chip routine-chip-idle"
+              onClick={() => router.push(`/calendar/?shift=${shift.id}`)}
+              title={`Open "${shift.name}" in the calendar`}
+            >
               {agent && <Avatar who={agent} size={22} state={null} />}
               <span className="routine-dot routine-dot-idle" />
               {chipLabel}
               {schedule && <span className="routine-chip-schedule">{schedule}</span>}
-            </span>
+            </button>
           );
         })}
       </div>
@@ -457,9 +478,39 @@ export default function TeamBoard({ group }: TeamBoardProps) {
     ? `${totalHelpers} helper${totalHelpers !== 1 ? "s" : ""} · ${totalRunning} running · ${totalNeedsYou} waiting on you`
     : `${goals.length} goal${goals.length !== 1 ? "s" : ""} · ${goalRunning} running · ${goalNeedsYou} waiting on you`;
 
-  const newWork = async () => {
+  /** Open a Chief-of-Staff chat, or — when a helper is passed — a staff-scoped chat for that helper. */
+  const newWork = async (helper?: BoardHelper) => {
+    try {
+      const body = helper
+        ? { scope: "staff", staff_id: helper.id }
+        : { scope: "master" };
+      const th = await api<{ id: string }>("/threads", { body });
+      router.push(`/chat/?thread=${th.id}`);
+    } catch {
+      /* silently ignore */
+    }
+  };
+
+  /** Spawn a new Chief-of-Staff chat seeded to plan work for a specific goal. */
+  const planGoalWork = async (goal: PlanGoal) => {
     try {
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
+      await api(`/threads/${th.id}/messages`, {
+        body: {
+          text: `Let's plan new work for the goal "${goal.title}". What should we do next?`,
+          mentions: [],
+        },
+      });
+      router.push(`/chat/?thread=${th.id}`);
+    } catch {
+      /* silently ignore */
+    }
+  };
+
+  /** Open the goal's discussion thread (backend scope=goal branch may land separately). */
+  const talkAboutGoal = async (goal: PlanGoal) => {
+    try {
+      const th = await api<{ id: string }>("/threads", { body: { scope: "goal", ref_id: goal.id } });
       router.push(`/chat/?thread=${th.id}`);
     } catch {
       /* silently ignore */
@@ -508,7 +559,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
         </div>
 
         {/* + New work → CoS chat */}
-        <button className="btn primary sm board-new-work" onClick={newWork}>
+        <button className="btn primary sm board-new-work" onClick={() => newWork()}>
           <i className="ri-add-line" />
           New work
         </button>
@@ -554,7 +605,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
                 key={helper.id}
                 helper={helper}
                 paused={paused}
-                onAddWork={newWork}
+                onAddWork={() => newWork(helper)}
               />
             ))}
             {/* Ghost "Add a helper" column */}
@@ -571,13 +622,14 @@ export default function TeamBoard({ group }: TeamBoardProps) {
               </div>
             )}
 
-            {goals.map((goal, idx) => (
+            {goals.map((goal) => (
               <GoalRow
                 key={goal.id}
                 goal={goal}
                 helpers={helpersMap}
                 paused={paused}
-                isLast={idx === goals.length - 1}
+                onAddWork={() => planGoalWork(goal)}
+                onTalk={() => talkAboutGoal(goal)}
               />
             ))}
 

@@ -72,6 +72,11 @@ const dur = (s: number) => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.ro
 const kindLabel = (e: Ev) => (e.kind === "workflow" ? "Scheduled workflow" : e.kind === "workflow_run" ? "Workflow run"
   : e.kind === "shift" || e.shift_id ? "Regular job" : "One-off job");
 
+/** The calendar shows only cron/recurring (scheduled) work: shifts, anything that comes from a shift, and recurring/cron
+ *  items. Ad-hoc one-off tasks with no shift origin are dropped even if the "task" chip is toggled on. */
+const scheduled = (e: Ev) => e.kind === "shift" || e.kind === "workflow" || e.kind === "workflow_run"
+  || e.recurring === true || !!e.cron || !!e.shift_id;
+
 function HoverCard({ h, tz, color }: { h: Hover; tz: string; color: (e: Ev) => string }) {
   const card = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
@@ -272,7 +277,8 @@ function Upcoming({ tz, staffId, color, onOpen, stamp, tick }: { tz: string; sta
       const q = new URLSearchParams({ limit: "25", ...(staffId ? { staff_id: staffId } : {}), ...(more && next.current ? next.current : {}) });
       const r = await api<{ items: Ev[]; next: Cursor }>(`/calendar/upcoming?${q}`);
       if (g !== gen.current) return; // a fresh reload started meanwhile
-      setItems((x) => (more ? [...x, ...r.items] : r.items));
+      const only = r.items.filter(scheduled); // calendar shows only cron/recurring work, never ad-hoc tasks
+      setItems((x) => (more ? [...x, ...only] : only));
       next.current = r.next;
       setDone(!r.next);
     } catch {
@@ -392,7 +398,7 @@ export default function CalendarPage() {
     if (!moved.current) setAnchorRaw(today(z));
   }, [overview?.timezone]);
   const [staffId, setStaffId] = useState("");
-  const [kinds, setKinds] = useState<Set<string>>(new Set(["shift", "task", "workflow"]));
+  const [kinds, setKinds] = useState<Set<string>>(new Set(["shift", "workflow"]));
   const [events, setEvents] = useState<Ev[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<Ev | null>(null);
@@ -442,7 +448,7 @@ export default function CalendarPage() {
     return () => window.removeEventListener("keydown", k);
   });
 
-  const shown = events.filter((e) => kinds.has(e.kind === "workflow_run" ? "workflow" : e.kind));
+  const shown = events.filter((e) => kinds.has(e.kind === "workflow_run" ? "workflow" : e.kind) && scheduled(e));
   const team = useMemo(() => Object.fromEntries((overview?.staff || []).map((s) => [s.id, s])), [overview?.staff]);
   const focus = staffId ? team[staffId] : null;
   const [hover, setHover] = useState<Hover>(null);
