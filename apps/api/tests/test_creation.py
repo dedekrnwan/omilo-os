@@ -31,8 +31,8 @@ import asyncio
 import uuid
 
 import pytest
-
 from conftest import cleanup_main_company_non_terminal_tasks
+
 from omilo_api import mcp_server as mcp
 from omilo_api import services as S
 from omilo_api.db import session_scope
@@ -322,8 +322,9 @@ async def _call_update_goal(caller_id: str, **args) -> dict:
 def test_d2_create_goal_active_with_plan_task_and_notice(owner):
     """create_goal creates a Goal(status=active, created_by=staff:<id>), enqueues exactly one
     origin=plan task (via start_planning), and sets Setting(agent_goal_notice='pending')."""
-    from omilo_api.models import AuditEvent, TaskGoal
     from sqlalchemy import select
+
+    from omilo_api.models import AuditEvent, TaskGoal
 
     cos_id = _make_cos_staff()
 
@@ -399,8 +400,9 @@ def test_d2_goal_appears_in_live_state_and_prompt(owner):
 
 def test_d2_update_goal_sets_done(owner):
     """update_goal with status='done' sets the goal to done."""
-    from omilo_api.models import AuditEvent
     from sqlalchemy import select
+
+    from omilo_api.models import AuditEvent
 
     cos_id = _make_cos_staff()
 

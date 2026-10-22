@@ -11,7 +11,6 @@ import asyncio
 import uuid
 
 import pytest
-
 from sqlalchemy import func
 
 from omilo_api import mcp_server as mcp
@@ -89,7 +88,6 @@ def out_data(out) -> dict:
 
 def _make_folder(tmp_path_str: str | None = None) -> str:
     """Create a Folder row and return its id."""
-    import os
     import tempfile
 
     p = tmp_path_str or tempfile.mkdtemp(prefix="mcp-ops-t5-")
@@ -268,8 +266,8 @@ def test_set_kpi_def_auto_executes(owner):
 
 def test_set_kpi_def_auto_undefine_executes(owner):
     """set_kpi_def with op=undefine removes the KPI definition."""
-    from omilo_api.models import KpiDef
     from omilo_api.kpis import key as kpi_key
+    from omilo_api.models import KpiDef
 
     kname = kpi_key("Test Metric Delete")
     with session_scope() as db:
@@ -510,8 +508,9 @@ def test_update_system_setting_rejects_unknown_key(owner):
 
 def _count_proposals(agent_id: str) -> int:
     """Return the number of Proposal rows for the given agent."""
-    from omilo_api.models import Proposal
     from sqlalchemy import select as _select
+
+    from omilo_api.models import Proposal
 
     with session_scope() as db:
         return db.scalar(_select(func.count()).select_from(Proposal).where(Proposal.staff_id == agent_id))

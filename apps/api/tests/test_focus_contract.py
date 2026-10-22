@@ -8,11 +8,8 @@ Run with:
 """
 import datetime as dt
 
-import pytest
-
 from omilo_api.db import session_scope
 from omilo_api.models import KbSource, Staff, Task, Thread
-
 
 # ---------------------------------------------------------------------------
 # Seed helpers (mirror test_team_board.py pattern)

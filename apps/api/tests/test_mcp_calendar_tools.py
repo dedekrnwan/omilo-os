@@ -8,11 +8,11 @@ Decision helpers:
   out_data(out)     → gate dict payload
 """
 import asyncio
-import datetime as dt
 import uuid
 
 import pytest
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func
+from sqlalchemy import select as sa_select
 
 from omilo_api import mcp_server as mcp
 from omilo_api import policy

@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-import pytest
-
 from omilo_api.db import session_scope
 from omilo_api.models import (
     KbSource,
@@ -26,7 +24,6 @@ from omilo_api.models import (
     Task,
     Thread,
 )
-
 
 # ---------------------------------------------------------------------------
 # Seed helpers

@@ -8,7 +8,6 @@ from omilo_api.models import Shift, Staff
 @pytest.mark.asyncio
 async def test_get_plan_returns_goals_with_work(owner):
     """Test that GET /api/plan returns the plan tree with goals and work nodes."""
-    from conftest import wait_for
 
     # Seed: one active Goal, one Staff, one Task linked to the goal via TaskGoal
     gid = owner.post("/api/goals", json={"title": "Launch", "target": "Ship the product", "due": "2026-12-31"}).json()["id"]

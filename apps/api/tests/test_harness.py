@@ -16,10 +16,11 @@ CONSENT_TOK = "sk-ant-consent01-" + "z" * 30 + "GATE1"
 
 def test_fresh_install_requires_consent_to_enable_pool():
     """Task 5: no accounts + no consent → add_account raises ValueError; after grant_pool_consent it succeeds."""
+    from sqlalchemy import select
+
     from omilo_api import harness as H
     from omilo_api.db import session_scope
     from omilo_api.models import HarnessAccount, Setting
-    from sqlalchemy import select
 
     with session_scope() as db:
         # clean any pre-existing consent state for a clean test

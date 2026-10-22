@@ -30,7 +30,6 @@ from sqlalchemy.orm import Session
 
 from .models import InboxItem, Task, TaskGoal, Thread
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

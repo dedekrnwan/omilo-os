@@ -11,8 +11,6 @@ Tests:
 """
 import asyncio
 
-import pytest
-
 from omilo_api import harness as H
 from omilo_api.engines import claude_code as CC
 from omilo_api.engines.claude_code import ClaudeCodeEngine

@@ -18,14 +18,12 @@ Precedence (first match wins):
 """
 from __future__ import annotations
 
-import datetime as dt
 import re
 
 from sqlalchemy.orm import Session
 
-from .services import autonomy_policy, is_paused
 from .graph.risk import classify_risk
-
+from .services import autonomy_policy, is_paused
 
 # ---------------------------------------------------------------------------
 # D3: Web-action tier classifier
@@ -159,8 +157,8 @@ def check_autonomy_budget_stop(db: Session, staff) -> bool:
     This does NOT double-fire if ``budgets.check`` already paused the helper at 100%.
     """
     from . import budgets as _budgets
-    from .services import alert
     from .models import Setting
+    from .services import alert
 
     stop = effective_budget_stop(db, staff)
     if stop is None:
