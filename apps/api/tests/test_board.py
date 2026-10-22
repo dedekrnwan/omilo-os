@@ -10,8 +10,8 @@ import datetime as dt
 import threading
 
 import pytest
-
 from conftest import cleanup_main_company_non_terminal_tasks
+
 from omilo_api import board
 from omilo_api.db import session_scope
 from omilo_api.models import Staff, Task, Thread
@@ -211,7 +211,8 @@ def test_board_stream_emits_on_commit(owner, base_url):
     t.start()
 
     # Give the SSE connection time to establish
-    import time; time.sleep(0.3)
+    import time
+    time.sleep(0.3)
 
     # Commit a Task that touches the database — triggers the office bus publish
     with session_scope() as db:

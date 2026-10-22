@@ -21,10 +21,10 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
-from .engines import ChatContext, get_engine
+from .engines import ChatContext, get_engine  # noqa: E402
 
 
 class Source(TypedDict):

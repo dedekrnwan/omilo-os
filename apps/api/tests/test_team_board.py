@@ -11,8 +11,8 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-
 from conftest import cleanup_main_company_non_terminal_tasks
+
 from omilo_api import team_board
 from omilo_api.db import session_scope
 from omilo_api.models import (
@@ -25,7 +25,6 @@ from omilo_api.models import (
     TaskGoal,
     Thread,
 )
-
 
 # ---------------------------------------------------------------------------
 # Module-level cleanup: purge non-terminal tasks created by this module
@@ -169,7 +168,6 @@ def test_open_proposal_makes_card_needs_you(owner):
         )
         db.add(p)
         db.commit()
-        staff_id = s.id
         task_id = t.id
 
     with session_scope() as db:
@@ -236,7 +234,6 @@ def test_awaiting_reply_thread_makes_card_needs_you(owner):
         )
         db.add(th)
         db.commit()
-        staff_id = s.id
         task_id = t.id
 
     with session_scope() as db:
@@ -270,7 +267,6 @@ def test_card_goal_linked(owner):
         tg = TaskGoal(task_id=t.id, goal_id=g.id)
         db.add(tg)
         db.commit()
-        staff_id = s.id
         task_id = t.id
         goal_id = g.id
 

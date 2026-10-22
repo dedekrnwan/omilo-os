@@ -3,17 +3,15 @@ C2: _cos_rule generalization — CoS auto-approves low/medium proposals for any 
 
 Self-contained: uses an in-memory SQLite database; no HTTP server required.
 """
-import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from omilo_api import services
 from omilo_api.db import Base
 from omilo_api.models import Proposal, Setting, Staff
-from omilo_api import services
-
 
 # ---------------------------------------------------------------------------
 # Fixtures: a fresh in-memory SQLite db per test function
@@ -226,7 +224,7 @@ def test_single_engine_permissive_low_medium_cos_approves(db):
 
     decide_calls = []
 
-    with patch("omilo_api.services.decide_proposal", side_effect=lambda db, prop, dec, note, by: decide_calls.append((dec, by)) or prop) as mock_decide, \
+    with patch("omilo_api.services.decide_proposal", side_effect=lambda db, prop, dec, note, by: decide_calls.append((dec, by)) or prop) as _mock_decide, \
          patch("omilo_api.graph.delegation.cos_id", return_value=_COS_ID):
         result = services._cos_rule(db, st, p)
 
@@ -334,7 +332,7 @@ def test_escalate_when_action_note_present(db):
 # C3-3: task has a founder_note → escalate("note")
 def test_escalate_when_task_has_founder_note(db):
     """When the task referenced by the action has a non-empty founder_note → escalate."""
-    from omilo_api.models import Task, Staff
+    from omilo_api.models import Staff, Task
     st = Staff(id="helper-fn", name="H", engine={"type": "fake"}, autonomy="standard")
     db.add(st)
     task = Task(id="tsk-fn-001234567890", staff_id="helper-fn", origin="shift", founder_note="owner says: stop here")
@@ -500,10 +498,9 @@ def test_should_escalate_budget_below_fraction(db):
 # C4-6: when budget stop fires, the worker pauses the helper and files an owner alert
 def test_worker_budget_stop_pauses_helper_and_alerts(db):
     """When month-to-date spend crosses the autonomy stop, the helper is paused and an alert is filed."""
-    from unittest.mock import patch, MagicMock
+
     from omilo_api.autonomy import DEFAULT_BUDGET_STOP_FRACTION
     from omilo_api.models import InboxItem, RunEvent
-    import datetime as dt
 
     st = _staff_with_budget(db, budget_usd_month=100.0)
     threshold = 100.0 * DEFAULT_BUDGET_STOP_FRACTION

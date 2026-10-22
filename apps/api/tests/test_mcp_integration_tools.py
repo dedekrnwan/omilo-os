@@ -468,8 +468,6 @@ def test_manage_workflow_strict_files_proposal(owner):
 
 def test_cancel_workflow_run_auto(owner):
     """cancel_workflow_run in Auto mode cancels the run inline."""
-    from omilo_api import workflows as W
-    from omilo_api.models import now
 
     with session_scope() as db:
         wf = Workflow(name="Cancelable WF", description="", graph=_MINIMAL_GRAPH, status="active", created_by="test")
@@ -546,7 +544,6 @@ def test_cancel_workflow_run_already_done_raises(owner):
 
 def test_cancel_workflow_run_strict_files_proposal(owner):
     """cancel_workflow_run with ASK-level workflow.change in Strict mode files a proposal."""
-    from omilo_api.models import now
 
     with session_scope() as db:
         wf = Workflow(name="Strict Cancel WF", description="", graph=_MINIMAL_GRAPH, status="active", created_by="test")
@@ -608,12 +605,11 @@ def test_manage_knowledge_file_write_auto(owner):
     assert result.get("name") == fname
 
     # Verify the file was actually written
-    with session_scope() as db:
+    with session_scope():
         read_back = S.read_knowledge(fname)
     assert read_back == content
 
     # cleanup
-    import os
     from omilo_api.config import get_settings
     p = get_settings().knowledge_dir / fname
     if p.exists():

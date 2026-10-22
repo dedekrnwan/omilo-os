@@ -3512,4 +3512,4 @@ async def ask(body: AskIn, db: Session = Depends(get_db), user: User = Depends(c
     try:
         return await ask_mod.answer(db, body.q)
     except ask_mod.NoEngineError:
-        raise HTTPException(503, "AI is unavailable")
+        raise HTTPException(503, "AI is unavailable") from None

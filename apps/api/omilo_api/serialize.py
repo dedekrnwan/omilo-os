@@ -167,7 +167,7 @@ def messages_v2(messages: list[Message], db: "Session", th: Thread) -> list[dict
     # Serialize messages with action_card substitution
     serialized: list[dict] = []
     last_agent_idx: int = -1
-    for i, m in enumerate(messages):
+    for _, m in enumerate(messages):
         raw = message(m)
         if m.role == "agent":
             # Replace legacy 'proposal' blocks for open Proposals; leave terminal ones
