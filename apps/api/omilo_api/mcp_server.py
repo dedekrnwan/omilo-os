@@ -545,6 +545,7 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
     if name == "learn":
         import hashlib as _hl
         import re as _re
+
         from . import kb
 
         summary = str(args.get("summary") or "").strip()
@@ -806,8 +807,8 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
 
     if name == "create_goal":
-        from .models import Goal, Setting
         from . import plan
+        from .models import Goal, Setting
 
         # Permission: CoS (is_chief) OR goal.create >= DO_AND_TELL in permissive mode.
         if not st.is_chief:
@@ -951,7 +952,8 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         # Validate unknown ids eagerly (raises DomainError before gating — ensures a bad id is
         # an error even in strict mode, rather than silently filing a proposal that can't execute)
         from . import capabilities as _C
-        from .models import Connector as _Connector, Folder as _Folder
+        from .models import Connector as _Connector
+        from .models import Folder as _Folder
 
         known = {
             "folders": {f.id for f in db.scalars(select(_Folder))},

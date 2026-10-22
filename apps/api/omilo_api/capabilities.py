@@ -116,6 +116,22 @@ def set_connector_token(c: Connector, token_dict: dict) -> None:
     c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
 
 
+def set_connector_fields(c: Connector, fields: dict) -> None:
+    """Store apikey field values under secrets["fields"] and clear any needs_reconnect sentinel.
+
+    Writes ``secrets["fields"] = {field_name: value, ...}`` (the collected body values from
+    the apikey connect route), then re-encrypts the whole blob.  Mirrors ``set_connector_token``.
+
+    Task 5 reads these via ``connector_secrets(conn).get("fields", {})``.
+
+    Security: never log the fields dict — it contains plaintext credential values.
+    """
+    cur = connector_secrets(c)
+    cur["fields"] = dict(fields)
+    cur.pop("needs_reconnect", None)
+    c.secrets_enc = encrypt(json.dumps(cur)) if cur else ""
+
+
 def connector_public(c: Connector) -> dict:
     s = connector_secrets(c)
     return {"id": c.id, "label": c.label, "kind": c.kind, "url": c.url, "command": c.command, "args": c.args or [],

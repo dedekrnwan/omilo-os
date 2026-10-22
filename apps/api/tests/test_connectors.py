@@ -17,15 +17,11 @@ Seeding strategy:
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import yaml
 
 from omilo_api.capabilities import Resources
 from omilo_api.engines.claude_code import plan
-
 
 # ---------------------------------------------------------------------------
 # Pure plan() tests (no DB, no network)

@@ -8,11 +8,11 @@ Decision helpers:
   out_data(out)     → gate dict payload
 """
 import asyncio
-import datetime as dt
 import uuid
 
 import pytest
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func
+from sqlalchemy import select as sa_select
 
 from omilo_api import mcp_server as mcp
 from omilo_api import policy
@@ -93,7 +93,7 @@ def _call(agent_id: str, tool_name: str, **args):
             agent = db.get(Staff, agent_id)
             return await mcp.call_tool(db, agent, tool_name, args)
 
-    return asyncio.get_event_loop().run_until_complete(_inner())
+    return asyncio.run(_inner())
 
 
 def out_decision(out) -> str:

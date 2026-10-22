@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import { useOverview } from "@/components/Shell";
-import { Thread, api, ago } from "@/lib/api";
-import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
 import Composer from "@/components/Composer";
 import { Attached } from "@/components/ComposerTools";
+import { useOverview } from "@/components/Shell";
+import { Staff, Thread, api, ago } from "@/lib/api";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -40,45 +39,40 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
-/* DeskComposer: wraps the shared <Composer> and wires the start-screen send path.
-   On send: get-or-create the master thread, post the message, then navigate to /chat. */
-type OverviewStaff = { id: string; name: string; status: string; is_chief: boolean; running: number };
-
-function DeskComposer({ staff }: { staff: OverviewStaff[] }) {
+function DeskComposer({ staff }: { staff: Staff[] }) {
   const [err, setErr] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
   const router = useRouter();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleSend = async (text: string, files: Attached[], _mentions: string[]) => {
-    const trimmed = text.trim();
-    if (!trimmed && !files.length) return;
+  /* Reuse the shared Composer (same as /chat/?thread=). On the desk there is no thread
+     yet, so sending opens a Chief-of-Staff thread, posts the message there, and navigates
+     into it. The usage meter is hidden here (showPoolMeter={false}). */
+  const send = useCallback(async (text: string, files: Attached[], mentions: string[]) => {
+    if (!text.trim() && !files.length) return;
     setErr(null);
-    setSending(true);
     try {
-      /* get-or-create the master (Chief of Staff) thread */
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
-      /* post the message (files already uploaded by Composer; pass block refs) */
-      const body: Record<string, unknown> = { text: trimmed || `(attached ${files.length} file${files.length > 1 ? "s" : ""})` };
-      if (files.length) body.blocks = files.map((f) => ({ type: "file", ...f }));
-      await api(`/threads/${th.id}/messages`, { body });
+      await api(`/threads/${th.id}/messages`, {
+        body: {
+          text: text.trim() || `(attached ${files.length} file${files.length > 1 ? "s" : ""})`,
+          blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined,
+          mentions,
+        },
+      });
       router.push(`/chat/?thread=${th.id}`);
     } catch (e: any) {
       setErr(e.message ?? "Failed to send");
-    } finally {
-      setSending(false);
     }
-  };
+  }, [router]);
 
   return (
     <div className="desk-composer">
       <Composer
-        staff={staff as unknown as import("@/lib/api").Staff[]}
+        staff={staff}
         threadId={null}
-        placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
-        awaitingReply={sending}
+        placeholder="What should the team do next? Type @ to bring in a helper…"
         error={err}
-        onSend={handleSend}
+        onSend={send}
+        showPoolMeter={false}
       />
     </div>
   );
@@ -121,71 +115,118 @@ function LatestCoS({ threads, staffMap }: { threads: Thread[]; staffMap: Map<str
   );
 }
 
-/* Recent work list */
-function RecentWork({ threads, staffMap }: {
+/* "YOUR WORK" block with counts + Open board + rows + summary footer */
+function YourWork({ threads, staffMap, router }: {
   threads: Thread[];
   staffMap: Map<string, { id: string; name: string; is_chief: boolean }>;
+  router: ReturnType<typeof useRouter>;
 }) {
-  /* show non-master, non-general threads sorted by last activity */
-  const recent = threads
+  /* categorize non-master threads */
+  const workThreads = threads
     .filter((t) => t.scope !== "master" && t.ref_id !== "general")
     .sort((a, b) => {
       const aAt = (a as any).last_at || a.updated_at || "";
       const bAt = (b as any).last_at || b.updated_at || "";
       return bAt.localeCompare(aAt);
-    })
-    .slice(0, 8);
+    });
+
+  /* compute honest counts from thread data */
+  const needsYouCount = workThreads.filter((t) => (t as any).group === "needs_you").length;
+  const runningCount = workThreads.filter((t) => (t as any).group === "active").length;
+  const totalCount = workThreads.length;
+
+  /* show top 5 in the card */
+  const shown = workThreads.slice(0, 5);
+  const remaining = Math.max(0, totalCount - shown.length);
+
+  const scheduledCount = workThreads.filter((t) => (t as any).group === "scheduled").length;
+  const waitingCount = workThreads.filter((t) => (t as any).group === "waiting" || (t as any).group === "idle").length;
 
   return (
     <div className="deskcard">
       <div className="deskcard-head">
-        <span className="deskcard-label">Your work</span>
+        <span className="deskcard-label">
+          Your work
+          {totalCount > 0 && (
+            <>
+              {needsYouCount > 0 && <span className="deskcard-count warn"> · {needsYouCount} need you</span>}
+              {runningCount > 0 && <span className="deskcard-count run"> · {runningCount} running</span>}
+              <span className="deskcard-count muted"> · {totalCount} in total</span>
+            </>
+          )}
+        </span>
+        <a
+          href="/chat/?view=board"
+          className="btn sm"
+          style={{ marginLeft: "auto", flexShrink: 0 }}
+          onClick={(e) => { e.preventDefault(); router.push("/chat/?view=board"); }}
+        >
+          Open board
+        </a>
       </div>
-      {recent.length === 0 ? (
+      {shown.length === 0 ? (
         <div className="deskcard-body">
           <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
             No recent work yet — start a conversation with the Chief of Staff.
           </p>
         </div>
       ) : (
-        <div className="desk-recent">
-          {recent.map((t) => {
-            const helper = staffMap.get(t.staff_id);
-            const group = (t as any).group as string | undefined;
-            const subtitle = (t as any).subtitle as string | undefined;
-            const lastAt = (t as any).last_at || (t as any).updated_at;
-            const sc = group === "needs_you"
-              ? statusChip("needs_you")
-              : group === "active"
-                ? statusChip("active")
-                : group === "earlier"
-                  ? statusChip("done")
-                  : statusChip("done");
-            const label = t.scope === "group"
-              ? `# ${t.title}`
-              : t.scope === "staff" && helper
-                ? helper.name
-                : t.title || "Thread";
-            return (
-              <a
-                key={t.id}
-                href={`/chat/?thread=${t.id}`}
-                className="desk-recent-item"
-              >
-                {helper && <Avatar who={helper} size={24} />}
-                <div className="desk-ri-t">
-                  <b>{label}</b>
-                  {subtitle && <span>{subtitle}</span>}
-                </div>
-                <div className="desk-ri-meta">
-                  <span className={sc.cls}>{sc.label}</span>
-                  {lastAt && <span>{ago(lastAt)}</span>}
-                  <i className="ri-arrow-right-s-line" />
-                </div>
-              </a>
-            );
-          })}
-        </div>
+        <>
+          <div className="desk-recent">
+            {shown.map((t) => {
+              const helper = staffMap.get(t.staff_id);
+              const group = (t as any).group as string | undefined;
+              const subtitle = (t as any).subtitle as string | undefined;
+              const lastAt = (t as any).last_at || (t as any).updated_at;
+              const sc = group === "needs_you"
+                ? statusChip("needs_you")
+                : group === "active"
+                  ? statusChip("active")
+                  : group === "earlier"
+                    ? statusChip("done")
+                    : statusChip("done");
+              const label = t.scope === "group"
+                ? `# ${t.title}`
+                : t.scope === "staff" && helper
+                  ? helper.name
+                  : t.title || "Thread";
+              return (
+                <a
+                  key={t.id}
+                  href={`/chat/?thread=${t.id}`}
+                  className="desk-recent-item"
+                >
+                  {helper && <Avatar who={helper} size={24} />}
+                  <div className="desk-ri-t">
+                    <b>{label}</b>
+                    {subtitle && <span>{subtitle}</span>}
+                  </div>
+                  <div className="desk-ri-meta">
+                    <span className={sc.cls}>{sc.label}</span>
+                    {lastAt && <span>{ago(lastAt)}</span>}
+                    <i className="ri-arrow-right-s-line" />
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          {/* Summary footer row */}
+          <div className="desk-work-footer">
+            <span className="desk-work-footer-text">
+              {remaining > 0 && <>{remaining} more on the team board</>}
+              {runningCount > 0 && <> · {runningCount} running</>}
+              {scheduledCount > 0 && <> · {scheduledCount} scheduled</>}
+              {waitingCount > 0 && <> · {waitingCount} waiting</>}
+            </span>
+            <a
+              href="/chat/?view=board"
+              className="desk-work-footer-link"
+              onClick={(e) => { e.preventDefault(); router.push("/chat/?view=board"); }}
+            >
+              Open board <i className="ri-arrow-right-line" />
+            </a>
+          </div>
+        </>
       )}
     </div>
   );
@@ -304,14 +345,14 @@ export default function Desk() {
   const { overview } = useOverview();
   const [me, setMe] = useState<{ name?: string; email?: string } | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [railFilter, setRailFilter] = useState<"all" | "needs_you" | "active">("all");
+  const router = useRouter();
 
   /* load user name */
   useEffect(() => {
     api<{ name?: string; email?: string }>("/auth/me").then(setMe).catch(() => {});
   }, []);
 
-  /* load threads for recent work + CoS latest message + rail */
+  /* load threads for recent work + CoS latest message */
   useEffect(() => {
     api<Thread[]>("/threads").then(setThreads).catch(() => {});
   }, []);
@@ -327,15 +368,7 @@ export default function Desk() {
 
   return (
     <div className="desk">
-      {/* Left rail — the threads rail shared with the focus session */}
-      <ThreadsRail
-        threads={threads as RailThread[]}
-        activeThreadId={null}
-        filter={railFilter}
-        onFilterChange={setRailFilter}
-      />
-
-      {/* Center column */}
+      {/* Center column (no left ThreadsRail — 2-column layout) */}
       <div className="desk-center">
         <div className="desk-scroll">
           <div className="desk-inner">
@@ -349,7 +382,9 @@ export default function Desk() {
             </div>
 
             {/* Composer */}
-            <DeskComposer staff={overview?.staff ?? []} />
+            <DeskComposer
+              staff={(overview?.staff || []) as unknown as Staff[]}
+            />
 
             {/* Suggestions */}
             <div className="desk-suggestions">
@@ -378,8 +413,8 @@ export default function Desk() {
             {/* Latest from Chief of Staff */}
             <LatestCoS threads={threads} staffMap={staffMap} />
 
-            {/* Recent work */}
-            <RecentWork threads={threads} staffMap={staffMap} />
+            {/* Your work */}
+            <YourWork threads={threads} staffMap={staffMap} router={router} />
           </div>
         </div>
       </div>

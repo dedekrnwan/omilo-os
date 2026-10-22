@@ -14,13 +14,14 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
 import tarfile
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import httpx
 import yaml
@@ -405,7 +406,7 @@ def validate_manifest(data: dict) -> list[str]:
                 )
             elif not mcp_host_allowed(mcp_url):
                 errors.append(
-                    f"Invalid 'mcp.url' host: host is not in the MCP host allowlist."
+                    "Invalid 'mcp.url' host: host is not in the MCP host allowlist."
                 )
 
             # Validate mcp.auth
@@ -487,31 +488,78 @@ def validate_manifest(data: dict) -> list[str]:
     else:
         # Validate auth.type
         auth_type = auth.get("type")
-        if auth_type != "oauth2":
+        _VALID_AUTH_TYPES = {"oauth2", "apikey"}
+        if auth_type not in _VALID_AUTH_TYPES:
             errors.append(
-                f"Invalid 'auth.type' '{auth_type}': must be 'oauth2'."
+                f"Invalid 'auth.type' '{auth_type}': must be 'oauth2' or 'apikey'."
             )
+        elif auth_type == "apikey":
+            # Validate auth.provider (required — SSRF allowlist is keyed on it)
+            provider = auth.get("provider")
+            if not provider or not isinstance(provider, str):
+                errors.append(
+                    "Missing or invalid 'auth.provider': must be a non-empty string."
+                )
 
-        # Validate auth.provider
-        provider = auth.get("provider")
-        if not provider or not isinstance(provider, str):
-            errors.append(
-                "Missing or invalid 'auth.provider': must be a non-empty string."
-            )
+            # Validate auth.scheme
+            _VALID_APIKEY_SCHEMES = {"bearer", "basic", "header", "query"}
+            scheme = auth.get("scheme")
+            if scheme not in _VALID_APIKEY_SCHEMES:
+                errors.append(
+                    f"Invalid 'auth.scheme' '{scheme}': must be one of {sorted(_VALID_APIKEY_SCHEMES)}."
+                )
 
-        # Validate auth.scopes
-        scopes = auth.get("scopes")
-        if not isinstance(scopes, list) or len(scopes) == 0:
-            errors.append(
-                "Missing or invalid 'auth.scopes': must be a non-empty list."
-            )
+            # Validate auth.fields
+            _FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
+            fields = auth.get("fields")
+            if not isinstance(fields, list) or len(fields) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.fields': must be a non-empty list."
+                )
+            else:
+                for i, field in enumerate(fields):
+                    if not isinstance(field, dict):
+                        errors.append(f"auth.fields[{i}]: must be a dictionary.")
+                        continue
+                    f_name = field.get("name")
+                    if not f_name or not isinstance(f_name, str) or not _FIELD_NAME_RE.match(f_name):
+                        errors.append(
+                            f"auth.fields[{i}]: 'name' must be a non-empty slug string."
+                        )
+                    f_label = field.get("label")
+                    if not f_label or not isinstance(f_label, str):
+                        errors.append(
+                            f"auth.fields[{i}]: 'label' must be a non-empty string."
+                        )
+
+            # Validate auth.attach
+            attach = auth.get("attach")
+            if not isinstance(attach, dict) or len(attach) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.attach': must be a non-empty dictionary."
+                )
         else:
-            # Validate each scope element is a non-empty string
-            for i, scope in enumerate(scopes):
-                if not isinstance(scope, str) or len(scope) == 0:
-                    errors.append(
-                        f"Invalid 'auth.scopes[{i}]': must be a non-empty string, got {type(scope).__name__}."
-                    )
+            # auth_type == "oauth2": existing checks unchanged
+            # Validate auth.provider
+            provider = auth.get("provider")
+            if not provider or not isinstance(provider, str):
+                errors.append(
+                    "Missing or invalid 'auth.provider': must be a non-empty string."
+                )
+
+            # Validate auth.scopes
+            scopes = auth.get("scopes")
+            if not isinstance(scopes, list) or len(scopes) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.scopes': must be a non-empty list."
+                )
+            else:
+                # Validate each scope element is a non-empty string
+                for i, scope in enumerate(scopes):
+                    if not isinstance(scope, str) or len(scope) == 0:
+                        errors.append(
+                            f"Invalid 'auth.scopes[{i}]': must be a non-empty string, got {type(scope).__name__}."
+                        )
 
     # Validate 'actions'
     actions = data.get("actions")
@@ -567,12 +615,14 @@ def validate_manifest(data: dict) -> list[str]:
                         f"Action {i}: invalid 'http.url' '{url}': must be absolute HTTPS."
                     )
 
-                # Validate http.auth
-                auth_type = http.get("auth")
-                if auth_type != "bearer":
-                    errors.append(
-                        f"Action {i}: invalid 'http.auth' '{auth_type}': must be 'bearer'."
-                    )
+                # Validate http.auth (only required to be "bearer" for oauth2 manifests)
+                manifest_auth_type = auth.get("type") if isinstance(auth, dict) else None
+                if manifest_auth_type == "oauth2":
+                    http_auth = http.get("auth")
+                    if http_auth != "bearer":
+                        errors.append(
+                            f"Action {i}: invalid 'http.auth' '{http_auth}': must be 'bearer'."
+                        )
 
             # Validate action.inputs (optional but if present, must be well-formed)
             inputs = action.get("inputs")
@@ -647,6 +697,9 @@ _TMPL_RE = re.compile(r"\{\{\s*(.+?)\s*\}\}")
 # Regex that detects a base64(expr) helper call
 _BASE64_RE = re.compile(r"^base64\((.+)\)$")
 
+# Regex that detects a basic(a, b) helper call — basic(user_var, pass_var)
+_BASIC_RE = re.compile(r"^basic\(\s*([^,]+?)\s*,\s*(.+?)\s*\)$")
+
 
 def _render_value(expr: str, args: dict) -> str:
     """Resolve a single template expression (the content between {{ }}).
@@ -654,6 +707,7 @@ def _render_value(expr: str, args: dict) -> str:
     Supported:
     - Plain variable reference: ``some_var``
     - base64 helper: ``base64(some_var)``
+    - basic helper: ``basic(user_var, pass_var)`` → base64("<user>:<pass>")
 
     Raises KeyError if a variable is not present in args.
     Raises ValueError for unrecognised helper calls.
@@ -664,6 +718,14 @@ def _render_value(expr: str, args: dict) -> str:
         inner = m.group(1).strip()
         raw_val = str(args[inner])
         return _base64.b64encode(raw_val.encode()).decode()
+    m = _BASIC_RE.match(expr)
+    if m:
+        user_var = m.group(1).strip()
+        pass_var = m.group(2).strip()
+        # Resolve both args — raises KeyError if either is missing (same as base64)
+        user_val = str(args[user_var])
+        pass_val = str(args[pass_var])
+        return _base64.b64encode(f"{user_val}:{pass_val}".encode()).decode()
     # Plain variable
     return str(args[expr])
 
@@ -846,11 +908,50 @@ def action_tools(manifest: dict) -> list[dict]:
     return tools
 
 
+def _apply_auth(manifest: dict, creds: dict) -> tuple[dict, dict]:
+    """Render auth attach templates from *creds* and split into headers / query params.
+
+    Args:
+        manifest: A validated connector piece manifest.
+        creds: Credential key→value dict supplied by the user (e.g. {"api_key": "..."}).
+
+    Returns:
+        ``(headers, query)`` — both are plain dicts of rendered string pairs.
+        For ``auth.type == "apikey"``:
+          - ``scheme == "query"``: rendered pairs go into *query*; headers is ``{}``.
+          - Any other scheme (bearer, basic, header): rendered pairs go into *headers*;
+            query is ``{}``.
+        For any other auth type (e.g. "oauth2"): returns ``({}, {})`` — oauth2 token
+        injection is handled in run_action, not here.
+
+    Security: this function never logs *creds* or the rendered values.
+    """
+    auth = manifest.get("auth", {})
+    if auth.get("type") != "apikey":
+        return {}, {}
+
+    attach: dict = auth.get("attach", {})
+    scheme: str = auth.get("scheme", "")
+    headers: dict = {}
+    query: dict = {}
+
+    for header_or_param, template in attach.items():
+        rendered = _render_str(template, creds)
+        if scheme == "query":
+            query[header_or_param] = rendered
+        else:
+            headers[header_or_param] = rendered
+
+    return headers, query
+
+
 def run_action(
     manifest: dict,
     action: str,
     args: dict,
-    token: str,
+    token: str = "",
+    *,
+    creds: dict | None = None,
 ) -> tuple[str, dict]:
     """Execute a named action against the provider API.
 
@@ -859,7 +960,10 @@ def run_action(
     2. Resolve the URL (template path variables from args, but *never* the host).
     3. SSRF guard: verify the resolved host is in provider_hosts(manifest).
     4. Template the request body (if any) from args.
-    5. Issue the HTTP request via httpx with ``Authorization: Bearer <token>``.
+    5. Issue the HTTP request:
+       - oauth2 (or any non-apikey auth.type): ``Authorization: Bearer <token>``.
+       - apikey: headers/query from ``_apply_auth``; query is merged into the URL
+         before the SSRF check; no Bearer header is added.
     6. Map 401/403 → needs_reconnect=True.
     7. Return ``(summary_text, meta_dict)``.
 
@@ -867,7 +971,8 @@ def run_action(
         manifest: A validated connector piece manifest.
         action: The action ``name`` to execute.
         args: Template arguments (variable substitutions).
-        token: OAuth2 bearer token for the request.
+        token: OAuth2 bearer token for the request (ignored for apikey auth).
+        creds: Credential dict for apikey auth (ignored for oauth2 auth).
 
     Returns:
         A ``(summary, meta)`` tuple where meta has keys:
@@ -903,6 +1008,27 @@ def run_action(
     rendered_query = _render_str(parsed.query, args) if parsed.query else ""
     rendered_url = parsed._replace(path=rendered_path, query=rendered_query).geturl()
 
+    # Determine auth type and build headers/query accordingly.
+    auth_type: str = (manifest.get("auth") or {}).get("type", "")
+
+    if auth_type == "apikey":
+        # apikey path: derive headers + query params from _apply_auth; no Bearer header.
+        auth_headers, auth_query = _apply_auth(manifest, creds or {})
+        if auth_query:
+            # Merge credential query params into the rendered URL's query string.
+            # Existing query pairs (from the action URL) are preserved; credential
+            # pairs are appended. The host is unchanged so SSRF check still passes.
+            existing_pairs = parse_qsl(rendered_query, keep_blank_values=True)
+            merged_query = urlencode(existing_pairs + list(auth_query.items()))
+            rendered_url = parsed._replace(
+                path=rendered_path, query=merged_query
+            ).geturl()
+        headers = auth_headers
+    else:
+        # oauth2 (or any other auth type): character-for-character identical to
+        # the original implementation — do NOT alter this path.
+        headers = {"Authorization": f"Bearer {token}"}
+
     # 3. SSRF guard on the final URL — before issuing the request
     _check_host(rendered_url, manifest)
 
@@ -918,24 +1044,37 @@ def run_action(
             )
         rendered_body = rendered_raw
 
-    # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF)
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        with httpx.Client(follow_redirects=False) as client:
-            request = client.build_request(
-                method,
-                rendered_url,
-                json=rendered_body,
-                headers=headers,
-            )
-            # Second host check after request construction guards url-with-userinfo tricks
-            _check_host(str(request.url), manifest)
-            response = client.send(request)
-    except httpx.RequestError as exc:
-        # Transport-level failure (DNS, timeout, connection refused, etc.).
+    # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF).
+    #    Retry a transient transport failure or a 429/5xx a couple of times with jittered backoff —
+    #    a brief network blip or an overloaded provider shouldn't fail the whole action. Retries are
+    #    capped (connector_retries) and limited to statuses that strongly imply the call didn't apply.
+    retryable_status = {429, 500, 502, 503, 504}
+    tries = max(0, get_settings().connector_retries) + 1
+    response, transport_err = None, None
+    for attempt in range(tries):
+        try:
+            with httpx.Client(follow_redirects=False) as client:
+                request = client.build_request(
+                    method,
+                    rendered_url,
+                    json=rendered_body,
+                    headers=headers,
+                )
+                # Second host check after request construction guards url-with-userinfo tricks
+                _check_host(str(request.url), manifest)
+                response = client.send(request)
+        except httpx.RequestError as exc:
+            response, transport_err = None, exc
+        else:
+            if response.status_code not in retryable_status:
+                break  # success or a non-transient error — handled below
+        if attempt < tries - 1:
+            time.sleep(min(4.0, 0.5 * 2 ** attempt) + random.uniform(0, 0.5))
+    if response is None:
+        # Transport-level failure (DNS, timeout, connection refused, etc.) on every attempt.
         # Return a structured result so callers don't need to handle the httpx exception.
         return (
-            f"Action '{action}' failed: {exc}",
+            f"Action '{action}' failed: {transport_err}",
             {"status": None, "needs_reconnect": False},
         )
 

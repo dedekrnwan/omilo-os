@@ -97,6 +97,14 @@ export type Block = {
   pause_step?: string;
   pause_quote?: string;
   pause_steps_left?: string;
+  /** Optional diff lines for Code blocks (HEAD v2 format) — when present, renders the dark diff view */
+  diff?: DiffLine[] | boolean;
+  /** Optional token count for streaming blocks — when present, shown as "Writing… · N tokens" */
+  tokens?: number;
+  /** Optional multi-image options for image blocks (done state) */
+  image_options?: { url: string }[];
+  /** Selected option index (0-based) for image blocks */
+  selected_option?: number;
   // pr_card fields
   repo?: string;
   branch?: string;
@@ -107,8 +115,7 @@ export type Block = {
   tests?: string;
   pr_url?: string;
   reviewer?: string;
-  // code diff fields
-  diff?: boolean;
+  // code diff fields (main: path for file path)
   path?: string;
   // confirmation extras
   confirm_label?: string;
@@ -133,6 +140,16 @@ export type TodoItem = {
   status?: "done" | "active" | "pending";
 };
 
+/** One line in a code diff (optional field on a `code` block) */
+export type DiffLine = {
+  /** 1-based line number (or display label) */
+  n: number | string;
+  /** " " = context, "+" = added, "-" = removed */
+  sign: " " | "+" | "-";
+  /** raw code text for the line */
+  text: string;
+};
+
 export type SourceItem = {
   n: number;
   icon?: string;
@@ -153,6 +170,8 @@ export type BlockCtx = {
   onProposal?: (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => void;
   onAnswer?: (itemId: string, answer: string) => void;
   onStop?: () => void;
+  /** Called when user clicks Apply on a code diff block */
+  onApply?: (block: Block) => void;
   people?: { id: string; name: string }[];
 };
 
@@ -429,18 +448,24 @@ function FileBlock({ block }: { block: Block }) {
 /* ---- reasoning (collapsible) ---- */
 /* Collapsed: a compact pill ("Thought for 12s"). Open: inline header + a left-accent body. */
 function ReasoningBlock({ block }: { block: Block }) {
+  const [open, setOpen] = useState(false);
   const label = block.label || block.title
     || (block.duration_s ? `Thought for ${Math.round(block.duration_s)}s` : "Thought");
   const content = block.content || block.text || "";
   return (
-    <details className="reply-reasoning">
-      <summary>
+    <div className={`reply-reasoning${open ? " open" : ""}`}>
+      <button type="button" className="reply-reasoning-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <i className="ri-brain-line" />
         <span>{label}</span>
-        <i className="ri-arrow-down-s-line chev" />
-      </summary>
-      <div className="reply-reasoning-body"><Markdown text={content} /></div>
-    </details>
+        <span className="sp" />
+        <i className={open ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} />
+      </button>
+      {open && (
+        <div className="reply-reasoning-lines">
+          <Markdown text={content} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -451,26 +476,26 @@ function TodosBlock({ block }: { block: Block }) {
   const label = block.title || block.label || "Plan";
   return (
     <div className="reply-todo">
-      <div className="reply-todo-h">
-        <b>{label}</b>
+      <div className="reply-todo-top">
+        <span className="reply-todo-plan">{label}</span>
         {items.length > 0 && <span className="reply-todo-count">{doneCount} of {items.length} done</span>}
-        <span className="sp" style={{ flex: 1 }} />
-        <i className="ri-list-check-2 reply-todo-add" />
+        <span className="sp" />
+        <button type="button" className="iconbtn reply-todo-add" aria-label="Add step"><i className="ri-add-line" /></button>
       </div>
-      <div className="reply-todo-list">
-        {items.map((item, i) => {
-          const s = item.status || "pending";
-          return (
-            <div key={i} className={`reply-todo-item ${s}`}>
-              {s === "done" ? <i className="ri-checkbox-circle-line" />
-                : s === "active" ? <span className="reply-todo-spin" />
-                : <i className="ri-circle-line" />}
-              <span className="reply-todo-text">{item.text}</span>
-              {s === "pending" && <i className="ri-draggable reply-todo-drag" aria-hidden />}
-            </div>
-          );
-        })}
-      </div>
+      {items.map((item, i) => {
+        const s = item.status || "pending";
+        return (
+          <div key={i} className={`reply-todo-item ${s}`}>
+            {s === "done"
+              ? <i className="ri-checkbox-circle-line" />
+              : s === "active"
+              ? <i className="ri-loader-4-line" />
+              : <i className="ri-circle-line" />}
+            <span>{item.text}</span>
+            {s === "pending" && <i className="ri-draggable reply-todo-grip" />}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -486,18 +511,86 @@ function MarkdownBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 }
 
 /* ---- code ---- */
-function CodeBlock({ block }: { block: Block }) {
+function CodeBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [copied, setCopied] = useState(false);
+  const diff = Array.isArray(block.diff) && block.diff.length > 0 ? (block.diff as DiffLine[]) : null;
   const code = block.text || block.content || "";
   const lang = block.lang || "";
-  const isDiff = block.diff === true || lang === "diff" || lang === "patch";
+  const filename = block.name || block.title || "";
 
-  if (isDiff) {
+  function handleCopy() {
+    const text = diff ? diff.map((l) => l.text).join("\n") : code;
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    }).catch(() => {});
+  }
+
+  const onApply = ctx?.onApply;
+
+  // When the block carries diff lines → render the dark code-card with diff view
+  if (diff) {
+    return (
+      <div className="reply-code-card">
+        <div className="reply-code-card-head">
+          <i className="ri-file-code-line reply-code-card-file-icon" />
+          {filename && <span className="reply-code-card-filename">{filename}</span>}
+          {lang && <span className="reply-code-card-lang">{lang}</span>}
+          <span className="reply-code-card-sp" />
+          <button type="button" className="reply-code-card-copy" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          {onApply ? (
+            <button type="button" className="reply-code-card-apply" onClick={() => onApply(block)}>Apply</button>
+          ) : (
+            <button type="button" className="reply-code-card-apply" disabled aria-disabled="true">Apply</button>
+          )}
+        </div>
+        <div className="reply-code-card-lines">
+          {diff.map((line, i) => (
+            <div
+              key={i}
+              className={`reply-code-line${line.sign === "+" ? " added" : line.sign === "-" ? " removed" : ""}`}
+            >
+              <span className="reply-code-ln">{line.n}</span>
+              <span className={`reply-code-sign${line.sign === "+" ? " plus" : line.sign === "-" ? " minus" : ""}`}>{line.sign}</span>
+              <span className="reply-code-text">{line.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // No diff array — check if it's a boolean diff (main-style) and delegate to DiffBlock
+  if (block.diff === true || lang === "diff" || lang === "patch") {
     return <DiffBlock block={block} />;
   }
 
-  // Reuse the codeblock rendered by Markdown (it generates the same .codeblock HTML)
-  const title = block.name || block.title || "";
-  const fence = "```" + (lang || "") + (title ? ` title="${title}"` : "") + "\n" + code + "\n```";
+  // No diff — keep existing highlighted fenced-code rendering via shared Markdown; optionally
+  // show a header row when the block has a filename or lang label.
+  const fence = "```" + (lang || "") + "\n" + code + "\n```";
+  if (filename || lang) {
+    return (
+      <div className="reply-code">
+        <div className="reply-code-card-head reply-code-card-head--light">
+          <i className="ri-file-code-line reply-code-card-file-icon--light" />
+          {filename && <span className="reply-code-card-filename--light">{filename}</span>}
+          {lang && <span className="reply-code-card-lang--light">{lang}</span>}
+          <span className="reply-code-card-sp" />
+          <button type="button" className="reply-code-copy-btn" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="reply-md reply-code-plain">
+          <Markdown text={fence} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="reply-code">
       <div className="reply-md">
@@ -508,14 +601,14 @@ function CodeBlock({ block }: { block: Block }) {
 }
 
 /* ---- diff (unified diff rendering, used when block.diff===true or lang="diff") ---- */
-type DiffLine =
+type ParsedDiffLine =
   | { kind: "add" | "remove" | "context"; text: string; lineNo: number }
   | { kind: "meta"; text: string };
 
-function parseDiff(raw: string): DiffLine[] {
+function parseDiff(raw: string): ParsedDiffLine[] {
   let oldNo = 0;
   let newNo = 0;
-  const lines: DiffLine[] = [];
+  const lines: ParsedDiffLine[] = [];
   for (const line of raw.split("\n")) {
     // Meta / hunk-header lines — no line number, no counter advance
     if (
@@ -696,33 +789,94 @@ function PrCardBlock({ block }: { block: Block }) {
 }
 
 /* ---- action_card ---- */
-function ActionCardBlock({ block }: { block: Block }) {
+function ActionCardBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [decided, setDecided] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const title = block.action_title || block.title || "";
   const target = block.action_target || block.summary || "";
-  const icon = block.action_icon || "ri-flashlight-line";
-  const details: string[] = Array.isArray(block.details) ? block.details : [];
+  const icon = block.action_icon || "ri-git-pull-request-line";
+
+  // pen detail rows: icon + text pairs (or fallback to raw details strings)
+  type DetailRow = { icon: string; text: string };
+  const detailRows: DetailRow[] = Array.isArray(block.detail_rows)
+    ? (block.detail_rows as DetailRow[])
+    : (Array.isArray(block.details)
+        ? (block.details as string[]).map((d: string) => ({ icon: "ri-git-commit-line", text: d }))
+        : []);
+
+  const decide = async (decision: string) => {
+    setBusy(true);
+    try {
+      if (block.proposal_id && ctx.onProposal) {
+        await ctx.onProposal(String(block.proposal_id), decision as "approve" | "reject" | "changes", "");
+      } else if (block.request_id && ctx.onDecide) {
+        await ctx.onDecide(String(block.request_id), decision === "approve" ? "once" : "deny", "");
+      }
+      setDecided(decision);
+    } finally { setBusy(false); }
+  };
+
+  const hasHandler = !!(block.proposal_id && ctx.onProposal) || !!(block.request_id && ctx.onDecide);
 
   return (
-    <div className="reply-action-card">
-      <div className="reply-ac-icon"><i className={icon} /></div>
-      <div className="reply-ac-t">
-        <b>{title}</b>
-        {target && <span>{target}</span>}
-        {details.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
-            {details.map((d, i) => (
-              <span key={i} className="small" style={{ color: "var(--ink-2)" }}>{d}</span>
-            ))}
-          </div>
-        )}
-        {block.url && (
-          <div className="reply-ac-acts">
-            <a className="btn sm" href={String(block.url)} target="_blank" rel="noopener noreferrer">
-              <i className="ri-external-link-line" />Open
-            </a>
-          </div>
-        )}
+    <div className="reply-ac">
+      {/* Top row: tile icon + title + target + "Needs you" chip */}
+      <div className="reply-ac-top">
+        <div className="reply-ac-tile">
+          <i className={icon} />
+        </div>
+        <div className="reply-ac-top-t">
+          <span className="reply-ac-title">{title}</span>
+          {target && <span className="reply-ac-target">{target}</span>}
+        </div>
+        <span className="chip reply-ac-chip">Needs you</span>
       </div>
+
+      {/* Details soft box */}
+      {detailRows.length > 0 && (
+        <div className="reply-ac-details">
+          {detailRows.map((row, i) => (
+            <div key={i} className="reply-ac-detail-row">
+              <i className={row.icon} />
+              <span>{row.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Actions — 3-button gap: primary / secondary / quiet */}
+      {decided ? (
+        <div className="reply-ac-decided">
+          {decided === "approve" ? "Opening PR…" : decided === "changes" ? "Noted, revising…" : "Deferred"}
+        </div>
+      ) : (
+        <div className="reply-ac-acts">
+          <button
+            type="button"
+            className="btn sm primary"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("approve")}
+          >
+            <i className="ri-check-line" />{block.action_title || block.action || "Open"}
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("changes")}
+          >
+            <i className="ri-pencil-line" />Change something
+          </button>
+          <button
+            type="button"
+            className="btn sm quiet"
+            disabled={busy || !hasHandler}
+            onClick={() => decide("reject")}
+          >
+            Not now
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -733,6 +887,17 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [busy, setBusy] = useState(false);
   const title = block.title || block.action_title || "";
   const body = block.text || block.content || block.summary || "";
+  // pen: "Send to N" label and "X asked · time" meta
+  const confirmN = (block as { confirm_n?: number | string }).confirm_n;
+  const isSendAction = block.action === "send" || confirmN != null;
+  const sendLabel = (block as { confirm_send_label?: string }).confirm_send_label
+    || (isSendAction ? `Send to ${confirmN ?? "recipients"}` : "Confirm");
+  const tileIcon = isSendAction ? "ri-send-plane-line" : "ri-error-warning-line";
+  const primaryIcon = isSendAction ? "ri-send-plane-line" : "ri-check-line";
+  const asker = (block as { confirm_asker?: string }).confirm_asker || "";
+  const askedAt = (block as { confirm_asked_at?: string }).confirm_asked_at || "";
+  const approvedText = (block as { confirm_approved_text?: string }).confirm_approved_text || title || "approved";
+  const approvedAt = (block as { confirm_approved_at?: string }).confirm_approved_at || "";
   const isDone = state === "done";
 
   const confirm = async (decision: "approve" | "deny") => {
@@ -747,44 +912,52 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     } finally { setBusy(false); }
   };
 
-  const icon = block.action_icon || "ri-send-plane-fill";
-  const confirmLabel = block.confirm_label || "Confirm";
-  const risky = block.risk !== "low"; // confirmations default to the danger treatment
-  const who = block.who || "";
-  const when = block.when || "";
+  // fold in main's new fields
+  const confirmLabel = block.confirm_label || sendLabel;
+  const risky = block.risk !== "low";
+  const confirmWho = block.who || "";
+  const confirmWhen = block.when || "";
 
-  // Answered → fold into a one-line record (green check + what you did + undo window).
-  if (state !== "pending") {
-    const approved = isDone;
+  // Done / cancelled: compact answered row (pen kMvfJ)
+  if (isDone || state === "cancelled") {
     return (
-      <div className={`reply-confirm-done ${approved ? "ok" : "no"}`}>
-        <i className={approved ? "ri-checkbox-circle-line" : "ri-close-circle-line"} />
-        <span>{approved ? `You approved: ${block.done_label || title}` : `You cancelled: ${title}`}</span>
-        {(when || (approved && block.undo_min)) && (
-          <span className="reply-confirm-done-meta">
-            {when}{when && approved && block.undo_min ? " · " : ""}
-            {approved && block.undo_min ? `Undo for ${block.undo_min} min` : ""}
-          </span>
-        )}
+      <div className="reply-confirm-answered">
+        <i className={isDone ? "ri-checkbox-circle-line reply-confirm-answered-icon ok" : "ri-close-circle-line reply-confirm-answered-icon bad"} />
+        <span className="reply-confirm-answered-text">
+          {isDone ? `You approved: ${block.done_label || approvedText}` : `You cancelled: ${approvedText}`}
+        </span>
+        <span className="reply-confirm-sp" />
+        <span className="reply-confirm-answered-meta">
+          {approvedAt && <>{approvedAt} · </>}{block.undo_min ? `Undo for ${block.undo_min} min` : "Undo for 5 min"}
+        </span>
       </div>
     );
   }
 
+  // Pending: full card (pen T4FR5)
   return (
     <div className="reply-confirm">
-      <div className="reply-confirm-head">
-        <span className={`reply-confirm-ico ${risky ? "danger" : ""}`}><i className={icon} /></span>
-        <b>{title}</b>
+      {/* Top: tile + icon + bold ask; icon/style depends on whether it's a send action */}
+      <div className="reply-confirm-top">
+        <div className={`reply-confirm-tile${risky ? " reply-confirm-tile--danger" : ""}`}>
+          <i className={tileIcon} />
+        </div>
+        <span className="reply-confirm-ask">{title}</span>
       </div>
       {body && <div className="reply-confirm-body">{body}</div>}
-      <div className="reply-confirm-foot">
-        <div className="reply-confirm-acts">
-          <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
-          <button className={`btn sm ${risky ? "danger-solid" : "primary"}`} type="button" disabled={busy} onClick={() => confirm("approve")}>
-            <i className={icon} />{confirmLabel}
-          </button>
-        </div>
-        {(who || when) && <span className="reply-confirm-who">{who}{who && when ? " · " : ""}{when}</span>}
+      {/* Actions row: Cancel / primary + spacer + "X asked · time" */}
+      <div className="reply-confirm-acts">
+        <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
+        <button className={`btn sm ${risky ? "danger-solid" : "primary"}`} type="button" disabled={busy} onClick={() => confirm("approve")}>
+          <i className={primaryIcon} />{confirmLabel}
+        </button>
+        <span className="reply-confirm-sp" />
+        {(asker || askedAt || confirmWho || confirmWhen) && (
+          <span className="reply-confirm-meta">
+            {(asker || confirmWho) && <>{asker || confirmWho} asked</>}
+            {(askedAt || confirmWhen) && <> · {askedAt || confirmWhen}</>}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -799,6 +972,8 @@ function StreamingApprovalBlock({ block, ctx }: { block: Block; ctx: BlockCtx })
   const pauseStep = block.pause_step || "";
   const pauseQuote = block.pause_quote || "";
   const stepsLeft = block.pause_steps_left || "";
+  // pen: action labels (defaults match the pen frame)
+  const changeLabel = (block as { pause_change_label?: string }).pause_change_label || "Change something";
 
   const decide = async (decision: "approve" | "reject" | "changes", note = "") => {
     setBusy(true);
@@ -809,32 +984,48 @@ function StreamingApprovalBlock({ block, ctx }: { block: Block; ctx: BlockCtx })
   };
 
   return (
-    <div className="reply-approval-wrap">
+    <div className="reply-approval">
+      {/* Intro text — outside the Ask card */}
       {intro && <div className="reply-approval-intro">{intro}</div>}
-      <div className="reply-approval">
+
+      {/* Ask card — helper-brand border */}
+      <div className="reply-approval-ask">
+        {/* Top: circle-pause (helper-brand) + pause label + spacer + step N of M */}
         <div className="reply-approval-head">
-          <i className="ri-pause-circle-line" />
-          <span>{pauseLabel}</span>
+          <i className="ri-pause-circle-line reply-approval-pause-icon" />
+          <span className="reply-approval-pause-label">{pauseLabel}</span>
+          <span className="reply-approval-sp" />
           {pauseStep && <span className="reply-approval-step">{pauseStep}</span>}
         </div>
-        {pauseQuote && <div className="reply-approval-quote">&ldquo;{pauseQuote}&rdquo;</div>}
-        {!decided ? (
-          <div className="reply-approval-acts">
-            <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>
-              <i className="ri-play-fill" />Looks right, continue
-            </button>
-            <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>Change something</button>
-            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
+
+        {/* Quote box */}
+        {pauseQuote && (
+          <div className="reply-approval-quote">
+            &ldquo;{pauseQuote}&rdquo;
+          </div>
+        )}
+
+        {/* Actions */}
+        {decided ? (
+          <div className="reply-approval-decided">
+            {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
           </div>
         ) : (
-          <div className="small" style={{ color: decided === "approve" ? "var(--ok)" : "var(--muted)", fontWeight: 500 }}>
-            {decided === "approve" ? "Continuing…" : decided === "changes" ? "Noted, changing…" : "Step skipped"}
+          <div className="reply-approval-acts">
+            <button className="btn sm primary" type="button" disabled={busy} onClick={() => decide("approve")}>
+              <i className="ri-play-line" />Looks right, continue
+            </button>
+            <button className="btn sm" type="button" disabled={busy} onClick={() => decide("changes")}>{changeLabel}</button>
+            <button className="btn sm quiet" type="button" disabled={busy} onClick={() => decide("reject")}>Skip this step</button>
           </div>
         )}
       </div>
+
+      {/* Rest row — dimmed (pen: opacity .5) */}
       {stepsLeft && (
-        <div className="reply-approval-foot">
-          <i className="ri-list-check-3" />{stepsLeft}
+        <div className="reply-approval-rest">
+          <i className="ri-list-check" />
+          <span>{stepsLeft}</span>
         </div>
       )}
     </div>
@@ -850,27 +1041,100 @@ function TaskBlock({ block }: { block: Block }) {
   const staffName = block.task_staff || "";
   const taskId = block.task_id || block.id || "";
   const pct = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
+  // pen extra meta fields
+  const taskDue = (block as { task_due?: string }).task_due || "";
+  const taskBranch = (block as { task_branch?: string }).task_branch || "";
+  const taskGoal = (block as { task_goal?: string }).task_goal || "";
 
-  const dotClass = status === "running" ? "running" : status === "done" ? "done" : status === "failed" ? "failed" : "";
-  const statusLabel = status === "running" ? "In progress" : status === "done" ? "Done" : status === "failed" ? "Failed" : "Pending";
+  // chip class for status
+  const chipClass = status === "running" || status === "in_progress"
+    ? "chip run"
+    : status === "done"
+    ? "chip up"
+    : status === "failed"
+    ? "chip down"
+    : "chip";
+  const statusLabel = status === "running" || status === "in_progress"
+    ? "In progress"
+    : status === "done"
+    ? "Done"
+    : status === "failed"
+    ? "Failed"
+    : "Pending";
 
   return (
-    <a className="reply-task" href={taskId ? `/jobs/${taskId}` : undefined} target={taskId ? "_blank" : undefined} rel="noopener noreferrer">
-      <div className={`reply-task-dot ${dotClass}`} />
-      <div className="reply-task-t">
-        <b>{title}</b>
-        <span>
-          {staffName && <>{staffName} · </>}{statusLabel}
-          {stepsTotal > 0 && <> · {stepsDone}/{stepsTotal} steps</>}
+    <div className="reply-task">
+      {/* Top: square-check icon + "Task · handed to X" + spacer + status chip */}
+      <div className="reply-task-top">
+        <i className="ri-checkbox-line reply-task-icon" />
+        <span className="reply-task-eyebrow">
+          Task{staffName ? ` · handed to ${staffName}` : ""}
         </span>
-        {stepsTotal > 0 && (
-          <div className="reply-usage-bar" style={{ marginTop: 4, height: 3, borderRadius: 2, background: "var(--line-strong)", overflow: "hidden" }}>
-            <i style={{ display: "block", height: "100%", background: "var(--info)", borderRadius: 2, width: `${pct}%` }} />
-          </div>
+        <span className="reply-task-sp" />
+        <span className={chipClass}>{statusLabel}</span>
+      </div>
+
+      {/* Title */}
+      <div className="reply-task-title">{title}</div>
+
+      {/* Meta row: owner / due / branch / goal */}
+      <div className="reply-task-meta">
+        {staffName && (
+          <span className="reply-task-meta-item">
+            <i className="ri-team-line" />{staffName}
+          </span>
+        )}
+        {taskDue && (
+          <span className="reply-task-meta-item">
+            <i className="ri-calendar-line" />{taskDue}
+          </span>
+        )}
+        {taskBranch && (
+          <span className="reply-task-meta-item">
+            <i className="ri-git-branch-line" />{taskBranch}
+          </span>
+        )}
+        {taskGoal && (
+          <span className="reply-task-meta-item">
+            <i className="ri-focus-3-line" />{taskGoal}
+          </span>
         )}
       </div>
-      <i className="ri-arrow-right-s-line" style={{ color: "var(--faint)", flexShrink: 0 }} />
-    </a>
+
+      {/* Progress track + "N of M steps" + Open job */}
+      {stepsTotal > 0 && (
+        <div className="reply-task-progress">
+          <div className="reply-task-track">
+            <div className="reply-task-track-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="reply-task-steps">{stepsDone} of {stepsTotal} steps</span>
+          {taskId && (
+            <a
+              className="btn sm quiet reply-task-open"
+              href={`/jobs/${taskId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open job<i className="ri-arrow-right-up-line" />
+            </a>
+          )}
+        </div>
+      )}
+      {/* If no steps but has taskId, still show Open job */}
+      {stepsTotal === 0 && taskId && (
+        <div className="reply-task-progress">
+          <span className="reply-task-sp" />
+          <a
+            className="btn sm quiet reply-task-open"
+            href={`/jobs/${taskId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open job<i className="ri-arrow-right-up-line" />
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -881,37 +1145,28 @@ function SourcesBlock({ block }: { block: Block }) {
   if (!sources.length) return null;
 
   return (
-    <div>
-      {!expanded ? (
-        <div className="reply-sources">
-          <span className="small" style={{ color: "var(--muted)" }}>Sources</span>
+    <div className="reply-sources-wrap">
+      <div className="reply-sources-pills">
+        <span className="reply-sources-label">Sources</span>
+        {sources.map((s, i) => (
+          <button key={i} type="button" className="reply-source-pill" onClick={() => setExpanded(!expanded)} title={s.title || ""}>
+            <span className="reply-source-pill-n">{s.n ?? i + 1}</span>
+            {s.title && <span className="reply-source-pill-txt">{s.title}</span>}
+          </button>
+        ))}
+      </div>
+      {expanded && (
+        <div className="reply-sources-list">
           {sources.map((s, i) => (
-            <button key={i} type="button" className="chip quiet" style={{ fontSize: 12, cursor: "pointer" }}
-              onClick={() => setExpanded(true)} title={s.title || ""}>
-              {s.n ?? i + 1}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div style={{ border: "1px solid var(--line)", borderRadius: "var(--r-md)", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "6px 10px", borderBottom: "1px solid var(--line)", gap: 6 }}>
-            <span className="small" style={{ fontWeight: 500, flex: 1 }}>Sources</span>
-            <button type="button" className="iconbtn" style={{ width: 24, height: 24 }} onClick={() => setExpanded(false)} aria-label="Collapse sources">
-              <i className="ri-close-line" />
-            </button>
-          </div>
-          {sources.map((s, i) => (
-            <a key={i} className="reply-doc" href={s.url || "#"} target={s.url ? "_blank" : undefined} rel="noopener noreferrer"
-              style={{ borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: i > 0 ? "1px solid var(--line)" : "none", borderBottom: "none" }}>
-              <span style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--soft)", border: "1px solid var(--line)", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                {s.n ?? i + 1}
-              </span>
+            <a key={i} className={`reply-sources-row${i > 0 ? " bordered" : ""}`}
+              href={s.url || "#"} target={s.url ? "_blank" : undefined} rel="noopener noreferrer">
+              <span className="reply-sources-n">{s.n ?? i + 1}</span>
               <i className={s.icon || "ri-file-text-line"} />
-              <div className="reply-doc-t">
+              <div className="reply-sources-t">
                 <b>{s.title || "Source"}</b>
                 {s.subtitle && <span>{s.subtitle}</span>}
               </div>
-              {s.url && <i className="ri-arrow-up-right-line" style={{ color: "var(--faint)", flexShrink: 0 }} />}
+              <i className="ri-arrow-right-up-line reply-sources-arrow" />
             </a>
           ))}
         </div>
@@ -926,26 +1181,41 @@ function UsageMeterBlock({ block }: { block: Block }) {
   const tokOut = block.tokens_out ?? 0;
   const cost = block.cost_usd;
   const dur = block.duration_s;
-  const pct = Math.min(100, block.budget_pct ?? 0);
+  const pct = block.budget_pct != null ? Math.min(100, block.budget_pct) : null;
   const account = block.account || "";
 
   const tier = block.tier || "";
 
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-  const sep = <span className="reply-usage-sep">·</span>;
+  const hasTok = tokIn > 0 || tokOut > 0;
 
   return (
     <div className="reply-usage">
-      <span className="reply-usage-dot" />
-      {account && <><span className="reply-usage-acct">{account}{tier ? ` · ${tier}` : ""}</span>{sep}</>}
-      <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>
-      {cost != null && <>{sep}<span>${cost < 1 ? cost.toFixed(3) : cost.toFixed(2)}</span></>}
-      {dur != null && <>{sep}<span>{dur.toFixed(1)}s</span></>}
-      {pct > 0 && (
-        <span className="reply-usage-today">
-          <span>of today</span>
-          <span className="reply-usage-bar"><i style={{ width: `${pct}%` }} /></span>
-        </span>
+      {/* Account: green dot + "Claude Code pool · tier" */}
+      {account && (
+        <>
+          <span className="reply-usage-account">
+            <span className="reply-usage-dot" aria-hidden="true" />
+            {account}{tier ? ` · ${tier}` : ""}
+          </span>
+          <span className="reply-usage-sep" aria-hidden="true">·</span>
+        </>
+      )}
+      {/* Tokens: "1.2k in / 860 out" */}
+      {hasTok && <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>}
+      {/* Cost */}
+      {cost != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>${cost < 1 ? cost.toFixed(3) : cost.toFixed(2)}</span></>}
+      {/* Duration */}
+      {dur != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>{dur.toFixed(1)}s</span></>}
+      {/* Spacer + "of today" + track */}
+      {pct != null && pct > 0 && (
+        <>
+          <span className="sp" />
+          <span className="reply-usage-today">of today</span>
+          <div className="reply-usage-track">
+            <i style={{ width: `${pct}%` }} />
+          </div>
+        </>
       )}
     </div>
   );
@@ -956,78 +1226,212 @@ function UsageMeterBlock({ block }: { block: Block }) {
    one action to open it (routes into the Docs page when the doc lives there). */
 function DocumentBlock({ block }: { block: Block }) {
   const title = block.title || block.name || "Document";
-  const snippet = block.summary || block.text || "";
+  // Fold in main's richer metadata fields
   const source = block.source || "";
   const writtenBy = block.written_by || "";
-  const when = block.when || "";
+  const docWhen = block.when || "";
   const mimeLabel = block.mime_label || (block.mime?.includes("markdown") ? "Markdown" : "");
+  const words = block.words;
+  const wordLabel = words != null ? `${words >= 1000 ? `${(words / 1000).toFixed(1)}k` : words} words` : "";
+  const richMeta = [mimeLabel, wordLabel, writtenBy ? `written by ${writtenBy}` : "", docWhen].filter(Boolean).join(" · ");
+  // HEAD's meta fallback (mime + text snippet)
+  const legacyMeta = block.summary
+    ? (block.mime ? block.mime.replace(/^application\//, "") + " · " : "") + (block.text ? block.text.slice(0, 80) : "")
+    : (block.text || "");
+  const meta = richMeta || legacyMeta;
+  const snippet = block.summary || "";
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
   const docsHref = block.doc_path
     ? `/docs/?path=${encodeURIComponent(block.doc_path)}`
     : (source.toLowerCase() === "docs" ? (url || null) : null);
+  // Chip label — prefer source, then kind, then derive from mime
+  const chipLabel = source || block.kind || (block.mime ? (block.mime.includes("pdf") ? "PDF" : block.mime.includes("markdown") ? "Markdown" : "Docs") : "Docs");
 
-  const words = block.words;
-  const wordLabel = words != null ? `${words >= 1000 ? `${(words / 1000).toFixed(1)}k` : words} words` : "";
-  const meta = [mimeLabel, wordLabel, writtenBy ? `written by ${writtenBy}` : "", when].filter(Boolean).join(" · ");
+  const open = () => url && window.open(url, "_blank", "noopener");
 
   return (
     <div className="reply-document">
-      <div className="reply-document-thumb" aria-hidden>
-        <span /><span /><span /><span /><span />
+      {/* Peek thumbnail */}
+      <div className="reply-document-peek" aria-hidden="true">
+        <span className="reply-document-peek-title">{title}</span>
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
+        <span className="reply-document-peek-line" />
       </div>
-      <div className="reply-document-main">
-        <div className="reply-document-title">
-          <b>{title}</b>
-          {source && <span className="reply-document-chip">{source}</span>}
+      {/* Right column */}
+      <div className="reply-document-body">
+        <div className="reply-document-top">
+          <span className="reply-document-title">{title}</span>
+          <span className="chip quiet reply-document-chip">{chipLabel}</span>
         </div>
-        {meta && <div className="reply-document-meta">{meta}</div>}
-        {snippet && <div className="reply-document-snip">{snippet}</div>}
-        {(docsHref || url) && (
-          <div className="reply-document-acts">
-            {docsHref && (
-              <a className="btn sm" href={docsHref}><i className="ri-book-open-line" />Open in Docs</a>
-            )}
-            {url && (
-              <a className="btn sm quiet" href={url} target="_blank" rel="noopener noreferrer" download>
-                <i className="ri-download-line" />Download
-              </a>
-            )}
-          </div>
-        )}
+        {meta && <span className="reply-document-meta">{meta}</span>}
+        {snippet && <span className="reply-document-snippet">{snippet}</span>}
+        <div className="reply-document-acts">
+          {docsHref ? (
+            <a className="btn sm" href={docsHref}><i className="ri-book-open-line" />Open in Docs</a>
+          ) : (
+            <button type="button" className="btn sm" onClick={open}>
+              <i className="ri-file-text-line" />Open in Docs
+            </button>
+          )}
+          {url && (
+            <a className="btn sm quiet" href={url} download aria-label="Download">
+              <i className="ri-download-line" />Download
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /* ---- image ---- */
-function ImageBlock({ block }: { block: Block }) {
+function ImageBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
+  const [selectedIdx, setSelectedIdx] = useState<number>(block.selected_option ?? 0);
   const isGenerating = block.generating;
   const progress = block.progress;
   const prompt = block.prompt || block.title || "";
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
   const name = block.name || block.title || "image";
+  const options: { url: string }[] | undefined = block.image_options;
+  const label = block.text || block.title || "image";
+  // count shown in generating header e.g. "Making 2 Instagram posts…"
+  const countLabel = label;
 
+  /* ---- generating state ---- */
   if (isGenerating) {
     return (
-      <div className="reply-image generating">
-        <i className="ri-image-line" style={{ fontSize: 20 }} />
-        <span>{block.text || block.title || "Generating…"}{progress != null ? ` ${progress}%` : ""}</span>
+      <div className="reply-img-gen">
+        {/* Top row: image icon + label + spacer + progress% + Stop */}
+        <div className="reply-img-gen-top">
+          <i className="ri-image-line reply-img-gen-icon" />
+          <span className="reply-img-gen-label">{countLabel}</span>
+          <span className="sp" />
+          {progress != null && (
+            <span className="reply-img-gen-pct">{progress}%</span>
+          )}
+          <button
+            type="button"
+            className="btn sm quiet reply-img-stop"
+            onClick={() => ctx.onStop?.()}
+            aria-label="Stop generation"
+          >
+            <i className="ri-stop-line" />Stop
+          </button>
+        </div>
+        {/* 2-up shimmer tiles */}
+        <div className="reply-img-tiles">
+          <div className="reply-img-tile shimmer-tile" aria-hidden="true" />
+          <div className="reply-img-tile shimmer-tile" aria-hidden="true" />
+        </div>
+        {/* Prompt italic */}
+        {prompt && <p className="reply-img-prompt">&ldquo;{prompt}&rdquo;</p>}
       </div>
     );
   }
 
+  /* ---- done with options (2-up) ---- */
+  if (options && options.length > 0) {
+    return (
+      <div className="reply-img-done">
+        {/* Option tiles */}
+        <div className="reply-img-tiles">
+          {options.map((opt, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`reply-img-tile reply-img-opt${selectedIdx === i ? " selected" : ""}`}
+              onClick={() => setSelectedIdx(i)}
+              aria-label={`Select option ${i + 1}`}
+            >
+              <img src={opt.url} alt={`Option ${i + 1}`} loading="lazy" />
+            </button>
+          ))}
+        </div>
+        {/* Actions row */}
+        <div className="reply-img-acts">
+          <button
+            type="button"
+            className="btn sm primary"
+            disabled
+            aria-disabled="true"
+          >
+            <i className="ri-check-line" />Use option {selectedIdx + 1}
+          </button>
+          <button
+            type="button"
+            className="btn sm"
+            disabled={!ctx.onStop}
+            aria-disabled={!ctx.onStop}
+            onClick={() => ctx.onStop?.()}
+          >
+            <i className="ri-loop-left-line" />Try again
+          </button>
+          <button
+            type="button"
+            className="btn sm quiet"
+            disabled
+            aria-disabled="true"
+          >
+            <i className="ri-pencil-line" />Edit prompt
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- fallback: single image (no options array) ---- */
   if (!url) return null;
   return (
     <div className="reply-image">
-      <img src={url} alt={prompt || name} loading="lazy" style={{ display: "block", maxWidth: "min(100%, 480px)", maxHeight: 340, objectFit: "cover" }} />
+      <img src={url} alt={prompt || name} loading="lazy" />
     </div>
   );
 }
 
 /* ---- streaming ---- */
-function StreamingBlock({ block }: { block: Block }) {
+function StreamingBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const text = block.text || block.content || "";
-  return <div className="reply-streaming">{text}</div>;
+  const tokens = block.tokens as number | undefined;
+
+  // Split text into all-but-last-line and last-line for caret placement
+  const lines = text.split("\n");
+  const lastLine = lines[lines.length - 1];
+  const prevLines = lines.slice(0, lines.length - 1).join("\n");
+
+  return (
+    <div className="reply-streaming-wrap">
+      {/* Partial text — lines before the last */}
+      {prevLines && (
+        <span className="reply-streaming-text">{prevLines}{"\n"}</span>
+      )}
+      {/* Last line + trailing block caret */}
+      <span className="reply-streaming-caret-row">
+        <span className="reply-streaming-text">{lastLine}</span>
+        <span className="reply-streaming-caret" aria-hidden="true" />
+      </span>
+      {/* Status row: spinner + "Writing… · N tokens" + spacer + Stop */}
+      <div className="reply-streaming-status">
+        <span className="spin reply-streaming-spin" aria-hidden="true" />
+        <span className="reply-streaming-status-txt">
+          Writing…{tokens != null ? ` · ${tokens} tokens` : ""}
+        </span>
+        <span className="sp" />
+        <button
+          type="button"
+          className="btn sm quiet reply-streaming-stop"
+          onClick={() => ctx.onStop?.()}
+          aria-label="Stop generation"
+        >
+          <i className="ri-stop-line" />Stop
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /* ---- mentions (inline chip display, not a block per se — render as fallback markdown) ---- */
@@ -1075,9 +1479,9 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
     case "markdown":
       return <MarkdownBlock key={block.type} block={block} ctx={ctx} />;
     case "code":
-      return <CodeBlock key={block.type} block={block} />;
+      return <CodeBlock key={block.type} block={block} ctx={ctx} />;
     case "action_card":
-      return <ActionCardBlock key={block.type} block={block} />;
+      return <ActionCardBlock key={block.type} block={block} ctx={ctx} />;
     case "confirmation":
       return <ConfirmationBlock key={block.id || block.type} block={block} ctx={ctx} />;
     case "streaming_approval":
@@ -1091,9 +1495,9 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
     case "document":
       return <DocumentBlock key={block.id || block.name || block.type} block={block} />;
     case "image":
-      return <ImageBlock key={block.id || block.url || block.type} block={block} />;
+      return <ImageBlock key={block.id || block.url || block.type} block={block} ctx={ctx} />;
     case "streaming":
-      return <StreamingBlock key={block.type} block={block} />;
+      return <StreamingBlock key={block.type} block={block} ctx={ctx} />;
     case "pr_card":
       return <PrCardBlock key={block.id || block.type} block={block} />;
 

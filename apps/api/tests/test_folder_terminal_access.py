@@ -23,7 +23,7 @@ def test_granted_write_commands_folder_enables_bash():
     # Grant the helper write + terminal commands on that folder (the exact UI/agent path)
     with session_scope() as db:
         st = db.get(Staff, sid)
-        view = S.set_staff_access(db, st, {"folders": {fid: {"access": "write", "commands": True}}}, actor="owner")
+        S.set_staff_access(db, st, {"folders": {fid: {"access": "write", "commands": True}}}, actor="owner")
         db.commit()
         print("STORED access:", st.access)
 

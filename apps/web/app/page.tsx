@@ -10,7 +10,7 @@ import InboxItemDetail, { SNOOZES, askCos } from "@/components/InboxItemDetail";
 import { useOverview } from "@/components/Shell";
 import { Empty, Err, StatusChip } from "@/components/ui";
 import { InboxItem, ago, api } from "@/lib/api";
-import { chatWith, helperItems, taskItems } from "@/lib/actions";
+import { helperItems, taskItems } from "@/lib/actions";
 import { MenuItem, copy, menu, sep } from "@/lib/menu";
 import { openTask, openThread } from "@/lib/open";
 import { useBoardStream, usePoll } from "@/lib/poll";
@@ -367,14 +367,14 @@ function BoardView({ onCount }: { onCount: () => void }) {
           {/* Done today section */}
           <div className="inbox2-sec inbox2-sec-done">
             <span className="inbox2-sec-label"><i className="ri-checkbox-circle-line inbox2-done-icon" /> Done today</span>
-            <span className="inbox2-sec-count">{b.done.length}</span>
+            <span className="inbox2-sec-count">{Math.min(b.done.length, 10)}</span>
           </div>
 
           {b.done.length === 0 ? (
             <div className="inbox2-empty">Finished jobs from the last two days show here.</div>
           ) : (
             <div className="inbox2-done-list">
-              {b.done.map((c) => (
+              {b.done.slice(0, 10).map((c) => (
                 <div key={c.id} className="side-item side-item-done" role="button" tabIndex={0}
                   onClick={() => openTask(c.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTask(c.id); } }}
@@ -488,11 +488,11 @@ export default function Inbox() {
       <div className="ph2">
         <div className="ph2-text">
           <h1 className="ph2-title">Inbox</h1>
-          <p className="ph2-sub">Your helpers propose, you decide.</p>
+          <p className="ph2-sub">Your helpers propose, you decide. Whatever you approve is done exactly as written.</p>
         </div>
         <div className="ph2-actions">
           <div className="seg" role="tablist" aria-label="View">
-            <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-layout-column-line" /> Board</button>
+            <button role="tab" aria-selected={view === "board"} className={view === "board" ? "on" : ""} onClick={() => pick("board")}><i className="ri-focus-3-line" /> Focus</button>
             <button role="tab" aria-selected={view === "list"} className={view === "list" ? "on" : ""} onClick={() => pick("list")}><i className="ri-list-unordered" /> List</button>
             <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => pick("map")}><i className="ri-node-tree" /> Map</button>
           </div>

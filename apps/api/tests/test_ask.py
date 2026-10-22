@@ -9,12 +9,9 @@ Run with:
 """
 from __future__ import annotations
 
-import pytest
-
 from omilo_api import ask
 from omilo_api.db import session_scope
 from omilo_api.models import Goal, InboxItem
-
 
 # ---------------------------------------------------------------------------
 # helpers

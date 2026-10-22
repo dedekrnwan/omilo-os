@@ -3,6 +3,7 @@
 Every state change writes an audit event. Functions take an open Session and commit themselves.
 """
 import datetime as dt
+import random
 import re
 import secrets
 from collections.abc import Callable
@@ -279,6 +280,17 @@ def _tz(db: Session | None = None) -> ZoneInfo:
 def next_run(cron: str, after: dt.datetime | None = None, db: Session | None = None) -> dt.datetime:
     base = (after or now()).astimezone(_tz(db))
     return croniter(cron, base).get_next(dt.datetime).astimezone(dt.UTC)
+
+
+def jittered(base: float, i: int = 0, cap: float | None = None, frac: float = 1.0) -> float:
+    """Exponential backoff ``base * 2**i`` (optionally capped) plus additive random jitter.
+
+    Jitter spreads retries so many callers recovering at once don't reconnect in lockstep
+    (thundering herd). ``frac`` scales the jitter window relative to the computed delay."""
+    d = base * (2 ** max(0, i))
+    if cap is not None:
+        d = min(d, cap)
+    return d + random.uniform(0, d * frac)
 
 
 def add_shift(db: Session, st: Staff, name: str, cron: str, brief: str, commit: bool = True) -> Shift:

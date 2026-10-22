@@ -252,6 +252,8 @@ The API suite runs on Postgres 16 + pgvector and Redis 7 (knowledge base, policy
 
 ## Contributing
 
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide — setup, the dev loop, tests/CI, commit and PR conventions, and the safety rules. In short:
+
 - **Connectors:** open a pull request to [`omilo-pieces`](https://github.com/dedekrnwan/omilo-pieces) with a new `pieces/<slug>/piece.yaml` and `logo.svg`. No Omilo release is needed to add an app.
 - **Code:** run `make test` before opening a pull request. Keep outward-facing behavior behind the approval policy, and never log secrets.
 - Design and implementation notes live under `docs/`.

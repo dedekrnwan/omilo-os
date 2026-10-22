@@ -5,7 +5,7 @@
  * Renders one helper's reply as:
  *   avatar + "Who" row (name · role · time) + stacked blocks + hover row
  *
- * The hover row (hover_actions + feedback_bar) is shown on hover via CSS (.reply-hover).
+ * The hover row (hover_actions + feedback_bar) is shown on hover via CSS (.reply-hover-row).
  *
  * Consumed by Conversation.tsx (Task 2) and will be re-used by Tasks 5 and 7.
  */
@@ -64,8 +64,10 @@ function FeedbackBar({ messageId, helperName }: { messageId: string; helperName:
   ];
 
   return (
-    <div>
+    <div className="reply-feedback-wrap">
+      {/* Idle bar: "Was this useful?" + thumbs */}
       <div className="reply-feedback">
+        <span className="reply-feedback-label">Was this useful?</span>
         <button type="button" className={state === "good" ? "on" : undefined}
           aria-label="Good response" title="Good response" onClick={handleGood}>
           <i className={state === "good" ? "ri-thumb-up-fill" : "ri-thumb-up-line"} />
@@ -75,34 +77,42 @@ function FeedbackBar({ messageId, helperName }: { messageId: string; helperName:
           <i className={state === "bad" ? "ri-thumb-down-fill" : "ri-thumb-down-line"} />
         </button>
       </div>
+      {/* Expanded: "What went wrong?" card */}
       {expanded && !saved && (
         <div className="reply-feedback-expanded">
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <i className="ri-thumb-down-line" style={{ fontSize: 13 }} />
-            <span className="small" style={{ fontWeight: 500, flex: 1 }}>What went wrong?</span>
-            <button type="button" className="iconbtn" style={{ width: 22, height: 22 }} onClick={() => setExpanded(false)} aria-label="Close feedback">
+          {/* Top row */}
+          <div className="reply-fbe-top">
+            <i className="ri-thumb-down-line" />
+            <span className="reply-fbe-title">What went wrong?</span>
+            <span className="sp" />
+            <button type="button" className="reply-fbe-close" onClick={() => setExpanded(false)} aria-label="Close feedback">
               <i className="ri-close-line" />
             </button>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {/* Reason pills */}
+          <div className="reply-fbe-reasons">
             {REASONS.map(({ key, label }) => (
               <button key={key!} type="button"
-                className={reason === key ? "chip" : "chip quiet"}
-                style={{ fontSize: 12, cursor: "pointer" }}
+                className={reason === key ? "reply-fbe-pill selected" : "reply-fbe-pill"}
                 onClick={() => setReason(reason === key ? null : key)}>
                 {label}
               </button>
             ))}
           </div>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)}
-            placeholder={`Tell ${helperName} what to do instead…`}
-            rows={2} style={{ resize: "vertical", fontSize: 12 }} />
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          {/* Note input row */}
+          <div className="reply-fbe-note">
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={`Tell ${helperName} what to do instead…`}
+              className="reply-fbe-input"
+            />
             <button type="button" className="btn sm primary" onClick={handleSave}>Save as lesson</button>
           </div>
         </div>
       )}
-      {saved && <div className="small" style={{ color: "var(--ok)", marginTop: 4 }}>Noted.</div>}
+      {saved && <div className="reply-fbe-saved">Noted.</div>}
     </div>
   );
 }
@@ -122,21 +132,20 @@ function HoverActions({
   const [pinned, setPinned] = useState(false);
 
   const handleCopy = () => copy(message.text);
-  const handleQuote = () => quote(thread.id, message.text);
 
   // Edit: put the message text back into the composer for editing/re-sending
   const handleEdit = () => {
     window.dispatchEvent(new CustomEvent("omilo:edit", { detail: { messageId: message.id, text: message.text } }));
   };
 
-  // Pin: toggle local state and dispatch event (no-op until backend wired)
+  // Pin: toggle local state and dispatch event
   const handlePin = () => {
     const next = !pinned;
     setPinned(next);
     window.dispatchEvent(new CustomEvent("omilo:pin", { detail: { messageId: message.id, pinned: next } }));
   };
 
-  // Share: copy a deep-link to the message if derivable, else dispatch event (no-op until backend wired)
+  // Share: copy a deep-link to the message if derivable, else dispatch event
   const handleShare = async () => {
     const url = `${window.location.href.split("#")[0]}#msg-${message.id}`;
     if (!navigator.clipboard?.writeText) {
@@ -151,28 +160,37 @@ function HoverActions({
   };
 
   return (
-    <div className="reply-hover">
-      <button type="button" title="Copy" aria-label="Copy message" onClick={handleCopy}>
-        <i className="ri-file-copy-line" />
-      </button>
-      <button type="button" title="Quote in reply" aria-label="Quote in reply" onClick={handleQuote}>
-        <i className="ri-double-quotes-l" />
-      </button>
-      {onReAsk && (
-        <button type="button" title="Ask again" aria-label="Ask again" onClick={onReAsk}>
-          <i className="ri-restart-line" />
+    <div className="reply-hover-row">
+      {/* Floating action bar */}
+      <div className="reply-hover-bar">
+        {/* Copy — wired to existing copy handler */}
+        <button type="button" className="reply-hbtn" title="Copy" aria-label="Copy message" onClick={handleCopy}>
+          <i className="ri-file-copy-line" />
         </button>
-      )}
-      <button type="button" title="Edit &amp; resend" aria-label="Edit and resend" onClick={handleEdit}>
-        <i className="ri-pencil-line" />
-      </button>
-      <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? "Unpin message" : "Pin message"} onClick={handlePin}>
-        <i className={pinned ? "ri-pushpin-fill" : "ri-pushpin-line"} />
-      </button>
-      <button type="button" title="Share link" aria-label="Share link to message" onClick={handleShare}>
-        <i className="ri-share-line" />
-      </button>
-      <span style={{ flex: 1 }} />
+        {/* Retry / Re-ask — wired to existing re-ask handler */}
+        <button type="button" className="reply-hbtn" title="Retry" aria-label="Retry" onClick={onReAsk}>
+          <i className="ri-loop-left-line" />
+        </button>
+        {/* Edit request — dispatches omilo:edit */}
+        <button type="button" className="reply-hbtn" title="Edit request" aria-label="Edit request" onClick={handleEdit}>
+          <i className="ri-pencil-line" />
+        </button>
+        {/* Pin — wired to handlePin; fill when pinned */}
+        <button type="button" className="reply-hbtn" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? "Unpin message" : "Pin message"} onClick={handlePin}>
+          <i className={pinned ? "ri-pushpin-fill" : "ri-pushpin-line"} />
+        </button>
+        {/* Share — wired to handleShare */}
+        <button type="button" className="reply-hbtn" title="Share" aria-label="Share link to message" onClick={handleShare}>
+          <i className="ri-share-line" />
+        </button>
+        {/* Separator */}
+        <span className="reply-hbar-sep" aria-hidden="true" />
+        {/* More — no handler yet; safe no-op */}
+        <button type="button" className="reply-hbtn" title="More" aria-label="More options">
+          <i className="ri-more-line" />
+        </button>
+      </div>
+      {/* Feedback bar (idle + expanded) */}
       <FeedbackBar messageId={message.id} helperName={message.author} />
     </div>
   );
@@ -273,11 +291,12 @@ export function Reply({
 
   return (
     <div className="reply-shell" onContextMenu={ctxMenu}>
+      {/* Avatar */}
       <div className="reply-av">
         <Avatar who={helper} size={30} />
       </div>
       <div className="reply-body">
-        {/* Who row */}
+        {/* Who row: name 13/600 $ink · role 12 $muted · time 12 $faint */}
         <div className="reply-who">
           <b>{helperName}</b>
           <span className="reply-role">{helperRole}</span>
@@ -285,7 +304,7 @@ export function Reply({
           <span className="reply-time">{when(m.at)}</span>
         </div>
 
-        {/* Block stack */}
+        {/* Content: block stack */}
         <div className="reply-blocks">
           {/* Typed blocks (v2 messages) */}
           {hasTypedBlocks && renderBlocks(displayBlocks, ctx)}
@@ -305,7 +324,7 @@ export function Reply({
           {!hasTypedBlocks && <Attachments blocks={m.blocks as { type: string; id?: string; name?: string; mime?: string; size?: number }[] | undefined} />}
         </div>
 
-        {/* Hover row: hover actions + feedback bar */}
+        {/* Footer: hover actions bar + feedback bar — shown on hover */}
         <HoverActions message={m} thread={th} helperName={helperName} onReAsk={reAsk} />
       </div>
     </div>

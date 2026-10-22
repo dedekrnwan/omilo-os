@@ -174,7 +174,7 @@ def tree(db: Session, days: int = 30) -> dict:
                     "kpis": [{k: r[k] for k in ("name", "label", "unit", "value", "target", "progress", "direction")} for r in kp if r["goal_id"] == g.id]})
     rest = [_node(t, names, reps, props, kids) for t in roots if t.id not in used]
     return {"days": days, "goals": out, "unlinked": list(reversed(rest)),
-            "shifts": [{"id": sh.id, "name": sh.name, "staff": names.get(sh.staff_id, sh.staff_id), "goal_id": shift_goal.get(sh.id)} for sh in shifts]}
+            "shifts": [{"id": sh.id, "name": sh.name, "staff": names.get(sh.staff_id, sh.staff_id), "goal_id": shift_goal.get(sh.id), "cron": sh.cron} for sh in shifts]}
 
 
 def lineage(db: Session, task_ids: list[str]) -> dict[str, dict]:

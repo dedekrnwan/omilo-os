@@ -7,17 +7,15 @@ capped at ``POOL_WAIT_CAP_S``; once the cap is reached the task fails and surfac
 """
 import asyncio
 
-import pytest
+from sqlalchemy import select
 
 from omilo_api import harness as H
-from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.engines import EngineResult
 from omilo_api.engines import claude_code as CC
 from omilo_api.engines.claude_code import ClaudeCodeEngine
 from omilo_api.models import InboxItem, Staff, Task
 from omilo_api.worker import Worker
-from sqlalchemy import select
 
 
 def _cfg(auth: str) -> dict:

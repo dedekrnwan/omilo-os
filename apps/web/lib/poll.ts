@@ -1,6 +1,29 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BASE } from "./api";
+
+/** True while the API is reachable. api() dispatches "omilo:online"/"omilo:offline" on each call;
+ *  we also listen to the browser's native online/offline events. usePoll keeps retrying on its own
+ *  interval, so the banner clears automatically on the next successful request — no extra retry here. */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("omilo:online", on);
+    window.addEventListener("omilo:offline", off);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    if (typeof navigator !== "undefined" && navigator.onLine === false) setOnline(false);
+    return () => {
+      window.removeEventListener("omilo:online", on);
+      window.removeEventListener("omilo:offline", off);
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+  return online;
+}
 
 /** Run `fn` now and then every `ms` (a number, or a function re-read after each run so pages can poll fast only while
  *  something is happening). Pauses while the tab is hidden and runs at once when it comes back. Returns nothing;

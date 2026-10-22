@@ -5,13 +5,14 @@ Uses respx to stub httpx calls.
 """
 from __future__ import annotations
 
+import base64 as _stdlib_base64
 import copy
 
 import httpx
 import pytest
 import respx
 
-from omilo_api.pieces import action_tools, provider_hosts, run_action
+from omilo_api.pieces import _apply_auth, _render_str, action_tools, provider_hosts, run_action
 
 # ---------------------------------------------------------------------------
 # Test fixture manifest — Gmail connector with underscored action name so
@@ -369,3 +370,209 @@ def test_run_action_raises_value_error_for_unknown_action():
     """run_action must raise exactly ValueError (not KeyError) for an unknown action name."""
     with pytest.raises(ValueError):
         run_action(GMAIL_MANIFEST, "nonexistent_action", {}, token="TOK")
+
+
+# ---------------------------------------------------------------------------
+# Task 2: basic() template helper + _apply_auth injection helper
+# ---------------------------------------------------------------------------
+
+def base64_of(s: str) -> str:
+    """Test helper: standard base64 encoding of a string (UTF-8)."""
+    return _stdlib_base64.b64encode(s.encode()).decode()
+
+
+# Canonical apikey manifest fixture (header scheme)
+_APIKEY_MANIFEST: dict = {
+    "id": "acme-api",
+    "label": "Acme API",
+    "category": "productivity",
+    "description": "Acme REST API connector.",
+    "auth": {
+        "type": "apikey",
+        "scheme": "header",
+        "provider": "stripe",
+        "fields": [{"name": "api_key", "label": "API Key"}],
+        "attach": {"X-Api-Key": "{{ api_key }}"},
+    },
+    "actions": [
+        {
+            "name": "list-items",
+            "label": "List items",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.stripe.com/v1/items",
+            },
+        }
+    ],
+}
+
+
+def test_basic_template_helper():
+    """basic(u, p) renders to base64('<u>:<p>')."""
+    assert _render_str("{{ basic(u, p) }}", {"u": "a", "p": "b"}) == base64_of("a:b")
+
+
+def test_basic_template_helper_missing_first_arg_raises():
+    """basic(u, p) raises KeyError if the first argument variable is missing."""
+    with pytest.raises(KeyError):
+        _render_str("{{ basic(u, p) }}", {"p": "b"})  # u missing
+
+
+def test_basic_template_helper_missing_second_arg_raises():
+    """basic(u, p) raises KeyError if the second argument variable is missing."""
+    with pytest.raises(KeyError):
+        _render_str("{{ basic(u, p) }}", {"u": "a"})  # p missing
+
+
+def test_basic_template_helper_in_longer_string():
+    """basic() helper works when embedded in a longer template string."""
+    result = _render_str("Basic {{ basic(u, p) }}", {"u": "alice", "p": "secret"})
+    assert result == "Basic " + base64_of("alice:secret")
+
+
+def test_apply_auth_header_scheme():
+    """_apply_auth with scheme='header' puts rendered pairs in headers, query is empty."""
+    h, q = _apply_auth(_APIKEY_MANIFEST, {"api_key": "K"})
+    assert h == {"X-Api-Key": "K"}
+    assert q == {}
+
+
+def test_apply_auth_query_scheme():
+    """_apply_auth with scheme='query' puts rendered pairs in query, headers is empty."""
+    m = {
+        **_APIKEY_MANIFEST,
+        "auth": {
+            "type": "apikey",
+            "scheme": "query",
+            "fields": [{"name": "token", "label": "Token"}],
+            "attach": {"access_token": "{{ token }}"},
+        },
+    }
+    h, q = _apply_auth(m, {"token": "K"})
+    assert q == {"access_token": "K"}
+    assert h == {}
+
+
+def test_apply_auth_basic_scheme():
+    """_apply_auth with scheme='basic' puts Basic header (via basic() helper) in headers."""
+    m = {
+        **_APIKEY_MANIFEST,
+        "auth": {
+            "type": "apikey",
+            "scheme": "basic",
+            "fields": [
+                {"name": "u", "label": "Username"},
+                {"name": "p", "label": "Password"},
+            ],
+            "attach": {"Authorization": "Basic {{ basic(u, p) }}"},
+        },
+    }
+    h, _ = _apply_auth(m, {"u": "a", "p": "b"})
+    assert h["Authorization"] == "Basic " + base64_of("a:b")
+
+
+def test_apply_auth_oauth2_returns_empty():
+    """_apply_auth returns ({}, {}) for oauth2 manifests — oauth2 is handled in run_action."""
+    assert _apply_auth(GMAIL_MANIFEST, {}) == ({}, {})
+
+
+# ---------------------------------------------------------------------------
+# Task 3: run_action apikey auth injection
+# ---------------------------------------------------------------------------
+
+# Apikey manifest with query scheme — uses stripe provider so SSRF check passes.
+_APIKEY_QUERY_MANIFEST: dict = {
+    "id": "stripe-api",
+    "label": "Stripe API",
+    "category": "payments",
+    "description": "Stripe REST API connector.",
+    "auth": {
+        "type": "apikey",
+        "scheme": "query",
+        "provider": "stripe",
+        "fields": [{"name": "token", "label": "API Token"}],
+        "attach": {"access_token": "{{ token }}"},
+    },
+    "actions": [
+        {
+            "name": "ping",
+            "label": "Ping",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.stripe.com/v1/ping",
+            },
+        }
+    ],
+}
+
+# Apikey manifest with header scheme — acme-api has no provider so we add one
+# that satisfies the SSRF registry. Use stripe for simplicity.
+_APIKEY_HEADER_MANIFEST: dict = {
+    **_APIKEY_MANIFEST,
+    "auth": {
+        **_APIKEY_MANIFEST["auth"],
+        "provider": "stripe",
+    },
+    "actions": [
+        {
+            "name": "ping",
+            "label": "Ping",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.stripe.com/v1/ping",
+            },
+        }
+    ],
+}
+
+
+@respx.mock
+def test_run_action_oauth2_unchanged():
+    """run_action with oauth2 manifest must inject Authorization: Bearer <token> unchanged."""
+    route = respx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    ).respond(200, json={"id": "x"})
+    _, meta = run_action(
+        GMAIL_MANIFEST,
+        "send_email",
+        {"to": "a@b.com", "message": "hi"},
+        "TOK",
+    )
+    req = route.calls.last.request
+    assert req.headers["authorization"] == "Bearer TOK"
+    assert meta["status"] == 200
+
+
+@respx.mock
+def test_run_action_apikey_header():
+    """run_action with apikey+header scheme must inject X-Api-Key and no Authorization header."""
+    route = respx.get("https://api.stripe.com/v1/ping").respond(200, json={})
+    _, meta = run_action(
+        _APIKEY_HEADER_MANIFEST,
+        "ping",
+        {},
+        creds={"api_key": "K"},
+    )
+    req = route.calls.last.request
+    assert req.headers["x-api-key"] == "K"
+    assert "authorization" not in req.headers
+    assert meta["status"] == 200
+
+
+@respx.mock
+def test_run_action_apikey_query_passes_ssrf():
+    """run_action with apikey+query scheme must embed access_token in URL; host unchanged."""
+    route = respx.get(url__regex=r"https://api\.stripe\.com/v1/ping.*").respond(200, json={})
+    _, meta = run_action(
+        _APIKEY_QUERY_MANIFEST,
+        "ping",
+        {},
+        creds={"token": "K"},
+    )
+    req = route.calls.last.request
+    assert "access_token=K" in str(req.url)
+    assert req.url.host == "api.stripe.com"
+    assert meta["status"] == 200

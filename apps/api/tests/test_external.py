@@ -17,11 +17,10 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from omilo_api.db import Base
-from omilo_api.models import Setting, Staff
 from omilo_api.autonomy import classify_action_tier, should_escalate
-from omilo_api.engines.claude_code import SAFE_TOOLS, _EXEC_TOOLS, manager_tool_filter
-
+from omilo_api.db import Base
+from omilo_api.engines.claude_code import _EXEC_TOOLS, SAFE_TOOLS, manager_tool_filter
+from omilo_api.models import Staff
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -236,15 +235,16 @@ def test_exec_tools_does_not_contain_web_fetch():
 # These tests use session_scope() (shared Postgres test DB, same as test_creation.py).
 # They are intentionally isolated: every staff id is UUID-based; refs/kinds are unique per run.
 
-import asyncio
-import uuid as _uuid
+import asyncio  # noqa: E402
+import uuid as _uuid  # noqa: E402
 
-from omilo_api import mcp_server as _mcp
-from omilo_api import services as _S
-from omilo_api import kb as _kb
-from omilo_api.db import session_scope as _ss
-from omilo_api.models import KbSource, Staff as _Staff
-from sqlalchemy import select as _select
+from sqlalchemy import select as _select  # noqa: E402
+
+from omilo_api import mcp_server as _mcp  # noqa: E402
+from omilo_api import services as _S  # noqa: E402
+from omilo_api.db import session_scope as _ss  # noqa: E402
+from omilo_api.models import KbSource  # noqa: E402
+from omilo_api.models import Staff as _Staff  # noqa: E402
 
 
 def _make_learner() -> str:
@@ -272,7 +272,7 @@ async def _learn(staff_id: str, **args) -> dict:
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

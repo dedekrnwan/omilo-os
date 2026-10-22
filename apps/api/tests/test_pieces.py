@@ -101,13 +101,13 @@ def test_invalid_id_slug_format():
             assert any("id" in e for e in errs), f"ID {id_val} should be invalid"
 
 
-def test_auth_type_must_be_oauth2():
-    """Auth type must be exactly 'oauth2'."""
+def test_auth_type_must_be_oauth2_or_apikey():
+    """Auth type must be 'oauth2' or 'apikey'; unknown types are rejected."""
     bad = {
         **GMAIL_MANIFEST,
-        "auth": {**GMAIL_MANIFEST["auth"], "type": "apikey"},
+        "auth": {**GMAIL_MANIFEST["auth"], "type": "saml"},
     }
-    assert any("oauth2" in e.lower() or "type" in e.lower() for e in validate_manifest(bad))
+    assert any("oauth2" in e.lower() or "apikey" in e.lower() or "type" in e.lower() for e in validate_manifest(bad))
 
 
 def test_auth_provider_required_and_non_empty():
@@ -471,3 +471,57 @@ def test_mcp_does_not_require_actions_or_scopes(monkeypatch):
     monkeypatch.setattr("omilo_api.pieces.MCP_HOSTS", {"mcp.repliz.com"})
     # _MCP_MANIFEST has no actions/auth.scopes -- must still be valid
     assert validate_manifest(_MCP_MANIFEST) == []
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (catalog v2 Track B): auth.type: apikey validation
+# ---------------------------------------------------------------------------
+
+_APIKEY_MANIFEST = {
+    "id": "acme", "label": "Acme", "category": "Ops",
+    "description": "Acme REST API.",
+    "auth": {"type": "apikey", "scheme": "header", "provider": "stripe",
+             "fields": [{"name": "api_key", "label": "API Key", "secret": True}],
+             "attach": {"X-Api-Key": "{{ api_key }}"}},
+    "actions": [{"name": "ping", "label": "Ping", "approval": "auto",
+                 "http": {"method": "GET", "url": "https://api.stripe.com/ping"}}],
+}
+
+
+def test_oauth2_still_valid():
+    assert validate_manifest(GMAIL_MANIFEST) == []
+
+
+def test_valid_apikey_manifest_accepted():
+    assert validate_manifest(_APIKEY_MANIFEST) == []
+
+
+def test_apikey_bad_scheme_reported():
+    m = {**_APIKEY_MANIFEST, "auth": {**_APIKEY_MANIFEST["auth"], "scheme": "nope"}}
+    assert any("scheme" in e for e in validate_manifest(m))
+
+
+def test_apikey_requires_fields_and_attach():
+    m = {**_APIKEY_MANIFEST, "auth": {"type": "apikey", "scheme": "header", "fields": [], "attach": {}}}
+    errs = validate_manifest(m)
+    assert any("fields" in e for e in errs) and any("attach" in e for e in errs)
+
+
+def test_apikey_action_without_http_auth_is_valid():
+    # the ping action has no http.auth — must be fine for apikey
+    assert validate_manifest(_APIKEY_MANIFEST) == []
+
+
+def test_oauth2_action_still_requires_bearer():
+    bad = {**GMAIL_MANIFEST, "actions": [{**GMAIL_MANIFEST["actions"][0], "http": {**GMAIL_MANIFEST["actions"][0]["http"], "auth": "none"}}]}
+    assert any("auth" in e for e in validate_manifest(bad))
+
+
+def test_apikey_requires_provider():
+    """An apikey manifest without auth.provider must fail validation with a 'provider' error."""
+    no_provider = {
+        **_APIKEY_MANIFEST,
+        "auth": {k: v for k, v in _APIKEY_MANIFEST["auth"].items() if k != "provider"},
+    }
+    errs = validate_manifest(no_provider)
+    assert any("provider" in e for e in errs), f"Expected 'provider' error, got: {errs}"

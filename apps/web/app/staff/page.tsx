@@ -242,13 +242,13 @@ function BudgetSection({ s, onSave }: { s: Staff & { budget?: { budget_usd: numb
 }
 
 function engineLabel(s: Staff) {
-  if (s.engine?.type === "claude-code") return s.engine?.auth === "api" ? "Claude Code · API key" : "Claude Code pool";
+  if (s.engine?.type === "claude-code") return s.engine?.auth === "api" ? "Claude Code · API key" : "Shared pool";
   if (s.engine?.type === "claude") return "Built-in Claude";
   return "Practice mode";
 }
 
 function StaffList() {
-  usePageActions({ primary: { label: "Hire a helper", icon: "ri-user-add-line", href: "/talent/" } }, []);
+  usePageActions(null, []);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [former, setFormer] = useState<Staff[]>([]);
   const load = useCallback(async () => {
@@ -263,15 +263,17 @@ function StaffList() {
       <div className="ph2">
         <div className="ph2-text">
           <h1 className="ph2-title">Team</h1>
-          <p className="ph2-sub">Your AI helpers. Open one to change their job, schedule or what they may do without asking.</p>
+          <p className="ph2-sub">Your AI helpers. Open one to change its job, its schedule, or what it may do without asking.</p>
+        </div>
+        <div className="ph2-actions">
+          <Link href="/talent/" className="btn primary"><i className="ri-user-add-line" />Hire a helper</Link>
         </div>
       </div>
 
       {/* Tab strip */}
       <div className="team2-tabs">
         <span className="team2-tab on">
-          <i className="ri-group-line" />Helpers
-          {staff.length > 0 && <span className="team2-tab-count">{staff.length}</span>}
+          <i className="ri-group-line" />Helpers{staff.length > 0 ? ` · ${staff.length}` : ""}
         </span>
         <Link href="/talent/" className="team2-tab">
           <i className="ri-store-2-line" />Hire specialists
@@ -291,12 +293,12 @@ function StaffList() {
                 { label: `Give ${s.name} a job`, icon: "ri-add-circle-line", href: `/chat/?view=work&task=new&staff=${s.id}&full=1` },
                 { label: "Copy the id", icon: "ri-file-copy-line", hint: s.id, onSelect: () => copy(s.id) }])}
             >
-              {/* Top: avatar + name + role */}
+              {/* Top: avatar + name + description */}
               <Link href={`/staff/?id=${s.id}`} className="team2-card-top">
-                <Avatar who={s} size={40} state={(s as any).state === "working" ? "working" : null} />
+                <Avatar who={s} size={44} state={(s as any).state === "working" ? "working" : null} />
                 <span className="team2-id-text">
-                  <b className="team2-name">{s.name}{s.is_chief ? <span className="team2-chief"> · Chief of Staff</span> : null}</b>
-                  <span className="team2-role small">{s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom"}</span>
+                  <b className="team2-name">{s.name}</b>
+                  <span className="team2-desc">{s.summary || s.tagline || (s.role?.startsWith("agency:") ? "Specialist · The Agency" : s.role || "custom")}</span>
                 </span>
               </Link>
               {/* Status: chip + next-job line */}
@@ -306,7 +308,7 @@ function StaffList() {
                   <span className="team2-next small">next {s.shifts[0].when || s.shifts[0].cron}</span>
                 )}
               </div>
-              {/* Meta: jobs count + engine pill */}
+              {/* Meta: jobs / engine / this-month cost */}
               <div className="team2-card-meta">
                 <span className="team2-pill">
                   <span className="team2-pill-label">Jobs</span>
@@ -315,6 +317,10 @@ function StaffList() {
                 <span className="team2-pill">
                   <span className="team2-pill-label">Engine</span>
                   <span className="team2-pill-val">{engineLabel(s)}</span>
+                </span>
+                <span className="team2-pill">
+                  <span className="team2-pill-label">This month</span>
+                  <span className="team2-pill-val">{!s.cost_month ? "$0" : `$${s.cost_month.toFixed(2)}`}</span>
                 </span>
               </div>
               {/* Actions: Open / Chat */}
@@ -357,16 +363,16 @@ function StaffList() {
         <p className="team2-suggest-head small">Suggested for your team</p>
         <div className="team2-suggest">
           {[
-            { role: "Support Responder", cat: "Support", desc: "Answers customer messages in your voice and hands anything unusual to you." },
-            { role: "Paid Media Buyer", cat: "Paid Media", desc: "Plans small ad tests on Instagram and Facebook. Every spend waits for your OK." },
-            { role: "Bookkeeper", cat: "Finance", desc: "Matches payments to invoices each week and flags anything that does not add up." },
+            { role: "Support Responder", cat: "Support", icon: "ri-customer-service-2-line", dot: "#EC4899", desc: "Answers customer messages on WhatsApp in your voice, and hands anything unusual to you." },
+            { role: "Paid Media Buyer", cat: "Paid Media", icon: "ri-megaphone-line", dot: "#F97316", desc: "Plans small ad tests on Instagram and Facebook. Every spend waits for your OK." },
+            { role: "Bookkeeper", cat: "Finance", icon: "ri-bill-line", dot: "#65A30D", desc: "Matches payments to invoices each week and flags anything that does not add up." },
           ].map((sp) => (
             <div key={sp.role} className="team2-spec">
               <div className="team2-spec-top">
-                <span className="team2-spec-icon"><i className="ri-robot-2-line" /></span>
+                <span className="team2-spec-icon"><i className={sp.icon} /></span>
                 <span className="team2-spec-text">
                   <b className="team2-spec-name">{sp.role}</b>
-                  <span className="team2-spec-cat small"><span className="team2-dot" />{sp.cat}</span>
+                  <span className="team2-spec-cat small"><span className="team2-dot" style={{ background: sp.dot }} />{sp.cat}</span>
                 </span>
               </div>
               <p className="team2-spec-desc small">{sp.desc}</p>

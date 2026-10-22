@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     worker_interval_s: float = 3.0
     max_concurrent_tasks: int = 3  # how many agents may work at the same time
     task_timeout_s: int = 30 * 60
+    shift_misfire_grace_s: float = 3600.0  # after downtime, fire a missed shift only if its slot is this fresh
+    connector_retries: int = 2  # extra tries for a connector call that hits a transient transport/5xx failure
     strict_mode: bool = True  # new installs: every external action needs approval
 
     cookie_secure: bool = False

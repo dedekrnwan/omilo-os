@@ -10,7 +10,6 @@ Integration tests (DB-bound, use owner/seeded_repliz_catalog fixtures):
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,6 @@ import yaml
 import omilo_api.pieces as P
 from omilo_api.config import get_settings
 from tests.test_pieces import GMAIL_MANIFEST
-
 
 # ---------------------------------------------------------------------------
 # Helpers

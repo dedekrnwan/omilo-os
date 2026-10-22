@@ -32,7 +32,7 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Checkpoint, KbSource, Message, Proposal, Task, Thread
+from .models import Checkpoint, Goal, KbSource, Message, Proposal, Task, TaskGoal, Thread
 
 # Cutoff separating "active" from "earlier" (non-awaiting threads).
 _ACTIVE_CUTOFF_HOURS = 4
@@ -126,6 +126,12 @@ def enrich(db: Session, th: Thread) -> dict:
         if task:
             extras["task_id"] = task.id
             extras["task_status"] = task.status
+            # Add linked goal when a TaskGoal association exists for this task.
+            tg = db.get(TaskGoal, task.id)
+            if tg:
+                goal = db.get(Goal, tg.goal_id)
+                if goal:
+                    extras["goal"] = {"id": goal.id, "title": goal.title}
 
     # Bug #3 + Bug #4: enrich proposal threads so the frontend can surface proposal context,
     # and mark a pending proposal thread as needs_you so the workspace rail matches the inbox count.
@@ -197,7 +203,7 @@ def focus(db: Session, th: Thread) -> dict:
     refs = list({th.id, task.id})
     kb_rows = list(db.scalars(select(KbSource).where(KbSource.ref.in_(refs))))
     files = [
-        {"title": k.title or k.ref, "kind": k.kind, "ref": k.ref}
+        {"title": k.title or k.ref, "kind": k.kind, "ref": k.ref, "url": k.url or ""}
         for k in kb_rows
     ]
 
