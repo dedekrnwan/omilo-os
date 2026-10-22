@@ -19,15 +19,11 @@ lru_cache'd so we call cache_clear() on every env change.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import yaml
 
 import omilo_api.pieces as pieces
 from omilo_api.config import get_settings
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -135,9 +131,9 @@ def test_mcp_connect_creates_locked_connector(owner, seeded_repliz_catalog):
     # Both rendered headers must be stored — connector_runtime exposes headers with their
     # values (used by plan()); connector_public exposes only header_names (no values).
     # Read the connector row directly via capabilities to prove both rendered values arrived.
+    from omilo_api import capabilities as C
     from omilo_api.db import session_scope
     from omilo_api.models import Connector as _Connector
-    from omilo_api import capabilities as C
 
     with session_scope() as db:
         c = db.get(_Connector, "repliz")

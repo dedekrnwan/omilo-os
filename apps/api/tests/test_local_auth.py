@@ -5,7 +5,6 @@ Tests:
   and _provider_of(...) round-trips back to "local"
 - _apply_ai accepts provider="local" with no Claude key set (no 400)
 """
-import pytest
 
 
 def test_local_engine_round_trip():
@@ -32,7 +31,6 @@ def test_local_engine_round_trip():
 
 def test_apply_ai_local_requires_no_key(owner, monkeypatch):
     """POST /api/ai {provider:"local"} succeeds even when no Claude API key is set."""
-    import os
 
     from omilo_api import services as S
     from omilo_api.db import session_scope

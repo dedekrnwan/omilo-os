@@ -1,8 +1,10 @@
 import datetime as dt
+from typing import TYPE_CHECKING
 
 from .models import (
     Checkpoint,
     InboxItem,
+    KbSource,
     Message,
     Proposal,
     Report,
@@ -12,6 +14,9 @@ from .models import (
     Thread,
 )
 from .services import current_body
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 def iso(v: dt.datetime | None) -> str | None:
@@ -77,3 +82,116 @@ def thread(t: Thread) -> dict:
 
 def message(m: Message) -> dict:
     return {"id": m.id, "role": m.role, "author": m.author, "text": m.text, "blocks": m.blocks, "channel": m.channel, "at": iso(m.at)}
+
+
+# ------------------------------------------------------------------ v2 read-time block mapping
+# Scope: action_card (open Proposal → replaces legacy 'proposal' block) and code (PR/diff
+# KbSource → injected once as the last agent message's block).
+# NOTE: streaming/reasoning/todos/usage-meter are NOT produced here — those are a separate
+# harness pass for live-streaming v2 vocabulary. This mapping is intentionally narrow.
+
+_OPEN_STATUSES = {"pending", "changes_requested"}
+
+
+def _proposal_to_action_card(p: Proposal) -> dict:
+    """Build an action_card block from an open Proposal, matching ActionCardBlock field names.
+
+    ActionCardBlock reads:
+      block.proposal_id   → onProposal callback (hits /proposals/{id}/decide)
+      block.action_title || block.title  → card title
+      block.action_target || block.summary → subtitle / target
+      block.action_icon   → tile icon (defaults to ri-git-pull-request-line)
+      block.detail_rows   → [{icon, text}] detail rows
+    """
+    return {
+        "type": "action_card",
+        "proposal_id": p.id,
+        "title": p.title,
+        "action_title": p.title,
+        "action_target": f"{p.type} · {p.risk} risk",
+        "action_icon": "ri-git-pull-request-line",
+        "detail_rows": [],
+    }
+
+
+def _kb_to_code_block(kb: KbSource) -> dict:
+    """Build a code block from a PR/diff KbSource, matching CodeBlock field names.
+
+    CodeBlock reads:
+      block.diff   → DiffLine[] — {n, sign, text} — when present, renders dark diff view
+      block.name || block.title  → filename shown in the header
+      block.lang   → language label (optional)
+    """
+    diff = (kb.meta or {}).get("diff") or []
+    return {
+        "type": "code",
+        "title": kb.title or "PR diff",
+        "name": kb.title or "PR diff",
+        "lang": "",
+        "diff": diff,
+    }
+
+
+def messages_v2(messages: list[Message], db: "Session", th: Thread) -> list[dict]:
+    """Serialize messages with v2 read-time block mapping for task-scoped threads.
+
+    For non-task threads the messages are returned unchanged (legacy path).
+    For task-scoped threads:
+      1. Open Proposals on the task → each legacy 'proposal' block matching an open
+         Proposal is replaced by an 'action_card' block. Closed/terminal Proposals
+         keep their legacy 'proposal' block untouched (already decided).
+      2. PR/diff KbSources scoped to the task → a 'code' block is injected once
+         (appended to the last agent message that exists, or left out if no agent
+         message is present).
+    """
+    from sqlalchemy import select  # deferred to avoid module-load cost
+
+    # Non-task threads: pass through unchanged
+    if th.scope != "task" or not th.ref_id:
+        return [message(m) for m in messages]
+
+    task_id = th.ref_id
+
+    # Load open Proposals for this task (indexed by id for fast lookup)
+    open_proposals: dict[str, Proposal] = {}
+    for p in db.scalars(
+        select(Proposal).where(Proposal.task_id == task_id, Proposal.status.in_(_OPEN_STATUSES))
+    ):
+        open_proposals[p.id] = p
+
+    # Load PR/diff KbSources scoped to this task
+    pr_sources: list[KbSource] = list(db.scalars(
+        select(KbSource).where(KbSource.kind == "pr", KbSource.ref == task_id)
+    ))
+
+    # Serialize messages with action_card substitution
+    serialized: list[dict] = []
+    last_agent_idx: int = -1
+    for _, m in enumerate(messages):
+        raw = message(m)
+        if m.role == "agent":
+            # Replace legacy 'proposal' blocks for open Proposals; leave terminal ones
+            new_blocks: list[dict] = []
+            for blk in (raw.get("blocks") or []):
+                if (
+                    isinstance(blk, dict)
+                    and blk.get("type") == "proposal"
+                    and blk.get("proposal_id") in open_proposals
+                ):
+                    # Open proposal → replace with action_card (no double-render)
+                    new_blocks.append(_proposal_to_action_card(open_proposals[blk["proposal_id"]]))
+                else:
+                    new_blocks.append(blk)
+            raw = {**raw, "blocks": new_blocks}
+            last_agent_idx = len(serialized)
+        serialized.append(raw)
+
+    # Inject code blocks from PR/diff KbSources into the last agent message
+    if pr_sources and last_agent_idx >= 0:
+        target = serialized[last_agent_idx]
+        extra_code_blocks = [_kb_to_code_block(kb) for kb in pr_sources if (kb.meta or {}).get("diff")]
+        if extra_code_blocks:
+            target = {**target, "blocks": list(target.get("blocks") or []) + extra_code_blocks}
+            serialized[last_agent_idx] = target
+
+    return serialized

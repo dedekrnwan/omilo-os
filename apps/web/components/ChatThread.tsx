@@ -23,18 +23,28 @@ if (typeof window !== "undefined") {
 /* A single chat thread: the message list, composer, mentions, slash menu, access decisions and Stop.
    Controlled by `threadId`; owns its own poll and reports the loaded thread up via `onThread`.
    Carved out of the /chat page so a later drawer can reuse it. */
-export default function ChatThread({ threadId, staff, events, inDrawer, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
+export default function ChatThread({ threadId, seed, staff, events, inDrawer, inFocus, placeholderOverride, composerHint, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
   threadId: string;
+  seed?: FullThread | null;
   staff: Staff[];
   events: RunEvent[];
   inDrawer?: boolean;
+  /** When true, adds focus-mode styling to the composer (circular send button, etc.). */
+  inFocus?: boolean;
+  /** Override the auto-derived placeholder text. */
+  placeholderOverride?: string;
+  /** Extra hint shown right-aligned in the composer row (e.g. "3 helpers in this work"). */
+  composerHint?: string;
   onThread?: (th: FullThread | null) => void;
   onStartJob?: (brief: string) => void;
   onOpenThread?: (body: Record<string, string>) => void;
   onNavigate?: (href: string) => void;
   onExpand?: () => void;
 }) {
-  const [current, setCurrent] = useState<FullThread | null>(null);
+  const [current, setCurrent] = useState<FullThread | null>(seed ?? null);
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState<Attached[]>([]);
+  const [stopping, setStopping] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<ComposerHandle>(null);
@@ -45,8 +55,12 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   const report = useRef(onThread);
   report.current = onThread;
   useEffect(() => { report.current?.(current); }, [current]);
-  // a new thread wipes the old one until the poll loads it
-  useEffect(() => { setCurrent(null); }, [threadId]);
+  // When switching to a different thread, blank so we don't show stale history.
+  // Skip blanking when the incoming threadId matches the seed we were given — the seed
+  // already carries the correct history for this thread, so painting it immediately
+  // eliminates the "Loading…" flash on Inbox → Workspace navigation.
+  const seedId = seed?.id ?? null;
+  useEffect(() => { if (threadId !== seedId) setCurrent(null); }, [threadId, seedId]);
 
   // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
   // unchanged threads cost a 304 thanks to the server's ETag
@@ -57,7 +71,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
     try { const th = await api<FullThread>(`/threads/${want}`); setCurrent((cur) => (want === threadId ? th : cur)); } catch (e: any) { setErr(e.message); }
   }, () => (awaiting.current ? 1500 : 12000), [threadId], (n) => n?.url?.includes(threadId));
 
-  const nMsgs = current?.messages.length || 0;
+  const nMsgs = current?.messages?.length || 0;
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
   useQuote(current?.id, (fn) => { composer.current?.updateText(fn); }, () => composer.current?.focus());
@@ -137,7 +151,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
     const add = (id?: string) => { if (id && !order.includes(id)) order.push(id); };
     add(current.staff_id);
     (current.pending || []).forEach(add);
-    for (const m of current.messages as Msg[]) if (m.role === "agent") add(m.author);
+    for (const m of (current.messages ?? []) as Msg[]) if (m.role === "agent") add(m.author);
     return order.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as Staff[];
   }, [current, staff]);
 
@@ -152,7 +166,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
       <div className="ws-scroll" ref={scroller}>
         <div className="ws-inner"><Conversation th={current} staff={staff} events={events} onSend={(t) => send(t, [], [])} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} /></div>
       </div>
-      <div className="ws-composer">
+      <div className={`ws-composer${inFocus ? " ws-composer--focus" : ""}`}>
         {related.length > 0 && (
           <div className="chat-people">
             {related.map((s) => (
@@ -162,11 +176,14 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
             ))}
           </div>
         )}
+        {composerHint && (
+          <div className="chat-composer-hint">{composerHint}</div>
+        )}
         <Composer
           handleRef={composer}
           staff={staff}
           threadId={threadId}
-          placeholder={`Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
+          placeholder={placeholderOverride ?? `Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
           awaitingReply={current.awaiting_reply}
           error={err}
           onSend={send}

@@ -308,7 +308,7 @@ def put_smtp(body: SmtpIn, db: Session = Depends(get_db), user: User = Depends(c
     try:
         smtp.set_config(db, body.model_dump())
     except smtp.SmtpError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     return smtp.get_config(db)
 
 
@@ -318,5 +318,5 @@ def smtp_test(body: SmtpTestIn, db: Session = Depends(get_db), user: User = Depe
     try:
         smtp.test_send(db, to)
     except smtp.SmtpError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     return {"ok": True}

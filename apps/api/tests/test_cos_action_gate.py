@@ -20,7 +20,7 @@ from sqlalchemy import select
 from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.graph.delegation import cos_id
-from omilo_api.models import AuditEvent, Proposal, Setting, Staff, Task
+from omilo_api.models import Proposal, Setting, Staff
 
 # ---------------------------------------------------------------------------
 # Helpers — a throwaway worker per test, scoped to ids we create.

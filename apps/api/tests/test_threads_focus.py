@@ -14,7 +14,7 @@ import pytest
 
 from omilo_api import thread_extras
 from omilo_api.db import session_scope
-from omilo_api.models import Checkpoint, KbSource, Staff, Task, Thread
+from omilo_api.models import Checkpoint, Goal, KbSource, Staff, Task, TaskGoal, Thread
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -292,6 +292,52 @@ def test_focus_task_id_and_status_in_thread_list(owner):
 # ---------------------------------------------------------------------------
 # (c) add-helper
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# (d) Thread goal enrichment
+# ---------------------------------------------------------------------------
+
+def test_task_thread_with_goal_returns_goal_in_get(owner):
+    """GET /api/threads/{id} for a task-scoped thread whose task has a linked Goal
+    returns goal: {id, title} in the response body."""
+    with session_scope() as db:
+        s = _staff("tg_goal")
+        db.add(s)
+        db.flush()
+
+        task = _task(s.id, status="running", brief="Build the landing page")
+        db.add(task)
+        db.flush()
+
+        g = Goal(title="Grow signups", target="500 signups by Q4", due="2026-12-31")
+        db.add(g)
+        db.flush()
+
+        tg = TaskGoal(task_id=task.id, goal_id=g.id)
+        db.add(tg)
+
+        th = _thread(
+            s.id,
+            scope="task",
+            ref_id=task.id,
+            title="Landing page thread",
+        )
+        db.add(th)
+        db.commit()
+
+        thread_id = th.id
+        goal_id = g.id
+        goal_title = g.title
+
+    resp = owner.get(f"/api/threads/{thread_id}")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert "goal" in data, f"Expected 'goal' in thread response, got keys: {list(data.keys())}"
+    assert data["goal"] is not None, "goal must not be null when a TaskGoal link exists"
+    assert data["goal"]["id"] == goal_id
+    assert data["goal"]["title"] == goal_title
+
 
 def test_add_helper_adds_participant(owner):
     """POST /threads/{id}/add-helper with staff_id adds a system @mention turn."""

@@ -213,6 +213,14 @@ def apply_team(body: TeamIn, db: Session = Depends(get_db), user: User = Depends
             "note": "MCP tokens are shown once. Use them only to connect an outside agent to this helper (see Team → Connect)."}
 
 
+@router.get("/team/board")
+def team_board(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Per-helper work cards for the By-helper team board view."""
+    from .. import team_board as TB
+
+    return TB.board(db)
+
+
 class StaffIn(BaseModel):
     id: str
     name: str
@@ -883,7 +891,8 @@ def thread_detail(thid: str, db: Session, user: User) -> dict:
     from .. import thread_extras as TE
 
     th = _404(db.get(Thread, thid))
-    return {**X.thread(th), **TE.enrich(db, th), "messages": [X.message(m) for m in S.thread_messages(db, th)]}
+    msgs = S.thread_messages(db, th)
+    return {**X.thread(th), **TE.enrich(db, th), "messages": X.messages_v2(msgs, db, th)}
 
 
 class MessageIn(BaseModel):
@@ -3576,4 +3585,4 @@ async def ask(body: AskIn, db: Session = Depends(get_db), user: User = Depends(c
     try:
         return await ask_mod.answer(db, body.q)
     except ask_mod.NoEngineError:
-        raise HTTPException(503, "AI is unavailable")
+        raise HTTPException(503, "AI is unavailable") from None

@@ -39,9 +39,9 @@ distinct role so there is no cross-test bleed.
 import uuid
 
 import pytest
+from conftest import cleanup_main_company_non_terminal_tasks
 from sqlalchemy import func, select
 
-from conftest import cleanup_main_company_non_terminal_tasks
 from omilo_api import services as S
 from omilo_api.db import session_scope
 from omilo_api.models import Goal, Staff, StaffRelation, Task, TaskGoal
@@ -497,7 +497,6 @@ def test_start_planning_no_cos_noop():
 
 from omilo_api.engines.claude_code import SAFE_TOOLS, manager_tool_filter  # noqa: E402
 
-
 _FULL_TOOLS = list(SAFE_TOOLS) + ["Bash", "mcp__omilo__create_task", "mcp__omilo__get_task"]
 
 
@@ -869,6 +868,7 @@ async def _call_complete_goal(cid: str, cos_id: str, goal_id: str, outcome: str)
 def test_b6_complete_goal_sets_status_done():
     """complete_goal sets the goal status to 'done' and writes an audit row."""
     import asyncio
+
     from omilo_api.models import AuditEvent
 
     cid = _isolated_b6_cid()
@@ -973,6 +973,7 @@ def test_b6_complete_goal_non_cos_rejected():
 def test_b6_complete_goal_idempotent_no_duplicate_audit():
     """complete_goal called twice on the same goal writes only one audit row (idempotent)."""
     import asyncio
+
     from omilo_api.models import AuditEvent
 
     cid = _isolated_b6_cid()
@@ -1003,6 +1004,7 @@ def test_b6_complete_goal_idempotent_no_duplicate_audit():
 def test_b6_done_goal_start_planning_is_noop():
     """After complete_goal, start_planning enqueues NO plan task (loop terminates)."""
     import asyncio
+
     from omilo_api import plan as P
 
     cid = _isolated_b6_cid()

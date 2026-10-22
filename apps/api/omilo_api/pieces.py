@@ -405,7 +405,7 @@ def validate_manifest(data: dict) -> list[str]:
                 )
             elif not mcp_host_allowed(mcp_url):
                 errors.append(
-                    f"Invalid 'mcp.url' host: host is not in the MCP host allowlist."
+                    "Invalid 'mcp.url' host: host is not in the MCP host allowlist."
                 )
 
             # Validate mcp.auth

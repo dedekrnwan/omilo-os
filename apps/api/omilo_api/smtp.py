@@ -65,7 +65,7 @@ def set_config(db: Session, cfg: dict) -> None:
     try:
         port = int(port)
     except (TypeError, ValueError):
-        raise SmtpError("port must be an integer")
+        raise SmtpError("port must be an integer") from None
 
     sec = cfg.get("security", "tls")
     if sec not in _VALID_SECURITY:

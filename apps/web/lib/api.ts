@@ -87,6 +87,8 @@ export type Thread = { id: string; scope: string; ref_id: string | null; staff_i
   /* Task 3 enrichment fields */
   group?: "needs_you" | "active" | "earlier"; subtitle?: string; participants?: string[];
   last_at?: string | null; task_id?: string | null; task_status?: string | null;
+  /** Linked goal when scope=="task" and the task has a TaskGoal→Goal link */
+  goal?: { id: string; title: string } | null;
 };
 export type AskResult = {
   answer: string;
@@ -104,6 +106,79 @@ export type Overview = {
   kpis: Record<string, { value: number; period: string; source: string; at: string }>;
   cost_7d_usd: number;
   ai_status?: { ok: boolean; label: string; detail?: string };
+};
+
+// ------------------------------------------------------------------ team board (Task 3)
+export type BoardCard = {
+  id: string;
+  title: string;
+  staff_id: string;
+  status: "running" | "needs_you" | "waiting" | "done" | "failed";
+  needs_proposal: boolean;
+  awaiting_reply: boolean;
+  progress: { done: number; total: number };
+  goal: { id: string; title: string } | null;
+  cost_usd: number;
+  updated_at: string | null;
+  collaborators?: { id: string; name: string }[];
+};
+
+export type BoardHelper = {
+  id: string;
+  name: string;
+  role: string;
+  is_chief: boolean;
+  status: "working" | "blocked" | "failed" | "queued" | "idle" | "paused";
+  cards: BoardCard[];
+  activity?: string | null;
+};
+
+export type TeamBoard = {
+  paused: boolean;
+  server_time: string;
+  helpers: BoardHelper[];
+};
+
+// ------------------------------------------------------------------ plan/goals (Task 1)
+export type PlanNode = {
+  id: string;
+  title: string;
+  staff_id: string;
+  staff: string | { id: string; name: string; role: string; is_chief: boolean } | null;
+  status: string;
+  origin: string;
+  created_at: string;
+  headline: string | null;
+  proposals: { id: string; title: string; status: string }[];
+  children: PlanNode[];
+};
+
+export type PlanGoal = {
+  id: string;
+  title: string;
+  target: string | null;
+  due: string | null;
+  status: string;
+  position: number;
+  jobs: number;
+  work: PlanNode[];
+  progress: {
+    total: number;
+    proposals: number;
+    approved: number;
+    running?: number;
+    done?: number;
+    failed?: number;
+    [key: string]: number | undefined;
+  };
+  kpis: Record<string, unknown>[];
+};
+
+export type PlanTree = {
+  days: number;
+  goals: PlanGoal[];
+  unlinked: PlanNode[];
+  shifts: { id: string; name: string; staff: string; goal_id: string | null; cron?: string | null }[];
 };
 
 export function ago(iso?: string | null): string {

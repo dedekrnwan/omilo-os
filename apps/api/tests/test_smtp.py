@@ -4,8 +4,6 @@ All smtplib calls are monkeypatched — NO real email is ever sent.
 """
 import json
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -188,7 +186,6 @@ def test_email_channel_in_config(owner):
 def test_email_pending_sends_when_enabled_and_configured(owner, monkeypatch):
     """SMTP configured + email pref True + matching Notice → email_pending sends 1 email + Notification row."""
     import asyncio
-
     import smtplib
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
@@ -247,7 +244,6 @@ def test_email_pending_sends_when_enabled_and_configured(owner, monkeypatch):
 def test_email_pending_defers_held_then_sends(owner, monkeypatch):
     """Quiet-hours hold: email_pending sends 0 but backlogs the notice; clear quiet → sends it."""
     import asyncio
-
     import smtplib
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
@@ -292,7 +288,7 @@ def test_email_pending_defers_held_then_sends(owner, monkeypatch):
     with session_scope() as db:
         ob = db.get(Setting, f"email_overflow:{uid}")
         assert ob is not None and ob.value, f"notice must be in email_overflow backlog; ob={ob}"
-        backlog_ids = ob.value
+        _backlog_ids = ob.value
 
     # Clear quiet hours
     with session_scope() as db:
@@ -318,7 +314,7 @@ def test_email_pending_noop_when_smtp_unconfigured(owner, monkeypatch):
     from omilo_api import smtp
     from omilo_api.db import session_scope
     from omilo_api.models import Notice, Setting
-    from omilo_api.services import get_setting, set_setting
+    from omilo_api.services import set_setting
 
     uid = _owner_user_id(owner)
 
@@ -359,7 +355,6 @@ def test_email_pending_noop_when_smtp_unconfigured(owner, monkeypatch):
 def test_email_pending_respects_pref_off(owner, monkeypatch):
     """SMTP configured but email pref False for the kind → no email sent."""
     import asyncio
-
     import smtplib
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)
@@ -406,7 +401,6 @@ def test_email_pending_respects_pref_off(owner, monkeypatch):
 def test_email_pending_send_failure_advances_cursor_no_duplicate(owner, monkeypatch):
     """SmtpError during send → cursor still advances; second call does NOT replay the same notice."""
     import asyncio
-
     import smtplib
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
     monkeypatch.setattr(smtplib, "SMTP_SSL", _FakeSMTP)

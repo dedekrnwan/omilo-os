@@ -546,30 +546,37 @@ function InterviewScreen({
           <div className="iv-log" aria-live="polite" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px" }}>
             {hist.map((h, i) =>
               h.role === "ai" ? (
-                <div key={i} className="iv-ai">
-                  <span className="iv-who">
+                <div key={i} className="reply-shell">
+                  <div className="reply-av">
                     <Avatar who={{ id: "chief-of-staff", name: "Omilo", is_chief: true }} size={28} />
-                  </span>
-                  <div className="iv-msg">
-                    <Markdown text={h.text} />
-                    {!!h.saved?.length && (
-                      <div className="iv-saved"><i className="ri-save-3-line" /> Noted in your profile</div>
-                    )}
-                    {i === hist.length - 1 && !busy && !!h.options?.length && (
-                      <div className="iv-chips">
-                        {h.options.map((o) => (
-                          <button key={o} type="button"
-                            className={`chipbtn ${picked.includes(o) ? "on" : ""}`}
-                            onClick={() => h.multi
-                              ? setPicked((p) => p.includes(o) ? p.filter((x) => x !== o) : [...p, o])
-                              : send(o)}>{o}</button>
-                        ))}
-                        {h.multi && picked.length > 0 && (
-                          <button type="button" className="btn sm primary"
-                            onClick={() => send(picked.join(", "))}>Send {picked.length}</button>
-                        )}
+                  </div>
+                  <div className="reply-body">
+                    <div className="reply-who">
+                      <b>Chief of Staff</b>
+                    </div>
+                    <div className="reply-blocks">
+                      <div className="reply-md">
+                        <Markdown text={h.text} />
                       </div>
-                    )}
+                      {!!h.saved?.length && (
+                        <div className="iv-saved"><i className="ri-save-3-line" /> Noted in your profile</div>
+                      )}
+                      {i === hist.length - 1 && !busy && !!h.options?.length && (
+                        <div className="choices">
+                          {h.options.map((o) => (
+                            <button key={o} type="button"
+                              className={`pick ${picked.includes(o) ? "on" : ""}`}
+                              onClick={() => h.multi
+                                ? setPicked((p) => p.includes(o) ? p.filter((x) => x !== o) : [...p, o])
+                                : send(o)}>{o}</button>
+                          ))}
+                          {h.multi && picked.length > 0 && (
+                            <button type="button" className="btn sm primary"
+                              onClick={() => send(picked.join(", "))}>Send {picked.length}</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -580,27 +587,34 @@ function InterviewScreen({
             )}
             {/* Live streaming AI message */}
             {busy && (
-              <div className="iv-ai">
-                <span className="iv-who">
+              <div className="reply-shell">
+                <div className="reply-av">
                   <Avatar who={{ id: "chief-of-staff", name: "Omilo", is_chief: true }} size={28} state="working" />
-                </span>
-                <div className="iv-msg">
-                  {streamingText !== null && streamingText !== "" ? (
-                    <>
-                      <Markdown text={streamingText} />
-                      {toolActivity && (
+                </div>
+                <div className="reply-body">
+                  <div className="reply-who">
+                    <b>Chief of Staff</b>
+                  </div>
+                  <div className="reply-blocks">
+                    <div className="reply-md small">
+                      {streamingText !== null && streamingText !== "" ? (
+                        <>
+                          <Markdown text={streamingText} />
+                          {toolActivity && (
+                            <div className="ob2-tool-activity">
+                              <i className="ri-loader-4-line ob2-spin" />
+                              {toolActivity}
+                            </div>
+                          )}
+                        </>
+                      ) : (
                         <div className="ob2-tool-activity">
                           <i className="ri-loader-4-line ob2-spin" />
-                          {toolActivity}
+                          {toolActivity || "Thinking…"}
                         </div>
                       )}
-                    </>
-                  ) : (
-                    <div className="ob2-tool-activity">
-                      <i className="ri-loader-4-line ob2-spin" />
-                      {toolActivity || "Thinking…"}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             )}

@@ -59,14 +59,25 @@ export default function ThreadsRail({
     <div className="threads-rail">
       <div className="threads-rail-head">
         {/* Back to desk */}
-        <button
-          className="threads-rail-back"
-          onClick={() => router.push("/chat/")}
-          aria-label="Back to desk"
-        >
-          <i className="ri-arrow-left-line" />
-          Start
-        </button>
+        <div className="threads-rail-nav">
+          <button
+            className="threads-rail-back"
+            onClick={() => router.push("/chat/")}
+            aria-label="Back to desk"
+          >
+            <i className="ri-arrow-left-line" />
+            Start
+          </button>
+          <button
+            className="threads-rail-board"
+            onClick={() => router.push("/chat/?view=board")}
+            aria-label="Team board"
+            title="Team board"
+          >
+            <i className="ri-layout-column-line" />
+            Board
+          </button>
+        </div>
         {/* Segmented filter */}
         <div className="seg" role="tablist" aria-label="Thread filter">
           <button
