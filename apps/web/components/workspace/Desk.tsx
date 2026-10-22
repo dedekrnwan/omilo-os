@@ -123,7 +123,7 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
           </button>
           {/* / command hint */}
           <span className="desk-composer-hint">
-            <i className="ri-slash-commands-line" /> command
+            <i className="ri-slash-commands-2" /> command
           </span>
           <span className="sp" />
           {busy && <span className="small">Sending…</span>}
