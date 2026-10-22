@@ -5,20 +5,89 @@ import asyncio
 import logging
 import time
 
+import json
+
 from sqlalchemy import func, select
 
 from . import company as C
 from . import harness as H
 from . import services as S
 from .capabilities import resolve
+from .channels import registry as _ch_registry
+from .channels.base import OutMessage
 from .config import get_settings
 from .db import init_db, session_scope
 from .engines import ChatContext, EngineResult, TaskContext, get_engine
 from .events import Emitter
-from .models import Proposal, Report, Shift, Staff, Task, TaskGoal, Thread, now
-from .security import decrypt
+from .models import ChannelConnection, ChannelIdentity, Proposal, Report, Shift, Staff, Task, TaskGoal, Thread, now
+from .security import decrypt, encrypt
 
 log = logging.getLogger("omilo.worker")
+
+
+# ------------------------------------------------------------------ outbound delivery
+
+
+def _channel_secrets(conn: ChannelConnection) -> dict:
+    """Decrypt and parse secrets_enc for a ChannelConnection; returns {} on failure."""
+    raw = decrypt(conn.secrets_enc) if conn.secrets_enc else None
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+
+
+def _flag_needs_reconnect(db, conn: ChannelConnection) -> None:
+    """Set needs_reconnect=True in conn.secrets_enc and commit."""
+    cur = _channel_secrets(conn)
+    cur["needs_reconnect"] = True
+    conn.secrets_enc = encrypt(json.dumps(cur))
+    db.commit()
+
+
+def deliver_outbound(db, thread: Thread, text: str) -> None:
+    """Deliver *text* to the non-web channel associated with *thread*.
+
+    No-op when thread.channel == "web".  Swallows all errors — must never raise.
+    """
+    if thread.channel == "web":
+        return
+
+    try:
+        conn = db.scalar(
+            select(ChannelConnection).where(
+                ChannelConnection.mode == "control",
+                ChannelConnection.staff_id == thread.staff_id,
+                ChannelConnection.enabled.is_(True),
+            )
+        )
+        if conn is None:
+            return
+
+        identity = db.scalar(
+            select(ChannelIdentity).where(
+                ChannelIdentity.connection_id == conn.id,
+                ChannelIdentity.role == "owner",
+            )
+        )
+        if identity is None:
+            return
+
+        adapter = _ch_registry.adapter_for(conn.kind)
+        if adapter is None:
+            return
+
+        try:
+            result = adapter.send(conn, identity.platform_user_id, OutMessage(text=text))
+            if not result.ok:
+                _flag_needs_reconnect(db, conn)
+        except Exception:
+            _flag_needs_reconnect(db, conn)
+    except Exception:
+        # Safety net — delivery failure must never propagate into the worker loop.
+        log.exception("deliver_outbound failed unexpectedly")
 
 
 def _mcp_url() -> str:
@@ -762,6 +831,8 @@ class Worker:
             th = db.get(Thread, thread_id)
             text = res.text if not res.error else f"Sorry, I couldn't answer: {res.error}"
             S.post_message(db, th, "agent" if not res.error else "system", staff_id, text)
+            if not res.error and text:
+                deliver_outbound(db, th, text)
         return "" if res.error else res.text
 
 
