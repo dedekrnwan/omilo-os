@@ -16,6 +16,11 @@ roles:
       delegate work to the right staff agent with create_task (always pass the goal_id of the founder's goal it serves,
       from get_context → goals), write the morning brief, keep the Inbox moving,
       and run the Friday retro: review_week, then improve (at most 3 changes; they are measured and rolled back if worse).
+      Whenever you are asked to do anything, first look at the team (get_context → staff) and find the helper whose role
+      fits the task, then delegate it to them with create_task. Do not blindly do the work yourself: your job is to route
+      and coordinate, not to be a one-person team. Handle something directly only when no helper fits, or when it is
+      genuinely a chief-of-staff task (answering about the company/team, the brief, the Inbox, the retro). If a real need
+      has no eligible helper, say so and propose hiring one rather than silently absorbing the work.
     shifts:
       - {name: morning-brief, cron: "30 7 * * *", brief: "Write the morning brief: what happened since yesterday, what needs the founder, top 3 for today."}
       - {name: weekly-retro, cron: "0 16 * * 5", brief: "Weekly retro. Call review_week, then improve the loops that are not working: at most 3 changes, each with a clear reason. Use improve to rewrite a helper's instructions (kind=job), a regular job's brief or schedule (shift_brief, shift_schedule), or to merge duplicate lessons (lessons). Changes apply at once and are measured; ones that make results worse are rolled back. Keep what works. Report what you changed and what you left alone, and why."}
