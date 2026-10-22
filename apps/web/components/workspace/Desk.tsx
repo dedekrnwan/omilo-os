@@ -7,7 +7,6 @@ import { useMentions } from "@/components/Mentions";
 import PoolMeter from "@/components/PoolMeter";
 import { useOverview } from "@/components/Shell";
 import { Staff, Thread, api, ago } from "@/lib/api";
-import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -72,7 +71,7 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
   return (
     <div className="desk-composer">
       <form
-        className="composer"
+        className="composer desk-composer-form"
         onSubmit={(e) => { e.preventDefault(); send(text); }}
       >
         {/* Augmented picker: real helpers (selectable) + disabled HIRES · PERSONAS group.
@@ -85,20 +84,21 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
                 pointer-events:none, aria-disabled, no onClick handler on any entry */}
             <div className="desk-personas-ext">
               <div className="sl-group desk-personas-group">
-                Hires · Personas
+                Hired · Personas
                 <span className="desk-personas-soon">Coming soon</span>
               </div>
-              {["Rina"].map((name) => (
+              {["Rina · customer support · Persona"].map((name) => (
                 <div
                   key={name}
                   className="sl-item desk-persona-item"
                   role="presentation"
+                  aria-disabled="true"
                 >
                   <span className="desk-persona-avatar" aria-hidden="true">
                     <i className="ri-user-heart-line" />
                   </span>
                   <span className="sl-label"><b>{name}</b></span>
-                  <span className="sl-hint desk-persona-hint">Coming soon</span>
+                  <span className="sl-hint desk-persona-hint">Setting up</span>
                 </div>
               ))}
             </div>
@@ -116,15 +116,25 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
           }}
         />
-        <div className="row">
+        <div className="row desk-composer-row">
+          {/* + button bottom-left */}
+          <button type="button" className="desk-composer-plus" aria-label="Add attachment">
+            <i className="ri-add-line" />
+          </button>
+          {/* / command hint */}
+          <span className="desk-composer-hint">
+            <i className="ri-slash-commands-line" /> command
+          </span>
           <span className="sp" />
           {busy && <span className="small">Sending…</span>}
+          {/* Black circular send button */}
           <button
-            className="btn primary sm"
+            className="desk-composer-send"
             type="submit"
             disabled={!text.trim() || busy}
+            aria-label="Send"
           >
-            <i className="ri-arrow-up-line" />Send
+            <i className="ri-arrow-up-line" />
           </button>
         </div>
         {err && <p className="small" style={{ color: "var(--bad)", margin: "4px 0 0" }}>{err}</p>}
@@ -171,71 +181,118 @@ function LatestCoS({ threads, staffMap }: { threads: Thread[]; staffMap: Map<str
   );
 }
 
-/* Recent work list */
-function RecentWork({ threads, staffMap }: {
+/* "YOUR WORK" block with counts + Open board + rows + summary footer */
+function YourWork({ threads, staffMap, router }: {
   threads: Thread[];
   staffMap: Map<string, { id: string; name: string; is_chief: boolean }>;
+  router: ReturnType<typeof useRouter>;
 }) {
-  /* show non-master, non-general threads sorted by last activity */
-  const recent = threads
+  /* categorize non-master threads */
+  const workThreads = threads
     .filter((t) => t.scope !== "master" && t.ref_id !== "general")
     .sort((a, b) => {
       const aAt = (a as any).last_at || a.updated_at || "";
       const bAt = (b as any).last_at || b.updated_at || "";
       return bAt.localeCompare(aAt);
-    })
-    .slice(0, 8);
+    });
+
+  /* compute honest counts from thread data */
+  const needsYouCount = workThreads.filter((t) => (t as any).group === "needs_you").length;
+  const runningCount = workThreads.filter((t) => (t as any).group === "active").length;
+  const totalCount = workThreads.length;
+
+  /* show top 5 in the card */
+  const shown = workThreads.slice(0, 5);
+  const remaining = Math.max(0, totalCount - shown.length);
+
+  const scheduledCount = workThreads.filter((t) => (t as any).group === "scheduled").length;
+  const waitingCount = workThreads.filter((t) => (t as any).group === "waiting" || (t as any).group === "idle").length;
 
   return (
     <div className="deskcard">
       <div className="deskcard-head">
-        <span className="deskcard-label">Your work</span>
+        <span className="deskcard-label">
+          Your work
+          {totalCount > 0 && (
+            <>
+              {needsYouCount > 0 && <span className="deskcard-count warn"> · {needsYouCount} need you</span>}
+              {runningCount > 0 && <span className="deskcard-count run"> · {runningCount} running</span>}
+              <span className="deskcard-count muted"> · {totalCount} in total</span>
+            </>
+          )}
+        </span>
+        <a
+          href="/chat/?view=board"
+          className="btn sm"
+          style={{ marginLeft: "auto", flexShrink: 0 }}
+          onClick={(e) => { e.preventDefault(); router.push("/chat/?view=board"); }}
+        >
+          Open board
+        </a>
       </div>
-      {recent.length === 0 ? (
+      {shown.length === 0 ? (
         <div className="deskcard-body">
           <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
             No recent work yet — start a conversation with the Chief of Staff.
           </p>
         </div>
       ) : (
-        <div className="desk-recent">
-          {recent.map((t) => {
-            const helper = staffMap.get(t.staff_id);
-            const group = (t as any).group as string | undefined;
-            const subtitle = (t as any).subtitle as string | undefined;
-            const lastAt = (t as any).last_at || (t as any).updated_at;
-            const sc = group === "needs_you"
-              ? statusChip("needs_you")
-              : group === "active"
-                ? statusChip("active")
-                : group === "earlier"
-                  ? statusChip("done")
-                  : statusChip("done");
-            const label = t.scope === "group"
-              ? `# ${t.title}`
-              : t.scope === "staff" && helper
-                ? helper.name
-                : t.title || "Thread";
-            return (
-              <a
-                key={t.id}
-                href={`/chat/?thread=${t.id}`}
-                className="desk-recent-item"
-              >
-                {helper && <Avatar who={helper} size={24} />}
-                <div className="desk-ri-t">
-                  <b>{label}</b>
-                  {subtitle && <span>{subtitle}</span>}
-                </div>
-                <div className="desk-ri-meta">
-                  <span className={sc.cls}>{sc.label}</span>
-                  {lastAt && <span>{ago(lastAt)}</span>}
-                  <i className="ri-arrow-right-s-line" />
-                </div>
-              </a>
-            );
-          })}
-        </div>
+        <>
+          <div className="desk-recent">
+            {shown.map((t) => {
+              const helper = staffMap.get(t.staff_id);
+              const group = (t as any).group as string | undefined;
+              const subtitle = (t as any).subtitle as string | undefined;
+              const lastAt = (t as any).last_at || (t as any).updated_at;
+              const sc = group === "needs_you"
+                ? statusChip("needs_you")
+                : group === "active"
+                  ? statusChip("active")
+                  : group === "earlier"
+                    ? statusChip("done")
+                    : statusChip("done");
+              const label = t.scope === "group"
+                ? `# ${t.title}`
+                : t.scope === "staff" && helper
+                  ? helper.name
+                  : t.title || "Thread";
+              return (
+                <a
+                  key={t.id}
+                  href={`/chat/?thread=${t.id}`}
+                  className="desk-recent-item"
+                >
+                  {helper && <Avatar who={helper} size={24} />}
+                  <div className="desk-ri-t">
+                    <b>{label}</b>
+                    {subtitle && <span>{subtitle}</span>}
+                  </div>
+                  <div className="desk-ri-meta">
+                    <span className={sc.cls}>{sc.label}</span>
+                    {lastAt && <span>{ago(lastAt)}</span>}
+                    <i className="ri-arrow-right-s-line" />
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          {/* Summary footer row */}
+          <div className="desk-work-footer">
+            <span className="desk-work-footer-text">
+              {remaining > 0 && <>{remaining} more on the team board</>}
+              {runningCount > 0 && <> · {runningCount} running</>}
+              {scheduledCount > 0 && <> · {scheduledCount} scheduled</>}
+              {waitingCount > 0 && <> · {waitingCount} waiting</>}
+            </span>
+            <a
+              href="/chat/?view=board"
+              className="desk-work-footer-link"
+              onClick={(e) => { e.preventDefault(); router.push("/chat/?view=board"); }}
+            >
+              Open board <i className="ri-arrow-right-line" />
+            </a>
+          </div>
+        </>
       )}
     </div>
   );
@@ -354,14 +411,14 @@ export default function Desk() {
   const { overview } = useOverview();
   const [me, setMe] = useState<{ name?: string; email?: string } | null>(null);
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [railFilter, setRailFilter] = useState<"all" | "needs_you" | "active">("all");
+  const router = useRouter();
 
   /* load user name */
   useEffect(() => {
     api<{ name?: string; email?: string }>("/auth/me").then(setMe).catch(() => {});
   }, []);
 
-  /* load threads for recent work + CoS latest message + rail */
+  /* load threads for recent work + CoS latest message */
   useEffect(() => {
     api<Thread[]>("/threads").then(setThreads).catch(() => {});
   }, []);
@@ -377,15 +434,7 @@ export default function Desk() {
 
   return (
     <div className="desk">
-      {/* Left rail — the threads rail shared with the focus session */}
-      <ThreadsRail
-        threads={threads as RailThread[]}
-        activeThreadId={null}
-        filter={railFilter}
-        onFilterChange={setRailFilter}
-      />
-
-      {/* Center column */}
+      {/* Center column (no left ThreadsRail — 2-column layout) */}
       <div className="desk-center">
         <div className="desk-scroll">
           <div className="desk-inner">
@@ -431,8 +480,8 @@ export default function Desk() {
             {/* Latest from Chief of Staff */}
             <LatestCoS threads={threads} staffMap={staffMap} />
 
-            {/* Recent work */}
-            <RecentWork threads={threads} staffMap={staffMap} />
+            {/* Your work */}
+            <YourWork threads={threads} staffMap={staffMap} router={router} />
           </div>
         </div>
       </div>

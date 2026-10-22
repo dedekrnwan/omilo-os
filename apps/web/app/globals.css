@@ -3715,9 +3715,10 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 /* ------------------------------------------------------------------ B. Workspace desk */
 
-/* Full-page desk layout: left rail (threads) + center (desk) + right (team now) */
-.desk { display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; height: 100%; min-height: 0; }
-.desk-center { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+/* 2-column layout: center (greeting + composer + content) + right (team-now rail).
+   ThreadsRail is NOT rendered on /chat/ — it only appears in FocusThread. */
+.desk { display: grid; grid-template-columns: minmax(0, 1fr) 280px; height: 100%; min-height: 0; }
+.desk-center { display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); }
 .desk-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .desk-inner { max-width: 680px; margin: 0 auto; padding: 28px 24px 40px; }
 
@@ -3727,8 +3728,23 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .desk-greeting-text h1 { font: 600 22px/1.25 var(--font-display); letter-spacing: -.015em; margin: 0 0 4px; }
 .desk-greeting-text p { margin: 0; font-size: 14px; color: var(--muted); }
 
-/* Composer on the desk (same .composer shell, just a spacing wrapper) */
+/* Composer on the desk — wrapper provides bottom margin */
 .desk-composer { margin-bottom: 24px; }
+/* Composer chrome row: + button, /command hint, spacer, send */
+.desk-composer-form { position: relative; }
+.desk-composer-row { display: flex; align-items: center; gap: 6px; }
+/* + button: square with border, bottom-left */
+.desk-composer-plus { width: 30px; height: 30px; display: inline-grid; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); flex-shrink: 0; }
+.desk-composer-plus:hover { background: var(--soft); }
+.desk-composer-plus i { font-size: 18px; color: var(--ink-2); }
+/* /command hint */
+.desk-composer-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--faint); }
+.desk-composer-hint i { font-size: 13px; color: var(--faint); }
+/* Black circular send button */
+.desk-composer-send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--primary); color: var(--primary-ink); display: inline-grid; place-items: center; flex-shrink: 0; cursor: pointer; transition: background .15s; }
+.desk-composer-send:hover { background: var(--primary-hover, #262626); }
+.desk-composer-send:disabled { background: var(--faint); cursor: not-allowed; }
+.desk-composer-send i { font-size: 16px; color: #fff; }
 
 /* Suggestions row */
 .desk-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
@@ -3740,9 +3756,14 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .deskcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 16px; }
 .deskcard-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .deskcard-head .deskcard-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); flex: 1; }
+/* Inline count annotations in deskcard-label */
+.deskcard-count { font-weight: 500; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.deskcard-count.warn { color: var(--warn); }
+.deskcard-count.run { color: var(--info); }
+.deskcard-count.muted { color: var(--muted); }
 .deskcard-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
-/* Recent work list */
+/* Recent / Your work list */
 .desk-recent { display: flex; flex-direction: column; gap: 0; }
 .desk-recent-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; color: var(--ink); text-decoration: none; }
 .desk-recent-item:last-child { border-bottom: 0; }
@@ -3751,6 +3772,13 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .desk-recent-item .desk-ri-t b { font-weight: 500; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desk-recent-item .desk-ri-t span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desk-recent-item .desk-ri-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+
+/* YOUR WORK: summary footer row */
+.desk-work-footer { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.desk-work-footer-text { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desk-work-footer-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--link); white-space: nowrap; flex-shrink: 0; }
+.desk-work-footer-link:hover { text-decoration: underline; }
+.desk-work-footer-link i { font-size: 13px; color: inherit; }
 
 /* Team now panel (right rail) */
 .team-now { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
@@ -3775,7 +3803,7 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 @media (max-width: 960px) {
   .desk { grid-template-columns: 1fr; }
-  .desk-center { border-left: 0; border-right: 0; }
+  .desk-center { border-right: 0; }
   .team-now { display: none; }
   .team-now.open { display: flex; position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(320px, calc(100vw - 16px)); z-index: 35; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 24px 48px -16px rgba(0,0,0,.3); }
 }
