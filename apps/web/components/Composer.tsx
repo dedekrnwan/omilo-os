@@ -172,14 +172,14 @@ export default function Composer({
             uploading={uploading}
             err={uploadErr}
           />
-          <span className="small hide-sm">
+          <span className="sp" />
+          <span className="small hide-sm composer-hint">
             {awaitingReply
               ? "Working on it…"
               : slash.jobBrief !== null
                 ? "Enter starts a job for the Chief of Staff"
                 : "@ to mention · / for commands · Enter to send"}
           </span>
-          <span className="sp" />
           {awaitingReply && (
             <button
               type="button"
@@ -191,11 +191,12 @@ export default function Composer({
             </button>
           )}
           <button
-            className="btn primary sm"
+            className="composer-send"
             type="submit"
+            aria-label="Send"
             disabled={(!text.trim() && !files.length) || awaitingReply}
           >
-            <i className="ri-arrow-up-line" />Send
+            <i className="ri-arrow-up-line" />
           </button>
         </div>
       </form>

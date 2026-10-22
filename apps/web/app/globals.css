@@ -298,11 +298,13 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
 .ws-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .ws-inner { max-width: 760px; margin: 0 auto; padding: 22px 24px 28px; }
 .ws-composer { padding: 0 24px 16px; max-width: 808px; width: 100%; margin: 0 auto; }
-/* Focus-mode composer: circular send button, muted hint text */
-.ws-composer--focus .ws-composer-inner .btn.primary.sm[type="submit"] {
-  width: 32px; height: 32px; border-radius: 50%; padding: 0; display: inline-grid; place-items: center;
-}
-.ws-composer--focus .ws-composer-inner .btn.primary.sm[type="submit"] i { font-size: 16px; color: #fff; }
+/* Composer send CTA: black circular icon button (matches pen.dev design) */
+.composer-send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--primary); color: var(--primary-ink);
+  display: inline-grid; place-items: center; flex-shrink: 0; cursor: pointer; transition: background .15s; }
+.composer-send:hover:not(:disabled) { background: var(--primary-hover, #262626); }
+.composer-send:disabled { background: var(--faint); cursor: not-allowed; }
+.composer-send i { font-size: 16px; color: #fff; }
+.composer .row > .composer-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 /* the helpers tied to the open chat, shown just above the composer; click one to @mention it */
 .chat-people { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 2px 8px; }
 .chip.person { height: auto; padding: 3px; border: 0; border-radius: 50%; cursor: pointer; background: transparent; }
@@ -3733,23 +3735,9 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .desk-greeting-text h1 { font: 600 22px/1.25 var(--font-display); letter-spacing: -.015em; margin: 0 0 4px; }
 .desk-greeting-text p { margin: 0; font-size: 14px; color: var(--muted); }
 
-/* Composer on the desk — wrapper provides bottom margin */
+/* Composer on the desk — wrapper provides bottom margin; the composer itself is the
+   shared <Composer> component (same as /chat/?thread=), with its usage meter hidden. */
 .desk-composer { margin-bottom: 24px; }
-/* Composer chrome row: + button, /command hint, spacer, send */
-.desk-composer-form { position: relative; }
-.desk-composer-row { display: flex; align-items: center; gap: 6px; }
-/* + button: square with border, bottom-left */
-.desk-composer-plus { width: 30px; height: 30px; display: inline-grid; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); flex-shrink: 0; }
-.desk-composer-plus:hover { background: var(--soft); }
-.desk-composer-plus i { font-size: 18px; color: var(--ink-2); }
-/* /command hint */
-.desk-composer-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--faint); }
-.desk-composer-hint i { font-size: 13px; color: var(--faint); }
-/* Black circular send button */
-.desk-composer-send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--primary); color: var(--primary-ink); display: inline-grid; place-items: center; flex-shrink: 0; cursor: pointer; transition: background .15s; }
-.desk-composer-send:hover { background: var(--primary-hover, #262626); }
-.desk-composer-send:disabled { background: var(--faint); cursor: not-allowed; }
-.desk-composer-send i { font-size: 16px; color: #fff; }
 
 /* Suggestions row */
 .desk-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
@@ -3813,23 +3801,6 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
   .team-now.open { display: flex; position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(320px, calc(100vw - 16px)); z-index: 35; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 24px 48px -16px rgba(0,0,0,.3); }
 }
 
-
-/* Desk composer: augmented @mention picker with real helpers + disabled HIRES·PERSONAS group.
-   desk-mention-container floats above the composer box; the .slash.mention-menu inside it
-   becomes position:relative so both sections share a single visual panel. */
-.desk-mention-container { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 45; display: flex; flex-direction: column; }
-/* Override .slash positioning when nested inside .desk-mention-container */
-.desk-mention-container .slash { position: relative; left: auto; right: auto; bottom: auto; box-shadow: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 1px solid var(--line); }
-/* Disabled PERSONAS extension appended below the real helpers */
-.desk-personas-ext { background: var(--surface); border: 1px solid var(--line-strong); border-top: 0; border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg); overflow: hidden; }
-/* Personas group header */
-.desk-personas-group { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--muted); padding: 8px 10px 4px; text-transform: uppercase; letter-spacing: .04em; }
-.desk-personas-soon { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: auto; }
-/* Disabled persona entry — not interactive: pointer-events:none prevents any click, aria-disabled signals this to AT */
-.desk-persona-item { opacity: .45; cursor: not-allowed; pointer-events: none; }
-.desk-persona-avatar { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--soft); border: 1px solid var(--line); flex-shrink: 0; }
-.desk-persona-avatar i { font-size: 13px; color: var(--muted); }
-.desk-persona-hint { color: var(--muted); font-style: italic; }
 
 /* ------------------------------------------------------------------ C. Focus chat session — threads rail */
 
@@ -4586,7 +4557,7 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .goal-panel-metric { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.2; letter-spacing: -.02em; }
 .goal-panel-bar-wrap { width: 100%; }
 .goal-panel-bar { height: 5px; border-radius: 3px; background: var(--line-strong); overflow: hidden; }
-.goal-panel-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ok); transition: width .4s; }
+.goal-panel-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ink); transition: width .4s; }
 .goal-panel-status { display: flex; align-items: center; gap: 5px; }
 .goal-panel-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .goal-panel-dot.goal-dot-ok   { background: #16a34a; }
@@ -4655,16 +4626,17 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 
 /* Top status row: dot + label + collaborator avatars */
 .wc-status-row { display: flex; align-items: center; gap: 5px; }
-.wc-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.wc-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .wc-dot-warn { background: #f59e0b; }
-.wc-dot-run  { background: #3b82f6; }
+.wc-dot-run  { background: var(--info); }
 .wc-dot-idle { background: #9ca3af; }
 .wc-dot-done { background: #16a34a; }
 .wc-dot-bad  { background: #ef4444; }
-.wc-status-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+/* The dot carries the status colour; the label stays muted (design) — except NEEDS YOU,
+   which the design renders in amber to match its warm accent. */
+.wc-status-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   color: var(--muted); }
 .wc-status-row .wc-dot-warn + .wc-status-label { color: #b45309; }
-.wc-status-row .wc-dot-run + .wc-status-label  { color: #1d4ed8; }
 .wc-collabs { display: flex; align-items: center; }
 .wc-collabs > * { margin-left: -3px; }
 .wc-collabs > *:first-child { margin-left: 0; }

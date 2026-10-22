@@ -1,10 +1,9 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import MentionBox, { MentionHandle } from "@/components/MentionBox";
-import { useMentions } from "@/components/Mentions";
-import PoolMeter from "@/components/PoolMeter";
+import Composer from "@/components/Composer";
+import { Attached } from "@/components/ComposerTools";
 import { useOverview } from "@/components/Shell";
 import { Staff, Thread, api, ago } from "@/lib/api";
 
@@ -40,106 +39,41 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
-/* OverviewStaff type (from main) */
-type OverviewStaff = { id: string; name: string; status: string; is_chief: boolean; running: number };
-
-function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; staff: Staff[] }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
+function DeskComposer({ staff }: { staff: Staff[] }) {
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
-  const box = useRef<MentionHandle | null>(null);
-  const mention = useMentions(text, setText, staff, box);
 
-  const send = useCallback(async (t: string) => {
-    if (!t.trim()) return;
-    setBusy(true);
+  /* Reuse the shared Composer (same as /chat/?thread=). On the desk there is no thread
+     yet, so sending opens a Chief-of-Staff thread, posts the message there, and navigates
+     into it. The usage meter is hidden here (showPoolMeter={false}). */
+  const send = useCallback(async (text: string, files: Attached[], mentions: string[]) => {
+    if (!text.trim() && !files.length) return;
     setErr(null);
     try {
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
-      await api(`/threads/${th.id}/messages`, { body: { text: t.trim() } });
-      onSent(th.id);
-      setText("");
+      await api(`/threads/${th.id}/messages`, {
+        body: {
+          text: text.trim() || `(attached ${files.length} file${files.length > 1 ? "s" : ""})`,
+          blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined,
+          mentions,
+        },
+      });
       router.push(`/chat/?thread=${th.id}`);
     } catch (e: any) {
       setErr(e.message ?? "Failed to send");
-    } finally {
-      setBusy(false);
     }
-  }, [busy, onSent, router]);
+  }, [router]);
 
   return (
     <div className="desk-composer">
-      <form
-        className="composer desk-composer-form"
-        onSubmit={(e) => { e.preventDefault(); send(text); }}
-      >
-        {/* Augmented picker: real helpers (selectable) + disabled HIRES · PERSONAS group.
-            desk-mention-container is position:absolute above the composer; inside it,
-            .slash.mention-menu becomes position:relative so both sections share one float. */}
-        {mention.open && (
-          <div className="desk-mention-container">
-            {mention.menu}
-            {/* Disabled HIRES · PERSONAS group — truly non-interactive:
-                pointer-events:none, aria-disabled, no onClick handler on any entry */}
-            <div className="desk-personas-ext">
-              <div className="sl-group desk-personas-group">
-                Hired · Personas
-                <span className="desk-personas-soon">Coming soon</span>
-              </div>
-              {["Rina · customer support · Persona"].map((name) => (
-                <div
-                  key={name}
-                  className="sl-item desk-persona-item"
-                  role="presentation"
-                  aria-disabled="true"
-                >
-                  <span className="desk-persona-avatar" aria-hidden="true">
-                    <i className="ri-user-heart-line" />
-                  </span>
-                  <span className="sl-label"><b>{name}</b></span>
-                  <span className="sl-hint desk-persona-hint">Setting up</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <MentionBox
-          handleRef={box}
-          value={text}
-          onChange={setText}
-          staff={staff}
-          placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
-          ariaExpanded={mention.open}
-          onKeyDown={(e) => {
-            if (mention.onKeyDown(e)) return;
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
-          }}
-        />
-        <div className="row desk-composer-row">
-          {/* + button bottom-left */}
-          <button type="button" className="desk-composer-plus" aria-label="Add attachment">
-            <i className="ri-add-line" />
-          </button>
-          {/* / command hint */}
-          <span className="desk-composer-hint">
-            <i className="ri-slash-commands-2" /> command
-          </span>
-          <span className="sp" />
-          {busy && <span className="small">Sending…</span>}
-          {/* Black circular send button */}
-          <button
-            className="desk-composer-send"
-            type="submit"
-            disabled={!text.trim() || busy}
-            aria-label="Send"
-          >
-            <i className="ri-arrow-up-line" />
-          </button>
-        </div>
-        {err && <p className="small" style={{ color: "var(--bad)", margin: "4px 0 0" }}>{err}</p>}
-      </form>
-      <PoolMeter />
+      <Composer
+        staff={staff}
+        threadId={null}
+        placeholder="What should the team do next? Type @ to bring in a helper…"
+        error={err}
+        onSend={send}
+        showPoolMeter={false}
+      />
     </div>
   );
 }
@@ -449,7 +383,6 @@ export default function Desk() {
 
             {/* Composer */}
             <DeskComposer
-              onSent={() => {}}
               staff={(overview?.staff || []) as unknown as Staff[]}
             />
 
