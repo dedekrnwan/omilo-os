@@ -487,31 +487,71 @@ def validate_manifest(data: dict) -> list[str]:
     else:
         # Validate auth.type
         auth_type = auth.get("type")
-        if auth_type != "oauth2":
+        _VALID_AUTH_TYPES = {"oauth2", "apikey"}
+        if auth_type not in _VALID_AUTH_TYPES:
             errors.append(
-                f"Invalid 'auth.type' '{auth_type}': must be 'oauth2'."
+                f"Invalid 'auth.type' '{auth_type}': must be 'oauth2' or 'apikey'."
             )
+        elif auth_type == "apikey":
+            # Validate auth.scheme
+            _VALID_APIKEY_SCHEMES = {"bearer", "basic", "header", "query"}
+            scheme = auth.get("scheme")
+            if scheme not in _VALID_APIKEY_SCHEMES:
+                errors.append(
+                    f"Invalid 'auth.scheme' '{scheme}': must be one of {sorted(_VALID_APIKEY_SCHEMES)}."
+                )
 
-        # Validate auth.provider
-        provider = auth.get("provider")
-        if not provider or not isinstance(provider, str):
-            errors.append(
-                "Missing or invalid 'auth.provider': must be a non-empty string."
-            )
+            # Validate auth.fields
+            _FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,40}$")
+            fields = auth.get("fields")
+            if not isinstance(fields, list) or len(fields) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.fields': must be a non-empty list."
+                )
+            else:
+                for i, field in enumerate(fields):
+                    if not isinstance(field, dict):
+                        errors.append(f"auth.fields[{i}]: must be a dictionary.")
+                        continue
+                    f_name = field.get("name")
+                    if not f_name or not isinstance(f_name, str) or not _FIELD_NAME_RE.match(f_name):
+                        errors.append(
+                            f"auth.fields[{i}]: 'name' must be a non-empty slug string."
+                        )
+                    f_label = field.get("label")
+                    if not f_label or not isinstance(f_label, str):
+                        errors.append(
+                            f"auth.fields[{i}]: 'label' must be a non-empty string."
+                        )
 
-        # Validate auth.scopes
-        scopes = auth.get("scopes")
-        if not isinstance(scopes, list) or len(scopes) == 0:
-            errors.append(
-                "Missing or invalid 'auth.scopes': must be a non-empty list."
-            )
+            # Validate auth.attach
+            attach = auth.get("attach")
+            if not isinstance(attach, dict) or len(attach) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.attach': must be a non-empty dictionary."
+                )
         else:
-            # Validate each scope element is a non-empty string
-            for i, scope in enumerate(scopes):
-                if not isinstance(scope, str) or len(scope) == 0:
-                    errors.append(
-                        f"Invalid 'auth.scopes[{i}]': must be a non-empty string, got {type(scope).__name__}."
-                    )
+            # auth_type == "oauth2": existing checks unchanged
+            # Validate auth.provider
+            provider = auth.get("provider")
+            if not provider or not isinstance(provider, str):
+                errors.append(
+                    "Missing or invalid 'auth.provider': must be a non-empty string."
+                )
+
+            # Validate auth.scopes
+            scopes = auth.get("scopes")
+            if not isinstance(scopes, list) or len(scopes) == 0:
+                errors.append(
+                    "Missing or invalid 'auth.scopes': must be a non-empty list."
+                )
+            else:
+                # Validate each scope element is a non-empty string
+                for i, scope in enumerate(scopes):
+                    if not isinstance(scope, str) or len(scope) == 0:
+                        errors.append(
+                            f"Invalid 'auth.scopes[{i}]': must be a non-empty string, got {type(scope).__name__}."
+                        )
 
     # Validate 'actions'
     actions = data.get("actions")
@@ -567,12 +607,14 @@ def validate_manifest(data: dict) -> list[str]:
                         f"Action {i}: invalid 'http.url' '{url}': must be absolute HTTPS."
                     )
 
-                # Validate http.auth
-                auth_type = http.get("auth")
-                if auth_type != "bearer":
-                    errors.append(
-                        f"Action {i}: invalid 'http.auth' '{auth_type}': must be 'bearer'."
-                    )
+                # Validate http.auth (only required to be "bearer" for oauth2 manifests)
+                manifest_auth_type = auth.get("type") if isinstance(auth, dict) else None
+                if manifest_auth_type == "oauth2":
+                    http_auth = http.get("auth")
+                    if http_auth != "bearer":
+                        errors.append(
+                            f"Action {i}: invalid 'http.auth' '{http_auth}': must be 'bearer'."
+                        )
 
             # Validate action.inputs (optional but if present, must be well-formed)
             inputs = action.get("inputs")
