@@ -1,4 +1,13 @@
 """Task 2: ChannelAdapter seam + registry — pure unit test, no DB/server."""
+import pytest
+from omilo_api.channels import registry
+
+
+@pytest.fixture(autouse=True)
+def _clear_registry():
+    registry.reset()
+    yield
+    registry.reset()
 
 
 def test_registry_register_and_lookup():

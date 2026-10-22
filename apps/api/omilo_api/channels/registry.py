@@ -14,3 +14,8 @@ def register(adapter: ChannelAdapter) -> None:
 def adapter_for(kind: str) -> ChannelAdapter | None:
     """Return the adapter registered for *kind*, or None if unknown."""
     return _ADAPTERS.get(kind)
+
+
+def reset() -> None:
+    """Clear all registered adapters (intended for test isolation)."""
+    _ADAPTERS.clear()
