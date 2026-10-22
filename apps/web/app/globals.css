@@ -110,6 +110,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 .workspace { flex: 1; min-width: 0; display: flex; padding: 8px 8px 8px 0; }
 .inset { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-strong);
   border-radius: var(--r-lg); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); overflow: hidden; }
+/* /chat pages: global topbar on top, the page owns the body below it and fills the rest */
+.chat-own { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.chat-own > * { flex: 1 1 auto; min-height: 0; }
 .topbar { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .topbar .crumb { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .topbar .sp, .sp { flex: 1; }
@@ -126,6 +129,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
   min-width: 180px; max-width: 280px; cursor: pointer; transition: border-color .15s, background .15s; white-space: nowrap; }
 .ask:hover { border-color: var(--faint); background: var(--surface); color: var(--muted); }
 .ask .ask-icon { font-size: 14px; color: var(--faint); flex-shrink: 0; }
+/* Chief-of-Staff mascot shown in the search, matching the design */
+.ask .ask-cos { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 20px; height: 20px; }
+.ask .ask-cos .mascot, .ask .ask-cos .av { width: 20px; height: 20px; }
 .ask .ask-placeholder { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .ask .ask-kbd { font: 11px var(--font-mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px;
   border-radius: 4px; background: var(--surface); color: var(--muted); flex-shrink: 0; }
@@ -3738,6 +3744,9 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 /* Composer on the desk — wrapper provides bottom margin; the composer itself is the
    shared <Composer> component (same as /chat/?thread=), with its usage meter hidden. */
 .desk-composer { margin-bottom: 24px; }
+/* The desk composer sits near the top of the scroll area, so its @/slash menus
+   open downward (and float above the page) instead of being clipped upward. */
+.desk-composer .slash { top: calc(100% + 6px); bottom: auto; }
 
 /* Suggestions row */
 .desk-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
@@ -4448,16 +4457,18 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 
 /* ------------------------------------------------------------------ D. Team board (by helper / by goal) */
 
-/* Board root: full-height, column flex */
-.team-board { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--soft); }
+/* Board root: full-height, column flex (sits under the global topbar, on the white inset) */
+.team-board { display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
 
-/* Board top bar */
-.board-topbar { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 16px; flex-shrink: 0;
-  background: var(--surface); border-bottom: 1px solid var(--line); }
-.board-topbar-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-.board-topbar-heading { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.board-topbar-title { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-topbar-subtitle { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Head: back link above the title, grouping toggle + New work on the right (matches design) */
+.board-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px 4px; flex-shrink: 0; }
+.board-head-title { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.board-head-back { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 0 0 4px; border: 0;
+  background: transparent; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.board-head-back i { font-size: 14px; }
+.board-head-back:hover { color: var(--ink); }
+.board-head-h1 { font: 600 20px/1.2 var(--font-display); letter-spacing: -0.2px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-head-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* black "+ New work" button */
 .board-new-work { background: var(--ink) !important; color: #fff !important; flex-shrink: 0; }
 .board-new-work:hover { background: #1c1917 !important; }
@@ -4472,31 +4483,30 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
   border-bottom: 1px solid var(--bad-line); font-size: 13px; color: var(--bad); flex-shrink: 0; }
 .board-err i { font-size: 16px; color: inherit; flex-shrink: 0; }
 
-/* Scrollable area below topbar */
-.board-scroll { flex: 1; overflow-x: auto; overflow-y: auto; min-height: 0; padding: 16px; }
+/* Scrollable area below the head */
+.board-scroll { flex: 1; overflow-x: auto; overflow-y: auto; min-height: 0; padding: 12px 24px 24px; }
 
 /* ---- By-helper: horizontal scrolling column layout ---- */
-.board-cols { display: flex; gap: 12px; align-items: flex-start; min-width: max-content; }
+.board-cols { display: flex; gap: 12px; align-items: stretch; }
 
-/* One helper column */
-.board-col { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  width: 280px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* One helper column — tinted card on the white inset; columns share the width,
+   falling back to horizontal scroll once there are too many to fit (min-width). */
+.board-col { background: #FAFAF9; border: 1px solid var(--line); border-radius: var(--r-lg);
+  flex: 1 1 0; min-width: 280px; display: flex; flex-direction: column; overflow: hidden; }
 
-/* Column header: avatar + name + count badge + "+" button */
+/* Column header: avatar + name + count + "+" button */
 .board-col-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; flex-shrink: 0; }
-.board-col-name { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; min-width: 0;
+.board-col-name { font-size: 14px; font-weight: 600; color: var(--ink); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.board-col-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: var(--line-strong); color: var(--muted); font-size: 11px; font-weight: 600;
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+/* Count is a plain muted number, not a pill */
+.board-col-badge { color: var(--faint); font-size: 12px; font-weight: 400; flex-shrink: 0; margin-right: auto; }
 .board-col-add { width: 24px; height: 24px; border: 0; background: transparent; border-radius: var(--r-sm);
   display: inline-flex; align-items: center; justify-content: center; color: var(--muted); cursor: pointer; flex-shrink: 0; }
 .board-col-add:hover { background: var(--hover); color: var(--ink); }
 .board-col-add i { font-size: 16px; }
 
-/* Column status line: dot + activity text */
-.board-col-status { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px;
-  border-bottom: 1px solid var(--line); flex-shrink: 0; }
+/* Column status line: dot + activity text (no divider — matches design) */
+.board-col-status { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; flex-shrink: 0; }
 .col-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .col-status-dot-run  { background: #3b82f6; }
 .col-status-dot-warn { background: #f59e0b; }
@@ -4523,8 +4533,8 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .board-col-chevron { margin-left: auto; }
 .board-col-done-list { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 10px; }
 
-/* Ghost "Add a helper" column */
-.board-col-ghost { border-style: dashed; background: transparent; align-items: center;
+/* Ghost "Add a helper" column — fixed narrow width, doesn't stretch (matches design) */
+.board-col-ghost { flex: 0 0 150px; min-width: 150px; border-style: dashed; background: transparent; align-items: center;
   justify-content: center; padding: 32px 16px; cursor: pointer; gap: 8px; color: var(--muted);
   min-height: 120px; }
 .board-col-ghost:hover { background: var(--soft); color: var(--ink); border-color: var(--faint); }
@@ -4539,25 +4549,26 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .board-col-skeleton-card { height: 80px; border-radius: var(--r-md); margin-bottom: 2px; }
 @keyframes shimmer-bg { from { background: var(--line-strong); } to { background: var(--line); } }
 
-/* ---- By-goal: vertical list of goal rows ---- */
-.board-goals { display: flex; flex-direction: column; gap: 0; max-width: 100%; }
+/* ---- By-goal: vertical list of goal rows (each row is its own card) ---- */
+.board-goals { display: flex; flex-direction: column; gap: 10px; max-width: 100%; }
 
-/* One goal row: left panel + right card strip */
-.goal-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); background: var(--surface); }
-.goal-row:last-child { border-bottom: 0; border-radius: 0 0 var(--r-lg) var(--r-lg); }
-.goal-row:first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
-.goal-row:only-child { border-radius: var(--r-lg); }
+/* One goal row: left panel + right card strip, as a self-contained tinted card */
+.goal-row { display: flex; align-items: stretch; gap: 12px; background: #FAFAF9;
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
 
-/* Left goal panel (fixed width) */
-.goal-panel { width: 260px; min-width: 220px; flex-shrink: 0; border-right: 1px solid var(--line);
-  padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+/* Left goal panel (fixed width, no divider — the row gap separates it from the cards) */
+.goal-panel { width: 300px; min-width: 260px; flex-shrink: 0;
+  padding: 4px 6px; display: flex; flex-direction: column; gap: 8px; }
 .goal-panel-head { display: flex; align-items: flex-start; gap: 7px; }
 .goal-panel-icon { font-size: 15px; color: var(--muted); flex-shrink: 0; margin-top: 1px; }
-.goal-panel-title { font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.4; }
-.goal-panel-metric { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1.2; letter-spacing: -.02em; }
-.goal-panel-bar-wrap { width: 100%; }
-.goal-panel-bar { height: 5px; border-radius: 3px; background: var(--line-strong); overflow: hidden; }
-.goal-panel-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ink); transition: width .4s; }
+.goal-panel-title { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.4; }
+/* Metric: large mono number + muted suffix, baseline-aligned (matches design) */
+.goal-panel-metric { display: flex; align-items: flex-end; gap: 6px; }
+.goal-panel-metric-num { font: 400 22px/1 var(--font-mono); color: var(--ink); }
+.goal-panel-metric-sub { font-size: 12px; color: var(--muted); padding-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-panel-bar-wrap { width: 200px; max-width: 100%; }
+.goal-panel-bar { height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
+.goal-panel-bar i { display: block; height: 100%; border-radius: 2px; background: var(--ink); transition: width .4s; }
 .goal-panel-status { display: flex; align-items: center; gap: 5px; }
 .goal-panel-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .goal-panel-dot.goal-dot-ok   { background: #16a34a; }
@@ -4573,8 +4584,10 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .goal-panel-done i { font-size: 13px; color: var(--ok); }
 
 /* Right: horizontal card strip */
-.goal-cards-strip { flex: 1; min-width: 0; display: flex; gap: 10px; padding: 14px 14px; overflow-x: auto;
-  align-items: flex-start; }
+.goal-cards-strip { flex: 1; min-width: 0; display: flex; gap: 12px; padding: 0; overflow-x: auto;
+  align-items: stretch; }
+/* Cards in a goal strip are fixed-width and full-height (matches design) */
+.goal-cards-strip .work-card { width: 236px; flex-shrink: 0; }
 .goal-cards-strip::-webkit-scrollbar { height: 4px; }
 .goal-cards-strip::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 2px; }
 
@@ -4683,13 +4696,14 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
   .board-col { width: 100%; }
   .board-scroll { padding: 12px; }
   .goal-row { flex-direction: column; }
-  .goal-panel { width: 100%; border-right: 0; border-bottom: 1px solid var(--line); }
-  .goal-cards-strip { padding: 12px; }
+  .goal-row { flex-direction: column; }
+  .goal-panel { width: 100%; min-width: 0; }
+  .goal-cards-strip { padding: 0; }
 }
 @media (max-width: 640px) {
-  .board-topbar { padding: 0 10px; gap: 8px; }
-  .board-topbar-subtitle { display: none; }
-  .goal-panel-metric { font-size: 18px; }
+  .board-head { padding: 14px 14px 4px; gap: 8px; }
+  .board-head-sub { display: none; }
+  .goal-panel-metric-num { font-size: 18px; }
 }
 
 /* ---------- Help & guides (help center) ---------- */

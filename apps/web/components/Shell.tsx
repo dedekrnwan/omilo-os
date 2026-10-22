@@ -14,6 +14,7 @@ import ChatLauncher from "./ChatLauncher";
 import { NAV, NavItem, navItemFor } from "./nav";
 import { CommandProvider, useCommand } from "./command";
 import CommandPalette from "./CommandPalette";
+import Avatar from "./Avatar";
 import { MenuItem, openMenu } from "@/lib/menu";
 
 type Ctx = { overview: Overview | null; refresh: () => void };
@@ -136,7 +137,10 @@ export default function Shell({ children }: { children: ReactNode }) {
   }
 
   const navItem = navItemFor(path);
-  const own = path === "/chat/" || path.startsWith("/chat/") || path.startsWith("/docs/");  // pages with their own top bar
+  /* /docs owns its full chrome (incl. top bar). /chat keeps the global top bar
+     (crumb + Chief-of-Staff search) but owns its own body layout below it. */
+  const docsOwn = path.startsWith("/docs/");
+  const chatOwn = path === "/chat/" || path.startsWith("/chat/");
 
   return (
     <OverviewCtx.Provider value={{ overview, refresh }}>
@@ -229,10 +233,8 @@ export default function Shell({ children }: { children: ReactNode }) {
         </aside>
         <div className="workspace">
           <div className="inset">
-            {own ? (
-              <>
-                {children}
-              </>
+            {docsOwn ? (
+              children
             ) : (
               <>
                 <TopbarV2
@@ -242,7 +244,9 @@ export default function Shell({ children }: { children: ReactNode }) {
                   togglePause={togglePause}
                   actions={actions}
                 />
-                <div className="scroll"><main className="page">{children}</main></div>
+                {chatOwn
+                  ? <div className="chat-own">{children}</div>
+                  : <div className="scroll"><main className="page">{children}</main></div>}
               </>
             )}
           </div>
@@ -273,6 +277,7 @@ function TopbarV2({
 
   const inboxCount = overview?.inbox.open || 0;
   const meta = path === "/" && inboxCount > 0 ? `${inboxCount} needs you` : null;
+  const chief = overview?.staff?.find((s) => s.is_chief) || null;
 
   const moreItems: MenuItem[] = [
     {
@@ -310,7 +315,7 @@ function TopbarV2({
               {actions.primary.icon && <i className={actions.primary.icon} />}{actions.primary.label}
             </button>
       )}
-      <AskBar onOpen={openCommand} />
+      <AskBar onOpen={openCommand} chief={chief} />
       <button
         ref={moreRef}
         className="iconbtn topbar-more"
@@ -325,10 +330,12 @@ function TopbarV2({
   );
 }
 
-function AskBar({ onOpen }: { onOpen: () => void }) {
+function AskBar({ onOpen, chief }: { onOpen: () => void; chief?: { id: string; name: string; is_chief?: boolean } | null }) {
   return (
     <button className="ask" onClick={onOpen} aria-label="Ask Chief of Staff or search" type="button">
-      <i className="ri-search-line ask-icon" aria-hidden />
+      {chief
+        ? <span className="ask-cos" aria-hidden><Avatar who={chief} size={18} /></span>
+        : <i className="ri-search-line ask-icon" aria-hidden />}
       <span className="ask-placeholder">Ask Chief of Staff or search…</span>
       <kbd className="ask-kbd">⌘K</kbd>
     </button>

@@ -305,7 +305,12 @@ function GoalRow({
           <i className="ri-focus-2-line goal-panel-icon" />
           <span className="goal-panel-title">{goal.title}</span>
         </div>
-        <div className="goal-panel-metric">{metric}</div>
+        <div className="goal-panel-metric">
+          <span className="goal-panel-metric-num">{metric.split(" ")[0]}</span>
+          {metric.split(" ").length > 1 && (
+            <span className="goal-panel-metric-sub">{metric.split(" ").slice(1).join(" ")}</span>
+          )}
+        </div>
         <div className="goal-panel-bar-wrap">
           <div className="goal-panel-bar">
             <i style={{ width: `${pct}%` }} />
@@ -456,23 +461,21 @@ export default function TeamBoard({ group }: TeamBoardProps) {
 
   return (
     <div className="team-board">
-      {/* Top bar */}
-      <div className="board-topbar">
-        <div className="board-topbar-left">
+      {/* Head: back link above the title, grouping toggle + New work on the right (matches design) */}
+      <div className="board-head">
+        <div className="board-head-title">
           <button
-            className="threads-rail-back"
+            className="board-head-back"
             onClick={() => router.push("/chat/")}
             aria-label="Back to desk"
           >
             <i className="ri-arrow-left-line" />
-            Desk
+            Start
           </button>
-          <div className="board-topbar-heading">
-            <span className="board-topbar-title">Your team at work</span>
-            {board && (
-              <span className="board-topbar-subtitle">{subtitle}</span>
-            )}
-          </div>
+          <span className="board-head-h1">Your team at work</span>
+          {board && (
+            <span className="board-head-sub">{subtitle}</span>
+          )}
         </div>
 
         {/* Segmented toggle: By helper | By goal */}
