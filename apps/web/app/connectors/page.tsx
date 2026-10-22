@@ -519,7 +519,9 @@ export default function Connectors() {
           <h1 className="ph2-title">Connectors</h1>
           <p className="ph2-sub">Give helpers the apps you already use. Anything that posts, sends or spends still waits for your OK.</p>
         </div>
-        <div className="ph2-actions" />
+        <div className="ph2-actions">
+          <button className="btn primary" onClick={startNew}><i className="ri-code-s-slash-line" />Custom integration</button>
+        </div>
       </div>
 
       {/* Filters v2: search + category picks + connected counter */}

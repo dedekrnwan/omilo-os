@@ -106,7 +106,9 @@ export default function Skills() {
           <h1 className="ph2-title">Skills</h1>
           <p className="ph2-sub">Know-how your helpers follow: a checklist, a house style, a process. Switch skills on per chat with + or by typing /, or make one standard for everyone.</p>
         </div>
-        <div className="ph2-actions" />
+        <div className="ph2-actions">
+          <button className="btn primary" onClick={() => { setErr(null); setTab("write"); setForm({ ...blank, body: STARTER }); }}><i className="ri-add-line" />New skill</button>
+        </div>
       </div>
 
       <div className="sec" style={{ marginTop: 0 }}>
