@@ -18,6 +18,7 @@ from .routers import api, auth, companies
 from .routers import kb as kb_router
 from .routers import office as office_router
 from .routers import settings as settings_router
+from .routers import channels as channels_router
 from .routers import workflows as workflows_router
 from .worker import Worker
 
@@ -49,9 +50,14 @@ def build_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         from . import bus
+        from .channels import registry as _ch_registry
+        from .channels.telegram import TelegramAdapter
 
         bus.check()  # Redis first: a clear message beats a half-started app
         init_db()
+
+        # Register channel adapters so adapter_for("telegram") works in-process
+        _ch_registry.register(TelegramAdapter())
 
         async def _refresh_catalog():
             # Best-effort: fetch the pieces repo and rebuild the connector catalog index.
@@ -90,6 +96,7 @@ def build_app() -> FastAPI:
     inner.include_router(workflows_router.router)
     inner.include_router(kb_router.router)
     inner.include_router(settings_router.router)
+    inner.include_router(channels_router.router)
     inner.include_router(mcp_router)
 
     @inner.get("/healthz")
