@@ -23,12 +23,18 @@ if (typeof window !== "undefined") {
 /* A single chat thread: the message list, composer, mentions, slash menu, access decisions and Stop.
    Controlled by `threadId`; owns its own poll and reports the loaded thread up via `onThread`.
    Carved out of the /chat page so a later drawer can reuse it. */
-export default function ChatThread({ threadId, seed, staff, events, inDrawer, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
+export default function ChatThread({ threadId, seed, staff, events, inDrawer, inFocus, placeholderOverride, composerHint, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
   threadId: string;
   seed?: FullThread | null;
   staff: Staff[];
   events: RunEvent[];
   inDrawer?: boolean;
+  /** When true, adds focus-mode styling to the composer (circular send button, etc.). */
+  inFocus?: boolean;
+  /** Override the auto-derived placeholder text. */
+  placeholderOverride?: string;
+  /** Extra hint shown right-aligned in the composer row (e.g. "3 helpers in this work"). */
+  composerHint?: string;
   onThread?: (th: FullThread | null) => void;
   onStartJob?: (brief: string) => void;
   onOpenThread?: (body: Record<string, string>) => void;
@@ -160,7 +166,7 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, on
       <div className="ws-scroll" ref={scroller}>
         <div className="ws-inner"><Conversation th={current} staff={staff} events={events} onSend={(t) => send(t, [], [])} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} /></div>
       </div>
-      <div className="ws-composer">
+      <div className={`ws-composer${inFocus ? " ws-composer--focus" : ""}`}>
         {related.length > 0 && (
           <div className="chat-people">
             {related.map((s) => (
@@ -170,11 +176,14 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, on
             ))}
           </div>
         )}
+        {composerHint && (
+          <div className="chat-composer-hint">{composerHint}</div>
+        )}
         <Composer
           handleRef={composer}
           staff={staff}
           threadId={threadId}
-          placeholder={`Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
+          placeholder={placeholderOverride ?? `Message ${shortLabel(threadLabel(current))} · ${isGroup ? "@ mention · / commands" : "@ someone · / commands"}`}
           awaitingReply={current.awaiting_reply}
           error={err}
           onSend={send}

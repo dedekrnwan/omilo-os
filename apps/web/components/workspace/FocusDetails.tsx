@@ -28,9 +28,10 @@ interface FocusData {
 }
 
 function fileIcon(kind?: string): string {
-  if (kind === "pr") return "ri-git-pull-request-line";
+  if (kind === "pr") return "ri-git-branch-line";
   if (kind === "chart") return "ri-bar-chart-line";
   if (kind === "image") return "ri-image-line";
+  if (kind === "notes" || kind === "doc") return "ri-file-text-line";
   return "ri-file-text-line";
 }
 
@@ -38,6 +39,11 @@ function stepIcon(status: FocusStep["status"]): string {
   if (status === "done") return "ri-checkbox-circle-fill";
   if (status === "active") return "ri-record-circle-line";
   return "ri-circle-line";
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
 }
 
 export default function FocusDetails({
@@ -91,30 +97,10 @@ export default function FocusDetails({
         )}
 
         {!loading && isEmpty && (
-          <div
-            className="empty"
-            style={{ textAlign: "center", padding: "24px 8px" }}
-          >
-            <i
-              className="ri-node-tree"
-              style={{
-                fontSize: 28,
-                color: "var(--faint)",
-                display: "block",
-                marginBottom: 8,
-              }}
-            />
-            <b style={{ color: "var(--muted)", fontWeight: 500, fontSize: 13 }}>
-              No details yet
-            </b>
-            <span
-              style={{
-                display: "block",
-                fontSize: 12,
-                color: "var(--faint)",
-                marginTop: 4,
-              }}
-            >
+          <div className="focus-empty">
+            <i className="ri-node-tree focus-empty-icon" />
+            <b className="focus-empty-title">No details yet</b>
+            <span className="focus-empty-sub">
               Progress and files appear as the work happens.
             </span>
           </div>
@@ -128,7 +114,7 @@ export default function FocusDetails({
               {data!.progress!.map((s, i) => (
                 <div
                   key={i}
-                  className={`focus-step${s.status === "done" ? " done" : s.status === "active" ? " active" : ""}`}
+                  className={`focus-step focus-step--${s.status}`}
                 >
                   <i className={stepIcon(s.status)} />
                   <span>{s.label}</span>
@@ -153,13 +139,13 @@ export default function FocusDetails({
                     className="focus-file"
                   >
                     <i className={fileIcon(f.kind)} />
-                    <span>{f.title}</span>
-                    <i className="ri-external-link-line" style={{ fontSize: 12, color: "var(--faint)" }} />
+                    <span className="focus-file-label">{f.title}</span>
+                    <i className="ri-external-link-line focus-file-ext" />
                   </a>
                 ) : (
                   <div key={i} className="focus-file">
                     <i className={fileIcon(f.kind)} />
-                    <span>{f.title}</span>
+                    <span className="focus-file-label">{f.title}</span>
                   </div>
                 )
               )}
@@ -171,28 +157,17 @@ export default function FocusDetails({
         {hasCost && (
           <div className="focus-section">
             <div className="focus-section-label">Cost so far</div>
-            <div className="focus-cost">
-              <div className="focus-cost-item">
-                <b>
-                  ${data!.cost!.usd < 0.01
-                    ? data!.cost!.usd.toFixed(4)
-                    : data!.cost!.usd.toFixed(2)}
-                </b>
-                <span>cost</span>
+            <div className="focus-cost-block">
+              <div className="focus-cost-big">
+                ${data!.cost!.usd < 0.01
+                  ? data!.cost!.usd.toFixed(4)
+                  : data!.cost!.usd.toFixed(2)}
               </div>
-              <div className="focus-cost-sep" />
-              <div className="focus-cost-item">
-                <b>
-                  {data!.cost!.tokens > 999
-                    ? `${Math.round(data!.cost!.tokens / 1000)}k`
-                    : String(data!.cost!.tokens)}
-                </b>
-                <span>tokens</span>
-              </div>
-              <div className="focus-cost-sep" />
-              <div className="focus-cost-item">
-                <b>{data!.cost!.minutes}</b>
-                <span>min</span>
+              <div className="focus-cost-sub">
+                {fmtTokens(data!.cost!.tokens)} tokens
+                {data!.cost!.minutes > 0
+                  ? ` · ${data!.cost!.minutes} min of work`
+                  : ""}
               </div>
             </div>
           </div>

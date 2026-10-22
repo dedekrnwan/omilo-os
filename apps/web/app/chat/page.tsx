@@ -276,6 +276,7 @@ function WorkspaceInner() {
           seed={focusSeed}
           staff={staff}
           events={threadEvents}
+          threads={railThreads}
           onThread={setCurrent}
           onStartJob={startJob}
           onOpenThread={openThread}
