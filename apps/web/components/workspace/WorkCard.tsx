@@ -2,8 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import { BoardCard } from "@/lib/api";
-import { api } from "@/lib/api";
+import { BoardCard, api, ago } from "@/lib/api";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -23,6 +22,7 @@ function cardChip(card: BoardCard): { label: string; cls: string } {
 function cardActionLabel(card: BoardCard): string {
   if (card.status === "needs_you" && card.needs_proposal) return "Review";
   if (card.status === "needs_you" && card.awaiting_reply) return "Reply";
+  if (card.status === "needs_you") return "Review"; // chip says "Needs you" → action matches
   if (card.status === "running") return "Open";
   if (card.status === "waiting") return "Open";
   if (card.status === "failed") return "Open";
@@ -102,16 +102,7 @@ export default function WorkCard({ card, helper, paused }: WorkCardProps) {
       {/* Footer: updated_at + action button */}
       <div className="wc-foot">
         {card.updated_at && (
-          <span className="wc-time">
-            {/* relative time computed inline to avoid a dep */}
-            {(() => {
-              const s = (Date.now() - new Date(card.updated_at!).getTime()) / 1000;
-              if (s < 60) return "just now";
-              if (s < 3600) return `${Math.round(s / 60)}m ago`;
-              if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-              return `${Math.round(s / 86400)}d ago`;
-            })()}
-          </span>
+          <span className="wc-time">{ago(card.updated_at)}</span>
         )}
         <span className="sp" />
         {hasId ? (

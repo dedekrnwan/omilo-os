@@ -183,13 +183,14 @@ export default function TeamBoard({ group }: TeamBoardProps) {
 
   const load = useCallback(async () => {
     try {
-      if (group === "helper") {
-        const b = await api<TeamBoardType>("/team/board");
-        setBoard(b);
-      } else {
-        const p = await api<PlanTree>("/plan");
-        setPlan(p);
-      }
+      // Always fetch board for paused flag (and server_time); additionally fetch plan when grouping by goal.
+      const fetches: [Promise<TeamBoardType>, Promise<PlanTree> | null] = [
+        api<TeamBoardType>("/team/board"),
+        group === "goal" ? api<PlanTree>("/plan") : null,
+      ];
+      const [b, p] = await Promise.all([fetches[0], fetches[1] ?? Promise.resolve(null)]);
+      setBoard(b);
+      if (p !== null) setPlan(p);
       setErr(null);
     } catch (e: any) {
       setErr(e.message ?? "Failed to load board");
