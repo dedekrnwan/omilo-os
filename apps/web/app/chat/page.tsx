@@ -254,6 +254,16 @@ function WorkspaceInner() {
   if (isFocus) {
     /* Cast threads to RailThread — the /threads endpoint may carry group/subtitle/last_at from Task 3 */
     const railThreads = threads as RailThread[];
+
+    // Prefer the parent's `current` when it already carries this thread's messages (revisit);
+    // fall back to the matching entry in the threads list (first open from Inbox — list items
+    // carry enough fields for the ThreadHead chrome; the poll will fill messages shortly).
+    // Cast is safe: FullThread is a superset of Thread; missing fields resolve to undefined.
+    const focusSeed: FullThread | null =
+      current?.id === tid
+        ? current
+        : (threads.find((t) => t.id === tid) as unknown as FullThread) ?? null;
+
     return (
       <div className="ws-focus">
         <ThreadsRail
@@ -264,6 +274,7 @@ function WorkspaceInner() {
         />
         <FocusThread
           threadId={tid}
+          seed={focusSeed}
           staff={staff}
           events={threadEvents}
           onThread={setCurrent}

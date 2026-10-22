@@ -27,8 +27,9 @@ if (typeof window !== "undefined") {
 /* A single chat thread: the message list, composer, mentions, slash menu, access decisions and Stop.
    Controlled by `threadId`; owns its own poll and reports the loaded thread up via `onThread`.
    Carved out of the /chat page so a later drawer can reuse it. */
-export default function ChatThread({ threadId, staff, events, inDrawer, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
+export default function ChatThread({ threadId, seed, staff, events, inDrawer, onThread, onStartJob, onOpenThread, onNavigate, onExpand }: {
   threadId: string;
+  seed?: FullThread | null;
   staff: Staff[];
   events: RunEvent[];
   inDrawer?: boolean;
@@ -38,7 +39,7 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   onNavigate?: (href: string) => void;
   onExpand?: () => void;
 }) {
-  const [current, setCurrent] = useState<FullThread | null>(null);
+  const [current, setCurrent] = useState<FullThread | null>(seed ?? null);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attached[]>([]);
   const [stopping, setStopping] = useState(false);
@@ -53,8 +54,12 @@ export default function ChatThread({ threadId, staff, events, inDrawer, onThread
   const report = useRef(onThread);
   report.current = onThread;
   useEffect(() => { report.current?.(current); }, [current]);
-  // a new thread wipes the old one until the poll loads it
-  useEffect(() => { setCurrent(null); }, [threadId]);
+  // When switching to a different thread, blank so we don't show stale history.
+  // Skip blanking when the incoming threadId matches the seed we were given — the seed
+  // already carries the correct history for this thread, so painting it immediately
+  // eliminates the "Loading…" flash on Inbox → Workspace navigation.
+  const seedId = seed?.id ?? null;
+  useEffect(() => { if (threadId !== seedId) setCurrent(null); }, [threadId, seedId]);
 
   // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
   // unchanged threads cost a 304 thanks to the server's ETag

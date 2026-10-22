@@ -159,6 +159,7 @@ function ThreadHead({
 
 export default function FocusThread({
   threadId,
+  seed,
   staff,
   events,
   onThread,
@@ -166,6 +167,7 @@ export default function FocusThread({
   onOpenThread,
 }: {
   threadId: string;
+  seed?: FullThread | null;
   staff: Staff[];
   events: RunEvent[];
   onThread?: (th: FullThread | null) => void;
@@ -173,7 +175,7 @@ export default function FocusThread({
   onOpenThread?: (body: Record<string, string>) => void;
 }) {
   const router = useRouter();
-  const [current, setCurrent] = useState<FullThread | null>(null);
+  const [current, setCurrent] = useState<FullThread | null>(seed ?? null);
 
   const handleThread = (th: FullThread | null) => {
     setCurrent(th);
@@ -196,6 +198,7 @@ export default function FocusThread({
       )}
       <ChatThread
         threadId={threadId}
+        seed={seed}
         staff={staff}
         events={events}
         onThread={handleThread}
