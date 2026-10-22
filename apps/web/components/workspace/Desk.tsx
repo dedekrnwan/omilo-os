@@ -265,6 +265,14 @@ function TeamNow({ staffMap, threads }: {
         <span>live</span>
       </div>
       <div className="team-now-scroll">
+        <a href="/chat/?view=board&group=helper" className="team-board-card">
+          <span className="team-board-card-tile"><i className="ri-layout-grid-line" /></span>
+          <span className="team-board-card-txt">
+            <b>Open the team board</b>
+            <span>See everyone&apos;s work in columns — by helper or by goal</span>
+          </span>
+          <i className="ri-arrow-right-line team-board-card-arrow" />
+        </a>
         {nonChief.map((s) => {
           const active = s.status === "working" || s.running > 0;
           const th = helperThread(s.id);

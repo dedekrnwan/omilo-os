@@ -253,7 +253,17 @@ function BoardView({ onCount }: { onCount: () => void }) {
           </div>
 
           {b.needs.length === 0 ? (
-            <div className="inbox2-empty">Nothing waiting on you.</div>
+            <div className="inbox2-allclear">
+              <div className="inbox2-allclear-badge"><i className="ri-checkbox-circle-fill" /></div>
+              <h3 className="inbox2-allclear-title">You&apos;re all caught up</h3>
+              <p className="inbox2-allclear-body">Nobody needs a decision from you right now. Your team is on it — this list fills up only when a helper is actually stuck.</p>
+              <div className="inbox2-allclear-stats">
+                <span className="inbox2-stat">{running.length} running</span>
+                <span className="inbox2-stat">{queued.length} queued</span>
+                <span className="inbox2-stat">{b.done.length} done today</span>
+              </div>
+              <Link className="inbox2-allclear-link" href="/chat/?view=board&group=helper">Go to the team board <i className="ri-arrow-right-line" /></Link>
+            </div>
           ) : (
             <>
               {/* Bulk-select hint shown above cards when eligible items exist and none selected */}
