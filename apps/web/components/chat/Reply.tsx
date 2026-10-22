@@ -290,9 +290,11 @@ export function Reply({
           {/* Typed blocks (v2 messages) */}
           {hasTypedBlocks && renderBlocks(displayBlocks, ctx)}
 
-          {/* Message text: render if present AND there's no markdown/streaming typed block */}
+          {/* Message text: render only as a fallback — skip it when a block already
+             carries the prose (markdown/streaming, or the backend's default "text" block),
+             otherwise the answer renders twice. */}
           {m.text && (hasTypedBlocks
-            ? !displayBlocks.some((b) => b.type === "markdown" || b.type === "streaming")
+            ? !displayBlocks.some((b) => b.type === "markdown" || b.type === "streaming" || b.type === "text")
             : true) && (
             <div className="reply-md">
               <Markdown text={m.text} people={people} />

@@ -91,19 +91,27 @@ def plan(cfg: dict, resources) -> tuple[dict, list[str], list[str]]:
                 deny += [f"Edit(/{d}/**)", f"Write(/{d}/**)"]
     if shell:
         tools.append("Bash")
-        deny += SHELL_DENY
+        # Auto/YOLO: only the destructive-local floor stays blocked; operational commands
+        # (push/publish/deploy) run directly. Strict: the full deny list.
+        deny += SHELL_DENY_DESTRUCTIVE if cfg.get("_auto") else SHELL_DENY
     extra: list[str] = []
     for d in add_dirs:
         extra += ["--add-dir", d]
     if deny:
         extra += ["--disallowedTools", *deny]
     return servers, tools, extra
-# commands that change the world outside the folder (or cannot be undone) stay blocked even when commands are allowed:
-# the helper asks the founder through request_action instead
-SHELL_DENY = [f"Bash({c}:*)" for c in (
-    "rm", "rmdir", "sudo", "git push", "git reset --hard", "git clean", "npm publish", "pnpm publish", "yarn publish", "twine upload",
-    "docker push", "kubectl", "terraform apply", "terraform destroy", "vercel", "netlify deploy", "fly deploy", "flyctl deploy", "gh pr merge",
-    "gh release", "ssh", "scp")]
+# Irreversible/destructive LOCAL commands — blocked in every mode, including Auto/YOLO
+# (this is the self-destruct floor: wiping files or history can't be undone).
+SHELL_DENY_DESTRUCTIVE = [f"Bash({c}:*)" for c in (
+    "rm", "rmdir", "sudo", "git reset --hard", "git clean", "terraform destroy")]
+# Outward/operational commands — blocked in Strict (the helper asks via request_action),
+# but allowed directly in Auto/YOLO so push/publish/deploy just run.
+SHELL_DENY_OPERATIONAL = [f"Bash({c}:*)" for c in (
+    "git push", "npm publish", "pnpm publish", "yarn publish", "twine upload",
+    "docker push", "kubectl", "terraform apply", "vercel", "netlify deploy", "fly deploy", "flyctl deploy",
+    "gh pr merge", "gh release", "ssh", "scp")]
+# Back-compat name = the full Strict-mode deny list.
+SHELL_DENY = SHELL_DENY_DESTRUCTIVE + SHELL_DENY_OPERATIONAL
 STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OMILO_SECRET_KEY", "OMILO_DATABASE_URL", "OMILO_REDIS_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 

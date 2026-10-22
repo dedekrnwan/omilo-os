@@ -122,8 +122,10 @@ def autonomy_policy(db: Session, staff: "Staff | None" = None) -> dict:
     budget_stop_usd: float | None = float(company_budget) if company_budget is not None else None
     escalate_tiers: list[str] = list(company_tiers) if company_tiers is not None else list(_DEFAULT_ESCALATE_TIERS)
 
-    # --- per-helper layer (wins over company for mode only) ---
-    if staff is not None:
+    # --- per-helper layer ---
+    # Company Auto (permissive) wins for everyone: a helper marked "guided" only stays
+    # strict while the COMPANY is strict. In Auto/YOLO nothing a helper does asks first.
+    if staff is not None and mode != "permissive":
         mode = "strict" if staff.autonomy == "guided" else "permissive"
 
     return {"mode": mode, "budget_stop_usd": budget_stop_usd, "escalate_tiers": escalate_tiers}
@@ -990,6 +992,8 @@ def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
     """
     if autonomy_policy(db, st)["mode"] == "strict":
         return None
+    if p.type in policy.ALWAYS_ASK:
+        return None  # self-destruct floor (credentials/auth/company-deletion) always reaches the owner
     from .graph import delegation
     from .graph.risk import classify_risk
 
@@ -1015,6 +1019,13 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
         db.commit()
         return {"decision": "refused", "level": "off", "message": f"'{action}' is not allowed for {st.name}."}
     if level == policy.ASK:
+        # Auto/YOLO: everything a helper does runs without asking, except the self-destruct
+        # floor (credentials/auth/company-deletion), which always reaches the owner.
+        if action not in policy.ALWAYS_ASK and autonomy_policy(db, st)["mode"] == "permissive":
+            audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level="auto", summary=summary[:200])
+            db.commit()
+            return {"decision": "allowed", "level": "auto",
+                    "message": "Allowed (Auto mode). Go ahead, and mention it in your report."}
         p = create_proposal(db, st, task_id, summary, action, "medium", details)
         ruled = _cos_rule(db, st, p)
         if ruled is not None:  # the CoS ruled this low/medium action inline (any brain, permissive mode)

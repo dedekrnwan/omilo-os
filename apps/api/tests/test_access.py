@@ -185,6 +185,25 @@ def test_folder_commands_grant_keeps_hard_denials(owner, base_url, tmp_path):
     assert any("git push" in d for d in SHELL_DENY), f"'git push' not in SHELL_DENY: {SHELL_DENY}"
 
 
+def test_auto_mode_lifts_operational_shell_denies():
+    """Auto/YOLO lets push/publish/deploy run directly; rm/git-reset stay blocked."""
+    from omilo_api.engines.claude_code import plan
+
+    base = {"_mcp_url": "http://x", "_mcp_token": "t", "allow_shell": True}
+
+    # Strict (default): the full deny list — operational AND destructive both blocked.
+    _, _, strict_extra = plan(dict(base), None)
+    assert any("git push" in d for d in strict_extra), f"strict must deny git push: {strict_extra}"
+    assert any("Bash(rm:*)" == d for d in strict_extra), "strict must deny rm"
+
+    # Auto: operational commands lifted, destructive floor kept.
+    _, _, auto_extra = plan({**base, "_auto": True}, None)
+    assert not any("git push" in d for d in auto_extra), f"Auto must allow git push: {auto_extra}"
+    assert not any("gh pr merge" in d for d in auto_extra), "Auto must allow gh pr merge"
+    assert any("Bash(rm:*)" == d for d in auto_extra), "Auto must still deny rm"
+    assert any("git reset --hard" in d for d in auto_extra), "Auto must still deny git reset --hard"
+
+
 # ---------------------------------------------------------------------------
 # Task 3: decide_access tests
 # ---------------------------------------------------------------------------
