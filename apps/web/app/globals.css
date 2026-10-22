@@ -148,7 +148,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 }
 
 .scroll { flex: 1; overflow-y: auto; }
-main.page { max-width: 960px; margin: 0 auto; padding: 28px 24px 64px; }
+main.page { max-width: 1180px; margin: 0 auto; padding: 28px 32px 48px; }
 main.page.narrow { max-width: 680px; }
 
 /* mobile: sidebar becomes a top bar with a menu */
