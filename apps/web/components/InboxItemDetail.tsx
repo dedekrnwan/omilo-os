@@ -209,7 +209,18 @@ export default function InboxItemDetail({ item: i, onDone }: { item: InboxItem; 
     setErr(null); setBusy(true);
     try { await fn(); setNote(""); onDone(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
-  const decide = (pid: string, decision: string) => act(() => api(`/proposals/${pid}/decide`, { body: { decision, note } }));
+  const decide = async (pid: string, decision: string) => {
+    // Bug #2: if the proposal was already decided (409 + "already"), treat as success-ish —
+    // refresh the parent item to show the current decided state instead of surfacing a scary error.
+    setErr(null); setBusy(true);
+    try {
+      await api(`/proposals/${pid}/decide`, { body: { decision, note } });
+      setNote(""); onDone();
+    } catch (e: any) {
+      if (e.status === 409 || /already/i.test(e.message || "")) { onDone(); }
+      else { setErr(e.message); }
+    } finally { setBusy(false); }
+  };
   const discuss = async (pid: string) => {
     try {
       const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } });

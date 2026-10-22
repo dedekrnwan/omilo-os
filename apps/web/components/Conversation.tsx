@@ -171,6 +171,12 @@ function ProposalCard({ proposalId, title, risk, summary, onProposal }: {
     try {
       await onProposal(proposalId, decision, n);
       setDecided(decision);
+    } catch (e: unknown) {
+      // Bug #2: 409 "already" means CoS auto-approved — show decided state rather than an error.
+      const err = e as { status?: number; message?: string };
+      if (err.status === 409 || /already/i.test(err.message || "")) {
+        setDecided(decision === "approve" ? "approve" : decision);
+      } else { throw e; }
     } finally {
       setBusy(false);
     }

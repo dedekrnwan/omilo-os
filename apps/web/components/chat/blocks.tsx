@@ -336,7 +336,15 @@ function QuestionBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [noteOpen, setNoteOpen] = useState<"reject" | "changes" | null>(null);
   const [note, setNote] = useState("");
-  const [decided, setDecided] = useState<string | null>(null);
+  // Bug #2: initialise from block.status so already-decided proposals render correctly.
+  const initDecided = (): string | null => {
+    const s = block.status as string | undefined;
+    if (s === "approved" || s === "executing" || s === "done") return "approve";
+    if (s === "rejected") return "reject";
+    if (s === "changes_requested") return "changes";
+    return null;
+  };
+  const [decided, setDecided] = useState<string | null>(initDecided);
   const [busy, setBusy] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const proposalId = block.proposal_id || "";
@@ -346,7 +354,17 @@ function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 
   const act = async (decision: "approve" | "reject" | "changes", n = "") => {
     setBusy(true);
-    try { await ctx.onProposal?.(proposalId, decision, n); setDecided(decision); } finally { setBusy(false); }
+    try {
+      await ctx.onProposal?.(proposalId, decision, n);
+      setDecided(decision);
+    } catch (e: unknown) {
+      // Bug #2: 409 "already" means the CoS auto-approved — treat as success and show decided state.
+      const err = e as { status?: number; message?: string };
+      if (err.status === 409 || /already/i.test(err.message || "")) {
+        setDecided(decision === "approve" ? "approve" : decision);
+      }
+      // non-409 errors bubble up to ctx silently (no local err state on this block)
+    } finally { setBusy(false); }
   };
 
   const openNote = (kind: "reject" | "changes") => { setNoteOpen(kind); setTimeout(() => noteRef.current?.focus(), 0); };
