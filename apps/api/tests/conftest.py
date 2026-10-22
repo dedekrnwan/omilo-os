@@ -67,6 +67,20 @@ def base_url():
     th.join(timeout=5)
 
 
+def _seed_owner(c: "httpx.Client") -> None:
+    """(Re)establish the signed-in owner + Small team on the shared MAIN company.
+
+    Idempotent: /api/setup/owner returns 200 when the owner is absent (e.g. a test
+    dropped and recreated co_main) and 409 when it already exists; both are fine.
+    """
+    c.post("/api/setup/owner", json={"email": "owner@example.com", "password": "correct-horse-1", "company_name": "Acme"})
+    tok = c.post("/api/auth/login", json={"email": "owner@example.com", "password": "correct-horse-1", "token_name": "tests"}).json()["token"]
+    c.headers["Authorization"] = f"Bearer {tok}"
+    c.post("/api/onboarding/company", json={"company_name": "Acme", "files": {"company.md": "# Acme\n\nWe sell anvils to coyotes."}})
+    team = c.post("/api/team/apply", json={"preset": "small", "engine": {"type": "fake"}}).json()
+    c.mcp_tokens = team.get("mcp_tokens")
+
+
 @pytest.fixture(scope="session")
 def owner(base_url):
     """A signed-in API client (bearer token, like the CLI) with the Small team on the fake engine."""
@@ -79,6 +93,33 @@ def owner(base_url):
     team = c.post("/api/team/apply", json={"preset": "small", "engine": {"type": "fake"}}).json()
     c.mcp_tokens = team["mcp_tokens"]
     return c
+
+
+@pytest.fixture(autouse=True)
+def _heal_owner_token(request):
+    """Self-heal the shared owner session between tests.
+
+    Some tests (e.g. test_migrate's light_env) legitimately DROP the co_main schema,
+    which destroys the owner's AuthToken and cascades 401 "invalid token" into every
+    later test that uses the session-scoped `owner` client. Before each test that uses
+    `owner`, verify the token still works and re-establish it (cheap re-login, or a full
+    re-seed if the owner itself is gone) so one isolation-breaking test can't poison the
+    rest of the suite. No-op for tests that don't use `owner`.
+    """
+    if "owner" not in request.fixturenames:
+        yield
+        return
+    c = request.getfixturevalue("owner")
+    try:
+        if c.get("/api/auth/me").status_code != 200:
+            r = c.post("/api/auth/login", json={"email": "owner@example.com", "password": "correct-horse-1", "token_name": "tests"})
+            if r.status_code == 200:
+                c.headers["Authorization"] = f"Bearer {r.json()['token']}"
+            else:
+                _seed_owner(c)
+    except Exception:  # noqa: BLE001 - healing must never break collection
+        pass
+    yield
 
 
 def wait_for(fn, timeout=15.0, every=0.1):
