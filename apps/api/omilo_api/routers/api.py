@@ -203,6 +203,14 @@ def apply_team(body: TeamIn, db: Session = Depends(get_db), user: User = Depends
             "note": "MCP tokens are shown once. Use them only to connect an outside agent to this helper (see Team → Connect)."}
 
 
+@router.get("/team/board")
+def team_board(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Per-helper work cards for the By-helper team board view."""
+    from .. import team_board as TB
+
+    return TB.board(db)
+
+
 class StaffIn(BaseModel):
     id: str
     name: str
