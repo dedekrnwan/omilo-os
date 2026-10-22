@@ -1712,6 +1712,69 @@ def mcp_connect(slug: str, body: dict, db: Session = Depends(get_db), user: User
     return {"status": "connected"}
 
 
+@router.post("/connectors/apikey/{slug}/connect")
+def apikey_connect(slug: str, body: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Broker-less connect: enter API key fields for a type='piece' + auth.type='apikey' catalog card.
+
+    Validates the catalog entry is a piece with apikey auth, requires every declared field,
+    upserts a kind='piece' Connector row, and stores the collected fields encrypted under
+    secrets["fields"].  Field values are NEVER logged.
+
+    Trust boundary: field NAMES come from the trusted, server-controlled manifest; only the
+    VALUES are supplied by the request body — body input can never become a field name.
+
+    Body: {field_name: value, ...} — every declared auth.fields entry is required and non-empty.
+    Returns: {"status": "connected"}
+    """
+    from .. import capabilities as C
+    from .. import pieces as P
+    from ..models import Connector
+
+    # 1. Load and validate the catalog entry
+    entry = P.get_piece(slug)
+    if entry is None:
+        raise HTTPException(404, f"piece '{slug}' not found in catalog")
+    manifest = entry["manifest"]
+    auth = manifest.get("auth") or {}
+    if auth.get("type") != "apikey":
+        raise HTTPException(404, f"piece '{slug}' is not an apikey connector")
+
+    # 2. Require every declared field — reject with 400 before creating anything
+    fields_spec = auth.get("fields") or []
+    collected: dict[str, str] = {}
+    for f in fields_spec:
+        name = f["name"]
+        if not body.get(name):
+            raise HTTPException(400, f"missing required field: {name}")
+        collected[name] = body[name]
+
+    # 3. Derive connector-level approval: 'ask' if ANY action has approval=='ask', else 'auto'
+    actions = manifest.get("actions", [])
+    approval = "ask" if any(a.get("approval") == "ask" for a in actions) else "auto"
+
+    # 4. Upsert the Connector row
+    c = db.get(Connector, slug)
+    if c is None:
+        c = Connector(id=slug)
+        db.add(c)
+
+    c.kind = "piece"
+    c.url = ""
+    c.label = manifest.get("label", slug)
+    c.approval = approval
+    c.default_on = True
+    c.enabled = True
+
+    # 5. Store the collected fields encrypted under secrets["fields"] (never log values)
+    C.set_connector_fields(c, collected)
+
+    # 6. Audit (slug only — NEVER field values) and commit
+    S.audit(db, user.id, "connector.apikey.connect", slug)
+    db.commit()
+
+    return {"status": "connected"}
+
+
 @router.delete("/connectors/{cid}")
 def connector_delete(cid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     from .. import broker as B
@@ -1784,8 +1847,18 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
                 {"label": a.get("label") or a.get("name", ""), "approval": a.get("approval", "ask")}
                 for a in (man.get("actions") or []) if isinstance(a, dict)
             ]
-            card_provider = (man.get("auth") or {}).get("provider") or ""
-            card_connect_fields = []
+            piece_auth = man.get("auth") or {}
+            card_provider = piece_auth.get("provider") or ""
+            # For apikey pieces: emit connect_fields (name/label/secret, NEVER values)
+            if piece_auth.get("type") == "apikey":
+                apikey_fields = piece_auth.get("fields") or []
+                card_connect_fields = [
+                    {"name": f["name"], "label": f.get("label", f["name"]), "secret": f.get("secret", False)}
+                    for f in apikey_fields
+                    if isinstance(f, dict) and "name" in f
+                ]
+            else:
+                card_connect_fields = []
         card: dict = {
             "slug": slug,
             "label": piece["label"],
@@ -1799,7 +1872,7 @@ def catalog_list(db: Session = Depends(get_db), user: User = Depends(current_use
             "actions": card_actions,
             "provider": card_provider,
         }
-        if entry_type == "mcp":
+        if entry_type == "mcp" or card_connect_fields:
             card["connect_fields"] = card_connect_fields
         result.append(card)
 
