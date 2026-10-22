@@ -45,6 +45,12 @@ export default function WorkCard({ card, helper, collaborators, paused, subtitle
   const pct = showBar ? Math.round((card.progress.done / card.progress.total) * 100) : 0;
   const isNeedsYou = card.status === "needs_you";
 
+  /* Use card.collaborators from the backend when no explicit collaborators prop is passed */
+  const collabList: { id: string; name: string; role?: string; is_chief?: boolean }[] =
+    collaborators && collaborators.length > 0
+      ? collaborators
+      : (card.collaborators ?? []);
+
   /* If the card has no id we cannot resolve a thread — render non-actionable */
   const hasId = !!card.id;
 
@@ -77,11 +83,14 @@ export default function WorkCard({ card, helper, collaborators, paused, subtitle
         <span className={`wc-status-dot ${dotCls}`} />
         <span className="wc-status-label">{label}</span>
         <span className="sp" />
-        {collaborators && collaborators.length > 0 && (
+        {collabList.length > 0 && (
           <div className="wc-collabs">
-            {collaborators.slice(0, 3).map((c) => (
+            {collabList.slice(0, 3).map((c) => (
               <Avatar key={c.id} who={c} size={18} state={null} />
             ))}
+            {collabList.length > 3 && (
+              <span className="wc-collabs-overflow">+{collabList.length - 3}</span>
+            )}
           </div>
         )}
       </div>

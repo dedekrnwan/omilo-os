@@ -28,6 +28,7 @@ from .models import (
     Checkpoint,
     Goal,
     Proposal,
+    Staff,
     Task,
     TaskGoal,
     Thread,
@@ -150,6 +151,49 @@ def board(db: Session, days: int = 14) -> dict:
         for task_id, goal_id, goal_title in rows:
             task_goals[task_id] = (goal_id, goal_title)
 
+    # ---------------------------------------------------------------- collaborators lookup (child tasks per parent task)
+    # Batch query: for each task in all_task_ids, find child tasks (handoffs) and their staff.
+    # collaborators[parent_task_id] = list of {id, name} for child-task staff EXCLUDING parent's own staff.
+    child_task_rows: list[tuple[str, str]] = []  # (parent_task_id, child_staff_id)
+    if all_task_ids:
+        child_task_rows = list(db.execute(
+            select(Task.parent_task_id, Task.staff_id)
+            .where(Task.parent_task_id.in_(all_task_ids))
+            .distinct()
+        ).all())
+
+    # Build staff name map for collaborator lookup
+    staff_name_map: dict[str, str] = {s.id: s.name for s in db.scalars(select(Staff))}
+
+    # Build parent_task_id -> list of child staff_id (deduplicated, excluding parent's own staff)
+    _child_staff_by_parent: dict[str, list[str]] = {}
+    for parent_tid, child_sid in child_task_rows:
+        if parent_tid:
+            _child_staff_by_parent.setdefault(parent_tid, []).append(child_sid)
+
+    def _collaborators(task: Task) -> list[dict]:
+        """Return up to 3 distinct child-task staff members (excluding the task's own staff)."""
+        child_sids = _child_staff_by_parent.get(task.id, [])
+        seen: set[str] = set()
+        result: list[dict] = []
+        for sid in child_sids:
+            if sid != task.staff_id and sid not in seen:
+                seen.add(sid)
+                result.append({"id": sid, "name": staff_name_map.get(sid, sid)})
+                if len(result) >= 3:
+                    break
+        return result
+
+    # ---------------------------------------------------------------- build agent activity map from office state
+    # agent["current"] = {"kind": "job"|"chat", "brief": str, ...} | None
+    agent_activity: dict[str, str | None] = {}
+    for agent in state["agents"]:
+        cur = agent.get("current")
+        if cur and cur.get("brief"):
+            agent_activity[agent["id"]] = cur["brief"][:80]
+        else:
+            agent_activity[agent["id"]] = None
+
     # ---------------------------------------------------------------- build per-helper card lists
 
     # Index tasks by staff_id
@@ -196,6 +240,7 @@ def board(db: Session, days: int = 14) -> dict:
                 "goal": goal,
                 "cost_usd": round(task.cost_usd or 0.0, 4),
                 "updated_at": _iso(updated_raw),
+                "collaborators": _collaborators(task),
             })
 
         helpers.append({
@@ -204,6 +249,7 @@ def board(db: Session, days: int = 14) -> dict:
             "role": agent["role"],
             "is_chief": agent["is_chief"],
             "status": agent["status"],
+            "activity": agent_activity.get(agent["id"]),
             "cards": cards,
         })
 

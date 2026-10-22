@@ -361,3 +361,89 @@ def test_team_board_endpoint_shape(owner):
             assert "awaiting_reply" in c
             assert "progress" in c
             assert "cost_usd" in c
+
+
+# ---------------------------------------------------------------------------
+# Test 9: helper.activity is set from office state current.brief (running task)
+# ---------------------------------------------------------------------------
+
+def test_helper_activity_from_running_task(owner):
+    """A helper with a running task has activity == task.brief[:80] (from office state current.brief)."""
+    brief_text = "Analyse sales funnel and prepare conversion report"
+
+    with session_scope() as db:
+        s = _staff("act_run")
+        db.add(s)
+        db.flush()
+
+        t = _task(s.id, status="running", brief=brief_text)
+        db.add(t)
+        db.commit()
+        staff_id = s.id
+
+    with session_scope() as db:
+        b = team_board.board(db)
+
+    h = _find_helper(b["helpers"], staff_id)
+    assert h is not None, f"Helper {staff_id} not found"
+    # The activity field must be present on each helper
+    assert "activity" in h
+    # When the task is running, activity comes from office.state current.brief[:80]
+    # office.state._short clips to 220, team_board clips to 80; brief is ≤80 so exact match
+    assert h["activity"] == brief_text[:80], (
+        f"Expected activity={brief_text[:80]!r}, got {h['activity']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 10: card.collaborators contains child-task staff (excluding owner)
+# ---------------------------------------------------------------------------
+
+def test_card_collaborators_from_child_tasks(owner):
+    """A task with a child task owned by a different staff member has
+    that staff member listed in card.collaborators; the parent's own staff is excluded."""
+    with session_scope() as db:
+        parent_staff = _staff("collab_par")
+        child_staff = _staff("collab_chi")
+        db.add(parent_staff)
+        db.add(child_staff)
+        db.flush()
+
+        # Parent task (running)
+        parent_task = _task(parent_staff.id, status="running", brief="Parent task work")
+        db.add(parent_task)
+        db.flush()
+
+        # Child task owned by a different helper, referencing parent
+        child_task = _task(
+            child_staff.id,
+            status="running",
+            brief="Child task work",
+            parent_task_id=parent_task.id,
+        )
+        db.add(child_task)
+        db.commit()
+
+        parent_staff_id = parent_staff.id
+        child_staff_id = child_staff.id
+        parent_task_id = parent_task.id
+
+    with session_scope() as db:
+        b = team_board.board(db)
+
+    card = _find_card(b["helpers"], parent_task_id)
+    assert card is not None, f"Card for parent task {parent_task_id} not found"
+    assert "collaborators" in card, "Card must have a 'collaborators' field"
+
+    collab_ids = [c["id"] for c in card["collaborators"]]
+    # Child staff is a collaborator
+    assert child_staff_id in collab_ids, (
+        f"Expected {child_staff_id} in collaborators {collab_ids}"
+    )
+    # Parent's own staff is NOT a collaborator
+    assert parent_staff_id not in collab_ids, (
+        f"Parent staff {parent_staff_id} must not appear in collaborators"
+    )
+    # Each collaborator has id and name
+    for c in card["collaborators"]:
+        assert "id" in c and "name" in c

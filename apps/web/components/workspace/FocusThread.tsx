@@ -151,9 +151,8 @@ function WorkHead({
         ? `# ${thread.title}`
         : thread.title || "Thread";
 
-  /* Linked goal — available when the thread was opened from a task with a goal */
-  const goal = (thread as any).goal as { id?: string; title?: string } | null | undefined;
-  const goalTitle = goal?.title || null;
+  /* Linked goal — populated by thread_extras.enrich when scope=="task" and a TaskGoal link exists */
+  const goalTitle = thread.goal?.title || null;
 
   const isNeedsYou = thread.group === "needs_you" || thread.awaiting_reply;
 

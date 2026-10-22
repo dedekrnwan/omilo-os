@@ -87,6 +87,8 @@ export type Thread = { id: string; scope: string; ref_id: string | null; staff_i
   /* Task 3 enrichment fields */
   group?: "needs_you" | "active" | "earlier"; subtitle?: string; participants?: string[];
   last_at?: string | null; task_id?: string | null; task_status?: string | null;
+  /** Linked goal when scope=="task" and the task has a TaskGoal→Goal link */
+  goal?: { id: string; title: string } | null;
 };
 export type AskResult = {
   answer: string;
@@ -118,6 +120,7 @@ export type BoardCard = {
   goal: { id: string; title: string } | null;
   cost_usd: number;
   updated_at: string | null;
+  collaborators?: { id: string; name: string }[];
 };
 
 export type BoardHelper = {
@@ -127,6 +130,7 @@ export type BoardHelper = {
   is_chief: boolean;
   status: "working" | "blocked" | "failed" | "queued" | "idle" | "paused";
   cards: BoardCard[];
+  activity?: string | null;
 };
 
 export type TeamBoard = {
@@ -174,7 +178,7 @@ export type PlanTree = {
   days: number;
   goals: PlanGoal[];
   unlinked: PlanNode[];
-  shifts: unknown[];
+  shifts: { id: string; name: string; staff: string; goal_id: string | null; cron?: string | null }[];
 };
 
 export function ago(iso?: string | null): string {

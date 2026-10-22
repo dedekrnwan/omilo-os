@@ -64,8 +64,12 @@ function countRunning(helpers: BoardHelper[]): number {
   return helpers.reduce((n, h) => n + h.cards.filter(c => c.status === "running").length, 0);
 }
 
-/** Derive a one-line activity text for a helper. */
+/** Derive a one-line activity text for a helper.
+ *  Prefers helper.activity (from office state current.brief) when available;
+ *  falls back to card-derived text when null/absent. */
 function helperActivity(helper: BoardHelper): string {
+  // Use the server-side activity (≤80 chars from the running task/chat brief) when present
+  if (helper.activity) return helper.activity;
   const running = helper.cards.filter(c => c.status === "running");
   const waiting = helper.cards.filter(c => c.status === "waiting");
   const needsYou = helper.cards.filter(c => c.status === "needs_you");
@@ -77,6 +81,49 @@ function helperActivity(helper: BoardHelper): string {
   }
   if (waiting.length > 0) return `${waiting.length} task${waiting.length !== 1 ? "s" : ""} queued`;
   return helper.status.charAt(0).toUpperCase() + helper.status.slice(1);
+}
+
+/** Convert a cron expression to a short human-readable schedule label.
+ *  Never throws — returns empty string when cron is empty or unparseable. */
+function cronLabel(cron?: string | null): string {
+  if (!cron) return "";
+  try {
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length < 5) return "";
+    const [min, hour, dom, , dow] = parts;
+    // Hourly: "0 * * * *"
+    if (hour === "*") return "Hourly";
+    // Daily: "X H * * *" (dom=*, dow=*)
+    if (dom === "*" && dow === "*") {
+      const h = parseInt(hour, 10);
+      if (!isNaN(h)) {
+        const ampm = h < 12 ? "am" : "pm";
+        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        return `Daily ${h12}${ampm}`;
+      }
+      return "Daily";
+    }
+    // Weekly: "X H * * N" where N is a specific weekday (0-6)
+    if (dow !== "*" && dom === "*") {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const d = parseInt(dow, 10);
+      if (!isNaN(d) && d >= 0 && d < 7) return `Weekly · ${days[d]}`;
+      // Multiple weekdays like "1,3,5"
+      const ds = dow.split(",").map(x => parseInt(x.trim(), 10)).filter(x => !isNaN(x) && x >= 0 && x < 7);
+      if (ds.length > 0) return ds.map(x => days[x]).join("/");
+    }
+    // Fallback: show human time if parseable
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    if (!isNaN(h) && !isNaN(m)) {
+      const ampm = h < 12 ? "am" : "pm";
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return `${h12}:${m.toString().padStart(2, "0")}${ampm}`;
+    }
+  } catch {
+    // Never throw on odd cron
+  }
+  return "";
 }
 
 /** Dot class for helper activity. */
@@ -319,16 +366,10 @@ function GoalRow({
 
 /* ------------------------------------------------------------------ Routines footer strip */
 function RoutinesStrip({ plan }: { plan: PlanTree }) {
-  /* Build routine-like items from unlinked shifts (approximated from plan data) */
-  const unlinked = flattenNodes(plan.unlinked || []);
-  const running = unlinked.filter(n => n.status === "running" || n.status === "working");
-  const items: { label: string; detail: string; dotCls: string }[] = running.slice(0, 6).map((n) => ({
-    label: n.title.length > 32 ? n.title.slice(0, 32) + "…" : n.title,
-    detail: "",
-    dotCls: "routine-dot-run",
-  }));
+  /* Render from plan.shifts that are NOT tied to a goal (goal_id === null) */
+  const unlinkedShifts = (plan.shifts || []).filter(s => !s.goal_id);
 
-  if (items.length === 0 && unlinked.length === 0) return null;
+  if (unlinkedShifts.length === 0) return null;
 
   return (
     <div className="routines-strip">
@@ -337,21 +378,17 @@ function RoutinesStrip({ plan }: { plan: PlanTree }) {
         Routine · not tied to a goal
       </span>
       <div className="routines-chips">
-        {unlinked.length === 0 ? (
-          <span className="routine-chip routine-chip-empty">No routines</span>
-        ) : (
-          unlinked.slice(0, 8).map((n) => {
-            const s = n.status === "running" || n.status === "working" ? "run"
-              : n.status === "done" || n.status === "completed" ? "done"
-              : "idle";
-            return (
-              <span key={n.id} className={`routine-chip routine-chip-${s}`}>
-                <span className={`routine-dot routine-dot-${s}`} />
-                {n.title.length > 28 ? n.title.slice(0, 28) + "…" : n.title}
-              </span>
-            );
-          })
-        )}
+        {unlinkedShifts.slice(0, 8).map((shift) => {
+          const schedule = cronLabel(shift.cron);
+          const chipLabel = shift.name.length > 28 ? shift.name.slice(0, 28) + "…" : shift.name;
+          return (
+            <span key={shift.id} className="routine-chip routine-chip-idle">
+              <span className="routine-dot routine-dot-idle" />
+              {chipLabel}
+              {schedule && <span className="routine-chip-schedule">{schedule}</span>}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
