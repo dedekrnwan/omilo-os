@@ -120,12 +120,18 @@ class TelegramAdapter:
         company_prefix = prefix()
         hook_url = f"{public_url}{company_prefix}/api/channels/telegram/hook/{webhook_token}"
 
-        # POST setWebhook — token in path, never in logs
-        resp = httpx.post(
-            _tg_url(bot_token, "setWebhook"),
-            json={"url": hook_url, "secret_token": secret_token},
-        )
-        resp.raise_for_status()
+        # POST setWebhook — token in path, never in logs.
+        # Any failure is re-raised as a sanitized RuntimeError so that
+        # the bot token (embedded in the request URL) cannot leak into
+        # exception messages, __cause__ chains, or caller logs.
+        try:
+            resp = httpx.post(
+                _tg_url(bot_token, "setWebhook"),
+                json={"url": hook_url, "secret_token": secret_token},
+            )
+            resp.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            raise RuntimeError("Telegram setWebhook failed") from None
 
         # Store pairing code in the in-process store (keyed by webhook_token)
         _PENDING_PAIRING[webhook_token] = pairing_code
@@ -279,7 +285,6 @@ class TelegramAdapter:
         On success the code is invalidated immediately (single-use).
         """
         from omilo_api.models import ChannelConnection, ChannelIdentity
-        from sqlalchemy import select
 
         # Retrieve the webhook_token for this connection to look up the code
         conn = db.get(ChannelConnection, connection_id)

@@ -384,6 +384,39 @@ def test_consume_pairing_wrong_code_returns_false(db, tmp_path, monkeypatch):
     _PENDING_PAIRING.clear()
 
 
+def test_connect_setwebhook_401_raises_sanitized_error(tmp_path, monkeypatch):
+    """connect() must raise RuntimeError (no token in message or __cause__) on 4xx."""
+    monkeypatch.setenv("OMILO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OMILO_SECRET_KEY", "test-secret-key-1234")
+
+    from omilo_api.config import get_settings
+    get_settings.cache_clear()
+
+    bot_token = "secret-bot-token-12345"
+
+    def _fake_post(url, *, json=None, **kwargs):
+        # Simulate Telegram returning 401 for a bad token; the URL contains the token.
+        req = httpx.Request("POST", url)
+        return httpx.Response(401, json={"ok": False, "description": "Unauthorized"}, request=req)
+
+    import omilo_api.channels.telegram as tg_mod
+    monkeypatch.setattr(tg_mod.httpx, "post", _fake_post)
+
+    from omilo_api.channels.telegram import TelegramAdapter, _PENDING_PAIRING
+    _PENDING_PAIRING.clear()
+
+    a = TelegramAdapter()
+    with pytest.raises(RuntimeError) as excinfo:
+        a.connect({"bot_token": bot_token, "mode": "control", "staff_id": "s"})
+
+    # The exception message must NOT expose the bot token.
+    assert bot_token not in str(excinfo.value)
+    # __cause__ must be None so callers cannot recover the original error (which contains the URL).
+    assert excinfo.value.__cause__ is None
+
+    _PENDING_PAIRING.clear()
+
+
 def test_consume_pairing_second_use_returns_false(db, tmp_path, monkeypatch):
     """A consumed pairing code cannot be used again."""
     monkeypatch.setenv("OMILO_DATA_DIR", str(tmp_path))
