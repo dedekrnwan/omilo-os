@@ -20,7 +20,7 @@ import subprocess
 import tarfile
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import httpx
 import yaml
@@ -941,7 +941,9 @@ def run_action(
     manifest: dict,
     action: str,
     args: dict,
-    token: str,
+    token: str = "",
+    *,
+    creds: dict | None = None,
 ) -> tuple[str, dict]:
     """Execute a named action against the provider API.
 
@@ -950,7 +952,10 @@ def run_action(
     2. Resolve the URL (template path variables from args, but *never* the host).
     3. SSRF guard: verify the resolved host is in provider_hosts(manifest).
     4. Template the request body (if any) from args.
-    5. Issue the HTTP request via httpx with ``Authorization: Bearer <token>``.
+    5. Issue the HTTP request:
+       - oauth2 (or any non-apikey auth.type): ``Authorization: Bearer <token>``.
+       - apikey: headers/query from ``_apply_auth``; query is merged into the URL
+         before the SSRF check; no Bearer header is added.
     6. Map 401/403 → needs_reconnect=True.
     7. Return ``(summary_text, meta_dict)``.
 
@@ -958,7 +963,8 @@ def run_action(
         manifest: A validated connector piece manifest.
         action: The action ``name`` to execute.
         args: Template arguments (variable substitutions).
-        token: OAuth2 bearer token for the request.
+        token: OAuth2 bearer token for the request (ignored for apikey auth).
+        creds: Credential dict for apikey auth (ignored for oauth2 auth).
 
     Returns:
         A ``(summary, meta)`` tuple where meta has keys:
@@ -994,6 +1000,29 @@ def run_action(
     rendered_query = _render_str(parsed.query, args) if parsed.query else ""
     rendered_url = parsed._replace(path=rendered_path, query=rendered_query).geturl()
 
+    # Determine auth type and build headers/query accordingly.
+    auth_type: str = (manifest.get("auth") or {}).get("type", "")
+
+    if auth_type == "apikey":
+        # apikey path: derive headers + query params from _apply_auth; no Bearer header.
+        auth_headers, auth_query = _apply_auth(manifest, creds or {})
+        if auth_query:
+            # Merge credential query params into the rendered URL's query string.
+            # Existing query pairs (from the action URL) are preserved; credential
+            # pairs are appended. The host is unchanged so SSRF check still passes.
+            existing_pairs = parse_qsl(rendered_query, keep_blank_values=True)
+            merged_query = urlencode(existing_pairs + list(auth_query.items()))
+            rendered_url = parsed._replace(
+                path=rendered_path, query=merged_query
+            ).geturl()
+        headers = auth_headers
+    else:
+        # oauth2 (or any other auth type): character-for-character identical to
+        # the original implementation — do NOT alter this path.
+        auth_headers = {}
+        auth_query = {}
+        headers = {"Authorization": f"Bearer {token}"}
+
     # 3. SSRF guard on the final URL — before issuing the request
     _check_host(rendered_url, manifest)
 
@@ -1010,7 +1039,6 @@ def run_action(
         rendered_body = rendered_raw
 
     # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF)
-    headers = {"Authorization": f"Bearer {token}"}
     try:
         with httpx.Client(follow_redirects=False) as client:
             request = client.build_request(

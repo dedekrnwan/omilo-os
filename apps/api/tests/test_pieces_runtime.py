@@ -475,3 +475,104 @@ def test_apply_auth_basic_scheme():
 def test_apply_auth_oauth2_returns_empty():
     """_apply_auth returns ({}, {}) for oauth2 manifests — oauth2 is handled in run_action."""
     assert _apply_auth(GMAIL_MANIFEST, {}) == ({}, {})
+
+
+# ---------------------------------------------------------------------------
+# Task 3: run_action apikey auth injection
+# ---------------------------------------------------------------------------
+
+# Apikey manifest with query scheme — uses stripe provider so SSRF check passes.
+_APIKEY_QUERY_MANIFEST: dict = {
+    "id": "stripe-api",
+    "label": "Stripe API",
+    "category": "payments",
+    "description": "Stripe REST API connector.",
+    "auth": {
+        "type": "apikey",
+        "scheme": "query",
+        "provider": "stripe",
+        "fields": [{"name": "token", "label": "API Token"}],
+        "attach": {"access_token": "{{ token }}"},
+    },
+    "actions": [
+        {
+            "name": "ping",
+            "label": "Ping",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.stripe.com/v1/ping",
+            },
+        }
+    ],
+}
+
+# Apikey manifest with header scheme — acme-api has no provider so we add one
+# that satisfies the SSRF registry. Use stripe for simplicity.
+_APIKEY_HEADER_MANIFEST: dict = {
+    **_APIKEY_MANIFEST,
+    "auth": {
+        **_APIKEY_MANIFEST["auth"],
+        "provider": "stripe",
+    },
+    "actions": [
+        {
+            "name": "ping",
+            "label": "Ping",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.stripe.com/v1/ping",
+            },
+        }
+    ],
+}
+
+
+@respx.mock
+def test_run_action_oauth2_unchanged():
+    """run_action with oauth2 manifest must inject Authorization: Bearer <token> unchanged."""
+    route = respx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    ).respond(200, json={"id": "x"})
+    _, meta = run_action(
+        GMAIL_MANIFEST,
+        "send_email",
+        {"to": "a@b.com", "message": "hi"},
+        "TOK",
+    )
+    req = route.calls.last.request
+    assert req.headers["authorization"] == "Bearer TOK"
+    assert meta["status"] == 200
+
+
+@respx.mock
+def test_run_action_apikey_header():
+    """run_action with apikey+header scheme must inject X-Api-Key and no Authorization header."""
+    route = respx.get("https://api.stripe.com/v1/ping").respond(200, json={})
+    _, meta = run_action(
+        _APIKEY_HEADER_MANIFEST,
+        "ping",
+        {},
+        creds={"api_key": "K"},
+    )
+    req = route.calls.last.request
+    assert req.headers["x-api-key"] == "K"
+    assert "authorization" not in req.headers
+    assert meta["status"] == 200
+
+
+@respx.mock
+def test_run_action_apikey_query_passes_ssrf():
+    """run_action with apikey+query scheme must embed access_token in URL; host unchanged."""
+    route = respx.get(url__regex=r"https://api\.stripe\.com/v1/ping.*").respond(200, json={})
+    _, meta = run_action(
+        _APIKEY_QUERY_MANIFEST,
+        "ping",
+        {},
+        creds={"token": "K"},
+    )
+    req = route.calls.last.request
+    assert "access_token=K" in str(req.url)
+    assert req.url.host == "api.stripe.com"
+    assert meta["status"] == 200
