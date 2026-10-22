@@ -455,7 +455,9 @@ class Worker:
             # ``get_engine`` stays the single dispatch, and the graph's worker node delegates
             # to the real engine. The staff's SOUL (voice/autonomy) rides along so the graph's
             # node prompts reflect it without changing the TaskContext signature.
-            engine_cfg = _effective_engine(st)
+            # _auto: when the company is in Auto/YOLO, the engine lifts the operational
+            # shell-deny (push/publish/deploy run directly instead of asking).
+            engine_cfg = {**_effective_engine(st), "_auto": S.autonomy_policy(db, st)["mode"] == "permissive"}
             # A CoS "goal-delivery" run must delegate, not execute: strip exec tools.
             # goal_delivery = is_chief AND (origin in plan/review OR a TaskGoal row links this task to a goal).
             goal_delivery = False
@@ -735,7 +737,8 @@ class Worker:
             note += _memory(db, st, None)
             ctx = ChatContext(staff_id=st.id, staff_name=st.name, job=st.job, is_chief=st.is_chief, thread_id=th.id,
                               scope=th.scope, history=history, context_note=note, mcp_url=_mcp_url(),
-                              mcp_token=decrypt(st.mcp_token_enc), engine_config=st.engine or {},
+                              mcp_token=decrypt(st.mcp_token_enc),
+                              engine_config={**(st.engine or {}), "_auto": S.autonomy_policy(db, st)["mode"] == "permissive"},
                               emit=Emitter(st.id, thread_id=th.id), resources=resolve(db, thread_id=th.id, staff=st), shared=shared)
         t0 = time.monotonic()
         ctx.emit("status", state="started", engine=_engine_label(ctx.engine_config))
