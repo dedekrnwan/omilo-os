@@ -182,7 +182,7 @@ def focus(db: Session, th: Thread) -> dict:
     refs = list({th.id, task.id})
     kb_rows = list(db.scalars(select(KbSource).where(KbSource.ref.in_(refs))))
     files = [
-        {"title": k.title or k.ref, "kind": k.kind, "ref": k.ref}
+        {"title": k.title or k.ref, "kind": k.kind, "ref": k.ref, "url": k.url or ""}
         for k in kb_rows
     ]
 

@@ -9,9 +9,10 @@ interface FocusStep {
 }
 
 interface FocusFile {
-  name: string;
-  url?: string;
+  title: string;
   kind?: string; /* "pr" | "file" | "chart" | etc. */
+  ref?: string;
+  url?: string;
 }
 
 interface FocusCost {
@@ -21,7 +22,7 @@ interface FocusCost {
 }
 
 interface FocusData {
-  steps?: FocusStep[];
+  progress?: FocusStep[];
   files?: FocusFile[];
   cost?: FocusCost;
 }
@@ -58,13 +59,13 @@ export default function FocusDetails({
       .finally(() => setLoading(false));
   }, [threadId]);
 
-  const hasSteps = (data?.steps?.length ?? 0) > 0;
+  const hasProgress = (data?.progress?.length ?? 0) > 0;
   const hasFiles = (data?.files?.length ?? 0) > 0;
   const hasCost =
     data?.cost &&
     (data.cost.usd > 0 || data.cost.tokens > 0 || data.cost.minutes > 0);
 
-  const isEmpty = !hasSteps && !hasFiles && !hasCost;
+  const isEmpty = !hasProgress && !hasFiles && !hasCost;
 
   return (
     <div className="focus-details">
@@ -120,11 +121,11 @@ export default function FocusDetails({
         )}
 
         {/* PROGRESS */}
-        {hasSteps && (
+        {hasProgress && (
           <div className="focus-section">
             <div className="focus-section-label">Progress</div>
             <div className="focus-progress">
-              {data!.steps!.map((s, i) => (
+              {data!.progress!.map((s, i) => (
                 <div
                   key={i}
                   className={`focus-step${s.status === "done" ? " done" : s.status === "active" ? " active" : ""}`}
@@ -152,13 +153,13 @@ export default function FocusDetails({
                     className="focus-file"
                   >
                     <i className={fileIcon(f.kind)} />
-                    <span>{f.name}</span>
+                    <span>{f.title}</span>
                     <i className="ri-external-link-line" style={{ fontSize: 12, color: "var(--faint)" }} />
                   </a>
                 ) : (
                   <div key={i} className="focus-file">
                     <i className={fileIcon(f.kind)} />
-                    <span>{f.name}</span>
+                    <span>{f.title}</span>
                   </div>
                 )
               )}

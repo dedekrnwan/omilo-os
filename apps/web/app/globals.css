@@ -3731,16 +3731,17 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 /* Thread view: the center column with head + messages + composer */
 .thread-view { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
-/* Thread head (title bar inside focus session) */
-.thread-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; min-height: 48px; }
-.thread-head-title { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Thread head (work header inside focus session) — fmF8G */
+.thread-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; min-height: 52px; background: var(--surface); }
+.thread-head-title { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-head-acts { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
 /* Participants row (avatars + add helper button) */
-.thread-participants { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
+.thread-participants { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; overflow: hidden; flex-shrink: 0; }
 .thread-participants .thread-part-av { display: inline-grid; place-items: center; flex-shrink: 0; }
-.thread-participants .thread-part-overflow { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 50%; width: 22px; height: 22px; display: inline-grid; place-items: center; flex-shrink: 0; }
-.thread-add-helper { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px dashed var(--line-strong); border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.thread-participants .thread-part-overflow { font-size: 10px; font-weight: 700; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 50%; width: 22px; height: 22px; display: inline-grid; place-items: center; flex-shrink: 0; }
+.thread-add-helper { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border: 1px dashed var(--line-strong); border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.thread-add-helper i { font-size: 14px; }
 .thread-add-helper:hover { border-color: var(--faint); background: var(--hover); color: var(--ink); }
 
 /* System / join events between messages */
@@ -3749,37 +3750,37 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 /* ------------------------------------------------------------------ D. Focus details panel */
 
-/* Right column of the focus session */
-.focus-details { display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--soft); min-height: 0; overflow: hidden; }
-.focus-details-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-.focus-details-head b { flex: 1; font-weight: 600; font-size: 13px; }
-.focus-details-body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
+/* Right column of the focus session — fmF8G */
+.focus-details { display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--surface); min-height: 0; overflow: hidden; }
+.focus-details-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; min-height: 48px; }
+.focus-details-head b { flex: 1; font-weight: 600; font-size: 13px; color: var(--ink); }
+.focus-details-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
 
 /* A section within the details panel */
-.focus-section { display: flex; flex-direction: column; gap: 8px; }
-.focus-section-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.focus-section { display: flex; flex-direction: column; gap: 10px; }
+.focus-section-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 
 /* Progress step list */
-.focus-progress { display: flex; flex-direction: column; gap: 4px; }
-.focus-step { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--ink-2); }
-.focus-step i { font-size: 14px; margin-top: 1px; flex-shrink: 0; }
-.focus-step.done { color: var(--muted); text-decoration: line-through; }
-.focus-step.done i { color: var(--ok); text-decoration: none; }
+.focus-progress { display: flex; flex-direction: column; gap: 6px; }
+.focus-step { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+.focus-step i { font-size: 15px; margin-top: 0px; flex-shrink: 0; color: var(--faint); }
+.focus-step.done { color: var(--muted); }
+.focus-step.done i { color: var(--ok); }
 .focus-step.active i { color: var(--info); }
 
-/* Files/references made in this thread */
-.focus-files { display: flex; flex-direction: column; gap: 4px; }
-.focus-file { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); font-size: 13px; cursor: pointer; text-decoration: none; color: var(--ink-2); }
-.focus-file:hover { background: var(--soft); color: var(--ink); text-decoration: none; }
-.focus-file i { font-size: 14px; color: var(--muted); flex-shrink: 0; }
-.focus-file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Cost so far row */
-.focus-cost { display: flex; align-items: center; gap: 14px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-.focus-cost-item { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.focus-cost-item b { font: 600 15px/1.2 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
-.focus-cost-item span { font-size: 11px; color: var(--muted); }
-.focus-cost-sep { width: 1px; height: 28px; background: var(--line-strong); }
+/* Files/references made in this thread — source-pill style (matches P7YIp) */
+.focus-files { display: flex; flex-direction: column; gap: 5px; }
+.focus-file { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--soft); font-size: 12px; font-weight: 500; cursor: default; text-decoration: none; color: var(--ink-2); align-self: flex-start; max-width: 100%; min-width: 0; }
+.focus-file[href] { cursor: pointer; }
+.focus-file[href]:hover { background: var(--hover); border-color: var(--line-strong); color: var(--ink); text-decoration: none; }
+.focus-file i { font-size: 13px; color: var(--muted); flex-shrink: 0; }
+.focus-file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Cost so far — inline meter row (matches viSgz Run Meter) */
+.focus-cost { display: flex; align-items: center; gap: 0; padding: 9px 12px; background: var(--soft); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 12px; color: var(--ink-2); }
+.focus-cost-item { display: flex; align-items: center; gap: 3px; }
+.focus-cost-item b { font: 600 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.focus-cost-item span { color: var(--muted); font-size: 11px; }
+.focus-cost-sep { width: 1px; height: 14px; background: var(--line-strong); margin: 0 10px; flex-shrink: 0; }
 
 @media (max-width: 1100px) {
   .focus-details {
