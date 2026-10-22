@@ -3744,9 +3744,11 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 /* Composer on the desk — wrapper provides bottom margin; the composer itself is the
    shared <Composer> component (same as /chat/?thread=), with its usage meter hidden. */
 .desk-composer { margin-bottom: 24px; }
-/* The desk composer sits near the top of the scroll area, so its @/slash menus
-   open downward (and float above the page) instead of being clipped upward. */
-.desk-composer .slash { top: calc(100% + 6px); bottom: auto; }
+/* The desk composer sits near the top of the scroll area, so all its popovers —
+   the @/slash menus AND the "+" attach menu — open downward (and float above the
+   page) instead of being clipped upward / hidden behind the content. */
+.desk-composer .slash,
+.desk-composer .menu:not(.sub) { top: calc(100% + 6px); bottom: auto; }
 
 /* Suggestions row */
 .desk-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
