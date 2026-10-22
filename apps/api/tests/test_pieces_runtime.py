@@ -11,7 +11,9 @@ import httpx
 import pytest
 import respx
 
-from omilo_api.pieces import action_tools, provider_hosts, run_action
+import base64 as _stdlib_base64
+
+from omilo_api.pieces import _apply_auth, _render_str, action_tools, provider_hosts, run_action
 
 # ---------------------------------------------------------------------------
 # Test fixture manifest — Gmail connector with underscored action name so
@@ -369,3 +371,107 @@ def test_run_action_raises_value_error_for_unknown_action():
     """run_action must raise exactly ValueError (not KeyError) for an unknown action name."""
     with pytest.raises(ValueError):
         run_action(GMAIL_MANIFEST, "nonexistent_action", {}, token="TOK")
+
+
+# ---------------------------------------------------------------------------
+# Task 2: basic() template helper + _apply_auth injection helper
+# ---------------------------------------------------------------------------
+
+def base64_of(s: str) -> str:
+    """Test helper: standard base64 encoding of a string (UTF-8)."""
+    return _stdlib_base64.b64encode(s.encode()).decode()
+
+
+# Canonical apikey manifest fixture (header scheme)
+_APIKEY_MANIFEST: dict = {
+    "id": "acme-api",
+    "label": "Acme API",
+    "category": "productivity",
+    "description": "Acme REST API connector.",
+    "auth": {
+        "type": "apikey",
+        "scheme": "header",
+        "fields": [{"name": "api_key", "label": "API Key"}],
+        "attach": {"X-Api-Key": "{{ api_key }}"},
+    },
+    "actions": [
+        {
+            "name": "list-items",
+            "label": "List items",
+            "approval": "auto",
+            "http": {
+                "method": "GET",
+                "url": "https://api.acme.example/v1/items",
+            },
+        }
+    ],
+}
+
+
+def test_basic_template_helper():
+    """basic(u, p) renders to base64('<u>:<p>')."""
+    assert _render_str("{{ basic(u, p) }}", {"u": "a", "p": "b"}) == base64_of("a:b")
+
+
+def test_basic_template_helper_missing_first_arg_raises():
+    """basic(u, p) raises KeyError if the first argument variable is missing."""
+    with pytest.raises(KeyError):
+        _render_str("{{ basic(u, p) }}", {"p": "b"})  # u missing
+
+
+def test_basic_template_helper_missing_second_arg_raises():
+    """basic(u, p) raises KeyError if the second argument variable is missing."""
+    with pytest.raises(KeyError):
+        _render_str("{{ basic(u, p) }}", {"u": "a"})  # p missing
+
+
+def test_basic_template_helper_in_longer_string():
+    """basic() helper works when embedded in a longer template string."""
+    result = _render_str("Basic {{ basic(u, p) }}", {"u": "alice", "p": "secret"})
+    assert result == "Basic " + base64_of("alice:secret")
+
+
+def test_apply_auth_header_scheme():
+    """_apply_auth with scheme='header' puts rendered pairs in headers, query is empty."""
+    h, q = _apply_auth(_APIKEY_MANIFEST, {"api_key": "K"})
+    assert h == {"X-Api-Key": "K"}
+    assert q == {}
+
+
+def test_apply_auth_query_scheme():
+    """_apply_auth with scheme='query' puts rendered pairs in query, headers is empty."""
+    m = {
+        **_APIKEY_MANIFEST,
+        "auth": {
+            "type": "apikey",
+            "scheme": "query",
+            "fields": [{"name": "token", "label": "Token"}],
+            "attach": {"access_token": "{{ token }}"},
+        },
+    }
+    h, q = _apply_auth(m, {"token": "K"})
+    assert q == {"access_token": "K"}
+    assert h == {}
+
+
+def test_apply_auth_basic_scheme():
+    """_apply_auth with scheme='basic' puts Basic header (via basic() helper) in headers."""
+    m = {
+        **_APIKEY_MANIFEST,
+        "auth": {
+            "type": "apikey",
+            "scheme": "basic",
+            "fields": [
+                {"name": "u", "label": "Username"},
+                {"name": "p", "label": "Password"},
+            ],
+            "attach": {"Authorization": "Basic {{ basic(u, p) }}"},
+        },
+    }
+    h, _ = _apply_auth(m, {"u": "a", "p": "b"})
+    assert h["Authorization"] == "Basic " + base64_of("a:b")
+
+
+def test_apply_auth_oauth2_returns_empty():
+    """_apply_auth returns ({}, {}) for oauth2 manifests — oauth2 is handled in run_action."""
+    assert _apply_auth(GMAIL_MANIFEST, {}) == ({}, {})

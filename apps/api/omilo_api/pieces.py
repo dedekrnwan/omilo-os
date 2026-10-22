@@ -689,6 +689,9 @@ _TMPL_RE = re.compile(r"\{\{\s*(.+?)\s*\}\}")
 # Regex that detects a base64(expr) helper call
 _BASE64_RE = re.compile(r"^base64\((.+)\)$")
 
+# Regex that detects a basic(a, b) helper call — basic(user_var, pass_var)
+_BASIC_RE = re.compile(r"^basic\(\s*([^,]+?)\s*,\s*(.+?)\s*\)$")
+
 
 def _render_value(expr: str, args: dict) -> str:
     """Resolve a single template expression (the content between {{ }}).
@@ -696,6 +699,7 @@ def _render_value(expr: str, args: dict) -> str:
     Supported:
     - Plain variable reference: ``some_var``
     - base64 helper: ``base64(some_var)``
+    - basic helper: ``basic(user_var, pass_var)`` → base64("<user>:<pass>")
 
     Raises KeyError if a variable is not present in args.
     Raises ValueError for unrecognised helper calls.
@@ -706,6 +710,14 @@ def _render_value(expr: str, args: dict) -> str:
         inner = m.group(1).strip()
         raw_val = str(args[inner])
         return _base64.b64encode(raw_val.encode()).decode()
+    m = _BASIC_RE.match(expr)
+    if m:
+        user_var = m.group(1).strip()
+        pass_var = m.group(2).strip()
+        # Resolve both args — raises KeyError if either is missing (same as base64)
+        user_val = str(args[user_var])
+        pass_val = str(args[pass_var])
+        return _base64.b64encode(f"{user_val}:{pass_val}".encode()).decode()
     # Plain variable
     return str(args[expr])
 
@@ -886,6 +898,43 @@ def action_tools(manifest: dict) -> list[dict]:
             },
         })
     return tools
+
+
+def _apply_auth(manifest: dict, creds: dict) -> tuple[dict, dict]:
+    """Render auth attach templates from *creds* and split into headers / query params.
+
+    Args:
+        manifest: A validated connector piece manifest.
+        creds: Credential key→value dict supplied by the user (e.g. {"api_key": "..."}).
+
+    Returns:
+        ``(headers, query)`` — both are plain dicts of rendered string pairs.
+        For ``auth.type == "apikey"``:
+          - ``scheme == "query"``: rendered pairs go into *query*; headers is ``{}``.
+          - Any other scheme (bearer, basic, header): rendered pairs go into *headers*;
+            query is ``{}``.
+        For any other auth type (e.g. "oauth2"): returns ``({}, {})`` — oauth2 token
+        injection is handled in run_action, not here.
+
+    Security: this function never logs *creds* or the rendered values.
+    """
+    auth = manifest.get("auth", {})
+    if auth.get("type") != "apikey":
+        return {}, {}
+
+    attach: dict = auth.get("attach", {})
+    scheme: str = auth.get("scheme", "")
+    headers: dict = {}
+    query: dict = {}
+
+    for header_or_param, template in attach.items():
+        rendered = _render_str(template, creds)
+        if scheme == "query":
+            query[header_or_param] = rendered
+        else:
+            headers[header_or_param] = rendered
+
+    return headers, query
 
 
 def run_action(
