@@ -689,6 +689,14 @@ code.fpath:hover { background: var(--hover); }
 .sl-hint { font-size: 12px; color: var(--muted); margin-left: auto; padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sl-foot { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 6px 12px; background: var(--soft); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .sl-foot kbd, .slash kbd { font: 10.5px var(--font-mono); padding: 1px 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); margin-right: 2px; }
+/* "Add helper" dropdown in the thread header — reuses .sl-group/.sl-item/.sl-label rows */
+.addhelper-menu { min-width: 200px; max-width: 280px; max-height: 320px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  padding: 4px; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .3); }
+.addhelper-menu .sl-item { min-height: 36px; }
+.addhelper-menu .sl-item:hover { background: var(--hover); }
+.addhelper-menu .sl-label { flex: 1; min-width: 0; color: var(--ink); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) { .sl-hint, .sl-foot { display: none; } }
 
 /* ---------- helper mascots ---------- */

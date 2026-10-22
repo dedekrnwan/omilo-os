@@ -335,28 +335,23 @@ function WorkHead({
             </button>
             {addOpen && (
               <div
-                className="ctx"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  zIndex: 36,
-                  minWidth: 180,
-                  background: "var(--surface)",
-                  border: "1px solid var(--line-strong)",
-                  borderRadius: "var(--r-lg)",
-                  boxShadow: "0 8px 24px -8px rgba(0,0,0,.2)",
-                  overflow: "hidden",
-                }}
+                className="addhelper-menu"
+                role="listbox"
+                aria-label="Add a helper"
+                style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 36 }}
               >
+                <div className="sl-group">Add a helper</div>
                 {notIn.map((s) => (
                   <button
                     key={s.id}
-                    className="ctx-item"
+                    type="button"
+                    role="option"
+                    className="sl-item"
+                    disabled={adding}
                     onClick={() => doAdd(s.id)}
                   >
-                    <Avatar who={s} size={18} />
-                    {s.name}
+                    <Avatar who={s} size={20} />
+                    <span className="sl-label">{s.name}</span>
                   </button>
                 ))}
               </div>
