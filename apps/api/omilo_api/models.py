@@ -223,6 +223,8 @@ class Thread(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
+    # mapped_column(default=) only fires at flush/INSERT, not on a transient instance; set here so
+    # Thread(...).channel == "web" holds before the object is ever added to a session.
     def __init__(self, **kw: object) -> None:
         kw.setdefault("channel", "web")
         super().__init__(**kw)
