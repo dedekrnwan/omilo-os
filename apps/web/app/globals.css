@@ -4607,15 +4607,19 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .board-empty-state span { font-size: 13px; }
 
 /* Routines footer strip */
-.routines-strip { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-top: 8px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+.routines-strip { display: flex; align-items: center; gap: 10px; padding: 10px 18px;
+  background: transparent; border: 1px solid var(--line); border-radius: 12px;
   flex-wrap: wrap; }
-.routines-label { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
-  color: var(--muted); white-space: nowrap; flex-shrink: 0; }
-.routines-label i { font-size: 13px; }
-.routines-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.routine-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: var(--r-pill);
-  font-size: 12px; font-weight: 500; border: 1px solid var(--line); background: var(--soft); color: var(--muted); }
+.routines-label { display: flex; align-items: center; gap: 6px; font-size: 13px;
+  color: var(--ink); white-space: nowrap; flex-shrink: 0; }
+.routines-label i { font-size: 13px; color: var(--muted); }
+.routines-label b { font-weight: 600; }
+.routines-label-sub { font-size: 12px; font-weight: 400; color: var(--muted); }
+.routines-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+/* Chip hugs the agent avatar on the left (padding-left 4) per design */
+.routine-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 400; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); }
+.routine-chip .mascot, .routine-chip .av { width: 22px; height: 22px; flex-shrink: 0; }
 .routine-chip-run  { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .routine-chip-done { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
 .routine-chip-idle { }

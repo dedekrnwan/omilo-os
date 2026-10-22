@@ -135,10 +135,6 @@ function helperActivityDotCls(helper: BoardHelper): string {
   return "col-status-dot col-status-dot-idle";
 }
 
-/** Count of done cards for a helper (approximated from done status). */
-function doneTodayCount(helper: BoardHelper): number {
-  return helper.cards.filter(c => c.status === "done").length;
-}
 
 /* ------------------------------------------------------------------ Goal progress % */
 function goalPct(goal: PlanGoal): number {
@@ -353,6 +349,7 @@ function GoalRow({
                 helper={helper}
                 paused={paused}
                 subtitle={node.headline}
+                showOwner
               />
             );
           })
@@ -370,24 +367,36 @@ function GoalRow({
 }
 
 /* ------------------------------------------------------------------ Routines footer strip */
-function RoutinesStrip({ plan }: { plan: PlanTree }) {
+function RoutinesStrip({ plan, helpers }: {
+  plan: PlanTree;
+  helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
+}) {
   /* Render from plan.shifts that are NOT tied to a goal (goal_id === null) */
   const unlinkedShifts = (plan.shifts || []).filter(s => !s.goal_id);
 
   if (unlinkedShifts.length === 0) return null;
 
+  /* Resolve a shift's agent (shift.staff may be an id or a name) for its avatar */
+  const shiftAgent = (staff: string) =>
+    helpers.get(staff) ||
+    Array.from(helpers.values()).find((h) => h.name === staff) ||
+    (staff ? { id: staff, name: staff } : null);
+
   return (
     <div className="routines-strip">
       <span className="routines-label">
         <i className="ri-loop-left-line" />
-        Routine · not tied to a goal
+        <b>Routine</b>
+        <span className="routines-label-sub">not tied to a goal</span>
       </span>
       <div className="routines-chips">
         {unlinkedShifts.slice(0, 8).map((shift) => {
           const schedule = cronLabel(shift.cron);
           const chipLabel = shift.name.length > 28 ? shift.name.slice(0, 28) + "…" : shift.name;
+          const agent = shiftAgent(shift.staff);
           return (
             <span key={shift.id} className="routine-chip routine-chip-idle">
+              {agent && <Avatar who={agent} size={22} state={null} />}
               <span className="routine-dot routine-dot-idle" />
               {chipLabel}
               {schedule && <span className="routine-chip-schedule">{schedule}</span>}
@@ -581,7 +590,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
             )}
 
             {/* Routines footer strip */}
-            {plan && <RoutinesStrip plan={plan} />}
+            {plan && <RoutinesStrip plan={plan} helpers={helpersMap} />}
           </div>
         )}
       </div>

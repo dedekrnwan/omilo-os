@@ -35,9 +35,12 @@ interface WorkCardProps {
   paused?: boolean;
   /** Subtitle / description line (one line, grey) */
   subtitle?: string | null;
+  /** Show the owning agent's avatar in the card's top-right "who" slot.
+   *  On by-goal the card must say who owns it; on by-helper the column already does. */
+  showOwner?: boolean;
 }
 
-export default function WorkCard({ card, helper, collaborators, paused, subtitle }: WorkCardProps) {
+export default function WorkCard({ card, helper, collaborators, paused, subtitle, showOwner }: WorkCardProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const { label, dotCls, cardMod } = cardStatus(card);
@@ -50,6 +53,12 @@ export default function WorkCard({ card, helper, collaborators, paused, subtitle
     collaborators && collaborators.length > 0
       ? collaborators
       : (card.collaborators ?? []);
+
+  /* Avatars shown in the card's top-right "who" slot. On by-goal we lead with the owning
+     agent (showOwner); on by-helper the column already names the helper, so we show none. */
+  const whoList = showOwner
+    ? [helper, ...collabList].filter(Boolean).filter((w, i, a) => a.findIndex((x) => x!.id === w!.id) === i) as typeof collabList
+    : collabList;
 
   /* If the card has no id we cannot resolve a thread — render non-actionable */
   const hasId = !!card.id;
@@ -83,13 +92,13 @@ export default function WorkCard({ card, helper, collaborators, paused, subtitle
         <span className={`wc-status-dot ${dotCls}`} />
         <span className="wc-status-label">{label}</span>
         <span className="sp" />
-        {collabList.length > 0 && (
+        {whoList.length > 0 && (
           <div className="wc-collabs">
-            {collabList.slice(0, 3).map((c) => (
-              <Avatar key={c.id} who={c} size={18} state={null} />
+            {whoList.slice(0, 3).map((c) => (
+              <Avatar key={c.id} who={c} size={22} state={null} />
             ))}
-            {collabList.length > 3 && (
-              <span className="wc-collabs-overflow">+{collabList.length - 3}</span>
+            {whoList.length > 3 && (
+              <span className="wc-collabs-overflow">+{whoList.length - 3}</span>
             )}
           </div>
         )}
