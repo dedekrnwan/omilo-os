@@ -71,6 +71,11 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 
 /* ------------------------------------------------------------------ app frame: sidebar + inset workspace */
 .frame { display: flex; height: 100dvh; overflow: hidden; }
+/* Offline banner — slim strip pinned top-center while the API is unreachable (clears on reconnect) */
+.offline-banner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 9000;
+  display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: var(--r-pill);
+  background: var(--ink); color: #fff; font-size: 13px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+.offline-banner-spin { width: 13px; height: 13px; border-color: rgba(255,255,255,.35); border-top-color: #fff; }
 .side { width: 252px; flex-shrink: 0; display: flex; flex-direction: column; padding: 12px 0; }
 .side .head { padding: 2px 16px 12px; display: flex; align-items: center; gap: 10px; }
 .mark { display: inline-grid; place-items: center; flex-shrink: 0; line-height: 0; }
@@ -3098,41 +3103,40 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 
 /* ---------------------------------------------------------------- Team v2 (pen b3nYgQ) */
 
-/* Tab strip */
-.team2-tabs { display: flex; align-items: center; gap: 2px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
-.team2-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px 10px; font-size: 14px; font-weight: 500; color: var(--muted);
-  border-bottom: 2px solid transparent; margin-bottom: -1px; text-decoration: none; cursor: pointer; white-space: nowrap; transition: color .15s; }
+/* Tab strip — boxed active tab sitting on a hairline (pen Refresh · Team) */
+.team2-tabs { display: flex; align-items: center; gap: 4px; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.team2-tab { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-sm);
+  font-size: 13px; font-weight: 500; color: var(--muted); border: 1px solid transparent; text-decoration: none; cursor: pointer; white-space: nowrap; transition: color .15s, background .15s; }
 .team2-tab:hover { color: var(--ink); text-decoration: none; }
-.team2-tab.on { color: var(--ink); border-bottom-color: var(--ink); }
-.team2-tab i { font-size: 15px; }
-.team2-tab-count { min-width: 18px; height: 16px; padding: 0 5px; border-radius: 4px; background: var(--line-strong);
-  color: var(--ink-2); font: 500 11px/16px var(--font-mono); letter-spacing: 0; text-align: center; }
+.team2-tab.on { color: var(--ink); background: var(--surface); border-color: var(--line-strong); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+.team2-tab i { font-size: 14px; }
 
 /* Helper card grid (pen b3nYgQ) — 3 columns desktop */
 .team2-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
 /* Individual helper card — stacks Top / Status / Meta / Actions vertically */
 .team2-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
-  padding: 16px; display: flex; flex-direction: column; gap: 12px; transition: box-shadow .12s; }
+  padding: 18px; display: flex; flex-direction: column; gap: 14px; transition: box-shadow .12s; }
 .team2-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.07); }
 
-/* Top: avatar + name/role */
-.team2-card-top { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; }
+/* Top: avatar + name/description */
+.team2-card-top { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; min-width: 0; }
 .team2-card-top:hover { text-decoration: none; }
-.team2-id-text { display: flex; flex-direction: column; min-width: 0; }
-.team2-name { font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team2-id-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.team2-name { font: 600 17px/1.2 var(--font-display); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team2-chief { font-weight: 400; color: var(--muted); }
+.team2-desc { font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .team2-role { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Status: chip + next-job line */
-.team2-card-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.team2-next { color: var(--muted); white-space: nowrap; }
+.team2-card-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.team2-next { color: var(--muted); white-space: nowrap; font-size: 12px; }
 
-/* Meta pillbox */
-.team2-card-meta { display: flex; align-items: flex-start; gap: 14px; }
-.team2-pill { display: flex; flex-direction: column; align-items: flex-start; }
-.team2-pill-label { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
-.team2-pill-val { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+/* Meta pillbox — three columns above a hairline */
+.team2-card-meta { display: flex; align-items: flex-start; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.team2-pill { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1 1 0; min-width: 0; }
+.team2-pill-label { font-size: 11px; font-weight: 400; color: var(--muted); line-height: 1.2; }
+.team2-pill-val { font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 /* Actions: Open / Chat buttons */
 .team2-card-actions { display: flex; align-items: center; gap: 6px; margin-top: auto; }
@@ -3152,19 +3156,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .team2-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 /* Suggested specialists */
-.team2-suggest-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
-.team2-suggest { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.team2-suggest-head { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0 0 10px; }
+.team2-suggest { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .team2-spec { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px;
-  display: flex; flex-direction: column; gap: 8px; }
-.team2-spec-top { display: flex; align-items: flex-start; gap: 10px; }
-.team2-spec-icon { width: 36px; height: 36px; border-radius: var(--r-md); background: var(--soft); border: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px; }
+.team2-spec-top { display: flex; align-items: center; gap: 10px; }
+.team2-spec-icon { width: 32px; height: 32px; border-radius: var(--r-md); background: var(--soft); border: 1px solid var(--line);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.team2-spec-icon i { font-size: 18px; color: var(--muted); }
+.team2-spec-icon i { font-size: 16px; color: var(--ink-2); }
 .team2-spec-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .team2-spec-name { font-size: 14px; font-weight: 600; color: var(--ink); }
-.team2-spec-cat { display: flex; align-items: center; gap: 5px; color: var(--muted); }
+.team2-spec-cat { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .team2-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-.team2-spec-desc { color: var(--ink-2); margin: 0; line-height: 1.5; }
+.team2-spec-desc { color: var(--ink-2); margin: 0; font-size: 13px; line-height: 20px; }
 .team2-spec-foot { display: flex; align-items: center; }
 
 @media (max-width: 900px) {

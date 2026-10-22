@@ -11,15 +11,29 @@ export class ApiError extends Error {
 // writes that change nothing anyone else shows (or that fire constantly) don't refresh every view
 const QUIET = ["/vault/write", "/onboarding/assist", "/ai/check", "/connectors/check", "/notify/test", "/fs", "/presence"];
 
+// Announce reachability so the shell can show an "offline — reconnecting" banner. A network-level
+// TypeError ("Failed to fetch") means the API is unreachable; any completed response means we're back.
+// Aborts (AbortError, a DOMException) are not network failures, so they don't flip the state.
+function markReachable(ok: boolean) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(ok ? "omilo:online" : "omilo:offline"));
+}
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const method = opts.method || (opts.body !== undefined ? "POST" : "GET");
-  const res = await fetch(`${BASE}/api${path}`, {
-    method,
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...(method !== "GET" ? { "X-Omilo": "1" } : {}) },
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    signal: opts.signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", ...(method !== "GET" ? { "X-Omilo": "1" } : {}) },
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: opts.signal,
+    });
+  } catch (e) {
+    if (e instanceof TypeError) markReachable(false);  // network down; not an abort
+    throw e;
+  }
+  markReachable(true);
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -37,6 +51,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 
 export type Staff = {
   id: string; name: string; role: string; is_chief: boolean; job: string; engine: Record<string, any>;
+  tagline?: string; summary?: string; cost_month?: number;
   permissions: Record<string, any>; status: string; has_mcp_token: boolean; max_task_minutes: number; budget_usd_month: number;
   shifts: Shift[]; effective_permissions?: Record<string, string>; recent_tasks?: Task[]; mcp?: { url: string };
 };

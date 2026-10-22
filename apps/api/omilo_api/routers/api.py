@@ -249,9 +249,12 @@ class StaffPatch(BaseModel):
 @router.get("/staff")
 def list_staff(former: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """The team. `former=true` lists the helpers you let go instead (their history is kept; you can hire them back)."""
+    from .. import budgets
+
     states = S.helper_states(db)
+    usage = budgets.month_usage(db)
     rows = db.scalars(select(Staff).where(Staff.status == "retired").order_by(Staff.name)) if former else S.team(db)
-    return [{**X.staff(s), "awake": True, **states.get(s.id, {})} for s in rows]
+    return [{**X.staff(s), "awake": True, "cost_month": round(usage.get(s.id, {}).get("cost_usd", 0.0), 2), **states.get(s.id, {})} for s in rows]
 
 
 @router.post("/staff")

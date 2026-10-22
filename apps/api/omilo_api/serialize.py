@@ -31,7 +31,11 @@ def staff(s: Staff) -> dict:
     eng = dict(s.engine or {})
     eng.pop("api_key", None)
     eng.pop("api_key_enc", None)  # secrets never leave the gateway
+    from .catalog import role as _role
+
+    r = _role(s.role) or {}
     return {"id": s.id, "name": s.name, "role": s.role, "is_chief": s.is_chief, "job": s.job, "engine": eng,
+            "tagline": r.get("tagline", ""), "summary": r.get("summary", ""),
             "permissions": s.permissions or {}, "budget_usd_month": s.budget_usd_month, "max_task_minutes": s.max_task_minutes,
             "status": s.status, "has_mcp_token": bool(s.mcp_token_hash), "shifts": [shift(x) for x in s.shifts],
             "created_at": iso(s.created_at), "updated_at": iso(s.updated_at)}

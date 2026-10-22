@@ -16,7 +16,7 @@ const CommandCtx = createContext<Ctx>({ isOpen: false, seed: "", open: () => {},
 export function CommandProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [seed, setSeed] = useState("");
-  const open = useCallback((s = "") => { setSeed(s); setIsOpen(true); }, []);
+  const open = useCallback((s = "") => { setSeed(typeof s === "string" ? s : ""); setIsOpen(true); }, []);
   const close = useCallback(() => setIsOpen(false), []);
 
   // Global ⌘K / Ctrl-K shortcut

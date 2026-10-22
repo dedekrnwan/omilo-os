@@ -1,5 +1,5 @@
 "use client";
-import { usePoll } from "@/lib/poll";
+import { usePoll, useOnline } from "@/lib/poll";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -147,6 +147,7 @@ export default function Shell({ children }: { children: ReactNode }) {
       <PageActionsCtx.Provider value={{ set: setActions }}>
       <CommandProvider>
       <div className="frame">
+        <OfflineBanner />
         <PreviewHost />
         {ready && !bare && <NotifyHost onNotice={refresh} />}
         {ready && !bare && <TaskDrawerLazy />}
@@ -330,9 +331,20 @@ function TopbarV2({
   );
 }
 
+function OfflineBanner() {
+  const online = useOnline();
+  if (online) return null;
+  return (
+    <div className="offline-banner" role="status" aria-live="polite">
+      <span className="spin offline-banner-spin" />
+      You&rsquo;re offline — reconnecting…
+    </div>
+  );
+}
+
 function AskBar({ onOpen, chief }: { onOpen: () => void; chief?: { id: string; name: string; is_chief?: boolean } | null }) {
   return (
-    <button className="ask" onClick={onOpen} aria-label="Ask Chief of Staff or search" type="button">
+    <button className="ask" onClick={() => onOpen()} aria-label="Ask Chief of Staff or search" type="button">
       {chief
         ? <span className="ask-cos" aria-hidden><Avatar who={chief} size={18} /></span>
         : <i className="ri-search-line ask-icon" aria-hidden />}
