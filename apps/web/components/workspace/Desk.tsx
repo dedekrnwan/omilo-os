@@ -2,9 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
+import MentionBox, { MentionHandle } from "@/components/MentionBox";
+import { useMentions } from "@/components/Mentions";
 import PoolMeter from "@/components/PoolMeter";
 import { useOverview } from "@/components/Shell";
-import { Thread, api, ago } from "@/lib/api";
+import { Staff, Thread, api, ago } from "@/lib/api";
 import ThreadsRail, { RailThread } from "@/components/workspace/ThreadsRail";
 
 /* ------------------------------------------------------------------ helpers */
@@ -39,12 +41,13 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
-function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
+function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; staff: Staff[] }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<MentionHandle | null>(null);
+  const mention = useMentions(text, setText, staff, box);
 
   const send = useCallback(async (msg: string) => {
     const trimmed = msg.trim();
@@ -66,25 +69,54 @@ function DeskComposer({ onSent }: { onSent: (threadId: string) => void }) {
     }
   }, [busy, onSent, router]);
 
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
-  };
-
   return (
     <div className="desk-composer">
       <form
         className="composer"
         onSubmit={(e) => { e.preventDefault(); send(text); }}
       >
-        <textarea
-          ref={inputRef}
-          rows={2}
+        {/* Augmented picker: real helpers (selectable) + disabled HIRES · PERSONAS group.
+            desk-mention-container is position:absolute above the composer; inside it,
+            .slash.mention-menu becomes position:relative so both sections share one float. */}
+        {mention.open && (
+          <div className="desk-mention-container">
+            {mention.menu}
+            {/* Disabled HIRES · PERSONAS group — truly non-interactive:
+                pointer-events:none, aria-disabled, no onClick handler on any entry */}
+            <div className="desk-personas-ext">
+              <div className="sl-group desk-personas-group">
+                Hires · Personas
+                <span className="desk-personas-soon">Coming soon</span>
+              </div>
+              {["Rina"].map((name) => (
+                <div
+                  key={name}
+                  className="sl-item desk-persona-item"
+                  role="option"
+                  aria-disabled="true"
+                  aria-selected={false}
+                >
+                  <span className="desk-persona-avatar" aria-hidden="true">
+                    <i className="ri-user-heart-line" />
+                  </span>
+                  <span className="sl-label"><b>{name}</b></span>
+                  <span className="sl-hint desk-persona-hint">Coming soon</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <MentionBox
+          handleRef={box}
           value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
+          onChange={setText}
+          staff={staff}
           placeholder="Tell me what you need. I'll hand it to the right helper and keep you posted here…"
-          disabled={busy}
-          aria-label="Message the Chief of Staff"
+          ariaExpanded={mention.open}
+          onKeyDown={(e) => {
+            if (mention.onKeyDown(e)) return;
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text); }
+          }}
         />
         <div className="row">
           <span className="sp" />
@@ -371,6 +403,7 @@ export default function Desk() {
             {/* Composer */}
             <DeskComposer
               onSent={() => {}}
+              staff={(overview?.staff || []) as unknown as Staff[]}
             />
 
             {/* Suggestions */}

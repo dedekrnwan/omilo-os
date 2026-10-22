@@ -3702,6 +3702,23 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 }
 
 
+/* Desk composer: augmented @mention picker with real helpers + disabled HIRES·PERSONAS group.
+   desk-mention-container floats above the composer box; the .slash.mention-menu inside it
+   becomes position:relative so both sections share a single visual panel. */
+.desk-mention-container { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 45; display: flex; flex-direction: column; }
+/* Override .slash positioning when nested inside .desk-mention-container */
+.desk-mention-container .slash { position: relative; left: auto; right: auto; bottom: auto; box-shadow: none; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 1px solid var(--line); }
+/* Disabled PERSONAS extension appended below the real helpers */
+.desk-personas-ext { background: var(--surface); border: 1px solid var(--line-strong); border-top: 0; border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg); overflow: hidden; }
+/* Personas group header */
+.desk-personas-group { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 500; color: var(--muted); padding: 8px 10px 4px; text-transform: uppercase; letter-spacing: .04em; }
+.desk-personas-soon { font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; margin-left: auto; }
+/* Disabled persona entry — not interactive: pointer-events:none prevents any click, aria-disabled signals this to AT */
+.desk-persona-item { opacity: .45; cursor: not-allowed; pointer-events: none; }
+.desk-persona-avatar { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--soft); border: 1px solid var(--line); flex-shrink: 0; }
+.desk-persona-avatar i { font-size: 13px; color: var(--muted); }
+.desk-persona-hint { color: var(--muted); font-style: italic; }
+
 /* ------------------------------------------------------------------ C. Focus chat session — threads rail */
 
 /* Threads rail (left column of the focus session layout) */
