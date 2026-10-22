@@ -984,6 +984,7 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 .inbox2-allclear { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px;
   padding: 36px 24px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
   box-shadow: 0 2px 8px -4px rgba(12, 10, 9, .08); }
+.inbox2-allclear-mascot { display: grid; place-items: center; margin-bottom: 2px; }
 .inbox2-allclear-badge { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
   background: var(--ok-tint); color: var(--ok); font-size: 28px; }
 .inbox2-allclear-badge i { line-height: 1; }

@@ -81,6 +81,8 @@ function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
 
 function BoardView({ onCount }: { onCount: () => void }) {
   const router = useRouter();
+  const { overview } = useOverview();
+  const chief = overview?.staff?.find((s) => s.is_chief) ?? null;
   const [b, setB] = useState<Board | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<NeedCard | null>(null);
@@ -254,7 +256,9 @@ function BoardView({ onCount }: { onCount: () => void }) {
 
           {b.needs.length === 0 ? (
             <div className="inbox2-allclear">
-              <div className="inbox2-allclear-badge"><i className="ri-checkbox-circle-fill" /></div>
+              <div className="inbox2-allclear-mascot">
+                {chief ? <Avatar who={chief} size={64} /> : <span className="inbox2-allclear-badge"><i className="ri-checkbox-circle-fill" /></span>}
+              </div>
               <h3 className="inbox2-allclear-title">You&apos;re all caught up</h3>
               <p className="inbox2-allclear-body">Nobody needs a decision from you right now. Your team is on it — this list fills up only when a helper is actually stuck.</p>
               <div className="inbox2-allclear-stats">
