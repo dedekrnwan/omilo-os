@@ -4,7 +4,9 @@ Runs the agent loop inside Omilo: the model gets the omilo MCP tools (fetched ov
 endpoint with the staff token, so policy and the tool log apply exactly as for Claude Code), and every
 tool_use is executed through MCP and returned as tool_result until the model stops.
 """
+import asyncio
 import os
+import random
 
 import httpx
 
@@ -14,6 +16,11 @@ from .prompts import CHAT_SYSTEM, CONSTITUTION, task_message, with_resources
 
 API = "https://api.anthropic.com"
 VERSION = "2023-06-01"
+# A blip (connection reset, overloaded, gateway hiccup) shouldn't kill a whole run. These statuses
+# and any transport error are retried a couple of times — safe because this is before the turn's
+# tools execute, so re-POSTing the same prefix repeats nothing.
+_RETRY_STATUS = {408, 429, 500, 502, 503, 504}
+_HTTP_TRIES = 3
 DEFAULT_MODEL = "claude-sonnet-5-5"
 MAX_TURNS_TASK = 40
 MAX_TURNS_CHAT = 8
@@ -142,10 +149,20 @@ class ClaudeEngine(Engine):
                     all_tools = tools + (WEB_TOOLS if web else [])
                     all_tools[-1] = {**all_tools[-1], "cache_control": {"type": "ephemeral"}}  # one breakpoint on the last tool caches the whole array
                     body["tools"] = all_tools
-                try:
-                    r = await c.post(f"{base}/v1/messages", json=body, headers=headers(key))
-                except httpx.HTTPError as e:
-                    return EngineResult(error=f"Claude unreachable: {e}", tokens=tokens, cost_usd=cost)
+                r, last_err = None, None
+                for attempt in range(_HTTP_TRIES):
+                    try:
+                        r = await c.post(f"{base}/v1/messages", json=body, headers=headers(key))
+                    except httpx.HTTPError as e:
+                        r, last_err = None, f"Claude unreachable: {e}"
+                    else:
+                        if r.status_code not in _RETRY_STATUS:
+                            break  # success or a non-transient error — let the checks below handle it
+                        last_err = f"Claude API {r.status_code}: {r.text[:300]}"
+                    if attempt < _HTTP_TRIES - 1:
+                        await asyncio.sleep(min(8.0, 1.0 * 2 ** attempt) + random.uniform(0, 1.0))
+                if r is None:  # every attempt hit a transport error
+                    return EngineResult(error=last_err or "Claude unreachable", tokens=tokens, cost_usd=cost)
                 if r.status_code == 400 and web and ("web_search" in r.text or "web_fetch" in r.text):
                     web = False  # web tools turned off for this Anthropic organization: carry on without them
                     continue

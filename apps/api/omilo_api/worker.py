@@ -303,18 +303,32 @@ class Worker:
         with session_scope() as db:
             if S.is_paused(db):
                 return
+            grace_cap = get_settings().shift_misfire_grace_s
             due = db.scalars(select(Shift).where(Shift.enabled.is_(True), Shift.next_at <= now()))
             for sh in due:
                 st = db.get(Staff, sh.staff_id)
                 from . import agenda
 
-                skipped = agenda.is_skipped(db, sh, sh.next_at)  # the owner skipped this one run in the calendar
-                sh.last_at = now()
-                sh.next_at = S.next_run(sh.cron, db=db)
+                tnow = now()
+                slot = sh.next_at  # the scheduled time that came due (may be far in the past after downtime)
+                skipped = agenda.is_skipped(db, sh, slot)  # the owner skipped this one run in the calendar
+                # Advance to the next slot strictly in the future, collapsing any slots missed
+                # during downtime: we fire at most one catch-up (the freshest), never a backlog.
+                period = (S.next_run(sh.cron, after=slot, db=db) - slot).total_seconds()
+                missed = (tnow - slot).total_seconds() if slot else 0.0
+                sh.last_at = tnow
+                sh.next_at = S.next_run(sh.cron, after=tnow, db=db)
                 if skipped:
                     S.audit(db, "system", "shift.skipped", sh.id)
                     continue
                 if not st or st.status != "active":
+                    continue
+                # Staleness guard: only run a missed slot if it's still fresh — within one
+                # cadence of its due time, capped by the misfire-grace setting. Older slots
+                # (service down for a while) are dropped but logged, so nothing is silent.
+                grace = min(period, grace_cap) if period > 0 else grace_cap
+                if missed > grace:
+                    S.audit(db, "system", "shift.missed", sh.id, staff=st.id, overdue_s=int(missed))
                     continue
                 busy = db.scalar(select(func.count()).select_from(Task).where(
                     Task.shift_id == sh.id, Task.status.in_(["queued", "running"])))
@@ -325,8 +339,10 @@ class Worker:
                     from . import nudge  # what is still waiting on the owner goes on top of the morning brief
 
                     brief += nudge.brief_section(db)
-                db.add(Task(staff_id=st.id, origin="shift", brief=brief, created_by="schedule", shift_id=sh.id))
-                S.audit(db, "system", "shift.fire", sh.id, staff=st.id)
+                catchup = missed > 60  # clearly late, not a normal on-time tick
+                db.add(Task(staff_id=st.id, origin="shift", brief=brief,
+                            created_by="catchup" if catchup else "schedule", shift_id=sh.id))
+                S.audit(db, "system", "shift.fire", sh.id, staff=st.id, catchup=catchup, overdue_s=int(missed))
 
     def dispatch_tasks(self):
         with session_scope() as db:
@@ -543,7 +559,7 @@ class Worker:
                     db.commit()
                     return
                 t.status = "queued"
-                self.retry_at[task_id] = time.monotonic() + 30  # re-check in 30s; slot is released because status != "running"
+                self.retry_at[task_id] = time.monotonic() + S.jittered(30, frac=0.25)  # re-check ~30s; slot is released because status != "running"
                 db.commit()
                 return
             self._deferred_since.pop(task_id, None)  # any NON-defer outcome ends a capacity wait
@@ -551,8 +567,8 @@ class Worker:
             from . import loops
 
             if res.error and report is None and t.origin != "execution" and t.attempts < 3 and loops.transient(res.error):
-                delay = 30 * 2 ** (t.attempts - 1)  # 30 s, then 60 s
-                t.status, t.error = "queued", f"try {t.attempts} failed ({res.error[:200]}); trying again in {delay} s"
+                delay = S.jittered(30, t.attempts - 1, frac=0.25)  # ~30 s, then ~60 s, with jitter
+                t.status, t.error = "queued", f"try {t.attempts} failed ({res.error[:200]}); trying again in {delay:.0f} s"
                 self.retry_at[t.id] = time.monotonic() + delay
                 retry.update(staff_id=t.staff_id, error=res.error[:300], wait_s=delay)
                 return

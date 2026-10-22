@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -1043,23 +1044,37 @@ def run_action(
             )
         rendered_body = rendered_raw
 
-    # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF)
-    try:
-        with httpx.Client(follow_redirects=False) as client:
-            request = client.build_request(
-                method,
-                rendered_url,
-                json=rendered_body,
-                headers=headers,
-            )
-            # Second host check after request construction guards url-with-userinfo tricks
-            _check_host(str(request.url), manifest)
-            response = client.send(request)
-    except httpx.RequestError as exc:
-        # Transport-level failure (DNS, timeout, connection refused, etc.).
+    # 5. Issue the HTTP request (follow_redirects=False prevents redirect-based SSRF).
+    #    Retry a transient transport failure or a 429/5xx a couple of times with jittered backoff —
+    #    a brief network blip or an overloaded provider shouldn't fail the whole action. Retries are
+    #    capped (connector_retries) and limited to statuses that strongly imply the call didn't apply.
+    retryable_status = {429, 500, 502, 503, 504}
+    tries = max(0, get_settings().connector_retries) + 1
+    response, transport_err = None, None
+    for attempt in range(tries):
+        try:
+            with httpx.Client(follow_redirects=False) as client:
+                request = client.build_request(
+                    method,
+                    rendered_url,
+                    json=rendered_body,
+                    headers=headers,
+                )
+                # Second host check after request construction guards url-with-userinfo tricks
+                _check_host(str(request.url), manifest)
+                response = client.send(request)
+        except httpx.RequestError as exc:
+            response, transport_err = None, exc
+        else:
+            if response.status_code not in retryable_status:
+                break  # success or a non-transient error — handled below
+        if attempt < tries - 1:
+            time.sleep(min(4.0, 0.5 * 2 ** attempt) + random.uniform(0, 0.5))
+    if response is None:
+        # Transport-level failure (DNS, timeout, connection refused, etc.) on every attempt.
         # Return a structured result so callers don't need to handle the httpx exception.
         return (
-            f"Action '{action}' failed: {exc}",
+            f"Action '{action}' failed: {transport_err}",
             {"status": None, "needs_reconnect": False},
         )
 
