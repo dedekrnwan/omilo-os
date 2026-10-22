@@ -129,9 +129,35 @@ function HoverActions({
   helperName: string;
   onReAsk?: () => void;
 }) {
+  const [pinned, setPinned] = useState(false);
+
   const handleCopy = () => copy(message.text);
-  // Edit request: re-quote the prior owner message (same as re-ask)
-  const handleEdit = () => quote(thread.id, message.text);
+
+  // Edit: put the message text back into the composer for editing/re-sending
+  const handleEdit = () => {
+    window.dispatchEvent(new CustomEvent("omilo:edit", { detail: { messageId: message.id, text: message.text } }));
+  };
+
+  // Pin: toggle local state and dispatch event
+  const handlePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    window.dispatchEvent(new CustomEvent("omilo:pin", { detail: { messageId: message.id, pinned: next } }));
+  };
+
+  // Share: copy a deep-link to the message if derivable, else dispatch event
+  const handleShare = async () => {
+    const url = `${window.location.href.split("#")[0]}#msg-${message.id}`;
+    if (!navigator.clipboard?.writeText) {
+      window.dispatchEvent(new CustomEvent("omilo:share", { detail: { messageId: message.id } }));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.dispatchEvent(new CustomEvent("omilo:share", { detail: { messageId: message.id } }));
+    }
+  };
 
   return (
     <div className="reply-hover-row">
@@ -145,16 +171,16 @@ function HoverActions({
         <button type="button" className="reply-hbtn" title="Retry" aria-label="Retry" onClick={onReAsk}>
           <i className="ri-loop-left-line" />
         </button>
-        {/* Edit request — quotes the message text back into composer */}
+        {/* Edit request — dispatches omilo:edit */}
         <button type="button" className="reply-hbtn" title="Edit request" aria-label="Edit request" onClick={handleEdit}>
           <i className="ri-pencil-line" />
         </button>
-        {/* Pin to Docs — no handler yet; safe no-op */}
-        <button type="button" className="reply-hbtn" title="Pin to Docs" aria-label="Pin to Docs">
-          <i className="ri-pushpin-line" />
+        {/* Pin — wired to handlePin; fill when pinned */}
+        <button type="button" className="reply-hbtn" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? "Unpin message" : "Pin message"} onClick={handlePin}>
+          <i className={pinned ? "ri-pushpin-fill" : "ri-pushpin-line"} />
         </button>
-        {/* Share — no handler yet; safe no-op */}
-        <button type="button" className="reply-hbtn" title="Share" aria-label="Share">
+        {/* Share — wired to handleShare */}
+        <button type="button" className="reply-hbtn" title="Share" aria-label="Share link to message" onClick={handleShare}>
           <i className="ri-share-line" />
         </button>
         {/* Separator */}
@@ -283,9 +309,11 @@ export function Reply({
           {/* Typed blocks (v2 messages) */}
           {hasTypedBlocks && renderBlocks(displayBlocks, ctx)}
 
-          {/* Message text: render if present AND there's no markdown/streaming typed block */}
+          {/* Message text: render only as a fallback — skip it when a block already
+             carries the prose (markdown/streaming, or the backend's default "text" block),
+             otherwise the answer renders twice. */}
           {m.text && (hasTypedBlocks
-            ? !displayBlocks.some((b) => b.type === "markdown" || b.type === "streaming")
+            ? !displayBlocks.some((b) => b.type === "markdown" || b.type === "streaming" || b.type === "text")
             : true) && (
             <div className="reply-md">
               <Markdown text={m.text} people={people} />

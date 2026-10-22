@@ -35,6 +35,10 @@ INSTRUCTIONS = (
 # Minimum summary length for the learn tool's structural quality gate (no LLM call).
 MIN_LEARN_CHARS = 40
 
+# Map gated_execute decision strings to MCP status strings.
+# Tasks 5/6 reuse this constant; do not inline the dict in new branches.
+_DECISION = {"done": "allowed", "needs_approval": "proposal", "refused": "refused"}
+
 
 def _s(type_, desc, **extra):
     return {"type": type_, "description": desc, **extra}
@@ -237,6 +241,177 @@ TOOLS: list[dict] = [
          "title": _s("string", "new title"),
          "target": _s("string", "new target description"),
      }, "required": ["goal_id"]}},
+    # ------------------------------------------------------------------ staff-lifecycle tools (Task 4)
+    {"name": "list_team", "description": "List all active helpers: their ids, names, roles and status. Read-only.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "create_staff", "description": "Hire a new helper. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "id": _s("string", "unique id: lowercase letters, digits, dashes"),
+         "name": _s("string", "display name"),
+         "role": _s("string", "short role label"),
+         "job": _s("string", "job description"),
+         "engine": _s("object", "engine config (optional; defaults to the company default)"),
+         "budget_usd_month": _s("number", "monthly budget cap in USD (0 = no cap)"),
+         "max_task_minutes": _s("integer", "task time-out in minutes (default 30)"),
+     }, "required": ["id", "name", "role", "job"]}},
+    {"name": "update_staff", "description": "Update a helper's name, job, role or budget. Requires approval in Strict mode. Permissions are managed by the founder only.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to update"),
+         "name": _s("string", "new display name"),
+         "job": _s("string", "new job description"),
+         "role": _s("string", "new role label"),
+         "budget_usd_month": _s("number", "new monthly budget cap in USD"),
+         "max_task_minutes": _s("integer", "new task time-out in minutes"),
+     }, "required": ["staff_id"]}},
+    {"name": "retire_staff", "description": "Let a helper go. Its queued jobs are cancelled; its history stays. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to retire"),
+     }, "required": ["staff_id"]}},
+    {"name": "grant_staff_access", "description": "Set a helper's access to folders, connectors or skills. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper to update"),
+         "folders": _s("object", "folder id → {access: none|read|write, commands: bool} or null to reset"),
+         "connectors": _s("object", "connector id → true/false or null to reset"),
+         "skills": _s("object", "skill slug → true/false or null to reset"),
+     }, "required": ["staff_id"]}},
+    {"name": "manage_shift", "description": "Create, edit or delete a helper's regular job (shift). op: create | edit | delete. Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "staff_id": _s("string", "the helper whose shifts to manage"),
+         "op": _s("string", "create | edit | delete", enum=["create", "edit", "delete"]),
+         "name": _s("string", "shift name (create)"),
+         "cron": _s("string", "cron schedule, e.g. '0 9 * * 1' (create or edit)"),
+         "brief": _s("string", "what to do in this shift (create or edit)"),
+         "shift_id": _s("string", "shift id (edit or delete)"),
+         "enabled": _s("boolean", "enable or disable (edit)"),
+     }, "required": ["staff_id", "op"]}},
+    # ------------------------------------------------------------------ ops tools (Task 5)
+    {"name": "manage_goal", "description": "Create, update, complete or delete a company goal. "
+                                           "op: create | update | complete | delete. "
+                                           "Requires approval in Strict mode (goal.create permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "create | update | complete | delete", enum=["create", "update", "complete", "delete"]),
+         "goal_id": _s("string", "goal id (update / complete / delete)"),
+         "title": _s("string", "goal title (create; optional for update)"),
+         "target": _s("string", "what success looks like (create; optional for update)"),
+         "due": _s("string", "deadline, e.g. 2026-12-31 (optional)"),
+         "status": _s("string", "new status: active | done | dropped (update only)", enum=["active", "done", "dropped"]),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "set_kpi_def", "description": "Define or undefine a KPI (Finance only unless permitted). "
+                                           "op: define (default) | undefine. "
+                                           "Requires approval in Strict mode (kpi.write permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "name": _s("string", "KPI name, e.g. 'Monthly Revenue'"),
+         "op": _s("string", "define | undefine (default: define)", enum=["define", "undefine"]),
+         "label": _s("string", "display label"),
+         "unit": _s("string", "unit, e.g. 'USD'"),
+         "target": _s("number", "target value"),
+         "clear_target": _s("boolean", "remove the target"),
+         "direction": _s("string", "up | down", enum=["up", "down"]),
+         "goal_id": _s("string", "link to a goal id"),
+         "owner_id": _s("string", "staff id of the owner"),
+         "note": _s("string", "note about this KPI"),
+         "position": _s("integer", "display order"),
+         "delete_values": _s("boolean", "also delete recorded values (undefine only)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["name"]}},
+    {"name": "manage_folder", "description": "Add, update or remove a company folder. "
+                                             "op: add | update | delete. "
+                                             "Requires approval in Strict mode (folder.grant permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "add | update | delete", enum=["add", "update", "delete"]),
+         "folder_id": _s("string", "folder id (update or delete)"),
+         "path": _s("string", "absolute path to the folder on disk (add or update)"),
+         "label": _s("string", "display label"),
+         "access": _s("string", "read | write", enum=["read", "write"]),
+         "commands": _s("boolean", "allow helpers to run commands in this folder"),
+         "default_on": _s("boolean", "default on for all helpers"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "update_system_setting", "description": "Change a safe company setting. "
+                                                     "ONLY max_concurrent_tasks and timezone are allowed. "
+                                                     "Autonomy, paused, strict_mode and budget keys are ALWAYS rejected — "
+                                                     "those are founder-only controls. "
+                                                     "Requires approval in Strict mode.",
+     "inputSchema": {"type": "object", "properties": {
+         "key": _s("string", "setting key: max_concurrent_tasks | timezone",
+                   enum=["max_concurrent_tasks", "timezone"]),
+         "value": _s("string", "new value (number or string depending on the key)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["key", "value"]}},
+    # ------------------------------------------------------------------ integration tools (Task 6)
+    {"name": "manage_connector", "description": "Install, configure or remove an http/stdio connector. "
+                                                 "op: install (add new) | configure (update existing) | remove (delete). "
+                                                 "Piece (OAuth) and MCP connectors are managed from the marketplace. "
+                                                 "Requires approval in Strict mode (connector.install permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "install | configure | remove", enum=["install", "configure", "remove"]),
+         "id": _s("string", "connector id: lowercase letters, digits and dashes"),
+         "label": _s("string", "display label"),
+         "kind": _s("string", "http | stdio", enum=["http", "stdio"]),
+         "url": _s("string", "base URL for http connectors (required for http)"),
+         "command": _s("string", "executable for stdio connectors (required for stdio)"),
+         "args": _s("array", "command-line args (stdio)", items={"type": "string"}),
+         "approval": _s("string", "ask | auto", enum=["ask", "auto"]),
+         "default_on": _s("boolean", "on by default for all helpers"),
+         "enabled": _s("boolean", "enable/disable the connector"),
+         "headers": _s("object", "connector credential headers (e.g. Authorization); values stored as secrets, never returned"),
+         "env": _s("object", "connector credential env vars (e.g. API_KEY); values stored as secrets, never returned"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "id"]}},
+    {"name": "manage_skill", "description": "Delete a skill. "
+                                            "(To write or improve a skill use skill_save instead.) "
+                                            "op: delete. "
+                                            "Requires approval in Strict mode (skill.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "delete", enum=["delete"]),
+         "slug": _s("string", "skill id to delete"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "slug"]}},
+    {"name": "manage_workflow", "description": "Create, update, delete, activate or pause a workflow automation. "
+                                               "op: create | update | delete | activate | pause. "
+                                               "Requires approval in Strict mode (workflow.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "create | update | delete | activate | pause",
+                  enum=["create", "update", "delete", "activate", "pause"]),
+         "workflow_id": _s("string", "workflow id (update / delete / activate / pause)"),
+         "name": _s("string", "workflow name (create; optional for update)"),
+         "description": _s("string", "what the workflow does (optional)"),
+         "graph": _s("object", "the workflow graph (create; optional for update)"),
+         "autonomy": _s("string", "ask | auto (default: ask)", enum=["ask", "auto"]),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op"]}},
+    {"name": "cancel_workflow_run", "description": "Cancel a running or queued workflow run. "
+                                                   "Requires approval in Strict mode (workflow.change permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "run_id": _s("string", "the run id to cancel"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["run_id"]}},
+    {"name": "manage_knowledge_file", "description": "Upload or update a company knowledge document. "
+                                                      "op: write (default). "
+                                                      "File names: lowercase letters, digits, - or _, ending in .md or .yaml. "
+                                                      "Requires approval in Strict mode (knowledge.write permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "write", enum=["write"]),
+         "name": _s("string", "file name, e.g. 'company.md' or 'offer.yaml'"),
+         "content": _s("string", "the full new content (Markdown or YAML)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["name", "content"]}},
+    # ------------------------------------------------------------------ calendar tools (Task 13)
+    {"name": "manage_calendar", "description": "Skip, unskip or immediately run a helper's scheduled shift. "
+                                               "op: skip (skip one occurrence) | unskip (re-enable a skipped occurrence) | run_now (run outside schedule). "
+                                               "Requires approval in Strict mode (calendar.manage permission).",
+     "inputSchema": {"type": "object", "properties": {
+         "op": _s("string", "skip | unskip | run_now", enum=["skip", "unskip", "run_now"]),
+         "shift_id": _s("string", "the shift id to act on"),
+         "at": _s("string", "ISO-8601 datetime of the occurrence to skip/unskip (required for skip and unskip)"),
+         "task_id": _s("string", "your task id"),
+     }, "required": ["op", "shift_id"]}},
+    {"name": "list_upcoming", "description": "List upcoming scheduled events (shifts and workflow runs). Read-only.",
+     "inputSchema": {"type": "object", "properties": {
+         "limit": _s("integer", "max events to return (default 20)"),
+         "staff_id": _s("string", "filter to one helper"),
+     }}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 
@@ -701,6 +876,399 @@ async def call_tool(db, st: Staff, name: str, args: dict) -> tuple[str, dict]:
         S.audit(db, f"staff:{st.id}", "goal.update", goal_id, **changed)
         db.commit()
         return "allowed", {"ok": True, "goal_id": g.id, "status": g.status}
+
+    # ------------------------------------------------------------------ staff-lifecycle tools (Task 4)
+    if name == "list_team":
+        gate = S.gated_execute(
+            db, st, "knowledge.read",
+            lambda: [{"id": s.id, "name": s.name, "role": s.role, "status": s.status} for s in S.team(db)],
+            summary="list the team roster",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "create_staff":
+        from . import serialize as X
+
+        data = {
+            "id": str(args.get("id") or ""),
+            "name": str(args.get("name") or ""),
+            "role": str(args.get("role") or ""),
+            "job": str(args.get("job") or ""),
+            "is_chief": False,
+            "engine": args.get("engine") if isinstance(args.get("engine"), dict) else S.default_engine(db),
+            "budget_usd_month": float(args.get("budget_usd_month") or 0),
+            "max_task_minutes": int(args.get("max_task_minutes") or 30),
+            "permissions": {},
+            "shifts": [],
+        }
+        actor = f"staff:{st.id}"
+        gate = S.gated_execute(
+            db, st, "staff.create",
+            lambda: X.staff(S.create_staff(db, data, actor)),
+            summary=f"hire new helper '{data['id']}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "update_staff":
+        from . import serialize as X
+
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        data = {k: args[k] for k in ("name", "job", "role", "budget_usd_month", "max_task_minutes") if k in args}
+        actor = f"staff:{st.id}"
+        gate = S.gated_execute(
+            db, st, "staff.change",
+            lambda: X.staff(S.update_staff(db, target, data, actor)),
+            summary=f"update helper '{target_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "retire_staff":
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        actor = f"staff:{st.id}"
+        try:
+            gate = S.gated_execute(
+                db, st, "staff.retire",
+                lambda: S.retire_staff(db, target, actor),
+                summary=f"retire helper '{target_id}'",
+            )
+        except ValueError as e:
+            raise S.DomainError(str(e), 400) from e
+        return _DECISION[gate["decision"]], gate
+
+    if name == "grant_staff_access":
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        change = {k: args[k] for k in ("folders", "connectors", "skills") if k in args}
+        actor = f"staff:{st.id}"
+        # Validate unknown ids eagerly (raises DomainError before gating — ensures a bad id is
+        # an error even in strict mode, rather than silently filing a proposal that can't execute)
+        from . import capabilities as _C
+        from .models import Connector as _Connector, Folder as _Folder
+
+        known = {
+            "folders": {f.id for f in db.scalars(select(_Folder))},
+            "connectors": {c.id for c in db.scalars(select(_Connector))},
+            "skills": {k["slug"] for k in _C.list_skills()},
+        }
+        for kind, items in change.items():
+            if not isinstance(items, dict):
+                continue
+            for i, v in items.items():
+                if v is not None and i not in known.get(kind, set()):
+                    raise S.DomainError(f"no {kind[:-1]} '{i}'", 404)
+                if kind == "folders" and v is not None and v.get("access") not in _C.ACCESS_LEVELS:
+                    raise S.DomainError("access must be none, read or write")
+
+        gate = S.gated_execute(
+            db, st, "staff.grant",
+            lambda: S.set_staff_access(db, target, change, actor),
+            summary=f"grant access to helper '{target_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_shift":
+        from . import serialize as X
+
+        target_id = str(args.get("staff_id") or "")
+        target = db.get(Staff, target_id)
+        if not target:
+            raise S.DomainError(f"no staff '{target_id}'", 404)
+        op = str(args.get("op") or "create")
+        actor = f"staff:{st.id}"
+
+        if op == "create":
+            sh_name = str(args.get("name") or "")
+            cron = str(args.get("cron") or "")
+            brief = str(args.get("brief") or "")
+            if not sh_name:
+                raise S.DomainError("name is required for create")
+            if not cron:
+                raise S.DomainError("cron is required for create")
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                lambda: X.shift(S.add_shift(db, target, sh_name, cron, brief)),
+                summary=f"create shift '{sh_name}' for '{target_id}'",
+            )
+        elif op == "edit":
+            from .models import Shift as _Shift
+
+            shift_id = str(args.get("shift_id") or "")
+            sh = db.get(_Shift, shift_id)
+            if not sh or sh.staff_id != target_id:
+                raise S.DomainError(f"no shift '{shift_id}' for '{target_id}'", 404)
+
+            def _edit_shift():
+                if args.get("cron"):
+                    from croniter import croniter as _cron
+                    if not _cron.is_valid(args["cron"]):
+                        raise S.DomainError("invalid cron expression")
+                    sh.cron, sh.next_at = args["cron"], S.next_run(args["cron"], db=db)
+                if args.get("brief") is not None:
+                    sh.brief = args["brief"]
+                if args.get("enabled") is not None:
+                    if args["enabled"] and not sh.enabled:
+                        sh.next_at = S.next_run(sh.cron, db=db)
+                    sh.enabled = bool(args["enabled"])
+                S.audit(db, actor, "shift.update", shift_id)
+                db.commit()
+                return X.shift(sh)
+
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                _edit_shift,
+                summary=f"edit shift '{shift_id}' for '{target_id}'",
+            )
+        elif op == "delete":
+            from .models import Shift as _Shift
+
+            shift_id = str(args.get("shift_id") or "")
+            sh = db.get(_Shift, shift_id)
+            if not sh or sh.staff_id != target_id:
+                raise S.DomainError(f"no shift '{shift_id}' for '{target_id}'", 404)
+
+            def _delete_shift():
+                db.delete(sh)
+                S.audit(db, actor, "shift.delete", shift_id)
+                db.commit()
+                return {"deleted": shift_id}
+
+            gate = S.gated_execute(
+                db, st, "staff.change",
+                _delete_shift,
+                summary=f"delete shift '{shift_id}' from '{target_id}'",
+            )
+        else:
+            raise S.DomainError(f"unknown op '{op}'; use create, edit or delete")
+
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ ops tools (Task 5)
+    if name == "manage_goal":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "create")
+        gate = S.gated_execute(
+            db, st, "goal.create",
+            lambda: S.manage_goal_svc(
+                db, actor, op,
+                title=args.get("title"),
+                target=args.get("target"),
+                due=args.get("due"),
+                status=args.get("status"),
+                goal_id=args.get("goal_id"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage goal op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "set_kpi_def":
+        actor = f"staff:{st.id}"
+        kpi_name = str(args.get("name") or "")
+        op = str(args.get("op") or "define")
+        gate = S.gated_execute(
+            db, st, "kpi.write",
+            lambda: S.set_kpi_def_svc(
+                db, actor, kpi_name,
+                op=op,
+                label=args.get("label"),
+                unit=args.get("unit"),
+                target=args.get("target"),
+                clear_target=bool(args.get("clear_target")),
+                direction=args.get("direction"),
+                goal_id=args.get("goal_id"),
+                owner_id=args.get("owner_id"),
+                note=args.get("note"),
+                position=args.get("position"),
+                delete_values=bool(args.get("delete_values")),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"kpi '{kpi_name}' op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_folder":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "add")
+        gate = S.gated_execute(
+            db, st, "folder.grant",
+            lambda: S.manage_folder_svc(
+                db, actor, op,
+                path=args.get("path"),
+                label=args.get("label"),
+                access=args.get("access"),
+                commands=bool(args.get("commands")),
+                default_on=bool(args.get("default_on")),
+                folder_id=args.get("folder_id"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage folder op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "update_system_setting":
+        actor = f"staff:{st.id}"
+        key = str(args.get("key") or "")
+        value = args.get("value")
+        # Pre-gate blocked-key check: reject autonomy/paused/strict_mode/budget keys
+        # BEFORE calling gated_execute, so no proposal can ever be filed for them in
+        # Strict mode (gated_execute would otherwise file a proposal without calling do()).
+        if key not in S._SETTING_ALLOWED:
+            if key in S._SETTING_BLOCKED:
+                raise S.DomainError(
+                    f"'{key}' cannot be changed by an agent via MCP — "
+                    "autonomy, pause, and budget settings are founder-only controls",
+                    403,
+                )
+            raise S.DomainError(
+                f"'{key}' is not an agent-accessible setting; "
+                f"allowed keys: {', '.join(sorted(S._SETTING_ALLOWED))}",
+                400,
+            )
+        # Allowed key: gate via system.config (ASK → Strict files a proposal, Auto runs inline).
+        # The service also validates, providing defence-in-depth.
+        gate = S.gated_execute(
+            db, st, "system.config",
+            lambda: S.update_system_setting_svc(db, actor, key, value),
+            task_id=args.get("task_id"),
+            summary=f"update system setting '{key}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ integration tools (Task 6)
+    if name == "manage_connector":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "install")
+        cid = str(args.get("id") or "")
+        gate = S.gated_execute(
+            db, st, "connector.install",
+            lambda: S.manage_connector_svc(
+                db, actor, op,
+                id=cid,
+                label=args.get("label"),
+                kind=str(args.get("kind") or "http"),
+                url=str(args.get("url") or ""),
+                command=str(args.get("command") or ""),
+                args=args.get("args") if isinstance(args.get("args"), list) else None,
+                headers=args.get("headers") if isinstance(args.get("headers"), dict) else None,
+                env=args.get("env") if isinstance(args.get("env"), dict) else None,
+                approval=str(args.get("approval") or "ask"),
+                default_on=bool(args.get("default_on", True)),
+                enabled=bool(args.get("enabled", True)),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage connector op='{op}' id='{cid}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_skill":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "delete")
+        slug = str(args.get("slug") or "")
+        gate = S.gated_execute(
+            db, st, "skill.change",
+            lambda: S.manage_skill_svc(db, actor, op, slug=slug),
+            task_id=args.get("task_id"),
+            summary=f"manage skill op='{op}' slug='{slug}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_workflow":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "create")
+        wid = str(args.get("workflow_id") or "")
+        gate = S.gated_execute(
+            db, st, "workflow.change",
+            lambda: S.manage_workflow_svc(
+                db, actor, op,
+                workflow_id=wid or None,
+                name=args.get("name"),
+                description=args.get("description"),
+                graph=args.get("graph") if isinstance(args.get("graph"), dict) else None,
+                autonomy=args.get("autonomy"),
+            ),
+            task_id=args.get("task_id"),
+            summary=f"manage workflow op='{op}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "cancel_workflow_run":
+        actor = f"staff:{st.id}"
+        run_id = str(args.get("run_id") or "")
+        # Pre-gate: check the run exists and is cancellable before filing a proposal.
+        # This ensures a bad run_id is always an error, even in Strict mode.
+        with db.no_autoflush:
+            from .models import WorkflowRun
+            r = db.get(WorkflowRun, run_id)
+            if r is None:
+                raise S.DomainError(f"no such run '{run_id}'", 404)
+            if r.status in ("done", "failed", "cancelled"):
+                raise S.DomainError(f"the run already {r.status}", 409)
+        gate = S.gated_execute(
+            db, st, "workflow.change",
+            lambda: S.cancel_workflow_run_svc(db, actor, run_id),
+            task_id=args.get("task_id"),
+            summary=f"cancel workflow run '{run_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "manage_knowledge_file":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "write")
+        fname = str(args.get("name") or "")
+        content = str(args.get("content") or "")
+        gate = S.gated_execute(
+            db, st, "knowledge.write",
+            lambda: S.manage_knowledge_file_svc(db, actor, op, name=fname, content=content),
+            task_id=args.get("task_id"),
+            summary=f"manage knowledge file op='{op}' name='{fname}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    # ------------------------------------------------------------------ calendar tools (Task 13)
+    if name == "manage_calendar":
+        actor = f"staff:{st.id}"
+        op = str(args.get("op") or "").strip()
+        shift_id = str(args.get("shift_id") or "").strip()
+        at_arg = args.get("at")
+
+        if not op:
+            raise S.DomainError("op is required", 400)
+        if not shift_id:
+            raise S.DomainError("shift_id is required", 400)
+
+        # PRE-GATE: resolve the shift eagerly so an unknown shift always raises DomainError
+        # (in both Auto and Strict modes) rather than filing a proposal for a non-existent shift.
+        from .models import Shift as _Shift
+        if not db.get(_Shift, shift_id):
+            raise S.DomainError(f"no shift '{shift_id}'", 404)
+
+        gate = S.gated_execute(
+            db, st, "calendar.manage",
+            lambda: S.manage_calendar_svc(db, actor, op, shift_id=shift_id, at=at_arg),
+            task_id=args.get("task_id"),
+            summary=f"calendar op='{op}' shift='{shift_id}'",
+        )
+        return _DECISION[gate["decision"]], gate
+
+    if name == "list_upcoming":
+        from . import agenda
+
+        limit = int(args.get("limit") or 20)
+        staff_id_arg = args.get("staff_id") or None
+        gate = S.gated_execute(
+            db, st, "knowledge.read",
+            lambda: agenda.upcoming(db, limit=limit, staff_id=staff_id_arg),
+            summary="list upcoming scheduled events",
+        )
+        return _DECISION[gate["decision"]], gate
 
     raise S.DomainError(f"unknown tool {name}", 404)
 

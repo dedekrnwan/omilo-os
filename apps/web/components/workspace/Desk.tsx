@@ -41,6 +41,9 @@ const SUGGESTIONS = [
 
 /* ------------------------------------------------------------------ sub-components */
 
+/* OverviewStaff type (from main) */
+type OverviewStaff = { id: string; name: string; status: string; is_chief: boolean; running: number };
+
 function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; staff: Staff[] }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,18 +52,15 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
   const box = useRef<MentionHandle | null>(null);
   const mention = useMentions(text, setText, staff, box);
 
-  const send = useCallback(async (msg: string) => {
-    const trimmed = msg.trim();
-    if (!trimmed || busy) return;
+  const send = useCallback(async (t: string) => {
+    if (!t.trim()) return;
     setBusy(true);
     setErr(null);
     try {
-      /* get-or-create the master (Chief of Staff) thread */
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
-      /* post the message */
-      await api(`/threads/${th.id}/messages`, { body: { text: trimmed } });
-      setText("");
+      await api(`/threads/${th.id}/messages`, { body: { text: t.trim() } });
       onSent(th.id);
+      setText("");
       router.push(`/chat/?thread=${th.id}`);
     } catch (e: any) {
       setErr(e.message ?? "Failed to send");

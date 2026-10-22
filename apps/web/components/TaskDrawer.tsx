@@ -14,6 +14,7 @@ import { taskItems } from "@/lib/actions";
 import Lineage from "@/components/Lineage";
 import { menu } from "@/lib/menu";
 import { confirmDialog } from "@/lib/dialog";
+import { openInDrawer } from "@/lib/open";
 
 /* A job, opened from anywhere (Inbox, Monitor, notifications, links in chats): live progress, what waits on you,
    and a chat with the helper about it, in one drawer. Chats open the same way. */
@@ -42,7 +43,9 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
     api<{ id: string }>("/threads", { body: { scope: "task", ref_id: id } }).then((th) => setThreadId(th.id)).catch((e) => setErr(e.message));
   }, [tab, threadId, id]);
 
-  if (!t) return <p className="small" style={{ padding: 20 }}>{err || "Loading…"}</p>;
+  if (!t) return err
+    ? <div className="empty" style={{ padding: 28 }}><b>This job isn&apos;t available</b><span>It may have finished and been cleared, or it never started. Close this and check the helper&apos;s chat for the latest.</span></div>
+    : <p className="small" style={{ padding: 20 }}>Loading…</p>;
   const runs = toRuns(events);
   const lines = t.brief.trim().split("\n");
   const ck = t.checkpoints?.[t.checkpoints.length - 1];
@@ -64,7 +67,21 @@ function JobBody({ id, staff, tab, setTab, onOpenTask }: { id: string; staff: St
             {t.founder_note && <div className="small"><b>Your note:</b> {t.founder_note}</div>}
           </div>
           {items.length > 0 && (
-            <button className="callout warn jd-wait" onClick={() => setTab("approvals")}><i className="ri-hand" /><span><b>{items.length} thing{items.length > 1 ? "s" : ""} waiting on you</b> for this job.</span><span className="sp" /><span className="small">Review →</span></button>
+            <button className="callout warn jd-wait" onClick={async () => {
+              // For a single proposal item open its chat thread directly (spec: Bug #1).
+              // For multiple items or non-proposal kinds fall back to the in-drawer Needs-you tab.
+              const first = items[0];
+              if (items.length === 1 && first.kind === "proposal" && first.ref_id) {
+                try {
+                  const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: first.ref_id } });
+                  if (!openInDrawer(`/chat/?thread=${th.id}`)) {
+                    window.location.href = `/chat/?thread=${th.id}`;
+                  }
+                } catch { setTab("approvals"); }
+              } else {
+                setTab("approvals");
+              }
+            }}><i className="ri-hand" /><span><b>{items.length} thing{items.length > 1 ? "s" : ""} waiting on you</b> for this job.</span><span className="sp" /><span className="small">Review →</span></button>
           )}
           {ck && t.status === "running" && (
             <div className="jd-ck"><div className="small">Latest checkpoint · {ago(ck.at)}</div>{ck.done && <div><b>Done:</b> {ck.done}</div>}{ck.next && <div><b>Next:</b> {ck.next}</div>}</div>

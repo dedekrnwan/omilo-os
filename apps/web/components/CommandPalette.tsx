@@ -65,7 +65,7 @@ const RECENT_MAX = 4;
 // ─── CommandPalette ───────────────────────────────────────────────────────────
 
 export default function CommandPalette() {
-  const { isOpen, close } = useCommand();
+  const { isOpen, close, seed } = useCommand();
   const router = useRouter();
   const { overview, refresh } = useOverview();
 
@@ -123,7 +123,7 @@ export default function CommandPalette() {
   // Focus input on open; reset all state; prefetch threads for RECENT group
   useEffect(() => {
     if (!isOpen) return;
-    setQuery("");
+    setQuery(seed || "");
     setMode("default");
     setHighlighted(0);
     setConfirmPause(false);

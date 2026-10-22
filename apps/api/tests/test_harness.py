@@ -140,6 +140,30 @@ def test_pool_wait_cap_constant_defined():
     assert H.POOL_WAIT_CAP_S == 2700
 
 
+def test_lease_order_tolerates_naive_last_used_at():
+    """Regression: SQLite returns last_used_at as a NAIVE datetime (tz stripped on read). lease() sorts
+    ready accounts by it, with an aware epoch fallback for never-used accounts. Sorting a naive value
+    against the aware fallback used to raise `TypeError: can't compare offset-naive and offset-aware
+    datetimes` whenever two+ equally-idle accounts were in the pool. _lease_order must normalize first."""
+    import datetime as dt
+
+    from omilo_api import harness as H
+
+    class _Acct:
+        def __init__(self, last_used_at):
+            self.last_used_at = last_used_at
+
+    naive = dt.datetime(2026, 10, 20, 10, 0, 0)  # what SQLite hands back: no tzinfo
+    aware = dt.datetime(2026, 10, 20, 11, 0, 0, tzinfo=dt.UTC)
+    rows = [_Acct(naive), _Acct(None), _Acct(aware)]
+
+    # all equally busy -> the tie-break on last_used_at is exercised; must not raise
+    rows.sort(key=lambda a: H._lease_order(a, 0))
+
+    # never-used (None) sorts first, then oldest naive, then the aware one
+    assert [a.last_used_at for a in rows] == [None, naive, aware]
+
+
 def test_accounts_validation_and_test(owner, fake_cli):
     # Task 5: grant pool consent before adding accounts (required on a fresh install)
     assert owner.post("/api/harness/pool-consent").status_code == 200
@@ -173,7 +197,7 @@ def test_pool_failover_resumes_session(owner, fake_cli):
     assert calls[0]["token"] == OK1[-6:] and calls[1]["token"] == LIMITED[-6:]
     assert calls[1]["resume"], "the second account resumes the first account's session"
     assert calls[1]["prompt"].startswith("Continue")
-    assert calls[0]["mode"] == "dontAsk" and "mcp__omilo" in (calls[0]["tools"] or "")
+    assert calls[0]["mode"] == "auto" and "mcp__omilo" in (calls[0]["tools"] or "")
 
     accts = {a["label"]: a for a in owner.get("/api/harness").json()["accounts"]}
     assert accts["Limited"]["state"] == "cooling" and accts["Limited"]["cooldown_until"].startswith("2100")

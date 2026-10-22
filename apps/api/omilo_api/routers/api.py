@@ -71,6 +71,7 @@ def overview(db: Session = Depends(get_db), user: User = Depends(current_user)):
         "company_name": S.get_setting(db, "company_name", ""),
         "paused": S.is_paused(db),
         "strict_mode": S.strict_mode(db),
+        "autonomy": "strict" if S.get_setting(db, "autonomy_mode") == "strict" else "auto",
         "max_concurrent_tasks": S.max_concurrent(db),
         "budget_company": _budgets.company_status(db),
         "timezone": S.timezone_name(db),
@@ -105,6 +106,7 @@ class SystemIn(BaseModel):
     company_name: str | None = None
     timezone: str | None = None
     self_tuning: bool | None = None
+    autonomy: Literal["strict", "auto"] | None = None
 
 
 def _set_timezone(db: Session, tz: str, actor: str) -> None:
@@ -133,6 +135,14 @@ def update_system(body: SystemIn, db: Session = Depends(get_db), user: User = De
         elif k == "budget_company_usd":
             S.set_setting(db, k, float(v), actor=user.id)
             S.audit(db, user.id, "budget.company", "company", usd=float(v))
+        elif k == "autonomy":
+            # Write both keys coherently: Auto → permissive/False, Strict → strict/True
+            if v == "auto":
+                S.set_setting(db, "strict_mode", False, actor=user.id)
+                S.set_setting(db, "autonomy_mode", "permissive", actor=user.id)
+            else:  # "strict"
+                S.set_setting(db, "strict_mode", True, actor=user.id)
+                S.set_setting(db, "autonomy_mode", "strict", actor=user.id)
         else:
             S.set_setting(db, k, v, actor=user.id)
     db.commit()
@@ -315,23 +325,9 @@ def staff_access(sid: str, db: Session = Depends(get_db), user: User = Depends(c
 
 @router.put("/staff/{sid}/access")
 def staff_access_set(sid: str, body: AccessIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    from .. import capabilities as C
-    from ..models import Connector, Folder
-
     st = _404(db.get(Staff, sid))
     change = {k: v for k, v in body.model_dump().items() if v is not None}  # null inside: back to the company default
-    known = {"folders": {f.id for f in db.scalars(select(Folder))}, "connectors": {c.id for c in db.scalars(select(Connector))},
-             "skills": {k["slug"] for k in C.list_skills()}}
-    for kind, items in change.items():
-        for i, v in items.items():
-            if v is not None and i not in known[kind]:
-                raise HTTPException(404, f"no {kind[:-1]} '{i}'")
-            if kind == "folders" and v is not None and v.get("access") not in C.ACCESS_LEVELS:
-                raise HTTPException(400, "access must be none, read or write")
-    C.set_helper_access(st, change)
-    S.audit(db, user.id, "staff.access", sid, change=change)
-    db.commit()
-    return _access_view(db, st)
+    return _run(S.set_staff_access, db, st, change, user.id)
 
 
 @router.delete("/staff/{sid}")
@@ -847,6 +843,18 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
     elif body.scope == "proposal":
         p = _404(db.get(Proposal, body.ref_id or ""), "unknown proposal")
         th = S.get_or_create_thread(db, "proposal", p.id, p.staff_id, p.title)
+        # Bug #3: seed proposal context as an initial system message so the thread is never empty.
+        from ..models import Message as _Msg
+        has_msgs = db.scalar(select(func.count(_Msg.id)).where(_Msg.thread_id == th.id))
+        if not has_msgs:
+            body_text = S.current_body(p)
+            seed_text = (
+                f"**Proposal: {p.title}**\n\n"
+                + (f"{body_text}\n\n" if body_text else "")
+                + f"*Type:* {p.type} · *Risk:* {p.risk} · *Status:* {p.status}"
+            )
+            S.post_message(db, th, "system", p.staff_id, seed_text,
+                           blocks=[{"type": "markdown", "text": seed_text}])
     elif body.scope == "group":
         from .. import teamchat as TC
 
@@ -2341,10 +2349,9 @@ def _onb_providers(db: Session) -> list[dict]:
     for o in out:
         if o["id"] in _LITELLM_PROVIDER_IDS:
             o["has_key"] = bool(S.ai_key_hint(db, o["id"]))
-    local = H.local_login_status()
-    if local.get("logged_in"):
-        out.append({"id": "local", "label": "Your Claude Code sign-in", "by": "This machine", "domain": "claude.ai", "kind": "local",
-                    "blurb": "Use the Claude you're already signed into on this machine — your login never leaves it. No key needed."})
+    # The local Claude Code sign-in is intentionally NOT offered: its per-user session limits and global
+    # skills/hooks made it unreliable as the team's engine. Omilo runs on the subscription pool, with the
+    # company API key as a small chat-only fallback. (The engine still supports auth:"local" if set manually.)
     return out
 
 
@@ -2450,6 +2457,23 @@ def _draft(db: Session) -> dict:
 class InterviewIn(BaseModel):
     message: str = ""
     restart: bool = False
+    file_ids: list[str] | None = None
+    website: str | None = None
+
+
+def _save_interview_turn(db: Session, user: User, d: dict, hist: list[dict], r: dict) -> dict:
+    """Persist one interview turn (AI reply) to the draft and return the full response dict."""
+    from .. import interview as _I
+
+    answers = {**d["answers"], **r["patch"]}
+    hist.append({"role": "ai", "text": r["reply"], "options": r.get("options") or [], **({"field": r.get("field")} if r.get("field") else {}),
+                 **({"multi": True} if r.get("multi") else {}), **({"saved": sorted(r["patch"])} if r.get("patch") else {})})
+    d.update(answers=answers, interview={"history": hist[-80:], "topic": r["topic"]})
+    S.set_setting(db, "onboarding_draft", d, actor=user.id)
+    if str(answers.get("company_name") or "").strip():
+        S.set_setting(db, "company_name", answers["company_name"].strip(), actor=user.id)
+    db.commit()
+    return {"history": hist, "topic": r["topic"], "answers": answers, "coverage": _I.coverage(answers), "ai": _onb_ai_view(db)}
 
 
 @router.post("/onboarding/interview")
@@ -2465,18 +2489,78 @@ async def onboarding_interview(body: InterviewIn, db: Session = Depends(get_db),
     elif hist and hist[-1]["role"] == "ai":  # reopened the page: show where we were
         return {"history": hist, "topic": iv.get("topic"), "answers": d["answers"], "coverage": I.coverage(d["answers"]), "ai": _onb_ai_view(db)}
     try:
-        r = await I.turn(I.ai_config(db), d["answers"], hist, iv.get("topic") or "business")
+        r = await I.turn(I.ai_config(db), d["answers"], hist, iv.get("topic") or "business",
+                         file_ids=body.file_ids, website=body.website)
     except I.AiError as e:
         raise HTTPException(502, str(e)) from e
-    answers = {**d["answers"], **r["patch"]}
-    hist.append({"role": "ai", "text": r["reply"], "options": r.get("options") or [], **({"field": r["field"]} if r.get("field") else {}),
-                 **({"multi": True} if r.get("multi") else {}), **({"saved": sorted(r["patch"])} if r["patch"] else {})})
-    d.update(answers=answers, interview={"history": hist[-80:], "topic": r["topic"]})
-    S.set_setting(db, "onboarding_draft", d, actor=user.id)
-    if str(answers.get("company_name") or "").strip():
-        S.set_setting(db, "company_name", answers["company_name"].strip(), actor=user.id)
-    db.commit()
-    return {"history": hist, "topic": r["topic"], "answers": answers, "coverage": I.coverage(answers), "ai": _onb_ai_view(db)}
+    return _save_interview_turn(db, user, d, hist, r)
+
+
+@router.post("/onboarding/interview/stream")
+async def onboarding_interview_stream(body: InterviewIn, request: Request,
+                                      db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Streaming interview turn — SSE.
+
+    Body: {message, file_ids?, website?, restart?}
+
+    Events:
+      event: tool  data: {"label": str}   — activity (reading file/website, saving profile)
+      event: text  data: {"delta": str}   — streamed reply chunk
+      event: done  data: {"reply", "options", "topic", "answers", "coverage", "ai"}
+      event: error data: {"message": str}
+    """
+    from fastapi.responses import StreamingResponse
+
+    from .. import interview as I
+
+    d = _draft(db)
+    iv = d["interview"] if not body.restart else {"history": [], "topic": "business"}
+    hist = list(iv.get("history") or [])
+    if body.message.strip():
+        hist.append({"role": "owner", "text": body.message.strip()[:4000]})
+    elif hist and hist[-1]["role"] == "ai":
+        # Reopened: return current state as a single done event
+        state = {"history": hist, "topic": iv.get("topic"), "answers": d["answers"],
+                 "coverage": I.coverage(d["answers"]), "ai": _onb_ai_view(db)}
+
+        async def _replay():
+            yield f"event: done\ndata: {json.dumps(state)}\n\n"
+
+        return StreamingResponse(_replay(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    cfg = I.ai_config(db)
+
+    async def gen():
+        final_patch: dict = {}
+        final_topic = iv.get("topic") or "business"
+        final_reply = ""
+        final_options: list = []
+        try:
+            async for ev in I.stream_turn(cfg, d["answers"], hist, iv.get("topic") or "business",
+                                          file_ids=body.file_ids, website=body.website):
+                event_name = ev["event"]
+                data = ev["data"]
+                if event_name == "done":
+                    final_patch = data.get("patch") or {}
+                    final_topic = data.get("topic") or final_topic
+                    final_reply = data.get("reply") or ""
+                    final_options = data.get("options") or []
+                    # Persist the turn
+                    result = {"reply": final_reply, "patch": final_patch, "options": final_options,
+                              "topic": final_topic}
+                    saved = _save_interview_turn(db, user, d, hist, result)
+                    done_data = {**saved}
+                    yield f"event: done\ndata: {json.dumps(done_data)}\n\n"
+                else:
+                    yield f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
+        except I.AiError as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {json.dumps({'message': f'Unexpected error: {str(e)[:200]}'})}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.post("/onboarding/team-plan")
@@ -2616,7 +2700,9 @@ def onboarding_finish(body: FinishIn, db: Session = Depends(get_db), user: User 
         _set_timezone(db, body.timezone, user.id)
     for name, content in OB.render(a).items():
         _run(S.write_knowledge, db, name, content, user.id)
-    S.set_setting(db, "strict_mode", bool(modes[body.approval_mode]["strict"]), actor=user.id)
+    _strict = bool(modes[body.approval_mode]["strict"])
+    S.set_setting(db, "strict_mode", _strict, actor=user.id)
+    S.set_setting(db, "autonomy_mode", "strict" if _strict else "permissive", actor=user.id)
     if body.engine:  # the older form: an explicit engine
         engine = dict(body.engine)
         # For claude-code engines, auth distinguishes the sub-provider; use _provider_of for correct round-trip.

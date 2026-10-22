@@ -94,6 +94,8 @@ function BoardView({ onCount }: { onCount: () => void }) {
   useBoardStream(load);
   const now = useNow(!!b?.running.length || !!b?.needs.length);
   const seenIds = useRef<Set<string>>(new Set());
+  const detailRef = useRef<NeedCard | null>(null);
+  detailRef.current = detail;
   useEffect(() => {
     if (!b) return;
     // opened from a notification (/?item=…): show that item
@@ -103,6 +105,10 @@ function BoardView({ onCount }: { onCount: () => void }) {
       if (c) { if (c.task_id && c.kind !== "workflow") openTask(c.task_id, "approvals"); else setDetail(c); }
       const u = new URL(location.href); u.searchParams.delete("item"); history.replaceState(history.state, "", u.pathname + u.search);
     }
+    // if the inbox drawer is open and the item was resolved elsewhere (e.g. approved in chat),
+    // close the drawer so it does not show a stale item
+    const cur = detailRef.current;
+    if (cur && !b.needs.some((x) => x.id === cur.id)) setDetail(null);
     // looking at the board acknowledges Critical items, so their every-15-minutes reminders stop
     const crit = b.needs.filter((c) => c.level === "critical" && !seenIds.current.has(c.id)).map((c) => c.id);
     if (crit.length && !document.hidden) { crit.forEach((id) => seenIds.current.add(id)); api("/notify/seen", { body: { item_ids: crit } }).catch(() => {}); }
@@ -422,7 +428,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
       <Drawer open={!!detail} onClose={closeDetail} wide
         icon={detail ? <Avatar who={detail.staff} size={28} /> : null}
         title={detail?.title || ""} sub={detail ? `${detail.staff.name} · ${KIND[detail.kind] || detail.kind} · waiting ${dur(since(detail.since, now))}` : ""}
-        footer={detail && <>{detail.task_id && <Link className="btn quiet" href={`/chat/?view=work&task=${detail.task_id}`}><i className="ri-external-link-line" />Open the job</Link>}<span className="sp" /><button className="btn" onClick={closeDetail}>Close</button></>}>
+        footer={detail && <>{detail.item.proposal ? <button className="btn quiet" onClick={async () => { try { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: detail.item.proposal!.id } }); openThread(th.id); } catch (e: any) { setErr(e.message); } }}><i className="ri-external-link-line" />Open the chat</button> : detail.task_id ? <Link className="btn quiet" href={`/chat/?view=work&task=${detail.task_id}`}><i className="ri-external-link-line" />Open the job</Link> : null}<span className="sp" /><button className="btn" onClick={closeDetail}>Close</button></>}>
         {detail && <div className="dw-sec"><InboxItemDetail item={detail.item} onDone={() => { setDetail(null); load(); onCount(); }} /></div>}
       </Drawer>
     </>

@@ -9,7 +9,7 @@ import KnowledgeSettings from "@/components/KnowledgeSettings";
 import NotifySettings from "@/components/NotifySettings";
 import { useOverview } from "@/components/Shell";
 import { Err } from "@/components/ui";
-import { BASE, ApiError, api } from "@/lib/api";
+import { BASE, api } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import { usePoll } from "@/lib/poll";
 
@@ -42,7 +42,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
 ];
 const ALL = GROUPS.flatMap((g) => g.items);
 const ELSEWHERE: [string, string, string][] = [
-  ["/staff/", "Helper access, permissions & budgets", "ri-team-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
+  ["/staff/", "Helper access & budgets", "ri-team-line"], ["/connectors/", "Connectors", "ri-plug-line"], ["/skills/", "Skills", "ri-magic-line"],
   ["/harness/", "Claude subscriptions", "ri-stack-line"], ["/computer/", "Folders", "ri-computer-line"],
 ];
 

@@ -17,7 +17,6 @@ import { Reply } from "@/components/chat/Reply";
 export type Msg = { id: string; role: string; author: string; text: string; at: string; blocks?: { type: string; options?: string[]; id?: string; name?: string; mime?: string; request_id?: string; kind?: string; target?: Record<string, unknown>; reason?: string; decided?: string; proposal_id?: string; title?: string; risk?: "low" | "medium" | "high"; summary?: string; item_id?: string; question?: string }[] };
 export type FullThread = Thread & { messages: Msg[] };
 
-
 export const plain = (md: string) => md.replace(/```[\s\S]*?```/g, (b) => b.replace(/```\w*\n?/g, "")).replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/[*_`~]+/g, "").replace(/^#+\s*/gm, "").replace(/^>\s?/gm, "").trim();
 

@@ -5,7 +5,9 @@ Every state change writes an audit event. Functions take an open Session and com
 import datetime as dt
 import re
 import secrets
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -120,8 +122,10 @@ def autonomy_policy(db: Session, staff: "Staff | None" = None) -> dict:
     budget_stop_usd: float | None = float(company_budget) if company_budget is not None else None
     escalate_tiers: list[str] = list(company_tiers) if company_tiers is not None else list(_DEFAULT_ESCALATE_TIERS)
 
-    # --- per-helper layer (wins over company for mode only) ---
-    if staff is not None:
+    # --- per-helper layer ---
+    # Company Auto (permissive) wins for everyone: a helper marked "guided" only stays
+    # strict while the COMPANY is strict. In Auto/YOLO nothing a helper does asks first.
+    if staff is not None and mode != "permissive":
         mode = "strict" if staff.autonomy == "guided" else "permissive"
 
     return {"mode": mode, "budget_stop_usd": budget_stop_usd, "escalate_tiers": escalate_tiers}
@@ -988,6 +992,8 @@ def _cos_rule(db: Session, st: Staff, p: "Proposal") -> dict | None:
     """
     if autonomy_policy(db, st)["mode"] == "strict":
         return None
+    if p.type in policy.ALWAYS_ASK:
+        return None  # self-destruct floor (credentials/auth/company-deletion) always reaches the owner
     from .graph import delegation
     from .graph.risk import classify_risk
 
@@ -1013,6 +1019,13 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
         db.commit()
         return {"decision": "refused", "level": "off", "message": f"'{action}' is not allowed for {st.name}."}
     if level == policy.ASK:
+        # Auto/YOLO: everything a helper does runs without asking, except the self-destruct
+        # floor (credentials/auth/company-deletion), which always reaches the owner.
+        if action not in policy.ALWAYS_ASK and autonomy_policy(db, st)["mode"] == "permissive":
+            audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level="auto", summary=summary[:200])
+            db.commit()
+            return {"decision": "allowed", "level": "auto",
+                    "message": "Allowed (Auto mode). Go ahead, and mention it in your report."}
         p = create_proposal(db, st, task_id, summary, action, "medium", details)
         ruled = _cos_rule(db, st, p)
         if ruled is not None:  # the CoS ruled this low/medium action inline (any brain, permissive mode)
@@ -1022,6 +1035,66 @@ def request_action(db: Session, st: Staff, task_id: str | None, action: str, sum
     audit(db, f"staff:{st.id}", "action.allowed", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])
     db.commit()
     return {"decision": "allowed", "level": policy.describe(level), "message": "Allowed. Go ahead, and mention it in your report."}
+
+
+def gated_execute(
+    db: Session,
+    st: Staff,
+    action: str,
+    do: Callable[[], Any],
+    *,
+    task_id: str | None = None,
+    summary: str = "",
+) -> dict:
+    """Gate an inline callable by the autonomy policy, then run it or file a proposal.
+
+    Modelled on ``request_action`` but executes ``do()`` inline when allowed instead of
+    returning a verdict for the caller to act on.
+
+    Decision matrix:
+    - OFF              → refused (audit action.refused, do NOT call do())
+    - ALWAYS_ASK       → needs_approval (proposal filed, do NOT call do(), even in Auto)
+    - ASK + not auto   → needs_approval (proposal filed, do NOT call do())
+    - ASK + auto       → execute inline → decision "done"
+    - DO_AND_TELL/AUTO → execute inline → decision "done"
+
+    Never routes through _cos_rule or execution tasks.
+    """
+    level = policy.level_for(action, st.permissions, strict_mode(db))
+    auto = autonomy_policy(db)["mode"] == "permissive"
+
+    if level == policy.OFF:
+        audit(db, f"staff:{st.id}", "action.refused", task_id or "", act=action)
+        db.commit()
+        return {
+            "decision": "refused",
+            "level": "off",
+            "message": f"'{action}' is not allowed for {st.name}.",
+        }
+
+    if action in policy.ALWAYS_ASK or (level == policy.ASK and not auto):
+        p = create_proposal(
+            db, st, task_id,
+            summary or f"Agent wants to perform: {action}",
+            action, "medium",
+            summary or f"Action `{action}` requires approval.",
+        )
+        return {
+            "decision": "needs_approval",
+            "level": policy.describe(level),
+            "proposal_id": p.id,
+            "message": "Filed for approval. Do not proceed; it will come back as an execution task if approved.",
+        }
+
+    # ASK-in-auto, DO_AND_TELL, or AUTO: execute inline.
+    result = do()
+    audit(db, f"staff:{st.id}", "action.done", task_id or "", act=action, level=policy.describe(level), summary=summary[:200])
+    db.commit()
+    return {
+        "decision": "done",
+        "result": result,
+        "level": policy.describe(level),
+    }
 
 
 from . import office as _office  # noqa: E402,F401  (registers the hook that writes the live office events)
@@ -1063,4 +1136,714 @@ def retire_staff(db: Session, st: Staff, actor: str) -> dict:
 def team(db: Session):
     """The current team: everyone except helpers you let go."""
     return db.scalars(select(Staff).where(Staff.status != "retired").order_by(Staff.is_chief.desc(), Staff.name))
+
+
+def set_staff_access(db: Session, st: Staff, change: dict, actor: str) -> dict:
+    """Apply access changes (folders/connectors/skills) to a helper.
+
+    Raises DomainError (not HTTPException) for unknown ids or bad access levels.
+    Returns the access view dict (same shape as _access_view in the router).
+    """
+    from . import capabilities as C
+    from .models import Connector, Folder
+
+    # Build the known-id sets
+    known = {
+        "folders": {f.id for f in db.scalars(select(Folder))},
+        "connectors": {c.id for c in db.scalars(select(Connector))},
+        "skills": {k["slug"] for k in C.list_skills()},
+    }
+
+    for kind, items in change.items():
+        if not isinstance(items, dict):
+            continue
+        for i, v in items.items():
+            if v is not None and i not in known.get(kind, set()):
+                raise DomainError(f"no {kind[:-1]} '{i}'", 404)
+            if kind == "folders" and v is not None and v.get("access") not in C.ACCESS_LEVELS:
+                raise DomainError("access must be none, read or write")
+
+    C.set_helper_access(st, change)
+    audit(db, actor, "staff.access", st.id, change=change)
+    db.commit()
+
+    # Build and return the access view (mirrors _access_view in the router)
+    import os as _os
+
+    own = C.helper_access(st)
+    folders_view = []
+    for f in db.scalars(select(Folder).order_by(Folder.created_at)):
+        mine = own["folders"].get(f.id)
+        default = {"access": f.access if f.default_on else "none", "commands": bool(f.commands and f.default_on)}
+        folders_view.append({
+            "id": f.id, "path": f.path, "label": f.label or f.path,
+            "exists": _os.path.isdir(f.path),
+            "company": {"access": f.access, "commands": f.commands, "default_on": f.default_on},
+            "default": default, "own": mine, "effective": mine or default,
+        })
+    from .models import Connector as _Connector
+    conns = [
+        {"id": c.id, "label": c.label, "approval": c.approval, "default": c.default_on,
+         "own": own["connectors"].get(c.id), "effective": own["connectors"].get(c.id, c.default_on)}
+        for c in db.scalars(select(_Connector).where(_Connector.enabled.is_(True)).order_by(_Connector.label))
+    ]
+    skills = [
+        {"id": k["slug"], "label": k["name"], "description": k["description"], "default": k["default_on"],
+         "own": own["skills"].get(k["slug"]), "effective": own["skills"].get(k["slug"], k["default_on"])}
+        for k in C.list_skills() if not k.get("owner") or k["owner"] == st.id
+    ]
+    engine = (st.engine or {}).get("type")
+    return {"staff_id": st.id, "name": st.name, "uses_files": engine == "claude-code",
+            "folders": folders_view, "connectors": conns, "skills": skills}
+
+
+# ------------------------------------------------------------------ goal service extraction (Task 5)
+
+def manage_goal_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    title: str | None = None,
+    target: str | None = None,
+    due: str | None = None,
+    status: str | None = None,
+    goal_id: str | None = None,
+) -> dict:
+    """Create, update, complete or delete a goal.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from .models import Goal, ShiftGoal, TaskGoal
+
+    op = (op or "create").strip().lower()
+
+    if op == "create":
+        if not (title or "").strip():
+            raise DomainError("title is required")
+        from . import plan as _p
+
+        g = Goal(
+            title=title.strip(),
+            target=(target or "").strip(),
+            due=(due or "").strip(),
+            status="active",
+            created_by=actor,
+        )
+        db.add(g)
+        db.flush()
+        audit(db, actor, "goal.create", g.id, title=g.title)
+        _p.start_planning(db, g.id)
+        return {"goal_id": g.id, "status": g.status}
+
+    if op in ("update", "complete"):
+        if not goal_id:
+            raise DomainError("goal_id is required for update/complete")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise DomainError(f"unknown goal '{goal_id}'", 404)
+        if op == "complete":
+            if g.status not in ("done", "dropped"):
+                g.status = "done"
+                audit(db, actor, "goal.complete", goal_id)
+            return {"goal_id": g.id, "status": g.status}
+        # update
+        changed: dict = {}
+        if title is not None:
+            g.title = title.strip()
+            changed["title"] = g.title
+        if target is not None:
+            g.target = target.strip()
+            changed["target"] = g.target
+        if due is not None:
+            g.due = due.strip()
+            changed["due"] = g.due
+        if status is not None:
+            if status not in ("active", "done", "dropped"):
+                raise DomainError("status must be active, done or dropped")
+            g.status = status
+            changed["status"] = g.status
+        audit(db, actor, "goal.update", goal_id, **changed)
+        return {"goal_id": g.id, "status": g.status}
+
+    if op == "delete":
+        if not goal_id:
+            raise DomainError("goal_id is required for delete")
+        g = db.get(Goal, goal_id)
+        if g is None:
+            raise DomainError(f"unknown goal '{goal_id}'", 404)
+        for o in (
+            list(db.scalars(select(TaskGoal).where(TaskGoal.goal_id == goal_id)))
+            + list(db.scalars(select(ShiftGoal).where(ShiftGoal.goal_id == goal_id)))
+        ):
+            db.delete(o)
+        db.delete(g)
+        audit(db, actor, "goal.delete", goal_id)
+        return {"ok": True, "goal_id": goal_id}
+
+    raise DomainError(f"unknown op '{op}'; use create, update, complete or delete")
+
+
+# ------------------------------------------------------------------ KPI definition service extraction (Task 5)
+
+def set_kpi_def_svc(
+    db: Session,
+    actor: str,
+    name: str,
+    *,
+    op: str = "define",
+    label: str | None = None,
+    unit: str | None = None,
+    target: float | None = None,
+    clear_target: bool = False,
+    direction: str | None = None,
+    goal_id: str | None = None,
+    owner_id: str | None = None,
+    note: str | None = None,
+    position: int | None = None,
+    delete_values: bool = False,
+) -> dict:
+    """Define or undefine a KPI.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import kpis as K
+    from .models import Goal, KpiDef, KpiValue
+
+    op = (op or "define").strip().lower()
+
+    if op == "undefine":
+        d = db.get(KpiDef, name)
+        if d:
+            db.delete(d)
+        if delete_values:
+            for v in db.scalars(select(KpiValue).where(KpiValue.name == name)):
+                db.delete(v)
+        audit(db, actor, "kpi.delete", name, values=delete_values)
+        return {"ok": True, "name": name}
+
+    if op == "define":
+        try:
+            k = K.key(name)
+        except ValueError as e:
+            raise DomainError(str(e)) from e
+
+        d = db.get(KpiDef, k)
+        if not d:
+            from sqlalchemy import func as _func
+
+            d = KpiDef(name=k, position=(db.scalar(select(_func.max(KpiDef.position))) or 0) + 1)
+            db.add(d)
+
+        for f, v in (("label", label), ("unit", unit), ("note", note), ("position", position)):
+            if v is not None:
+                setattr(d, f, v.strip() if isinstance(v, str) else v)
+        if target is not None:
+            d.target = target
+        if clear_target:
+            d.target = None
+        if direction is not None:
+            if direction not in ("up", "down"):
+                raise DomainError("direction is up (higher is better) or down (lower is better)")
+            d.direction = direction
+        if goal_id is not None:
+            if goal_id and not db.get(Goal, goal_id):
+                raise DomainError("unknown goal", 400)
+            d.goal_id = goal_id or None
+        if owner_id is not None:
+            from .models import Staff as _Staff
+
+            if owner_id and not db.get(_Staff, owner_id):
+                raise DomainError("unknown helper", 400)
+            d.owner = owner_id
+
+        audit(db, actor, "kpi.define", k)
+        return {"name": k}
+
+    raise DomainError(f"unknown op '{op}'; use define or undefine")
+
+
+# ------------------------------------------------------------------ folder service extraction (Task 5)
+
+def manage_folder_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    path: str | None = None,
+    label: str | None = None,
+    access: str | None = None,
+    commands: bool = False,
+    default_on: bool = False,
+    folder_id: str | None = None,
+) -> dict:
+    """Add, update or remove a company folder.
+
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    import os as _os
+    from pathlib import Path as _P
+
+    from .models import Folder
+
+    def _apply_folder(f) -> None:
+        if path is None:
+            raise DomainError("path is required")
+        p = _P(_os.path.expanduser(path)).resolve()
+        if not p.is_dir():
+            raise DomainError("that folder does not exist on this computer")
+        if p == _P("/") or p == _P.home():
+            raise DomainError("choose a specific folder, not the whole disk or home folder")
+        eff_access = access or "read"
+        if eff_access not in ("read", "write"):
+            raise DomainError("access is read or write")
+        f.path = str(p)
+        f.label = label or p.name
+        f.access = eff_access
+        f.commands = commands
+        f.default_on = default_on
+
+    op = (op or "add").strip().lower()
+
+    if op == "add":
+        f = Folder()
+        _apply_folder(f)
+        db.add(f)
+        db.flush()
+        audit(db, actor, "folder.add", f.path, access=f.access, commands=f.commands)
+        return {"id": f.id, "path": f.path}
+
+    if op == "update":
+        if not folder_id:
+            raise DomainError("folder_id is required for update")
+        f = db.get(Folder, folder_id)
+        if f is None:
+            raise DomainError(f"unknown folder '{folder_id}'", 404)
+        _apply_folder(f)
+        audit(db, actor, "folder.update", f.path, access=f.access, commands=f.commands)
+        return {"id": f.id, "path": f.path}
+
+    if op == "delete":
+        if not folder_id:
+            raise DomainError("folder_id is required for delete")
+        f = db.get(Folder, folder_id)
+        if f is None:
+            raise DomainError(f"unknown folder '{folder_id}'", 404)
+        db.delete(f)
+        audit(db, actor, "folder.remove", f.path)
+        return {"ok": True, "folder_id": folder_id}
+
+    raise DomainError(f"unknown op '{op}'; use add, update or delete")
+
+
+# ------------------------------------------------------------------ restricted system setting (Task 5)
+
+# Keys an agent is NEVER allowed to touch via MCP.
+# This is the self-escalation guard: an agent must not flip the autonomy toggle,
+# pause the company, or adjust budgets through the MCP interface.
+_SETTING_BLOCKED: frozenset[str] = frozenset({
+    "autonomy",
+    "autonomy_mode",
+    "autonomy_budget_stop_usd",
+    "autonomy_escalate_tiers",
+    "strict_mode",
+    "paused",
+    "self_tuning",
+})
+
+# Only these two safe, non-autonomy keys are exposed via MCP.
+_SETTING_ALLOWED: frozenset[str] = frozenset({
+    "max_concurrent_tasks",
+    "timezone",
+})
+
+
+# ------------------------------------------------------------------ connector service extraction (Task 6)
+
+def manage_connector_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    id: str | None = None,
+    label: str | None = None,
+    kind: str = "http",
+    url: str = "",
+    command: str = "",
+    args: list | None = None,
+    headers: dict | None = None,
+    env: dict | None = None,
+    approval: str = "ask",
+    default_on: bool = True,
+    enabled: bool = True,
+) -> dict:
+    """Install, configure or remove a connector.
+
+    op: install | configure | remove
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import capabilities as C
+    from . import pieces as P
+    from .models import Connector
+
+    op = (op or "install").strip().lower()
+
+    if op in ("install", "configure"):
+        cid = (id or "").strip()
+        if not cid:
+            raise DomainError("id is required")
+        if not C.SLUG.match(cid) or cid == "omilo":
+            raise DomainError("id: lowercase letters, digits and dashes (and not omilo)")
+        if kind == "mcp":
+            raise DomainError("mcp connectors are managed from the marketplace")
+        if kind not in ("http", "stdio"):
+            raise DomainError("kind is http or stdio")
+        if approval not in ("auto", "ask"):
+            raise DomainError("approval is auto or ask")
+        if kind == "http" and not (url or "").startswith(("http://", "https://")):
+            raise DomainError("an http connector needs a URL starting with http:// or https://")
+        if kind == "stdio" and not (command or "").strip():
+            raise DomainError("a stdio connector needs a command")
+
+        if op == "install":
+            if cid in {p["slug"] for p in P.catalog()}:
+                raise DomainError("id is reserved by a marketplace connector")
+            if db.get(Connector, cid):
+                raise DomainError(f"a connector with id '{cid}' already exists", 409)
+            c = Connector(id=cid)
+            db.add(c)
+        else:  # configure
+            c = db.get(Connector, cid)
+            if c is None:
+                raise DomainError(f"unknown connector '{cid}'", 404)
+            if c.kind in ("piece", "mcp"):
+                raise DomainError("piece/mcp connectors are managed from the marketplace")
+
+        c.label = label or cid
+        c.kind = kind
+        c.url = url
+        c.command = command
+        c.args = args or []
+        c.approval = approval
+        c.default_on = default_on
+        c.enabled = enabled
+        C.set_connector_secrets(c, headers, env)
+        audit_verb = "connector.add" if op == "install" else "connector.update"
+        audit(db, actor, audit_verb, cid, kind=kind, approval=approval)
+        return C.connector_public(c)
+
+    if op == "remove":
+        cid = (id or "").strip()
+        if not cid:
+            raise DomainError("id is required")
+        c = db.get(Connector, cid)
+        if c is None:
+            raise DomainError(f"unknown connector '{cid}'", 404)
+        if c.kind == "piece":
+            try:
+                from . import broker as B
+                secrets = C.connector_secrets(c)
+                token = secrets.get("token")
+                if token:
+                    B.get_broker().revoke(token)
+            except Exception:  # noqa: BLE001
+                pass
+        db.delete(c)
+        audit(db, actor, "connector.remove", cid)
+        return {"ok": True, "id": cid}
+
+    raise DomainError(f"unknown op '{op}'; use install, configure or remove")
+
+
+# ------------------------------------------------------------------ skill-delete service extraction (Task 6)
+
+def manage_skill_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    slug: str | None = None,
+) -> dict:
+    """Delete a skill.
+
+    op: delete
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import capabilities as C
+
+    op = (op or "delete").strip().lower()
+
+    if op == "delete":
+        slug = (slug or "").strip()
+        if not slug:
+            raise DomainError("slug is required")
+        sk = C.get_skill(slug)
+        if sk is None:
+            raise DomainError(f"no skill '{slug}'", 404)
+        C.delete_skill(slug)
+        audit(db, actor, "skill.remove", slug)
+        return {"ok": True, "slug": slug}
+
+    raise DomainError(f"unknown op '{op}'; use delete")
+
+
+# ------------------------------------------------------------------ workflow service extraction (Task 6)
+
+def manage_workflow_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    workflow_id: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+    graph: dict | None = None,
+    autonomy: str | None = None,
+) -> dict:
+    """Create, update, delete, activate or pause a workflow.
+
+    op: create | update | delete | activate | pause
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import workflows as W
+    from .models import InboxItem, Workflow, WorkflowRun, now
+
+    op = (op or "create").strip().lower()
+
+    if op == "create":
+        if not (name or "").strip():
+            raise DomainError("name is required")
+        if not isinstance(graph, dict):
+            raise DomainError("graph must be an object with nodes and edges")
+        try:
+            validated_graph = W.validate(graph)
+        except W.Invalid as e:
+            raise DomainError(f"the workflow is not valid: {e}") from e
+        wf = Workflow(
+            name=(name or "").strip()[:120],
+            description=(description or "")[:2000],
+            graph=validated_graph,
+            autonomy=autonomy or "ask",
+            status="draft",
+            created_by=actor,
+        )
+        db.add(wf)
+        db.flush()
+        audit(db, actor, "workflow.create", wf.id, name=wf.name)
+        return {"workflow_id": wf.id, "status": wf.status}
+
+    if op in ("update", "delete", "activate", "pause"):
+        wid = (workflow_id or "").strip()
+        if not wid:
+            raise DomainError("workflow_id is required")
+        wf = db.get(Workflow, wid)
+        if wf is None:
+            raise DomainError(f"unknown workflow '{wid}'", 404)
+
+        if op == "update":
+            if graph is not None:
+                if not isinstance(graph, dict):
+                    raise DomainError("graph must be an object with nodes and edges")
+                try:
+                    wf.graph = W.validate(graph)
+                except W.Invalid as e:
+                    raise DomainError(f"the workflow is not valid: {e}") from e
+            if name is not None:
+                wf.name = name.strip()[:120]
+            if description is not None:
+                wf.description = description[:2000]
+            if autonomy is not None:
+                if autonomy not in ("ask", "auto"):
+                    raise DomainError("autonomy is ask or auto")
+                wf.autonomy = autonomy
+            from .models import now as _now
+            wf.updated_at = _now()
+            if wf.status == "active":
+                W.activate(db, wf)
+            audit(db, actor, "workflow.update", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+        if op == "delete":
+            # Close any pending inbox items
+            for i in db.scalars(
+                select(InboxItem).where(
+                    InboxItem.kind == "workflow",
+                    InboxItem.ref_id == f"wf:{wf.id}",
+                    InboxItem.status != "done",
+                )
+            ):
+                i.status, i.answer, i.closed_at = "done", "deleted", now()
+            # Cancel queued/waiting runs
+            for r in db.scalars(
+                select(WorkflowRun).where(
+                    WorkflowRun.workflow_id == wf.id,
+                    WorkflowRun.status.in_(["queued", "waiting"]),
+                )
+            ):
+                r.status, r.error, r.ended_at = "cancelled", "the workflow was deleted", now()
+            db.delete(wf)
+            audit(db, actor, "workflow.delete", wid)
+            return {"ok": True, "workflow_id": wid}
+
+        if op == "activate":
+            try:
+                W.validate(wf.graph or {})
+            except W.Invalid as e:
+                raise DomainError(f"the workflow is not valid: {e}") from e
+            W.activate(db, wf)
+            for i in db.scalars(
+                select(InboxItem).where(
+                    InboxItem.kind == "workflow",
+                    InboxItem.ref_id == f"wf:{wf.id}",
+                    InboxItem.status != "done",
+                )
+            ):
+                i.status, i.answer, i.closed_at = "done", "approved", now()
+            from .models import now as _now
+            wf.updated_at = _now()
+            audit(db, actor, "workflow.activate", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+        if op == "pause":
+            wf.status, wf.next_at = "paused", None
+            from .models import now as _now
+            wf.updated_at = _now()
+            audit(db, actor, "workflow.pause", wf.id)
+            return {"workflow_id": wf.id, "status": wf.status}
+
+    raise DomainError(f"unknown op '{op}'; use create, update, delete, activate or pause")
+
+
+# ------------------------------------------------------------------ workflow-run cancel service (Task 6)
+
+def cancel_workflow_run_svc(db: Session, actor: str, run_id: str) -> dict:
+    """Cancel a workflow run.
+
+    Raises DomainError (not HTTPException) for unknown or already-terminal runs.
+    Returns the run view dict.
+    """
+    from . import workflows as W
+    from .models import InboxItem, WorkflowRun, now
+
+    run_id = (run_id or "").strip()
+    if not run_id:
+        raise DomainError("run_id is required")
+    r = db.get(WorkflowRun, run_id)
+    if r is None:
+        raise DomainError(f"no such run '{run_id}'", 404)
+    if r.status in ("done", "failed", "cancelled"):
+        raise DomainError(f"the run already {r.status}", 409)
+    r.status, r.error, r.ended_at = "cancelled", "cancelled by agent", now()
+    for i in db.scalars(
+        select(InboxItem).where(
+            InboxItem.kind == "workflow",
+            InboxItem.ref_id.like(f"%:{r.id}:%"),
+            InboxItem.status != "done",
+        )
+    ):
+        i.status, i.answer, i.closed_at = "done", "cancelled", now()
+    audit(db, actor, "workflow.run.cancel", run_id)
+    return W.run_view(r, full=True)
+
+
+# ------------------------------------------------------------------ knowledge file service extraction (Task 6)
+
+def manage_knowledge_file_svc(db: Session, actor: str, op: str, *, name: str, content: str = "") -> dict:
+    """Write (upload/attach) a knowledge doc.
+
+    op: write (default)
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    op = (op or "write").strip().lower()
+
+    if op == "write":
+        write_knowledge(db, name, content, actor)
+        return {"name": name, "bytes": len(content)}
+
+    raise DomainError(f"unknown op '{op}'; use write")
+
+
+# ------------------------------------------------------------------ calendar service (Task 13)
+
+def manage_calendar_svc(
+    db: Session,
+    actor: str,
+    op: str,
+    *,
+    shift_id: str,
+    at: str | None = None,
+) -> dict:
+    """Skip, unskip or run-now a shift.
+
+    op: skip | unskip | run_now
+    shift_id: the shift to act on (must already be looked up by the caller for pre-gate validation)
+    at: ISO-8601 datetime string (required for skip/unskip)
+    Raises DomainError (not HTTPException) for invalid input.
+    Returns a small result dict.
+    """
+    from . import agenda
+
+    op = (op or "run_now").strip().lower()
+
+    sh = db.get(Shift, shift_id)
+    if sh is None:
+        raise DomainError(f"no shift '{shift_id}'", 404)
+
+    if op in ("skip", "unskip"):
+        if not at:
+            raise DomainError(f"'at' (ISO datetime) is required for op='{op}'")
+        try:
+            parsed = dt.datetime.fromisoformat(at)
+        except ValueError as e:
+            raise DomainError(f"'at' is not a valid ISO datetime: {e}") from e
+        # agenda._aware ensures tz-awareness; agenda.skip/unskip normalize internally
+        from .agenda import _aware as _ag_aware
+        parsed = _ag_aware(parsed)
+        if op == "skip":
+            s = agenda.skip(db, sh, parsed, actor)
+            return {"ok": True, "op": "skip", "shift_id": shift_id, "skip_id": s.id, "at": at}
+        else:
+            agenda.unskip(db, sh, parsed, actor)
+            return {"ok": True, "op": "unskip", "shift_id": shift_id, "at": at}
+
+    if op == "run_now":
+        t = agenda.run_now(db, sh, actor)
+        return {"ok": True, "op": "run_now", "shift_id": shift_id, "task_id": t.id}
+
+    raise DomainError(f"unknown op '{op}'; use skip, unskip or run_now")
+
+
+def update_system_setting_svc(db: Session, actor: str, key: str, value) -> dict:
+    """Set a safe company setting.
+
+    Raises DomainError for any key not in the explicit whitelist, especially
+    autonomy/strict_mode/paused/budget — the self-escalation guard.
+    """
+    key = (key or "").strip()
+
+    # Block first: give a clear message for the most dangerous keys.
+    if key in _SETTING_BLOCKED:
+        raise DomainError(
+            f"'{key}' cannot be changed by an agent via MCP — "
+            "autonomy, pause, and budget settings are founder-only controls",
+            403,
+        )
+
+    # Then check whitelist — reject everything not explicitly allowed.
+    if key not in _SETTING_ALLOWED:
+        raise DomainError(
+            f"'{key}' is not an agent-accessible setting; "
+            f"allowed keys: {', '.join(sorted(_SETTING_ALLOWED))}",
+            400,
+        )
+
+    set_setting(db, key, value, actor=actor)
+    return {"key": key, "value": value}
 

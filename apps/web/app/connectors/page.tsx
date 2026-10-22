@@ -365,7 +365,9 @@ export default function Connectors() {
       }, 1500);
     } catch (e: any) {
       setConnectState(s, "idle");
-      setErr(e.message);
+      setErr(/not found|404/i.test(e?.message || "")
+        ? "This connector isn’t available yet — it hasn’t been enabled on the server."
+        : (e?.message || "Couldn’t start the connection. Try again."));
     }
   };
 

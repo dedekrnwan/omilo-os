@@ -115,10 +115,18 @@ def test_company_full_override(db):
 # Per-helper overrides
 # ---------------------------------------------------------------------------
 
-def test_guided_staff_maps_to_strict(db):
-    """staff.autonomy='guided' → mode='strict', overriding the permissive default."""
+def test_guided_staff_permissive_when_company_auto(db):
+    """Company Auto (the permissive default) wins for everyone: even a 'guided' helper is permissive."""
     st = _staff(db, "guided")
     policy = services.autonomy_policy(db, staff=st)
+    assert policy["mode"] == "permissive"
+
+
+def test_guided_staff_strict_when_company_strict(db):
+    """A 'guided' helper is strict only while the COMPANY is strict."""
+    db.add(Setting(key="autonomy_mode", value="strict"))
+    db.flush()
+    policy = services.autonomy_policy(db, staff=_staff(db, "guided"))
     assert policy["mode"] == "strict"
 
 
@@ -146,13 +154,13 @@ def test_per_helper_wins_over_company_mode(db):
     assert policy["mode"] == "permissive"
 
 
-def test_guided_wins_over_permissive_company(db):
-    """guided helper overrides a permissive company setting."""
+def test_company_auto_overrides_guided_helper(db):
+    """Company Auto wins: a 'guided' helper is permissive when the company is permissive."""
     db.add(Setting(key="autonomy_mode", value="permissive"))
     db.flush()
     st = _staff(db, "guided")
     policy = services.autonomy_policy(db, staff=st)
-    assert policy["mode"] == "strict"
+    assert policy["mode"] == "permissive"
 
 
 def test_budget_and_tiers_still_use_company_when_staff_present(db):
@@ -232,9 +240,11 @@ def test_single_engine_permissive_low_medium_cos_approves(db):
 # -- C2-2: single_engine + strict → escalate to owner (returns None) --
 
 def test_single_engine_strict_escalates_to_owner(db):
-    """A single_engine staff with autonomy='guided' (strict mode) → _cos_rule returns None."""
+    """A guided helper is strict only while the COMPANY is strict → _cos_rule returns None."""
     _make_cos(db)
-    st = _make_staff_with_brain(db, "single_engine", autonomy="guided")  # guided → strict
+    db.add(Setting(key="autonomy_mode", value="strict"))  # company Strict so guided stays strict
+    db.flush()
+    st = _make_staff_with_brain(db, "single_engine", autonomy="guided")
 
     p = _make_proposal(db, st, "knowledge.write")
 

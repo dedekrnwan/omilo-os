@@ -14,8 +14,7 @@
  */
 
 import React, { useRef, useState } from "react";
-import { Markdown, Attachments, fileUrl, fileIcon, renderMarkdown } from "@/components/Markdown";
-import { when } from "@/lib/api";
+import { Markdown, Attachments, fileUrl } from "@/components/Markdown";
 import type { Msg } from "@/components/Conversation";
 
 /* ------------------------------------------------------------------ Block type union */
@@ -41,6 +40,7 @@ export type BlockType =
   | "document"
   | "image"
   | "streaming"
+  | "pr_card"
   | string; // allow unknown/future types — safe fallback
 
 export type Block = {
@@ -97,14 +97,40 @@ export type Block = {
   pause_step?: string;
   pause_quote?: string;
   pause_steps_left?: string;
-  /** Optional diff lines for Code blocks — when present, renders the dark diff view */
-  diff?: DiffLine[];
+  /** Optional diff lines for Code blocks (HEAD v2 format) — when present, renders the dark diff view */
+  diff?: DiffLine[] | boolean;
   /** Optional token count for streaming blocks — when present, shown as "Writing… · N tokens" */
   tokens?: number;
   /** Optional multi-image options for image blocks (done state) */
   image_options?: { url: string }[];
   /** Selected option index (0-based) for image blocks */
   selected_option?: number;
+  // pr_card fields
+  repo?: string;
+  branch?: string;
+  base?: string;
+  files_changed?: number;
+  additions?: number;
+  deletions?: number;
+  tests?: string;
+  pr_url?: string;
+  reviewer?: string;
+  // code diff fields (main: path for file path)
+  path?: string;
+  // confirmation extras
+  confirm_label?: string;
+  done_label?: string;
+  who?: string;
+  when?: string;
+  undo_min?: number;
+  // usage meter extras
+  tier?: string;
+  // document extras
+  source?: string;
+  words?: number;
+  written_by?: string;
+  mime_label?: string;
+  doc_path?: string;
   // streaming_approval callbacks live in ctx
   [key: string]: unknown;
 };
@@ -329,7 +355,15 @@ function QuestionBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
   const [noteOpen, setNoteOpen] = useState<"reject" | "changes" | null>(null);
   const [note, setNote] = useState("");
-  const [decided, setDecided] = useState<string | null>(null);
+  // Bug #2: initialise from block.status so already-decided proposals render correctly.
+  const initDecided = (): string | null => {
+    const s = block.status as string | undefined;
+    if (s === "approved" || s === "executing" || s === "done") return "approve";
+    if (s === "rejected") return "reject";
+    if (s === "changes_requested") return "changes";
+    return null;
+  };
+  const [decided, setDecided] = useState<string | null>(initDecided);
   const [busy, setBusy] = useState(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const proposalId = block.proposal_id || "";
@@ -339,7 +373,17 @@ function ProposalBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
 
   const act = async (decision: "approve" | "reject" | "changes", n = "") => {
     setBusy(true);
-    try { await ctx.onProposal?.(proposalId, decision, n); setDecided(decision); } finally { setBusy(false); }
+    try {
+      await ctx.onProposal?.(proposalId, decision, n);
+      setDecided(decision);
+    } catch (e: unknown) {
+      // Bug #2: 409 "already" means the CoS auto-approved — treat as success and show decided state.
+      const err = e as { status?: number; message?: string };
+      if (err.status === 409 || /already/i.test(err.message || "")) {
+        setDecided(decision === "approve" ? "approve" : decision);
+      }
+      // non-409 errors bubble up to ctx silently (no local err state on this block)
+    } finally { setBusy(false); }
   };
 
   const openNote = (kind: "reject" | "changes") => { setNoteOpen(kind); setTimeout(() => noteRef.current?.focus(), 0); };
@@ -402,9 +446,11 @@ function FileBlock({ block }: { block: Block }) {
 }
 
 /* ---- reasoning (collapsible) ---- */
+/* Collapsed: a compact pill ("Thought for 12s"). Open: inline header + a left-accent body. */
 function ReasoningBlock({ block }: { block: Block }) {
   const [open, setOpen] = useState(false);
-  const label = block.label || block.title || "Thought";
+  const label = block.label || block.title
+    || (block.duration_s ? `Thought for ${Math.round(block.duration_s)}s` : "Thought");
   const content = block.content || block.text || "";
   return (
     <div className={`reply-reasoning${open ? " open" : ""}`}>
@@ -517,6 +563,11 @@ function CodeBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     );
   }
 
+  // No diff array — check if it's a boolean diff (main-style) and delegate to DiffBlock
+  if (block.diff === true || lang === "diff" || lang === "patch") {
+    return <DiffBlock block={block} />;
+  }
+
   // No diff — keep existing highlighted fenced-code rendering via shared Markdown; optionally
   // show a header row when the block has a filename or lang label.
   const fence = "```" + (lang || "") + "\n" + code + "\n```";
@@ -544,6 +595,194 @@ function CodeBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     <div className="reply-code">
       <div className="reply-md">
         <Markdown text={fence} />
+      </div>
+    </div>
+  );
+}
+
+/* ---- diff (unified diff rendering, used when block.diff===true or lang="diff") ---- */
+type ParsedDiffLine =
+  | { kind: "add" | "remove" | "context"; text: string; lineNo: number }
+  | { kind: "meta"; text: string };
+
+function parseDiff(raw: string): ParsedDiffLine[] {
+  let oldNo = 0;
+  let newNo = 0;
+  const lines: ParsedDiffLine[] = [];
+  for (const line of raw.split("\n")) {
+    // Meta / hunk-header lines — no line number, no counter advance
+    if (
+      line.startsWith("@@") ||
+      line.startsWith("---") ||
+      line.startsWith("+++") ||
+      line.startsWith("diff --git")
+    ) {
+      // Parse @@ -a,b +c,d @@ to seed counters
+      if (line.startsWith("@@")) {
+        const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (m) {
+          oldNo = parseInt(m[1], 10) - 1;
+          newNo = parseInt(m[2], 10) - 1;
+        }
+        lines.push({ kind: "meta", text: line });
+      }
+      // Skip ---/+++/diff --git entirely (they carry no user-visible content)
+      continue;
+    }
+    if (line.startsWith("+")) {
+      newNo++;
+      lines.push({ kind: "add", text: line.slice(1), lineNo: newNo });
+    } else if (line.startsWith("-")) {
+      oldNo++;
+      lines.push({ kind: "remove", text: line.slice(1), lineNo: oldNo });
+    } else {
+      oldNo++;
+      newNo++;
+      lines.push({ kind: "context", text: line.startsWith(" ") ? line.slice(1) : line, lineNo: newNo });
+    }
+  }
+  return lines;
+}
+
+function DiffBlock({ block }: { block: Block }) {
+  const [copied, setCopied] = useState(false);
+  const code = block.text || block.content || "";
+  const filePath = block.path || block.name || block.title || "";
+  const rawLang = block.lang || "diff";
+  const langLabel = rawLang === "diff" || rawLang === "patch" ? "Diff" : rawLang.toUpperCase();
+
+  const lines = parseDiff(code);
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const handleApply = () => {
+    const id = block.id || block.name || "";
+    window.dispatchEvent(new CustomEvent("omilo:apply", { detail: { id, code, path: filePath } }));
+  };
+
+  return (
+    <div className="reply-diff">
+      <div className="reply-diff-head">
+        <div className="reply-diff-path">
+          {filePath && <span className="reply-diff-file">{filePath}</span>}
+          <span className="reply-diff-lang">{langLabel}</span>
+        </div>
+        <div className="reply-diff-acts">
+          <button type="button" className="reply-diff-btn" onClick={handleCopy}>
+            <i className={copied ? "ri-check-line" : "ri-file-copy-line"} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button type="button" className="reply-diff-btn" onClick={handleApply}>
+            <i className="ri-code-s-slash-line" />
+            Apply
+          </button>
+        </div>
+      </div>
+      <div className="reply-diff-body">
+        <table className="reply-diff-table" aria-label="Code diff">
+          <tbody>
+            {lines.map((line, i) => {
+              if (line.kind === "meta") {
+                return (
+                  <tr key={i} className="reply-diff-row reply-diff-meta">
+                    <td className="reply-diff-gutter" />
+                    <td className="reply-diff-num" />
+                    <td className="reply-diff-code reply-diff-meta-text">{line.text}</td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={i} className={`reply-diff-row reply-diff-${line.kind}`}>
+                  <td className="reply-diff-gutter">
+                    {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : ""}
+                  </td>
+                  <td className="reply-diff-num">{line.lineNo}</td>
+                  <td className="reply-diff-code">{line.text}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---- pr_card ---- */
+function PrCardBlock({ block }: { block: Block }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  const repo = block.repo || "";
+  const branch = block.branch || "";
+  const base = block.base || "main";
+  const filesChanged = block.files_changed ?? 0;
+  const additions = block.additions ?? 0;
+  const deletions = block.deletions ?? 0;
+  const tests = block.tests || "";
+  const prUrl = block.pr_url || "";
+  const reviewer = block.reviewer || "you";
+
+  const subtitle = [repo, branch && base ? `${branch} → ${base}` : branch || base].filter(Boolean).join(" · ");
+
+  const handleOpenPr = () => {
+    if (prUrl) {
+      window.open(prUrl, "_blank", "noopener,noreferrer");
+    } else {
+      window.dispatchEvent(new CustomEvent("omilo:open-pr", { detail: { block } }));
+    }
+  };
+
+  const handleChangeSomething = () => {
+    window.dispatchEvent(new CustomEvent("omilo:pr-edit", { detail: { block } }));
+  };
+
+  return (
+    <div className="reply-pr-card">
+      <div className="reply-pr-head">
+        <div className="reply-pr-icon">
+          <i className="ri-git-branch-line" />
+        </div>
+        <div className="reply-pr-t">
+          <b>Open a pull request</b>
+          {subtitle && <span>{subtitle}</span>}
+        </div>
+        <span className="chip warn reply-pr-badge">Needs you</span>
+      </div>
+      <div className="reply-pr-rows">
+        <div className="reply-pr-row">
+          <i className="ri-file-list-3-line" />
+          <span>{filesChanged} file{filesChanged !== 1 ? "s" : ""} changed</span>
+          <span className="reply-pr-stat up">+{additions}</span>
+          <span className="reply-pr-stat down">−{deletions}</span>
+        </div>
+        {tests && (
+          <div className="reply-pr-row">
+            <i className="ri-test-tube-line" />
+            <span>{tests}</span>
+          </div>
+        )}
+        <div className="reply-pr-row">
+          <i className="ri-user-line" />
+          <span>Reviewer: {reviewer}</span>
+        </div>
+      </div>
+      <div className="reply-pr-acts">
+        <button type="button" className="btn sm primary" onClick={handleOpenPr}>
+          <i className="ri-external-link-line" />Open PR
+        </button>
+        <button type="button" className="btn sm" onClick={handleChangeSomething}>
+          <i className="ri-edit-line" />Change something
+        </button>
+        <button type="button" className="btn sm quiet" onClick={() => setDismissed(true)}>
+          Not now
+        </button>
       </div>
     </div>
   );
@@ -673,17 +912,23 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     } finally { setBusy(false); }
   };
 
+  // fold in main's new fields
+  const confirmLabel = block.confirm_label || sendLabel;
+  const risky = block.risk !== "low";
+  const confirmWho = block.who || "";
+  const confirmWhen = block.when || "";
+
   // Done / cancelled: compact answered row (pen kMvfJ)
   if (isDone || state === "cancelled") {
     return (
       <div className="reply-confirm-answered">
         <i className={isDone ? "ri-checkbox-circle-line reply-confirm-answered-icon ok" : "ri-close-circle-line reply-confirm-answered-icon bad"} />
         <span className="reply-confirm-answered-text">
-          {isDone ? `You approved: ${approvedText}` : `You cancelled: ${approvedText}`}
+          {isDone ? `You approved: ${block.done_label || approvedText}` : `You cancelled: ${approvedText}`}
         </span>
         <span className="reply-confirm-sp" />
         <span className="reply-confirm-answered-meta">
-          {approvedAt && <>{approvedAt} · </>}Undo for 5 min
+          {approvedAt && <>{approvedAt} · </>}{block.undo_min ? `Undo for ${block.undo_min} min` : "Undo for 5 min"}
         </span>
       </div>
     );
@@ -694,7 +939,7 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
     <div className="reply-confirm">
       {/* Top: tile + icon + bold ask; icon/style depends on whether it's a send action */}
       <div className="reply-confirm-top">
-        <div className="reply-confirm-tile">
+        <div className={`reply-confirm-tile${risky ? " reply-confirm-tile--danger" : ""}`}>
           <i className={tileIcon} />
         </div>
         <span className="reply-confirm-ask">{title}</span>
@@ -703,13 +948,14 @@ function ConfirmationBlock({ block, ctx }: { block: Block; ctx: BlockCtx }) {
       {/* Actions row: Cancel / primary + spacer + "X asked · time" */}
       <div className="reply-confirm-acts">
         <button className="btn sm" type="button" disabled={busy} onClick={() => confirm("deny")}>Cancel</button>
-        <button className="btn sm primary" type="button" disabled={busy} onClick={() => confirm("approve")}>
-          <i className={primaryIcon} />{sendLabel}
+        <button className={`btn sm ${risky ? "danger-solid" : "primary"}`} type="button" disabled={busy} onClick={() => confirm("approve")}>
+          <i className={primaryIcon} />{confirmLabel}
         </button>
         <span className="reply-confirm-sp" />
-        {(asker || askedAt) && (
+        {(asker || askedAt || confirmWho || confirmWhen) && (
           <span className="reply-confirm-meta">
-            {asker && <>{asker} asked</>}{askedAt && <> · {askedAt}</>}
+            {(asker || confirmWho) && <>{asker || confirmWho} asked</>}
+            {(askedAt || confirmWhen) && <> · {askedAt || confirmWhen}</>}
           </span>
         )}
       </div>
@@ -938,17 +1184,19 @@ function UsageMeterBlock({ block }: { block: Block }) {
   const pct = block.budget_pct != null ? Math.min(100, block.budget_pct) : null;
   const account = block.account || "";
 
+  const tier = block.tier || "";
+
   const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   const hasTok = tokIn > 0 || tokOut > 0;
 
   return (
     <div className="reply-usage">
-      {/* Account: green dot + "Claude Code pool · cloud" */}
+      {/* Account: green dot + "Claude Code pool · tier" */}
       {account && (
         <>
           <span className="reply-usage-account">
             <span className="reply-usage-dot" aria-hidden="true" />
-            {account}
+            {account}{tier ? ` · ${tier}` : ""}
           </span>
           <span className="reply-usage-sep" aria-hidden="true">·</span>
         </>
@@ -956,7 +1204,7 @@ function UsageMeterBlock({ block }: { block: Block }) {
       {/* Tokens: "1.2k in / 860 out" */}
       {hasTok && <span>{fmt(tokIn)} in / {fmt(tokOut)} out</span>}
       {/* Cost */}
-      {cost != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>${cost.toFixed(4)}</span></>}
+      {cost != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>${cost < 1 ? cost.toFixed(3) : cost.toFixed(2)}</span></>}
       {/* Duration */}
       {dur != null && <><span className="reply-usage-sep" aria-hidden="true">·</span><span>{dur.toFixed(1)}s</span></>}
       {/* Spacer + "of today" + track */}
@@ -973,16 +1221,31 @@ function UsageMeterBlock({ block }: { block: Block }) {
   );
 }
 
-/* ---- document ---- */
+/* ---- document / artifact ---- */
+/* A doc a helper wrote or read: thumbnail, title + source chip, meta, snippet, and
+   one action to open it (routes into the Docs page when the doc lives there). */
 function DocumentBlock({ block }: { block: Block }) {
   const title = block.title || block.name || "Document";
-  const meta = block.summary
+  // Fold in main's richer metadata fields
+  const source = block.source || "";
+  const writtenBy = block.written_by || "";
+  const docWhen = block.when || "";
+  const mimeLabel = block.mime_label || (block.mime?.includes("markdown") ? "Markdown" : "");
+  const words = block.words;
+  const wordLabel = words != null ? `${words >= 1000 ? `${(words / 1000).toFixed(1)}k` : words} words` : "";
+  const richMeta = [mimeLabel, wordLabel, writtenBy ? `written by ${writtenBy}` : "", docWhen].filter(Boolean).join(" · ");
+  // HEAD's meta fallback (mime + text snippet)
+  const legacyMeta = block.summary
     ? (block.mime ? block.mime.replace(/^application\//, "") + " · " : "") + (block.text ? block.text.slice(0, 80) : "")
     : (block.text || "");
+  const meta = richMeta || legacyMeta;
   const snippet = block.summary || "";
   const url = block.url || (block.id ? fileUrl(String(block.id)) : null);
-  // Chip label — derive from mime or kind
-  const chipLabel = block.kind || (block.mime ? (block.mime.includes("pdf") ? "PDF" : block.mime.includes("markdown") ? "Markdown" : "Docs") : "Docs");
+  const docsHref = block.doc_path
+    ? `/docs/?path=${encodeURIComponent(block.doc_path)}`
+    : (source.toLowerCase() === "docs" ? (url || null) : null);
+  // Chip label — prefer source, then kind, then derive from mime
+  const chipLabel = source || block.kind || (block.mime ? (block.mime.includes("pdf") ? "PDF" : block.mime.includes("markdown") ? "Markdown" : "Docs") : "Docs");
 
   const open = () => url && window.open(url, "_blank", "noopener");
 
@@ -1008,9 +1271,13 @@ function DocumentBlock({ block }: { block: Block }) {
         {meta && <span className="reply-document-meta">{meta}</span>}
         {snippet && <span className="reply-document-snippet">{snippet}</span>}
         <div className="reply-document-acts">
-          <button type="button" className="btn sm" onClick={open}>
-            <i className="ri-file-text-line" />Open in Docs
-          </button>
+          {docsHref ? (
+            <a className="btn sm" href={docsHref}><i className="ri-book-open-line" />Open in Docs</a>
+          ) : (
+            <button type="button" className="btn sm" onClick={open}>
+              <i className="ri-file-text-line" />Open in Docs
+            </button>
+          )}
           {url && (
             <a className="btn sm quiet" href={url} download aria-label="Download">
               <i className="ri-download-line" />Download
@@ -1231,6 +1498,8 @@ export function renderBlock(block: Block, ctx: BlockCtx): React.ReactElement {
       return <ImageBlock key={block.id || block.url || block.type} block={block} ctx={ctx} />;
     case "streaming":
       return <StreamingBlock key={block.type} block={block} ctx={ctx} />;
+    case "pr_card":
+      return <PrCardBlock key={block.id || block.type} block={block} />;
 
     default: {
       /* SAFE FALLBACK — render any unknown/future block as text/markdown.

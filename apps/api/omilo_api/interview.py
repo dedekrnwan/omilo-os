@@ -85,6 +85,7 @@ class AiError(RuntimeError):
 
 def ai_config(db) -> dict:
     """The AI chosen in onboarding (or later in Settings): provider, model and key."""
+    from . import harness as H
     from . import services as S
     from .engines import providers as P
 
@@ -100,6 +101,15 @@ def ai_config(db) -> dict:
         return {"provider": provider, "model": model or p.tiers["balanced"], "key": S.ai_api_key(db, provider) or "", "label": p.label}
     if provider == "claude-code":
         return {"provider": "claude-code", "model": model, "label": "Claude subscription"}
+    if provider == "local":
+        # "Already signed in on this computer" — route through the user's own claude CLI login.
+        # We invoke the local Claude Code path: no pool token, no CLAUDE_CONFIG_DIR override,
+        # so the user's own ~/.claude credentials resolve.  Falls back to fake if not installed/logged in.
+        cli = H.find_cli()
+        if cli and H.local_login_status(cli).get("logged_in"):
+            return {"provider": "local", "model": model, "label": "Claude (your sign-in)"}
+        # Not signed in locally — fall through to practice mode so onboarding still works
+        return {"provider": "fake", "label": "Practice mode (sign in to Claude Code to activate)"}
     return {"provider": "fake", "label": "Practice mode"}
 
 
@@ -108,6 +118,8 @@ async def complete(cfg: dict, system: str, messages: list[dict], tools: list[dic
     pid = cfg["provider"]
     if pid == "claude-code":
         return await _complete_cli(cfg, system, messages, tools)
+    if pid == "local":
+        return await _complete_local(cfg, system, messages, tools)
     import litellm
 
     from .engines import providers as P
@@ -169,11 +181,48 @@ async def _complete_cli(cfg: dict, system: str, messages: list[dict], tools: lis
     return {"text": str(data.get("reply") or "").strip(), "calls": calls, "message": {"role": "assistant", "content": str(data.get("reply") or "")}}
 
 
+async def _complete_local(cfg: dict, system: str, messages: list[dict], tools: list[dict] | None) -> dict:
+    """The user's own locally-logged-in Claude Code — no pool token injected.
+
+    The interview has no MCP server or file access, so we use the same prompt-as-JSON
+    approach as _complete_cli but invoke the CLI with token_env=None and config=None so
+    the user's own ~/.claude credentials resolve.
+    """
+    from . import harness as H
+
+    cli = H.find_cli()
+    if not cli:
+        raise AiError("Claude Code isn't installed. Install it at claude.ai/code, then try again.")
+    status = H.local_login_status(cli)
+    if not status.get("logged_in"):
+        raise AiError("You aren't signed in to Claude Code locally. Run `claude` in a terminal to sign in.")
+    shape = {t["function"]["name"]: t["function"]["parameters"] for t in tools or []}
+    convo = "\n\n".join(f"{m['role'].upper()}: {m.get('content') or ''}" for m in messages if m["role"] in ("user", "assistant"))
+    prompt = (f"{system}\n\nConversation so far:\n{convo}\n\nAnswer with ONE JSON object only, no other text: "
+              '{"reply": "<what you say to the founder>", "calls": [{"name": "<tool>", "args": {...}}]}. '
+              f"Tools you may call (name: JSON schema of args): {json.dumps(shape)[:6000]}")
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")}
+    env.pop("CLAUDE_CONFIG_DIR", None)  # let the user's own ~/.claude resolve
+    try:
+        proc = await asyncio.create_subprocess_exec(cli, "-p", prompt, "--output-format", "json", "--max-turns", "1",
+                                                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env)
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=180)
+    except Exception as e:  # noqa: BLE001
+        raise AiError(f"Claude Code local call failed: {str(e)[:300]}") from e
+    try:
+        result = json.loads(out.decode() or "{}").get("result", "")
+        data = json.loads(re.search(r"\{.*\}", result, re.S).group(0))
+    except Exception as e:  # noqa: BLE001
+        raise AiError(f"Claude Code gave an answer I couldn't read: {(err or out).decode()[:200]}") from e
+    calls = [{"id": f"c{i}", "name": c.get("name"), "args": c.get("args") or {}} for i, c in enumerate(data.get("calls") or []) if isinstance(c, dict)]
+    return {"text": str(data.get("reply") or "").strip(), "calls": calls, "message": {"role": "assistant", "content": str(data.get("reply") or "")}}
+
+
 async def check(cfg: dict) -> None:
     """A tiny call to prove the key and model work. Raises AiError with a plain message."""
     if cfg["provider"] == "fake":
         return
-    if cfg["provider"] != "claude-code" and not cfg.get("key") and cfg["provider"] != "bedrock":
+    if cfg["provider"] not in ("claude-code", "local") and not cfg.get("key") and cfg["provider"] != "bedrock":
         raise AiError("Paste your API key first.")
     r = await complete(cfg, "Reply with the single word OK.", [{"role": "user", "content": "Say OK"}])
     if not r["text"] and not r["calls"]:
@@ -197,6 +246,9 @@ def tools() -> list[dict]:
                                     "required": ["topic"]}),
         _fn("read_website", "Read a web page the founder gave you (their site, a product page).",
             {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}),
+        _fn("read_file", "Read an uploaded file the founder shared (deck, menu, price list, etc.).",
+            {"type": "object", "properties": {"file_id": {"type": "string", "description": "the fil_… id of the uploaded file"}},
+             "required": ["file_id"]}),
     ]
 
 
@@ -212,28 +264,38 @@ def _opt_lines() -> str:
 def system_prompt(a: dict, topic: str) -> str:
     cur = next((t for t in topics() if t["id"] == topic), topics()[0])
     cov = coverage(a)
-    plan = "\n".join(f"{i + 1}. {t['label']} [{t['id']}]{' ✓ covered' if c['done'] else ''}: must find out {', '.join(t['must'])}"
-                     + (f"; also useful: {', '.join(t.get('nice', []))}" if t.get("nice") else "")
-                     for i, (t, c) in enumerate(zip(topics(), cov, strict=True)))
-    return f"""You are Omilo's onboarding interviewer. You are getting to know a founder's business so their team of AI helpers
-can work for them from day one. The team itself is chosen from what you learn, so the work they want to hand off matters.
+    done_topics = [c["id"] for c in cov if c["done"]]
+    remaining = [f"{t['label']} [{t['id']}]: need {', '.join(t['must'])}"
+                 + (f" (also nice: {', '.join(t.get('nice', []))})" if t.get("nice") else "")
+                 for t, c in zip(topics(), cov, strict=True) if not c["done"]]
+    covered_note = f"Already covered: {', '.join(done_topics)}." if done_topics else "Nothing captured yet."
+    return f"""You are helping a founder set up their AI team in Omilo. To pick the right helpers and write their jobs,
+you need to understand the business — but this is a real conversation, not a form.
 
 {script()['style']}
-Interview plan (go in this order, skip what is already covered):
-{plan}
 
-Current topic: {cur['label']} [{cur['id']}]. Start it with something like: "{cur['ask']}"
-How to dig here: {cur['dig']}
+Private mental checklist (do NOT march through this mechanically — weave it into the conversation naturally):
+{covered_note}
+Still to learn (in any order that feels right):
+{chr(10).join(f"  - {r}" for r in remaining) or "  (all covered — finish when this exchange is done)"}
 
-Tools: save facts with update_profile as soon as you hear them; offer clickable replies with suggest_replies whenever a
-choice or ideas would help; call set_topic to move on, and set_topic("finish") when everything is covered well enough.
-Allowed option keys for list and choice fields:
+Right now you're on: {cur['label']}. A natural way to open this area: "{cur['ask']}"
+Angle to dig: {cur['dig']}
+
+Tools:
+- update_profile: save facts the moment you hear them (only what the founder actually said or their site states)
+- suggest_replies: give 2-5 short clickable options when a choice or brainstorm helps
+- set_topic: glide to the next area; call set_topic("finish") when you understand the business well enough
+- read_website: if they share a URL, read it immediately and react to what's there
+- read_file: if they share a file (deck, menu, price list), read it and react
+
+Valid option keys for structured fields:
 {_opt_lines()}
 
-The profile so far (JSON):
+Profile captured so far:
 {json.dumps(a, ensure_ascii=False)[:9000]}
 
-Reply in the founder's language (they may write Indonesian, English or another language)."""
+Reply in the founder's language (Indonesian, English, or whatever they write in)."""
 
 
 async def _read_site(url: str) -> str:
@@ -251,8 +313,50 @@ async def _read_site(url: str) -> str:
         return f"(could not open {url}: {e})"
 
 
-async def turn(cfg: dict, a: dict, history: list[dict], topic: str) -> dict:
-    """The interviewer's next message. history: [{"role": "owner"|"ai", "text"}], the last one is the owner's."""
+def _read_file_text(file_id: str) -> tuple[str, str]:
+    """Return (name, text) for a file the AI wants to read. Delegates to capabilities."""
+    from . import capabilities as C
+
+    return C.extract_file_text(file_id)
+
+
+async def _inject_context(msgs: list[dict], file_ids: list[str] | None, website: str | None) -> list[str]:
+    """Pre-extract file/website text and inject it into the last user message as context.
+    Returns a list of human-readable activity labels (for streaming tool events).
+    """
+    from . import capabilities as C
+
+    activities: list[str] = []
+    injected: list[str] = []
+
+    if website:
+        url = website.strip()
+        activities.append(f"Reading {url}…")
+        text = await _read_site(url)
+        injected.append(f"The founder shared their website ({url}):\n<website>\n{text[:8000]}\n</website>")
+
+    for fid in (file_ids or []):
+        name, text = C.extract_file_text(fid)
+        activities.append(f"Reading {name}…")
+        injected.append(f"The founder shared a file ({name}):\n<file>\n{text[:6000]}\n</file>")
+
+    if injected and msgs:
+        # Append the context to the last user message
+        last = msgs[-1]
+        if last["role"] == "user":
+            msgs[-1] = {**last, "content": (last["content"] or "") + "\n\n" + "\n\n".join(injected)}
+        else:
+            msgs.append({"role": "user", "content": "\n\n".join(injected)})
+    return activities
+
+
+async def turn(cfg: dict, a: dict, history: list[dict], topic: str,
+               file_ids: list[str] | None = None, website: str | None = None) -> dict:
+    """The interviewer's next message. history: [{"role": "owner"|"ai", "text"}], the last one is the owner's.
+
+    Optional file_ids and website inject pre-extracted text into the conversation so the AI reacts to
+    uploaded files and websites right away without needing a separate tool call.
+    """
     if cfg["provider"] == "fake":
         return scripted_turn(a, history)
     msgs: list[dict] = []
@@ -261,6 +365,8 @@ async def turn(cfg: dict, a: dict, history: list[dict], topic: str) -> dict:
         msgs.append({"role": role, "content": h.get("text") or ""})
     if not msgs or msgs[0]["role"] != "user":
         msgs.insert(0, {"role": "user", "content": "(The founder just opened the interview. Greet them in one line and ask the first question.)"})
+    # Pre-inject file/website context into the last user message
+    await _inject_context(msgs, file_ids, website)
     patch: dict = {}
     options: list[str] = []
     new_topic = topic
@@ -284,12 +390,204 @@ async def turn(cfg: dict, a: dict, history: list[dict], topic: str) -> dict:
                     result = f"now on {t}"
             elif c["name"] == "read_website":
                 result = await _read_site(str(c["args"].get("url") or ""))
+            elif c["name"] == "read_file":
+                _fname, result = _read_file_text(str(c["args"].get("file_id") or ""))
             msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
         if text and all(c["name"] in ("update_profile", "suggest_replies", "set_topic") for c in r["calls"]):
             break  # it already talked; the tools only saved things
     if not text:
         text = "Got it. Tell me more?"
     return {"reply": text, "patch": patch, "options": options, "topic": new_topic}
+
+
+# ------------------------------------------------------------------ streaming turn (SSE)
+async def stream_turn(cfg: dict, a: dict, history: list[dict], topic: str,
+                      file_ids: list[str] | None = None, website: str | None = None):
+    """Async generator for a streaming interview turn.
+
+    Yields dicts with "event" and "data" keys:
+      {"event": "tool",  "data": {"label": str}}
+      {"event": "text",  "data": {"delta": str}}
+      {"event": "done",  "data": {"reply", "options", "topic", "patch"}}
+      {"event": "error", "data": {"message": str}}
+
+    For fake provider: runs scripted_turn and emits one text + done (no real streaming).
+    For local/claude-code providers: emits a "Thinking…" tool event then runs the blocking
+      complete() call and emits the whole reply as one text delta before done.
+    For litellm providers: streams content chunks; accumulates tool_call deltas; runs the
+      same tool loop as turn(), emitting tool events for read_website/read_file/update_profile.
+    """
+    # Emit tool activity events for any uploaded files/websites (all providers, including fake)
+    from . import capabilities as C
+
+    if website:
+        url = website.strip()
+        yield {"event": "tool", "data": {"label": f"Reading {url}…"}}
+    for fid in (file_ids or []):
+        p = C.file_path(fid)
+        fname = p.name if p else fid
+        yield {"event": "tool", "data": {"label": f"Reading {fname}…"}}
+
+    if cfg["provider"] == "fake":
+        r = scripted_turn(a, history)
+        yield {"event": "text", "data": {"delta": r["reply"]}}
+        yield {"event": "done", "data": {"reply": r["reply"], "options": r.get("options", []),
+                                         "topic": r["topic"], "patch": r.get("patch", {})}}
+        return
+
+    # Build initial message list (same as turn())
+    msgs: list[dict] = []
+    for h in history[-30:]:
+        role = "user" if h["role"] == "owner" else "assistant"
+        msgs.append({"role": role, "content": h.get("text") or ""})
+    if not msgs or msgs[0]["role"] != "user":
+        msgs.insert(0, {"role": "user", "content": "(The founder just opened the interview. Greet them in one line and ask the first question.)"})
+
+    await _inject_context(msgs, file_ids, website)
+
+    patch: dict = {}
+    options: list[str] = []
+    new_topic = topic
+    text = ""
+
+    # CLI-based providers can't stream tokens — emit one Thinking event then run blocking
+    if cfg["provider"] in ("claude-code", "local"):
+        yield {"event": "tool", "data": {"label": "Thinking…"}}
+        try:
+            r = await complete(cfg, system_prompt({**a, **patch}, new_topic), msgs, tools())
+        except AiError as e:
+            yield {"event": "error", "data": {"message": str(e)}}
+            return
+        # Still need to run the tool loop for update_profile / set_topic / suggest_replies
+        while r["calls"]:
+            text = r["text"] or text
+            msgs.append(r["message"])
+            for c in r["calls"]:
+                result = "ok"
+                if c["name"] == "update_profile":
+                    patch.update(clean(c["args"]))
+                    yield {"event": "tool", "data": {"label": "Noted in your profile"}}
+                elif c["name"] == "suggest_replies":
+                    options = [str(x)[:80] for x in (c["args"].get("options") or []) if str(x).strip()][:5]
+                elif c["name"] == "set_topic":
+                    t = c["args"].get("topic")
+                    if t in (*TOPIC_IDS, "finish"):
+                        new_topic = t
+                        result = f"now on {t}"
+                elif c["name"] == "read_website":
+                    u = str(c["args"].get("url") or "")
+                    yield {"event": "tool", "data": {"label": f"Reading {u}…"}}
+                    result = await _read_site(u)
+                elif c["name"] == "read_file":
+                    fid2 = str(c["args"].get("file_id") or "")
+                    fname2, result = _read_file_text(fid2)
+                    yield {"event": "tool", "data": {"label": f"Reading {fname2}…"}}
+                msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
+            if text and all(c["name"] in ("update_profile", "suggest_replies", "set_topic") for c in r["calls"]):
+                break
+            try:
+                r = await complete(cfg, system_prompt({**a, **patch}, new_topic), msgs, tools())
+            except AiError as e:
+                yield {"event": "error", "data": {"message": str(e)}}
+                return
+        text = r["text"] or text or "Got it. Tell me more?"
+        yield {"event": "text", "data": {"delta": text}}
+        yield {"event": "done", "data": {"reply": text, "options": options, "topic": new_topic, "patch": patch}}
+        return
+
+    # LiteLLM streaming path
+    import litellm
+
+    from .engines import providers as P
+
+    pid = cfg["provider"]
+    prefix = P.get_provider(pid).prefix
+    model = cfg["model"] if "/" in (cfg.get("model") or "") else f"{prefix}/{cfg.get('model', '')}"
+    kw_base: dict = {"model": model, "max_tokens": 1500, "api_key": cfg.get("key") or None, "timeout": 90}
+    if cfg.get("model") and "/" in cfg["model"]:
+        kw_base["model"] = cfg["model"]
+
+    for _tool_turn in range(MAX_TOOL_TURNS):
+        sys_msg = system_prompt({**a, **patch}, new_topic)
+        full_msgs = [{"role": "system", "content": sys_msg}, *msgs]
+        kw = {**kw_base, "messages": full_msgs, "tools": tools(), "stream": True}
+        try:
+            stream = await litellm.acompletion(**kw)
+        except Exception as e:  # noqa: BLE001
+            yield {"event": "error", "data": {"message": f"{cfg.get('label', pid)} didn't answer: {str(e)[:300]}"}}
+            return
+
+        # Accumulate streamed response
+        acc_text = ""
+        acc_calls: dict[int, dict] = {}  # index → {id, name, args_str}
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta is None:
+                continue
+            if delta.content:
+                acc_text += delta.content
+                yield {"event": "text", "data": {"delta": delta.content}}
+            for tc in getattr(delta, "tool_calls", None) or []:
+                i = tc.index
+                if i not in acc_calls:
+                    acc_calls[i] = {"id": tc.id or "", "name": tc.function.name or "" if tc.function else "", "args_str": ""}
+                if tc.function and tc.function.arguments:
+                    acc_calls[i]["args_str"] += tc.function.arguments
+                if tc.id and not acc_calls[i]["id"]:
+                    acc_calls[i]["id"] = tc.id
+                if tc.function and tc.function.name and not acc_calls[i]["name"]:
+                    acc_calls[i]["name"] = tc.function.name
+
+        # Parse accumulated tool calls
+        calls = []
+        for idx in sorted(acc_calls):
+            raw = acc_calls[idx]
+            try:
+                args = json.loads(raw["args_str"] or "{}")
+            except ValueError:
+                args = {}
+            calls.append({"id": raw["id"] or f"c{idx}", "name": raw["name"], "args": args})
+
+        text = acc_text.strip() or text
+
+        if not calls:
+            break  # no tools — done
+
+        # Build assistant message for tool loop
+        asst_msg: dict = {"role": "assistant", "content": acc_text or ""}
+        if calls:
+            asst_msg["tool_calls"] = [{"id": c["id"], "type": "function",
+                                        "function": {"name": c["name"], "arguments": json.dumps(c["args"])}} for c in calls]
+        msgs.append(asst_msg)
+
+        for c in calls:
+            result = "ok"
+            if c["name"] == "update_profile":
+                patch.update(clean(c["args"]))
+                yield {"event": "tool", "data": {"label": "Noted in your profile"}}
+            elif c["name"] == "suggest_replies":
+                options = [str(x)[:80] for x in (c["args"].get("options") or []) if str(x).strip()][:5]
+            elif c["name"] == "set_topic":
+                t = c["args"].get("topic")
+                if t in (*TOPIC_IDS, "finish"):
+                    new_topic = t
+                    result = f"now on {t}"
+            elif c["name"] == "read_website":
+                u = str(c["args"].get("url") or "")
+                yield {"event": "tool", "data": {"label": f"Reading {u}…"}}
+                result = await _read_site(u)
+            elif c["name"] == "read_file":
+                fid2 = str(c["args"].get("file_id") or "")
+                fname2, result = _read_file_text(fid2)
+                yield {"event": "tool", "data": {"label": f"Reading {fname2}…"}}
+            msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
+
+        if text and all(c["name"] in ("update_profile", "suggest_replies", "set_topic") for c in calls):
+            break  # already replied; tools only saved things
+
+    if not text:
+        text = "Got it. Tell me more?"
+    yield {"event": "done", "data": {"reply": text, "options": options, "topic": new_topic, "patch": patch}}
 
 
 # ------------------------------------------------------------------ practice mode: the fixed questions

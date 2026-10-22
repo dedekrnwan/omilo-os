@@ -108,7 +108,6 @@ export default function PlanPage() {
             <button className={asMap ? "on" : ""} onClick={() => setAsMap(true)}><i className="ri-node-tree" /> Map</button>
           </div>
           <div className="seg">{[[7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([d, l]) => <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d as number)}>{l}</button>)}</div>
-          <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New goal</button>
         </div>
       </div>
       <Err error={err} />

@@ -30,6 +30,13 @@ SAFE_TOOLS = ["mcp__omilo", "WebSearch", "WebFetch", "Read", "Glob", "Grep", "To
 # CoS may use them to monitor/validate progress.  Only write/exec-class tools are excluded.
 _EXEC_TOOLS = frozenset(["Bash", "Write", "Edit", "MultiEdit", "NotebookEdit"])
 
+# Claude Code's headless permission mode. "dontAsk" was DEPRECATED/REMOVED in CLI v2.1.300+ — passing it now
+# silently falls back to Manual mode, which DENIES approval-gated tools (Bash, etc.) even when they are in
+# --allowedTools (this is why granted terminal access stopped working). "auto" is the modern classifier-backed
+# replacement that still honors our --allowedTools/--disallowedTools sandboxing (unlike bypassPermissions, which
+# ignores the deny-list). Override for older CLIs via OMILO_CLAUDE_PERMISSION_MODE=dontAsk.
+PERMISSION_MODE = os.environ.get("OMILO_CLAUDE_PERMISSION_MODE", "auto")
+
 
 def manager_tool_filter(tools: list[str], *, is_chief: bool, goal_delivery: bool) -> list[str]:
     """Return the filtered tool list for one run.
@@ -84,19 +91,27 @@ def plan(cfg: dict, resources) -> tuple[dict, list[str], list[str]]:
                 deny += [f"Edit(/{d}/**)", f"Write(/{d}/**)"]
     if shell:
         tools.append("Bash")
-        deny += SHELL_DENY
+        # Auto/YOLO: only the destructive-local floor stays blocked; operational commands
+        # (push/publish/deploy) run directly. Strict: the full deny list.
+        deny += SHELL_DENY_DESTRUCTIVE if cfg.get("_auto") else SHELL_DENY
     extra: list[str] = []
     for d in add_dirs:
         extra += ["--add-dir", d]
     if deny:
         extra += ["--disallowedTools", *deny]
     return servers, tools, extra
-# commands that change the world outside the folder (or cannot be undone) stay blocked even when commands are allowed:
-# the helper asks the founder through request_action instead
-SHELL_DENY = [f"Bash({c}:*)" for c in (
-    "rm", "rmdir", "sudo", "git push", "git reset --hard", "git clean", "npm publish", "pnpm publish", "yarn publish", "twine upload",
-    "docker push", "kubectl", "terraform apply", "terraform destroy", "vercel", "netlify deploy", "fly deploy", "flyctl deploy", "gh pr merge",
-    "gh release", "ssh", "scp")]
+# Irreversible/destructive LOCAL commands — blocked in every mode, including Auto/YOLO
+# (this is the self-destruct floor: wiping files or history can't be undone).
+SHELL_DENY_DESTRUCTIVE = [f"Bash({c}:*)" for c in (
+    "rm", "rmdir", "sudo", "git reset --hard", "git clean", "terraform destroy")]
+# Outward/operational commands — blocked in Strict (the helper asks via request_action),
+# but allowed directly in Auto/YOLO so push/publish/deploy just run.
+SHELL_DENY_OPERATIONAL = [f"Bash({c}:*)" for c in (
+    "git push", "npm publish", "pnpm publish", "yarn publish", "twine upload",
+    "docker push", "kubectl", "terraform apply", "vercel", "netlify deploy", "fly deploy", "flyctl deploy",
+    "gh pr merge", "gh release", "ssh", "scp")]
+# Back-compat name = the full Strict-mode deny list.
+SHELL_DENY = SHELL_DENY_DESTRUCTIVE + SHELL_DENY_OPERATIONAL
 STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OMILO_SECRET_KEY", "OMILO_DATABASE_URL", "OMILO_REDIS_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
@@ -246,6 +261,11 @@ class ClaudeCodeEngine(Engine):
         config, runs, cwd = _dirs(staff_id)
         servers, tools, extra = plan(cfg, resources)
         tools = manager_tool_filter(tools, is_chief=bool(cfg.get("_is_chief")), goal_delivery=bool(cfg.get("_goal_delivery")))
+        if cfg.get("_chat"):  # a chat turn is conversational: Omilo's own tools + read-only web only, never the dev
+            # toolset. Without this (esp. on the local sign-in, which inherits the user's skills/hooks) the helper runs
+            # off building — invoking Skill/Bash in the real repo — and never writes a reply. Real work goes via Tasks.
+            tools = ["mcp__omilo", "WebSearch", "WebFetch"]
+            extra = ["--disallowedTools", "Bash", "Skill", "Task", "Agent", "Edit", "Write", "MultiEdit", "NotebookEdit", "Read", "Glob", "Grep"]
         if resources is not None and resources.folders:
             first_rw = next((f for f in resources.folders if f["access"] == "write"), None)
             if first_rw:
@@ -262,22 +282,35 @@ class ClaudeCodeEngine(Engine):
             finally:
                 mcp_file.unlink(missing_ok=True)
         if auth == "local":  # your OWN locally-logged-in claude: the credential never leaves your machine
-            try:
-                if H.local_login_status(cli)["logged_in"]:
-                    return await self._run_local(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
-                if api_key():  # not signed in locally, but a company API key is set — fall back to it
+            if H.local_login_status(cli)["logged_in"]:
+                res = await self._run_local(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd)
+                if not (res.error and H.LIMIT_RE.search(res.error)):
+                    mcp_file.unlink(missing_ok=True)
+                    return res
+                # your sign-in hit its usage limit — fall back to the pool (then your API key) as overflow
+                emit("status", state="switching", account="the pool", reason="your Claude sign-in hit its limit")
+                total.tokens += res.tokens
+                total.cost_usd += res.cost_usd
+                if res.text:
+                    total.text = res.text
+                # fall through to the pool loop below (mcp_file is cleaned up there)
+            elif api_key():  # not signed in locally, but a company API key is set — fall back to it
+                try:
                     emit("status", state="switching", account="your API key", reason="not signed in to Claude Code")
                     return await self._run_api(cli, cfg, system, prompt, session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
-                return EngineResult(error="Sign in to Claude Code (run `claude`), or add a Claude API key in Settings → AI.")
-            finally:
+                finally:
+                    mcp_file.unlink(missing_ok=True)
+            else:
                 mcp_file.unlink(missing_ok=True)
+                return EngineResult(error="Sign in to Claude Code (run `claude`), or add a Claude API key in Settings → AI.")
         try:
             while True:
                 picked = H.lease(exclude=tried)
                 if not picked:
-                    # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key
-                    # (same config dir, so a session begun on the pool resumes cleanly). Pure pool mode errors instead.
-                    if api_key():
+                    # "auto": the pool is empty, all busy, or every account cooled down — spill over to your API key,
+                    # but ONLY for a chat turn (small). Big Tasks must never bill the API key: they defer until a pool
+                    # account is free again. (same config dir, so a chat session begun on the pool resumes cleanly.)
+                    if api_key() and cfg.get("_chat"):
                         emit("status", state="switching", account="your API key", reason="pool busy — using your API key")
                         res = await self._run_api(cli, cfg, system, prompt if not session else "Continue exactly where you left off.",
                                                   session, emit, timeout, remember, tools, extra, mcp_file, cwd, config)
@@ -293,7 +326,7 @@ class ClaudeCodeEngine(Engine):
                 emit("status", state="harness", account=label)
                 args = ["-p", prompt if not session else (prompt if not tried - {acc_id} else "Continue exactly where you left off."),
                         "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                        "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                         "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
                 if cfg.get("model"):
                     args += ["--model", cfg["model"]]
@@ -309,7 +342,7 @@ class ClaudeCodeEngine(Engine):
                 if run.session and run.session != session:
                     session = run.session
                     remember(session)
-                problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+                problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
                 rejected = H.rejected_reset(run.limits)
                 if problem and rejected is not None and not H.LIMIT_RE.search(problem):
                     problem = f"usage limit reached ({problem[:200]})"
@@ -339,7 +372,7 @@ class ClaudeCodeEngine(Engine):
         # shares the pool's config dir on purpose, so "auto" can resume a pool session on the API key and back
         emit("status", state="harness", account="your API key")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
@@ -348,7 +381,7 @@ class ClaudeCodeEngine(Engine):
         run, code, err = await self._once(cli, key, args, cwd, config, emit, timeout, token_env="ANTHROPIC_API_KEY")
         if run.session and run.session != session:
             remember(run.session)
-        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
         res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
         if problem:
             res.error = f"Claude Code: {problem[:400]}"
@@ -359,7 +392,7 @@ class ClaudeCodeEngine(Engine):
         # ~/.claude login resolves. The credential never leaves the machine — the compliant, load-bearing path.
         emit("status", state="harness", account="your Claude sign-in")
         args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--append-system-prompt", system,
-                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", "dontAsk",
+                "--mcp-config", str(mcp_file), "--strict-mcp-config", "--permission-mode", PERMISSION_MODE, "--settings", '{"disableAllHooks": true}',
                 "--allowedTools", *tools, *extra, "--max-turns", str(int(cfg.get("max_turns") or 60))]
         if cfg.get("model"):
             args += ["--model", cfg["model"]]
@@ -368,7 +401,7 @@ class ClaudeCodeEngine(Engine):
         run, code, err = await self._once(cli, "", args, cwd, None, emit, timeout, token_env=None)
         if run.session and run.session != session:
             remember(run.session)
-        problem = run.result_text if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
+        problem = (run.result_text or err or "the account returned an error with no message (its sign-in may have expired)") if run.is_error else ("" if code == 0 and run.text else (err or f"exit code {code}"))
         res = EngineResult(tokens=run.tokens, cost_usd=run.cost, text=run.text)
         if problem:
             res.error = f"Claude Code: {problem[:400]}"
@@ -386,7 +419,7 @@ class ClaudeCodeEngine(Engine):
                                float(cfg.get("timeout_s") or 1800), lambda s: ctx.emit("session", session_id=s), ctx.resources)
 
     async def chat(self, ctx: ChatContext) -> EngineResult:
-        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or ""}
+        cfg = {**ctx.engine_config, "_mcp_url": ctx.mcp_url, "_mcp_token": ctx.mcp_token or "", "_chat": True, "_is_chief": ctx.is_chief}
         system = with_resources(CHAT_SYSTEM.format(name=ctx.staff_name, chief=", the Chief of Staff" if ctx.is_chief else "", context=ctx.context_note), ctx.resources)
         # a chat with several helpers: each turn starts fresh with the conversation so far (one helper's session would
         # not have seen the others' replies, and must not be resumed by another helper)

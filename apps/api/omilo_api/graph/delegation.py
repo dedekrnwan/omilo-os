@@ -49,6 +49,7 @@ from langgraph.types import interrupt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import policy
 from .. import services as S
 from ..models import Proposal, Staff
 from .risk import classify_risk
@@ -146,13 +147,20 @@ def gate(state: dict, ctx: GateContext) -> dict:
     # Risk is re-derived structurally — the worker's label is only a hint.
     risk = classify_risk(action_type, summary, worker_label)
 
-    if risk == "high":
-        return _escalate(ctx, pending_action, risk)
-    # low/medium may be auto-handled — but ONLY by the Chief of Staff. With no CoS there is
-    # no delegation authority, so escalate to the owner rather than let a worker approve its
-    # own proposal (which would break the "CoS is the approver" invariant).
+    # The self-destruct floor (credentials/auth/company-deletion) always reaches the owner.
+    is_floor = any(action_type == a or action_type.startswith(a + ".") for a in policy.ALWAYS_ASK)
+
     with _session() as db:
+        permissive = S.autonomy_policy(db, db.get(Staff, ctx.staff_id))["mode"] == "permissive"
         cos = cos_id(db)
+
+    # Escalate to the owner only for the self-destruct floor, or for high risk when NOT in
+    # Auto/YOLO. In Auto, high-risk operational actions (push, deploy, publish, send, spend)
+    # are auto-approved like low/medium.
+    if is_floor or (risk == "high" and not permissive):
+        return _escalate(ctx, pending_action, risk)
+    # Auto-handling needs the Chief of Staff as approver. With no CoS there is no delegation
+    # authority, so escalate rather than let a worker approve its own proposal.
     if cos is None:
         return _escalate(ctx, pending_action, risk)
     return _auto_approve(ctx, pending_action, risk, cos)

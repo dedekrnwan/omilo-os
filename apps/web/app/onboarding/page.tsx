@@ -2,14 +2,16 @@
 import { useRouter } from "next/navigation";
 import { KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import ClaudeCodeSetup from "@/components/ClaudeCodeSetup";
-import ProviderLogo from "@/components/ProviderLogo";
 import Avatar from "@/components/Avatar";
 import { Err } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
-import { api } from "@/lib/api";
+import { api, BASE } from "@/lib/api";
 import { Mark } from "@/components/Logo";
 import Stepper from "@/components/onboarding/Stepper";
 import { WelcomeNotes, LiveNotes, EditableNotes, NOTE_DEFS, TOPIC_TO_NOTE, NoteKey } from "@/components/onboarding/Notes";
+import { useFileUpload } from "@/lib/upload";
+import type { Attached } from "@/components/ComposerTools";
+import { streamSSE } from "@/lib/sse";
 
 /* Onboarding v2 — 5 screens, 7-note model, 4-step stepper.
    Steps: 0 Welcome · 1 Your AI · 2 Get to know you · 3 Check · 4 Your team */
@@ -39,8 +41,6 @@ type Turn = { history: Hist[]; topic: string; answers: Answers; coverage: Topic[
 /* ---------- helpers ---------- */
 const label = (v: Opt[string] | undefined) =>
   v === undefined ? "" : typeof v === "string" ? v : v.label;
-const slug = (s: string) =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "helper";
 function browserTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
 }
@@ -98,7 +98,7 @@ function answersToNoteValues(answers: Answers, o: Options): Record<NoteKey, stri
 }
 
 /* ---------- top bar ---------- */
-function TopBar({ company, onLogout }: { company: string; onLogout: () => void }) {
+function TopBar({ company, step, onLogout }: { company: string; step: number; onLogout: () => void }) {
   return (
     <div className="ob2-bar">
       <div className="ob2-brand">
@@ -106,76 +106,93 @@ function TopBar({ company, onLogout }: { company: string; onLogout: () => void }
         <b>Omilo</b>
         <span>· Setting up {company}</span>
       </div>
-      <span className="sp" />
-      <span className="ob2-saved"><i className="ri-save-3-line" />Saved as you go</span>
-      <button className="btn quiet sm" onClick={onLogout} style={{ marginLeft: 8 }}>
-        <i className="ri-logout-box-r-line" />Log out
-      </button>
+      <div className="ob2-bar-center">
+        {step > 0 && <Stepper active={step} />}
+      </div>
+      <div className="ob2-bar-right">
+        <span className="ob2-saved"><i className="ri-save-3-line" />Saved as you go</span>
+        <button className="btn quiet sm" onClick={onLogout}>
+          <i className="ri-logout-box-r-line" />Log out
+        </button>
+      </div>
     </div>
   );
 }
 
-/* ================================================================ Screen 1: Welcome */
+/* ================================================================ Screen 0: Welcome */
 function WelcomeScreen({ company, onStart }: { company: string; onStart: () => void }) {
   return (
-    <div className="ob2-layout">
-      <div className="ob2-form">
-        <div className="ob2-inner">
-          <div style={{ display: "flex", gap: 12, marginBottom: 18, alignItems: "center" }}>
-            <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={36} />
-            <Avatar who={{ id: "builder", name: "Builder", role: "builder" }} size={36} />
-            <Avatar who={{ id: "grower", name: "Grower", role: "grower" }} size={36} />
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Let&apos;s build your AI team</h1>
-          <p className="lead" style={{ marginBottom: 24 }}>
-            I&apos;m Chief of Staff. I&apos;ll ask about {company} the way a good advisor would: one question
-            at a time, with ideas when you&apos;re not sure.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
-            {[
-              { n: 1, label: "Connect the AI you already have", time: "1 min" },
-              { n: 2, label: "Talk about your business", time: "~10 min" },
-              { n: 3, label: "Meet your team and approve their jobs", time: "2 min" },
-            ].map((s) => (
-              <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{
-                  width: 24, height: 24, borderRadius: "50%", background: "var(--primary)",
-                  color: "var(--primary-ink)", display: "grid", placeItems: "center",
-                  fontSize: 12, fontWeight: 700, flexShrink: 0,
-                }}>{s.n}</span>
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{s.label}</span>
-                <span className="small" style={{ color: "var(--muted)" }}>{s.time}</span>
+    <div className="ob2-scroll">
+      <div className="ob2-card-wrap">
+        <div className="ob2-card">
+          <div className="ob2-card-cols">
+            {/* LEFT column */}
+            <div className="ob2-card-left">
+              {/* Overlapping crew avatars */}
+              <div style={{ display: "flex", marginBottom: 20, position: "relative", height: 46 }}>
+                <span style={{ position: "absolute", left: 0, zIndex: 3 }}>
+                  <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={40} />
+                </span>
+                <span style={{ position: "absolute", left: 28, zIndex: 2 }}>
+                  <Avatar who={{ id: "builder", name: "Builder", role: "builder" }} size={40} />
+                </span>
+                <span style={{ position: "absolute", left: 56, zIndex: 1 }}>
+                  <Avatar who={{ id: "grower", name: "Grower", role: "grower" }} size={40} />
+                </span>
               </div>
-            ))}
+
+              <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12, lineHeight: 1.2 }}>
+                Let&apos;s build your AI team
+              </h1>
+              <p style={{ fontSize: 15, color: "var(--muted)", lineHeight: 1.6, marginBottom: 28 }}>
+                I&apos;m Chief of Staff. I&apos;ll ask about {company} the way a good advisor would: one question
+                at a time, with ideas when you&apos;re not sure. Then I&apos;ll suggest a team that fits.
+              </p>
+
+              <div className="ob2-welcome-steps">
+                {[
+                  { n: 1, label: "Connect the AI you already have", time: "1 min" },
+                  { n: 2, label: "Talk about your business", time: "~10 min" },
+                  { n: 3, label: "Meet your team and approve their jobs", time: "2 min" },
+                ].map((s) => (
+                  <div key={s.n} className="ob2-welcome-step">
+                    <span className="ob2-welcome-step-n">{s.n}</span>
+                    <span className="ob2-welcome-step-label">{s.label}</span>
+                    <span className="ob2-welcome-step-time">{s.time}</span>
+                  </div>
+                ))}
+              </div>
+
+              <button className="btn primary" style={{ marginBottom: 10 }} onClick={onStart}>
+                <i className="ri-arrow-right-line" />Let&apos;s start
+              </button>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                You can stop anytime and pick up later.
+              </p>
+            </div>
+
+            {/* RIGHT column */}
+            <div className="ob2-card-right">
+              <p style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: "var(--muted)", marginBottom: 6,
+              }}>
+                What your team will know
+              </p>
+              <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.55, marginBottom: 16 }}>
+                Everything you tell me becomes 7 short notes. Helpers read them before every job, and you can edit
+                them anytime in Company.
+              </p>
+              <WelcomeNotes />
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button className="btn primary" style={{ width: "fit-content" }} onClick={onStart}>
-              Let&apos;s start<i className="ri-arrow-right-line" />
-            </button>
-            <p className="small" style={{ color: "var(--muted)", margin: 0 }}>
-              You can stop anytime and pick up later.
-            </p>
-          </div>
-        </div>
-      </div>
-      <div className="ob2-rail">
-        <div style={{ padding: "16px 12px 8px" }}>
-          <p className="small" style={{ fontWeight: 700, letterSpacing: "0.05em", color: "var(--muted)", marginBottom: 4 }}>
-            WHAT YOUR TEAM WILL KNOW
-          </p>
-          <p className="small" style={{ color: "var(--muted)", marginBottom: 12 }}>
-            Everything you tell me becomes 7 short notes. Helpers read them before every job.
-          </p>
-        </div>
-        <div style={{ padding: "0 12px 16px" }}>
-          <WelcomeNotes />
         </div>
       </div>
     </div>
   );
 }
 
-/* ================================================================ Screen 2: Your AI */
+/* ================================================================ Screen 1: Your AI */
 const GOOD_TO_KNOW = [
   { icon: "ri-team-line", title: "It runs your whole team", body: "Every helper and every job uses the AI you connect here." },
   { icon: "ri-coins-line", title: "Costs stay with you", body: "A sign-in or subscription costs nothing extra. With a key, you pay your provider directly." },
@@ -191,7 +208,6 @@ function AiScreen({
 }) {
   const [sel, setSel] = useState<string | null>(() => {
     if (ai.chosen && ai.provider !== "fake") return ai.provider === "anthropic" ? "claude" : ai.provider;
-    // Auto-select local login if available
     const local = providers.find((p) => p.kind === "local");
     if (local) return local.id;
     return null;
@@ -206,7 +222,6 @@ function AiScreen({
 
   const p = providers.find((x) => x.id === sel);
 
-  // Group providers into the 3 option types
   const localProvider = providers.find((x) => x.kind === "local");
   const subProvider = providers.find((x) => x.kind === "subscription");
   const keyProviders = providers.filter((x) => x.kind === "key" && (!x.more || more || x.id === sel));
@@ -242,140 +257,150 @@ function AiScreen({
     : sel === "__key";
 
   return (
-    <div className="ob2-layout">
-      <div className="ob2-form">
-        <div className="ob2-inner">
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-            <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={28} />
-            <span className="small" style={{ color: "var(--muted)" }}>Step 1 of 4</span>
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
-            Which AI should your team think with?
-          </h1>
-          <p className="lead" style={{ marginBottom: 20 }}>
-            Your helpers, and our chat next, run on it. Pick what you already have; you can change it later.
-          </p>
+    <div className="ob2-scroll">
+      <div className="ob2-card-wrap">
+        <div className="ob2-card">
+          <div className="ob2-card-cols">
+            {/* LEFT */}
+            <div className="ob2-card-left">
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+                <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={26} />
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 500 }}>Step 1 of 4</span>
+              </div>
+              <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 10, lineHeight: 1.25 }}>
+                Which AI should your team think with?
+              </h1>
+              <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, marginBottom: 22 }}>
+                Your helpers, and our chat next, run on it. Pick what you already have; you can change it
+                anytime in AI accounts.
+              </p>
 
-          <div className="ob2-ai-options">
-            {aiOptions.map((opt) => {
-              const isOn = sel === opt.id || (opt.id === "__key" && selIsKey && sel !== localProvider?.id && sel !== subProvider?.id);
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`ob2-ai-option${isOn ? " on" : ""}`}
-                  onClick={() => { setSel(opt.id === "__key" ? (keyProviders[0]?.id || "__key") : opt.id); setErr(null); }}
-                >
-                  <span className="ob2-ai-dot" />
-                  <span className="ob2-ai-t">
-                    <b>
-                      {opt.title}
-                      {opt.badge && <span className="chip up" style={{ fontSize: 11 }}>{opt.badge}</span>}
-                    </b>
-                    <span>{opt.subtitle}</span>
-                    {opt.isLocal && localProvider?.has_key && (
-                      <span style={{ fontSize: 12, color: "var(--ok)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
-                        <i className="ri-check-circle-fill" />
-                        Claude Code signed in · <button type="button" className="linkbtn" style={{ fontSize: 12 }} onClick={() => {}}>Use another</button>
+              <div className="ob2-ai-options">
+                {aiOptions.map((opt) => {
+                  const isOn = sel === opt.id || (opt.id === "__key" && selIsKey && sel !== localProvider?.id && sel !== subProvider?.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`ob2-ai-option${isOn ? " on" : ""}`}
+                      onClick={() => { setSel(opt.id === "__key" ? (keyProviders[0]?.id || "__key") : opt.id); setErr(null); }}
+                    >
+                      <span className="ob2-ai-dot" />
+                      <span className="ob2-ai-t">
+                        <b>{opt.title}</b>
+                        <span>{opt.subtitle}</span>
+                        {opt.isLocal && localProvider?.has_key && isOn && (
+                          <span style={{ fontSize: 12, color: "var(--ok)", display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+                            <i className="ri-checkbox-circle-fill" style={{ fontSize: 13, color: "var(--ok)" }} />
+                            Claude Code 2.1.169 · signed in on this computer
+                            <button type="button" className="linkbtn" style={{ fontSize: 12 }} onClick={() => {}}>Use another</button>
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+                      {opt.badge && (
+                        <span className="chip" style={{ fontSize: 11, alignSelf: "flex-start", marginLeft: "auto", flexShrink: 0 }}>
+                          {opt.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* API key provider chips */}
+              {selIsKey && (
+                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {keyProviders.map((x) => (
+                    <button key={x.id} type="button" className={`chipbtn${sel === x.id ? " on" : ""}`}
+                      onClick={() => setSel(x.id)}>
+                      {x.label}
+                    </button>
+                  ))}
+                  {!more && providers.some((x) => x.more && x.kind === "key") && (
+                    <button type="button" className="chipbtn" onClick={() => setMore(true)}>More…</button>
+                  )}
+                </div>
+              )}
+
+              {/* Connection panel */}
+              {p && (
+                <div className="paper" style={{ marginTop: 16, padding: 16 }}>
+                  {p.kind === "key" ? (
+                    <>
+                      <label style={{ marginTop: 0 }}>Your {p.label} API key</label>
+                      <input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)}
+                        placeholder={p.has_key ? "Saved. Paste a new one to replace it" : "Paste it here"} />
+                      <p className="small">Get one at{" "}
+                        <a href={p.key_url} target="_blank" rel="noopener noreferrer">
+                          {p.key_url?.replace(/^https?:\/\//, "").split("/")[0]}
+                        </a>: sign in, create a key, copy it here. Stored encrypted, only used by your Omilo.
+                      </p>
+                      <details><summary className="small">Advanced: a specific model</summary>
+                        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Leave empty for a good default" />
+                      </details>
+                    </>
+                  ) : p.kind === "local" ? (
+                    <p style={{ marginTop: 0 }}>Use your own Claude Code sign-in on this machine — no key needed.</p>
+                  ) : (
+                    <>
+                      <p style={{ marginTop: 0 }}>Use your Claude Pro or Max plan. Omilo runs Claude Code on this computer with it.</p>
+                      <ClaudeCodeSetup autoInstall onReady={setSubReady} />
+                      <label>Your Claude token</label>
+                      <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)}
+                        placeholder={p.has_key ? "Connected. Paste another to add it" : "sk-ant-oat…"} />
+                      <p className="small">In the Terminal app run <code>claude setup-token</code>, sign in with your Claude account in the browser, then paste the token it shows.</p>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <Err error={err} />
+            </div>
+
+            {/* RIGHT: GOOD TO KNOW */}
+            <div className="ob2-card-right">
+              <p style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: "var(--muted)", marginBottom: 20,
+              }}>
+                Good to know
+              </p>
+              <div className="ob2-know-tiles">
+                {GOOD_TO_KNOW.map((t) => (
+                  <div key={t.title} className="ob2-know-tile">
+                    <i className={t.icon} />
+                    <div className="ob2-kt-t"><b>{t.title}</b>{t.body}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {/* API key provider sub-selection */}
-          {selIsKey && (
-            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {keyProviders.map((x) => (
-                <button key={x.id} type="button" className={`chipbtn${sel === x.id ? " on" : ""}`}
-                  onClick={() => setSel(x.id)}>
-                  {x.label}
-                </button>
-              ))}
-              {!more && providers.some((x) => x.more && x.kind === "key") && (
-                <button type="button" className="chipbtn" onClick={() => setMore(true)}>More…</button>
-              )}
-            </div>
-          )}
-
-          {/* Connection panel */}
-          {p && (
-            <div className="paper" style={{ marginTop: 16, padding: 16 }}>
-              {p.kind === "key" ? (
-                <>
-                  <label style={{ marginTop: 0 }}>Your {p.label} API key</label>
-                  <input type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)}
-                    placeholder={p.has_key ? "Saved. Paste a new one to replace it" : "Paste it here"} />
-                  <p className="small">Get one at{" "}
-                    <a href={p.key_url} target="_blank" rel="noopener noreferrer">
-                      {p.key_url?.replace(/^https?:\/\//, "").split("/")[0]}
-                    </a>: sign in, create a key, copy it here. Stored encrypted, only used by your Omilo.
-                  </p>
-                  <details><summary className="small">Advanced: a specific model</summary>
-                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Leave empty for a good default" />
-                  </details>
-                </>
-              ) : p.kind === "local" ? (
-                <p style={{ marginTop: 0 }}>Use your own Claude Code sign-in on this machine — no key needed.</p>
-              ) : (
-                <>
-                  <p style={{ marginTop: 0 }}>Use your Claude Pro or Max plan. Omilo runs Claude Code on this computer with it.</p>
-                  <ClaudeCodeSetup autoInstall onReady={setSubReady} />
-                  <label>Your Claude token</label>
-                  <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)}
-                    placeholder={p.has_key ? "Connected. Paste another to add it" : "sk-ant-oat…"} />
-                  <p className="small">In the Terminal app run <code>claude setup-token</code>, sign in with your Claude account in the browser, then paste the token it shows.</p>
-                </>
-              )}
-            </div>
-          )}
-
-          <Err error={err} />
+          {/* Bottom nav inside the card */}
+          <div className="ob2-card-nav">
+            <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back</button>
+            <span className="ob2-nav-sp" />
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              No AI yet?{" "}
+              <button type="button" className="linkbtn" disabled={busy} onClick={onSkip}>
+                Try with fixed questions
+              </button>
+            </span>
+            <button
+              className="btn primary"
+              disabled={busy || !sel || sel === "__key" || (p?.kind === "key" && !key.trim() && !p?.has_key) || (p?.kind === "subscription" && ((!token.trim() && !p?.has_key) || !subReady))}
+              onClick={() => p && connect(p.id)}
+            >
+              {busy ? "Checking…" : "Connect and continue"}<i className="ri-arrow-right-line" />
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Right rail: GOOD TO KNOW */}
-      <div className="ob2-rail">
-        <div style={{ padding: "14px 12px 6px" }}>
-          <p className="small" style={{ fontWeight: 700, letterSpacing: "0.05em", color: "var(--muted)", margin: 0 }}>
-            GOOD TO KNOW
-          </p>
-        </div>
-        <div className="ob2-know-tiles">
-          {GOOD_TO_KNOW.map((t) => (
-            <div key={t.title} className="ob2-know-tile">
-              <i className={t.icon} />
-              <div className="ob2-kt-t"><b>{t.title}</b>{t.body}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Bottom nav */}
-      <div className="ob2-nav" style={{ gridColumn: "1 / -1" }}>
-        <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back</button>
-        <span className="sp" />
-        <span className="small" style={{ color: "var(--muted)" }}>
-          No AI yet?{" "}
-          <button type="button" className="linkbtn" disabled={busy} onClick={onSkip}>
-            Try with fixed questions
-          </button>
-        </span>
-        <button
-          className="btn primary"
-          disabled={busy || !sel || sel === "__key" || (p?.kind === "key" && !key.trim() && !p?.has_key) || (p?.kind === "subscription" && ((!token.trim() && !p?.has_key) || !subReady))}
-          onClick={() => p && connect(p.id)}
-        >
-          {busy ? "Checking…" : "Connect and continue"}<i className="ri-arrow-right-line" />
-        </button>
       </div>
     </div>
   );
 }
 
-/* ================================================================ Screen 3: Interview */
+/* ================================================================ Screen 2: Interview */
 function buildLiveNotes(answers: Answers, topics: Topic[], topic: string) {
   const doneTopics = new Set(topics.filter((t) => t.done).map((t) => t.id));
   const currentNote = TOPIC_TO_NOTE[topic];
@@ -399,19 +424,63 @@ function InterviewScreen({
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Streaming state
+  const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [toolActivity, setToolActivity] = useState<string | null>(null);
+  // File attachment state
+  const [files, setFiles] = useState<Attached[]>([]);
+  const { upload, uploading, err: uploadErr } = useFileUpload(files, setFiles);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Website input state
+  const [website, setWebsite] = useState("");
   const end = useRef<HTMLDivElement>(null);
 
-  const send = useCallback(async (message: string) => {
-    setBusy(true); setErr(null);
+  const send = useCallback(async (message: string, opts?: { file_ids?: string[]; website?: string; restart?: boolean }) => {
+    setBusy(true); setErr(null); setStreamingText(""); setToolActivity(null);
     if (message) setHist((h) => [...h, { role: "owner", text: message }]);
+    // Clear attachments immediately so the UI resets
+    setFiles([]);
+    setWebsite("");
     try {
-      const r = await api<Turn>("/onboarding/interview", { body: { message } });
-      setHist(r.history); setTopic(r.topic); onAnswers(r.answers, r.coverage); setPicked([]);
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      await streamSSE(
+        `${BASE}/api/onboarding/interview/stream`,
+        {
+          message,
+          ...(opts?.file_ids?.length ? { file_ids: opts.file_ids } : {}),
+          ...(opts?.website ? { website: opts.website } : {}),
+          ...(opts?.restart ? { restart: true } : {}),
+        },
+        (event, data: any) => {
+          if (event === "text") {
+            setStreamingText((prev) => (prev ?? "") + (data.delta ?? ""));
+          } else if (event === "tool") {
+            setToolActivity(data.label ?? null);
+          } else if (event === "done") {
+            // Replace streamed placeholder with final history from server
+            setHist(data.history ?? []);
+            setTopic(data.topic ?? "business");
+            onAnswers(data.answers, data.coverage);
+            setPicked([]);
+            setStreamingText(null);
+            setToolActivity(null);
+          } else if (event === "error") {
+            setErr(data.message ?? "Something went wrong");
+            setStreamingText(null);
+            setToolActivity(null);
+          }
+        },
+      );
+    } catch (e: any) {
+      setErr(e.message);
+      setStreamingText(null);
+      setToolActivity(null);
+    } finally {
+      setBusy(false);
+    }
   }, [onAnswers]);
 
   useEffect(() => { if (!hist.length) send(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [hist.length, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [hist.length, busy, streamingText]);
 
   const last = hist[hist.length - 1];
   const finished = topic === "finish";
@@ -422,37 +491,59 @@ function InterviewScreen({
   const currentTopicLabel = st.topics.find((t) => t.id === topic)?.label || topic;
   const pct = (doneCount / Math.max(1, totalTopics)) * 100;
 
-  const submit = () => { const t = text.trim(); if (!t || busy) return; setText(""); send(t); };
+  const submit = () => {
+    const t = text.trim();
+    if (busy) return;
+    if (!t && !files.length && !website.trim()) return;
+    setText("");
+    const fileIds = files.map((f) => f.id);
+    const ws = website.trim();
+    // If only website/files with no message, use a brief filler message
+    const msg = t || (ws ? "Please read my website first." : "");
+    send(msg, { file_ids: fileIds.length ? fileIds : undefined, website: ws || undefined });
+  };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } };
+
+  const submitWebsite = () => {
+    const ws = website.trim();
+    if (!ws || busy) return;
+    const fileIds = files.map((f) => f.id);
+    setFiles([]);
+    setText("");
+    send("Please read my website first.", { website: ws, file_ids: fileIds.length ? fileIds : undefined });
+  };
 
   const liveNotes = buildLiveNotes(st.answers, st.topics, topic);
 
   return (
-    <div className="ob2-layout" style={{ gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
-      {/* Left: interview chat */}
-      <div className="ob2-form">
-        <div className="ob2-interview" style={{ padding: "0 20px" }}>
+    <div className="ob2-iv-wrap">
+      {/* LEFT panel: chat */}
+      <div className="ob2-iv-left">
+        <div className="ob2-interview">
           {/* Topic bar */}
           <div className="ob2-topic-bar">
             <span className="ob2-topic-label">
               Topic {topicIndex} of {totalTopics} · {currentTopicLabel}
             </span>
+            <div className="ob2-progress" style={{ flex: "0 0 80px", margin: "0 10px" }}>
+              <i style={{ width: `${pct}%` }} />
+            </div>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>~{totalTopics - doneCount} min left</span>
             <span className="sp" />
             {!finished && (
               <>
                 <button className="linkbtn small" disabled={busy} onClick={() => send("Let's skip this topic for now.")}>
-                  Skip this topic
+                  <i className="ri-skip-right-line" style={{ fontSize: 13 }} />Skip this topic
                 </button>
                 <button className="linkbtn small" disabled={busy} onClick={onDone} style={{ marginLeft: 8 }}>
-                  Finish later
+                  <i className="ri-time-line" style={{ fontSize: 13 }} />Finish later
                 </button>
               </>
             )}
           </div>
-          <div className="ob2-progress"><i style={{ width: `${pct}%` }} /></div>
 
           {/* Chat log */}
-          <div className="iv-log" aria-live="polite" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <div className="iv-log" aria-live="polite" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px" }}>
             {hist.map((h, i) =>
               h.role === "ai" ? (
                 <div key={i} className="reply-shell">
@@ -494,6 +585,7 @@ function InterviewScreen({
                 </div>
               )
             )}
+            {/* Live streaming AI message */}
             {busy && (
               <div className="reply-shell">
                 <div className="reply-av">
@@ -504,7 +596,24 @@ function InterviewScreen({
                     <b>Chief of Staff</b>
                   </div>
                   <div className="reply-blocks">
-                    <div className="reply-md small">Thinking…</div>
+                    <div className="reply-md small">
+                      {streamingText !== null && streamingText !== "" ? (
+                        <>
+                          <Markdown text={streamingText} />
+                          {toolActivity && (
+                            <div className="ob2-tool-activity">
+                              <i className="ri-loader-4-line ob2-spin" />
+                              {toolActivity}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="ob2-tool-activity">
+                          <i className="ri-loader-4-line ob2-spin" />
+                          {toolActivity || "Thinking…"}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -512,68 +621,149 @@ function InterviewScreen({
             <div ref={end} />
           </div>
 
-          <Err error={err} />
+          <Err error={err || uploadErr} />
 
           {finished ? (
-            <div className="callout ok" style={{ margin: "8px 0" }}>
-              That&apos;s what I needed. Next: check what I learned, then build your team.
+            <div style={{ padding: "0 20px 10px" }}>
+              <div className="callout ok">
+                That&apos;s what I needed. Next: check what I learned, then build your team.
+              </div>
             </div>
           ) : (
-            <div className="iv-compose" style={{ flexShrink: 0 }}>
-              <textarea
-                rows={2} value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={onKey}
-                placeholder={last?.multi ? "Pick above, or write your own…" : "Type your answer, or hold space to talk…"}
-                disabled={busy}
-              />
-              <button className="btn primary" disabled={busy || !text.trim()} onClick={submit} aria-label="Send">
-                <i className="ri-send-plane-2-line" />
-              </button>
-            </div>
+            <>
+              {/* Attachment chips above composer */}
+              {(files.length > 0 || uploading) && (
+                <div className="ob2-attach-chips">
+                  {files.map((f) => (
+                    <span key={f.id} className="ob2-attach-chip">
+                      {f.mime.startsWith("image/") ? (
+                        <img src={`${BASE}/api/files/${f.id}`} alt="" />
+                      ) : (
+                        <i className="ri-file-3-line" />
+                      )}
+                      <span>{f.name}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() => setFiles(files.filter((x) => x.id !== f.id))}
+                      >
+                        <i className="ri-close-line" />
+                      </button>
+                    </span>
+                  ))}
+                  {uploading && (
+                    <span className="ob2-attach-chip">
+                      <span className="spin" style={{ width: 12, height: 12 }} />
+                      Uploading…
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="ob2-iv-composer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(e) => { upload(e.target.files); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                />
+                <button
+                  type="button"
+                  className="btn quiet sm"
+                  aria-label="Attach a file"
+                  disabled={busy || uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <i className="ri-attachment-line" style={{ fontSize: 16 }} />
+                </button>
+                <textarea
+                  rows={2} value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={onKey}
+                  placeholder={last?.multi ? "Pick above, or write your own…" : "Type your answer, or hold space to talk…"}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="ob2-iv-send"
+                  disabled={busy || uploading || (!text.trim() && !files.length && !website.trim())}
+                  onClick={submit}
+                  aria-label="Send"
+                >
+                  <i className="ri-send-plane-2-line" />
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Nav */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0 14px", flexShrink: 0 }}>
-            <span className="sp" />
+          {/* Nav to proceed */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px 14px", flexShrink: 0 }}>
+            <span style={{ flex: 1 }} />
             <button
               className={`btn ${finished || enough ? "primary" : ""}`}
               disabled={busy}
               onClick={onDone}
             >
-              {finished ? "Check what I learned" : enough ? "That’s enough, check it" : "Check what I learned so far"}
+              {finished ? "Check what I learned" : enough ? "That's enough, check it" : "Check what I learned so far"}
               <i className="ri-arrow-right-line" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Right: What I've learned */}
-      <div className="ob2-rail">
-        <div style={{ padding: "14px 12px 6px", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>What I&apos;ve learned</span>
-          <span className="small" style={{ color: "var(--muted)" }}>{doneCount} of {totalTopics} done</span>
+      {/* RIGHT panel: What I've learned */}
+      <div className="ob2-iv-right">
+        <div style={{ padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+          <span style={{ flex: 1, fontWeight: 600, fontSize: 13.5 }}>What I&apos;ve learned</span>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{doneCount} of {totalTopics} done</span>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "4px 12px 12px" }}>
-          <LiveNotes notes={liveNotes} />
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          <LiveNotes notes={liveNotes} doneCount={doneCount} totalTopics={totalTopics} />
         </div>
-        {/* Speed up strip */}
-        <div style={{ padding: "0 12px 14px" }}>
-          <div className="ob2-speedup">
-            <i className="ri-flashlight-line" />
-            <div className="ob2-sp-t">
-              <b>Speed up</b>
-              <span>Skip questions: let me read your website or a doc first.</span>
+        {/* Speed-up strip */}
+        <div className="ob2-speedup">
+          <i className="ri-link-m" />
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>
+              Skip questions: let me read your website or a doc first.
+            </span>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input
+                type="url"
+                placeholder="sahabat-warga.id"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitWebsite(); } }}
+                style={{ flex: 1, fontSize: 12, padding: "4px 8px", height: 30 }}
+                disabled={busy}
+              />
+              <button
+                type="button"
+                className="btn sm"
+                disabled={busy || !website.trim()}
+                onClick={submitWebsite}
+                style={{ height: 30, fontSize: 12, padding: "0 10px" }}
+              >
+                Read
+              </button>
             </div>
-            <button className="btn sm"><i className="ri-upload-2-line" />Upload</button>
           </div>
+          <button
+            type="button"
+            className="btn sm"
+            aria-label="Upload a doc"
+            disabled={busy || uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <i className="ri-attachment-line" />
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ================================================================ Screen 4: Check */
+/* ================================================================ Screen 3: Check */
 function CheckScreen({
   st, noteValues, onNoteChange, onBack, onDone, busy,
 }: {
@@ -586,39 +776,47 @@ function CheckScreen({
 }) {
   const company = st.answers.company_name || "your business";
   const answerCount = Object.values(st.answers).filter(Boolean).length;
-  return (
-    <div className="ob2-layout" style={{ gridTemplateColumns: "1fr" }}>
-      <div className="ob2-form">
-        <div className="ob2-inner" style={{ maxWidth: 760 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-            <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={32} />
-            <div>
-              <p style={{ fontWeight: 600, fontSize: 14, margin: 0 }}>
-                Here&apos;s what I understood about {company}
-              </p>
-              <p className="small" style={{ color: "var(--muted)", margin: 0 }}>
-                Fix anything that&apos;s off. Helpers read these 7 notes before every job, and you can update them any time.
-              </p>
-            </div>
-          </div>
-          <EditableNotes values={noteValues} onChange={onNoteChange} />
-        </div>
-      </div>
+  const doneCount = st.topics?.filter((t) => t.done).length || 0;
 
-      {/* Bottom nav */}
-      <div className="ob2-nav" style={{ gridColumn: "1 / -1" }}>
-        <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back to our chat</button>
-        <span className="sp" />
-        <span className="ob2-count">~9 min · {answerCount} answers</span>
-        <button className="btn primary" disabled={busy} onClick={onDone}>
-          Looks right, build my team<i className="ri-arrow-right-line" />
-        </button>
+  return (
+    <div className="ob2-scroll">
+      <div className="ob2-card-wrap">
+        <div className="ob2-card">
+          <div className="ob2-card-body">
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 0 }}>
+              <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={36} />
+              <div>
+                <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, lineHeight: 1.2 }}>
+                  Here&apos;s what I understood about {company}
+                </h2>
+                <p style={{ fontSize: 14, color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
+                  Fix anything that&apos;s off. Helpers read these 7 notes before every job, and you can update them any time.
+                </p>
+              </div>
+            </div>
+
+            <EditableNotes values={noteValues} onChange={onNoteChange} />
+          </div>
+
+          {/* Bottom nav */}
+          <div className="ob2-card-nav">
+            <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back to our chat</button>
+            <span className="ob2-nav-sp" />
+            <span className="ob2-count">
+              Took {doneCount > 0 ? `~${doneCount + 4}` : "~9"} minutes · {answerCount} answers
+            </span>
+            <button className="btn primary" disabled={busy} onClick={onDone}>
+              Looks right, build my team<i className="ri-arrow-right-line" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ================================================================ Screen 5: Your Team */
+/* ================================================================ Screen 4: Your Team */
 function TeamScreen({
   st, team, setTeam, roles, teamBy, mode, setMode, tz, setTz, onBack, onFinish, busy, err,
 }: {
@@ -629,117 +827,120 @@ function TeamScreen({
 }) {
   const company = st.answers.company_name || "your business";
   const activeCount = team.filter((h) => h.enabled !== false).length;
-  const slug2 = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "helper";
 
   const toggle = (i: number) =>
     setTeam(team.map((h, j) => j === i ? { ...h, enabled: h.enabled === false ? true : false } : h));
 
   return (
-    <div className="ob2-layout" style={{ gridTemplateColumns: "1fr" }}>
-      <div className="ob2-form">
-        <div className="ob2-inner" style={{ maxWidth: 680 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
-            Your team for {company}
-          </h2>
-          <p className="lead" style={{ marginBottom: 20 }}>
-            {teamBy === "ai"
-              ? "Based on your goals and the work you want to hand off."
-              : "Picked from your goals."}{" "}
-            After you create them, each helper proposes its own job, you approve.
-          </p>
+    <div className="ob2-scroll">
+      <div className="ob2-card-wrap">
+        <div className="ob2-card">
+          <div className="ob2-card-body">
+            <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6, lineHeight: 1.2 }}>
+              Your team for {company}
+            </h2>
+            <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.55, marginBottom: 24 }}>
+              {teamBy === "ai"
+                ? "Based on your goals and the work you want to hand off."
+                : "Picked from your goals."}{" "}
+              After you create them, each helper proposes its own job, and nothing runs until you approve it in Inbox.
+            </p>
 
-          <div className="ob2-team-grid">
-            {/* Chief of Staff — always on */}
-            <div className="ob2-team-card chief">
-              <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={40} />
-              <div className="ob2-tc-t">
-                <b>Chief of Staff <span className="chip" style={{ fontSize: 11 }}>Always included</span></b>
-                <span>Writes your morning brief, routes every request, and runs the weekly retro.</span>
-                <span className="small" style={{ color: "var(--muted)", marginTop: 2 }}>
-                  <i className="ri-information-line" /> Every team needs one
-                </span>
-              </div>
-            </div>
-
-            {team.map((h, i) => (
-              <div key={h.id + i} className={`ob2-team-card${h.enabled === false ? " off" : ""}`}
-                style={{ opacity: h.enabled === false ? 0.55 : 1, transition: "opacity .2s" }}>
-                <Avatar who={{ id: h.id, name: h.name, role: h.base }} size={40} />
-                <div className="ob2-tc-t">
-                  <b>
-                    {h.name}
-                    {roles.find((r) => r.id === h.base) &&
-                      <span className="chip" style={{ fontSize: 11, marginLeft: 6 }}>
-                        {roles.find((r) => r.id === h.base)?.tagline || h.base}
-                      </span>}
-                  </b>
-                  <span>{h.focus}</span>
-                  {h.why && (
-                    <span className="small" style={{ color: "var(--muted)", marginTop: 2 }}>
-                      <i className="ri-information-line" /> {h.why}
-                    </span>
-                  )}
+            <div className="ob2-team-list">
+              {/* Chief of Staff — always on, no toggle */}
+              <div className="ob2-team-row">
+                <Avatar who={{ id: "chief-of-staff", name: "Chief of Staff", is_chief: true }} size={42} />
+                <div className="ob2-team-row-body">
+                  <div className="ob2-team-row-head">
+                    <b>Chief of Staff</b>
+                    <span className="ob2-role-tag">runs the team</span>
+                    <span className="ob2-team-row-badge">Always included</span>
+                  </div>
+                  <div className="ob2-team-row-desc">
+                    Writes your morning brief, routes every request, and runs the weekly retro.
+                  </div>
+                  <div className="ob2-team-row-why">
+                    <i className="ri-information-line" />Every team needs one
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className={`toggle${h.enabled !== false ? " on" : ""}`}
-                  aria-checked={h.enabled !== false}
-                  role="switch"
-                  aria-label={`${h.enabled !== false ? "Remove" : "Add"} ${h.name}`}
-                  onClick={() => toggle(i)}
-                  style={{
-                    width: 36, height: 20, borderRadius: 10, border: "none", cursor: "pointer", flexShrink: 0,
-                    background: h.enabled !== false ? "var(--ok)" : "var(--line-strong)",
-                    transition: "background .2s", position: "relative",
-                  }}
-                >
-                  <span style={{
-                    position: "absolute", top: 2, width: 16, height: 16, borderRadius: "50%",
-                    background: "#fff", transition: "left .2s",
-                    left: h.enabled !== false ? 18 : 2,
-                  }} />
+                {/* disabled toggle — always on */}
+                <button type="button" className="ob2-team-toggle disabled" aria-checked={true} role="switch" aria-label="Chief of Staff always included" disabled>
+                  <span className="ob2-team-toggle-knob" />
                 </button>
               </div>
+
+              {team.map((h, i) => {
+                const role = roles.find((r) => r.id === h.base);
+                const isOn = h.enabled !== false;
+                return (
+                  <div key={h.id + i} className="ob2-team-row" style={{ opacity: isOn ? 1 : 0.55, transition: "opacity .2s" }}>
+                    <Avatar who={{ id: h.id, name: h.name, role: h.base }} size={42} />
+                    <div className="ob2-team-row-body">
+                      <div className="ob2-team-row-head">
+                        <b>{h.name}</b>
+                        {role && <span className="ob2-role-tag">{role.tagline || h.base}</span>}
+                        {/* "Suggested" badge for non-chief if we know it's suggested */}
+                      </div>
+                      <div className="ob2-team-row-desc">{h.focus}</div>
+                      {h.why && (
+                        <div className="ob2-team-row-why">
+                          <i className="ri-information-line" />{h.why}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className={`ob2-team-toggle${isOn ? "" : " off"}`}
+                      aria-checked={isOn}
+                      role="switch"
+                      aria-label={`${isOn ? "Remove" : "Add"} ${h.name}`}
+                      onClick={() => toggle(i)}
+                    >
+                      <span className="ob2-team-toggle-knob" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Persona hint */}
+            <div className="ob2-team-persona-row">
+              <i className="ri-user-star-line" />
+              <span style={{ flex: 1 }}>
+                Want a real professional&apos;s experience? You can also hire a Persona later from the Marketplace.
+              </span>
+              <button type="button" className="linkbtn">Browse</button>
+            </div>
+
+            {/* Approval mode */}
+            <label style={{ marginTop: 24 }}>How much freedom should your helpers have?</label>
+            {Object.entries(st.options.approval_modes).map(([k, m]) => (
+              <button type="button" key={k} className={`choice ${mode === k ? "on" : ""}`} onClick={() => setMode(k)}>
+                <b>{m.label}{k === "ask_all" && <span className="rec">Recommended to start</span>}</b>
+                <span>{m.detail}</span>
+              </button>
             ))}
+
+            <label style={{ marginTop: 16 }}>Your time zone</label>
+            <select value={tz} onChange={(e) => setTz(e.target.value)}>
+              {allTimezones(tz).map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
+            </select>
+
+            <Err error={err} />
           </div>
 
-          {/* Persona hint */}
-          <div className="callout" style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
-            <i className="ri-user-star-line" style={{ fontSize: 16, color: "var(--muted)" }} />
-            <span className="small" style={{ flex: 1, color: "var(--ink-2)" }}>
-              Want a real professional&apos;s experience? You can also hire a Persona later from the Personas gallery.{" "}
-              <button type="button" className="linkbtn small">Browse</button>
+          {/* Bottom nav */}
+          <div className="ob2-card-nav">
+            <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back</button>
+            <span className="ob2-nav-sp" />
+            <span className="ob2-count">
+              {activeCount} helper{activeCount !== 1 ? "s" : ""} · they sleep until they have work
             </span>
-          </div>
-
-          {/* Approval mode */}
-          <label style={{ marginTop: 20 }}>How much freedom should your helpers have?</label>
-          {Object.entries(st.options.approval_modes).map(([k, m]) => (
-            <button type="button" key={k} className={`choice ${mode === k ? "on" : ""}`} onClick={() => setMode(k)}>
-              <b>{m.label}{k === "ask_all" && <span className="rec">Recommended to start</span>}</b>
-              <span>{m.detail}</span>
+            <button className="btn primary" disabled={busy} onClick={onFinish}>
+              {busy ? "Creating your team…" : <><i className="ri-sparkling-2-line" />Create my team</>}
             </button>
-          ))}
-
-          <label style={{ marginTop: 16 }}>Your time zone</label>
-          <select value={tz} onChange={(e) => setTz(e.target.value)}>
-            {allTimezones(tz).map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
-          </select>
-
-          <Err error={err} />
+          </div>
         </div>
-      </div>
-
-      {/* Bottom nav */}
-      <div className="ob2-nav" style={{ gridColumn: "1 / -1" }}>
-        <button className="btn" onClick={onBack}><i className="ri-arrow-left-line" />Back</button>
-        <span className="sp" />
-        <span className="ob2-count">
-          {activeCount} helper{activeCount !== 1 ? "s" : ""} · they sleep until they have work
-        </span>
-        <button className="btn primary" disabled={busy} onClick={onFinish}>
-          {busy ? "Creating your team…" : "Create my team"}<i className="ri-arrow-right-line" />
-        </button>
       </div>
     </div>
   );
@@ -767,7 +968,7 @@ function DoneScreen({ company, team, done, onGo }: { company: string; team: Help
 
 /* ================================================================ Main page */
 // Step indices: 0=welcome, 1=ai, 2=interview, 3=check, 4=team
-// Stepper shows steps 1-4.
+// Stepper shows steps 1-4, rendered inside TopBar.
 
 export default function Onboarding() {
   const router = useRouter();
@@ -788,9 +989,8 @@ export default function Onboarding() {
   useEffect(() => {
     api<State>("/onboarding").then((s) => {
       setSt(s);
-      // Map old step to new: 0=welcome,1=ai,2=interview,3(old team)→4; add check(3) as new
       const oldStep = s.step || 0;
-      const mappedStep = oldStep >= 3 ? oldStep + 1 : oldStep; // old team(3) → new team(4)
+      const mappedStep = oldStep >= 3 ? oldStep + 1 : oldStep;
       setStep(Math.min(mappedStep, 4));
       setTz(s.timezone && s.timezone !== "UTC" ? s.timezone : browserTimezone());
       setMode(s.answers.approval_mode || "ask_all");
@@ -798,7 +998,6 @@ export default function Onboarding() {
     }).catch((e) => setErr(e.message));
   }, []);
 
-  // When we arrive at check, derive note values from answers
   useEffect(() => {
     if (step === 3 && st) {
       setNoteValues(answersToNoteValues(st.answers, st.options));
@@ -855,7 +1054,6 @@ export default function Onboarding() {
     router.replace("/login/");
   };
 
-  // --- loading / error states ---
   if (err && !st) return (
     <div className="ob2-page">
       <div style={{ padding: 24 }}><Err error={err} /></div>
@@ -869,22 +1067,18 @@ export default function Onboarding() {
 
   const company = st.answers.company_name || "your company";
 
-  // --- done ---
   if (done) {
     return (
       <div className="ob2-page">
-        <TopBar company={company} onLogout={logout} />
+        <TopBar company={company} step={0} onLogout={logout} />
         <DoneScreen company={company} team={team || []} done={done} onGo={() => router.replace("/chat/")} />
       </div>
     );
   }
 
-  const stepperActive = step; // 1-4 maps 1:1; step 0 (welcome) → stepper shows step 1 not highlighted
-
   return (
     <div className="ob2-page">
-      <TopBar company={company} onLogout={logout} />
-      {step > 0 && <Stepper active={stepperActive} />}
+      <TopBar company={company} step={step} onLogout={logout} />
 
       {step === 0 && (
         <WelcomeScreen company={company} onStart={() => go(1)} />
@@ -918,7 +1112,6 @@ export default function Onboarding() {
           noteValues={noteValues}
           onNoteChange={(key, val) => {
             setNoteValues((prev) => ({ ...prev, [key]: val }));
-            // Map note key back to field and save if it's a single-field topic
             const topicId = Object.entries(TOPIC_TO_NOTE).find(([, nk]) => nk === key)?.[0];
             if (topicId && st) {
               const fields = SHOWN[topicId];
@@ -933,9 +1126,15 @@ export default function Onboarding() {
 
       {step === 4 && (
         !team ? (
-          <div style={{ padding: 24, flex: 1 }}>
-            <p className="small">{busy ? "Putting your team together from what you told me…" : ""}</p>
-            <Err error={err} />
+          <div className="ob2-scroll">
+            <div className="ob2-card-wrap">
+              <div className="ob2-card">
+                <div className="ob2-card-body">
+                  <p className="small">{busy ? "Putting your team together from what you told me…" : ""}</p>
+                  <Err error={err} />
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <TeamScreen

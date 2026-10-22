@@ -22,7 +22,7 @@ from .models import HarnessAccount, HarnessLimitHit, HarnessQuota, HarnessUsage,
 from .security import decrypt, encrypt
 
 TOKEN_RE = re.compile(r"^sk-ant-[A-Za-z0-9_\-]{20,}$")
-LIMIT_RE = re.compile(r"usage limit|limit reached|rate limit|too many requests|quota|overloaded|resets? (at|in)", re.I)
+LIMIT_RE = re.compile(r"usage limit|session limit|limit reached|rate limit|too many requests|quota|overloaded|hit your .{0,24}limit|resets? (at|in|\d)", re.I)
 AUTH_RE = re.compile(r"invalid api key|unauthori[sz]ed|authentication|expired|revoked|401|please run /login|oauth token", re.I)
 DEFAULT_COOLDOWN = dt.timedelta(hours=1)
 MAX_PARALLEL_PER_ACCOUNT = int(os.environ.get("OMILO_HARNESS_PARALLEL", "2"))

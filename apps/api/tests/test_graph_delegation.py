@@ -24,7 +24,7 @@ from omilo_api.db import session_scope
 from omilo_api.engines import Engine, EngineResult, TaskContext, get_engine
 from omilo_api.graph import engine as graph_engine_mod
 from omilo_api.graph.delegation import cos_id
-from omilo_api.models import AuditEvent, Proposal, Staff, Task
+from omilo_api.models import AuditEvent, Proposal, Setting, Staff, Task
 
 # ---------------------------------------------------------------------------
 # Stub underlying engine — stands in for exec_engine={"type":"fake"}.
@@ -147,6 +147,12 @@ async def test_gate_escalates_high_risk(owner, monkeypatch):
     monkeypatch.setattr(graph_engine_mod, "get_engine", lambda cfg: stub)
 
     worker_id = _make_worker_staff()
+    # High-risk escalates only when NOT in Auto/YOLO. Put the company in Strict and
+    # make this worker guided so the gate escalates instead of auto-approving.
+    with session_scope() as db:
+        db.add(Setting(key="autonomy_mode", value="strict"))
+        db.get(Staff, worker_id).autonomy = "guided"
+        db.commit()
     task_id = _make_task(worker_id)
 
     # An OUTWARD action a worker tried to self-label "low" to dodge escalation.
