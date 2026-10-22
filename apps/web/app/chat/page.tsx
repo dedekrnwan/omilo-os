@@ -255,14 +255,13 @@ function WorkspaceInner() {
     /* Cast threads to RailThread — the /threads endpoint may carry group/subtitle/last_at from Task 3 */
     const railThreads = threads as RailThread[];
 
-    // Prefer the parent's `current` when it already carries this thread's messages (revisit);
-    // fall back to the matching entry in the threads list (first open from Inbox — list items
-    // carry enough fields for the ThreadHead chrome; the poll will fill messages shortly).
-    // Cast is safe: FullThread is a superset of Thread; missing fields resolve to undefined.
+    // Use the parent's `current` ONLY when it already carries this thread (and therefore its
+    // messages array). The /threads LIST entries do NOT carry messages, so seeding from them
+    // would produce a messages-less FullThread that crashes render guards. For unknown/first-open
+    // threads we fall back to null — the poll fires immediately and fills messages within one
+    // round-trip, with no crash and no stale-switch.
     const focusSeed: FullThread | null =
-      current?.id === tid
-        ? current
-        : (threads.find((t) => t.id === tid) as unknown as FullThread) ?? null;
+      current?.id === tid ? current : null;
 
     return (
       <div className="ws-focus">

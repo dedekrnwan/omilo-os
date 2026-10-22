@@ -70,7 +70,7 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, on
     try { const th = await api<FullThread>(`/threads/${want}`); setCurrent((cur) => (want === threadId ? th : cur)); } catch (e: any) { setErr(e.message); }
   }, () => (awaiting.current ? 1500 : 12000), [threadId], (n) => n?.url?.includes(threadId));
 
-  const nMsgs = current?.messages.length || 0;
+  const nMsgs = current?.messages?.length || 0;
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
 
   useQuote(current?.id, setText, () => box.current?.focus());
@@ -153,7 +153,7 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, on
     const add = (id?: string) => { if (id && !order.includes(id)) order.push(id); };
     add(current.staff_id);
     (current.pending || []).forEach(add);
-    for (const m of current.messages as Msg[]) if (m.role === "agent") add(m.author);
+    for (const m of (current.messages ?? []) as Msg[]) if (m.role === "agent") add(m.author);
     return order.map((id) => staff.find((s) => s.id === id)).filter(Boolean) as Staff[];
   }, [current, staff]);
   const addMention = (s: Staff) => {

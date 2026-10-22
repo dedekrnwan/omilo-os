@@ -16,7 +16,7 @@ function participantIds(th: FullThread): string[] {
   const add = (id?: string | null) => { if (id) seen.add(id); };
   add(th.staff_id);
   (th.pending || []).forEach(add);
-  for (const m of th.messages) {
+  for (const m of (th.messages ?? [])) {
     if (m.role === "agent" && m.author) add(m.author);
   }
   return Array.from(seen);
