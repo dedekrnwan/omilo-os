@@ -883,7 +883,8 @@ def thread_detail(thid: str, db: Session, user: User) -> dict:
     from .. import thread_extras as TE
 
     th = _404(db.get(Thread, thid))
-    return {**X.thread(th), **TE.enrich(db, th), "messages": [X.message(m) for m in S.thread_messages(db, th)]}
+    msgs = S.thread_messages(db, th)
+    return {**X.thread(th), **TE.enrich(db, th), "messages": X.messages_v2(msgs, db, th)}
 
 
 class MessageIn(BaseModel):
