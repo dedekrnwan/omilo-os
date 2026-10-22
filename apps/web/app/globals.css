@@ -2959,7 +2959,7 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .co2-docs-link { flex-shrink: 0; }
 
 /* Knowledge tile grid */
-.co2-know-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.co2-know-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
 
 /* Individual tile button */
 .co2-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); text-align: left; cursor: pointer; transition: border-color .15s, background .15s; }
@@ -3058,6 +3058,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .sk2-starter-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk2-starter-text b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
 .sk2-starter-text span { font-size: 13px; color: var(--muted); }
+
+/* Populated skills list — clean full-width rows in a bordered card (matches pen Starters) */
+.sk2-list { display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+.sk2-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface); border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; text-align: left; }
+.sk2-row:last-child { border-bottom: 0; }
+.sk2-row:hover { background: var(--soft); }
+.sk2-row-tile { width: 36px; height: 36px; border-radius: var(--r-md); background: linear-gradient(135deg, #fdf4ff, #ede9fe); color: #7c3aed; display: grid; place-items: center; font-size: 17px; flex-shrink: 0; border: 1px solid var(--line); }
+.sk2-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk2-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sk2-row-name b { font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk2-row-desc { font-size: 13px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk2-row-slug { font-size: 11.5px; color: var(--faint); }
+.sk2-row-action { flex-shrink: 0; }
 
 @media (max-width: 640px) {
   .sk2-empty { flex-direction: column; padding: 24px 16px; }

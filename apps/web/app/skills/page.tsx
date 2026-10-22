@@ -179,19 +179,20 @@ export default function Skills() {
             </div>
           </>
         ) : (
-          <div className="grid2">
+          <div className="sk2-list">
             {list.map((s) => (
-              <div key={s.slug} className="card" role="button" tabIndex={0} style={{ cursor: "pointer" }} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }} onContextMenu={menu(() => items(s))}>
-                <div className="acts" style={{ justifyContent: "space-between", flexWrap: "nowrap" }}>
-                  <b style={{ fontWeight: 500 }}><i className="ri-magic-line" /> {s.name}</b>
-                  {s.owner ? <span className="chip idle" title="Only this helper uses it"><i className="ri-user-line" /> {who(s.owner)}&apos;s own</span>
-                    : s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}
+              <div key={s.slug} className="sk2-row" role="button" tabIndex={0} onClick={() => open(s.slug)} onKeyDown={(e) => { if (e.key === "Enter") open(s.slug); }} onContextMenu={menu(() => items(s))}>
+                <div className="sk2-row-tile"><i className="ri-magic-line" /></div>
+                <div className="sk2-row-text">
+                  <div className="sk2-row-name">
+                    <b>{s.name}</b>
+                    {s.owner ? <span className="chip idle" title="Only this helper uses it"><i className="ri-user-line" /> {who(s.owner)}&apos;s own</span>
+                      : s.default_on ? <span className="chip up">Standard</span> : <span className="chip idle">Per chat</span>}
+                  </div>
+                  <span className="sk2-row-desc">{s.description || "No description"}</span>
+                  <span className="sk2-row-slug mono">/{s.slug}{s.made_by && !s.owner ? ` · made by ${who(s.made_by)}` : ""}</span>
                 </div>
-                <div className="small clamp">{s.description || "No description"}</div>
-                <div className="acts" style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
-                  <span className="small mono">/{s.slug}</span>
-                  {s.made_by && !s.owner && <span className="small">· made by {who(s.made_by)}</span>}
-                  <span className="sp" />
+                <div className="sk2-row-action" onClick={(e) => e.stopPropagation()}>
                   {s.owner ? <button className="btn sm" onClick={() => share(s)}><i className="ri-team-line" />Share with the team</button>
                     : <button className="btn sm" onClick={() => toggleDefault(s)}>{s.default_on ? "Make per chat" : "Make standard"}</button>}
                 </div>
