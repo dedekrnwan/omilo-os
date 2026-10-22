@@ -47,7 +47,15 @@ function Delta({ k }: { k: Kpi }) {
   return <span className={`kpi-d ${better ? "up" : "down"}`}><i className={d > 0 ? "ri-arrow-right-up-line" : "ri-arrow-right-down-line"} />{d > 0 ? "+" : ""}{fmt(d)}{pct}</span>;
 }
 
-export default function KpiBoard() {
+/* Empty-state "ghost" KPIs — examples that seed a new KPI when you click Track this (pen f36rWx). */
+const GHOSTS: { label: string; direction: "up" | "down"; hint: string }[] = [
+  { label: "Monthly revenue", direction: "up", hint: "e.g. Rp 25 jt by December" },
+  { label: "Paying customers", direction: "up", hint: "e.g. 100 by December" },
+  { label: "Churn", direction: "down", hint: "e.g. under 3% a month" },
+  { label: "Support reply time", direction: "down", hint: "e.g. under 1 hour" },
+];
+
+export default function KpiBoard({ openRef }: { openRef?: { current: (() => void) | null } } = {}) {
   const [rows, setRows] = useState<Kpi[] | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
@@ -67,9 +75,11 @@ export default function KpiBoard() {
     setBusy(key); setErr(null);
     try { await fn(); await load(); return true; } catch (e: any) { setErr(e.message); return false; } finally { setBusy(null); }
   };
-  const edit = (k?: Kpi) => setForm(k ? { name: k.name, isNew: false, label: k.label, unit: k.unit, target: k.target == null ? "" : String(k.target), direction: k.direction,
-    goal_id: k.goal_id || "", owner: k.owner || "", note: k.note || "" }
-    : { name: "", isNew: true, label: "", unit: "", target: "", direction: "up", goal_id: "", owner: "finance", note: "" });
+  const editNew = (preset?: Partial<Form>) => setForm({ name: "", isNew: true, label: "", unit: "", target: "", direction: "up", goal_id: "", owner: "finance", note: "", ...preset });
+  const edit = (k?: Kpi) => k ? setForm({ name: k.name, isNew: false, label: k.label, unit: k.unit, target: k.target == null ? "" : String(k.target), direction: k.direction,
+    goal_id: k.goal_id || "", owner: k.owner || "", note: k.note || "" }) : editNew();
+  // Let the Company page's header "New KPI" button open this board's create form.
+  if (openRef) openRef.current = () => editNew();
   const addValue = (k: Kpi) => setVal({ name: k.name, value: "", period: thisMonth(), source: "" });
   const ask = (k: Kpi) => run(`ask-${k.name}`, async () => { const t = await api<{ task_id: string }>(`/kpis/${k.name}/ask`, { method: "POST" }); openTask(t.task_id); });
   const remove = async (k: Kpi) => {
@@ -108,16 +118,23 @@ export default function KpiBoard() {
 
   return (
     <div className="sec" style={{ marginTop: 16 }}>
-      <div className="acts" style={{ marginBottom: 10 }}>
-        <h2 style={{ margin: 0 }}>KPIs</h2>
-        <span className="small">The numbers you watch. Helpers see them and their targets.</span>
-        <span className="sp" />
-        <button className="btn primary" onClick={() => edit()}><i className="ri-add-line" />New KPI</button>
+      <div className="co2-kpi-head">
+        <h2>KPIs</h2>
+        {rows && <span className="co2-kpi-count">{rows.length}</span>}
+        <span className="small">Helpers see these numbers and their targets.</span>
       </div>
       <Err error={err} />
       {!rows ? <p className="small">Loading…</p> : rows.length === 0 ? (
-        <div className="empty"><b>No KPIs yet</b><span>Add the numbers that tell you how the company is doing (MRR, paying customers, churn). Give each a target and the helper who keeps it current.</span>
-          <button className="btn" style={{ marginTop: 10 }} onClick={() => edit()}><i className="ri-add-line" />Add your first KPI</button></div>
+        <div className="kpi-ghosts">
+          {GHOSTS.map((g) => (
+            <div key={g.label} className="kpi-ghost">
+              <span className="kpi-ghost-label">{g.label}</span>
+              <span className="kpi-ghost-dash">—</span>
+              <button className="kpi-ghost-add" onClick={() => editNew({ label: g.label, direction: g.direction })}><i className="ri-add-line" />Track this</button>
+              <span className="kpi-ghost-hint">{g.hint}</span>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="kpi-grid">
           {rows.map((k) => {

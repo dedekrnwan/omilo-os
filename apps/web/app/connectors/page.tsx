@@ -181,29 +181,27 @@ function ConnectorCard({ entry, onOpen, onConnect, connectState }: {
 }) {
   const busy = connectState === "connecting" || connectState === "polling";
   const on = entry.connected && !entry.needs_reconnect;
+  const expired = connectState === "expired";
+  const safety = busy ? (connectState === "connecting" ? "Opening sign-in…" : "Waiting for sign-in…")
+    : expired ? "Sign-in timed out. Try again."
+    : actionsLine(entry) || "Waits for your OK before anything is sent.";
   return (
-    <div className={`card talent app-card ${on ? "is-on" : ""}`} role="button" tabIndex={0} onClick={() => onOpen(entry)}
+    <div className={`card app-card cn2-card ${on ? "is-on" : ""}`} role="button" tabIndex={0} onClick={() => onOpen(entry)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(entry); } }} aria-label={`${entry.label}: details`}>
-      <div className="acts" style={{ gap: 10, flexWrap: "nowrap" }}>
+      <div className="cn2-card-top">
         <AppLogo entry={entry} />
-        <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <b>{entry.label}</b>
-          <span className="small"><span className="dot" style={{ background: catColor(entry.category || "Other") }} />{entry.category || "Other"}</span>
-        </span>
-        {entry.needs_reconnect ? <span className="chip warn" style={{ marginLeft: "auto" }}>Reconnect</span>
-          : on ? <span className="chip up" style={{ marginLeft: "auto" }}><i className="ri-check-line" />Connected</span> : null}
-      </div>
-      <span className="clamp small" style={{ color: "var(--ink-2)" }}>{entry.description || "Let your helpers use " + entry.label + "."}</span>
-      <div className="app-foot">
-        <span className="small">{busy ? (connectState === "connecting" ? "Opening sign-in…" : "Waiting for sign-in…")
-          : connectState === "expired" ? <span style={{ color: "var(--warn)" }}>Sign-in timed out. Try again.</span> : actionsLine(entry)}</span>
-        <span className="sp" />
-        {!on && (
-          <button className="btn sm primary" disabled={busy} onClick={(e) => { e.stopPropagation(); onConnect(entry.slug); }}
+        <b className="cn2-card-name">{entry.label}</b>
+        {on ? <span className="chip up cn2-card-chip"><i className="ri-check-line" />Connected</span> : (
+          <button className="btn sm cn2-card-connect" disabled={busy} onClick={(e) => { e.stopPropagation(); onConnect(entry.slug); }}
             aria-label={entry.needs_reconnect ? `Reconnect ${entry.label}` : `Connect ${entry.label}`}>
             {busy ? <span className="spin" /> : <i className="ri-link" />}{entry.needs_reconnect ? "Reconnect" : "Connect"}
           </button>
         )}
+      </div>
+      <span className="cn2-card-desc small">{entry.description || "Let your helpers use " + entry.label + "."}</span>
+      <div className={`cn2-card-safety ${expired ? "warn" : ""}`}>
+        <i className={expired ? "ri-error-warning-line" : "ri-shield-check-line"} />
+        <span>{safety}</span>
       </div>
     </div>
   );
@@ -532,19 +530,17 @@ export default function Connectors() {
             className="cn2-search-input" aria-label="Search apps" />
         </div>
         {catalog && catalog.length > 0 && (
-          <div className="picks cn2-picks">
-            <button className={`pick ${cat === "" ? "on" : ""}`} onClick={() => setCat("")}>All <span className="mono" style={{ opacity: .6 }}>{catalog.length}</span></button>
-            {cats.map(([c, n]) => (
-              <button key={c} className={`pick ${cat === c ? "on" : ""}`} onClick={() => setCat(cat === c ? "" : c)}>
-                <span className="dot" style={{ background: catColor(c) }} />{c} <span className="mono" style={{ opacity: .6 }}>{n}</span>
-              </button>
+          <div className="cn2-seg">
+            <button className={`cn2-seg-item ${cat === "" ? "on" : ""}`} onClick={() => setCat("")}>All {catalog.length}</button>
+            {cats.map(([c]) => (
+              <button key={c} className={`cn2-seg-item ${cat === c ? "on" : ""}`} onClick={() => setCat(cat === c ? "" : c)}>{c}</button>
             ))}
           </div>
         )}
         <span className="sp" />
         {catalog && (
           <button
-            className={`pick cn2-connected-pick ${cat === "@connected" ? "on" : ""}`}
+            className={`cn2-connected ${cat === "@connected" ? "on" : ""}`}
             onClick={() => setCat(cat === "@connected" ? "" : "@connected")}
             title="Show only connected apps"
           >

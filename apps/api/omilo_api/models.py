@@ -216,11 +216,18 @@ class Thread(Base):
     ref_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     staff_id: Mapped[str] = mapped_column(String(64))  # who answers in this thread
     title: Mapped[str] = mapped_column(String(300), default="")
+    channel: Mapped[str] = mapped_column(String(16), default="web")  # web | telegram | …
     awaiting_reply: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     engine_session: Mapped[str] = mapped_column(String(255), default="")
     pending: Mapped[list | None] = mapped_column(JSON, nullable=True)  # helpers still to answer the last message (mentions)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+    # mapped_column(default=) only fires at flush/INSERT, not on a transient instance; set here so
+    # Thread(...).channel == "web" holds before the object is ever added to a session.
+    def __init__(self, **kw: object) -> None:
+        kw.setdefault("channel", "web")
+        super().__init__(**kw)
 
 
 class Message(Base):
@@ -604,3 +611,28 @@ class KbQuery(Base):
     mode: Mapped[str] = mapped_column(String(16), default="hybrid")  # hybrid | words (no embeddings yet)
     results: Mapped[list] = mapped_column(JSON, default=list)  # [{chunk_id, source_id, title, kind, score}]
     ms: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# ------------------------------------------------------------------ channel control (Telegram, …)
+class ChannelConnection(Base):
+    """A channel the owner has wired up (e.g. a Telegram bot). Per-company schema, no company column."""
+    __tablename__ = "channel_connection"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("chn"))
+    kind: Mapped[str] = mapped_column(String(16))          # telegram | slack | …
+    mode: Mapped[str] = mapped_column(String(16))          # control | notify | both
+    staff_id: Mapped[str] = mapped_column(String(64))      # which helper handles this channel
+    webhook_token: Mapped[str] = mapped_column(String(64), index=True)
+    secrets_enc: Mapped[str] = mapped_column(Text, default="")  # encrypted JSON (bot token, …)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ChannelIdentity(Base):
+    """Maps a platform user id to an Omilo user for a given ChannelConnection."""
+    __tablename__ = "channel_identity"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("cid"))
+    connection_id: Mapped[str] = mapped_column(String(32), index=True)
+    platform_user_id: Mapped[str] = mapped_column(String(64))
+    omilo_user_id: Mapped[str] = mapped_column(String(64))
+    role: Mapped[str] = mapped_column(String(16))          # owner | member | …
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
