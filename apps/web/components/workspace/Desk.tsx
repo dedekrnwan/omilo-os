@@ -92,9 +92,7 @@ function DeskComposer({ onSent, staff }: { onSent: (threadId: string) => void; s
                 <div
                   key={name}
                   className="sl-item desk-persona-item"
-                  role="option"
-                  aria-disabled="true"
-                  aria-selected={false}
+                  role="presentation"
                 >
                   <span className="desk-persona-avatar" aria-hidden="true">
                     <i className="ri-user-heart-line" />
