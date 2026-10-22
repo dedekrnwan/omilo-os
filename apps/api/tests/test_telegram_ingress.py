@@ -323,3 +323,65 @@ def test_start_code_pairs(owner, seeded_unpaired_conn):
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True}
     assert _is_paired(OWNER_TG_ID) is True, "owner identity should have been created after /start pairing"
+
+
+def test_web_staff_thread_not_hijacked_by_telegram(owner, seeded_control_conn_and_pairing):
+    """Regression test for I1 (cross-channel content leak).
+
+    Steps:
+    (a) Pre-create the WEB staff thread (ref_id=None, channel="web") so it exists
+        before any Telegram message arrives.
+    (b) Send a Telegram owner message, which creates the dedicated tg:<conn_id>
+        control thread (ref_id="tg:<conn_id>", channel="telegram").
+    (c) Re-read the WEB staff thread and assert its channel is still "web" — the
+        two threads are distinct rows and the web thread is untouched.
+    """
+    from omilo_api import services as S
+    from omilo_api.db import session_scope
+
+    conn_id = seeded_control_conn_and_pairing
+
+    # (a) Create the web staff thread explicitly (simulates a prior web session)
+    with session_scope() as db:
+        web_th = S.get_or_create_thread(db, "staff", None, STAFF_ID)
+        web_th.channel = "web"
+        db.commit()
+        web_th_id = web_th.id
+
+    # (b) Send a Telegram owner message
+    r = owner.post(
+        f"/api/channels/telegram/hook/{WTOK}",
+        headers={"X-Telegram-Bot-Api-Secret-Token": SECRET},
+        json={
+            "update_id": 10,
+            "message": {
+                "from": {"id": int(OWNER_TG_ID)},
+                "chat": {"id": int(OWNER_TG_ID)},
+                "text": "ping from telegram",
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True}
+
+    # (c) Re-read the WEB staff thread and assert it was not touched
+    with session_scope() as db:
+        refreshed_web_th = db.get(Thread, web_th_id)
+        assert refreshed_web_th is not None, "web staff thread should still exist"
+        assert refreshed_web_th.channel == "web", (
+            f"web staff thread channel was hijacked to '{refreshed_web_th.channel}' "
+            "— it must stay 'web' after a Telegram message"
+        )
+        # Also confirm the telegram control thread is a DIFFERENT row
+        tg_th = db.scalar(
+            select(Thread).where(
+                Thread.scope == "staff",
+                Thread.staff_id == STAFF_ID,
+                Thread.ref_id == f"tg:{conn_id}",
+            )
+        )
+        assert tg_th is not None, "a dedicated telegram control thread should have been created"
+        assert tg_th.id != web_th_id, "telegram thread must be a distinct row from the web thread"
+        assert tg_th.channel == "telegram", (
+            f"telegram control thread should have channel='telegram', got '{tg_th.channel}'"
+        )

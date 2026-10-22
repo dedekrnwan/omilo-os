@@ -139,7 +139,10 @@ async def telegram_hook(
         )
         omilo_user_id = identity.omilo_user_id if identity else platform_user_id
 
-        th = S.get_or_create_thread(db, "staff", None, conn.staff_id)
+        # Use a dedicated telegram control thread (ref_id="tg:<conn.id>") so it
+        # never collides with the web staff thread (ref_id=None).  The web thread
+        # stays channel="web"; only THIS dedicated thread is channel="telegram".
+        th = S.get_or_create_thread(db, "staff", f"tg:{conn.id}", conn.staff_id)
         # Set channel so deliver_outbound (Task 3) routes the reply back via Telegram
         th.channel = "telegram"
         db.commit()
