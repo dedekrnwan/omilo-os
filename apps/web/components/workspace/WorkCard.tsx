@@ -2,31 +2,25 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
-import { BoardCard, api, ago } from "@/lib/api";
+import { BoardCard, api } from "@/lib/api";
 
 /* ------------------------------------------------------------------ helpers */
 
-/** Derive chip class + label from the card's status and action flags. */
-function cardChip(card: BoardCard): { label: string; cls: string } {
-  if (card.status === "needs_you" && card.needs_proposal) return { label: "Review", cls: "chip warn" };
-  if (card.status === "needs_you" && card.awaiting_reply) return { label: "Reply", cls: "chip warn" };
-  if (card.status === "needs_you") return { label: "Needs you", cls: "chip warn" };
-  if (card.status === "running") return { label: "Running", cls: "chip run" };
-  if (card.status === "waiting") return { label: "Waiting", cls: "chip idle" };
-  if (card.status === "done") return { label: "Done", cls: "chip up" };
-  if (card.status === "failed") return { label: "Failed", cls: "chip down" };
-  return { label: card.status, cls: "chip" };
+/** Status label + dot color + border modifier for a card. */
+function cardStatus(card: BoardCard): { label: string; dotCls: string; cardMod: string } {
+  if (card.status === "needs_you") return { label: "NEEDS YOU", dotCls: "wc-dot-warn",  cardMod: "work-card-needs-you" };
+  if (card.status === "running")   return { label: "RUNNING",   dotCls: "wc-dot-run",   cardMod: "" };
+  if (card.status === "waiting")   return { label: "WAITING",   dotCls: "wc-dot-idle",  cardMod: "" };
+  if (card.status === "done")      return { label: "DONE",      dotCls: "wc-dot-done",  cardMod: "" };
+  if (card.status === "failed")    return { label: "FAILED",    dotCls: "wc-dot-bad",   cardMod: "" };
+  return { label: (card.status as string).toUpperCase(), dotCls: "wc-dot-idle", cardMod: "" };
 }
 
-/** Derive the primary action label. Matches task brief spec. */
-function cardActionLabel(card: BoardCard): string {
-  if (card.status === "needs_you" && card.needs_proposal) return "Review";
-  if (card.status === "needs_you" && card.awaiting_reply) return "Reply";
-  if (card.status === "needs_you") return "Review"; // chip says "Needs you" → action matches
-  if (card.status === "running") return "Open";
-  if (card.status === "waiting") return "Open";
-  if (card.status === "failed") return "Open";
-  return "Open";
+/** Primary action button label. */
+function primaryLabel(card: BoardCard): string {
+  if (card.needs_proposal) return "Review PR";
+  if (card.awaiting_reply) return "Reply";
+  return "Approve";
 }
 
 /* ------------------------------------------------------------------ WorkCard */
@@ -35,16 +29,21 @@ interface WorkCardProps {
   card: BoardCard;
   /** Who owns this card — for the avatar. Pass at minimum { id, name } */
   helper: { id: string; name: string; role?: string; is_chief?: boolean } | null;
+  /** Collaborator avatars (other helpers involved). Optional. */
+  collaborators?: { id: string; name: string; role?: string; is_chief?: boolean }[];
   /** When board is paused cards are greyed out */
   paused?: boolean;
+  /** Subtitle / description line (one line, grey) */
+  subtitle?: string | null;
 }
 
-export default function WorkCard({ card, helper, paused }: WorkCardProps) {
+export default function WorkCard({ card, helper, collaborators, paused, subtitle }: WorkCardProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const chip = cardChip(card);
+  const { label, dotCls, cardMod } = cardStatus(card);
   const showBar = card.progress.total > 0;
   const pct = showBar ? Math.round((card.progress.done / card.progress.total) * 100) : 0;
+  const isNeedsYou = card.status === "needs_you";
 
   /* If the card has no id we cannot resolve a thread — render non-actionable */
   const hasId = !!card.id;
@@ -64,22 +63,34 @@ export default function WorkCard({ card, helper, paused }: WorkCardProps) {
     }
   };
 
-  const actionLabel = cardActionLabel(card);
-
   return (
-    <div className={`work-card${paused ? " work-card-paused" : ""}`}>
-      {/* Header: avatar + title */}
-      <div className="wc-head">
-        {helper && (
-          <Avatar
-            who={helper as { id: string; name: string; role?: string; is_chief?: boolean }}
-            size={24}
-            state={card.status === "running" ? "working" : null}
-          />
+    <div
+      className={`work-card${cardMod ? " " + cardMod : ""}${paused ? " work-card-paused" : ""}`}
+      onClick={!isNeedsYou && hasId ? openThread : undefined}
+      style={!isNeedsYou && hasId ? { cursor: "pointer" } : undefined}
+      role={!isNeedsYou && hasId ? "button" : undefined}
+      tabIndex={!isNeedsYou && hasId ? 0 : undefined}
+      onKeyDown={!isNeedsYou && hasId ? (e) => e.key === "Enter" && openThread() : undefined}
+    >
+      {/* Top row: status dot + label + collaborator avatar(s) */}
+      <div className="wc-status-row">
+        <span className={`wc-status-dot ${dotCls}`} />
+        <span className="wc-status-label">{label}</span>
+        <span className="sp" />
+        {collaborators && collaborators.length > 0 && (
+          <div className="wc-collabs">
+            {collaborators.slice(0, 3).map((c) => (
+              <Avatar key={c.id} who={c} size={18} state={null} />
+            ))}
+          </div>
         )}
-        <span className="wc-title">{card.title}</span>
-        <span className={chip.cls}>{chip.label}</span>
       </div>
+
+      {/* Bold title */}
+      <div className="wc-title">{card.title}</div>
+
+      {/* Subtitle / description */}
+      {subtitle && <div className="wc-subtitle">{subtitle}</div>}
 
       {/* Goal tag */}
       {card.goal && (
@@ -89,7 +100,7 @@ export default function WorkCard({ card, helper, paused }: WorkCardProps) {
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar + N/M */}
       {showBar && (
         <div className="wc-progress">
           <div className="wc-progress-bar">
@@ -99,26 +110,26 @@ export default function WorkCard({ card, helper, paused }: WorkCardProps) {
         </div>
       )}
 
-      {/* Footer: updated_at + action button */}
-      <div className="wc-foot">
-        {card.updated_at && (
-          <span className="wc-time">{ago(card.updated_at)}</span>
-        )}
-        <span className="sp" />
-        {hasId ? (
+      {/* Action buttons (NEEDS YOU only) */}
+      {isNeedsYou && hasId && (
+        <div className="wc-actions">
           <button
-            className="btn sm wc-action"
-            onClick={openThread}
+            className="btn primary sm wc-action-primary"
+            onClick={(e) => { e.stopPropagation(); openThread(); }}
             disabled={busy || !!paused}
-            aria-label={`${actionLabel} ${card.title}`}
+            aria-label={`${primaryLabel(card)} ${card.title}`}
           >
-            {busy ? <span className="spin" /> : actionLabel}
+            {busy ? <span className="spin" /> : primaryLabel(card)}
           </button>
-        ) : (
-          /* No resolvable task — non-actionable */
-          <span className="wc-no-action" aria-label="No task link available" />
-        )}
-      </div>
+          <button
+            className="btn sm wc-action-open"
+            onClick={(e) => { e.stopPropagation(); openThread(); }}
+            disabled={busy || !!paused}
+          >
+            Open
+          </button>
+        </div>
+      )}
     </div>
   );
 }
