@@ -140,7 +140,7 @@ export type PlanNode = {
   id: string;
   title: string;
   staff_id: string;
-  staff: { id: string; name: string; role: string; is_chief: boolean } | null;
+  staff: string | { id: string; name: string; role: string; is_chief: boolean } | null;
   status: string;
   origin: string;
   created_at: string;

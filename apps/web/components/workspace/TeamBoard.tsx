@@ -10,13 +10,14 @@ import { usePoll } from "@/lib/poll";
 
 /** Map a PlanNode (goal work item) to the common BoardCard shape so WorkCard can render it. */
 function nodeToCard(node: PlanNode): BoardCard {
-  const status = mapNodeStatus(node.status);
+  const needs_proposal = node.proposals.some((p) => p.status === "pending" || p.status === "open");
+  const status: BoardCard["status"] = needs_proposal ? "needs_you" : mapNodeStatus(node.status);
   return {
     id: node.id,
     title: node.title,
     staff_id: node.staff_id,
     status,
-    needs_proposal: node.proposals.some((p) => p.status === "pending" || p.status === "open"),
+    needs_proposal,
     awaiting_reply: false,
     progress: { done: 0, total: 0 },
     goal: null,
@@ -27,7 +28,6 @@ function nodeToCard(node: PlanNode): BoardCard {
 
 function mapNodeStatus(s: string): BoardCard["status"] {
   if (s === "running" || s === "working") return "running";
-  if (s === "needs_you" || s === "waiting_for_owner") return "needs_you";
   if (s === "waiting" || s === "queued") return "waiting";
   if (s === "done" || s === "completed") return "done";
   if (s === "failed" || s === "error") return "failed";
@@ -44,7 +44,10 @@ function flattenNodes(nodes: PlanNode[]): PlanNode[] {
 
 /** Derive a helper-like object from a PlanNode's staff field (for Avatar). */
 function nodeHelper(node: PlanNode): { id: string; name: string; role?: string; is_chief?: boolean } | null {
-  if (node.staff) return { id: node.staff.id, name: node.staff.name, role: node.staff.role, is_chief: node.staff.is_chief };
+  if (node.staff) {
+    if (typeof node.staff === "string") return { id: node.staff_id, name: node.staff };
+    return { id: node.staff.id, name: node.staff.name, role: node.staff.role, is_chief: node.staff.is_chief };
+  }
   if (node.staff_id) return { id: node.staff_id, name: node.staff_id };
   return null;
 }
