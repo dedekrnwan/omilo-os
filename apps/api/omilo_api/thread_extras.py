@@ -32,7 +32,7 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Checkpoint, KbSource, Message, Task, Thread
+from .models import Checkpoint, KbSource, Message, Proposal, Task, Thread
 
 # Cutoff separating "active" from "earlier" (non-awaiting threads).
 _ACTIVE_CUTOFF_HOURS = 4
@@ -126,6 +126,21 @@ def enrich(db: Session, th: Thread) -> dict:
         if task:
             extras["task_id"] = task.id
             extras["task_status"] = task.status
+
+    # Bug #3 + Bug #4: enrich proposal threads so the frontend can surface proposal context,
+    # and mark a pending proposal thread as needs_you so the workspace rail matches the inbox count.
+    if th.scope == "proposal" and th.ref_id:
+        from .services import current_body
+        proposal = db.get(Proposal, th.ref_id)
+        if proposal:
+            extras["proposal_id"] = proposal.id
+            extras["proposal_title"] = proposal.title
+            extras["proposal_status"] = proposal.status
+            extras["proposal_risk"] = proposal.risk
+            extras["proposal_body"] = current_body(proposal)
+            # Bug #4: a pending proposal needs the founder — surface it as needs_you in the workspace rail.
+            if proposal.status == "pending":
+                extras["group"] = "needs_you"
 
     return extras
 

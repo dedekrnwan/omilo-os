@@ -835,6 +835,18 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
     elif body.scope == "proposal":
         p = _404(db.get(Proposal, body.ref_id or ""), "unknown proposal")
         th = S.get_or_create_thread(db, "proposal", p.id, p.staff_id, p.title)
+        # Bug #3: seed proposal context as an initial system message so the thread is never empty.
+        from ..models import Message as _Msg
+        has_msgs = db.scalar(select(func.count(_Msg.id)).where(_Msg.thread_id == th.id))
+        if not has_msgs:
+            body_text = S.current_body(p)
+            seed_text = (
+                f"**Proposal: {p.title}**\n\n"
+                + (f"{body_text}\n\n" if body_text else "")
+                + f"*Type:* {p.type} · *Risk:* {p.risk} · *Status:* {p.status}"
+            )
+            S.post_message(db, th, "system", p.staff_id, seed_text,
+                           blocks=[{"type": "markdown", "text": seed_text}])
     elif body.scope == "group":
         from .. import teamchat as TC
 
