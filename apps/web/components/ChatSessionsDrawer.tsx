@@ -378,8 +378,11 @@ export default function ChatSessionsDrawer({ open, onClose }: { open: boolean; o
         const sorted = [...ths].sort((a, b) => (b.last_at || b.updated_at || "").localeCompare(a.last_at || a.updated_at || ""));
         setThreads(sorted);
 
-        if (sorted.length > 0) {
-          setActiveId(sorted[0].id);
+        // The floating launcher IS the Chief of Staff, so open your latest Chief (master) session —
+        // not whatever helper thread was touched most recently. Other threads stay in the list to pick.
+        const latestChief = sorted.find((t) => t.scope === "master");
+        if (latestChief) {
+          setActiveId(latestChief.id);
         } else {
           try {
             const master = await api<Thread>("/threads", { body: { scope: "master" } });
