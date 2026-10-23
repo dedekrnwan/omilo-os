@@ -265,7 +265,7 @@ function TeamNow({ staffMap, threads }: {
         <span>live</span>
       </div>
       <div className="team-now-scroll">
-        <a href="/chat/?view=board&group=helper" className="team-board-card">
+        <a href="/chat/?view=board" className="team-board-card">
           <span className="team-board-card-tile"><i className="ri-layout-grid-line" /></span>
           <span className="team-board-card-txt">
             <b>Open the team board</b>
