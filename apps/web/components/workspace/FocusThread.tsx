@@ -41,9 +41,11 @@ function goalThreads(threads: Thread[]): Thread[] {
 function GoalNav({
   thread,
   threads,
+  backHref,
 }: {
   thread: FullThread;
   threads: Thread[];
+  backHref?: string;
 }) {
   const router = useRouter();
   const gv: GoalView | null | undefined = thread.goal_view;
@@ -64,7 +66,7 @@ function GoalNav({
       <div className="work-nav-left">
         <button
           className="work-nav-back"
-          onClick={() => router.push("/chat/?view=board&group=goal")}
+          onClick={() => router.push(backHref || "/chat/?view=board&group=goal")}
           aria-label="Back to team board"
         >
           <i className="ri-arrow-left-line" />
@@ -127,14 +129,16 @@ function GoalNav({
 function WorkNav({
   thread,
   threads,
+  backHref,
 }: {
   thread: FullThread;
   threads: Thread[];
+  backHref?: string;
 }) {
   const router = useRouter();
 
   if (isGoalThread(thread)) {
-    return <GoalNav thread={thread} threads={threads} />;
+    return <GoalNav thread={thread} threads={threads} backHref={backHref} />;
   }
 
   /* Determine position among needs-you items */
@@ -160,7 +164,7 @@ function WorkNav({
       <div className="work-nav-left">
         <button
           className="work-nav-back"
-          onClick={() => router.push("/chat/?view=board")}
+          onClick={() => router.push(backHref || "/chat/?view=board")}
           aria-label="Back to team board"
         >
           <i className="ri-arrow-left-line" />
@@ -461,6 +465,7 @@ export default function FocusThread({
   onThread,
   onStartJob,
   onOpenThread,
+  backHref,
 }: {
   threadId: string;
   seed?: FullThread | null;
@@ -471,6 +476,8 @@ export default function FocusThread({
   onThread?: (th: FullThread | null) => void;
   onStartJob?: (brief: string) => void;
   onOpenThread?: (body: Record<string, string>) => void;
+  /** Where "Team board" / back navigates — respects the current mode + remembered grouping. */
+  backHref?: string;
 }) {
   const router = useRouter();
   const [current, setCurrent] = useState<FullThread | null>(seed ?? null);
@@ -495,7 +502,7 @@ export default function FocusThread({
   return (
     <div className="thread-view">
       {current && threads && threads.length > 0 && (
-        <WorkNav thread={current} threads={threads} />
+        <WorkNav thread={current} threads={threads} backHref={backHref} />
       )}
       {current && (
         <WorkHead

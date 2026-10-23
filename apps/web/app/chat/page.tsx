@@ -18,6 +18,7 @@ import { confirmDialog } from "@/lib/dialog";
 import Desk from "@/components/workspace/Desk";
 import TeamBoard from "@/components/workspace/TeamBoard";
 import ChannelsRail from "@/components/workspace/ChannelsRail";
+import { boardHref, saveWsGroup, wsGroup } from "@/lib/ws";
 import { RailThread } from "@/components/workspace/ThreadsRail";
 import FocusThread from "@/components/workspace/FocusThread";
 import FocusDetails from "@/components/workspace/FocusDetails";
@@ -223,7 +224,7 @@ function WorkspaceInner() {
   }, []);
   usePoll(loadLists, 20000, [loadLists], (n) => n?.kind === "reply" || n?.kind?.startsWith("job"));
 
-  const go = useCallback((q: Record<string, string>) => { router.replace(`/chat/?${new URLSearchParams(q)}`); setListOpen(false); }, [router]);
+  const go = useCallback((q: Record<string, string>) => { router.push(`/chat/?${new URLSearchParams(q)}`); setListOpen(false); }, [router]);
   const openThread = useCallback(async (body: Record<string, string>) => {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
@@ -233,6 +234,15 @@ function WorkspaceInner() {
   }, [go]);
   // ChatThread only reports its thread while mounted (chat view with a thread); clear it otherwise so the topbar/panel don't show stale info
   useEffect(() => { if (view !== "chat" || !tid) setCurrent(null); }, [view, tid]);
+  // Remember the board grouping (By-helper / By-goal) so it sticks across navigation…
+  useEffect(() => {
+    const g = params.get("group");
+    if (isBoard && (g === "helper" || g === "goal")) saveWsGroup(g);
+  }, [isBoard, params]);
+  // …and restore it when a board URL arrives without one (e.g. a plain "Board" link).
+  useEffect(() => {
+    if (isBoard && !params.get("group") && wsGroup() === "goal") router.replace("/chat/?view=board&group=goal");
+  }, [isBoard, params, router]);
 
   const threadEvents = useEvents(view === "chat" && tid ? { thread_id: tid } : null);
   const taskEvents = useEvents(view === "work" && taskId && taskId !== "new" ? { task_id: taskId } : null);
@@ -276,6 +286,7 @@ function WorkspaceInner() {
               onThread={setCurrent}
               onStartJob={startJob}
               onOpenThread={openThread}
+              backHref="/chat/?mode=chat"
             />
             <FocusDetails threadId={tid} />
           </>
@@ -321,6 +332,7 @@ function WorkspaceInner() {
           onThread={setCurrent}
           onStartJob={startJob}
           onOpenThread={openThread}
+          backHref={boardHref()}
         />
         <FocusDetails threadId={tid} />
       </div>

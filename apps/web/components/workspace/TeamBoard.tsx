@@ -626,7 +626,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
           <button className="on" role="tab" aria-selected>
             <i className="ri-layout-grid-line" /> Work
           </button>
-          <button role="tab" aria-selected={false} onClick={() => router.replace("/chat/?mode=chat")}>
+          <button role="tab" aria-selected={false} onClick={() => router.push("/chat/?mode=chat")}>
             <i className="ri-chat-3-line" /> Chat
           </button>
         </div>
