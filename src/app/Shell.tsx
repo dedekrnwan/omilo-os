@@ -32,16 +32,8 @@ export function Shell() {
       {/* Left rail */}
       <Rail />
 
-      {/* Sidebar slot — reserved for channel/inbox list panels (Tasks 7 & 8) */}
-      <div
-        aria-label="sidebar"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--soft)',
-          borderRight: '1px solid var(--line-strong)',
-        }}
-      />
+      {/* Sidebar slot — channel/inbox list panels live inside the feature
+           route components (ChatRoute, OfficeRoute) so no wrapper here. */}
 
       {/* Main content area */}
       <main

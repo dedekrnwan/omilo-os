@@ -6,7 +6,7 @@ import {
   Outlet,
 } from '@tanstack/react-router'
 import { Shell } from './Shell'
-import { ChatRoute } from './routes/ChatRoute'
+import { ChatRoute } from '../features/chat/ChatRoute'
 import { OfficeRoute } from './routes/OfficeRoute'
 
 /** Root route renders the Shell; the Shell renders <Outlet /> for child routes. */
