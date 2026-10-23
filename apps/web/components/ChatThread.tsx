@@ -21,6 +21,15 @@ if (typeof window !== "undefined") {
   });
 }
 
+/* Merge two message lists by id (incoming wins on conflict), ordered oldest→newest by `at`. Lets the
+   live poll refresh the newest page without dropping older messages the user scrolled up to load. */
+function mergeMsgs(a: Msg[], b: Msg[]): Msg[] {
+  const by = new Map<string, Msg>();
+  for (const m of a) by.set(m.id, m);
+  for (const m of b) by.set(m.id, m);
+  return [...by.values()].sort((p, q) => String(p.at).localeCompare(String(q.at)));
+}
+
 /* A single chat thread: the message list, composer, mentions, slash menu, access decisions and Stop.
    Controlled by `threadId`; owns its own poll and reports the loaded thread up via `onThread`.
    Carved out of the /chat page so a later drawer can reuse it. */
@@ -48,6 +57,9 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
   const [stopping, setStopping] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [goals, setGoals] = useState<MentionGoal[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState<boolean>(!!seed?.has_more);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const firstLoad = useRef(!seed);  // the first /threads load for this threadId sets hasMoreOlder from its has_more
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<ComposerHandle>(null);
 
@@ -65,19 +77,47 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
   // already carries the correct history for this thread, so painting it immediately
   // eliminates the "Loading…" flash on Inbox → Workspace navigation.
   const seedId = seed?.id ?? null;
-  useEffect(() => { if (threadId !== seedId) setCurrent(null); }, [threadId, seedId]);
+  useEffect(() => { if (threadId !== seedId) { setCurrent(null); setHasMoreOlder(false); firstLoad.current = true; } }, [threadId, seedId]);
 
   // the thread: every 1.5 s while a helper is answering, every 12 s otherwise (and at once when a notice arrives);
-  // unchanged threads cost a 304 thanks to the server's ETag
+  // unchanged threads cost a 304 thanks to the server's ETag. The poll refreshes only the NEWEST page, so we
+  // merge it into whatever older messages are already loaded rather than replacing (keeps scroll-up history).
   const awaiting = useRef(false);
   awaiting.current = !!current?.awaiting_reply;
   usePoll(async () => {
     const want = threadId;
-    try { const th = await api<FullThread>(`/threads/${want}`); setCurrent((cur) => (want === threadId ? th : cur)); } catch (e: any) { setErr(e.message); }
+    try {
+      const th = await api<FullThread>(`/threads/${want}`);
+      if (want !== threadId) return;
+      setCurrent((cur) => (cur && cur.id === th.id ? { ...th, messages: mergeMsgs(cur.messages || [], th.messages || []) } : th));
+      if (firstLoad.current) { setHasMoreOlder(!!th.has_more); firstLoad.current = false; }
+    } catch (e: any) { setErr(e.message); }
   }, () => (awaiting.current ? 1500 : 12000), [threadId], (n) => n?.url?.includes(threadId));
 
-  const nMsgs = current?.messages?.length || 0;
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [nMsgs, events.length]);
+  // Load older messages when the user scrolls near the top; prepend and keep their scroll position.
+  const loadOlder = async () => {
+    const sc = scroller.current;
+    if (loadingOlder || !hasMoreOlder || !sc) return;
+    const before = current?.messages?.[0]?.at;
+    if (!before) return;
+    setLoadingOlder(true);
+    const prevH = sc.scrollHeight, prevT = sc.scrollTop;
+    try {
+      const page = await api<{ messages: Msg[]; has_more: boolean }>(`/threads/${threadId}/messages?before=${encodeURIComponent(before)}&limit=40`);
+      setCurrent((cur) => (cur ? { ...cur, messages: mergeMsgs(page.messages, cur.messages || []) } : cur));
+      setHasMoreOlder(page.has_more);
+      requestAnimationFrame(() => { const s = scroller.current; if (s) s.scrollTop = prevT + (s.scrollHeight - prevH); });
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoadingOlder(false); }
+  };
+
+  // Scroll to the bottom only when a NEW last message arrives (or a live event) — never when older
+  // messages are prepended (lastId is unchanged then), so scroll-up stays put.
+  const lastId = current?.messages?.length ? current.messages[current.messages.length - 1].id : null;
+  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [lastId, events.length]);
+
+  // Apply a freshly-fetched thread (send/decide/answer) while keeping any older messages already loaded.
+  const applyThread = (th: FullThread) => setCurrent((cur) => (cur && cur.id === th.id ? { ...th, messages: mergeMsgs(cur.messages || [], th.messages || []) } : th));
 
   useQuote(current?.id, (fn) => { composer.current?.updateText(fn); }, () => composer.current?.focus());
   // side-list context menus ("Brief me", "Mention … in General") prefill the composer after opening a thread.
@@ -108,7 +148,7 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
     const body = { text: t.trim() || `(attached ${files.length} file${files.length > 1 ? "s" : ""})`,
       blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined, mentions, goal_ids: goalIds };
     // Composer already cleared optimistically; restore on failure
-    try { setCurrent(await api<FullThread>(`/threads/${threadId}/messages`, { body })); awaiting.current = true; kick(threadId); } catch (e: any) { setErr(e.message); composer.current?.setText(t); }
+    try { applyThread(await api<FullThread>(`/threads/${threadId}/messages`, { body })); awaiting.current = true; kick(threadId); } catch (e: any) { setErr(e.message); composer.current?.setText(t); }
   };
 
   const onSlash = (a: SlashAction, rest: string) => {
@@ -125,21 +165,21 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
   const decide = async (requestId: string, scope: "once" | "always" | "deny", note: string) => {
     try {
       await api(`/access/${requestId}/decide`, { body: { scope, note } });
-      if (threadId) { const th = await api<FullThread>(`/threads/${threadId}`); setCurrent(th); }
+      if (threadId) { applyThread(await api<FullThread>(`/threads/${threadId}`)); }
     } catch (e: any) { setErr(e.message); }
   };
 
   const decideProposal = async (proposalId: string, decision: "approve" | "reject" | "changes", note: string) => {
     try {
       await api(`/proposals/${proposalId}/decide`, { body: { decision, note } });
-      if (threadId) { const th = await api<FullThread>(`/threads/${threadId}`); setCurrent(th); }
+      if (threadId) { applyThread(await api<FullThread>(`/threads/${threadId}`)); }
     } catch (e: any) { setErr(e.message); }
   };
 
   const answerQuestion = async (itemId: string, answer: string) => {
     try {
       await api(`/inbox/${itemId}/answer`, { body: { answer } });
-      if (threadId) { const th = await api<FullThread>(`/threads/${threadId}`); setCurrent(th); }
+      if (threadId) { applyThread(await api<FullThread>(`/threads/${threadId}`)); }
     } catch (e: any) { setErr(e.message); }
   };
 
@@ -168,8 +208,16 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
 
   return (
     <DropCatcher onFiles={(fs) => composer.current?.uploadFiles(fs)} chief={chief} disabled={current.awaiting_reply}>
-      <div className="ws-scroll" ref={scroller}>
-        <div className="ws-inner"><Conversation th={current} staff={staff} events={events} onSend={(t) => send(t, [], [])} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} /></div>
+      <div className="ws-scroll" ref={scroller} onScroll={(e) => { if (e.currentTarget.scrollTop < 80) loadOlder(); }}>
+        <div className="ws-inner">
+          {(hasMoreOlder || loadingOlder) && (
+            <div className="ws-older">
+              {loadingOlder ? <span className="small"><i className="ri-loader-4-line ws-older-spin" /> Loading earlier messages…</span>
+                : <button type="button" className="btn sm quiet" onClick={loadOlder}><i className="ri-arrow-up-line" />Load earlier messages</button>}
+            </div>
+          )}
+          <Conversation th={current} staff={staff} events={events} onSend={(t) => send(t, [], [])} busy={current.awaiting_reply} onDecide={decide} onProposal={decideProposal} onAnswer={answerQuestion} />
+        </div>
       </div>
       <div className={`ws-composer${inFocus ? " ws-composer--focus" : ""}`}>
         {related.length > 0 && (

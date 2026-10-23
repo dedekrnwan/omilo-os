@@ -107,6 +107,8 @@ export type Thread = { id: string; scope: string; ref_id: string | null; staff_i
   goal?: { id: string; title: string } | null;
   /** Goal-thread header meta — present when scope=="goal" */
   goal_view?: GoalView | null;
+  /** True when older messages exist before the oldest one returned (scroll-up paging). */
+  has_more?: boolean;
 };
 export type GoalView = {
   id: string; title: string;

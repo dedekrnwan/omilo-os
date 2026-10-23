@@ -308,6 +308,9 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--soft); }
 .ws-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .ws-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .ws-inner { max-width: 760px; margin: 0 auto; padding: 22px 24px 28px; }
+.ws-older { display: flex; justify-content: center; padding: 2px 0 12px; }
+.ws-older .small { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.ws-older-spin { animation: sc-rot 0.7s linear infinite; }
 .ws-composer { padding: 0 24px 16px; max-width: 808px; width: 100%; margin: 0 auto; }
 /* Composer send CTA: black circular icon button (matches pen.dev design) */
 .composer-send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--primary); color: var(--primary-ink);
