@@ -866,6 +866,25 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
         if not ch:
             raise HTTPException(409, "no Chief of Staff yet: create the team first")
         th = S.get_or_create_thread(db, "goal", goal.id, ch.id, goal.title)
+    elif body.scope == "channel":
+        from ..models import Channel, Goal
+        from ..models import Message as _Msg
+
+        channel = _404(db.get(Channel, body.ref_id or ""), "unknown channel")
+        ch = S.chief(db)
+        if not ch:
+            raise HTTPException(409, "no Chief of Staff yet: create the team first")
+        th = S.get_or_create_thread(db, "channel", channel.id, ch.id, channel.name)
+        # Seed an intro so the channel conversation is never empty.
+        has_msgs = db.scalar(select(func.count(_Msg.id)).where(_Msg.thread_id == th.id))
+        if not has_msgs:
+            goal_titles = [g.title for g in db.scalars(select(Goal).where(Goal.channel_id == channel.id))]
+            intro = (
+                f"**{(channel.emoji + ' ') if channel.emoji else ''}{channel.name}**\n\n"
+                + ("A home for: " + ", ".join(goal_titles) + "."
+                   if goal_titles else "A new channel. Give it goals and the sessions about them gather here.")
+            )
+            S.post_message(db, th, "system", ch.id, intro, blocks=[{"type": "markdown", "text": intro}])
     elif body.scope == "group":
         from .. import teamchat as TC
 

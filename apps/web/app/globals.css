@@ -4164,8 +4164,7 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .chrail-label { display: flex; align-items: center; justify-content: space-between; }
 .chrail-add { border: 0; background: transparent; cursor: pointer; color: var(--faint); display: inline-flex; padding: 2px; border-radius: var(--r-sm); }
 .chrail-add:hover { color: var(--ink); background: var(--hover); }
-.chrail-chhead { font-weight: 600; cursor: default; }
-.chrail-chhead:hover { background: transparent; }
+.chrail-chhead { font-weight: 600; }
 .chrail-nested { padding-left: 22px; }
 .chrail-nested .chrail-hash { color: var(--wire-strong, var(--line-strong)); }
 .chrail-count { flex: 0 0 auto; font: 11px var(--font-mono); color: var(--faint); }

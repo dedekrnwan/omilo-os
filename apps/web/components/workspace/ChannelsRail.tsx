@@ -37,6 +37,7 @@ export default function ChannelsRail({
   const others = staff.filter((s) => !s.is_chief);
   const goalThread = (gid: string) => threads.find((t) => t.scope === "goal" && (t as any).ref_id === gid);
   const staffThread = (sid: string) => threads.find((t) => t.staff_id === sid && t.scope !== "master");
+  const channelThread = (cid: string) => threads.find((t) => t.scope === "channel" && (t as any).ref_id === cid);
 
   const goalRow = (g: GoalLite, nested: boolean) => {
     const th = goalThread(g.id);
@@ -82,16 +83,24 @@ export default function ChannelsRail({
             <span className="chrail-name">general</span>
           </button>
 
-          {data.channels.map((ch) => (
-            <div key={ch.id} className="chrail-channel">
-              <div className="chrail-row chrail-chhead">
-                <span className="chrail-hash">{ch.emoji || "#"}</span>
-                <span className="chrail-name">{ch.name}</span>
-                {ch.members.length > 0 && <span className="chrail-count">{ch.members.length}</span>}
+          {data.channels.map((ch) => {
+            const cth = channelThread(ch.id);
+            const con = cth && activeThreadId === cth.id;
+            return (
+              <div key={ch.id} className="chrail-channel">
+                <button
+                  className={`chrail-row chrail-chhead${con ? " on" : ""}`}
+                  onClick={() => onOpen({ scope: "channel", ref_id: ch.id })}
+                  title={ch.name}
+                >
+                  <span className="chrail-hash">{ch.emoji || "#"}</span>
+                  <span className="chrail-name">{ch.name}</span>
+                  {ch.members.length > 0 && <span className="chrail-count">{ch.members.length}</span>}
+                </button>
+                {ch.goals.map((g) => goalRow(g, true))}
               </div>
-              {ch.goals.map((g) => goalRow(g, true))}
-            </div>
-          ))}
+            );
+          })}
 
           {/* goals not yet in a channel */}
           {data.unassigned.map((g) => goalRow(g, false))}
