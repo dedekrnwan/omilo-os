@@ -17,6 +17,7 @@ import { Staff, Task, Thread, ago, api, when } from "@/lib/api";
 import { confirmDialog } from "@/lib/dialog";
 import Desk from "@/components/workspace/Desk";
 import TeamBoard from "@/components/workspace/TeamBoard";
+import ChannelsRail from "@/components/workspace/ChannelsRail";
 import { RailThread } from "@/components/workspace/ThreadsRail";
 import FocusThread from "@/components/workspace/FocusThread";
 import FocusDetails from "@/components/workspace/FocusDetails";
@@ -203,6 +204,8 @@ function WorkspaceInner() {
   const isDesk = view === "chat" && !tid && !taskId;
   /* ---- Focus session: chat view with a thread id ---- */
   const isFocus = view === "chat" && !!tid;
+  /* ---- Chat mode: same sessions grouped by channel/staff (a left channels rail) ---- */
+  const isChat = params.get("mode") === "chat";
 
   const [panel, setPanel] = useLocal("omilo.panel", true);
   const [listOpen, setListOpen] = useState(false);
@@ -224,6 +227,10 @@ function WorkspaceInner() {
   const openThread = useCallback(async (body: Record<string, string>) => {
     try { const th = await api<Thread>("/threads", { body }); go({ thread: th.id }); } catch (e: any) { setErr(e.message); }
   }, [go]);
+  /* Open a session but stay in Chat mode (keep the channels rail). */
+  const openThreadChat = useCallback(async (body: Record<string, string>) => {
+    try { const th = await api<Thread>("/threads", { body }); go({ mode: "chat", thread: th.id }); } catch (e: any) { setErr(e.message); }
+  }, [go]);
   // ChatThread only reports its thread while mounted (chat view with a thread); clear it otherwise so the topbar/panel don't show stale info
   useEffect(() => { if (view !== "chat" || !tid) setCurrent(null); }, [view, tid]);
 
@@ -244,6 +251,46 @@ function WorkspaceInner() {
 
   /* Board: full-page team board (by helper / by goal) */
   if (isBoard) return <TeamBoard group={boardGroup} />;
+
+  /* Chat mode: left channels/staff rail + the selected session (same sessions as Work mode) */
+  if (isChat) {
+    const railThreads = threads as RailThread[];
+    const chatSeed: FullThread | null = current?.id === tid ? current : null;
+    return (
+      <div className="chat-mode">
+        <ChannelsRail
+          threads={threads}
+          staff={staff}
+          activeThreadId={tid}
+          onOpen={openThreadChat}
+          onSwitchMode={() => go({ view: "board" })}
+        />
+        {tid ? (
+          <>
+            <FocusThread
+              threadId={tid}
+              seed={chatSeed}
+              staff={staff}
+              events={threadEvents}
+              threads={railThreads}
+              onThread={setCurrent}
+              onStartJob={startJob}
+              onOpenThread={openThread}
+            />
+            <FocusDetails threadId={tid} />
+          </>
+        ) : (
+          <div className="chat-mode-welcome">
+            <div className="chat-mode-welcome-inner">
+              <i className="ri-chat-3-line" />
+              <b>Pick a channel or a teammate</b>
+              <span>Every chat is a session. Channels hold goals; staff are one-on-one.</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   /* Desk: full-page three-column layout (threads rail + desk center + team now) */
   if (isDesk) return <Desk />;
