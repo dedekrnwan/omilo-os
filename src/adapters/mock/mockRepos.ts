@@ -1,5 +1,5 @@
-import { Id } from '../../core/domain/types'
-import { Repos } from '../../core/ports/repos'
+import type { Id } from '../../core/domain/types'
+import type { Repos } from '../../core/ports/repos'
 import { channels, sessions, messages, inboxItems } from './fixtures'
 
 export function createMockRepos(): Repos {

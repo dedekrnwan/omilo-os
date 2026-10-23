@@ -1,4 +1,4 @@
-import { Channel, Id, Message, Session, InboxItem } from '../domain/types'
+import type { Channel, Id, Message, Session, InboxItem } from '../domain/types'
 
 export interface ChannelRepo {
   list(): Promise<Channel[]>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Repos } from './repos'
+import type { Repos } from './repos'
 
 export function runReposContract(name: string, makeRepos: () => Repos): void {
   describe(`Repos contract: ${name}`, () => {

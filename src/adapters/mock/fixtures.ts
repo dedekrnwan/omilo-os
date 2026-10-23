@@ -1,4 +1,4 @@
-import { Channel, Session, Message, InboxItem } from '../../core/domain/types'
+import type { Channel, Session, Message, InboxItem } from '../../core/domain/types'
 
 // ── Channels ─────────────────────────────────────────────────────────────────
 
