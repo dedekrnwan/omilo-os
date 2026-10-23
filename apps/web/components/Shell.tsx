@@ -55,7 +55,7 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [menu, setMenu] = useState(false);
   const [actions, setActions] = useState<PageActionsSpec | null>(null);
-  const bare = ["/login/", "/setup/"].includes(path);
+  const bare = ["/login/", "/setup/", "/select-company/"].includes(path);
 
   const refresh = useCallback(async () => {
     try {
