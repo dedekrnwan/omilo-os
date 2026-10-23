@@ -4189,6 +4189,22 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .chrail-new { display: flex; gap: 6px; align-items: center; padding: 4px 8px; }
 .chrail-new input { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 0 8px; font: inherit; font-size: 13px; }
 
+/* New-channel modal (Step 5) */
+.nc-dlg { width: min(460px, 100%); text-align: left; padding: 24px; max-height: 86vh; overflow-y: auto; }
+.nc-title { font: 600 18px/1.3 var(--font-display); color: var(--ink); margin: 0 0 2px; }
+.nc-sub { text-align: left; margin: 0 0 14px; max-width: none; }
+.nc-namerow { display: flex; gap: 8px; margin-bottom: 14px; }
+.nc-emoji { width: 46px; flex-shrink: 0; text-align: center; height: 38px; border: 1px solid var(--line-strong); border-radius: var(--r); font-size: 16px; }
+.nc-name { flex: 1; min-width: 0; height: 38px; border: 1px solid var(--line-strong); border-radius: var(--r); padding: 0 12px; font: inherit; font-size: 14px; }
+.nc-sec { margin-bottom: 14px; }
+.nc-sec-label { font: 600 11px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.nc-list { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); padding: 4px; }
+.nc-opt { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border: 0; background: transparent; border-radius: var(--r-sm); cursor: pointer; text-align: left; font: inherit; font-size: 13px; color: var(--ink); }
+.nc-opt:hover { background: var(--hover); }
+.nc-check { width: 18px; height: 18px; flex-shrink: 0; border: 1px solid var(--line-strong); border-radius: 5px; display: grid; place-items: center; color: transparent; font-size: 12px; }
+.nc-opt.on .nc-check { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.nc-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 
 /* ------------------------------------------------------------------ E. Chat FAB + nudge bubble */
 

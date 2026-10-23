@@ -26,22 +26,12 @@ export default function ChannelsRail({
   onSwitchMode: () => void;
 }) {
   const [data, setData] = useState<ChannelsResp>({ channels: [], unassigned: [] });
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [modal, setModal] = useState(false);
 
   const load = useCallback(async () => {
     try { setData(await api<ChannelsResp>("/channels")); } catch { /* keep last */ }
   }, []);
   useEffect(() => { load(); }, [load]);
-
-  const create = async () => {
-    const name = newName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try { await api("/channels", { body: { name } }); setNewName(""); setCreating(false); await load(); }
-    catch { /* ignore */ } finally { setBusy(false); }
-  };
 
   const chief = staff.find((s) => s.is_chief);
   const others = staff.filter((s) => !s.is_chief);
@@ -82,7 +72,7 @@ export default function ChannelsRail({
         <div className="chrail-group">
           <div className="chrail-label">
             Channels
-            <button className="chrail-add" onClick={() => setCreating((c) => !c)} title="New channel" aria-label="New channel">
+            <button className="chrail-add" onClick={() => setModal(true)} title="New channel" aria-label="New channel">
               <i className="ri-add-line" />
             </button>
           </div>
@@ -106,21 +96,7 @@ export default function ChannelsRail({
           {/* goals not yet in a channel */}
           {data.unassigned.map((g) => goalRow(g, false))}
 
-          {creating && (
-            <div className="chrail-new">
-              <input
-                autoFocus
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") create(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
-                placeholder="Channel name…"
-                aria-label="New channel name"
-              />
-              <button className="btn sm primary" disabled={!newName.trim() || busy} onClick={create}>Add</button>
-            </div>
-          )}
-
-          {data.channels.length === 0 && data.unassigned.length === 0 && !creating && (
+          {data.channels.length === 0 && data.unassigned.length === 0 && (
             <div className="chrail-empty">Goals you create become channels. Add one with +.</div>
           )}
         </div>
@@ -144,6 +120,100 @@ export default function ChannelsRail({
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {modal && (
+        <NewChannelModal
+          goals={data.unassigned}
+          staff={staff}
+          onClose={() => setModal(false)}
+          onCreated={() => { setModal(false); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Step 5 · New channel = a home for goals. Name + emoji, the goals it holds, the staff in it. */
+function NewChannelModal({
+  goals,
+  staff,
+  onClose,
+  onCreated,
+}: {
+  goals: GoalLite[];
+  staff: Staff[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState("");
+  const [goalIds, setGoalIds] = useState<Set<string>>(new Set());
+  const [memberIds, setMemberIds] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setter(next);
+  };
+
+  const create = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api("/channels", { body: { name: name.trim(), emoji, goal_ids: [...goalIds], member_ids: [...memberIds] } });
+      onCreated();
+    } catch { /* ignore */ } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="dlg-scrim" role="dialog" aria-modal="true" aria-labelledby="nc-title"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="dlg nc-dlg">
+        <h2 id="nc-title" className="nc-title">New channel</h2>
+        <p className="dlg-body nc-sub">A home for goals and the sessions about them.</p>
+
+        <div className="nc-namerow">
+          <input className="nc-emoji" value={emoji} onChange={(e) => setEmoji(e.target.value.slice(0, 2))} placeholder="#" aria-label="Emoji" />
+          <input className="nc-name" autoFocus value={name} onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") create(); }} placeholder="Channel name" aria-label="Channel name" />
+        </div>
+
+        {goals.length > 0 && (
+          <div className="nc-sec">
+            <div className="nc-sec-label">Goals in this channel</div>
+            <div className="nc-list">
+              {goals.map((g) => (
+                <button key={g.id} className={`nc-opt${goalIds.has(g.id) ? " on" : ""}`} onClick={() => toggle(goalIds, setGoalIds, g.id)}>
+                  <span className="nc-check"><i className="ri-check-line" /></span>
+                  <span className="chrail-hash">#</span>
+                  <span className="nc-opt-name">{g.title}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="nc-sec">
+          <div className="nc-sec-label">Members</div>
+          <div className="nc-list">
+            {staff.map((s) => (
+              <button key={s.id} className={`nc-opt${memberIds.has(s.id) ? " on" : ""}`} onClick={() => toggle(memberIds, setMemberIds, s.id)}>
+                <span className="nc-check"><i className="ri-check-line" /></span>
+                <Avatar who={s} size={20} />
+                <span className="nc-opt-name">{s.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="dlg-acts">
+          <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn primary" onClick={create} disabled={!name.trim() || busy}>
+            {busy ? "Creating…" : "Create channel"}
+          </button>
         </div>
       </div>
     </div>
