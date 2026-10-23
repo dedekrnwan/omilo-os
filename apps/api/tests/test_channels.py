@@ -93,3 +93,24 @@ def test_open_channel_thread_seeds_intro(owner):
         assert th is not None and th.scope == "channel" and th.ref_id == ch_id
         msgs = list(db.scalars(select(Message).where(Message.thread_id == th_id)))
         assert len(msgs) >= 1, "channel thread must be seeded with an intro message"
+
+
+def test_move_staff_dm_into_channel(owner):
+    """A staff DM can be moved into a channel (PATCH) and taken back out (channel_id=null)."""
+    with session_scope() as db:
+        ch = S.create_channel(db, "Growth")
+        ch_id = ch.id
+        t = Thread(scope="staff", staff_id="chief-of-staff", title="Quick question")
+        db.add(t)
+        db.commit()
+        tid = t.id
+
+    r = owner.patch(f"/api/threads/{tid}/channel", json={"channel_id": ch_id})
+    assert r.status_code == 200, r.text
+    with session_scope() as db:
+        assert db.get(Thread, tid).channel_id == ch_id
+
+    r2 = owner.patch(f"/api/threads/{tid}/channel", json={"channel_id": None})
+    assert r2.status_code == 200, r2.text
+    with session_scope() as db:
+        assert db.get(Thread, tid).channel_id is None

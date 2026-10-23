@@ -4204,6 +4204,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .nc-opt.on .nc-check { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
 .nc-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Staff DM → channel offer (Step 4): the Chief suggests moving a DM into a channel */
+.dm-offer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 16px 8px; padding: 9px 12px;
+  background: var(--soft); border: 1px solid var(--line); border-radius: var(--r-md); }
+.dm-offer-lead { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--helper-brand, #6366f1); flex-shrink: 0; }
+.dm-offer-text { font-size: 13px; color: var(--muted); flex: 1; min-width: 160px; }
+.dm-offer-act { flex-shrink: 0; }
+.dm-offer-done { color: var(--ok); }
+.dm-offer-done i { color: var(--ok); margin-right: 2px; }
+.dm-offer-menu { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dm-offer-opt { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-pill); cursor: pointer; font: inherit; font-size: 12.5px; color: var(--ink); }
+.dm-offer-opt:hover { background: var(--hover); }
+.dm-offer-cancel { border-color: transparent; color: var(--muted); }
+
 
 /* ------------------------------------------------------------------ E. Chat FAB + nudge bubble */
 

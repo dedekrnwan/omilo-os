@@ -99,7 +99,7 @@ export type WfPattern = { staff: { id: string; name: string }; title: string; co
   last_at: string; task_ids: string[]; per_week: number };
 export type Message = { id: string; role: string; author: string; text: string; at: string };
 export type Thread = { id: string; scope: string; ref_id: string | null; staff_id: string; title: string; awaiting_reply: boolean; messages?: Message[];
-  pending?: string[]; updated_at?: string;
+  pending?: string[]; updated_at?: string; channel_id?: string | null;
   /* Task 3 enrichment fields */
   group?: "needs_you" | "active" | "earlier"; subtitle?: string; participants?: string[];
   last_at?: string | null; task_id?: string | null; task_status?: string | null;
