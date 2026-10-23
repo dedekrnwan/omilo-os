@@ -46,8 +46,8 @@ function useNow(active: boolean) {
   return now;
 }
 
-function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
-  c: Base; indicator: React.ReactNode; time: string; tag?: React.ReactNode; open: boolean; onToggle: () => void; onOpen: () => void; items?: () => MenuItem[];
+function Card({ c, indicator, time, tag, open, onToggle, onOpen, items, actions }: {
+  c: Base; indicator: React.ReactNode; time: string; tag?: React.ReactNode; open: boolean; onToggle: () => void; onOpen: () => void; items?: () => MenuItem[]; actions?: React.ReactNode;
 }) {
   return (
     <div className={`bcard ${open ? "open" : ""}`} role="button" tabIndex={0} aria-expanded={open} onContextMenu={items ? menu(items) : undefined}
@@ -62,6 +62,7 @@ function Card({ c, indicator, time, tag, open, onToggle, onOpen, items }: {
         <span className="bc-sep" />
         <span className="bc-n" title={`${c.tools} tool calls`}><i className="ri-hammer-line" />{c.tools}</span>
       </div>
+      {actions && <div className="bc-actions" onClick={(e) => e.stopPropagation()}>{actions}</div>}
       {open && (
         <div className="bc-x" onClick={(e) => e.stopPropagation()}>
           <div className="bc-who">{c.staff.name}{c.engine ? ` · ${c.engine}` : ""}</div>
@@ -218,6 +219,33 @@ function BoardView({ onCount }: { onCount: () => void }) {
     ].filter(Boolean) as MenuItem[];
   };
 
+  /* Inline actions on the card face — act without opening a drawer. */
+  const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
+  const discussProposal = async (pid: string) => { try { const th = await api<{ id: string }>("/threads", { body: { scope: "proposal", ref_id: pid } }); openThread(th.id); } catch (e: any) { setErr(e.message); } };
+  const inlineActions = (c: NeedCard): React.ReactNode => {
+    const p = c.item.proposal;
+    if (p && p.status === "pending") {
+      return (
+        <>
+          <button className="btn sm primary" onClick={stop(() => quick(() => api(`/proposals/${p.id}/decide`, { body: { decision: "approve", note: "" } })))}><i className="ri-check-line" />Approve</button>
+          {c.kind === "access_request"
+            ? <button className="btn sm" onClick={stop(() => quick(() => api(`/proposals/${p.id}/decide`, { body: { decision: "deny", note: "" } })))}><i className="ri-close-line" />Deny</button>
+            : <button className="btn sm" onClick={stop(() => discussProposal(p.id))}><i className="ri-chat-3-line" />Review</button>}
+        </>
+      );
+    }
+    if (c.kind === "workflow" && c.item.status === "open") {
+      return <button className="btn sm primary" onClick={stop(() => quick(() => api(`/inbox/${c.id}/decide`, { body: { decision: "approved" } })))}><i className="ri-check-line" />{c.item.workflow?.type === "proposal" ? "Approve & switch on" : "Approve"}</button>;
+    }
+    if (c.kind === "question") {
+      return <button className="btn sm primary" onClick={stop(() => (c.task_id ? openTask(c.task_id, "approvals") : setDetail(c)))}><i className="ri-question-answer-line" />Answer</button>;
+    }
+    if (c.kind === "alert") {
+      return <button className="btn sm quiet" onClick={stop(() => quick(() => api(`/inbox/${c.id}/dismiss`, { body: {} })))}><i className="ri-close-circle-line" />Dismiss</button>;
+    }
+    return null;
+  };
+
   if (!b) return err ? <Err error={err} /> : <p className="small">Loading…</p>;
   // Split the "running" feed: queued tasks get their own group so they don't distract from what is actually running.
   const running = b.running.filter((c) => c.status !== "queued");
@@ -336,6 +364,7 @@ function BoardView({ onCount }: { onCount: () => void }) {
                     )}
                     <Card c={c} open={open.has(c.id)} onToggle={() => toggle(c.id)} onOpen={() => (c.task_id && c.kind !== "workflow" ? openTask(c.task_id, "approvals") : setDetail(c))}
                       items={() => needItems(c)}
+                      actions={inlineActions(c)}
                       indicator={<i className={`ri-time-line bc-ind ${c.level === "critical" || c.blocking ? "crit" : "wait"}`} />}
                       time={dur(since(c.since, now))}
                       tag={<div className="bc-tags"><span className={`chip ${c.kind === "alert" ? "down" : c.kind === "question" || c.kind === "access_request" ? "warn" : c.kind === "workflow" ? "run" : "outline"}`}>{KIND[c.kind] || c.kind}</span>
