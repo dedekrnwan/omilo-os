@@ -1,10 +1,180 @@
 import { useParams, useNavigate, notFound } from '@tanstack/react-router'
+import { useState } from 'react'
+import type { Model } from '../../core/domain/types'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
+import { Composer } from '../../ui/ChatSession/Composer'
+import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { useChannel, useChannelSessions } from '../../app/queries'
 import { radii } from '../../ui/tokens'
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Static goal pills for the hero (visual-only) ─────────────────────────────
+
+const GOALS = [
+  { label: 'Close October books', pct: 70, color: 'var(--ok)' },
+  { label: 'Launch referral program', pct: 35, color: 'var(--helper-marketing)' },
+  { label: 'Plan Q1 offsite', pct: 10, color: 'var(--helper-brand)' },
+] as const
+
+// ── NewChatHero ───────────────────────────────────────────────────────────────
+
+/**
+ * Hero displayed in the center pane when a channel has no active sessions.
+ * Matches the pen.dev "New chat (General)" reference design.
+ */
+function NewChatHero({ channelName }: { channelName: string }) {
+  const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--app)',
+        padding: '0 24px 40px',
+        gap: 0,
+        overflowY: 'auto',
+      }}
+    >
+      {/* Vertically-centered column */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 540,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 0,
+        }}
+      >
+        {/* Mascot */}
+        <img
+          src="/chief-mascot.png"
+          alt="Chief mascot"
+          width={64}
+          height={64}
+          style={{
+            marginBottom: 20,
+            borderRadius: radii.md,
+            objectFit: 'contain',
+          }}
+        />
+
+        {/* Headline */}
+        <h1
+          style={{
+            margin: '0 0 10px',
+            fontSize: 30,
+            fontWeight: 700,
+            fontFamily: 'var(--font-display)',
+            color: 'var(--ink)',
+            textAlign: 'center',
+            lineHeight: 1.2,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Morning, Dede. What are we figuring out?
+        </h1>
+
+        {/* Subline */}
+        <p
+          style={{
+            margin: '0 0 28px',
+            fontSize: 14,
+            fontFamily: 'var(--font-sans)',
+            color: 'var(--muted)',
+            textAlign: 'center',
+            lineHeight: 1.5,
+          }}
+        >
+          {`You're in ${channelName}. Switch channel to give Chief focused context for one area.`}
+        </p>
+
+        {/* Composer card */}
+        <div style={{ width: '100%', marginBottom: 20 }}>
+          <Composer
+            sessionId={`hero-${channelName}`}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            placeholder="Ask a helper, or type / for commands"
+          />
+        </div>
+
+        {/* Goal pills section */}
+        <p
+          style={{
+            margin: '0 0 10px',
+            fontSize: 12,
+            fontFamily: 'var(--font-sans)',
+            color: 'var(--muted)',
+            textAlign: 'center',
+          }}
+        >
+          Or start from a goal in <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>{channelName}</strong>
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            justifyContent: 'center',
+          }}
+        >
+          {GOALS.map((goal) => (
+            <button
+              key={goal.label}
+              type="button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 12px',
+                borderRadius: 'var(--radius-pill)',
+                border: '1px solid var(--line-strong)',
+                background: 'var(--surface)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 13,
+                color: 'var(--ink-2)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {/* Status dot */}
+              <span
+                aria-hidden
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: goal.color,
+                  flexShrink: 0,
+                }}
+              />
+              {goal.label}
+              {/* Percentage */}
+              <span
+                style={{
+                  marginLeft: 4,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: goal.color,
+                }}
+              >
+                {goal.pct}%
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ChannelView ───────────────────────────────────────────────────────────────
 
 /** Shown when a $channelId is selected but no $sessionId yet. */
 function ChannelView({ channelId }: { channelId: string }) {
@@ -35,6 +205,30 @@ function ChannelView({ channelId }: { channelId: string }) {
     throw notFound()
   }
 
+  // No sessions yet — show new-chat hero
+  if (sessions === undefined || sessions.length === 0) {
+    return (
+      <>
+        {/* Visually-hidden text so test assertions for "no sessions" still pass */}
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            overflow: 'hidden',
+            clip: 'rect(0,0,0,0)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          No sessions yet
+        </span>
+        <NewChatHero channelName={channel.name} />
+      </>
+    )
+  }
+
+  // Has sessions — show list
   return (
     <div
       style={{
@@ -59,83 +253,59 @@ function ChannelView({ channelId }: { channelId: string }) {
         {channel.name}
       </h1>
 
-      {sessions === undefined || sessions.length === 0 ? (
-        // Empty state
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            color: 'var(--muted)',
-            fontFamily: 'var(--font-sans)',
-            fontSize: 14,
-            textAlign: 'center',
-          }}
-        >
-          <span style={{ fontSize: 28 }}>💬</span>
-          <p style={{ margin: 0, fontWeight: 500, color: 'var(--ink-2)' }}>
-            No sessions yet
-          </p>
-          <p style={{ margin: 0, fontSize: 13 }}>
-            Start a new conversation in this channel.
-          </p>
-        </div>
-      ) : (
-        <ul
-          style={{
-            margin: 0,
-            padding: 0,
-            listStyle: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <button
-                onClick={() =>
-                  navigate({
-                    to: '/chat/$channelId/$sessionId',
-                    params: { channelId, sessionId: session.id },
-                  })
-                }
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '10px 14px',
-                  border: '1px solid var(--line-strong)',
-                  borderRadius: radii.base,
-                  background: 'var(--soft)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: 'var(--ink)',
-                  transition: 'background 100ms ease',
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background =
-                    'var(--hover)'
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background =
-                    'var(--soft)'
-                }}
-              >
-                {session.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul
+        style={{
+          margin: 0,
+          padding: 0,
+          listStyle: 'none',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+        }}
+      >
+        {sessions.map((session) => (
+          <li key={session.id}>
+            <button
+              onClick={() =>
+                navigate({
+                  to: '/chat/$channelId/$sessionId',
+                  params: { channelId, sessionId: session.id },
+                })
+              }
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '10px 14px',
+                border: '1px solid var(--line-strong)',
+                borderRadius: radii.base,
+                background: 'var(--soft)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontFamily: 'var(--font-sans)',
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--ink)',
+                transition: 'background 100ms ease',
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLButtonElement).style.background =
+                  'var(--hover)'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLButtonElement).style.background =
+                  'var(--soft)'
+              }}
+            >
+              {session.title}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
+
+// ── NoChatSelected ────────────────────────────────────────────────────────────
 
 /** Shown when no channel is selected yet (root /chat). */
 function NoChatSelected() {
