@@ -266,6 +266,43 @@ def goal_focus(db: Session, goal: Goal) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Goal thread feed — the Chief's opening summary, then a line per finished job
+# ---------------------------------------------------------------------------
+
+def goal_intro(db: Session, goal: Goal) -> str:
+    """The Chief's opening message in a goal thread: what the goal is, how it's measured, and who's on
+    it right now. The running updates (a line per finished job) are appended later by goal_activity_line."""
+    f = goal_focus(db, goal)
+    lines = [f"Here's the goal I'm coordinating: **{goal.title}**."]
+    measured = f["about"].get("measured")
+    if measured:
+        lines.append(f"How we measure it: {measured}.")
+    if goal.due:
+        lines.append(f"Target date: {goal.due}.")
+    work = f.get("work") or []
+    if work:
+        lines += ["", "**Who's on it**"]
+        for w in work[:12]:
+            lines.append(f"- **{w['staff']['name']}** — {w['title']} _({w['status_label']})_")
+        if len(work) > 12:
+            lines.append(f"- …and {len(work) - 12} more")
+    else:
+        lines += ["", "No jobs are linked to this goal yet. Ask me to put someone on it, or link a regular job on the Plan."]
+    lines += ["", "I'll post here as the team makes progress — ask me anything about where we stand."]
+    return "\n".join(lines)
+
+
+def goal_activity_line(staff_name: str, task_title: str, status: str, headline: str = "") -> str:
+    """One feed line for a goal thread when a linked job ends. status is the task's final status."""
+    mark = "✅" if status == "done" else "⚠️" if status == "failed" else "•"
+    verb = "finished" if status == "done" else "couldn't finish" if status == "failed" else "updated"
+    line = f"{mark} **{staff_name}** {verb}: {task_title}"
+    if headline:
+        line += f" — {headline}"
+    return line
+
+
+# ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
 

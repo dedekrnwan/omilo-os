@@ -613,6 +613,30 @@ class Worker:
         if retry:  # after the database session closed (the event is written with its own)
             Emitter(retry["staff_id"], task_id=task_id)("status", state="retrying", error=retry["error"], wait_s=retry["wait_s"])
 
+    def _post_goal_activity(self, db, t: Task, rep) -> None:
+        """When a goal-linked job ends, post a feed line to that goal's thread (seeding the Chief's
+        intro first if the thread is still empty, so the update always has context)."""
+        from . import thread_extras as TE
+        from .models import Goal, Message
+
+        tg = db.scalar(select(TaskGoal).where(TaskGoal.task_id == t.id))
+        if not tg:
+            return
+        goal = db.get(Goal, tg.goal_id)
+        ch = S.chief(db)
+        if not goal or not ch:
+            return
+        gth = S.get_or_create_thread(db, "goal", goal.id, ch.id, goal.title)
+        if not db.scalar(select(Message.id).where(Message.thread_id == gth.id).limit(1)):
+            intro = TE.goal_intro(db, goal)
+            S.post_message(db, gth, "agent", ch.id, intro, blocks=[{"type": "markdown", "text": intro}])
+        st = db.get(Staff, t.staff_id)
+        staff_name = st.name if st else t.staff_id
+        title = (t.brief or "Job").strip().splitlines()[0][:80]
+        headline = (rep.headline if rep else "")[:160]
+        line = TE.goal_activity_line(staff_name, title, t.status, headline)
+        S.post_message(db, gth, "system", t.staff_id, line, blocks=[{"type": "markdown", "text": line}])
+
     def _finish(self, task_id: str, res: EngineResult, retry: dict):
         with session_scope() as db:
             t = db.get(Task, task_id)
@@ -678,6 +702,11 @@ class Worker:
             rep = db.scalar(select(Report).where(Report.task_id == t.id))
             summary = f"**{t.status.upper()}**: " + (rep.headline if rep else res.error or "")
             S.post_message(db, th, "system", "omilo", summary)
+            if t.status in ("done", "failed"):
+                try:  # if this job serves a goal, add a line to that goal's thread (the goal feed)
+                    self._post_goal_activity(db, t, rep)
+                except Exception:
+                    log.exception("goal feed update failed for task %s", t.id)
             try:  # the run log of a regular job, which its next run reads
                 from . import memory
 

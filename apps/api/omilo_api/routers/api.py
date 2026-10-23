@@ -859,13 +859,18 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
             S.post_message(db, th, "system", p.staff_id, seed_text,
                            blocks=[{"type": "markdown", "text": seed_text}])
     elif body.scope == "goal":
-        from ..models import Goal
+        from .. import thread_extras as TE
+        from ..models import Goal, Message
 
         goal = _404(db.get(Goal, body.ref_id or ""), "unknown goal")
         ch = S.chief(db)
         if not ch:
             raise HTTPException(409, "no Chief of Staff yet: create the team first")
         th = S.get_or_create_thread(db, "goal", goal.id, ch.id, goal.title)
+        # First open: seed the Chief's summary so the thread isn't empty (idempotent — only when no messages).
+        if not db.scalar(select(Message.id).where(Message.thread_id == th.id).limit(1)):
+            intro = TE.goal_intro(db, goal)
+            S.post_message(db, th, "agent", ch.id, intro, blocks=[{"type": "markdown", "text": intro}])
     elif body.scope == "group":
         from .. import teamchat as TC
 
