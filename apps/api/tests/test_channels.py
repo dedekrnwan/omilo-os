@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from omilo_api import services as S
 from omilo_api.db import session_scope
-from omilo_api.models import Channel, Goal, Staff
+from omilo_api.models import Goal, Message, Staff, Thread
 
 
 def _goal(db, title: str) -> Goal:
@@ -69,9 +69,27 @@ def test_assign_and_unassign_goal(owner):
 
 
 def test_create_channel_requires_name(owner):
+    import pytest
     with session_scope() as db:
-        try:
+        with pytest.raises(S.DomainError):
             S.create_channel(db, "   ")
-            assert False, "blank name must raise"
-        except S.DomainError:
-            pass
+
+
+def test_open_channel_thread_seeds_intro(owner):
+    """POST /api/threads scope=channel opens the channel's conversation with a seeded intro."""
+    with session_scope() as db:
+        g = _goal(db, "Grow signups")
+        db.commit()
+        gid = g.id
+        ch = S.create_channel(db, "Growth", goal_ids=[gid])
+        ch_id = ch.id
+
+    r = owner.post("/api/threads", json={"scope": "channel", "ref_id": ch_id})
+    assert r.status_code == 200, r.text
+    th_id = r.json()["id"]
+
+    with session_scope() as db:
+        th = db.get(Thread, th_id)
+        assert th is not None and th.scope == "channel" and th.ref_id == ch_id
+        msgs = list(db.scalars(select(Message).where(Message.thread_id == th_id)))
+        assert len(msgs) >= 1, "channel thread must be seeded with an intro message"
