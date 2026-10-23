@@ -61,6 +61,18 @@ export interface Session {
   channelId?: Id
 }
 
+export interface InboxSubtask {
+  who: string
+  area?: HelperArea
+  text: string
+  due: string
+}
+
+export interface InboxAction {
+  label: string
+  primary?: boolean
+}
+
 export interface InboxItem {
   id: Id
   title: string
@@ -69,4 +81,20 @@ export interface InboxItem {
   kind: 'decision' | 'update' | 'mention'
   status: 'pending' | 'done'
   createdAt: string
+  /** Optional: agent/helper name that sent this approval request */
+  asker?: string
+  /** Optional: human-readable elapsed time, e.g. "2m ago" */
+  askedAgo?: string
+  /** Optional: area tag shown on the card header */
+  area?: HelperArea
+  /** Optional: when true, shows the red "Needs you" badge */
+  needsYou?: boolean
+  /** Optional: sub-task rows shown inside the card */
+  subtasks?: InboxSubtask[]
+  /** Optional: action buttons in the card footer */
+  actions?: InboxAction[]
+  /** Optional: reassurance note next to the action buttons */
+  reassurance?: string
+  /** Optional: when true, renders as a compact single-line row instead of a full card */
+  compact?: boolean
 }

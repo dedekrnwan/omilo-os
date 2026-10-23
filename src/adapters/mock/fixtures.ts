@@ -1,4 +1,5 @@
 import type { Channel, Session, Message, InboxItem } from '../../core/domain/types'
+// InboxSubtask and InboxAction are inlined via the InboxItem type — no direct import needed
 
 // ── Channels ─────────────────────────────────────────────────────────────────
 
@@ -189,6 +190,7 @@ export const messages: Message[] = [
 // ── Inbox ─────────────────────────────────────────────────────────────────────
 
 export const inboxItems: InboxItem[] = [
+  // ── Full approval card #1 — task creation ──────────────────────────────────
   {
     id: 'inbox-1',
     title: 'Approve Q4 planning timeline',
@@ -197,7 +199,25 @@ export const inboxItems: InboxItem[] = [
     kind: 'decision',
     status: 'pending',
     createdAt: '2026-10-20T10:00:00Z',
+    // approval card enrichment
+    asker: 'Chief',
+    askedAgo: '2m ago',
+    area: 'dev',
+    needsYou: true,
+    subtasks: [
+      { who: 'Dev', area: 'dev',       text: 'Ship passkeys on web + iOS',         due: 'Nov 14' },
+      { who: 'Dev', area: 'dev',       text: 'Android password fallback flow',      due: 'Nov 21' },
+      { who: 'Growth', area: 'marketing', text: 'Launch comms to all users',        due: 'Nov 24' },
+    ],
+    actions: [
+      { label: 'Approve all 3', primary: true },
+      { label: 'Review one by one' },
+      { label: 'Reply' },
+    ],
+    reassurance: 'Nothing runs until you approve',
   },
+
+  // ── Full approval card #2 — budget approval ────────────────────────────────
   {
     id: 'inbox-2',
     title: 'API rate-limit rollback approved',
@@ -206,7 +226,20 @@ export const inboxItems: InboxItem[] = [
     kind: 'update',
     status: 'pending',
     createdAt: '2026-10-22T09:00:00Z',
+    // approval card enrichment
+    asker: 'Growth',
+    askedAgo: '25m ago',
+    area: 'marketing',
+    needsYou: true,
+    actions: [
+      { label: 'Approve $4,800', primary: true },
+      { label: 'Change amount' },
+      { label: 'Reply' },
+    ],
+    reassurance: 'Charged only when ads run',
   },
+
+  // ── Compact row #3 ─────────────────────────────────────────────────────────
   {
     id: 'inbox-3',
     title: 'Campaign debrief highlights',
@@ -215,7 +248,13 @@ export const inboxItems: InboxItem[] = [
     kind: 'mention',
     status: 'pending',
     createdAt: '2026-10-24T09:05:00Z',
+    // compact enrichment
+    askedAgo: '1h',
+    area: 'sales',
+    compact: true,
   },
+
+  // ── Compact row #4 ─────────────────────────────────────────────────────────
   {
     id: 'inbox-4',
     title: 'Database migration plan ready',
@@ -224,5 +263,9 @@ export const inboxItems: InboxItem[] = [
     kind: 'decision',
     status: 'pending',
     createdAt: '2026-10-23T15:00:00Z',
+    // compact enrichment
+    askedAgo: 'Yesterday',
+    area: 'ops',
+    compact: true,
   },
 ]
