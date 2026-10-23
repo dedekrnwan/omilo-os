@@ -19,7 +19,7 @@ function Avatar({ name, color }: { name: string; color?: string }) {
         height: 32,
         borderRadius: '50%',
         background: color ?? 'var(--ink)',
-        color: '#fff',
+        color: 'var(--primary-ink)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

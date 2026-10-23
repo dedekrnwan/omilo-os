@@ -1,30 +1,33 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { Model } from '../../core/domain/types'
-import { ModelMenu, DEFAULT_MODEL } from './ModelMenu'
+import { ModelMenu } from './ModelMenu'
 
-interface ComposerProps {
+export interface ComposerProps {
   sessionId: string
+  selectedModel: Model
+  onModelChange: (m: Model) => void
 }
 
-export function Composer({ sessionId }: ComposerProps) {
+export function Composer({ sessionId, selectedModel, onModelChange }: ComposerProps) {
   const [text, setText] = useState('')
-  const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
 
-  // Reset model when sessionId changes
-  // (This is handled by the key prop on the parent instead, but we keep
-  //  model state here so ModelMenu can be swapped without re-keying Composer)
+  // Reset text when session changes
+  const prevSession = useRef(sessionId)
+  useEffect(() => {
+    if (prevSession.current !== sessionId) {
+      prevSession.current = sessionId
+      setText('')
+    }
+  }, [sessionId])
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       // No backend — visual affordance only
-      setText('')
+      if (text.trim()) setText('')
     }
   }
-
-  // Suppress unused warning — sessionId will drive future send behavior
-  void sessionId
 
   return (
     <div
@@ -35,6 +38,7 @@ export function Composer({ sessionId }: ComposerProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
+        flexShrink: 0,
       }}
     >
       {/* Affordance bar: @mention + thinking */}
@@ -72,7 +76,7 @@ export function Composer({ sessionId }: ComposerProps) {
           Think
         </button>
         <div style={{ flex: 1 }} />
-        <ModelMenu selected={selectedModel} onSelect={setSelectedModel} />
+        <ModelMenu selected={selectedModel} onSelect={onModelChange} />
       </div>
 
       {/* Text area */}
