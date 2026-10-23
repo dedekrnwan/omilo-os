@@ -1390,19 +1390,28 @@ def harness_delete(aid: str, db: Session = Depends(get_db), user: User = Depends
 
 
 @router.post("/harness/accounts/{aid}/test")
-async def harness_test(aid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Ask Claude Code for a one-word reply with this account (the same probe the pool auto-runs in the background)."""
+async def harness_test(aid: str, user: User = Depends(current_user)):
+    """Ask Claude Code for a one-word reply with this account (the same probe the pool auto-runs in the background).
+
+    The probe runs a Claude CLI subprocess for up to a minute. We must NOT hold a pooled DB connection
+    across it: testing several capped accounts at once (the exact "click Test on every account" flow)
+    would otherwise pin every connection for the probe's duration and exhaust the pool. So we take a
+    short session to read the token, release it for the probe, then take another to record the result.
+    """
     from .. import harness as H
+    from ..db import session_scope
     from ..models import HarnessAccount
     from ..security import decrypt
 
-    a = _404(db.get(HarnessAccount, aid), "unknown account")
     if not H.find_cli():
         raise HTTPException(409, "Install Claude Code first.")
-    ok, detail = await H.probe(decrypt(a.token_enc) or "", timeout=120)
-    H.apply_probe_result(a, ok, detail)
-    db.commit()
-    return {"ok": ok, "detail": detail, "account": H.serialize(a)}
+    with session_scope() as db:
+        token = decrypt(_404(db.get(HarnessAccount, aid), "unknown account").token_enc) or ""
+    ok, detail = await H.probe(token, timeout=60)
+    with session_scope() as db:
+        a = _404(db.get(HarnessAccount, aid), "unknown account")
+        H.apply_probe_result(a, ok, detail)
+        return {"ok": ok, "detail": detail, "account": H.serialize(a)}
 
 
 @router.post("/harness/install")
