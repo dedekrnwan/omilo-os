@@ -168,24 +168,6 @@ function ApprovalCard({
         gap: 12,
       }}
     >
-      {/* Visually-hidden kind label — keeps test assertions on kind text green */}
-      <span
-        aria-label={`kind: ${item.kind}`}
-        style={{
-          position: 'absolute',
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: 'hidden',
-          clip: 'rect(0,0,0,0)',
-          whiteSpace: 'nowrap',
-          border: 0,
-        }}
-      >
-        {item.kind}
-      </span>
-
       {/* ── Card header row ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -406,7 +388,6 @@ function CompactRow({
         textAlign: 'left',
         fontFamily: 'var(--font-sans)',
         transition: 'background 100ms ease',
-        position: 'relative',
       }}
       onMouseEnter={(e) => {
         ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--soft)'
@@ -415,24 +396,6 @@ function CompactRow({
         ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'
       }}
     >
-      {/* Visually-hidden kind label — keeps test assertions on kind text green */}
-      <span
-        aria-label={`kind: ${item.kind}`}
-        style={{
-          position: 'absolute',
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: 'hidden',
-          clip: 'rect(0,0,0,0)',
-          whiteSpace: 'nowrap',
-          border: 0,
-        }}
-      >
-        {item.kind}
-      </span>
-
       {/* small avatar dot */}
       <span
         style={{
@@ -798,7 +761,8 @@ function InboxList() {
     )
   }
 
-  const needsYouCount = items.filter((i) => i.needsYou).length || items.length
+  // Count ALL inbox items — full approval cards (needsYou) plus compact rows — they all require attention
+  const needsYouCount = items.length
 
   const openItem = (item: InboxItem) =>
     navigate({ to: '/office/inbox/$itemId', params: { itemId: item.id } })

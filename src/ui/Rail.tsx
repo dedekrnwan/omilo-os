@@ -29,13 +29,24 @@ function DotsIcon() {
 
 function ChatBubbleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
-        d="M3 3.5h12a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1H6l-3 3V4.5a1 1 0 0 1 1-1z"
+        d="M2.5 3h11a.75.75 0 0 1 .75.75V10a.75.75 0 0 1-.75.75H5.5L2 14V3.75A.75.75 0 0 1 2.5 3z"
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinejoin="round"
       />
+    </svg>
+  )
+}
+
+function BuildingIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <rect x="2" y="4" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.5 14V10h5v4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M5 7h1.5M9.5 7H11M5 9.5h1.5M9.5 9.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M6 4V2.5h4V4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -290,14 +301,33 @@ export function Rail() {
         <DotsIcon />
       </RailIconBtn>
 
-      {/* Mode toggle — chat bubble icon; aria-label encodes current mode so tests can find it */}
-      <RailIconBtn
-        label={isChatMode ? 'Chat' : 'Office'}
-        onClick={handleModeToggle}
-        active={isChatMode}
+      {/* Mode toggle — segmented chat/office icons */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          padding: '4px 0',
+          borderTop: '1px solid var(--line-strong)',
+          width: '100%',
+          alignItems: 'center',
+        }}
       >
-        <ChatBubbleIcon />
-      </RailIconBtn>
+        <RailIconBtn
+          label="Chat"
+          onClick={isChatMode ? undefined : handleModeToggle}
+          active={isChatMode}
+        >
+          <ChatBubbleIcon />
+        </RailIconBtn>
+        <RailIconBtn
+          label="Office"
+          onClick={isChatMode ? handleModeToggle : undefined}
+          active={!isChatMode}
+        >
+          <BuildingIcon />
+        </RailIconBtn>
+      </div>
 
       <RailIconBtn label="Settings">
         <LockIcon />

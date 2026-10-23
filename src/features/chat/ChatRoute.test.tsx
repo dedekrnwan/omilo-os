@@ -7,30 +7,14 @@ import {
   createRouter,
   RouterProvider,
   Outlet,
-  NotFoundRoute,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
-import { ChannelSidebar } from './ChannelSidebar'
 import { ChatRoute } from './ChatRoute'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-function makeWrapper(repos: Repos = createMockRepos()) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <ReposProvider repos={repos}>{children}</ReposProvider>
-      </QueryClientProvider>
-    )
-  }
-}
 
 /**
  * Build a minimal test router that mirrors the production route shape:
@@ -80,15 +64,6 @@ function makeTestRouter(
     component: ChatRoute,
   })
 
-  const notFoundRoute = new NotFoundRoute({
-    getParentRoute: () => rootRoute,
-    component: () => (
-      <div role="alert" data-testid="not-found">
-        Not found
-      </div>
-    ),
-  })
-
   const routeTree = rootRoute.addChildren([
     chatRoute.addChildren([
       chatChannelRoute.addChildren([chatSessionRoute]),
@@ -96,7 +71,7 @@ function makeTestRouter(
   ])
 
   const history = createMemoryHistory({ initialEntries: [initialPath] })
-  const router = createRouter({ routeTree, history, notFoundRoute })
+  const router = createRouter({ routeTree, history })
 
   return { router, queryClient }
 }
@@ -113,12 +88,10 @@ function openChannelDropdown() {
 
 describe('ChannelSidebar', () => {
   test('lists General, Engineering, Marketing channels', async () => {
-    const Wrapper = makeWrapper()
-    render(
-      <Wrapper>
-        <ChannelSidebar activeChannelId={undefined} />
-      </Wrapper>,
-    )
+    // Render inside a full test router so useNavigate (used by ChannelSidebar) resolves without warnings
+    const { router } = makeTestRouter('/chat/ch-general')
+    await router.load()
+    render(<RouterProvider router={router} />)
 
     // Channels are shown in the dropdown — open it first
     await waitFor(() => {
@@ -133,12 +106,9 @@ describe('ChannelSidebar', () => {
   })
 
   test('each channel row has an area dot', async () => {
-    const Wrapper = makeWrapper()
-    render(
-      <Wrapper>
-        <ChannelSidebar activeChannelId={undefined} />
-      </Wrapper>,
-    )
+    const { router } = makeTestRouter('/chat/ch-general')
+    await router.load()
+    render(<RouterProvider router={router} />)
 
     // Channels (and their dots) are in the dropdown — open it
     await waitFor(() => {
@@ -152,12 +122,9 @@ describe('ChannelSidebar', () => {
   })
 
   test('active channel is highlighted', async () => {
-    const Wrapper = makeWrapper()
-    render(
-      <Wrapper>
-        <ChannelSidebar activeChannelId="ch-engineering" />
-      </Wrapper>,
-    )
+    const { router } = makeTestRouter('/chat/ch-engineering')
+    await router.load()
+    render(<RouterProvider router={router} />)
 
     // Active channel highlight (aria-current) is on the dropdown row — open it
     await waitFor(() => {

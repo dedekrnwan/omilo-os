@@ -40,7 +40,7 @@ export function Shell() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'var(--surface)',
+          background: 'var(--app)',
         }}
       >
         {/* Top bar */}

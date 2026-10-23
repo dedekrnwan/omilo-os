@@ -7,7 +7,6 @@ import {
   createRouter,
   RouterProvider,
   Outlet,
-  NotFoundRoute,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
@@ -64,15 +63,6 @@ function makeTestRouter(
     component: InboxRoute,
   })
 
-  const notFoundRoute = new NotFoundRoute({
-    getParentRoute: () => rootRoute,
-    component: () => (
-      <div role="alert" data-testid="not-found">
-        Not found
-      </div>
-    ),
-  })
-
   const routeTree = rootRoute.addChildren([
     officeRoute.addChildren([
       officeInboxRoute.addChildren([officeInboxItemRoute]),
@@ -80,7 +70,7 @@ function makeTestRouter(
   ])
 
   const history = createMemoryHistory({ initialEntries: [initialPath] })
-  const router = createRouter({ routeTree, history, notFoundRoute })
+  const router = createRouter({ routeTree, history })
 
   return { router, queryClient }
 }
@@ -111,16 +101,17 @@ describe('InboxRoute — inbox list', () => {
     })
   })
 
-  test('shows kind and status badges', async () => {
+  test('shows approve actions and needs-you badges for inbox cards', async () => {
     const { router } = makeTestRouter('/office/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      // kind labels
-      expect(screen.getAllByText(/decision/i).length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText(/update/i).length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText(/mention/i).length).toBeGreaterThanOrEqual(1)
+      // Decision cards show primary approve buttons
+      expect(screen.getByRole('button', { name: /Approve all 3/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Approve \$4,800/i })).toBeInTheDocument()
+      // "Needs you" badge is present for flagged items
+      expect(screen.getAllByText(/Needs you/i).length).toBeGreaterThanOrEqual(1)
     })
   })
 })

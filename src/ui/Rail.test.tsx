@@ -53,32 +53,35 @@ beforeEach(() => {
 })
 
 describe('Rail mode toggle', () => {
-  test('shows current mode label', async () => {
+  test('shows both Chat and Office segment buttons', async () => {
     const router = makeTestRouter('/chat')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    expect(screen.getByRole('button', { name: /chat/i })).toBeInTheDocument()
+    // Both segment buttons are always visible
+    expect(screen.getByRole('button', { name: /^chat$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^office$/i })).toBeInTheDocument()
   })
 
-  test('clicking toggle when office was never visited navigates to /office/inbox', async () => {
+  test('clicking Office segment when office was never visited navigates to /office/inbox', async () => {
     const user = userEvent.setup()
     const router = makeTestRouter('/chat')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    const toggle = screen.getByRole('button', { name: /chat/i })
+    // In chat mode, click the Office segment to switch to office
+    const officeBtn = screen.getByRole('button', { name: /^office$/i })
     await act(async () => {
-      await user.click(toggle)
+      await user.click(officeBtn)
     })
 
     // Should navigate to /office/inbox (default path since lastPath['office'] is '')
     expect(router.state.location.pathname).toBe('/office/inbox')
-    // The Rail now shows office mode
-    expect(screen.getByRole('button', { name: /office/i })).toBeInTheDocument()
+    // Both segment buttons still present; Office is now active
+    expect(screen.getByRole('button', { name: /^office$/i })).toBeInTheDocument()
   })
 
-  test('clicking toggle back returns to remembered chat path', async () => {
+  test('clicking Chat segment back returns to remembered chat path', async () => {
     const user = userEvent.setup()
     // Pre-set lastPath for chat so toggle back lands there
     useUIStore.setState({
@@ -89,14 +92,14 @@ describe('Rail mode toggle', () => {
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // Currently in office mode, toggle back to chat
-    const toggle = screen.getByRole('button', { name: /office/i })
+    // In office mode, click the Chat segment to switch back
+    const chatBtn = screen.getByRole('button', { name: /^chat$/i })
     await act(async () => {
-      await user.click(toggle)
+      await user.click(chatBtn)
     })
 
     // Should navigate to the remembered /chat path
     expect(router.state.location.pathname).toBe('/chat')
-    expect(screen.getByRole('button', { name: /chat/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^chat$/i })).toBeInTheDocument()
   })
 })
