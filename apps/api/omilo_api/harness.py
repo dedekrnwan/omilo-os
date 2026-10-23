@@ -6,25 +6,33 @@ down and the run continues on another account, resuming the same Claude Code ses
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from sqlalchemy import select
 
+from . import company as C
 from .config import get_settings
 from .db import session_scope
 from .models import HarnessAccount, HarnessLimitHit, HarnessQuota, HarnessUsage, Setting, now
 from .security import decrypt, encrypt
 
+log = logging.getLogger("omilo.harness")
+
 TOKEN_RE = re.compile(r"^sk-ant-[A-Za-z0-9_\-]{20,}$")
 LIMIT_RE = re.compile(r"usage limit|session limit|limit reached|rate limit|too many requests|quota|overloaded|hit your .{0,24}limit|resets? (at|in|\d)", re.I)
 AUTH_RE = re.compile(r"invalid api key|unauthori[sz]ed|authentication|expired|revoked|401|please run /login|oauth token", re.I)
 DEFAULT_COOLDOWN = dt.timedelta(hours=1)
+PROBE_EVERY_S = 300  # a cooling account is re-probed at most this often (keeps background health checks cheap)
 MAX_PARALLEL_PER_ACCOUNT = int(os.environ.get("OMILO_HARNESS_PARALLEL", "2"))
 POOL_WAIT_CAP_S = int(os.environ.get("OMILO_POOL_WAIT_CAP_S", "2700"))  # 45 min: a job waits this long for pool capacity, then surfaces
 NPM_PACKAGE = "@anthropic-ai/claude-code"
@@ -434,9 +442,11 @@ def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, er
         a.cost_usd = (a.cost_usd or 0) + cost
         if ok:
             a.status, a.last_error = "ready", ""
+            a.cooldown_until, a.cooldown_estimated = None, False  # a run just succeeded on it → it isn't capped
         elif limit:
             a.status, a.last_error = "ready", error[:500]
             a.cooldown_until = resets_at or (now() + DEFAULT_COOLDOWN)
+            a.cooldown_estimated = resets_at is None  # no real reset time → the hour is a guess we can re-probe early
         else:
             a.last_error = error[:500]
             if AUTH_RE.search(error or ""):
@@ -445,6 +455,99 @@ def release(account_id: str, *, ok: bool, tokens: int = 0, cost: float = 0.0, er
 
 def _aware(d: dt.datetime | None) -> dt.datetime | None:
     return d.replace(tzinfo=d.tzinfo or dt.UTC) if d else None
+
+
+# ------------------------------------------------------------------ readiness probe + auto-recovery
+async def probe(token: str, timeout: float = 60) -> tuple[bool, str]:
+    """Ask Claude Code for a one-word reply with this account's token. Returns (ok, detail).
+
+    This is the single source of truth behind both the manual "Test" button and the background
+    pool recovery below — a cheap, side-effect-free check of whether a token can run right now."""
+    cli = find_cli()
+    if not cli:
+        return False, "Claude Code is not installed"
+    cfg = get_settings().company_dir / "harness" / "config"
+    cfg.mkdir(parents=True, exist_ok=True)
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    env.update({"CLAUDE_CODE_OAUTH_TOKEN": token or "", "CLAUDE_CONFIG_DIR": str(cfg)})
+    proc = await asyncio.create_subprocess_exec(
+        cli, "-p", "Reply with exactly: OK", "--output-format", "json", "--max-turns", "1",
+        env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, stdin=asyncio.subprocess.DEVNULL)
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
+        proc.kill()
+        return False, f"Claude Code did not answer in {int(timeout)}s"
+    text = out.decode(errors="replace")
+    try:
+        res = json.loads(text.strip().splitlines()[-1])
+        ok = not res.get("is_error") and "OK" in str(res.get("result", ""))
+        return ok, str(res.get("result", ""))[:300]
+    except (ValueError, IndexError):
+        return False, (err.decode(errors="replace") or text)[:300]
+
+
+def apply_probe_result(a: HarnessAccount, ok: bool, detail: str) -> None:
+    """Fold a readiness-probe outcome into an account's health. Shared by Test and recovery so the
+    two can never drift. Crucially, success clears cooldown_until — otherwise serialize() keeps
+    reporting 'cooling' no matter the status."""
+    if ok:
+        a.status, a.last_error, a.cooldown_until, a.cooldown_estimated = "ready", "", None, False
+    elif LIMIT_RE.search(detail):  # still capped: stay cooling, adopting a real reset time if one came back
+        reset = parse_reset(detail)
+        a.cooldown_until = reset or (now() + DEFAULT_COOLDOWN)
+        a.cooldown_estimated = reset is None
+        a.last_error = detail[:500]
+    elif AUTH_RE.search(detail):  # a genuine sign-in failure, not a cap — surface it (clear cooldown so it shows as error)
+        a.status, a.last_error, a.cooldown_until, a.cooldown_estimated = "error", detail[:500], None, False
+    else:
+        a.last_error = detail[:500]  # unknown blip: leave the state as-is, next cycle tries again
+
+
+_recover_inflight: set[str] = set()  # account ids with a probe running right now (no duplicates)
+_recover_last: dict[str, float] = {}  # account id → monotonic time of its last probe (per-account throttle)
+_recover_tasks: set[asyncio.Task] = set()  # keep strong refs so in-flight probes aren't garbage-collected
+
+
+async def recover_pool() -> None:
+    """Re-probe cooling accounts whose cooldown was only a guess, releasing them the instant their cap
+    lifts instead of waiting out the full DEFAULT_COOLDOWN. Accounts with a real reset time are left to
+    flip back on their own at the deadline; healthy/busy accounts are never touched."""
+    if not find_cli():
+        return
+    t, mono = now(), time.monotonic()
+    for _cid in C.each():  # per company: each has its own pool; C.each() sets the company for session_scope()
+        try:
+            with session_scope() as db:
+                due = [(a.id, decrypt(a.token_enc) or "")
+                       for a in db.scalars(select(HarnessAccount).where(HarnessAccount.enabled.is_(True)))
+                       if a.cooldown_estimated and a.cooldown_until and _aware(a.cooldown_until) > t]
+        except Exception:  # noqa: BLE001 - a bad company must not stall recovery for the rest
+            log.exception("pool recovery: could not read accounts")
+            continue
+        for aid, token in due:
+            if aid in _recover_inflight or (mono - _recover_last.get(aid, -1e9)) < PROBE_EVERY_S:
+                continue
+            _recover_last[aid] = mono
+            _recover_inflight.add(aid)
+            task = asyncio.create_task(_recover_one(aid, token))  # captures the current company context
+            _recover_tasks.add(task)
+            task.add_done_callback(_recover_tasks.discard)
+
+
+async def _recover_one(aid: str, token: str) -> None:
+    try:
+        ok, detail = await probe(token, timeout=30)
+        with session_scope() as db:
+            a = db.get(HarnessAccount, aid)
+            if a:
+                apply_probe_result(a, ok, detail)
+        if ok:
+            log.info("pool recovery: %s is usable again", aid)
+    except Exception:  # noqa: BLE001 - never let a probe crash the worker
+        log.exception("pool recovery: probe failed for %s", aid)
+    finally:
+        _recover_inflight.discard(aid)
 
 
 def meter() -> dict:

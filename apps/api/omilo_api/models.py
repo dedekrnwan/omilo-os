@@ -298,6 +298,7 @@ class HarnessAccount(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(16), default="new")  # new | ready | cooling | error
     cooldown_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cooldown_estimated: Mapped[bool] = mapped_column(Boolean, default=False)  # True when the cooldown is a guess (Claude gave no reset time) → safe to re-probe early
     last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str] = mapped_column(Text, default="")
     runs: Mapped[int] = mapped_column(Integer, default=0)

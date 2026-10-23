@@ -2,10 +2,10 @@
 and answers chat threads. Runs inside the API (laptop mode) or as its own process: `omilo-worker`.
 """
 import asyncio
+import datetime as dt
+import json
 import logging
 import time
-
-import json
 
 from sqlalchemy import func, select
 
@@ -23,6 +23,12 @@ from .models import ChannelConnection, ChannelIdentity, Proposal, Report, Shift,
 from .security import decrypt, encrypt
 
 log = logging.getLogger("omilo.worker")
+
+
+def _aware(d: dt.datetime | None) -> dt.datetime | None:
+    """SQLite drops tzinfo on read; treat stored timestamps as UTC so they can be
+    compared/subtracted against the aware datetimes the rest of the code uses."""
+    return d.replace(tzinfo=d.tzinfo or dt.UTC) if d else None
 
 
 # ------------------------------------------------------------------ outbound delivery
@@ -353,6 +359,17 @@ class Worker:
         self.running = {k: v for k, v in self.running.items() if not v.done()}
         self.chatting = {k: v for k, v in self.chatting.items() if not v.done()}
         self.flowing = {k: v for k, v in self.flowing.items() if not v.done()}
+        await self._recover_pool()  # bring rate-capped Claude accounts back the moment their cap lifts
+
+    async def _recover_pool(self):
+        """Re-probe cooling pool accounts (throttled to once a minute; probes are per-account rate-limited inside)."""
+        if time.monotonic() - getattr(self, "_last_recover", -1e9) < 60:
+            return
+        self._last_recover = time.monotonic()
+        try:
+            await H.recover_pool()
+        except Exception:
+            log.exception("pool recovery pass failed")
 
     def loop_housekeeping(self, cid: str):
         """Every few hours per company: make sure the retro loop exists, and measure retro changes (keep or roll back)."""
@@ -379,7 +396,7 @@ class Worker:
                 from . import agenda
 
                 tnow = now()
-                slot = sh.next_at  # the scheduled time that came due (may be far in the past after downtime)
+                slot = _aware(sh.next_at)  # the scheduled time that came due (may be far in the past after downtime)
                 skipped = agenda.is_skipped(db, sh, slot)  # the owner skipped this one run in the calendar
                 # Advance to the next slot strictly in the future, collapsing any slots missed
                 # during downtime: we fire at most one catch-up (the freshest), never a backlog.

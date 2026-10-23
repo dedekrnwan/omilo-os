@@ -165,6 +165,56 @@ def test_lease_order_tolerates_naive_last_used_at():
     assert [a.last_used_at for a in rows] == [None, naive, aware]
 
 
+class _Acct:
+    """Minimal stand-in for a HarnessAccount row (apply_probe_result only touches these fields)."""
+    def __init__(self, **kw):
+        self.status = kw.get("status", "ready")
+        self.last_error = kw.get("last_error", "")
+        self.cooldown_until = kw.get("cooldown_until")
+        self.cooldown_estimated = kw.get("cooldown_estimated", False)
+
+
+def test_apply_probe_success_clears_cooldown_and_estimate():
+    """A passing probe un-rests the account: status ready AND cooldown_until cleared (so serialize()
+    stops reporting 'cooling') AND the estimate flag reset (so recovery stops re-probing it)."""
+    import datetime as dt
+
+    from omilo_api import harness as H
+
+    a = _Acct(status="ready", cooldown_until=dt.datetime(2100, 1, 1, tzinfo=dt.UTC), cooldown_estimated=True, last_error="limit reached")
+    H.apply_probe_result(a, ok=True, detail="OK")
+    assert a.status == "ready" and a.cooldown_until is None and a.cooldown_estimated is False and a.last_error == ""
+
+
+def test_apply_probe_still_capped_keeps_cooling_and_adopts_real_reset():
+    """Still rate-limited: a real reset time from Claude replaces the guessed hour and clears the estimate flag."""
+    from omilo_api import harness as H
+
+    a = _Acct(cooldown_estimated=True)
+    H.apply_probe_result(a, ok=False, detail="usage limit reached|4102444800")  # 2100-01-01 epoch
+    assert a.cooldown_until is not None and a.cooldown_estimated is False  # now a known reset, not a guess
+
+
+def test_apply_probe_still_capped_without_reset_stays_estimated():
+    """Still capped with no reset time: keep guessing (estimated stays True so it is re-probed again)."""
+    from omilo_api import harness as H
+
+    a = _Acct(cooldown_estimated=True)
+    H.apply_probe_result(a, ok=False, detail="rate limit, try again later")
+    assert a.cooldown_until is not None and a.cooldown_estimated is True
+
+
+def test_apply_probe_auth_failure_marks_error_not_capped():
+    """An auth failure during a probe is a genuine break, not a cap: status error, cooldown cleared."""
+    import datetime as dt
+
+    from omilo_api import harness as H
+
+    a = _Acct(status="ready", cooldown_until=dt.datetime(2100, 1, 1, tzinfo=dt.UTC), cooldown_estimated=True)
+    H.apply_probe_result(a, ok=False, detail="invalid api key / please run /login")
+    assert a.status == "error" and a.cooldown_until is None and a.cooldown_estimated is False
+
+
 def test_accounts_validation_and_test(owner, fake_cli):
     # Task 5: grant pool consent before adding accounts (required on a fresh install)
     assert owner.post("/api/harness/pool-consent").status_code == 200

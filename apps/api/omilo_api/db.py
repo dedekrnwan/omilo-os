@@ -144,6 +144,7 @@ _COLUMNS = [
     ("staff", "brain", "VARCHAR(16) NOT NULL DEFAULT 'single_engine'"),
     ("staff", "autonomy", "VARCHAR(16) NOT NULL DEFAULT 'standard'"),
     ("staff", "voice", "TEXT NOT NULL DEFAULT ''"),
+    ("harness_account", "cooldown_estimated", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 

@@ -1382,38 +1382,16 @@ def harness_delete(aid: str, db: Session = Depends(get_db), user: User = Depends
 
 @router.post("/harness/accounts/{aid}/test")
 async def harness_test(aid: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    """Ask Claude Code for a one-word reply with this account."""
-    import asyncio as _a
-
+    """Ask Claude Code for a one-word reply with this account (the same probe the pool auto-runs in the background)."""
     from .. import harness as H
     from ..models import HarnessAccount
     from ..security import decrypt
 
     a = _404(db.get(HarnessAccount, aid), "unknown account")
-    cli = H.find_cli()
-    if not cli:
+    if not H.find_cli():
         raise HTTPException(409, "Install Claude Code first.")
-    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-    env.update({"CLAUDE_CODE_OAUTH_TOKEN": decrypt(a.token_enc) or "", "CLAUDE_CONFIG_DIR": str(get_settings().company_dir / "harness" / "config")})
-    (get_settings().company_dir / "harness" / "config").mkdir(parents=True, exist_ok=True)
-    proc = await _a.create_subprocess_exec(cli, "-p", "Reply with exactly: OK", "--output-format", "json", "--max-turns", "1",
-                                           env=env, stdout=_a.subprocess.PIPE, stderr=_a.subprocess.PIPE, stdin=_a.subprocess.DEVNULL)
-    try:
-        out, err = await _a.wait_for(proc.communicate(), timeout=120)
-    except TimeoutError:
-        proc.kill()
-        raise HTTPException(504, "Claude Code did not answer in 2 minutes") from None
-    text = out.decode(errors="replace")
-    try:
-        res = json.loads(text.strip().splitlines()[-1])
-        ok = not res.get("is_error") and "OK" in str(res.get("result", ""))
-        detail = str(res.get("result", ""))[:300]
-    except (ValueError, IndexError):
-        ok, detail = False, (err.decode(errors="replace") or text)[:300]
-    a.status = "ready" if ok else ("error" if H.AUTH_RE.search(detail) else a.status)
-    a.last_error = "" if ok else detail
-    if not ok and H.LIMIT_RE.search(detail):
-        a.cooldown_until = H.parse_reset(detail) or (now() + H.DEFAULT_COOLDOWN)
+    ok, detail = await H.probe(decrypt(a.token_enc) or "", timeout=120)
+    H.apply_probe_result(a, ok, detail)
     db.commit()
     return {"ok": ok, "detail": detail, "account": H.serialize(a)}
 
