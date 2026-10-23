@@ -2,5 +2,6 @@ node_modules/
 dist/
 .superpowers/
 src-tauri/target/
+src-tauri/gen/
 *.log
 .DS_Store

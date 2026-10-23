@@ -78,7 +78,7 @@ export function ChannelSidebar({ activeChannelId }: ChannelSidebarProps) {
               fontFamily: 'var(--font-sans)',
               fontSize: 14,
               fontWeight: isActive ? 600 : 400,
-              color: isActive ? 'var(--ink-1)' : 'var(--ink-2)',
+              color: isActive ? 'var(--ink)' : 'var(--ink-2)',
               background: isActive ? 'var(--surface)' : 'transparent',
               boxShadow: isActive ? '0 1px 3px 0 rgba(0,0,0,.08)' : 'none',
               transition: 'background 100ms ease, color 100ms ease',

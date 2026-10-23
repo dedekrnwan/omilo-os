@@ -53,7 +53,7 @@ function ChannelView({ channelId }: { channelId: string }) {
           fontSize: 20,
           fontWeight: 700,
           fontFamily: 'var(--font-sans)',
-          color: 'var(--ink-1)',
+          color: 'var(--ink)',
         }}
       >
         {channel.name}
@@ -115,7 +115,7 @@ function ChannelView({ channelId }: { channelId: string }) {
                   fontFamily: 'var(--font-sans)',
                   fontSize: 14,
                   fontWeight: 500,
-                  color: 'var(--ink-1)',
+                  color: 'var(--ink)',
                   transition: 'background 100ms ease',
                 }}
                 onMouseEnter={(e) => {

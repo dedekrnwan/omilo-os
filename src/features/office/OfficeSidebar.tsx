@@ -48,7 +48,7 @@ export function OfficeSidebar() {
           fontFamily: 'var(--font-sans)',
           fontSize: 14,
           fontWeight: isInboxActive ? 600 : 400,
-          color: isInboxActive ? 'var(--ink-1)' : 'var(--ink-2)',
+          color: isInboxActive ? 'var(--ink)' : 'var(--ink-2)',
           background: isInboxActive ? 'var(--surface)' : 'transparent',
           boxShadow: isInboxActive ? '0 1px 3px 0 rgba(0,0,0,.08)' : 'none',
           transition: 'background 100ms ease, color 100ms ease',

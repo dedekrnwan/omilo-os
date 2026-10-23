@@ -8,7 +8,7 @@ import type { InboxItem } from '../../core/domain/types'
 // ── Kind badge ────────────────────────────────────────────────────────────────
 
 const kindColor: Record<InboxItem['kind'], string> = {
-  decision: 'var(--ink-1)',
+  decision: 'var(--ink)',
   update:   'var(--muted)',
   mention:  'var(--ink-2)',
 }
@@ -109,7 +109,7 @@ function InboxList() {
           fontSize: 20,
           fontWeight: 700,
           fontFamily: 'var(--font-sans)',
-          color: 'var(--ink-1)',
+          color: 'var(--ink)',
         }}
       >
         Inbox
@@ -163,7 +163,7 @@ function InboxList() {
                   style={{
                     fontSize: 14,
                     fontWeight: 600,
-                    color: 'var(--ink-1)',
+                    color: 'var(--ink)',
                     lineHeight: 1.4,
                   }}
                 >
@@ -181,7 +181,7 @@ function InboxList() {
                         fontSize: 11,
                         fontWeight: 600,
                         letterSpacing: '0.04em',
-                        color: 'var(--ink-1)',
+                        color: 'var(--ink-2)',
                         background: 'var(--soft)',
                         fontFamily: 'var(--font-sans)',
                         border: '1px solid var(--line-strong)',
