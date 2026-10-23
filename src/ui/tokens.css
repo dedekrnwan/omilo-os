@@ -1,0 +1,170 @@
+/* Omilo v2 — design tokens (pinned from §6 of the spec) */
+
+/* ── Font imports ──────────────────────────────────────────────────── */
+@import "@fontsource/inter/variable.css";
+@import "@fontsource/bricolage-grotesque/variable.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/fraunces/variable.css";
+
+/* ── CSS custom properties ─────────────────────────────────────────── */
+:root {
+  /* Neutrals / surfaces */
+  --app:          #F5F5F4;
+  --surface:      #FFFFFF;
+  --soft:         #FAFAF9;
+  --line:         #E7E5E4A6;
+  --line-strong:  #E7E5E4;
+  --hover:        #E7E5E4A6;
+  --disabled-bg:  #E5E5E5A6;
+
+  /* Ink / text */
+  --ink:        #0C0A09;
+  --ink-2:      #44403C;
+  --muted:      #78716C;
+  --faint:      #A8A29E;
+  --on-ink-2:   #D6D3D1;
+
+  /* Primary */
+  --primary:        #171717;
+  --primary-hover:  #262626;
+  --primary-ink:    #FFFFFF;
+
+  /* Link */
+  --link: #2563EB;
+
+  /* Status — ok */
+  --ok:       #15803D;
+  --ok-tint:  #F0FDF4;
+  --ok-line:  #BBF7D0;
+
+  /* Status — warn */
+  --warn:       #B45309;
+  --warn-tint:  #FFFBEB;
+  --warn-line:  #FDE68A;
+
+  /* Status — bad */
+  --bad:        #B91C1C;
+  --bad-tint:   #FEF2F2;
+  --bad-line:   #FECACA;
+  --bad-solid:  #DC2626;
+
+  /* Status — info */
+  --info:       #1D4ED8;
+  --info-tint:  #EFF6FF;
+  --info-line:  #BFDBFE;
+
+  /* Helper accents */
+  --helper-brand:     #6366F1;
+  --helper-ops:       #0EA5E9;
+  --helper-dev:       #14B8A6;
+  --helper-support:   #EC4899;
+  --helper-finance:   #65A30D;
+  --helper-marketing: #F97316;
+  --helper-sales:     #8B5CF6;
+  --helper-retro:     #64748B;
+  --spark:            #F59E0B;
+  --mascot-ink:       #1C1917;
+
+  /* Field tints */
+  --field-base:   #FAFAF9;
+  --field-indigo: #E0E7FF;
+  --field-sky:    #E0F2FE;
+  --field-sage:   #ECFCCB;
+  --field-amber:  #FEF3C7;
+  --field-rose:   #FCE7F3;
+
+  /* Radii */
+  --radius-xs:     4px;
+  --radius-sm:     6px;
+  --radius-base:   8px;
+  --radius-md:     10px;
+  --radius-lg:     12px;
+  --radius-btn:    7px;
+  --radius-dialog: 20px;
+  --radius-pill:   999px;
+
+  /* Fonts */
+  --font-sans:    'Inter Variable', 'Inter', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
+  --font-serif:   'Fraunces Variable', 'Fraunces', Georgia, serif;
+}
+
+/* ── Tailwind v4 @theme mapping ────────────────────────────────────── */
+@theme {
+  /* Surface / neutral colors */
+  --color-app:         #F5F5F4;
+  --color-surface:     #FFFFFF;
+  --color-soft:        #FAFAF9;
+  --color-line:        #E7E5E4;
+  --color-line-strong: #E7E5E4;
+  --color-hover:       #E7E5E4;
+  --color-disabled-bg: #E5E5E5;
+
+  /* Ink */
+  --color-ink:      #0C0A09;
+  --color-ink-2:    #44403C;
+  --color-muted:    #78716C;
+  --color-faint:    #A8A29E;
+  --color-on-ink-2: #D6D3D1;
+
+  /* Primary */
+  --color-primary:        #171717;
+  --color-primary-hover:  #262626;
+  --color-primary-ink:    #FFFFFF;
+
+  /* Link */
+  --color-link: #2563EB;
+
+  /* Status */
+  --color-ok:        #15803D;
+  --color-ok-tint:   #F0FDF4;
+  --color-ok-line:   #BBF7D0;
+  --color-warn:      #B45309;
+  --color-warn-tint: #FFFBEB;
+  --color-warn-line: #FDE68A;
+  --color-bad:       #B91C1C;
+  --color-bad-tint:  #FEF2F2;
+  --color-bad-line:  #FECACA;
+  --color-bad-solid: #DC2626;
+  --color-info:      #1D4ED8;
+  --color-info-tint: #EFF6FF;
+  --color-info-line: #BFDBFE;
+
+  /* Helper accents */
+  --color-helper-brand:     #6366F1;
+  --color-helper-ops:       #0EA5E9;
+  --color-helper-dev:       #14B8A6;
+  --color-helper-support:   #EC4899;
+  --color-helper-finance:   #65A30D;
+  --color-helper-marketing: #F97316;
+  --color-helper-sales:     #8B5CF6;
+  --color-helper-retro:     #64748B;
+  --color-spark:            #F59E0B;
+  --color-mascot-ink:       #1C1917;
+
+  /* Field tints */
+  --color-field-base:   #FAFAF9;
+  --color-field-indigo: #E0E7FF;
+  --color-field-sky:    #E0F2FE;
+  --color-field-sage:   #ECFCCB;
+  --color-field-amber:  #FEF3C7;
+  --color-field-rose:   #FCE7F3;
+
+  /* Radii */
+  --radius-xs:     4px;
+  --radius-sm:     6px;
+  --radius-base:   8px;
+  --radius-md:     10px;
+  --radius-lg:     12px;
+  --radius-btn:    7px;
+  --radius-dialog: 20px;
+  --radius-pill:   999px;
+
+  /* Fonts */
+  --font-sans:    'Inter Variable', 'Inter', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
+  --font-serif:   'Fraunces Variable', 'Fraunces', Georgia, serif;
+}
