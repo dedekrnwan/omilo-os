@@ -136,7 +136,7 @@ def _kb_to_code_block(kb: KbSource) -> dict:
     }
 
 
-def messages_v2(messages: list[Message], db: "Session", th: Thread) -> list[dict]:
+def messages_v2(messages: list[Message], db: "Session", th: Thread, inject_code: bool = True) -> list[dict]:
     """Serialize messages with v2 read-time block mapping for task-scoped threads.
 
     For non-task threads the messages are returned unchanged (legacy path).
@@ -146,7 +146,9 @@ def messages_v2(messages: list[Message], db: "Session", th: Thread) -> list[dict
          keep their legacy 'proposal' block untouched (already decided).
       2. PR/diff KbSources scoped to the task → a 'code' block is injected once
          (appended to the last agent message that exists, or left out if no agent
-         message is present).
+         message is present). Skipped when inject_code=False — i.e. for an older
+         scroll-up page, whose "last agent message" is not the thread's, so the
+         singleton code block would wrongly duplicate there.
     """
     from sqlalchemy import select  # deferred to avoid module-load cost
 
@@ -191,7 +193,7 @@ def messages_v2(messages: list[Message], db: "Session", th: Thread) -> list[dict
         serialized.append(raw)
 
     # Inject code blocks from PR/diff KbSources into the last agent message
-    if pr_sources and last_agent_idx >= 0:
+    if inject_code and pr_sources and last_agent_idx >= 0:
         target = serialized[last_agent_idx]
         extra_code_blocks = [_kb_to_code_block(kb) for kb in pr_sources if (kb.meta or {}).get("diff")]
         if extra_code_blocks:

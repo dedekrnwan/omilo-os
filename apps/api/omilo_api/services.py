@@ -934,9 +934,24 @@ def post_message(db: Session, th: Thread, role: str, author: str, text: str, blo
     return m
 
 
-def thread_messages(db: Session, th: Thread, limit: int = 200) -> list[Message]:
-    rows = db.scalars(select(Message).where(Message.thread_id == th.id).order_by(Message.at.desc()).limit(limit))
+PAGE = 40  # messages per chat page: the newest PAGE on load, older PAGE on scroll-up (never the whole history)
+
+
+def thread_messages(db: Session, th: Thread, limit: int = PAGE, before: dt.datetime | None = None) -> list[Message]:
+    """One page of a thread's messages, oldest→newest. Without `before`, the newest `limit`; with it,
+    the `limit` messages strictly older than that timestamp (for scroll-up paging). id breaks at-ties."""
+    q = select(Message).where(Message.thread_id == th.id)
+    if before is not None:
+        q = q.where(Message.at < before)
+    rows = db.scalars(q.order_by(Message.at.desc(), Message.id.desc()).limit(limit))
     return list(reversed(list(rows)))
+
+
+def has_messages_before(db: Session, th: Thread, before: dt.datetime | None) -> bool:
+    """True when older messages exist before the given timestamp (drives the 'load older' affordance)."""
+    if before is None:
+        return False
+    return db.scalar(select(Message.id).where(Message.thread_id == th.id, Message.at < before).limit(1)) is not None
 
 
 # ---------------------------------------------------------------- knowledge & KPIs

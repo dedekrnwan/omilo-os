@@ -902,8 +902,31 @@ def thread_detail(thid: str, db: Session, user: User) -> dict:
     from .. import thread_extras as TE
 
     th = _404(db.get(Thread, thid))
-    msgs = S.thread_messages(db, th)
-    return {**X.thread(th), **TE.enrich(db, th), "messages": X.messages_v2(msgs, db, th)}
+    msgs = S.thread_messages(db, th)  # newest page only; older ones load on scroll-up via /messages
+    has_more = S.has_messages_before(db, th, msgs[0].at if msgs else None)
+    return {**X.thread(th), **TE.enrich(db, th), "messages": X.messages_v2(msgs, db, th), "has_more": has_more}
+
+
+@router.get("/threads/{thid}/messages")
+def thread_messages_page(thid: str, before: str | None = None, limit: int = 40,
+                         db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """A page of older messages for scroll-up paging: up to `limit` messages strictly older than the
+    ISO timestamp `before` (the oldest message you already have), oldest→newest, plus whether more remain."""
+    import datetime as _dt
+
+    th = _404(db.get(Thread, thid))
+    cursor: _dt.datetime | None = None
+    if before:
+        try:
+            cursor = _dt.datetime.fromisoformat(before)
+        except ValueError:
+            raise HTTPException(400, "before must be an ISO timestamp") from None
+        if cursor.tzinfo is None:
+            cursor = cursor.replace(tzinfo=_dt.UTC)
+    limit = max(1, min(limit, 100))
+    msgs = S.thread_messages(db, th, limit=limit, before=cursor)
+    has_more = S.has_messages_before(db, th, msgs[0].at if msgs else None)
+    return {"messages": X.messages_v2(msgs, db, th, inject_code=False), "has_more": has_more}
 
 
 class MessageIn(BaseModel):
