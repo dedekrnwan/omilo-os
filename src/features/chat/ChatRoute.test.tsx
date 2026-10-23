@@ -174,15 +174,14 @@ describe('ChannelSidebar', () => {
   })
 })
 
-describe('ChatRoute — channel session list', () => {
-  test('navigating to a channel shows its sessions', async () => {
+describe('ChatRoute — channel default view', () => {
+  test('navigating to a channel (no session) shows the new-chat hero', async () => {
     const { router } = makeTestRouter('/chat/ch-general')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Q4 planning kickoff')).toBeInTheDocument()
-      expect(screen.getByText('Team onboarding checklist')).toBeInTheDocument()
+      expect(screen.getByText(/what are we figuring out/i)).toBeInTheDocument()
     })
   })
 
@@ -247,7 +246,7 @@ describe('ChatRoute — unknown channel id', () => {
 })
 
 describe('ChatRoute — empty channel', () => {
-  test('a channel with no sessions shows an empty placeholder, not a crash', async () => {
+  test('a channel with no sessions shows the new-chat hero, not a crash', async () => {
     // Override repos: ch-empty has no sessions
     const emptyChannelRepos: Repos = {
       ...createMockRepos(),
@@ -272,8 +271,9 @@ describe('ChatRoute — empty channel', () => {
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      // Should show an empty placeholder, not crash
-      expect(screen.getByText(/no sessions/i)).toBeInTheDocument()
+      // Hero is shown: headline present, composer placeholder present
+      expect(screen.getByText(/what are we figuring out/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/ask a helper/i)).toBeInTheDocument()
     })
   })
 })

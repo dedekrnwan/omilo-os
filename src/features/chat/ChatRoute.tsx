@@ -1,11 +1,11 @@
-import { useParams, useNavigate, notFound } from '@tanstack/react-router'
+import { useParams, notFound } from '@tanstack/react-router'
 import { useState } from 'react'
 import type { Model } from '../../core/domain/types'
 import { ChannelSidebar } from './ChannelSidebar'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
-import { useChannel, useChannelSessions } from '../../app/queries'
+import { useChannel } from '../../app/queries'
 import { radii } from '../../ui/tokens'
 
 // ── Static goal pills for the hero (visual-only) ─────────────────────────────
@@ -178,11 +178,9 @@ function NewChatHero({ channelName }: { channelName: string }) {
 
 /** Shown when a $channelId is selected but no $sessionId yet. */
 function ChannelView({ channelId }: { channelId: string }) {
-  const navigate = useNavigate()
   const { data: channel, isLoading: channelLoading } = useChannel(channelId)
-  const { data: sessions, isLoading: sessionsLoading } = useChannelSessions(channelId)
 
-  if (channelLoading || sessionsLoading) {
+  if (channelLoading) {
     return (
       <div
         style={{
@@ -205,104 +203,8 @@ function ChannelView({ channelId }: { channelId: string }) {
     throw notFound()
   }
 
-  // No sessions yet — show new-chat hero
-  if (sessions === undefined || sessions.length === 0) {
-    return (
-      <>
-        {/* Visually-hidden text so test assertions for "no sessions" still pass */}
-        <span
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            width: 1,
-            height: 1,
-            overflow: 'hidden',
-            clip: 'rect(0,0,0,0)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          No sessions yet
-        </span>
-        <NewChatHero channelName={channel.name} />
-      </>
-    )
-  }
-
-  // Has sessions — show list
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        padding: '24px 32px',
-        gap: 16,
-        background: 'var(--surface)',
-      }}
-    >
-      <h1
-        style={{
-          margin: 0,
-          fontSize: 20,
-          fontWeight: 700,
-          fontFamily: 'var(--font-sans)',
-          color: 'var(--ink)',
-        }}
-      >
-        {channel.name}
-      </h1>
-
-      <ul
-        style={{
-          margin: 0,
-          padding: 0,
-          listStyle: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-        }}
-      >
-        {sessions.map((session) => (
-          <li key={session.id}>
-            <button
-              onClick={() =>
-                navigate({
-                  to: '/chat/$channelId/$sessionId',
-                  params: { channelId, sessionId: session.id },
-                })
-              }
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '10px 14px',
-                border: '1px solid var(--line-strong)',
-                borderRadius: radii.base,
-                background: 'var(--soft)',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontFamily: 'var(--font-sans)',
-                fontSize: 14,
-                fontWeight: 500,
-                color: 'var(--ink)',
-                transition: 'background 100ms ease',
-              }}
-              onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.background =
-                  'var(--hover)'
-              }}
-              onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.background =
-                  'var(--soft)'
-              }}
-            >
-              {session.title}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
+  // Always show the new-chat hero — sessions are navigated via the sidebar
+  return <NewChatHero channelName={channel.name} />
 }
 
 // ── NoChatSelected ────────────────────────────────────────────────────────────
