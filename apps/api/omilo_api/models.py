@@ -469,6 +469,7 @@ class Goal(Base):
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # active | done | dropped
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[str] = mapped_column(String(64), default="owner")
+    channel_id: Mapped[str | None] = mapped_column(String(32), default=None, index=True)  # the chat-mode channel this goal lives in
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -636,4 +637,17 @@ class ChannelIdentity(Base):
     platform_user_id: Mapped[str] = mapped_column(String(64))
     omilo_user_id: Mapped[str] = mapped_column(String(64))
     role: Mapped[str] = mapped_column(String(16))          # owner | member | …
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Channel(Base):
+    """A chat-mode channel: a home for goals and the sessions about them, with staff members.
+    Distinct from ChannelConnection, which wires an external platform (e.g. Telegram)."""
+    __tablename__ = "channel"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ch"))
+    name: Mapped[str] = mapped_column(String(120))
+    emoji: Mapped[str] = mapped_column(String(16), default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    member_ids: Mapped[list] = mapped_column(JSON, default=list)   # staff ids who belong to this channel
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=now)

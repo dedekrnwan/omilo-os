@@ -4159,8 +4159,18 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .chrail-row:hover { background: var(--hover); }
 .chrail-row.on { background: var(--hover); font-weight: 500; }
 .chrail-hash { color: var(--faint); font-weight: 600; flex-shrink: 0; width: 12px; text-align: center; }
-.chrail-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chrail-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .chrail-empty { font-size: 12px; color: var(--faint); padding: 4px 8px 8px; line-height: 1.4; }
+.chrail-label { display: flex; align-items: center; justify-content: space-between; }
+.chrail-add { border: 0; background: transparent; cursor: pointer; color: var(--faint); display: inline-flex; padding: 2px; border-radius: var(--r-sm); }
+.chrail-add:hover { color: var(--ink); background: var(--hover); }
+.chrail-chhead { font-weight: 600; cursor: default; }
+.chrail-chhead:hover { background: transparent; }
+.chrail-nested { padding-left: 22px; }
+.chrail-nested .chrail-hash { color: var(--wire-strong, var(--line-strong)); }
+.chrail-count { flex: 0 0 auto; font: 11px var(--font-mono); color: var(--faint); }
+.chrail-new { display: flex; gap: 6px; align-items: center; padding: 4px 8px; }
+.chrail-new input { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 0 8px; font: inherit; font-size: 13px; }
 
 
 /* ------------------------------------------------------------------ E. Chat FAB + nudge bubble */

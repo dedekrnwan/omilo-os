@@ -3281,7 +3281,7 @@ def improvement_undo(iid: str, db: Session = Depends(get_db), user: User = Depen
     try:
         L.undo(db, imp, by=user.id)
     except L.LoopError as e:
-        raise HTTPException(e.status, str(e)) from e
+        raise HTTPException(e.code, str(e)) from e
     S.audit(db, user.id, "improvement.undo", iid)
     db.commit()
     return L.serialize(imp)
@@ -3319,6 +3319,17 @@ class GoalIn(BaseModel):
     status: str | None = None
     position: int | None = None
     shift_ids: list[str] | None = None  # regular jobs that serve this goal
+
+
+class ChannelIn(BaseModel):
+    name: str = Field(max_length=120)
+    emoji: str | None = Field(default=None, max_length=16)
+    member_ids: list[str] | None = None   # staff in this channel
+    goal_ids: list[str] | None = None      # goals this channel is a home for
+
+
+class GoalChannelIn(BaseModel):
+    channel_id: str | None = None   # null to remove the goal from its channel
 
 
 def _goal_apply(db: Session, g, body: GoalIn) -> None:
@@ -3371,6 +3382,31 @@ def goal_create(body: GoalIn, db: Session = Depends(get_db), user: User = Depend
     db.commit()
     start_planning(db, g.id)
     return {"id": g.id}
+
+
+@router.get("/channels")
+def channels_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Chat-mode channels with their members + goals, plus goals not yet in a channel."""
+    return S.list_channels(db)
+
+
+@router.post("/channels")
+def channel_create(body: ChannelIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    try:
+        ch = S.create_channel(db, body.name, emoji=body.emoji or "",
+                              member_ids=body.member_ids, goal_ids=body.goal_ids, actor=user.id)
+    except S.DomainError as e:
+        raise HTTPException(e.code, str(e)) from e
+    return {"id": ch.id}
+
+
+@router.patch("/goals/{gid}/channel")
+def goal_set_channel(gid: str, body: GoalChannelIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    try:
+        S.assign_goal_channel(db, gid, body.channel_id, actor=user.id)
+    except S.DomainError as e:
+        raise HTTPException(e.code, str(e)) from e
+    return {"ok": True}
 
 
 @router.patch("/goals/{gid}")
