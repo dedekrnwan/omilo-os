@@ -1632,6 +1632,20 @@ main.page:has(> .monitor.office) { max-width: none; }
 .au-note { font-size: 13px; line-height: 1.5; color: #44403c; background: #f7f6ff; border: 1px solid #e0e1fb; border-radius: 12px; padding: 10px 12px; }
 .au-note code { display: block; margin-top: 6px; font: 12.5px var(--font-mono); background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 6px 8px; width: fit-content; }
 .au-err { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 9px 12px; }
+/* Post-login "choose a company" picker (select-company) */
+.sc-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.sc-co { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: #fff; cursor: pointer; font: inherit; color: var(--ink); transition: border-color .15s, background .15s, transform .12s, box-shadow .15s; }
+.sc-co:hover:not(:disabled) { border-color: var(--ink); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(28,25,23,.08); }
+.sc-co:disabled { opacity: .6; cursor: default; }
+.sc-co.on { border-color: var(--primary); background: var(--soft); }
+.sc-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sc-t b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-t .small { font-size: 12.5px; color: var(--muted); }
+.sc-co .count { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #fde8dc; color: #b4471a; }
+.sc-go { color: var(--muted); font-size: 18px; }
+.sc-spin { color: var(--muted); font-size: 18px; animation: sc-rot 0.7s linear infinite; }
+@keyframes sc-rot { to { transform: rotate(360deg); } }
 .au-btn { height: 48px; border: 0; border-radius: 12px; background: #1c1917; color: #fff; font: 600 14.5px var(--font-sans); display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
   margin-top: 6px; transition: transform .12s, background .15s, box-shadow .15s; box-shadow: 0 6px 18px rgba(28,25,23,.18); }
 .au-btn:hover:not(:disabled) { background: #000; transform: translateY(-1px); box-shadow: 0 10px 24px rgba(28,25,23,.22); }

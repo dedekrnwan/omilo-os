@@ -24,7 +24,12 @@ export default function Login() {
       const next = new URLSearchParams(location.search).get("next");
       let dest: URL | null = null;
       try { dest = next ? new URL(next, location.href) : null; } catch { dest = null; }
-      if (dest && dest.origin === location.origin) location.assign(dest.href); else router.replace("/");
+      const safe = dest && dest.origin === location.origin ? dest.href : null;
+      // More than one company? Choose which to open first; a single company goes straight in.
+      let many = false;
+      try { many = ((await api<{ companies: { archived: boolean }[] }>("/companies")).companies.filter((c) => !c.archived).length) > 1; } catch { /* fall through to default */ }
+      if (many) { router.replace("/select-company/" + (next ? `?next=${encodeURIComponent(next)}` : "")); return; }
+      if (safe) location.assign(safe); else router.replace("/");
     }
     catch (x: any) { setErr(x.status === 401 || /invalid|wrong|password/i.test(x.message) ? "That email and password don't match." : x.message); setBusy(false); }
   };
