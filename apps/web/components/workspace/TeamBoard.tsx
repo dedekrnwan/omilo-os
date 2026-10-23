@@ -286,26 +286,8 @@ function GhostHelperColumn({ onClick }: { onClick: () => void }) {
 
 /* ------------------------------------------------------------------ By-goal: work tree */
 /** Status pill for a work node. */
-function statusBadge(status: BoardCard["status"]): { label: string; cls: string; icon: boolean } {
-  if (status === "done") return { label: "Done", cls: "gtb-done", icon: true };
-  if (status === "running") return { label: "Running", cls: "gtb-run", icon: false };
-  if (status === "needs_you") return { label: "Needs you", cls: "gtb-warn", icon: false };
-  if (status === "failed") return { label: "Failed", cls: "gtb-bad", icon: false };
-  return { label: "Waiting", cls: "gtb-idle", icon: false };
-}
-
-/** How a node came to exist, in plain words — for the meta line. */
-const ORIGIN_LABELS: Record<string, string> = {
-  handoff: "handed out", handout: "handed out", delegated: "handed out", delegate: "handed out", delegation: "handed out",
-  review: "review", cron: "routine", shift: "routine", chat: "chat", proposal: "proposal",
-  goal: "goal", plan: "plan",
-};
-function originLabel(o?: string | null): string {
-  if (!o) return "";
-  return ORIGIN_LABELS[o] ?? o.replace(/_/g, " ");
-}
-
-/** One node in the goal work tree — renders itself, then its children nested with a connector rail. */
+/** One work item under a goal — a flat, scannable row: dot + title + owner + status + chevron.
+ *  Clicking opens the item's own thread (what the staff actually did). Matches the V2 pen list. */
 function GoalWorkRow({ node, helpers, paused }: {
   node: PlanNode;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
@@ -313,13 +295,17 @@ function GoalWorkRow({ node, helpers, paused }: {
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(true);
-  const kids = node.children ?? [];
-  const hasKids = kids.length > 0;
   const owner = helpers.get(node.staff_id) || nodeHelper(node);
-  const badge = statusBadge(nodeToCard(node).status);
-  const meta = [owner?.name, originLabel(node.origin), ago(node.created_at), node.headline]
-    .filter(Boolean).join(" · ");
+  const status = nodeToCard(node).status;
+  const dotCls = status === "needs_you" ? "goal-work-dot-warn"
+    : status === "running" ? "goal-work-dot-run"
+    : status === "done" ? "goal-work-dot-done"
+    : status === "failed" ? "goal-work-dot-bad" : "goal-work-dot-idle";
+  const note = status === "needs_you" ? { text: "needs you", cls: "goal-work-note-warn" }
+    : status === "done" ? { text: "done", cls: "goal-work-note-ok" }
+    : status === "failed" ? { text: "failed", cls: "goal-work-note-bad" }
+    : status === "running" ? { text: "running", cls: "" }
+    : { text: "waiting", cls: "" };
   const open = async () => {
     if (busy || paused || !node.id) return;
     setBusy(true);
@@ -329,35 +315,13 @@ function GoalWorkRow({ node, helpers, paused }: {
     } catch { /* silently ignore */ } finally { setBusy(false); }
   };
   return (
-    <div className="goal-tree-node">
-      <div className="goal-tree-row">
-        {hasKids ? (
-          <button className="goal-tree-toggle" onClick={() => setExpanded((e) => !e)}
-            aria-expanded={expanded} aria-label={expanded ? "Collapse" : "Expand"}>
-            <i className={`ri-arrow-${expanded ? "down" : "right"}-s-line`} />
-          </button>
-        ) : (
-          <span className="goal-tree-toggle goal-tree-leaf" aria-hidden />
-        )}
-        <div className="goal-tree-click" role="button" tabIndex={0}
-          onClick={open} onKeyDown={(e) => e.key === "Enter" && open()}>
-          {owner && <Avatar who={owner} size={24} state={null} />}
-          <div className="goal-tree-text">
-            <div className="goal-tree-title">{node.title}</div>
-            {meta && <div className="goal-tree-meta">{meta}</div>}
-          </div>
-        </div>
-        <span className={`goal-tree-badge ${badge.cls}`}>
-          {badge.icon && <i className="ri-check-line" />}{badge.label}
-        </span>
-      </div>
-      {hasKids && expanded && (
-        <div className="goal-tree-children">
-          {kids.map((ch) => (
-            <GoalWorkRow key={ch.id} node={ch} helpers={helpers} paused={paused} />
-          ))}
-        </div>
-      )}
+    <div className="goal-work-row" role="button" tabIndex={0}
+      onClick={open} onKeyDown={(e) => e.key === "Enter" && open()}>
+      <span className={`goal-work-dot ${dotCls}`} />
+      <span className="goal-work-title">{node.title}</span>
+      {owner && <Avatar who={owner} size={18} state={null} />}
+      <span className={`goal-work-note ${note.cls}`}>{note.text}</span>
+      <i className="ri-arrow-right-s-line goal-work-chev" />
     </div>
   );
 }
@@ -457,7 +421,7 @@ function GoalRow({
         </div>
       </div>
 
-      {/* Right: hierarchical, scannable work tree */}
+      {/* Right: flat, scannable work list (matches the V2 pen design) */}
       <div className="goal-work">
         <div className="goal-work-head">
           <span className="goal-work-head-label">WORK</span>
@@ -467,13 +431,13 @@ function GoalRow({
         </div>
         {open && (
           <div className="goal-work-list">
-            {goal.work.length === 0 ? (
+            {flat.length === 0 ? (
               <div className="goal-work-empty">
                 <i className="ri-checkbox-blank-circle-line" />
                 <span>No tasks yet</span>
               </div>
             ) : (
-              goal.work.map((node) => (
+              flat.map((node) => (
                 <GoalWorkRow
                   key={node.id}
                   node={node}
