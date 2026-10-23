@@ -359,6 +359,8 @@ def finish_task(db: Session, t: Task, status: str, error: str = "", result_text:
     t.error = error[:4000]
     if result_text:
         t.result_text = result_text[:20000]
+    if status in ("done", "failed", "cancelled"):
+        _resolve_task_inbox(db, t)
     audit(db, "system", f"task.{status}", t.id, error=error[:300])
     db.commit()
 
@@ -454,6 +456,25 @@ def revise_proposal(db: Session, p: Proposal, body: str, author: str, summary: s
 def _close_inbox(db: Session, kind: str, ref_id: str) -> None:
     for item in db.scalars(select(InboxItem).where(InboxItem.kind == kind, InboxItem.ref_id == ref_id, InboxItem.status != "done")):
         item.status, item.closed_at = "done", now()
+
+
+def _resolve_task_inbox(db: Session, t: Task) -> None:
+    """A task just reached a terminal state (done/failed/cancelled). Any approval or question
+    still open against it is now moot — the work it was gating already finished or stopped —
+    so close those Inbox items automatically. The Inbox then reflects what genuinely still
+    needs the owner, instead of asking for a decision on work that is already over. A pending
+    proposal is also marked resolved so it does not dangle (mirrors the let-go path)."""
+    reason = f"Closed automatically — the task was {t.status} before you decided."
+    for item in db.scalars(select(InboxItem).where(
+        InboxItem.task_id == t.id,
+        InboxItem.kind.in_(("proposal", "question")),
+        InboxItem.status == "open",
+    )):
+        item.status, item.closed_at, item.answer = "done", now(), reason
+        if item.kind == "proposal" and item.ref_id:
+            p = db.get(Proposal, item.ref_id)
+            if p and p.status in ("pending", "changes_requested"):
+                p.status, p.decision_note, p.decided_by, p.decided_at = "rejected", reason, "system", now()
 
 
 def _graph_origin_task(db: Session, p: Proposal) -> Task | None:
