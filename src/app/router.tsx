@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router'
 import { Shell } from './Shell'
 import { ChatRoute } from '../features/chat/ChatRoute'
-import { OfficeRoute } from './routes/OfficeRoute'
+import { InboxRoute } from '../features/office/InboxRoute'
 
 /** Root route renders the Shell; the Shell renders <Outlet /> for child routes. */
 const rootRoute = createRootRoute({
@@ -56,13 +56,13 @@ const officeRoute = createRoute({
 const officeInboxRoute = createRoute({
   getParentRoute: () => officeRoute,
   path: 'inbox',
-  component: OfficeRoute,
+  component: InboxRoute,
 })
 
 const officeInboxItemRoute = createRoute({
   getParentRoute: () => officeInboxRoute,
   path: '$itemId',
-  component: OfficeRoute,
+  component: InboxRoute,
 })
 
 const routeTree = rootRoute.addChildren([
