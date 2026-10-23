@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import WorkCard from "@/components/workspace/WorkCard";
-import { BoardCard, BoardHelper, TeamBoard as TeamBoardType, PlanTree, PlanGoal, PlanNode, ago, api } from "@/lib/api";
+import { BoardCard, BoardHelper, TeamBoard as TeamBoardType, PlanTree, PlanGoal, PlanNode, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 
 /* ------------------------------------------------------------------ helpers */
@@ -619,6 +619,16 @@ export default function TeamBoard({ group }: TeamBoardProps) {
           {board && (
             <span className="board-head-sub">{subtitle}</span>
           )}
+        </div>
+
+        {/* Mode toggle: Work (board) ↔ Chat (channels) — same sessions, two ways in */}
+        <div className="seg" role="tablist" aria-label="Workspace mode">
+          <button className="on" role="tab" aria-selected>
+            <i className="ri-layout-grid-line" /> Work
+          </button>
+          <button role="tab" aria-selected={false} onClick={() => router.replace("/chat/?mode=chat")}>
+            <i className="ri-chat-3-line" /> Chat
+          </button>
         </div>
 
         {/* Segmented toggle: By helper | By goal */}
