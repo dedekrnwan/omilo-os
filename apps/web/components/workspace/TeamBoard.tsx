@@ -5,6 +5,7 @@ import Avatar from "@/components/Avatar";
 import WorkCard from "@/components/workspace/WorkCard";
 import { BoardCard, BoardHelper, TeamBoard as TeamBoardType, PlanTree, PlanGoal, PlanNode, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
+import { confirmDialog } from "@/lib/dialog";
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -333,12 +334,14 @@ function GoalRow({
   paused,
   onAddWork,
   onTalk,
+  onArchive,
 }: {
   goal: PlanGoal;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
   paused: boolean;
   onAddWork: () => void;
   onTalk: () => void;
+  onArchive: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const flat = flattenNodes(goal.work);
@@ -373,6 +376,14 @@ function GoalRow({
         <div className="goal-panel-head">
           <i className="ri-focus-3-line goal-panel-icon" />
           <span className="goal-panel-title">{goal.title}</span>
+          <button
+            className="goal-panel-archive"
+            onClick={onArchive}
+            aria-label="Archive goal"
+            title="Archive — no longer needs work"
+          >
+            <i className="ri-archive-line" />
+          </button>
           <button
             className="goal-panel-collapse"
             onClick={() => setOpen(o => !o)}
@@ -600,6 +611,21 @@ export default function TeamBoard({ group }: TeamBoardProps) {
     }
   };
 
+  /** Archive a goal that no longer needs work — it leaves the active board. */
+  const archiveGoal = async (goal: PlanGoal) => {
+    if (!(await confirmDialog({
+      title: `Archive “${goal.title}”?`,
+      body: "It leaves the board and stops counting as active work. You can still find it in the Plan.",
+      confirm: "Archive goal",
+    }))) return;
+    try {
+      await api(`/goals/${goal.id}`, { method: "PATCH", body: { status: "archived" } });
+      load();
+    } catch (e: any) {
+      setErr(e.message ?? "Failed to archive");
+    }
+  };
+
   const goToStaff = () => router.push("/staff");
 
   return (
@@ -767,6 +793,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
                 paused={paused}
                 onAddWork={() => planGoalWork(goal)}
                 onTalk={() => talkAboutGoal(goal)}
+                onArchive={() => archiveGoal(goal)}
               />
             ))}
 

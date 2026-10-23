@@ -112,9 +112,22 @@ export default function ChatThread({ threadId, seed, staff, events, inDrawer, in
   };
 
   // Scroll to the bottom only when a NEW last message arrives (or a live event) — never when older
-  // messages are prepended (lastId is unchanged then), so scroll-up stays put.
+  // messages are prepended (lastId is unchanged then), so scroll-up stays put. The FIRST paint of a
+  // thread jumps instantly (after layout settles via rAF) so you open on the latest message instead
+  // of mid-history; later messages animate in smoothly.
+  const bottomPinnedFor = useRef<string | null>(null);
   const lastId = current?.messages?.length ? current.messages[current.messages.length - 1].id : null;
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" }); }, [lastId, events.length]);
+  useEffect(() => {
+    const sc = scroller.current;
+    if (!sc || lastId == null) return;
+    if (bottomPinnedFor.current !== threadId) {
+      bottomPinnedFor.current = threadId;
+      const jump = () => { const s = scroller.current; if (s) s.scrollTop = s.scrollHeight; };
+      requestAnimationFrame(() => { jump(); requestAnimationFrame(jump); });
+    } else {
+      sc.scrollTo({ top: sc.scrollHeight, behavior: "smooth" });
+    }
+  }, [lastId, events.length, threadId]);
 
   // Apply a freshly-fetched thread (send/decide/answer) while keeping any older messages already loaded.
   const applyThread = (th: FullThread) => setCurrent((cur) => (cur && cur.id === th.id ? { ...th, messages: mergeMsgs(cur.messages || [], th.messages || []) } : th));

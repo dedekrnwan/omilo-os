@@ -3405,8 +3405,8 @@ def _goal_apply(db: Session, g, body: GoalIn) -> None:
         if v is not None:
             setattr(g, k, v.strip() if isinstance(v, str) else v)
     if body.status is not None:
-        if body.status not in ("active", "done", "dropped"):
-            raise HTTPException(400, "status is active, done or dropped")
+        if body.status not in ("active", "done", "dropped", "archived"):
+            raise HTTPException(400, "status is active, done, dropped or archived")
         g.status = body.status
     if body.shift_ids is not None:
         db.flush()

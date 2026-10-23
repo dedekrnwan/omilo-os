@@ -4883,6 +4883,9 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .goal-panel-collapse { margin-left: auto; flex-shrink: 0; border: 0; background: transparent; cursor: pointer;
   color: var(--muted); font-size: 18px; line-height: 1; padding: 0 2px; display: inline-flex; }
 .goal-panel-collapse:hover { color: var(--ink); }
+.goal-panel-archive { margin-left: auto; flex-shrink: 0; border: 0; background: transparent; cursor: pointer;
+  color: var(--faint); font-size: 15px; line-height: 1; padding: 0 3px; display: inline-flex; }
+.goal-panel-archive:hover { color: var(--bad, #b91c1c); }
 
 /* Right side: compact, scannable work list (replaces the horizontal card strip) */
 .goal-work { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
