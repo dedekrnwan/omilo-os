@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import { Id } from '../domain/types'
 import { Repos } from './repos'
 
 export function runReposContract(name: string, makeRepos: () => Repos): void {
@@ -37,6 +36,7 @@ export function runReposContract(name: string, makeRepos: () => Repos): void {
       const repos = makeRepos()
       const items = await repos.inbox.list()
       expect(Array.isArray(items)).toBe(true)
+      expect(items.length).toBeGreaterThan(0)
 
       // Every inbox item's sessionId must resolve to a non-null session
       for (const item of items) {
