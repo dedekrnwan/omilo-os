@@ -69,6 +69,8 @@ export function TopBar() {
     title = 'Omilo'
   }
 
+  const isSession = Boolean(chatSessionMatch)
+
   return (
     <header
       style={{
@@ -120,7 +122,7 @@ export function TopBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         {/* Agent avatar cluster (static) */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          {['#14B8A6', '#6366F1'].map((c, i) => (
+          {['var(--helper-dev)', 'var(--helper-brand)'].map((c, i) => (
             <div
               key={i}
               style={{
@@ -135,6 +137,30 @@ export function TopBar() {
             />
           ))}
         </div>
+
+        {/* Goal pill — shown only in session view */}
+        {isSession && (
+          <div
+            aria-label="Active goal: Passwordless login by Q4"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 10px',
+              borderRadius: 'var(--radius-pill)',
+              background: 'var(--ok-tint)',
+              border: '1px solid var(--ok-line)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--ok)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 11 }}>✓</span>
+            Passwordless login by Q4
+          </div>
+        )}
 
         {/* Share button */}
         <button

@@ -31,12 +31,28 @@ export interface MessageAuthor {
   area?: HelperArea
 }
 
+export interface MessageAttachment {
+  title: string
+  meta: string
+}
+
+export interface MessageAction {
+  label: string
+  primary?: boolean
+}
+
 export interface Message {
   id: Id
   sessionId: Id
   author: MessageAuthor
   content: string
   createdAt: string
+  /** If true, render as a centered system/event line instead of a chat bubble */
+  system?: boolean
+  /** Optional doc/file attachment card displayed inside the message */
+  attachment?: MessageAttachment
+  /** Optional action buttons rendered below the message content */
+  actions?: MessageAction[]
 }
 
 export interface Session {

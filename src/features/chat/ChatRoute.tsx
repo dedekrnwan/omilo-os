@@ -8,6 +8,14 @@ import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { useChannel } from '../../app/queries'
 import { radii } from '../../ui/tokens'
 
+// ── Channel id → display name ─────────────────────────────────────────────────
+
+const CHANNEL_NAMES: Record<string, string> = {
+  'ch-general':     'General',
+  'ch-engineering': 'Engineering',
+  'ch-marketing':   'Marketing',
+}
+
 // ── Static goal pills for the hero (visual-only) ─────────────────────────────
 
 const GOALS = [
@@ -261,7 +269,10 @@ export function ChatRoute() {
 
       {/* Main content pane */}
       {sessionId ? (
-        <ChatSession sessionId={sessionId} />
+        <ChatSession
+          sessionId={sessionId}
+          channelName={channelId ? (CHANNEL_NAMES[channelId] ?? channelId) : undefined}
+        />
       ) : channelId ? (
         <ChannelView channelId={channelId} />
       ) : (

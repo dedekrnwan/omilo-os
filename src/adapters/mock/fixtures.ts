@@ -90,6 +90,46 @@ export const messages: Message[] = [
     content: 'Contained to checkout. Order service and fulfillment are clean. I recommend rolling back to v2.4.1 while we patch.',
     createdAt: '2026-10-22T08:19:15Z',
   },
+  {
+    id: 'msg-eng-1-5', sessionId: 'sess-eng-1',
+    author: { kind: 'you', name: 'You' },
+    content: 'Can we ship passkeys to everyone before the Q4 code freeze on Nov 28?',
+    createdAt: '2026-10-22T10:41:00Z',
+  },
+  {
+    id: 'msg-eng-1-6', sessionId: 'sess-eng-1',
+    author: { kind: 'helper', name: 'Chief', area: 'brand' },
+    content: 'Yes — if we split it in two. Your Engineering goal "Passwordless login by Q4" is at 40%, and the blocker is WebAuthn on the legacy Android app. I\'m pulling Dev in to size it.',
+    createdAt: '2026-10-22T10:41:30Z',
+  },
+  // System event line — Chief added Dev
+  {
+    id: 'msg-eng-1-sys-1', sessionId: 'sess-eng-1',
+    author: { kind: 'helper', name: 'Chief', area: 'brand' },
+    content: 'Chief added Dev to this chat',
+    createdAt: '2026-10-22T10:43:00Z',
+    system: true,
+  },
+  {
+    id: 'msg-eng-1-7', sessionId: 'sess-eng-1',
+    author: { kind: 'helper', name: 'Dev', area: 'dev' },
+    content: 'Sized it. Web + iOS can ship Nov 14 (=3 days). Legacy Android needs a password fallback flow, ≈5 days. Rollout doc is drafted in this channel\'s Docs.',
+    createdAt: '2026-10-22T10:43:30Z',
+    attachment: {
+      title: 'Passkey rollout — v1',
+      meta: 'Doc · Engineering · edited just now',
+    },
+  },
+  {
+    id: 'msg-eng-1-8', sessionId: 'sess-eng-1',
+    author: { kind: 'helper', name: 'Chief', area: 'brand' },
+    content: 'Want me to turn this into 3 tasks under the goal? They\'ll show up in Office mode for tracking and approvals.',
+    createdAt: '2026-10-22T10:44:00Z',
+    actions: [
+      { label: 'Create 3 tasks in Goal', primary: true },
+      { label: 'Not yet' },
+    ],
+  },
 
   // sess-eng-2 thread
   {

@@ -7,9 +7,11 @@ import { Composer } from './Composer'
 
 interface ChatSessionProps {
   sessionId: string
+  /** Channel name to populate session-specific composer placeholder and footer */
+  channelName?: string
 }
 
-export function ChatSession({ sessionId }: ChatSessionProps) {
+export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const { data: messages, isLoading } = useMessages(sessionId)
 
   // Model state keyed to sessionId — reset whenever sessionId changes
@@ -88,12 +90,27 @@ export function ChatSession({ sessionId }: ChatSessionProps) {
         )}
       </div>
 
-      {/* Composer — model state lives here so it's scoped to this session */}
-      <Composer
-        sessionId={sessionId}
-        selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
-      />
+      {/* Composer + footer — wrapped so footer note appears below the card */}
+      <div style={{ flexShrink: 0, padding: '0 16px 12px' }}>
+        <Composer
+          sessionId={sessionId}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          placeholder="Reply — Chief and Dev are in this chat"
+        />
+        {/* Footer note — reflects channel scope */}
+        <p
+          style={{
+            margin: '6px 0 0',
+            textAlign: 'center',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '12px',
+            color: 'var(--faint)',
+          }}
+        >
+          ◈ Agents here only read {channelName ?? 'channel'} goals, docs and chats
+        </p>
+      </div>
     </div>
   )
 }
