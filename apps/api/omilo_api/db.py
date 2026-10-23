@@ -146,6 +146,7 @@ _COLUMNS = [
     ("staff", "voice", "TEXT NOT NULL DEFAULT ''"),
     ("harness_account", "cooldown_estimated", "BOOLEAN NOT NULL DEFAULT false"),
     ("goal", "channel_id", "VARCHAR(32)"),
+    ("thread", "channel_id", "VARCHAR(32)"),
 ]
 
 

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import ChatThread from "@/components/ChatThread";
@@ -396,6 +396,62 @@ function WorkHead({
 
 /* ------------------------------------------------------------------ FocusThread */
 
+/* Step 4 · a staff DM. If the one-on-one is becoming work for a goal, the Chief offers to
+   move it to a channel so the team can run it there. */
+function ChannelOffer({ thread, chiefName }: { thread: FullThread; chiefName: string }) {
+  const [channels, setChannels] = useState<{ id: string; name: string; emoji: string }[]>([]);
+  const [picking, setPicking] = useState(false);
+  const [moved, setMoved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<{ channels: { id: string; name: string; emoji: string }[] }>("/channels")
+      .then((d) => setChannels(d.channels)).catch(() => {});
+  }, []);
+
+  const move = async (c: { id: string; name: string }) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api(`/threads/${thread.id}/channel`, { method: "PATCH", body: { channel_id: c.id } });
+      setMoved(c.name); setPicking(false);
+    } catch { /* ignore */ } finally { setBusy(false); }
+  };
+
+  if (moved) {
+    return (
+      <div className="dm-offer dm-offer-done">
+        <i className="ri-check-line" />
+        <span>Moved to <b>#{moved}</b> — the team can pick it up there.</span>
+      </div>
+    );
+  }
+  if (thread.channel_id) return null;  // already filed in a channel
+
+  return (
+    <div className="dm-offer">
+      <span className="dm-offer-lead"><i className="ri-chat-smile-2-line" /> {chiefName}</span>
+      <span className="dm-offer-text">If this is work for a goal, move it to a channel so the team can run it.</span>
+      <div className="dm-offer-act">
+        {!picking ? (
+          <button className="btn sm" disabled={channels.length === 0} onClick={() => setPicking(true)}>
+            <i className="ri-folder-transfer-line" /> Move to a channel
+          </button>
+        ) : (
+          <div className="dm-offer-menu">
+            {channels.map((c) => (
+              <button key={c.id} className="dm-offer-opt" disabled={busy} onClick={() => move(c)}>
+                <span className="chrail-hash">{c.emoji || "#"}</span> {c.name}
+              </button>
+            ))}
+            <button className="dm-offer-opt dm-offer-cancel" onClick={() => setPicking(false)}>Cancel</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function FocusThread({
   threadId,
   seed,
@@ -447,6 +503,9 @@ export default function FocusThread({
           staff={staff}
           onAddHelper={addHelper}
         />
+      )}
+      {current && current.scope === "staff" && (
+        <ChannelOffer thread={current} chiefName={staff.find((s) => s.is_chief)?.name || "Chief of Staff"} />
       )}
       <ChatThread
         threadId={threadId}

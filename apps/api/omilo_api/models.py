@@ -217,6 +217,7 @@ class Thread(Base):
     staff_id: Mapped[str] = mapped_column(String(64))  # who answers in this thread
     title: Mapped[str] = mapped_column(String(300), default="")
     channel: Mapped[str] = mapped_column(String(16), default="web")  # web | telegram | …
+    channel_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # the chat-mode Channel this session was moved into
     awaiting_reply: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     engine_session: Mapped[str] = mapped_column(String(255), default="")
     pending: Mapped[list | None] = mapped_column(JSON, nullable=True)  # helpers still to answer the last message (mentions)

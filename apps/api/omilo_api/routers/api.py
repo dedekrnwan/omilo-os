@@ -897,8 +897,26 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
         else:
             th = _run(TC.general, db)
     else:
-        raise HTTPException(400, "scope must be master, staff, task, proposal, goal or group")
+        raise HTTPException(400, "scope must be master, staff, task, proposal, goal, channel or group")
     return thread_detail(th.id, db, user)
+
+
+class ThreadChannelIn(BaseModel):
+    channel_id: str | None = None   # null to take the session back out of its channel
+
+
+@router.patch("/threads/{tid}/channel")
+def thread_set_channel(tid: str, body: ThreadChannelIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Move a session (e.g. a staff DM) into a channel — or clear it with channel_id=null."""
+    from ..models import Channel
+
+    th = _404(db.get(Thread, tid), "unknown thread")
+    if body.channel_id and not db.get(Channel, body.channel_id):
+        raise HTTPException(404, "unknown channel")
+    th.channel_id = body.channel_id or None
+    S.audit(db, user.id, "thread.set_channel", tid, channel_id=body.channel_id or "")
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/threads/{thid}")
