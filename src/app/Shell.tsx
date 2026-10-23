@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation } from '@tanstack/react-router'
 import { Rail } from '../ui/Rail'
+import { TopBar } from '../ui/TopBar'
 import { useUIStore } from './store'
 
 /**
@@ -32,10 +33,7 @@ export function Shell() {
       {/* Left rail */}
       <Rail />
 
-      {/* Sidebar slot — channel/inbox list panels live inside the feature
-           route components (ChatRoute, OfficeRoute) so no wrapper here. */}
-
-      {/* Main content area */}
+      {/* Main content area (sidebar + center pane) */}
       <main
         style={{
           flex: 1,
@@ -45,7 +43,19 @@ export function Shell() {
           background: 'var(--surface)',
         }}
       >
-        <Outlet />
+        {/* Top bar */}
+        <TopBar />
+
+        {/* Route content (sidebar + center rendered by feature routes) */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            overflow: 'hidden',
+          }}
+        >
+          <Outlet />
+        </div>
       </main>
     </div>
   )

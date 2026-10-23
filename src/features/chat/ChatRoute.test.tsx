@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -103,6 +103,14 @@ function makeTestRouter(
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
+// Helper: open the channel-switcher dropdown (channels now live in the dropdown)
+function openChannelDropdown() {
+  // The header button that opens the dropdown is identifiable by the chevron
+  // and "Channel · Chief + 3 agents" subtitle text. We click the nav's first button.
+  const trigger = screen.getAllByRole('button')[0]
+  fireEvent.click(trigger)
+}
+
 describe('ChannelSidebar', () => {
   test('lists General, Engineering, Marketing channels', async () => {
     const Wrapper = makeWrapper()
@@ -112,8 +120,13 @@ describe('ChannelSidebar', () => {
       </Wrapper>,
     )
 
+    // Channels are shown in the dropdown — open it first
     await waitFor(() => {
-      expect(screen.getByText('General')).toBeInTheDocument()
+      openChannelDropdown()
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByText('General').length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText('Engineering')).toBeInTheDocument()
       expect(screen.getByText('Marketing')).toBeInTheDocument()
     })
@@ -126,6 +139,11 @@ describe('ChannelSidebar', () => {
         <ChannelSidebar activeChannelId={undefined} />
       </Wrapper>,
     )
+
+    // Channels (and their dots) are in the dropdown — open it
+    await waitFor(() => {
+      openChannelDropdown()
+    })
 
     await waitFor(() => {
       const dots = screen.getAllByRole('presentation')
@@ -141,9 +159,17 @@ describe('ChannelSidebar', () => {
       </Wrapper>,
     )
 
+    // Active channel highlight (aria-current) is on the dropdown row — open it
     await waitFor(() => {
-      const engineeringRow = screen.getByRole('button', { name: /engineering/i })
-      expect(engineeringRow).toHaveAttribute('aria-current', 'true')
+      openChannelDropdown()
+    })
+
+    await waitFor(() => {
+      // The dropdown row for the active channel has aria-current="true"
+      const activeButtons = screen.getAllByRole('button', { name: /engineering/i })
+      const activeRow = activeButtons.find((b) => b.getAttribute('aria-current') === 'true')
+      expect(activeRow).toBeTruthy()
+      expect(activeRow).toHaveAttribute('aria-current', 'true')
     })
   })
 })
