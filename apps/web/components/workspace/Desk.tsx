@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import Composer from "@/components/Composer";
+import { type MentionGoal } from "@/components/Mentions";
 import { Attached } from "@/components/ComposerTools";
 import { useOverview } from "@/components/Shell";
 import { Staff, Thread, api, ago } from "@/lib/api";
@@ -41,12 +42,16 @@ const SUGGESTIONS = [
 
 function DeskComposer({ staff }: { staff: Staff[] }) {
   const [err, setErr] = useState<string | null>(null);
+  const [goals, setGoals] = useState<MentionGoal[]>([]);
   const router = useRouter();
+
+  // active goals for the @-mention picker (resilient: [] on error)
+  useEffect(() => { api<MentionGoal[]>("/goals").then(setGoals).catch(() => setGoals([])); }, []);
 
   /* Reuse the shared Composer (same as /chat/?thread=). On the desk there is no thread
      yet, so sending opens a Chief-of-Staff thread, posts the message there, and navigates
      into it. The usage meter is hidden here (showPoolMeter={false}). */
-  const send = useCallback(async (text: string, files: Attached[], mentions: string[]) => {
+  const send = useCallback(async (text: string, files: Attached[], mentions: string[], goalIds: string[] = []) => {
     if (!text.trim() && !files.length) return;
     setErr(null);
     try {
@@ -56,6 +61,7 @@ function DeskComposer({ staff }: { staff: Staff[] }) {
           text: text.trim() || `(attached ${files.length} file${files.length > 1 ? "s" : ""})`,
           blocks: files.length ? files.map((f) => ({ type: "file", ...f })) : undefined,
           mentions,
+          goal_ids: goalIds,
         },
       });
       router.push(`/chat/?thread=${th.id}`);
@@ -68,6 +74,7 @@ function DeskComposer({ staff }: { staff: Staff[] }) {
     <div className="desk-composer">
       <Composer
         staff={staff}
+        goals={goals}
         threadId={null}
         placeholder="What should the team do next? Type @ to bring in a helper…"
         error={err}
@@ -258,6 +265,14 @@ function TeamNow({ staffMap, threads }: {
         <span>live</span>
       </div>
       <div className="team-now-scroll">
+        <a href="/chat/?view=board&group=helper" className="team-board-card">
+          <span className="team-board-card-tile"><i className="ri-layout-grid-line" /></span>
+          <span className="team-board-card-txt">
+            <b>Open the team board</b>
+            <span>See everyone&apos;s work in columns — by helper or by goal</span>
+          </span>
+          <i className="ri-arrow-right-line team-board-card-arrow" />
+        </a>
         {nonChief.map((s) => {
           const active = s.status === "working" || s.running > 0;
           const th = helperThread(s.id);

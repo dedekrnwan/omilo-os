@@ -148,7 +148,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover, input[typ
 }
 
 .scroll { flex: 1; overflow-y: auto; }
-main.page { max-width: 960px; margin: 0 auto; padding: 28px 24px 64px; }
+main.page { max-width: 1180px; margin: 0 auto; padding: 28px 32px 48px; }
 main.page.narrow { max-width: 680px; }
 
 /* mobile: sidebar becomes a top bar with a menu */
@@ -689,6 +689,14 @@ code.fpath:hover { background: var(--hover); }
 .sl-hint { font-size: 12px; color: var(--muted); margin-left: auto; padding-left: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sl-foot { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 6px 12px; background: var(--soft); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .sl-foot kbd, .slash kbd { font: 10.5px var(--font-mono); padding: 1px 4px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); margin-right: 2px; }
+/* "Add helper" dropdown in the thread header — reuses .sl-group/.sl-item/.sl-label rows */
+.addhelper-menu { min-width: 200px; max-width: 280px; max-height: 320px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  padding: 4px; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .3); }
+.addhelper-menu .sl-item { min-height: 36px; }
+.addhelper-menu .sl-item:hover { background: var(--hover); }
+.addhelper-menu .sl-label { flex: 1; min-width: 0; color: var(--ink); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) { .sl-hint, .sl-foot { display: none; } }
 
 /* ---------- helper mascots ---------- */
@@ -922,6 +930,8 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 .bc-n { display: inline-flex; align-items: center; gap: 3px; font: 11.5px var(--font-mono); }
 .bc-n i { font-size: 12px; }
 .bc-sep { width: 1px; height: 12px; background: var(--line-strong); }
+/* Inline actions on the card face — act straight from the inbox, no drawer */
+.bc-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .bc-ind { font-size: 13px; }
 .bc-ind.wait { color: var(--muted); } .bc-ind.crit { color: #d03b3b; }
 .spin.bc-ind { width: 11px; height: 11px; }
@@ -957,6 +967,9 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 /* Section header row (label + count badge) */
 .inbox2-sec { display: flex; align-items: center; gap: 8px; padding: 6px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .inbox2-sec-done { margin-top: 20px; }
+/* FIX D: queued tasks as their own group under Running now */
+.inbox2-sec-queued { margin-top: 20px; }
+.inbox2-sec-queued .inbox2-sec-label i { color: var(--warn); }
 .inbox2-sec-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; flex: 1; }
 .inbox2-sec-label i { font-size: 14px; color: var(--muted); }
 .inbox2-sec-label .inbox2-done-icon { color: #16a34a; }
@@ -968,6 +981,23 @@ main.page:has(> .inbox-page) { max-width: 1280px; }
 /* Empty / idle states */
 .inbox2-empty { border: 1px dashed var(--line-strong); border-radius: var(--r-md); padding: 18px 12px; text-align: center; font-size: 13px; color: var(--muted); }
 .inbox2-idle { border-style: dashed; background: transparent; }
+
+/* "You're all caught up" — a warm, alive empty state for Needs you */
+.inbox2-allclear { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px;
+  padding: 36px 24px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  box-shadow: 0 2px 8px -4px rgba(12, 10, 9, .08); }
+.inbox2-allclear-mascot { display: grid; place-items: center; margin-bottom: 2px; }
+.inbox2-allclear-badge { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ok-tint); color: var(--ok); font-size: 28px; }
+.inbox2-allclear-badge i { line-height: 1; }
+.inbox2-allclear-title { margin: 2px 0 0; font: 600 18px/1.2 var(--font-display); letter-spacing: -.01em; color: var(--ink); }
+.inbox2-allclear-body { margin: 0; max-width: 420px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.inbox2-allclear-stats { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 2px; }
+.inbox2-stat { font: 12px var(--font-mono); color: var(--muted); background: var(--soft);
+  border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 11px; }
+.inbox2-allclear-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px;
+  font-size: 13px; font-weight: 500; color: var(--link); text-decoration: none; }
+.inbox2-allclear-link:hover { text-decoration: underline; }
 
 /* Bulk-hint bar above the needs list */
 .inbox2-bulk-hint { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
@@ -1398,7 +1428,9 @@ button.pg-head { border: 0; background: none; padding: 0; text-align: left; curs
 .ws-panel-close { display: none; } @media (max-width: 1100px) { .ws-panel-close { display: inline-grid; } }
 
 /* KPIs on the Company page */
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 1040px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .kpi-grid { grid-template-columns: 1fr; } }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .kpi:hover { border-color: var(--line-strong); }
 .kpi-top { display: flex; align-items: center; gap: 6px; }
@@ -1798,6 +1830,12 @@ main.page:has(> .wfb) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .wf-card-f .chip i { font-size: 12px; color: inherit; }
 .wf-by { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
 .wf-by i { font-size: 14px; }
+/* --- FIX B: keep each workflow-footer item self-contained so the AI chip never stacks under the avatar.
+   The author line truncates instead of pushing the chip; the chip stays whole on one line. --- */
+.wf-card-f .wf-by { flex: 0 1 auto; min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wf-card-f .wf-by .av-wrap, .wf-card-f .wf-by i { flex-shrink: 0; }
+.wf-card-f .chip { flex-shrink: 0; white-space: nowrap; align-items: center; gap: 4px; }
+.wf-card-f .chip i { flex-shrink: 0; line-height: 1; }
 .wf-pats { display: flex; flex-direction: column; gap: 10px; }
 .wf-pat .t { display: flex; flex-direction: column; min-width: 0; }
 .wf-pat .t b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2308,6 +2346,8 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .queue-note span { margin-left: 4px; }
 .mention-menu .sl-item { display: flex; align-items: center; gap: 8px; }
 .mention-menu .sl-label b { font-weight: 600; }
+/* goal items in the @-picker: a focus icon tinted to read as a goal (not a helper avatar) */
+.mention-menu .mention-goal { width: 22px; text-align: center; font-size: 17px; color: var(--primary); }
 
 /* app connections: cards like hiring from The Agency */
 .app-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
@@ -2918,7 +2958,9 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .co2-kpi-head .small { color: var(--muted); }
 
 /* KPI empty-state "ghost" cards (pen f36rWx) */
-.kpi-ghosts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.kpi-ghosts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 1040px) { .kpi-ghosts { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .kpi-ghosts { grid-template-columns: 1fr; } }
 .kpi-ghost { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--soft); border: 1px dashed var(--line-strong); border-radius: var(--r-lg); }
 .kpi-ghost-label { font-size: 13px; font-weight: 500; color: var(--muted); }
 .kpi-ghost-dash { font: 400 26px/1 var(--font-mono); color: var(--faint); }
@@ -3052,6 +3094,19 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .sk2-starter-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sk2-starter-text b { font-size: 13.5px; font-weight: 500; color: var(--ink); }
 .sk2-starter-text span { font-size: 13px; color: var(--muted); }
+
+/* Populated skills list — clean full-width rows in a bordered card (matches pen Starters) */
+.sk2-list { display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
+.sk2-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface); border-bottom: 1px solid var(--line); cursor: pointer; transition: background .12s; text-align: left; }
+.sk2-row:last-child { border-bottom: 0; }
+.sk2-row:hover { background: var(--soft); }
+.sk2-row-tile { width: 36px; height: 36px; border-radius: var(--r-md); background: linear-gradient(135deg, #fdf4ff, #ede9fe); color: #7c3aed; display: grid; place-items: center; font-size: 17px; flex-shrink: 0; border: 1px solid var(--line); }
+.sk2-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sk2-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sk2-row-name b { font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk2-row-desc { font-size: 13px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk2-row-slug { font-size: 11.5px; color: var(--faint); }
+.sk2-row-action { flex-shrink: 0; }
 
 @media (max-width: 640px) {
   .sk2-empty { flex-direction: column; padding: 24px 16px; }
@@ -3210,8 +3265,37 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .team2-spec-desc { color: var(--ink-2); margin: 0; font-size: 13px; line-height: 20px; }
 .team2-spec-foot { display: flex; align-items: center; }
 
+/* ======================= FIX C: match pen.dev Team design exactly ======================= */
+/* Dark "Hire a helper" button in the page header */
+.team2-hire { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.team2-hire:hover { background: var(--ink); opacity: .9; color: var(--surface); text-decoration: none; }
+.team2-hire i { color: inherit; }
+
+/* Helper card: 18px padding, name 17px, border-separated 3-column meta */
+.team2-card { padding: 18px; }
+.team2-name { font-size: 17px; }
+.team2-role { font-size: 13px; }
+.team2-next { font-size: 12px; }
+.team2-card-meta { border-top: 1px solid var(--line); padding-top: 12px; gap: 0; }
+.team2-card-meta .team2-pill { flex: 1 1 0; min-width: 0; gap: 2px; }
+.team2-pill-label { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); }
+.team2-pill-val { font-size: 13px; color: var(--ink); font-weight: 500; }
+
+/* Suggested specialists: 3-column grid, 32px icon tile radius 10, dark Hire button */
+.team2-suggest { grid-template-columns: repeat(3, 1fr); }
+.team2-spec { padding: 18px; }
+.team2-spec-icon { width: 32px; height: 32px; border-radius: var(--r-md); background: var(--soft); }
+.team2-spec-icon i { font-size: 16px; }
+.team2-spec-name { font-size: 14px; }
+.team2-spec-cat { font-size: 12px; }
+.team2-spec-desc { font-size: 13px; color: var(--ink-2); line-height: 20px; }
+.team2-spec-foot .btn { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.team2-spec-foot .btn:hover { opacity: .9; color: var(--surface); text-decoration: none; }
+.team2-spec-foot .btn i { color: inherit; }
+
 @media (max-width: 900px) {
   .team2-grid { grid-template-columns: repeat(2, 1fr); }
+  .team2-suggest { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 600px) {
   .team2-grid { grid-template-columns: 1fr; }
@@ -3835,6 +3919,18 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .team-now-scroll { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .team-now-hint { font-size: 12px; color: var(--muted); padding: 8px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: var(--r-md); line-height: 1.5; }
 
+/* Prominent "Open the team board" card at the top of team-now */
+.team-board-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-decoration: none;
+  background: var(--surface); border: 1.5px solid var(--wire-strong, var(--line-strong)); border-radius: var(--r-lg);
+  box-shadow: 0 1px 4px -2px rgba(12, 10, 9, .1); transition: border-color .12s, box-shadow .12s; }
+.team-board-card:hover { border-color: var(--ink-2, var(--ink)); box-shadow: 0 4px 12px -6px rgba(12, 10, 9, .18); }
+.team-board-card-tile { flex-shrink: 0; width: 40px; height: 40px; border-radius: var(--r-md); display: grid; place-items: center;
+  background: var(--field-indigo, #e0e7ff); color: var(--helper-brand, #6366f1); font-size: 20px; }
+.team-board-card-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.team-board-card-txt b { font-size: 14px; font-weight: 600; color: var(--ink); }
+.team-board-card-txt span { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.team-board-card-arrow { flex-shrink: 0; color: var(--muted); font-size: 16px; }
+
 /* Per-helper status card in team-now */
 .team-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .team-card-head { display: flex; align-items: center; gap: 8px; }
@@ -3979,6 +4075,45 @@ main.page:has(> .cal) { max-width: none; padding: 0; height: 100%; width: 100%; 
 .focus-cost-block { display: flex; flex-direction: column; gap: 3px; }
 .focus-cost-big { font: 600 28px/1.1 var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .focus-cost-sub { font-size: 12px; color: var(--muted); }
+
+/* ------------------------------------------------------------------ goal thread — nav + header */
+.goal-nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #16a34a); flex-shrink: 0; }
+.goal-nav-pos { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.goal-head-title { font-family: var(--font-display, var(--font-sans)); font-size: 18px; font-weight: 600; }
+.goal-head-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.goal-head-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #16a34a); flex-shrink: 0; }
+.goal-head-status { color: var(--ink-2); font-weight: 500; }
+.goal-head-owner { color: var(--muted); }
+
+/* ------------------------------------------------------------------ goal thread — details sidebar */
+.goal-side-progress { display: flex; flex-direction: column; gap: 6px; }
+.goal-side-big { font: 600 22px/1.1 var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.goal-side-of { font-size: 12px; color: var(--muted); }
+.goal-side-track { height: 6px; border-radius: 3px; background: #E7E5E4; overflow: hidden; margin-top: 2px; }
+.goal-side-fill { height: 100%; background: #0C0A09; border-radius: 3px; }
+.goal-side-note { font-size: 12px; color: var(--faint); margin-top: 2px; }
+
+.goal-side-work { display: flex; flex-direction: column; gap: 10px; }
+.goal-side-work-row { display: flex; align-items: flex-start; gap: 8px; }
+.goal-side-av { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--soft); color: var(--muted); font-size: 9px; font-weight: 700; display: inline-grid; place-items: center; letter-spacing: .02em; }
+.goal-side-work-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.goal-side-work-title { font-size: 13px; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; }
+.goal-side-work-sub { font-size: 11.5px; color: var(--muted); }
+.goal-side-done { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ok, #16a34a); margin-top: 2px; }
+.goal-side-done i { font-size: 13px; }
+
+.goal-side-about { display: flex; flex-direction: column; gap: 8px; }
+.goal-side-row { display: flex; align-items: baseline; gap: 8px; }
+.goal-side-k { flex-shrink: 0; width: 72px; font-size: 12px; color: var(--faint); }
+.goal-side-v { flex: 1; font-size: 12.5px; color: var(--ink-2); min-width: 0; }
+
+.goal-side-spacer { flex: 1; min-height: 8px; }
+.goal-side-actions { display: flex; flex-direction: column; gap: 6px; }
+.goal-side-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-md, 8px); background: var(--surface); color: var(--ink-2); font-size: 13px; cursor: pointer; }
+.goal-side-btn i { font-size: 15px; color: var(--muted); }
+.goal-side-btn:hover:not(:disabled) { background: var(--soft); color: var(--ink); }
+.goal-side-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 @media (max-width: 1100px) {
   .focus-details {
@@ -4600,12 +4735,12 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .board-goals { display: flex; flex-direction: column; gap: 10px; max-width: 100%; }
 
 /* One goal row: left panel + right card strip, as a self-contained tinted card */
-.goal-row { display: flex; align-items: stretch; gap: 12px; background: #FAFAF9;
+.goal-row { display: flex; align-items: flex-start; gap: 12px; background: #FAFAF9;
   border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
 
-/* Left goal panel (fixed width, no divider — the row gap separates it from the cards) */
-.goal-panel { width: 300px; min-width: 260px; flex-shrink: 0;
-  padding: 4px 6px; display: flex; flex-direction: column; gap: 8px; }
+/* Left goal panel (fixed width, sticks to the top so its CTAs stay visible past a long work list) */
+.goal-panel { width: 300px; min-width: 260px; flex-shrink: 0; align-self: flex-start;
+  position: sticky; top: 8px; padding: 4px 6px; display: flex; flex-direction: column; gap: 8px; }
 .goal-panel-head { display: flex; align-items: flex-start; gap: 7px; }
 .goal-panel-icon { font-size: 15px; color: var(--muted); flex-shrink: 0; margin-top: 1px; }
 .goal-panel-title { font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.4; }
@@ -4623,7 +4758,8 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .goal-panel-dot.goal-dot-bad  { background: #dc2626; }
 .goal-panel-dot.goal-dot-idle { background: #9ca3af; }
 .goal-panel-status-text { font-size: 12px; color: var(--muted); }
-.goal-panel-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.goal-panel-foot { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-top: 10px; }
+.goal-panel-foot-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .goal-panel-avatars { display: flex; align-items: center; }
 .goal-panel-avatars > * { margin-left: -4px; }
 .goal-panel-avatars > *:first-child { margin-left: 0; }
@@ -4647,6 +4783,77 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .goal-card-ghost i { font-size: 20px; color: var(--faint); }
 .goal-card-ghost span { font-size: 12px; font-weight: 500; text-align: center; }
 
+/* Interactive "Give work to this goal" add-work card (on every goal row) */
+.goal-add-card { width: 236px; min-width: 236px; flex-shrink: 0; border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md); padding: 20px 14px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px; color: var(--muted); cursor: pointer;
+  background: transparent; align-self: stretch; font: inherit; transition: border-color .15s, background .15s, color .15s; }
+.goal-add-card:hover:not(:disabled) { background: var(--soft); border-color: var(--faint); color: var(--ink); }
+.goal-add-card:disabled { opacity: .5; cursor: not-allowed; }
+.goal-add-card i { font-size: 20px; color: var(--faint); }
+.goal-add-card span { font-size: 12px; font-weight: 500; text-align: center; }
+
+/* "Talk about it" button in the goal panel footer (full-width, centered) */
+.goal-panel-talk { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-btn); background: var(--surface);
+  font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s; }
+.goal-panel-talk:hover { background: var(--soft); border-color: var(--faint); }
+.goal-panel-talk i { font-size: 13px; }
+
+/* Collapse chevron in the goal panel head */
+.goal-panel-collapse { margin-left: auto; flex-shrink: 0; border: 0; background: transparent; cursor: pointer;
+  color: var(--muted); font-size: 18px; line-height: 1; padding: 0 2px; display: inline-flex; }
+.goal-panel-collapse:hover { color: var(--ink); }
+
+/* Right side: compact, scannable work list (replaces the horizontal card strip) */
+.goal-work { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.goal-work-head { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+.goal-work-head-label { font: 11px var(--font-mono); letter-spacing: .08em; color: var(--muted); }
+.goal-work-head-count { font-size: 12px; color: var(--faint); }
+.goal-work-head-need { font-size: 12px; font-weight: 500; color: var(--warn); }
+.goal-work-list { display: flex; flex-direction: column; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: var(--r-lg); overflow: hidden; }
+.goal-work-empty { display: flex; align-items: center; gap: 8px; padding: 14px; color: var(--muted); font-size: 13px; }
+.goal-work-empty i { color: var(--faint); }
+
+/* Flat, scannable work rows (V2 pen design): dot + title + owner + status + chevron */
+.goal-work-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
+  border-top: 1px solid var(--line); background: transparent; transition: background .12s; }
+.goal-work-row:first-child { border-top: 0; }
+.goal-work-row:hover { background: var(--soft); }
+.goal-work-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.goal-work-dot.goal-work-dot-warn { background: var(--warn); }
+.goal-work-dot.goal-work-dot-run  { background: var(--info, #1d4ed8); }
+.goal-work-dot.goal-work-dot-done { background: var(--ok); }
+.goal-work-dot.goal-work-dot-bad  { background: var(--bad, #b91c1c); }
+.goal-work-dot.goal-work-dot-idle { background: var(--faint); }
+.goal-work-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-work-note { font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.goal-work-note.goal-work-note-warn { color: var(--warn); }
+.goal-work-note.goal-work-note-ok { color: var(--ok); }
+.goal-work-note.goal-work-note-bad { color: var(--bad, #b91c1c); }
+.goal-work-chev { font-size: 15px; color: var(--faint); flex-shrink: 0; }
+.goal-give-row { display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 14px; border: 0; border-top: 1px dashed var(--line-strong); background: transparent;
+  cursor: pointer; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; transition: background .12s, color .12s; }
+.goal-give-row:hover:not(:disabled) { background: var(--soft); color: var(--ink); }
+.goal-give-row:disabled { opacity: .5; cursor: not-allowed; }
+.goal-give-row i { font-size: 15px; }
+
+/* By-helper filter bar + by-goal search bar */
+.board-filter-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.board-filter-count { font: 12px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.board-search-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.board-search-field { display: flex; align-items: center; gap: 8px; width: 360px; max-width: 60%;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-btn); padding: 8px 12px; }
+.board-search-field i { color: var(--faint); font-size: 15px; flex-shrink: 0; }
+.board-search-field input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
+.board-search-field input::placeholder { color: var(--faint); }
+.board-search-clear { border: 0; background: transparent; cursor: pointer; color: var(--muted); display: inline-flex; padding: 0; }
+.board-search-clear:hover { color: var(--ink); }
+
 /* Board empty state (no goals) */
 .board-empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 24px; text-align: center; color: var(--muted); }
 .board-empty-state i { font-size: 32px; color: var(--faint); }
@@ -4663,9 +4870,11 @@ body:has(.ws) .chat-nudge { bottom: 160px; }
 .routines-label b { font-weight: 600; }
 .routines-label-sub { font-size: 12px; font-weight: 400; color: var(--muted); }
 .routines-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-/* Chip hugs the agent avatar on the left (padding-left 4) per design */
+/* Chip hugs the agent avatar on the left (padding-left 4) per design; clickable → calendar */
 .routine-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: var(--r-pill);
-  font-size: 12px; font-weight: 400; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); }
+  font-size: 12px; font-weight: 400; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2);
+  cursor: pointer; font-family: inherit; transition: background .15s, border-color .15s, color .15s; }
+.routine-chip:hover { border-color: var(--faint); color: var(--ink); }
 .routine-chip .mascot, .routine-chip .av { width: 22px; height: 22px; flex-shrink: 0; }
 .routine-chip-run  { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 .routine-chip-done { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }

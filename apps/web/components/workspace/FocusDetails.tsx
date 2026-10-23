@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { GoalFocus, api } from "@/lib/api";
 
 /* Shape returned by GET /api/threads/{id}/focus */
 interface FocusStep {
@@ -25,6 +25,16 @@ interface FocusData {
   progress?: FocusStep[];
   files?: FocusFile[];
   cost?: FocusCost;
+  /** Present when the thread is a goal thread (scope=="goal") */
+  goal?: GoalFocus;
+}
+
+/* Initials for a staff avatar fallback (we only have id/name here) */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 function fileIcon(kind?: string): string {
@@ -65,6 +75,8 @@ export default function FocusDetails({
       .finally(() => setLoading(false));
   }, [threadId]);
 
+  const goal = data?.goal;
+
   const hasProgress = (data?.progress?.length ?? 0) > 0;
   const hasFiles = (data?.files?.length ?? 0) > 0;
   const hasCost =
@@ -96,7 +108,105 @@ export default function FocusDetails({
           </p>
         )}
 
-        {!loading && isEmpty && (
+        {/* GOAL THREAD VIEW */}
+        {!loading && goal && (
+          <>
+            {/* PROGRESS */}
+            <div className="focus-section">
+              <div className="focus-section-label">Progress</div>
+              <div className="goal-side-progress">
+                {goal.progress.percent !== null ? (
+                  <>
+                    <div className="goal-side-big">{goal.progress.percent}%</div>
+                    {goal.progress.target_label && (
+                      <div className="goal-side-of">of {goal.progress.target_label} target</div>
+                    )}
+                    <div className="goal-side-track" aria-hidden>
+                      <div
+                        className="goal-side-fill"
+                        style={{ width: `${Math.max(0, Math.min(100, goal.progress.percent))}%` }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="goal-side-of">No measured progress yet</div>
+                )}
+                {goal.progress.note && (
+                  <div className="goal-side-note">{goal.progress.note}</div>
+                )}
+              </div>
+            </div>
+
+            {/* WORK FOR THIS GOAL */}
+            {goal.work.length > 0 && (
+              <div className="focus-section">
+                <div className="focus-section-label">Work for this goal</div>
+                <div className="goal-side-work">
+                  {goal.work.map((w) => (
+                    <div key={w.id} className="goal-side-work-row">
+                      <span className="goal-side-av" title={w.staff.name}>
+                        {initials(w.staff.name)}
+                      </span>
+                      <div className="goal-side-work-text">
+                        <span className="goal-side-work-title">{w.title}</span>
+                        <span className="goal-side-work-sub">{w.status_label}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {goal.done_this_week > 0 && (
+                  <div className="goal-side-done">
+                    <i className="ri-check-line" /> {goal.done_this_week} done this week
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ABOUT THIS GOAL */}
+            <div className="focus-section">
+              <div className="focus-section-label">About this goal</div>
+              <div className="goal-side-about">
+                {goal.about.owner && (
+                  <div className="goal-side-row">
+                    <span className="goal-side-k">Owner</span>
+                    <span className="goal-side-v">{goal.about.owner}</span>
+                  </div>
+                )}
+                {goal.about.measured && (
+                  <div className="goal-side-row">
+                    <span className="goal-side-k">Measured</span>
+                    <span className="goal-side-v">{goal.about.measured}</span>
+                  </div>
+                )}
+                {goal.about.check_in && (
+                  <div className="goal-side-row">
+                    <span className="goal-side-k">Check-in</span>
+                    <span className="goal-side-v">{goal.about.check_in}</span>
+                  </div>
+                )}
+                {goal.about.since && (
+                  <div className="goal-side-row">
+                    <span className="goal-side-k">Since</span>
+                    <span className="goal-side-v">{goal.about.since}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="goal-side-spacer" />
+            <div className="goal-side-actions">
+              <button className="goal-side-btn" disabled>
+                <i className="ri-pencil-line" /> Edit goal
+              </button>
+              <button className="goal-side-btn" disabled>
+                <i className="ri-pause-line" /> Pause
+              </button>
+            </div>
+          </>
+        )}
+
+        {!loading && !goal && isEmpty && (
           <div className="focus-empty">
             <i className="ri-node-tree focus-empty-icon" />
             <b className="focus-empty-title">No details yet</b>
@@ -107,7 +217,7 @@ export default function FocusDetails({
         )}
 
         {/* PROGRESS */}
-        {hasProgress && (
+        {!goal && hasProgress && (
           <div className="focus-section">
             <div className="focus-section-label">Progress</div>
             <div className="focus-progress">
@@ -125,7 +235,7 @@ export default function FocusDetails({
         )}
 
         {/* MADE IN THIS THREAD */}
-        {hasFiles && (
+        {!goal && hasFiles && (
           <div className="focus-section">
             <div className="focus-section-label">Made in this thread</div>
             <div className="focus-files">
@@ -154,7 +264,7 @@ export default function FocusDetails({
         )}
 
         {/* COST SO FAR */}
-        {hasCost && (
+        {!goal && hasCost && (
           <div className="focus-section">
             <div className="focus-section-label">Cost so far</div>
             <div className="focus-cost-block">

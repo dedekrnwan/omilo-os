@@ -5,7 +5,7 @@ import Avatar from "@/components/Avatar";
 import ChatThread from "@/components/ChatThread";
 import { FullThread } from "@/components/Conversation";
 import { menu } from "@/lib/menu";
-import { Staff, Thread, api } from "@/lib/api";
+import { GoalView, Staff, Thread, api } from "@/lib/api";
 import { RunEvent } from "@/components/Run";
 
 /* ------------------------------------------------------------------ helpers */
@@ -27,6 +27,102 @@ function needsYouThreads(threads: Thread[]): Thread[] {
   return threads.filter((t) => t.group === "needs_you" || t.awaiting_reply);
 }
 
+/* Is this a goal thread? */
+function isGoalThread(th: FullThread | Thread): boolean {
+  return th.scope === "goal" || !!th.goal_view;
+}
+
+/* Goal threads in order — used for goal-to-goal navigation */
+function goalThreads(threads: Thread[]): Thread[] {
+  return threads.filter(isGoalThread);
+}
+
+/* ------------------------------------------------------------------ goal-nav bar */
+function GoalNav({
+  thread,
+  threads,
+}: {
+  thread: FullThread;
+  threads: Thread[];
+}) {
+  const router = useRouter();
+  const gv: GoalView | null | undefined = thread.goal_view;
+
+  const gThreads = goalThreads(threads);
+  const gIdx = gThreads.findIndex((t) => t.id === thread.id);
+  const total = gv?.total ?? (gThreads.length || 1);
+  const pos = gv?.position ?? (gIdx >= 0 ? gIdx + 1 : 1);
+
+  const nextThread =
+    gIdx >= 0 && gThreads.length > 1 ? gThreads[(gIdx + 1) % gThreads.length] : null;
+  const nextTitle =
+    gv?.next_goal?.title || (nextThread ? nextThread.title || "Next" : null);
+  const nextTitleShort = nextTitle ? nextTitle.slice(0, 38) : null;
+
+  return (
+    <div className="work-nav goal-nav">
+      <div className="work-nav-left">
+        <button
+          className="work-nav-back"
+          onClick={() => router.push("/chat/?view=board&group=goal")}
+          aria-label="Back to team board"
+        >
+          <i className="ri-arrow-left-line" />
+          Team board
+        </button>
+        <span className="goal-nav-dot" aria-hidden />
+        <span className="goal-nav-pos">
+          Goal · {pos} of {total}
+        </span>
+      </div>
+
+      {(nextThread || nextTitleShort) && (
+        <div className="work-nav-right">
+          {nextThread && nextTitleShort && (
+            <button
+              className="work-nav-next"
+              onClick={() => router.push(`/chat/?thread=${nextThread.id}`)}
+              aria-label={`Go to next goal: ${nextTitleShort}`}
+            >
+              Next
+              <span className="work-nav-next-title">{nextTitleShort}</span>
+              <i className="ri-arrow-right-line" />
+            </button>
+          )}
+          {gThreads.length > 1 && (
+            <div className="work-nav-chevrons">
+              <button
+                className="iconbtn"
+                aria-label="Previous goal"
+                onClick={() =>
+                  gIdx > 0
+                    ? router.push(`/chat/?thread=${gThreads[gIdx - 1].id}`)
+                    : undefined
+                }
+                disabled={gIdx <= 0}
+              >
+                <i className="ri-arrow-up-s-line" />
+              </button>
+              <button
+                className="iconbtn"
+                aria-label="Next goal"
+                onClick={() =>
+                  gIdx < gThreads.length - 1
+                    ? router.push(`/chat/?thread=${gThreads[gIdx + 1].id}`)
+                    : undefined
+                }
+                disabled={gIdx >= gThreads.length - 1}
+              >
+                <i className="ri-arrow-down-s-line" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ work-nav bar */
 function WorkNav({
   thread,
@@ -36,6 +132,10 @@ function WorkNav({
   threads: Thread[];
 }) {
   const router = useRouter();
+
+  if (isGoalThread(thread)) {
+    return <GoalNav thread={thread} threads={threads} />;
+  }
 
   /* Determine position among needs-you items */
   const nyThreads = needsYouThreads(threads);
@@ -144,8 +244,12 @@ function WorkHead({
   /* helpers not yet in this thread — candidates for "add helper" */
   const notIn = staff.filter((s) => !partIds.includes(s.id));
 
-  const title =
-    thread.scope === "master"
+  const isGoal = isGoalThread(thread);
+  const gv = thread.goal_view;
+
+  const title = isGoal
+    ? gv?.title || thread.title || "Goal"
+    : thread.scope === "master"
       ? "Chief of Staff"
       : thread.scope === "group"
         ? `# ${thread.title}`
@@ -154,7 +258,14 @@ function WorkHead({
   /* Linked goal — populated by thread_extras.enrich when scope=="task" and a TaskGoal link exists */
   const goalTitle = thread.goal?.title || null;
 
-  const isNeedsYou = thread.group === "needs_you" || thread.awaiting_reply;
+  const isNeedsYou = !isGoal && (thread.group === "needs_you" || thread.awaiting_reply);
+
+  /* Muted owner · check-in line for a goal thread */
+  const goalOwnerLine = gv
+    ? [gv.owner ? `Owner: ${gv.owner}` : null, gv.check_in ? `checked ${gv.check_in}` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
 
   const doAdd = async (staffId: string) => {
     setAdding(true);
@@ -166,7 +277,7 @@ function WorkHead({
     <div className="work-head">
       {/* Title row */}
       <div className="work-head-top">
-        <span className="work-head-title">{title}</span>
+        <span className={`work-head-title${isGoal ? " goal-head-title" : ""}`}>{title}</span>
         {isNeedsYou && (
           <span className="chip warn work-head-chip">
             <i className="ri-time-line" />
@@ -175,8 +286,17 @@ function WorkHead({
         )}
       </div>
 
-      {/* Goal line */}
-      {goalTitle && (
+      {/* Goal meta line (scope=="goal") */}
+      {isGoal && gv && (
+        <div className="goal-head-meta">
+          <span className="goal-head-dot" aria-hidden />
+          <span className="goal-head-status">{gv.status_label}</span>
+          {goalOwnerLine && <span className="goal-head-owner">{goalOwnerLine}</span>}
+        </div>
+      )}
+
+      {/* Goal line (task thread linked to a goal) */}
+      {!isGoal && goalTitle && (
         <div className="work-head-goal">
           <i className="ri-flag-2-line" />
           <span>Goal · {goalTitle}</span>
@@ -215,28 +335,23 @@ function WorkHead({
             </button>
             {addOpen && (
               <div
-                className="ctx"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  zIndex: 36,
-                  minWidth: 180,
-                  background: "var(--surface)",
-                  border: "1px solid var(--line-strong)",
-                  borderRadius: "var(--r-lg)",
-                  boxShadow: "0 8px 24px -8px rgba(0,0,0,.2)",
-                  overflow: "hidden",
-                }}
+                className="addhelper-menu"
+                role="listbox"
+                aria-label="Add a helper"
+                style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 36 }}
               >
+                <div className="sl-group">Add a helper</div>
                 {notIn.map((s) => (
                   <button
                     key={s.id}
-                    className="ctx-item"
+                    type="button"
+                    role="option"
+                    className="sl-item"
+                    disabled={adding}
                     onClick={() => doAdd(s.id)}
                   >
-                    <Avatar who={s} size={18} />
-                    {s.name}
+                    <Avatar who={s} size={20} />
+                    <span className="sl-label">{s.name}</span>
                   </button>
                 ))}
               </div>

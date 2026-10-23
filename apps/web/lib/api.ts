@@ -54,6 +54,7 @@ export type Staff = {
   tagline?: string; summary?: string; cost_month?: number;
   permissions: Record<string, any>; status: string; has_mcp_token: boolean; max_task_minutes: number; budget_usd_month: number;
   shifts: Shift[]; effective_permissions?: Record<string, string>; recent_tasks?: Task[]; mcp?: { url: string };
+  state?: string;
 };
 export type Shift = { id: string; staff_id: string; name: string; cron: string; when?: string; brief: string; enabled: boolean; next_at: string | null; last_at: string | null };
 export type Report = { headline: string; body_md: string; kpis: Record<string, number>; at: string };
@@ -104,6 +105,30 @@ export type Thread = { id: string; scope: string; ref_id: string | null; staff_i
   last_at?: string | null; task_id?: string | null; task_status?: string | null;
   /** Linked goal when scope=="task" and the task has a TaskGoal→Goal link */
   goal?: { id: string; title: string } | null;
+  /** Goal-thread header meta — present when scope=="goal" */
+  goal_view?: GoalView | null;
+};
+export type GoalView = {
+  id: string; title: string;
+  percent: number | null;
+  target_label: string | null;
+  status_label: string;
+  owner: string;
+  check_in: string | null;
+  position: number;
+  total: number;
+  next_goal: { id: string; title: string } | null;
+};
+export type GoalFocus = {
+  progress: { percent: number | null; target_label: string | null; note: string | null };
+  work: {
+    id: string; title: string;
+    staff: { id: string; name: string };
+    status_label: string;
+    progress: { done: number; total: number };
+  }[];
+  done_this_week: number;
+  about: { owner: string; measured: string | null; check_in: string | null; since: string | null };
 };
 export type AskResult = {
   answer: string;
@@ -186,6 +211,14 @@ export type PlanGoal = {
     failed?: number;
     [key: string]: number | undefined;
   };
+  /** Percent of the primary KPI's target (0-100+), or null when there's no KPI/target. */
+  percent?: number | null;
+  /** Secondary metric label e.g. "this week · target 95%", or null. */
+  metric_label?: string | null;
+  /** Count of work nodes done within the last 7 days. */
+  done_this_week?: number;
+  /** Distinct staff working toward this goal (up to 5). */
+  team?: { id: string; name: string }[];
   kpis: Record<string, unknown>[];
 };
 

@@ -858,6 +858,14 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
             )
             S.post_message(db, th, "system", p.staff_id, seed_text,
                            blocks=[{"type": "markdown", "text": seed_text}])
+    elif body.scope == "goal":
+        from ..models import Goal
+
+        goal = _404(db.get(Goal, body.ref_id or ""), "unknown goal")
+        ch = S.chief(db)
+        if not ch:
+            raise HTTPException(409, "no Chief of Staff yet: create the team first")
+        th = S.get_or_create_thread(db, "goal", goal.id, ch.id, goal.title)
     elif body.scope == "group":
         from .. import teamchat as TC
 
@@ -870,7 +878,7 @@ def open_thread(body: ThreadIn, db: Session = Depends(get_db), user: User = Depe
         else:
             th = _run(TC.general, db)
     else:
-        raise HTTPException(400, "scope must be master, staff, task, proposal or group")
+        raise HTTPException(400, "scope must be master, staff, task, proposal, goal or group")
     return thread_detail(th.id, db, user)
 
 
@@ -902,6 +910,7 @@ class MessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     blocks: list[dict] | None = None
     mentions: list[str] | None = None  # helper ids the composer picked with @ (names in the text work too)
+    goal_ids: list[str] | None = None  # goal ids the composer picked with @ (titles in the text work too)
 
 
 @router.post("/threads/{thid}/messages")
@@ -909,7 +918,7 @@ def send_message(thid: str, body: MessageIn, db: Session = Depends(get_db), user
     from .. import teamchat as TC
 
     th = _404(db.get(Thread, thid))
-    TC.post(db, th, user.id, body.text, body.blocks, body.mentions)
+    TC.post(db, th, user.id, body.text, body.blocks, body.mentions, body.goal_ids)
     return thread_detail(thid, db, user)
 
 
@@ -3327,6 +3336,15 @@ def _goal_apply(db: Session, g, body: GoalIn) -> None:
                 sg.goal_id = g.id
             else:
                 db.add(ShiftGoal(shift_id=sid, goal_id=g.id))
+
+
+@router.get("/goals")
+def goals_list(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Active goals for the @-mention picker: lightweight id + title, ordered by position."""
+    from ..models import Goal
+
+    goals = db.scalars(select(Goal).where(Goal.status == "active").order_by(Goal.position))
+    return [{"id": g.id, "title": g.title} for g in goals]
 
 
 @router.post("/goals")

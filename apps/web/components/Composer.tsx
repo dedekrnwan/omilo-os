@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import ComposerTools, { Attached } from "@/components/ComposerTools";
 import { SlashAction, useSlash } from "@/components/SlashMenu";
-import { useMentions } from "@/components/Mentions";
+import { useMentions, type MentionGoal } from "@/components/Mentions";
 import MentionBox, { type MentionHandle } from "@/components/MentionBox";
 import PoolMeter from "@/components/PoolMeter";
 import { Err } from "@/components/ui";
@@ -30,19 +30,21 @@ export type ComposerHandle = {
 
    Props:
    - staff            — list of helpers for @-mention and /talk completions
+   - goals            — list of active goals for @-mention (attaches goal context to the session)
    - threadId         — current thread id, or null when on the start screen (ComposerTools renders
                         in "no-thread" mode — the + button still works for file attach)
    - placeholder      — text shown when the box is empty
    - awaitingReply    — true while a helper is composing its reply (disables input + shows Stop)
    - error            — error string to surface (controlled by the caller)
    - handleRef        — optional ref; on mount exposes a ComposerHandle for external text/focus control
-   - onSend           — called with (text, files, mentionedIds) — caller owns thread creation / posting
+   - onSend           — called with (text, files, mentionedIds, goalIds) — caller owns thread creation / posting
    - onSlash          — optional extra handler for slash-command dispatch (called instead of defaults)
    - onStop           — called when the user confirms Stop; caller fires the cancel API
    - showPoolMeter    — render the <PoolMeter /> below the form (default true)
 */
 export default function Composer({
   staff,
+  goals = [],
   threadId = null,
   placeholder = "@ to mention · / for commands · Enter to send",
   awaitingReply = false,
@@ -54,12 +56,13 @@ export default function Composer({
   showPoolMeter = true,
 }: {
   staff: Staff[];
+  goals?: MentionGoal[];
   threadId?: string | null;
   placeholder?: string;
   awaitingReply?: boolean;
   error?: string | null;
   handleRef?: React.RefObject<ComposerHandle | null>;
-  onSend: (text: string, files: Attached[], mentions: string[]) => void;
+  onSend: (text: string, files: Attached[], mentions: string[], goalIds: string[]) => void;
   onSlash?: (a: SlashAction, rest: string) => void;
   onStop?: () => void;
   showPoolMeter?: boolean;
@@ -74,6 +77,7 @@ export default function Composer({
   const onSlashExtraRef = useRef(onSlashExtra);
   onSlashExtraRef.current = onSlashExtra;
   const mentionedRef = useRef<(t: string) => string[]>(() => []);
+  const mentionedGoalsRef = useRef<(t: string) => string[]>(() => []);
 
   const { upload, uploading, err: uploadErr } = useFileUpload(files, setFiles);
 
@@ -89,7 +93,7 @@ export default function Composer({
     else if (a.kind === "send") {
       const t = rest.trim() ? `${a.text}\n\n${rest}` : a.text;
       setText("");
-      setFiles((cur) => { onSendRef.current(t, cur, mentionedRef.current(t)); return []; });
+      setFiles((cur) => { onSendRef.current(t, cur, mentionedRef.current(t), mentionedGoalsRef.current(t)); return []; });
     }
     else if (a.kind === "composer") { setText(""); window.dispatchEvent(new CustomEvent("omilo:composer", { detail: { action: a.action, kind: a.sub, id: a.id } })); focus(); }
     else if (a.kind === "job") { setText("/job "); focus(); }
@@ -103,9 +107,10 @@ export default function Composer({
   };
 
   const slash = useSlash(text, staff, onSlashInner);
-  const mention = useMentions(text, setText, staff, box);
-  // keep mentionedRef in sync so onSlashInner can call it without a stale closure
+  const mention = useMentions(text, setText, staff, box, goals);
+  // keep refs in sync so onSlashInner can call them without a stale closure
   mentionedRef.current = mention.mentioned;
+  mentionedGoalsRef.current = mention.mentionedGoals;
 
   /* Expose a handle so ChatThread (and any future caller) can setText / focus / read jobBrief. */
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,7 +136,7 @@ export default function Composer({
 
   const handleSend = () => {
     if (!text.trim() && !files.length) return;
-    onSend(text, files, mention.mentioned(text));
+    onSend(text, files, mention.mentioned(text), mention.mentionedGoals(text));
     setText("");
     setFiles([]);
   };

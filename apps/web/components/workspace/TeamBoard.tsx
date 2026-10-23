@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import WorkCard from "@/components/workspace/WorkCard";
-import { BoardCard, BoardHelper, TeamBoard as TeamBoardType, PlanTree, PlanGoal, PlanNode, api } from "@/lib/api";
+import { BoardCard, BoardHelper, TeamBoard as TeamBoardType, PlanTree, PlanGoal, PlanNode, ago, api } from "@/lib/api";
 import { usePoll } from "@/lib/poll";
 
 /* ------------------------------------------------------------------ helpers */
@@ -137,22 +137,23 @@ function helperActivityDotCls(helper: BoardHelper): string {
 
 
 /* ------------------------------------------------------------------ Goal progress % */
+/** Progress bar fill %: prefer the primary-KPI percent, else derive from work progress. */
 function goalPct(goal: PlanGoal): number {
+  if (typeof goal.percent === "number") return Math.max(0, Math.min(100, goal.percent));
   const { total, done = 0 } = goal.progress;
   if (!total) return 0;
   return Math.round((done / total) * 100);
 }
 
-/** Big metric string for a goal. */
-function goalMetric(goal: PlanGoal): string {
-  const pct = goalPct(goal);
-  const { total, done = 0 } = goal.progress;
-  if (total > 0) {
-    const due = goal.due ? ` · by ${goal.due}` : "";
-    return `${done} of ${total} · ${pct}%${due}`;
-  }
-  if (goal.target) return goal.target;
-  return "No metric";
+/** Big metric number for a goal's left panel — e.g. "92%", or null to hide the metric row. */
+function goalMetricNum(goal: PlanGoal): string | null {
+  if (typeof goal.percent === "number") return `${goal.percent}%`;
+  return null;
+}
+
+/** Secondary metric label — e.g. "this week · target 95%", or null. */
+function goalMetricLabel(goal: PlanGoal): string | null {
+  return goal.metric_label ?? null;
 }
 
 /** Goal status dot class + text. */
@@ -165,22 +166,39 @@ function goalStatusInfo(goal: PlanGoal): { dot: string; text: string } {
 }
 
 /* ------------------------------------------------------------------ By-helper column */
+type HelperFilter = "all" | "running" | "needs_you" | "done";
+const HELPER_FILTERS: [HelperFilter, string][] = [
+  ["all", "All"], ["running", "Running"], ["needs_you", "Needs me"], ["done", "Done"],
+];
+
 function HelperColumn({
   helper,
   paused,
   onAddWork,
+  filter,
 }: {
   helper: BoardHelper;
   paused: boolean;
   onAddWork: () => void;
+  filter: HelperFilter;
 }) {
   const [doneFolded, setDoneFolded] = useState(true);
   const helperObj = { id: helper.id, name: helper.name, role: helper.role, is_chief: helper.is_chief };
-  const activeCards = helper.cards.filter(c => c.status !== "done");
-  const doneCards = helper.cards.filter(c => c.status === "done");
-  const doneCount = doneCards.length;
+  const matchFilter = (c: BoardCard) =>
+    filter === "all" ? true : filter === "done" ? c.status === "done" : c.status === filter;
+  const visible = helper.cards.filter(matchFilter);
+  const activeCards = visible.filter(c => c.status !== "done");
+  const doneCards = visible.filter(c => c.status === "done");
+  const doneCount = helper.cards.filter(c => c.status === "done").length;
+  const showDoneFooter = filter === "all" || filter === "done";
+  const forceDoneOpen = filter === "done";
   const activityDotCls = helperActivityDotCls(helper);
   const activityText = helperActivity(helper);
+  const emptyMsg = filter === "all"
+    ? `No work for ${helper.name}`
+    : `No ${filter === "needs_you" ? "needs-me" : filter} work`;
+  const bodyCards = [...activeCards, ...(forceDoneOpen ? doneCards : [])];
+  const showEmpty = bodyCards.length === 0 && (filter !== "all" || doneCount === 0);
 
   return (
     <div className="board-col">
@@ -188,7 +206,7 @@ function HelperColumn({
       <div className="board-col-head">
         <Avatar who={helperObj} size={28} state={helper.status === "working" ? "working" : null} />
         <span className="board-col-name">{helper.name}</span>
-        <span className="board-col-badge">{helper.cards.length}</span>
+        <span className="board-col-badge">{filter === "all" ? helper.cards.length : visible.length}</span>
         <button
           className="board-col-add"
           onClick={onAddWork}
@@ -207,13 +225,13 @@ function HelperColumn({
 
       {/* Cards */}
       <div className="board-col-body">
-        {activeCards.length === 0 && doneCards.length === 0 ? (
+        {showEmpty ? (
           <div className="board-col-empty">
             <i className="ri-sleep-line" />
-            <span>No work for {helper.name}</span>
+            <span>{emptyMsg}</span>
           </div>
         ) : (
-          activeCards.map((card) => (
+          bodyCards.map((card) => (
             <WorkCard
               key={card.id}
               card={card}
@@ -225,30 +243,32 @@ function HelperColumn({
         )}
       </div>
 
-      {/* Column footer: "✓ N done today" + chevron */}
-      <div className="board-col-footer">
-        <button
-          className="board-col-done-toggle"
-          onClick={() => setDoneFolded(f => !f)}
-          aria-expanded={!doneFolded}
-        >
-          <i className="ri-checkbox-circle-line" />
-          <span>{doneCount} done today</span>
-          <i className={`ri-arrow-${doneFolded ? "down" : "up"}-s-line board-col-chevron`} />
-        </button>
-        {!doneFolded && doneCards.length > 0 && (
-          <div className="board-col-done-list">
-            {doneCards.map((card) => (
-              <WorkCard
-                key={card.id}
-                card={card}
-                helper={helperObj}
-                paused={paused}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Column footer: "✓ N done today" + chevron (only in All view) */}
+      {showDoneFooter && !forceDoneOpen && (
+        <div className="board-col-footer">
+          <button
+            className="board-col-done-toggle"
+            onClick={() => setDoneFolded(f => !f)}
+            aria-expanded={!doneFolded}
+          >
+            <i className="ri-checkbox-circle-line" />
+            <span>{doneCount} done today</span>
+            <i className={`ri-arrow-${doneFolded ? "down" : "up"}-s-line board-col-chevron`} />
+          </button>
+          {!doneFolded && doneCards.length > 0 && (
+            <div className="board-col-done-list">
+              {doneCards.map((card) => (
+                <WorkCard
+                  key={card.id}
+                  card={card}
+                  helper={helperObj}
+                  paused={paused}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -264,32 +284,85 @@ function GhostHelperColumn({ onClick }: { onClick: () => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ By-goal: work tree */
+/** Status pill for a work node. */
+/** One work item under a goal — a flat, scannable row: dot + title + owner + status + chevron.
+ *  Clicking opens the item's own thread (what the staff actually did). Matches the V2 pen list. */
+function GoalWorkRow({ node, helpers, paused }: {
+  node: PlanNode;
+  helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
+  paused: boolean;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const owner = helpers.get(node.staff_id) || nodeHelper(node);
+  const status = nodeToCard(node).status;
+  const dotCls = status === "needs_you" ? "goal-work-dot-warn"
+    : status === "running" ? "goal-work-dot-run"
+    : status === "done" ? "goal-work-dot-done"
+    : status === "failed" ? "goal-work-dot-bad" : "goal-work-dot-idle";
+  const note = status === "needs_you" ? { text: "needs you", cls: "goal-work-note-warn" }
+    : status === "done" ? { text: "done", cls: "goal-work-note-ok" }
+    : status === "failed" ? { text: "failed", cls: "goal-work-note-bad" }
+    : status === "running" ? { text: "running", cls: "" }
+    : { text: "waiting", cls: "" };
+  const open = async () => {
+    if (busy || paused || !node.id) return;
+    setBusy(true);
+    try {
+      const th = await api<{ id: string }>("/threads", { body: { scope: "task", ref_id: node.id } });
+      router.push(`/chat/?thread=${th.id}`);
+    } catch { /* silently ignore */ } finally { setBusy(false); }
+  };
+  return (
+    <div className="goal-work-row" role="button" tabIndex={0}
+      onClick={open} onKeyDown={(e) => e.key === "Enter" && open()}>
+      <span className={`goal-work-dot ${dotCls}`} />
+      <span className="goal-work-title">{node.title}</span>
+      {owner && <Avatar who={owner} size={18} state={null} />}
+      <span className={`goal-work-note ${note.cls}`}>{note.text}</span>
+      <i className="ri-arrow-right-s-line goal-work-chev" />
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ By-goal row */
 function GoalRow({
   goal,
   helpers,
   paused,
-  isLast,
+  onAddWork,
+  onTalk,
 }: {
   goal: PlanGoal;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
   paused: boolean;
-  isLast: boolean;
+  onAddWork: () => void;
+  onTalk: () => void;
 }) {
-  const nodes = flattenNodes(goal.work);
+  const [open, setOpen] = useState(true);
+  const flat = flattenNodes(goal.work);
+  const needCount = flat.filter(n => n.proposals.some(p => p.status === "pending" || p.status === "open")).length;
   const pct = goalPct(goal);
-  const metric = goalMetric(goal);
+  const metricNum = goalMetricNum(goal);
+  const metricLabel = goalMetricLabel(goal);
   const { dot, text } = goalStatusInfo(goal);
-  const doneCount = nodes.filter(n => n.status === "done" || n.status === "completed").length;
+  const doneCount = typeof goal.done_this_week === "number"
+    ? goal.done_this_week
+    : flat.filter(n => n.status === "done" || n.status === "completed").length;
 
-  /* Collect unique contributors from this goal's work */
-  const contributors: { id: string; name: string; role?: string; is_chief?: boolean }[] = [];
-  const seen = new Set<string>();
-  for (const node of nodes) {
-    const h = helpers.get(node.staff_id) || nodeHelper(node);
-    if (h && !seen.has(h.id)) {
-      seen.add(h.id);
-      contributors.push(h);
+  /* Team avatars: prefer backend `team`, else derive distinct contributors from work nodes */
+  let contributors: { id: string; name: string; role?: string; is_chief?: boolean }[] = [];
+  if (goal.team && goal.team.length > 0) {
+    contributors = goal.team.map((t) => helpers.get(t.id) ?? { id: t.id, name: t.name });
+  } else {
+    const seen = new Set<string>();
+    for (const node of flat) {
+      const h = helpers.get(node.staff_id) || nodeHelper(node);
+      if (h && !seen.has(h.id)) {
+        seen.add(h.id);
+        contributors.push(h);
+      }
     }
   }
 
@@ -298,15 +371,26 @@ function GoalRow({
       {/* Left panel */}
       <div className="goal-panel">
         <div className="goal-panel-head">
-          <i className="ri-focus-2-line goal-panel-icon" />
+          <i className="ri-focus-3-line goal-panel-icon" />
           <span className="goal-panel-title">{goal.title}</span>
+          <button
+            className="goal-panel-collapse"
+            onClick={() => setOpen(o => !o)}
+            aria-expanded={open}
+            aria-label={open ? "Collapse work" : "Expand work"}
+            title={open ? "Hide work" : "Show work"}
+          >
+            <i className={`ri-arrow-${open ? "up" : "down"}-s-line`} />
+          </button>
         </div>
-        <div className="goal-panel-metric">
-          <span className="goal-panel-metric-num">{metric.split(" ")[0]}</span>
-          {metric.split(" ").length > 1 && (
-            <span className="goal-panel-metric-sub">{metric.split(" ").slice(1).join(" ")}</span>
-          )}
-        </div>
+        {metricNum && (
+          <div className="goal-panel-metric">
+            <span className="goal-panel-metric-num">{metricNum}</span>
+            {metricLabel && (
+              <span className="goal-panel-metric-sub">{metricLabel}</span>
+            )}
+          </div>
+        )}
         <div className="goal-panel-bar-wrap">
           <div className="goal-panel-bar">
             <i style={{ width: `${pct}%` }} />
@@ -317,48 +401,56 @@ function GoalRow({
           <span className="goal-panel-status-text">{text}</span>
         </div>
         <div className="goal-panel-foot">
-          {contributors.length > 0 && (
-            <div className="goal-panel-avatars">
-              {contributors.slice(0, 5).map((c) => (
-                <Avatar key={c.id} who={c} size={20} state={null} />
-              ))}
-            </div>
-          )}
-          <span className="goal-panel-done">
-            <i className="ri-checkbox-circle-line" />
-            {doneCount} done this week
-          </span>
+          <div className="goal-panel-foot-meta">
+            {contributors.length > 0 && (
+              <div className="goal-panel-avatars">
+                {contributors.slice(0, 5).map((c) => (
+                  <Avatar key={c.id} who={c} size={24} state={null} />
+                ))}
+              </div>
+            )}
+            <span className="goal-panel-done">
+              <i className="ri-checkbox-circle-line" />
+              {doneCount} done this week
+            </span>
+          </div>
+          <button className="goal-panel-talk" onClick={onTalk} title="Talk about it">
+            <i className="ri-message-3-line" />
+            Talk about it
+          </button>
         </div>
       </div>
 
-      {/* Right: horizontal card strip */}
-      <div className="goal-cards-strip">
-        {nodes.length === 0 ? (
-          <div className="board-col-empty goal-empty">
-            <i className="ri-checkbox-blank-circle-line" />
-            <span>No tasks yet</span>
-          </div>
-        ) : (
-          nodes.map((node) => {
-            const card = nodeToCard(node);
-            const helper = helpers.get(node.staff_id) || nodeHelper(node);
-            return (
-              <WorkCard
-                key={node.id}
-                card={card}
-                helper={helper}
-                paused={paused}
-                subtitle={node.headline}
-                showOwner
-              />
-            );
-          })
-        )}
-        {/* Ghost "Give work to this goal" card — only on the last goal row */}
-        {isLast && (
-          <div className="goal-card-ghost">
-            <i className="ri-add-line" />
-            <span>Give work to this goal</span>
+      {/* Right: flat, scannable work list (matches the V2 pen design) */}
+      <div className="goal-work">
+        <div className="goal-work-head">
+          <span className="goal-work-head-label">WORK</span>
+          <span className="goal-work-head-count">· {flat.length} item{flat.length !== 1 ? "s" : ""}</span>
+          <span className="sp" />
+          {needCount > 0 && <span className="goal-work-head-need">{needCount} need you</span>}
+        </div>
+        {open && (
+          <div className="goal-work-list">
+            {flat.length === 0 ? (
+              <div className="goal-work-empty">
+                <i className="ri-checkbox-blank-circle-line" />
+                <span>No tasks yet</span>
+              </div>
+            ) : (
+              flat.map((node) => (
+                <GoalWorkRow
+                  key={node.id}
+                  node={node}
+                  helpers={helpers}
+                  paused={paused}
+                />
+              ))
+            )}
+            {/* "Give work to this goal" — spawns a seeded Chief chat about this goal */}
+            <button className="goal-give-row" onClick={onAddWork} disabled={paused} title="Give work to this goal">
+              <i className="ri-add-line" />
+              <span>Give work to this goal</span>
+            </button>
           </div>
         )}
       </div>
@@ -371,6 +463,7 @@ function RoutinesStrip({ plan, helpers }: {
   plan: PlanTree;
   helpers: Map<string, { id: string; name: string; role: string; is_chief: boolean }>;
 }) {
+  const router = useRouter();
   /* Render from plan.shifts that are NOT tied to a goal (goal_id === null) */
   const unlinkedShifts = (plan.shifts || []).filter(s => !s.goal_id);
 
@@ -395,12 +488,17 @@ function RoutinesStrip({ plan, helpers }: {
           const chipLabel = shift.name.length > 28 ? shift.name.slice(0, 28) + "…" : shift.name;
           const agent = shiftAgent(shift.staff);
           return (
-            <span key={shift.id} className="routine-chip routine-chip-idle">
+            <button
+              key={shift.id}
+              className="routine-chip routine-chip-idle"
+              onClick={() => router.push(`/calendar/?shift=${shift.id}`)}
+              title={`Open "${shift.name}" in the calendar`}
+            >
               {agent && <Avatar who={agent} size={22} state={null} />}
               <span className="routine-dot routine-dot-idle" />
               {chipLabel}
               {schedule && <span className="routine-chip-schedule">{schedule}</span>}
-            </span>
+            </button>
           );
         })}
       </div>
@@ -419,6 +517,8 @@ export default function TeamBoard({ group }: TeamBoardProps) {
   const [board, setBoard] = useState<TeamBoardType | null>(null);
   const [plan, setPlan] = useState<PlanTree | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [hFilter, setHFilter] = useState<HelperFilter>("all");
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -450,6 +550,10 @@ export default function TeamBoard({ group }: TeamBoardProps) {
   const totalNeedsYou = countNeedsYou(helpers);
 
   const goals = plan?.goals || [];
+  const searchQ = search.trim().toLowerCase();
+  const visibleGoals = searchQ
+    ? goals.filter(g => g.title.toLowerCase().includes(searchQ) || flattenNodes(g.work).some(n => n.title.toLowerCase().includes(searchQ)))
+    : goals;
   const goalRunning = goals.reduce((n, g) => n + flattenNodes(g.work).filter(nd => nd.status === "running" || nd.status === "working").length, 0);
   const goalNeedsYou = goals.reduce((n, g) => n + flattenNodes(g.work).filter(nd => nd.proposals.some(p => p.status === "pending" || p.status === "open")).length, 0);
 
@@ -457,9 +561,39 @@ export default function TeamBoard({ group }: TeamBoardProps) {
     ? `${totalHelpers} helper${totalHelpers !== 1 ? "s" : ""} · ${totalRunning} running · ${totalNeedsYou} waiting on you`
     : `${goals.length} goal${goals.length !== 1 ? "s" : ""} · ${goalRunning} running · ${goalNeedsYou} waiting on you`;
 
-  const newWork = async () => {
+  /** Open a Chief-of-Staff chat, or — when a helper is passed — a staff-scoped chat for that helper. */
+  const newWork = async (helper?: BoardHelper) => {
+    try {
+      const body = helper
+        ? { scope: "staff", staff_id: helper.id }
+        : { scope: "master" };
+      const th = await api<{ id: string }>("/threads", { body });
+      router.push(`/chat/?thread=${th.id}`);
+    } catch {
+      /* silently ignore */
+    }
+  };
+
+  /** Spawn a new Chief-of-Staff chat seeded to plan work for a specific goal. */
+  const planGoalWork = async (goal: PlanGoal) => {
     try {
       const th = await api<{ id: string }>("/threads", { body: { scope: "master" } });
+      await api(`/threads/${th.id}/messages`, {
+        body: {
+          text: `Let's plan new work for the goal "${goal.title}". What should we do next?`,
+          mentions: [],
+        },
+      });
+      router.push(`/chat/?thread=${th.id}`);
+    } catch {
+      /* silently ignore */
+    }
+  };
+
+  /** Open the goal's discussion thread (backend scope=goal branch may land separately). */
+  const talkAboutGoal = async (goal: PlanGoal) => {
+    try {
+      const th = await api<{ id: string }>("/threads", { body: { scope: "goal", ref_id: goal.id } });
       router.push(`/chat/?thread=${th.id}`);
     } catch {
       /* silently ignore */
@@ -508,7 +642,7 @@ export default function TeamBoard({ group }: TeamBoardProps) {
         </div>
 
         {/* + New work → CoS chat */}
-        <button className="btn primary sm board-new-work" onClick={newWork}>
+        <button className="btn primary sm board-new-work" onClick={() => newWork()}>
           <i className="ri-add-line" />
           New work
         </button>
@@ -534,6 +668,26 @@ export default function TeamBoard({ group }: TeamBoardProps) {
       <div className="board-scroll">
         {/* ---- By helper ---- */}
         {group === "helper" && (
+          <>
+          {board && (
+            <div className="board-filter-bar">
+              <div className="seg" role="tablist" aria-label="Filter work">
+                {HELPER_FILTERS.map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={hFilter === key}
+                    className={hFilter === key ? "on" : ""}
+                    onClick={() => setHFilter(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="sp" />
+              <span className="board-filter-count">{totalRunning} running · {totalNeedsYou} waiting on you</span>
+            </div>
+          )}
           <div className="board-cols">
             {!board && !err && (
               [0, 1, 2].map((i) => (
@@ -554,12 +708,14 @@ export default function TeamBoard({ group }: TeamBoardProps) {
                 key={helper.id}
                 helper={helper}
                 paused={paused}
-                onAddWork={newWork}
+                onAddWork={() => newWork(helper)}
+                filter={hFilter}
               />
             ))}
             {/* Ghost "Add a helper" column */}
             {board && <GhostHelperColumn onClick={goToStaff} />}
           </div>
+          </>
         )}
 
         {/* ---- By goal ---- */}
@@ -571,15 +727,46 @@ export default function TeamBoard({ group }: TeamBoardProps) {
               </div>
             )}
 
-            {goals.map((goal, idx) => (
+            {plan && goals.length > 0 && (
+              <div className="board-search-bar">
+                <div className="board-search-field">
+                  <i className="ri-search-line" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search goals & work…"
+                    aria-label="Search goals and work"
+                  />
+                  {search && (
+                    <button className="board-search-clear" onClick={() => setSearch("")} aria-label="Clear search">
+                      <i className="ri-close-line" />
+                    </button>
+                  )}
+                </div>
+                <span className="sp" />
+                <span className="board-filter-count">{goals.length} goal{goals.length !== 1 ? "s" : ""}</span>
+              </div>
+            )}
+
+            {visibleGoals.map((goal) => (
               <GoalRow
                 key={goal.id}
                 goal={goal}
                 helpers={helpersMap}
                 paused={paused}
-                isLast={idx === goals.length - 1}
+                onAddWork={() => planGoalWork(goal)}
+                onTalk={() => talkAboutGoal(goal)}
               />
             ))}
+
+            {plan && goals.length > 0 && visibleGoals.length === 0 && (
+              <div className="board-empty-state">
+                <i className="ri-search-line" />
+                <b>No matches</b>
+                <span>Nothing matches &ldquo;{search}&rdquo;. Try a different search.</span>
+              </div>
+            )}
 
             {plan && goals.length === 0 && (
               <div className="board-empty-state">

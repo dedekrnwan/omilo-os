@@ -16,11 +16,14 @@ function token(text: string, caret: number): { start: number; query: string } | 
   return m ? { start: caret - m[2].length - 1, query: m[2].toLowerCase() } : null;
 }
 
-export function useMentions(text: string, setText: (t: string) => void, staff: Staff[], box: Box) {
+export type MentionGoal = { id: string; title: string };
+
+export function useMentions(text: string, setText: (t: string) => void, staff: Staff[], box: Box, goals: MentionGoal[] = []) {
   const [caret, setCaret] = useState(0);
   const [idx, setIdx] = useState(0);
   const [closedAt, setClosedAt] = useState<string | null>(null);
   const picked = useRef<Set<string>>(new Set());
+  const pickedGoals = useRef<Set<string>>(new Set());
 
   useEffect(() => { // follow the caret as the owner types or clicks. selectionchange covers typing, clicks and arrow
     // keys; box.current is read lazily so there is no mount-order race with the MentionBox handle.
@@ -31,7 +34,7 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
   useEffect(() => { const h = box.current; if (h?.el && (document.activeElement === h.el || h.el.contains(document.activeElement))) setCaret(h.getCaret()); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tok = token(text, Math.min(caret, text.length));
-  const items = useMemo(() => {
+  const staffItems = useMemo(() => {
     if (!tok) return [];
     const q = tok.query;
     const people = staff.filter((s) => (s as any).status !== "retired");
@@ -39,17 +42,37 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
     const has = people.filter((s) => !starts.includes(s) && s.name.toLowerCase().includes(q));
     return [...starts, ...has].slice(0, 8);
   }, [tok?.query, staff]); // eslint-disable-line react-hooks/exhaustive-deps
+  const goalItems = useMemo(() => {
+    if (!tok) return [];
+    const q = tok.query;
+    const starts = goals.filter((g) => g.title.toLowerCase().startsWith(q));
+    const has = goals.filter((g) => !starts.includes(g) && g.title.toLowerCase().includes(q));
+    return [...starts, ...has].slice(0, 5);
+  }, [tok?.query, goals]); // eslint-disable-line react-hooks/exhaustive-deps
+  // flat, keyboard-navigable list across both groups: staff first, then goals
+  const items = useMemo(
+    () => [
+      ...staffItems.map((s) => ({ kind: "staff" as const, staff: s })),
+      ...goalItems.map((g) => ({ kind: "goal" as const, goal: g })),
+    ],
+    [staffItems, goalItems],
+  );
   useEffect(() => setIdx(0), [tok?.query]);
-  useEffect(() => { if (!text) picked.current.clear(); }, [text]);
+  useEffect(() => { if (!text) { picked.current.clear(); pickedGoals.current.clear(); } }, [text]);
 
   const open = !!tok && items.length > 0 && closedAt !== `${text}:${caret}`;
-  const pick = (s: Staff | undefined) => {
-    if (!s || !tok) return;
-    const next = `${text.slice(0, tok.start)}@${s.name} ${text.slice(caret)}`;
-    picked.current.add(s.id);
+  type Item = (typeof items)[number];
+  const insert = (label: string) => {
+    if (!tok) return;
+    const next = `${text.slice(0, tok.start)}@${label} ${text.slice(caret)}`;
     setText(next);
-    const pos = tok.start + s.name.length + 2;
+    const pos = tok.start + label.length + 2;
     setTimeout(() => { const h = box.current; if (h) { h.focus(); h.setCaret(pos); setCaret(pos); } }, 0);
+  };
+  const pick = (it: Item | undefined) => {
+    if (!it) return;
+    if (it.kind === "staff") { picked.current.add(it.staff.id); insert(it.staff.name); }
+    else { pickedGoals.current.add(it.goal.id); insert(it.goal.title); }
   };
 
   /** Returns true when the key was used by the menu. */
@@ -65,21 +88,37 @@ export function useMentions(text: string, setText: (t: string) => void, staff: S
   /** The helpers mentioned in what is about to be sent (picked from the menu and still in the text). */
   const mentioned = (t: string) => staff.filter((s) => picked.current.has(s.id) && t.toLowerCase().includes(`@${s.name.toLowerCase()}`)).map((s) => s.id);
 
+  /** The goals mentioned in what is about to be sent (picked from the menu and still in the text). */
+  const mentionedGoals = (t: string) => goals.filter((g) => pickedGoals.current.has(g.id) && t.toLowerCase().includes(`@${g.title.toLowerCase()}`)).map((g) => g.id);
+
+  const staffCount = staffItems.length;
   const menu = open ? (
-    <div className="slash mention-menu" role="listbox" aria-label="Mention a helper">
-      <div className="sl-group">Mention a helper</div>
-      {items.map((s, i) => (
+    <div className="slash mention-menu" role="listbox" aria-label="Mention a helper or goal">
+      {staffCount > 0 && <div className="sl-group">Mention a helper</div>}
+      {staffItems.map((s, i) => (
         <button key={s.id} type="button" role="option" aria-selected={i === idx} className={`sl-item ${i === idx ? "on" : ""}`}
-          onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); pick(s); }}>
+          onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); pick(items[i]); }}>
           <Avatar who={s} size={22} />
           <span className="sl-label"><b>{s.name}</b></span>
           <span className="sl-hint">{s.is_chief ? "routes work to the team" : (s as any).role || ""}</span>
         </button>
       ))}
+      {goalItems.length > 0 && <div className="sl-group">Mention a goal</div>}
+      {goalItems.map((g, gi) => {
+        const i = staffCount + gi;
+        return (
+          <button key={g.id} type="button" role="option" aria-selected={i === idx} className={`sl-item ${i === idx ? "on" : ""}`}
+            onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); pick(items[i]); }}>
+            <i className="ri-focus-3-line mention-goal" aria-hidden />
+            <span className="sl-label"><b>{g.title}</b></span>
+            <span className="sl-hint">goal context</span>
+          </button>
+        );
+      })}
       <div className="sl-foot"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>Enter</kbd> mention · <kbd>Esc</kbd> close</div>
     </div>
   ) : null;
-  return { open, onKeyDown, menu, mentioned };
+  return { open, onKeyDown, menu, mentioned, mentionedGoals };
 }
 
 type MentionStaff = { id: string; name: string; role?: string; is_chief?: boolean };

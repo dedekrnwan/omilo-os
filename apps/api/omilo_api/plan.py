@@ -114,6 +114,15 @@ def seed_from_onboarding(db: Session) -> None:
     db.commit()
 
 
+def _fmt_num(n) -> str:
+    """Render a KPI number without a trailing .0 (95.0 -> '95', 2.5 -> '2.5')."""
+    try:
+        f = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+    return str(int(f)) if f == int(f) else str(f)
+
+
 def _node(t: Task, names: dict, reps: dict, props: dict, kids: dict) -> dict:
     first = (t.brief or "").strip().splitlines()[0] if (t.brief or "").strip() else t.origin
     return {"id": t.id, "title": first[:160], "staff_id": t.staff_id, "staff": names.get(t.staff_id, t.staff_id), "status": t.status,
@@ -163,15 +172,57 @@ def tree(db: Session, days: int = 30) -> dict:
     from .kpis import board as kpi_board
 
     kp = kpi_board(db, history=8)
+    week_ago = now() - dt.timedelta(days=7)
     out, used = [], set()
     for g in goals:
         nodes = [_node(t, names, reps, props, kids) for t in roots if link.get(t.id) == g.id]
         used |= {n["id"] for n in nodes}
+        gkpis = [{k: r[k] for k in ("name", "label", "unit", "value", "target", "progress", "direction")} for r in kp if r["goal_id"] == g.id]
+
+        # Primary KPI → percent of target + a human metric label
+        percent: int | None = None
+        metric_label: str | None = None
+        if gkpis:
+            primary = gkpis[0]
+            target = primary.get("target")
+            value = primary.get("value")
+            if target and value is not None:
+                try:
+                    percent = round(float(value) / float(target) * 100)
+                    metric_label = f"this week · target {_fmt_num(target)}{primary.get('unit') or ''}"
+                except (TypeError, ValueError, ZeroDivisionError):
+                    percent = None
+                    metric_label = None
+
+        # Distinct staff + "done this week" count across this goal's flattened work nodes
+        def _walk(ns: list[dict], team: dict[str, str], acc: dict) -> None:
+            for n in ns:
+                sid = n.get("staff_id")
+                if sid and sid not in team:
+                    team[sid] = names.get(sid, sid)
+                st = (n.get("status") or "").lower()
+                if st in ("done", "completed"):
+                    created = n.get("created_at")
+                    if created:
+                        try:
+                            when_dt = dt.datetime.fromisoformat(created)
+                            if when_dt >= week_ago:
+                                acc["done"] += 1
+                        except ValueError:
+                            pass
+                _walk(n.get("children") or [], team, acc)
+
+        team_map: dict[str, str] = {}
+        week_acc = {"done": 0}
+        _walk(nodes, team_map, week_acc)
+        team = [{"id": sid, "name": nm} for sid, nm in list(team_map.items())[:5]]
+
         out.append({"id": g.id, "title": g.title, "target": g.target, "due": g.due, "status": g.status, "position": g.position,
                     "jobs": [{"id": sh.id, "name": sh.name, "staff_id": sh.staff_id, "staff": names.get(sh.staff_id, sh.staff_id), "cron": sh.cron}
                              for sh in shifts if shift_goal.get(sh.id) == g.id],
                     "work": list(reversed(nodes)), "progress": count(nodes, {"total": 0, "proposals": 0, "approved": 0}),
-                    "kpis": [{k: r[k] for k in ("name", "label", "unit", "value", "target", "progress", "direction")} for r in kp if r["goal_id"] == g.id]})
+                    "percent": percent, "metric_label": metric_label, "done_this_week": week_acc["done"], "team": team,
+                    "kpis": gkpis})
     rest = [_node(t, names, reps, props, kids) for t in roots if t.id not in used]
     return {"days": days, "goals": out, "unlinked": list(reversed(rest)),
             "shifts": [{"id": sh.id, "name": sh.name, "staff": names.get(sh.staff_id, sh.staff_id), "goal_id": shift_goal.get(sh.id), "cron": sh.cron} for sh in shifts]}

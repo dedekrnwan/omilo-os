@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import (
@@ -105,6 +105,17 @@ def board(db: Session, days: int = 14) -> dict:
         )
     ))
 
+    # Terminal tasks (done/failed/cancelled) finished since start-of-today (UTC),
+    # so the per-helper "✓ N done today" toggle has something to show.
+    start_of_today = dt.datetime.now(dt.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    done_tasks = list(db.scalars(
+        select(Task)
+        .where(
+            Task.status.in_(["done", "failed", "cancelled"]),
+            func.coalesce(Task.ended_at, Task.created_at) >= start_of_today,
+        )
+    ))
+
     # Tasks with an open Proposal (status in pending/changes_requested)
     open_proposal_task_ids: set[str] = set(
         db.scalars(
@@ -128,16 +139,20 @@ def board(db: Session, days: int = 14) -> dict:
         )
     )
 
-    # Collect all qualifying task IDs
-    all_task_ids: set[str] = {t.id for t in live_tasks} | open_proposal_task_ids | awaiting_thread_task_ids
+    # Collect all qualifying task IDs (live + done-today so goal/collaborator/progress lookups cover them)
+    done_task_ids: set[str] = {t.id for t in done_tasks}
+    all_task_ids: set[str] = (
+        {t.id for t in live_tasks} | open_proposal_task_ids | awaiting_thread_task_ids | done_task_ids
+    )
 
     # Load tasks we don't yet have (open proposal / awaiting thread tasks not in live window)
-    extra_ids = (open_proposal_task_ids | awaiting_thread_task_ids) - {t.id for t in live_tasks}
+    have_ids = {t.id for t in live_tasks} | done_task_ids
+    extra_ids = (open_proposal_task_ids | awaiting_thread_task_ids) - have_ids
     extra_tasks: list[Task] = []
     if extra_ids:
         extra_tasks = list(db.scalars(select(Task).where(Task.id.in_(extra_ids))))
 
-    all_tasks: dict[str, Task] = {t.id: t for t in live_tasks + extra_tasks}
+    all_tasks: dict[str, Task] = {t.id: t for t in live_tasks + done_tasks + extra_tasks}
 
     # ---------------------------------------------------------------- goal lookup
 
