@@ -20,7 +20,9 @@ from . import policy
 from .config import get_settings
 from .models import (
     AuditEvent,
+    Channel,
     Checkpoint,
+    Goal,
     InboxItem,
     KpiValue,
     Message,
@@ -1894,4 +1896,59 @@ def update_system_setting_svc(db: Session, actor: str, key: str, value) -> dict:
 
     set_setting(db, key, value, actor=actor)
     return {"key": key, "value": value}
+
+
+# ---------------------------------------------------------------- channels (chat mode: a home for goals)
+def list_channels(db: Session) -> dict:
+    """All active channels with their members + goals, plus the goals not yet in any channel."""
+    chans = list(db.scalars(
+        select(Channel).where(Channel.archived.is_(False)).order_by(Channel.position, Channel.created_at)
+    ))
+    goals = list(db.scalars(select(Goal).where(Goal.status == "active").order_by(Goal.position)))
+    staff = {s.id: s for s in db.scalars(select(Staff))}
+
+    def member(sid: str) -> dict:
+        s = staff.get(sid)
+        return {"id": sid, "name": s.name if s else sid}
+
+    out = []
+    for ch in chans:
+        out.append({
+            "id": ch.id, "name": ch.name, "emoji": ch.emoji or "", "position": ch.position,
+            "members": [member(sid) for sid in (ch.member_ids or [])],
+            "goals": [{"id": g.id, "title": g.title} for g in goals if g.channel_id == ch.id],
+        })
+    unassigned = [{"id": g.id, "title": g.title} for g in goals if not g.channel_id]
+    return {"channels": out, "unassigned": unassigned}
+
+
+def create_channel(db: Session, name: str, emoji: str = "", member_ids: list[str] | None = None,
+                   goal_ids: list[str] | None = None, actor: str = "owner") -> Channel:
+    name = (name or "").strip()
+    if not name:
+        raise DomainError("a channel needs a name")
+    pos = (db.scalar(select(func.max(Channel.position))) or 0) + 1
+    ch = Channel(name=name[:120], emoji=(emoji or "")[:16], position=pos, member_ids=list(member_ids or []))
+    db.add(ch)
+    db.flush()
+    for gid in (goal_ids or []):
+        g = db.get(Goal, gid)
+        if g:
+            g.channel_id = ch.id
+    audit(db, actor, "channel.create", ch.id, name=name[:120], goals=len(goal_ids or []))
+    db.commit()
+    db.refresh(ch)
+    return ch
+
+
+def assign_goal_channel(db: Session, goal_id: str, channel_id: str | None, actor: str = "owner") -> Goal:
+    g = db.get(Goal, goal_id)
+    if not g:
+        raise DomainError("goal not found", 404)
+    if channel_id and not db.get(Channel, channel_id):
+        raise DomainError("channel not found", 404)
+    g.channel_id = channel_id or None
+    audit(db, actor, "channel.assign_goal", channel_id or "", goal_id=goal_id)
+    db.commit()
+    return g
 

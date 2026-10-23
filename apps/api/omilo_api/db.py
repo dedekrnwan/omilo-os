@@ -145,6 +145,7 @@ _COLUMNS = [
     ("staff", "autonomy", "VARCHAR(16) NOT NULL DEFAULT 'standard'"),
     ("staff", "voice", "TEXT NOT NULL DEFAULT ''"),
     ("harness_account", "cooldown_estimated", "BOOLEAN NOT NULL DEFAULT false"),
+    ("goal", "channel_id", "VARCHAR(32)"),
 ]
 
 
