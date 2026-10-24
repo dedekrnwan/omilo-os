@@ -80,12 +80,18 @@ function DocCard({ title, meta }: { title: string; meta: string }) {
 }
 
 /** pen `Suggested Actions`: primary (list-checks) + secondary, h-28, indented 34px. */
-function SuggestedActions({ actions }: { actions: NonNullable<Message['actions']> }) {
+function SuggestedActions({
+  actions,
+  onTasksAction,
+}: {
+  actions: NonNullable<Message['actions']>
+  onTasksAction?: () => void
+}) {
   return (
     <div className={`${col} flex gap-[8px] pl-[34px]`}>
       {actions.map((a) =>
         a.primary ? (
-          <Button key={a.label} height={28} icon={ListChecks}>
+          <Button key={a.label} height={28} icon={ListChecks} onClick={onTasksAction}>
             {a.label}
           </Button>
         ) : (
@@ -100,10 +106,11 @@ function SuggestedActions({ actions }: { actions: NonNullable<Message['actions']
 
 interface MessageListProps {
   messages: Message[]
+  onTasksAction?: () => void
 }
 
 /** pen `Thread`: centred column · gap 20 · padding 23 0 13 0. */
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({ messages, onTasksAction }: MessageListProps) {
   return (
     <div role="log" aria-label="Messages" className="flex flex-col items-center gap-[20px] pt-[23px] pb-[13px]">
       {messages.map((m) => (
@@ -116,7 +123,9 @@ export function MessageList({ messages }: MessageListProps) {
             <AgentMessage message={m} />
           )}
           {m.attachment && <DocCard {...m.attachment} />}
-          {m.actions && m.actions.length > 0 && <SuggestedActions actions={m.actions} />}
+          {m.actions && m.actions.length > 0 && (
+            <SuggestedActions actions={m.actions} onTasksAction={onTasksAction} />
+          )}
         </Fragment>
       ))}
     </div>

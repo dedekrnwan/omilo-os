@@ -13,11 +13,13 @@ import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
 import { InboxRoute } from './InboxRoute'
+import { OfficeLayout } from './OfficeLayout'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Build a minimal test router that mirrors the production office route shape:
+ *   /office  → OfficeLayout (sidebar + Outlet)
  *   /office/inbox
  *   /office/inbox/$itemId
  * Wraps with ReposProvider + QueryClientProvider inside the root route.
@@ -48,7 +50,7 @@ function makeTestRouter(
   const officeRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/office',
-    component: () => <Outlet />,
+    component: OfficeLayout,
   })
 
   const officeInboxRoute = createRoute({

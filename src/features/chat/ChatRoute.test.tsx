@@ -12,16 +12,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
-import { ChatRoute } from './ChatRoute'
+import { ChatChannelLayout } from './ChatChannelLayout'
+import { ChatIndexRoute, ChatSessionRoute } from './ChatRoute'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Build a minimal test router that mirrors the production route shape:
+ * Build a test router that mirrors the REAL production route shape:
  *   /chat
- *   /chat/$channelId
- *   /chat/$channelId/$sessionId
- * Wraps with ReposProvider + QueryClientProvider via the wrapper component.
+ *   /chat/$channelId          → ChatChannelLayout  (sidebar + Inset + Outlet)
+ *   /chat/$channelId/         → ChatIndexRoute     (new-chat hero)
+ *   /chat/$channelId/$sessionId → ChatSessionRoute (session thread)
+ *
+ * This structure ensures sub-routes actually mount via <Outlet />, catching
+ * the class of bug where child routes silently fall back to the hero.
  */
 function makeTestRouter(
   initialPath: string,
@@ -49,24 +53,33 @@ function makeTestRouter(
   const chatRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/chat',
-    component: ChatRoute,
+    component: () => <Outlet />,
   })
 
+  // Layout route — renders ChannelSidebar + Inset + <Outlet />
   const chatChannelRoute = createRoute({
     getParentRoute: () => chatRoute,
     path: '$channelId',
-    component: ChatRoute,
+    component: ChatChannelLayout,
   })
 
+  // Index child — renders the new-chat hero
+  const chatChannelIndexRoute = createRoute({
+    getParentRoute: () => chatChannelRoute,
+    path: '/',
+    component: ChatIndexRoute,
+  })
+
+  // Session child — renders the session thread
   const chatSessionRoute = createRoute({
     getParentRoute: () => chatChannelRoute,
     path: '$sessionId',
-    component: ChatRoute,
+    component: ChatSessionRoute,
   })
 
   const routeTree = rootRoute.addChildren([
     chatRoute.addChildren([
-      chatChannelRoute.addChildren([chatSessionRoute]),
+      chatChannelRoute.addChildren([chatChannelIndexRoute, chatSessionRoute]),
     ]),
   ])
 
@@ -166,6 +179,21 @@ describe('ChatRoute — channel default view', () => {
         screen.getByText(/WebAuthn on the legacy Android app/i),
       ).toBeInTheDocument()
     })
+  })
+
+  test('session route does NOT show the new-chat hero', async () => {
+    // This test catches the bug: if child routes fall back to the hero, this fails
+    const { router } = makeTestRouter('/chat/ch-engineering/sess-passkey')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    // Wait for session content to load
+    await waitFor(() => {
+      expect(screen.getByText(/WebAuthn on the legacy Android app/i)).toBeInTheDocument()
+    })
+
+    // The hero headline must NOT be visible on a session route
+    expect(screen.queryByText(/what are we figuring out/i)).not.toBeInTheDocument()
   })
 })
 

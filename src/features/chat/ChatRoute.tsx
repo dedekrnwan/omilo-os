@@ -6,12 +6,8 @@ import { useChannel, useChannelGoals } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
-import { Inset, Topbar } from '../../ui/ds/Frame'
+import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { ChannelSidebar } from './ChannelSidebar'
-
-/** /chat with no channel opens the default channel. */
-const DEFAULT_CHANNEL_ID = 'ch-general'
 
 // ── New chat hero (pen `Chat · New chat (General)`) ───────────────────────────
 
@@ -29,7 +25,7 @@ function NewChatHero({ channel }: { channel: Channel }) {
             Morning, Dede. What are we figuring out?
           </h2>
           <p className="m-0 text-[14px] text-muted">
-            You’re in {channel.name}. Switch channel to give Chief focused context for one area.
+            You're in {channel.name}. Switch channel to give Chief focused context for one area.
           </p>
         </div>
 
@@ -64,30 +60,51 @@ function NewChatHero({ channel }: { channel: Channel }) {
   )
 }
 
-function ChannelView({ channelId }: { channelId: string }) {
+// ── ChatIndexRoute: index child of $channelId — shows the new-chat hero ───────
+
+/**
+ * Index route under /chat/$channelId.
+ * Renders ONLY the main-content hero; the layout provides the sidebar + Inset wrapper.
+ */
+export function ChatIndexRoute() {
+  const params = useParams({ strict: false })
+  const channelId = params.channelId ?? 'ch-general'
   const { data: channel, isLoading } = useChannel(channelId)
+
   if (isLoading) return null
   if (!channel) throw notFound()
+
   return <NewChatHero channel={channel} />
 }
 
-// ── ChatRoute ─────────────────────────────────────────────────────────────────
+// ── ChatSessionRoute: $sessionId child — shows the session thread ─────────────
 
 /**
- * Bound to /chat, /chat/$channelId and /chat/$channelId/$sessionId.
- * Channel sidebar + inset main (new-chat hero or the shared ChatSession).
+ * Session route under /chat/$channelId/$sessionId.
+ * Renders ONLY the ChatSession main content; the layout provides sidebar + Inset.
+ */
+export function ChatSessionRoute() {
+  const params = useParams({ strict: false })
+  const sessionId = params.sessionId ?? ''
+
+  return <ChatSession key={sessionId} sessionId={sessionId} />
+}
+
+/**
+ * @deprecated Use ChatChannelLayout + ChatIndexRoute + ChatSessionRoute instead.
+ * Kept temporarily so existing imports don't break during migration.
+ * Remove once router.tsx and tests are fully updated.
  */
 export function ChatRoute() {
   const params = useParams({ strict: false })
-  const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
+  const channelId = params.channelId ?? 'ch-general'
   const sessionId = params.sessionId
+  const { data: channel, isLoading } = useChannel(channelId)
 
-  return (
-    <>
-      <ChannelSidebar channelId={channelId} sessionId={sessionId} />
-      <Inset>
-        {sessionId ? <ChatSession key={sessionId} sessionId={sessionId} /> : <ChannelView channelId={channelId} />}
-      </Inset>
-    </>
-  )
+  if (isLoading) return null
+  if (!channel) throw notFound()
+
+  return sessionId
+    ? <ChatSession key={sessionId} sessionId={sessionId} />
+    : <NewChatHero channel={channel} />
 }

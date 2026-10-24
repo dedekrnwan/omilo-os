@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { CalendarSync, ChartLine, FileText, Inbox, Layers, Target, Workflow } from 'lucide-react'
 import { useChannels, useInbox } from '../../app/queries'
 import { areaDot } from '../../ui/ds/accents'
@@ -7,14 +7,20 @@ import { GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar
 /** Areas filter value: a channel id, or null for "All areas". */
 export type AreaFilter = string | null
 
+export type OfficeNav = 'Goals' | 'Inbox'
+
 interface OfficeSidebarProps {
   area?: AreaFilter
   onAreaChange?: (area: AreaFilter) => void
+  activeNav?: OfficeNav
 }
 
 /** pen `Office Sidebar` (EuKqr). */
-export function OfficeSidebar({ area = null, onAreaChange }: OfficeSidebarProps) {
+export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }: OfficeSidebarProps) {
   const navigate = useNavigate()
+  const matchRoute = useMatchRoute()
+  const onFlows = !!matchRoute({ to: '/office/flows', fuzzy: true })
+  const onDocs = !!matchRoute({ to: '/office/docs', fuzzy: true })
   const { data: channels = [] } = useChannels()
   const { data: items = [] } = useInbox()
   const needsYou = items.filter((i) => i.status === 'pending' && i.needsYou).length
@@ -35,19 +41,34 @@ export function OfficeSidebar({ area = null, onAreaChange }: OfficeSidebarProps)
       </div>
 
       <NavGroup>
-        <NavLink icon={Target} label="Goals" />
+        <NavLink
+          icon={Target}
+          label="Goals"
+          active={activeNav === 'Goals'}
+          onClick={() => void navigate({ to: '/office/goals' })}
+        />
         <NavLink
           icon={Inbox}
           label="Inbox"
-          active
+          active={activeNav === 'Inbox'}
           count={needsYou || undefined}
           countClassName="font-semibold text-[#EB6834]"
           onClick={() => void navigate({ to: '/office/inbox' })}
         />
-        <NavLink icon={Workflow} label="Flows" />
-        <NavLink icon={CalendarSync} label="Routines" />
-        <NavLink icon={FileText} label="Docs" />
-        <NavLink icon={ChartLine} label="Analytics" />
+        <NavLink
+          icon={Workflow}
+          label="Flows"
+          active={onFlows}
+          onClick={() => void navigate({ to: '/office/flows' })}
+        />
+        <NavLink icon={CalendarSync} label="Routines" onClick={() => {}} />
+        <NavLink
+          icon={FileText}
+          label="Docs"
+          active={onDocs}
+          onClick={() => void navigate({ to: '/office/docs' })}
+        />
+        <NavLink icon={ChartLine} label="Analytics" onClick={() => {}} />
       </NavGroup>
 
       <NavGroup>

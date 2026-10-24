@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   Bell,
@@ -13,6 +13,7 @@ import {
   MessageCircle,
   MessageSquareHeart,
   Plus,
+  Search,
   Settings,
   ShieldCheck,
   UserRound,
@@ -191,6 +192,7 @@ interface BottomActionsProps {
  */
 function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage }: BottomActionsProps) {
   const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
   const yolo = autonomy === 'yolo'
   const autonomyProps = {
     label: 'Autonomy',
@@ -201,7 +203,14 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
     current: currentPage === 'autonomy',
   }
   const items = {
-    team: { label: 'Team', tooltip: `Team · ${helpers} helpers`, kbd: 'G T', glyph: <TeamGlyph />, current: currentPage === 'team' },
+    team: {
+      label: 'Team',
+      tooltip: `Team · ${helpers} helpers`,
+      kbd: 'G T',
+      glyph: <TeamGlyph />,
+      current: currentPage === 'team',
+      onClick: () => void navigate({ to: '/team' }),
+    },
     notifications: {
       label: 'Notifications',
       tooltip: unread > 0 ? `Notifications · ${unread} new` : 'Notifications',
@@ -209,8 +218,16 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
       icon: Bell,
       dot: unread > 0,
       current: currentPage === 'notifications',
+      onClick: () => void navigate({ to: '/notifications' }),
     },
-    settings: { label: 'Settings', tooltip: 'Control panel', kbd: 'G ,', icon: Settings, current: currentPage === 'settings' },
+    settings: {
+      label: 'Settings',
+      tooltip: 'Control panel',
+      kbd: 'G ,',
+      icon: Settings,
+      current: currentPage === 'settings',
+      onClick: () => void navigate({ to: '/control-panel' }),
+    },
     autonomy: autonomyProps,
   }
 
@@ -362,10 +379,19 @@ function ProfileMenu() {
  * Omilo mark → companies → spacer → tray (notifications, more) →
  * Chat/Office mode switch → you.
  */
-export function Rail() {
+export function Rail({ onOpenCommandMenu }: { onOpenCommandMenu?: () => void } = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { mode, toggleTarget } = useUIStore()
   const isChat = mode === 'chat'
+
+  const currentPage: RailPage | undefined = location.pathname.startsWith('/team')
+    ? 'team'
+    : location.pathname.startsWith('/notifications')
+      ? 'notifications'
+      : location.pathname.startsWith('/control-panel')
+        ? 'settings'
+        : undefined
 
   function switchMode() {
     const target = toggleTarget()
@@ -395,7 +421,17 @@ export function Rail() {
 
       <div className="w-px flex-1" />
 
-      <BottomActions />
+      {onOpenCommandMenu && (
+        <TrayButton
+          label="Search"
+          tooltip="Search"
+          kbd="⌘K"
+          icon={Search}
+          onClick={onOpenCommandMenu}
+        />
+      )}
+
+      <BottomActions currentPage={currentPage} />
 
       <div role="group" aria-label="Mode" className="flex flex-col gap-[2px] rounded-md bg-[#E7E5E4] p-[3px]">
         <ModeSegment label="Chat" icon={MessageCircle} active={isChat} onClick={isChat ? undefined : switchMode} />
