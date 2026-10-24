@@ -8,11 +8,12 @@ import type { ChannelNav } from './ChannelSidebar'
 function useActiveNav(): ChannelNav | undefined {
   const matchRoute = useMatchRoute()
 
-  if (matchRoute({ to: '/chat/$channelId/goals', fuzzy: false })) return 'Goals'
-  if (matchRoute({ to: '/chat/$channelId/flows', fuzzy: false })) return 'Flows'
-  if (matchRoute({ to: '/chat/$channelId/docs',  fuzzy: false })) return 'Docs'
-  // Session routes and index both map to Chats (undefined lets ChannelSidebar
-  // highlight Chats when a sessionId is present via its own logic)
+  if (matchRoute({ to: '/chat/$channelId/goals',    fuzzy: false })) return 'Goals'
+  if (matchRoute({ to: '/chat/$channelId/flows',    fuzzy: false })) return 'Flows'
+  if (matchRoute({ to: '/chat/$channelId/docs',     fuzzy: false })) return 'Docs'
+  if (matchRoute({ to: '/chat/$channelId/archived', fuzzy: false })) return 'Archived'
+  // Session routes, folder routes, and index all map to Chats (undefined lets
+  // ChannelSidebar highlight Chats when a sessionId is present via its own logic)
   return undefined
 }
 

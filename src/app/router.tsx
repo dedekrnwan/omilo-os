@@ -11,6 +11,8 @@ import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
 import { GoalsRoute } from '../features/chat/GoalsRoute'
 import { FlowsRoute } from '../features/chat/FlowsRoute'
 import { DocsRoute } from '../features/chat/DocsRoute'
+import { ArchivedRoute } from '../features/chat/ArchivedRoute'
+import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
 
 /** Root route renders the Shell; the Shell renders <Outlet /> for child routes. */
@@ -82,6 +84,18 @@ const chatDocsRoute = createRoute({
   component: DocsRoute,
 })
 
+const chatArchivedRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'archived',
+  component: ArchivedRoute,
+})
+
+const chatFolderRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'folder/$folderId',
+  component: FolderRoute,
+})
+
 /**
  * Office routes — Task 8 replaces OfficeRoute with the real feature UI.
  */
@@ -111,6 +125,8 @@ const routeTree = rootRoute.addChildren([
       chatGoalsRoute,
       chatFlowsRoute,
       chatDocsRoute,
+      chatArchivedRoute,
+      chatFolderRoute,
     ]),
   ]),
   officeRoute.addChildren([

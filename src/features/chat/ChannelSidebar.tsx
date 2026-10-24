@@ -18,11 +18,12 @@ import { useChannelFolders, useChannelGoals, useChannelSessions, useChannels } f
 import { Button } from '../../ui/ds/Button'
 import { accents } from '../../ui/ds/accents'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
+import { CreateChannelDialog } from './CreateChannelDialog'
 
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
 
-export type ChannelNav = 'Chats' | 'Goals' | 'Flows' | 'Docs' | 'Analytics'
+export type ChannelNav = 'Chats' | 'Goals' | 'Flows' | 'Docs' | 'Analytics' | 'Archived'
 
 function channelSidebarMeta(c: Channel) {
   return c.isDefault ? 'Default channel · Chief' : `Channel · Chief + ${c.agentCount} agents`
@@ -55,11 +56,13 @@ function ChannelPopover({
   activeId,
   onSelect,
   onClose,
+  onCreateChannel,
 }: {
   channels: Channel[]
   activeId: string
   onSelect: (id: string) => void
   onClose: () => void
+  onCreateChannel: () => void
 }) {
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -124,20 +127,22 @@ function ChannelPopover({
         )
       })}
       <div className="h-px w-full bg-line-strong" />
-      {[
-        { icon: Plus, label: 'Create channel' },
-        { icon: Settings2, label: 'Manage channels' },
-      ].map(({ icon: Icon, label }) => (
-        <button
-          key={label}
-          type="button"
-          onClick={onClose}
-          className="flex w-full items-center gap-[10px] rounded-base px-[7px] py-[8px] text-left transition-colors hover:bg-hover"
-        >
-          <Icon size={15} aria-hidden className="text-ink-2" />
-          <span className="text-[12.5px] text-ink-2">{label}</span>
-        </button>
-      ))}
+      <button
+        type="button"
+        onClick={() => { onClose(); onCreateChannel() }}
+        className="flex w-full items-center gap-[10px] rounded-base px-[7px] py-[8px] text-left transition-colors hover:bg-hover"
+      >
+        <Plus size={15} aria-hidden className="text-ink-2" />
+        <span className="text-[12.5px] text-ink-2">Create channel</span>
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="flex w-full items-center gap-[10px] rounded-base px-[7px] py-[8px] text-left transition-colors hover:bg-hover"
+      >
+        <Settings2 size={15} aria-hidden className="text-ink-2" />
+        <span className="text-[12.5px] text-ink-2">Manage channels</span>
+      </button>
     </div>
   )
 }
@@ -159,6 +164,7 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
   const { data: sessions = [] } = useChannelSessions(channelId)
   const { data: goals = [] } = useChannelGoals(channelId)
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [createChannelOpen, setCreateChannelOpen] = useState(false)
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -187,7 +193,13 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
       void navigate({ to: '/chat/$channelId/flows', params: { channelId } })
     } else if (nav === 'Docs') {
       void navigate({ to: '/chat/$channelId/docs', params: { channelId } })
+    } else if (nav === 'Archived') {
+      void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
     }
+  }
+
+  function openFolder(folderId: string) {
+    void navigate({ to: '/chat/$channelId/folder/$folderId', params: { channelId, folderId } })
   }
 
   function selectChannel(id: string) {
@@ -221,6 +233,7 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
           activeId={channelId}
           onSelect={selectChannel}
           onClose={() => setPopoverOpen(false)}
+          onCreateChannel={() => setCreateChannelOpen(true)}
         />
       )}
 
@@ -277,7 +290,11 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
                   name={f.name}
                   count={f.count}
                   open={open}
-                  onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))}
+                  onToggle={() => {
+                    setToggled((t) => ({ ...t, [f.id]: !open }))
+                    // Navigate to folder view when opening a folder row
+                    if (!open) openFolder(f.id)
+                  }}
                 />
                 {open && (
                   <div className="pb-[2px] pl-[20px]">
@@ -329,6 +346,13 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
         label="Archived"
         count={12}
         labelClassName="text-muted"
+        active={activeNav === 'Archived'}
+        onClick={() => navTo('Archived')}
+      />
+
+      <CreateChannelDialog
+        open={createChannelOpen}
+        onOpenChange={setCreateChannelOpen}
       />
     </SidebarFrame>
   )
