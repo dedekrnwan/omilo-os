@@ -6,9 +6,9 @@ Legend: [x] done · [ ] todo. IDs are pen.dev node ids (export PNG for reference
 
 ## WAVE 1 — CHAT mode
 - [x] gTI4y New chat (General)
-- [ ] PHRy6 Archived chats
-- [ ] W0f1Ji Create channel (dialog)
-- [ ] A8lWSN Folder
+- [x] PHRy6 Archived chats
+- [x] W0f1Ji Create channel (dialog)
+- [x] A8lWSN Folder
 - [x] k1bhz Docs (Engineering, in chat)
 - [x] b3vqC5 Session (base)
 - [ ] Session states on base: qx8jA @mention · DKIFQ /command · ON7HK #context · eqdjl Model menu · HoEHX Thinking menu · C9Glat Context menu · gHFPG Context almost full · GNF2E Compacted · P334a Share · ERnYB Chat menu · n9NI9G Tasks created
