@@ -52,7 +52,7 @@ describe('ShareDialog', () => {
   test('Close button triggers onOpenChange(false)', async () => {
     const user = userEvent.setup()
     let openState = true
-    const { rerender } = render(
+    render(
       <ShareDialog title="Test" open={openState} onOpenChange={(v) => { openState = v }} />,
     )
     const closeBtn = screen.getByRole('button', { name: /close/i })

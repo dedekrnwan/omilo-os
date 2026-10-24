@@ -15,11 +15,10 @@ import { ArchivedRoute } from './ArchivedRoute'
 import { FolderRoute } from './FolderRoute'
 import { CreateChannelDialog } from './CreateChannelDialog'
 
-// ── Test router builder ───────────────────────────────────────────────────────
+// ── Test router builders ──────────────────────────────────────────────────────
 
-function makeRouter(path: string, extraRoutes?: (channelRoute: ReturnType<typeof createRoute>) => ReturnType<typeof createRoute>[]) {
+function makeArchivedTestRouter(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={queryClient}>
@@ -29,12 +28,29 @@ function makeRouter(path: string, extraRoutes?: (channelRoute: ReturnType<typeof
       </QueryClientProvider>
     ),
   })
-
   const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
   const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
+  const archivedRoute = createRoute({ getParentRoute: () => channelRoute, path: 'archived', component: ArchivedRoute })
+  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([archivedRoute])])])
+  const history = createMemoryHistory({ initialEntries: [path] })
+  return createRouter({ routeTree: tree, history })
+}
 
-  const children = extraRoutes ? extraRoutes(channelRoute) : []
-  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren(children)])])
+function makeFolderTestRouter(path: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const rootRoute = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={queryClient}>
+        <ReposProvider>
+          <Outlet />
+        </ReposProvider>
+      </QueryClientProvider>
+    ),
+  })
+  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
+  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
+  const folderRoute = createRoute({ getParentRoute: () => channelRoute, path: 'folder/$folderId', component: FolderRoute })
+  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([folderRoute])])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
@@ -42,14 +58,8 @@ function makeRouter(path: string, extraRoutes?: (channelRoute: ReturnType<typeof
 // ── Archived route ────────────────────────────────────────────────────────────
 
 describe('ArchivedRoute', () => {
-  function makeArchivedRouter(path: string) {
-    return makeRouter(path, (channelRoute) => [
-      createRoute({ getParentRoute: () => channelRoute, path: 'archived', component: ArchivedRoute }),
-    ])
-  }
-
   test('renders the Archived topbar and chat list', async () => {
-    const router = makeArchivedRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/ch-general/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -62,7 +72,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route shows distinct content — NOT the new-chat hero', async () => {
-    const router = makeArchivedRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/ch-general/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -75,7 +85,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route has a search input', async () => {
-    const router = makeArchivedRouter('/chat/ch-engineering/archived')
+    const router = makeArchivedTestRouter('/chat/ch-engineering/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -85,7 +95,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route shows the footer disclaimer', async () => {
-    const router = makeArchivedRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/ch-general/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -98,14 +108,8 @@ describe('ArchivedRoute', () => {
 // ── Folder route ──────────────────────────────────────────────────────────────
 
 describe('FolderRoute', () => {
-  function makeFolderRouter(path: string) {
-    return makeRouter(path, (channelRoute) => [
-      createRoute({ getParentRoute: () => channelRoute, path: 'folder/$folderId', component: FolderRoute }),
-    ])
-  }
-
   test('renders folder header and chat list for Q4 Launch folder', async () => {
-    const router = makeFolderRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -116,7 +120,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows distinct content — NOT the new-chat hero', async () => {
-    const router = makeFolderRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -128,7 +132,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows chats belonging to the folder', async () => {
-    const router = makeFolderRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -140,7 +144,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route renders folder instructions panel', async () => {
-    const router = makeFolderRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
