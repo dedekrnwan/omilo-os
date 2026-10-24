@@ -16,9 +16,8 @@ import {
 import { useParams } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
-import { Inset, Topbar } from '../../ui/ds/Frame'
+import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { ChannelSidebar } from './ChannelSidebar'
 
 const DEFAULT_CHANNEL_ID = 'ch-general'
 
@@ -446,17 +445,14 @@ function DocsPage({ channelName }: { channelName: string }) {
 
 // ── DocsRoute ─────────────────────────────────────────────────────────────────
 
+/**
+ * Main content for /chat/$channelId/docs.
+ * The sidebar and Inset wrapper are provided by ChatChannelLayout.
+ */
 export function DocsRoute() {
   const params = useParams({ strict: false })
   const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
   const { data: channel } = useChannel(channelId)
 
-  return (
-    <>
-      <ChannelSidebar channelId={channelId} activeNav="Docs" />
-      <Inset label="Docs">
-        <DocsPage channelName={channel?.name ?? '…'} />
-      </Inset>
-    </>
-  )
+  return <DocsPage channelName={channel?.name ?? '…'} />
 }

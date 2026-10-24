@@ -3,9 +3,8 @@ import { MessageSquare, Plus, Target } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
-import { Inset, Topbar } from '../../ui/ds/Frame'
+import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { ChannelSidebar } from './ChannelSidebar'
 
 const DEFAULT_CHANNEL_ID = 'ch-general'
 
@@ -229,17 +228,14 @@ function GoalsPage({ channelName }: { channelName: string }) {
 
 // ── GoalsRoute ────────────────────────────────────────────────────────────────
 
+/**
+ * Main content for /chat/$channelId/goals.
+ * The sidebar and Inset wrapper are provided by ChatChannelLayout.
+ */
 export function GoalsRoute() {
   const params = useParams({ strict: false })
   const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
   const { data: channel } = useChannel(channelId)
 
-  return (
-    <>
-      <ChannelSidebar channelId={channelId} activeNav="Goals" />
-      <Inset label="Goals">
-        <GoalsPage channelName={channel?.name ?? '…'} />
-      </Inset>
-    </>
-  )
+  return <GoalsPage channelName={channel?.name ?? '…'} />
 }

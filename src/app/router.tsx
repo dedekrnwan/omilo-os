@@ -6,7 +6,8 @@ import {
   Outlet,
 } from '@tanstack/react-router'
 import { Shell } from './Shell'
-import { ChatRoute } from '../features/chat/ChatRoute'
+import { ChatChannelLayout } from '../features/chat/ChatChannelLayout'
+import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
 import { GoalsRoute } from '../features/chat/GoalsRoute'
 import { FlowsRoute } from '../features/chat/FlowsRoute'
 import { DocsRoute } from '../features/chat/DocsRoute'
@@ -26,25 +27,41 @@ const rootRoute = createRootRoute({
 })
 
 /**
- * Chat routes — Task 7 replaces ChatRoute with the real feature UI.
- * Swapping is a one-line change (the `component` prop on each route).
+ * Chat routes — layout-based nesting so the ChannelSidebar renders ONCE
+ * and each child route swaps main content via <Outlet />.
+ *
+ * /chat                              → passthrough (redirects to default channel)
+ * /chat/$channelId                   → ChatChannelLayout (sidebar + Inset(<Outlet />))
+ * /chat/$channelId/          (index) → ChatIndexRoute  (new-chat hero)
+ * /chat/$channelId/$sessionId        → ChatSessionRoute (session thread)
+ * /chat/$channelId/goals             → GoalsRoute
+ * /chat/$channelId/flows             → FlowsRoute
+ * /chat/$channelId/docs              → DocsRoute
  */
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/chat',
-  component: ChatRoute,
+  component: () => <Outlet />,
 })
 
 const chatChannelRoute = createRoute({
   getParentRoute: () => chatRoute,
   path: '$channelId',
-  component: ChatRoute,
+  component: ChatChannelLayout,
 })
 
+/** Index route: /chat/$channelId → new-chat hero */
+const chatChannelIndexRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: '/',
+  component: ChatIndexRoute,
+})
+
+/** Session route: /chat/$channelId/$sessionId → session thread */
 const chatSessionRoute = createRoute({
   getParentRoute: () => chatChannelRoute,
   path: '$sessionId',
-  component: ChatRoute,
+  component: ChatSessionRoute,
 })
 
 const chatGoalsRoute = createRoute({
@@ -88,7 +105,13 @@ const officeInboxItemRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   chatRoute.addChildren([
-    chatChannelRoute.addChildren([chatSessionRoute, chatGoalsRoute, chatFlowsRoute, chatDocsRoute]),
+    chatChannelRoute.addChildren([
+      chatChannelIndexRoute,
+      chatSessionRoute,
+      chatGoalsRoute,
+      chatFlowsRoute,
+      chatDocsRoute,
+    ]),
   ]),
   officeRoute.addChildren([
     officeInboxRoute.addChildren([officeInboxItemRoute]),

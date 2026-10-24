@@ -10,8 +10,14 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
+import { ChatChannelLayout } from './ChatChannelLayout'
 import { FlowsRoute } from './FlowsRoute'
 
+/**
+ * Build a test router that mirrors the real route tree for /chat/$channelId/flows.
+ * Uses ChatChannelLayout as the layout so FlowsRoute is mounted through <Outlet />,
+ * matching the production nesting and catching any layout-outlet bugs.
+ */
 function makeRouter(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
@@ -26,7 +32,9 @@ function makeRouter(path: string) {
   })
 
   const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
-  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: () => <Outlet /> })
+  // Layout route — matches production: renders ChannelSidebar + Inset + <Outlet />
+  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
+  // Flows child mounted through the layout's <Outlet />
   const flowsRoute = createRoute({ getParentRoute: () => channelRoute, path: 'flows', component: FlowsRoute })
 
   const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([flowsRoute])])])
