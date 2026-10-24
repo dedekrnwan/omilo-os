@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   Bell,
   Building2,
+  ChevronDown,
   CircleHelp,
   CreditCard,
   Ellipsis,
@@ -12,7 +14,9 @@ import {
   MessageSquareHeart,
   Plus,
   Settings,
+  ShieldCheck,
   UserRound,
+  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useUIStore } from '../app/store'
@@ -64,20 +68,188 @@ function CompanyTile({
   )
 }
 
-/** 30×30 tray button (radius 10, icon 17 ink-2). */
-function TrayButton({ label, icon: Icon, dot }: { label: string; icon: LucideIcon; dot?: boolean }) {
+// ── Bottom actions tray (pen `Rail · bottom actions`) ─────────────────────────
+
+/** Dark tooltip to the right of a rail button: h-26 · radius 7 · px-9 · gap 8 · 12px white · optional kbd. */
+function RailTooltip({ label, kbd }: { label: string; kbd?: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute top-1/2 left-[calc(100%+10px)] z-50 hidden h-[26px] -translate-y-1/2 items-center gap-[8px] rounded-btn bg-primary px-[9px] whitespace-nowrap shadow-[0_4px_10px_#0C0A0929] group-hover:flex group-focus-visible:flex"
+    >
+      <span className="text-[12px] text-white">{label}</span>
+      {kbd && (
+        <span className="flex h-[16px] items-center rounded-xs bg-[#FFFFFF1F] px-[4px] font-mono text-[10px] text-on-ink-2">
+          {kbd}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Orange unread dot on a 30×30 rail button. */
+function UnreadDot() {
+  return (
+    <span
+      aria-hidden
+      className="absolute top-[4px] left-[17px] size-[8px] rounded-full border-2 border-app bg-[#EB6834]"
+    />
+  )
+}
+
+/** Two overlapping helper mascots — the Team glyph. */
+function TeamGlyph() {
+  return (
+    <span aria-hidden className="relative block size-[30px]">
+      <span className="absolute top-[5px] left-0">
+        <Mascot size={20} radius={0} area="dev" tile={false} />
+      </span>
+      <span className="absolute top-[8px] left-[11px]">
+        <Mascot size={20} radius={0} area="marketing" tile={false} />
+      </span>
+    </span>
+  )
+}
+
+type TrayContext = 'rail' | 'tray'
+
+/**
+ * 30×30 rail button (radius 10 · icon 17 ink-2).
+ * On the rail: hover = #E7E5E4A6, current page = hover fill + ink icon.
+ * Inside the open tray: hover = soft white chip, current page = white + shadow.
+ */
+function TrayButton({
+  label,
+  tooltip,
+  kbd,
+  icon: Icon,
+  glyph,
+  dot,
+  current,
+  context = 'rail',
+  onClick,
+  iconClassName,
+  expanded,
+}: {
+  label: string
+  tooltip: string
+  kbd?: string
+  icon?: LucideIcon
+  glyph?: React.ReactNode
+  dot?: boolean
+  current?: boolean
+  context?: TrayContext
+  onClick?: () => void
+  iconClassName?: string
+  expanded?: boolean
+}) {
+  const look =
+    context === 'tray'
+      ? current
+        ? 'bg-surface shadow-[0_1px_3px_#0C0A091F]'
+        : 'hover:bg-[#FFFFFF99]'
+      : current
+        ? 'bg-hover'
+        : 'hover:bg-[#E7E5E4A6]'
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
-      className="relative flex size-[30px] items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-hover"
+      aria-current={current ? 'page' : undefined}
+      aria-expanded={expanded}
+      onClick={onClick}
+      className={`group relative flex size-[30px] shrink-0 items-center justify-center ${
+        glyph ? 'rounded-[9px]' : 'rounded-md'
+      } transition-colors ${look}`}
     >
-      <Icon size={17} aria-hidden />
-      {dot && (
-        <span className="absolute top-[4px] left-[17px] size-[8px] rounded-full border-2 border-app bg-[#EB6834]" />
-      )}
+      {glyph ??
+        (Icon && (
+          <Icon size={17} aria-hidden className={iconClassName ?? (current ? 'text-ink' : 'text-ink-2')} />
+        ))}
+      {dot && <UnreadDot />}
+      <RailTooltip label={tooltip} kbd={kbd} />
     </button>
+  )
+}
+
+export type RailPage = 'team' | 'notifications' | 'settings' | 'autonomy'
+
+interface BottomActionsProps {
+  /** Unread notifications (bell shows while > 0). */
+  unread?: number
+  helpers?: number
+  /** Autonomy mode; anything but "ask" keeps the shield visible. */
+  autonomy?: 'ask' | 'yolo'
+  /** Page currently open, if it is one of the tray's pages. */
+  currentPage?: RailPage
+}
+
+/**
+ * Team, Notifications, Settings and Autonomy live in a tray behind ⋯.
+ * Collapsed, only items with something to show stay out (unread bell,
+ * current page, non-default autonomy). ⋯ opens the tray; ⌄ closes it.
+ */
+function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage }: BottomActionsProps) {
+  const [open, setOpen] = useState(false)
+  const yolo = autonomy === 'yolo'
+  const autonomyProps = {
+    label: 'Autonomy',
+    tooltip: `Autonomy · ${yolo ? 'YOLO' : 'Ask'}`,
+    kbd: '⌥ A',
+    icon: yolo ? Zap : ShieldCheck,
+    iconClassName: yolo ? 'text-warn' : undefined,
+    current: currentPage === 'autonomy',
+  }
+  const items = {
+    team: { label: 'Team', tooltip: `Team · ${helpers} helpers`, kbd: 'G T', glyph: <TeamGlyph />, current: currentPage === 'team' },
+    notifications: {
+      label: 'Notifications',
+      tooltip: unread > 0 ? `Notifications · ${unread} new` : 'Notifications',
+      kbd: 'G N',
+      icon: Bell,
+      dot: unread > 0,
+      current: currentPage === 'notifications',
+    },
+    settings: { label: 'Settings', tooltip: 'Control panel', kbd: 'G ,', icon: Settings, current: currentPage === 'settings' },
+    autonomy: autonomyProps,
+  }
+
+  if (open) {
+    return (
+      <div role="group" aria-label="Rail actions" className="flex flex-col items-center gap-[2px] rounded-lg bg-[#E7E5E4] p-[3px]">
+        <TrayButton context="tray" {...items.team} />
+        <TrayButton context="tray" {...items.notifications} />
+        <TrayButton context="tray" {...items.settings} />
+        <TrayButton context="tray" {...items.autonomy} />
+        <button
+          type="button"
+          aria-label="Close tray"
+          aria-expanded
+          onClick={() => setOpen(false)}
+          className="flex h-[18px] w-[30px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-[#FFFFFF99]"
+        >
+          <ChevronDown size={14} aria-hidden />
+        </button>
+      </div>
+    )
+  }
+
+  const bellOut = unread > 0 || items.notifications.current
+  return (
+    <div role="group" aria-label="Rail actions" className="flex flex-col items-center gap-[10px] rounded-lg">
+      {items.team.current && <TrayButton {...items.team} />}
+      {bellOut && <TrayButton {...items.notifications} />}
+      {items.settings.current && <TrayButton {...items.settings} />}
+      {(yolo || items.autonomy.current) && <TrayButton {...items.autonomy} />}
+      <TrayButton
+        label="More"
+        tooltip="More actions"
+        icon={Ellipsis}
+        dot={!bellOut && unread > 0}
+        expanded={false}
+        onClick={() => setOpen(true)}
+      />
+    </div>
   )
 }
 
@@ -223,10 +395,7 @@ export function Rail() {
 
       <div className="w-px flex-1" />
 
-      <div className="flex flex-col items-center gap-[10px] rounded-lg">
-        <TrayButton label="Notifications" icon={Bell} dot />
-        <TrayButton label="More" icon={Ellipsis} />
-      </div>
+      <BottomActions />
 
       <div role="group" aria-label="Mode" className="flex flex-col gap-[2px] rounded-md bg-[#E7E5E4] p-[3px]">
         <ModeSegment label="Chat" icon={MessageCircle} active={isChat} onClick={isChat ? undefined : switchMode} />
