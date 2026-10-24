@@ -4,7 +4,11 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
 } from '@tanstack/react-router'
+
+/** Default landing: the General channel's new-chat hero. */
+const DEFAULT_CHANNEL = 'ch-general'
 import { Shell } from './Shell'
 import { ChatChannelLayout } from '../features/chat/ChatChannelLayout'
 import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
@@ -81,6 +85,15 @@ const shellRoute = createRoute({
   component: Shell,
 })
 
+/** Root index: "/" redirects to the default channel's new-chat view. */
+const rootIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/chat/$channelId', params: { channelId: DEFAULT_CHANNEL } })
+  },
+})
+
 /**
  * Chat routes — layout-based nesting so the ChannelSidebar renders ONCE
  * and each child route swaps main content via <Outlet />.
@@ -97,6 +110,15 @@ const chatRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/chat',
   component: () => <Outlet />,
+})
+
+/** Bare /chat redirects to the default channel. */
+const chatIndexRoute = createRoute({
+  getParentRoute: () => chatRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/chat/$channelId', params: { channelId: DEFAULT_CHANNEL } })
+  },
 })
 
 const chatChannelRoute = createRoute({
@@ -381,8 +403,10 @@ const onboardingRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
+  rootIndexRoute,
   shellRoute.addChildren([
     chatRoute.addChildren([
+      chatIndexRoute,
       chatChannelRoute.addChildren([
         chatChannelIndexRoute,
         chatSessionRoute,
