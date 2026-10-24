@@ -10,6 +10,9 @@ import { DEFAULT_MODEL } from './ModelMenu'
 import { Composer } from './Composer'
 import { ShareDialog } from './ShareDialog'
 import { ChatMenu } from './ChatMenu'
+import { ResultsPanel } from './ResultsPanel'
+import { BrowserPanel } from './BrowserPanel'
+import { GoalContextBanner } from './GoalContext'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
 
@@ -95,6 +98,14 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   // Topbar dialog / menu state
   const [shareOpen, setShareOpen] = useState(false)
 
+  // Panel states (split-pane)
+  const [resultsOpen, setResultsOpen] = useState(false)
+  const [browserOpen, setBrowserOpen] = useState(false)
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+
+  // Goal context banner state — shown when session has a goal prop passed
+  const [goalContextOpen, setGoalContextOpen] = useState(false)
+
   // Tasks created confirmation state (n9NI9G)
   const [tasksCreated, setTasksCreated] = useState(false)
 
@@ -110,7 +121,10 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const participants = session?.participants?.length ? session.participants : [CHIEF]
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onDragEnter={() => setIsDraggingOver(true)}
+    >
       <Topbar
         icon={MessageCircle}
         title={session?.title ?? ''}
@@ -146,52 +160,104 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
               </button>
             </ChatMenu>
             <div className="flex items-center gap-[2px] pr-[2px] pl-[6px]">
-              <IconButton icon={Globe} aria-label="Browser" />
-              <IconButton icon={PanelRight} aria-label="Results panel" />
+              <IconButton
+                icon={Globe}
+                aria-label="Browser panel"
+                aria-pressed={browserOpen}
+                onClick={() => { setBrowserOpen((v) => !v); if (!browserOpen) setResultsOpen(false) }}
+                className={browserOpen ? 'bg-hover text-ink' : ''}
+              />
+              <IconButton
+                icon={PanelRight}
+                aria-label="Results panel"
+                aria-pressed={resultsOpen}
+                onClick={() => { setResultsOpen((v) => !v); if (!resultsOpen) setBrowserOpen(false) }}
+                className={resultsOpen ? 'bg-hover text-ink' : ''}
+              />
             </div>
+            {session?.goal && (
+              <IconButton
+                icon={Target}
+                aria-label="Toggle goal context"
+                aria-pressed={goalContextOpen}
+                onClick={() => setGoalContextOpen((v) => !v)}
+                className={goalContextOpen ? 'bg-hover text-ok' : ''}
+              />
+            )}
           </div>
         }
       />
 
-      {/* Thread */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading ? null : !messages || messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-[6px] px-[24px] text-center">
-            <Mascot size={40} radius={11} />
-            <p className="m-0 mt-[6px] text-[13.5px] font-medium text-ink">No messages yet</p>
-            <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
-          </div>
-        ) : (
-          <>
-            <MessageList messages={messages} onTasksAction={() => setTasksCreated(true)} />
-            {tasksCreated && session?.goal && (
-              <div className="flex flex-col items-center pb-[13px]">
-                <TasksCreatedConfirmation
-                  goal={session.goal}
-                  onUndo={() => setTasksCreated(false)}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      {/* Goal context banner (AQW5x) — shown when session has a goal and banner is toggled */}
+      {goalContextOpen && session?.goal && (
+        <GoalContextBanner
+          goalTitle={session.goal}
+          progress={40}
+          status="On track"
+          due="due Nov 28"
+          area={channel?.name ?? 'Engineering'}
+        />
+      )}
 
-      {/* Composer area */}
-      <div className="flex shrink-0 flex-col items-center gap-[8px] pt-[4px] pb-[13px]">
-        <div className="w-[680px] max-w-[calc(100%-48px)]">
-          <Composer
-            sessionId={sessionId}
-            selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
-            placeholder={`Reply — ${joinNames(participants.map((p) => p.name))} ${
-              participants.length > 1 ? 'are' : 'is'
-            } in this chat`}
-          />
+      {/* Main content area: thread + optional split panel */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Left: thread + composer */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Thread */}
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            {isLoading ? null : !messages || messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-[6px] px-[24px] text-center">
+                <Mascot size={40} radius={11} />
+                <p className="m-0 mt-[6px] text-[13.5px] font-medium text-ink">No messages yet</p>
+                <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
+              </div>
+            ) : (
+              <>
+                <MessageList messages={messages} onTasksAction={() => setTasksCreated(true)} />
+                {tasksCreated && session?.goal && (
+                  <div className="flex flex-col items-center pb-[13px]">
+                    <TasksCreatedConfirmation
+                      goal={session.goal}
+                      onUndo={() => setTasksCreated(false)}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Composer area */}
+          <div className="flex shrink-0 flex-col items-center gap-[8px] pt-[4px] pb-[13px]">
+            <div className="w-[680px] max-w-[calc(100%-48px)]">
+              <Composer
+                sessionId={sessionId}
+                selectedModel={selectedModel}
+                onModelChange={setSelectedModel}
+                placeholder={`Reply — ${joinNames(participants.map((p) => p.name))} ${
+                  participants.length > 1 ? 'are' : 'is'
+                } in this chat`}
+              />
+            </div>
+            <p className="m-0 flex items-center gap-[6px] text-[12px] text-faint">
+              <ShieldCheck size={13} aria-hidden />
+              Agents here only read {area} goals, docs and chats
+            </p>
+          </div>
         </div>
-        <p className="m-0 flex items-center gap-[6px] text-[12px] text-faint">
-          <ShieldCheck size={13} aria-hidden />
-          Agents here only read {area} goals, docs and chats
-        </p>
+
+        {/* Right: Results panel (SP6gy / CnBzj / Zdjc7) */}
+        {resultsOpen && (
+          <ResultsPanel
+            onClose={() => setResultsOpen(false)}
+            isDraggingOver={isDraggingOver}
+            onDragLeave={() => setIsDraggingOver(false)}
+          />
+        )}
+
+        {/* Right: Browser panel (E5554m / ocar6) */}
+        {browserOpen && (
+          <BrowserPanel onClose={() => setBrowserOpen(false)} />
+        )}
       </div>
 
       {/* Share dialog */}
