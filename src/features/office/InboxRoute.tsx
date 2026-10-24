@@ -144,7 +144,7 @@ function RunningCard({ items }: { items: InboxItem[] }) {
           <div key={r.id} className="flex flex-col gap-[6px]">
             <div className="flex items-center gap-[8px]">
               <span aria-label="running" className="size-[7px] shrink-0 rounded-full bg-ok" />
-              <Mascot size={18} radius={5} area={r.askerArea} />
+              <Mascot size={18} radius={5} area={r.askerArea} working />
               <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{r.title}</span>
             </div>
             <div className="h-[4px] w-full overflow-hidden rounded-pill bg-[#E7E5E4]">
