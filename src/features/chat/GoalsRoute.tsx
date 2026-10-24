@@ -119,20 +119,23 @@ function GoalItem({ goal, expanded, onToggle }: { goal: GoalRow; expanded: boole
   return (
     <div className="flex flex-col">
       {/* Main row */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-[12px] rounded-base px-[12px] py-[10px] text-left transition-colors hover:bg-soft"
-        aria-expanded={expanded}
-      >
-        <StatusRing value={goal.progress} status={goal.status} />
+      <div className="flex w-full items-center gap-[12px] py-[10px]">
+        {/* Expand toggle: left part only (ring + title/meta) */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center gap-[12px] rounded-base px-[12px] py-[0px] text-left transition-colors hover:bg-soft"
+          aria-expanded={expanded}
+        >
+          <StatusRing value={goal.progress} status={goal.status} />
 
-        <span className="min-w-0 flex-1 flex flex-col gap-[2px]">
-          <span className="text-[13.5px] font-medium text-ink truncate">{goal.title}</span>
-          <span className="text-[11.5px] text-muted">
-            {goal.chats} chats · active {goal.lastActive}
+          <span className="min-w-0 flex-1 flex flex-col gap-[2px]">
+            <span className="text-[13.5px] font-medium text-ink truncate">{goal.title}</span>
+            <span className="text-[11.5px] text-muted">
+              {goal.chats} chats · active {goal.lastActive}
+            </span>
           </span>
-        </span>
+        </button>
 
         {/* Status chip */}
         <span
@@ -152,7 +155,7 @@ function GoalItem({ goal, expanded, onToggle }: { goal: GoalRow; expanded: boole
         <Button variant="secondary" height={28} icon={MessageSquare}>
           Chat
         </Button>
-      </button>
+      </div>
 
       {/* Expanded subtask rows */}
       {expanded && goal.subtasks && (
