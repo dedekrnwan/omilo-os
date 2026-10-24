@@ -2,16 +2,32 @@
 @import "./ui/tokens.css";
 
 /* ── Global base ────────────────────────────────────────────────────── */
+html,
 body {
   margin: 0;
+  height: 100%;
+}
+
+body {
   font-family: var(--font-sans);
-  background-color: var(--app);
-  color: var(--ink);
+  background-color: var(--color-app);
+  color: var(--color-ink);
+  /* pen.dev text uses the font's default line height unless set explicitly */
+  line-height: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 #root {
-  min-height: 100svh;
+  height: 100svh;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* pen.dev renders Bricolage Grotesque at its display optical size. */
+.font-display {
+  font-variation-settings: "opsz" 96;
 }

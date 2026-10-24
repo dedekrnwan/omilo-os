@@ -1,355 +1,124 @@
+import { Fragment } from 'react'
+import { ArrowUpRight, FileText, ListChecks } from 'lucide-react'
 import type { Message } from '../../core/domain/types'
-import { helperColor } from '../tokens'
+import { Button } from '../ds/Button'
+import { Mascot } from '../ds/Mascot'
+
+/** "10:41" — 24h clock, the way the design prints message times. */
+export function formatTime(iso: string): string {
+  const d = new Date(iso)
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+}
+
+/** Thread column: 680px, centred (shrinks with the window). */
+const col = 'w-[680px] max-w-[calc(100%-48px)]'
+
+/** pen `User Message` (p7b22O): right-aligned app-grey bubble, radius 16 16 4 16. */
+function UserMessage({ message }: { message: Message }) {
+  return (
+    <div className={`${col} flex justify-end`}>
+      <div className="max-w-[444px] rounded-[16px_16px_4px_16px] bg-app px-[12px] py-[8px]">
+        <p className="m-0 text-[13.5px] leading-[1.55] whitespace-pre-wrap text-ink">{message.content}</p>
+      </div>
+    </div>
+  )
+}
+
+/** pen `Agent Message` (gkzJ4): 24px mascot · name/role/time · body 13.5/1.55 ink-2. */
+function AgentMessage({ message }: { message: Message }) {
+  const { author } = message
+  return (
+    <div className={`${col} flex gap-[10px]`}>
+      <Mascot size={24} radius={7} area={author.area ?? 'brand'} />
+      <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+        <div className="flex items-center gap-[8px]">
+          <span className="text-[12.5px] font-semibold text-ink">{author.name}</span>
+          {author.role && <span className="text-[11.5px] text-muted">{author.role}</span>}
+          <time dateTime={message.createdAt} className="text-[11.5px] text-faint">
+            {formatTime(message.createdAt)}
+          </time>
+        </div>
+        <p className="m-0 text-[13.5px] leading-[1.55] whitespace-pre-wrap text-ink-2">{message.content}</p>
+      </div>
+    </div>
+  )
+}
+
+/** pen `Event · Mention`: hairlines either side of a mascot + muted caption. */
+function EventLine({ message }: { message: Message }) {
+  return (
+    <div role="note" className={`${col} flex items-center justify-center gap-[8px]`}>
+      <div className="h-px flex-1 bg-line-strong" />
+      <div className="flex items-center gap-[6px]">
+        <Mascot size={16} radius={4.48} area={message.author.area ?? 'brand'} />
+        <span className="text-[12px] whitespace-nowrap text-muted">{message.content}</span>
+      </div>
+      <div className="h-px flex-1 bg-line-strong" />
+    </div>
+  )
+}
+
+/** pen `Attachment · Doc`: 360px card indented under the message body (34px). */
+function DocCard({ title, meta }: { title: string; meta: string }) {
+  return (
+    <div className={`${col} pl-[34px]`}>
+      <button
+        type="button"
+        className="flex w-[360px] max-w-full items-center gap-[12px] rounded-md outline-1 -outline-offset-1 outline-line-strong p-[9px] text-left transition-colors hover:bg-soft"
+      >
+        <span className="flex size-[36px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong bg-soft">
+          <FileText size={18} aria-hidden className="text-ink-2" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <span className="truncate text-[12.5px] font-semibold text-ink">{title}</span>
+          <span className="truncate text-[12px] text-muted">{meta}</span>
+        </span>
+        <ArrowUpRight size={16} aria-hidden className="shrink-0 text-muted" />
+      </button>
+    </div>
+  )
+}
+
+/** pen `Suggested Actions`: primary (list-checks) + secondary, h-28, indented 34px. */
+function SuggestedActions({ actions }: { actions: NonNullable<Message['actions']> }) {
+  return (
+    <div className={`${col} flex gap-[8px] pl-[34px]`}>
+      {actions.map((a) =>
+        a.primary ? (
+          <Button key={a.label} height={28} icon={ListChecks}>
+            {a.label}
+          </Button>
+        ) : (
+          <Button key={a.label} height={28} variant="secondary">
+            {a.label}
+          </Button>
+        ),
+      )}
+    </div>
+  )
+}
 
 interface MessageListProps {
   messages: Message[]
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function Avatar({ name, color }: { name: string; color?: string }) {
-  const initial = name.charAt(0).toUpperCase()
-  return (
-    <div
-      aria-hidden
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: '50%',
-        background: color ?? 'var(--ink)',
-        color: 'var(--primary-ink)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '13px',
-        fontWeight: 600,
-        fontFamily: 'var(--font-sans)',
-        flexShrink: 0,
-      }}
-    >
-      {initial}
-    </div>
-  )
-}
-
-/** Centered muted system/event line — e.g. "✓ Chief added Dev to this chat" */
-function SystemLine({ content }: { content: string }) {
-  return (
-    <li
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        padding: '4px 16px',
-      }}
-    >
-      <span
-        style={{
-          fontFamily: 'var(--font-sans)',
-          fontSize: '12px',
-          color: 'var(--faint)',
-          letterSpacing: '0.01em',
-        }}
-      >
-        ✓ {content}
-      </span>
-    </li>
-  )
-}
-
-/** Small bordered doc-attachment card inside a message */
-function AttachmentCard({ title, meta }: { title: string; meta: string }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        marginTop: 8,
-        padding: '8px 12px',
-        borderRadius: 'var(--radius-base)',
-        border: '1px solid var(--line-strong)',
-        background: 'var(--surface)',
-        maxWidth: 300,
-      }}
-    >
-      {/* Doc icon */}
-      <span
-        aria-hidden
-        style={{
-          fontSize: 18,
-          flexShrink: 0,
-          color: 'var(--ink-2)',
-        }}
-      >
-        📄
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '13px',
-            fontWeight: 500,
-            color: 'var(--ink)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {title}
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '11px',
-            color: 'var(--faint)',
-            marginTop: 1,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {meta}
-        </div>
-      </div>
-      {/* Open-arrow icon */}
-      <span
-        aria-hidden
-        style={{
-          fontSize: 13,
-          color: 'var(--muted)',
-          flexShrink: 0,
-        }}
-      >
-        ↗
-      </span>
-    </div>
-  )
-}
-
+/** pen `Thread`: centred column · gap 20 · padding 23 0 13 0. */
 export function MessageList({ messages }: MessageListProps) {
   return (
-    <ol
-      aria-label="Messages"
-      style={{
-        listStyle: 'none',
-        margin: 0,
-        padding: '16px 0',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-      }}
-    >
-      {messages.map(msg => {
-        // System / event line
-        if (msg.system) {
-          return <SystemLine key={msg.id} content={msg.content} />
-        }
-
-        const isYou = msg.author.kind === 'you'
-        const accentColor =
-          !isYou && msg.author.area
-            ? helperColor[msg.author.area]
-            : undefined
-
-        if (isYou) {
-          // User bubble — dark right-aligned, unchanged
-          return (
-            <li
-              key={msg.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'row-reverse',
-                gap: '10px',
-                padding: '0 16px',
-                alignItems: 'flex-start',
-              }}
-            >
-              <Avatar name={msg.author.name} color="var(--ink)" />
-              <div
-                style={{
-                  maxWidth: '70%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  gap: '2px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '6px',
-                    alignItems: 'baseline',
-                    flexDirection: 'row-reverse',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-sans)',
-                      color: 'var(--ink-2)',
-                    }}
-                  >
-                    {msg.author.name}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--faint)',
-                      fontFamily: 'var(--font-sans)',
-                    }}
-                  >
-                    {formatTime(msg.createdAt)}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg)',
-                    background: 'var(--primary)',
-                    color: 'var(--primary-ink)',
-                    fontSize: '14px',
-                    lineHeight: 1.55,
-                    fontFamily: 'var(--font-sans)',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {msg.content}
-                </div>
-              </div>
-            </li>
-          )
-        }
-
-        // Agent/helper message — borderless plain text per ref design
-        return (
-          <li
-            key={msg.id}
-            style={{
-              display: 'flex',
-              flexDirection: 'row',
-              gap: '10px',
-              padding: '0 16px',
-              alignItems: 'flex-start',
-            }}
-          >
-            {/* Colored circular avatar */}
-            <Avatar
-              name={msg.author.name}
-              color={accentColor ?? 'var(--helper-brand)'}
-            />
-
-            <div
-              style={{
-                maxWidth: '70%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: '4px',
-              }}
-            >
-              {/* Bold name + muted role + muted time — one line */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '6px',
-                  alignItems: 'baseline',
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    fontFamily: 'var(--font-sans)',
-                    color: accentColor ?? 'var(--ink)',
-                  }}
-                >
-                  {msg.author.name}
-                </span>
-                {msg.author.area && (
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      color: 'var(--faint)',
-                      fontFamily: 'var(--font-sans)',
-                    }}
-                  >
-                    {msg.author.area === 'brand' ? 'Chief of Staff' : `${msg.author.area.charAt(0).toUpperCase() + msg.author.area.slice(1)} agent`}
-                  </span>
-                )}
-                <span
-                  style={{
-                    fontSize: '11px',
-                    color: 'var(--faint)',
-                    fontFamily: 'var(--font-sans)',
-                  }}
-                >
-                  {formatTime(msg.createdAt)}
-                </span>
-              </div>
-
-              {/* Message text — plain paragraph, no card/border/left-bar */}
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: '14px',
-                  lineHeight: 1.6,
-                  fontFamily: 'var(--font-sans)',
-                  color: 'var(--ink)',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {msg.content}
-              </p>
-
-              {/* Optional doc attachment card */}
-              {msg.attachment && (
-                <AttachmentCard
-                  title={msg.attachment.title}
-                  meta={msg.attachment.meta}
-                />
-              )}
-
-              {/* Optional action buttons */}
-              {msg.actions && msg.actions.length > 0 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '8px',
-                    marginTop: '6px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {msg.actions.map((action) => (
-                    <button
-                      key={action.label}
-                      type="button"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '6px 14px',
-                        borderRadius: 'var(--radius-btn)',
-                        border: action.primary ? 'none' : '1px solid var(--line-strong)',
-                        background: action.primary ? 'var(--primary)' : 'transparent',
-                        color: action.primary ? 'var(--primary-ink)' : 'var(--ink-2)',
-                        fontFamily: 'var(--font-sans)',
-                        fontSize: '13px',
-                        fontWeight: action.primary ? 500 : 400,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </li>
-        )
-      })}
-    </ol>
+    <div role="log" aria-label="Messages" className="flex flex-col items-center gap-[20px] pt-[23px] pb-[13px]">
+      {messages.map((m) => (
+        <Fragment key={m.id}>
+          {m.system ? (
+            <EventLine message={m} />
+          ) : m.author.kind === 'you' ? (
+            <UserMessage message={m} />
+          ) : (
+            <AgentMessage message={m} />
+          )}
+          {m.attachment && <DocCard {...m.attachment} />}
+          {m.actions && m.actions.length > 0 && <SuggestedActions actions={m.actions} />}
+        </Fragment>
+      ))}
+    </div>
   )
 }

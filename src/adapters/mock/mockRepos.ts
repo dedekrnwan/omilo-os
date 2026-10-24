@@ -1,12 +1,22 @@
 import type { Id } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
-import { channels, sessions, messages, inboxItems } from './fixtures'
+import { channels, folders, goals, sessions, messages, inboxItems } from './fixtures'
 
 export function createMockRepos(): Repos {
   return {
     channels: {
       list: () => Promise.resolve([...channels]),
       get: (id: Id) => Promise.resolve(channels.find(c => c.id === id) ?? null),
+    },
+
+    folders: {
+      listByChannel: (channelId: Id) =>
+        Promise.resolve(folders.filter(f => f.channelId === channelId)),
+    },
+
+    goals: {
+      listByChannel: (channelId: Id) =>
+        Promise.resolve(goals.filter(g => g.channelId === channelId)),
     },
 
     sessions: {

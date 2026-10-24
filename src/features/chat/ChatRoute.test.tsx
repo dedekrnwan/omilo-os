@@ -82,12 +82,11 @@ function makeTestRouter(
 function openChannelDropdown() {
   // The header button that opens the dropdown is identifiable by the chevron
   // and "Channel · Chief + 3 agents" subtitle text. We click the nav's first button.
-  const trigger = screen.getAllByRole('button')[0]
-  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('button', { name: /switch channel/i }))
 }
 
 describe('ChannelSidebar', () => {
-  test('lists General, Engineering, Marketing channels', async () => {
+  test('lists General, Engineering, Marketing, Business channels', async () => {
     // Render inside a full test router so useNavigate (used by ChannelSidebar) resolves without warnings
     const { router } = makeTestRouter('/chat/ch-general')
     await router.load()
@@ -102,10 +101,11 @@ describe('ChannelSidebar', () => {
       expect(screen.getAllByText('General').length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText('Engineering')).toBeInTheDocument()
       expect(screen.getByText('Marketing')).toBeInTheDocument()
+      expect(screen.getByText('Business')).toBeInTheDocument()
     })
   })
 
-  test('each channel row has an area dot', async () => {
+  test('each channel row has its coloured channel icon', async () => {
     const { router } = makeTestRouter('/chat/ch-general')
     await router.load()
     render(<RouterProvider router={router} />)
@@ -116,8 +116,8 @@ describe('ChannelSidebar', () => {
     })
 
     await waitFor(() => {
-      const dots = screen.getAllByRole('presentation')
-      expect(dots.length).toBeGreaterThanOrEqual(3)
+      // 1 in the switcher + 4 in the popover
+      expect(screen.getAllByTestId('channel-icon').length).toBe(5)
     })
   })
 
@@ -133,8 +133,11 @@ describe('ChannelSidebar', () => {
 
     await waitFor(() => {
       // The dropdown row for the active channel has aria-current="true"
-      const activeButtons = screen.getAllByRole('button', { name: /engineering/i })
-      const activeRow = activeButtons.find((b) => b.getAttribute('aria-current') === 'true')
+      const dialog = screen.getByRole('dialog', { name: /channel switcher/i })
+      const activeRow = Array.from(dialog.querySelectorAll('button')).find(
+        (b) => b.getAttribute('aria-current') === 'true',
+      )
+      expect(activeRow?.textContent).toMatch(/engineering/i)
       expect(activeRow).toBeTruthy()
       expect(activeRow).toHaveAttribute('aria-current', 'true')
     })
@@ -153,14 +156,14 @@ describe('ChatRoute — channel default view', () => {
   })
 
   test('navigating to a channel+session renders that session\'s messages', async () => {
-    const { router } = makeTestRouter('/chat/ch-engineering/sess-eng-1')
+    const { router } = makeTestRouter('/chat/ch-engineering/sess-passkey')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // Messages from sess-eng-1 must be visible
+    // Messages from sess-passkey must be visible
     await waitFor(() => {
       expect(
-        screen.getByText(/429s from the payment gateway/i),
+        screen.getByText(/WebAuthn on the legacy Android app/i),
       ).toBeInTheDocument()
     })
   })
@@ -168,32 +171,32 @@ describe('ChatRoute — channel default view', () => {
 
 describe('ChatRoute — stale session on channel switch', () => {
   test('switching to a different channel\'s session swaps the thread — stale message from first session is gone', async () => {
-    const { router } = makeTestRouter('/chat/ch-general/sess-gen-1')
+    const { router } = makeTestRouter('/chat/ch-general/sess-investor')
     await router.load()
     render(<RouterProvider router={router} />)
 
     // First session message must be visible
     await waitFor(() => {
       expect(
-        screen.getByText(/Let's outline our Q4 priorities/i),
+        screen.getByText(/Start the October investor update/i),
       ).toBeInTheDocument()
     })
 
     // Navigate to Engineering channel's session
     await act(async () => {
-      await router.navigate({ to: '/chat/$channelId/$sessionId', params: { channelId: 'ch-engineering', sessionId: 'sess-eng-1' } })
+      await router.navigate({ to: '/chat/$channelId/$sessionId', params: { channelId: 'ch-engineering', sessionId: 'sess-passkey' } })
     })
 
     // Engineering message should appear
     await waitFor(() => {
       expect(
-        screen.getByText(/429s from the payment gateway/i),
+        screen.getByText(/WebAuthn on the legacy Android app/i),
       ).toBeInTheDocument()
     })
 
     // The Q4 priorities message from the first session should be gone
     expect(
-      screen.queryByText(/Let's outline our Q4 priorities/i),
+      screen.queryByText(/Start the October investor update/i),
     ).not.toBeInTheDocument()
   })
 })
@@ -220,11 +223,11 @@ describe('ChatRoute — empty channel', () => {
       channels: {
         list: () =>
           Promise.resolve([
-            { id: 'ch-empty', name: 'Empty Channel', area: 'ops' },
+            { id: 'ch-empty', name: 'Empty Channel', accent: 'general', agentCount: 0, chatCount: 0, openItems: 0 },
           ]),
         get: (id) =>
           id === 'ch-empty'
-            ? Promise.resolve({ id: 'ch-empty', name: 'Empty Channel', area: 'ops' })
+            ? Promise.resolve({ id: 'ch-empty', name: 'Empty Channel', accent: 'general' as const, agentCount: 0, chatCount: 0, openItems: 0 })
             : Promise.resolve(null),
       },
       sessions: {

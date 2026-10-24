@@ -36,9 +36,9 @@ function renderSession(sessionId: string, repos = createMockRepos()) {
 
 describe('ChatSession', () => {
   test('renders each message content for a session with messages', async () => {
-    renderSession('sess-gen-1')
+    renderSession('sess-investor')
 
-    const sessionMessages = messages.filter(m => m.sessionId === 'sess-gen-1')
+    const sessionMessages = messages.filter(m => m.sessionId === 'sess-investor')
     expect(sessionMessages.length).toBeGreaterThan(0)
 
     for (const msg of sessionMessages) {
@@ -59,7 +59,7 @@ describe('ChatSession', () => {
 
   test('opening the ModelMenu and selecting a model updates the trigger label', async () => {
     const user = userEvent.setup()
-    renderSession('sess-gen-1')
+    renderSession('sess-investor')
 
     // Wait for session to load
     await waitFor(() => expect(screen.getByRole('combobox', { name: /model/i })).toBeInTheDocument())
@@ -75,11 +75,11 @@ describe('ChatSession', () => {
     })
 
     // Find a menu item that is NOT the currently selected one
-    const items = screen.getAllByRole('menuitem')
-    const otherItem = items.find(item => item.textContent !== defaultLabel)
+    const items = screen.getAllByRole('menuitem').filter(i => i.hasAttribute('data-model-label'))
+    const otherItem = items.find(item => item.getAttribute('data-model-label') !== defaultLabel)
     expect(otherItem).toBeDefined()
 
-    const newLabel = otherItem!.textContent ?? ''
+    const newLabel = otherItem!.getAttribute('data-model-label') ?? ''
 
     await act(async () => {
       await user.click(otherItem!)
@@ -96,7 +96,7 @@ describe('ChatSession', () => {
     const Wrapper = makeWrapper()
     const { rerender } = render(
       <Wrapper>
-        <ChatSession sessionId="sess-gen-1" />
+        <ChatSession sessionId="sess-investor" />
       </Wrapper>,
     )
 
@@ -111,9 +111,9 @@ describe('ChatSession', () => {
     await act(async () => {
       await user.click(trigger)
     })
-    const items = screen.getAllByRole('menuitem')
-    const otherItem = items.find(item => item.textContent !== defaultLabel)!
-    const newLabel = otherItem.textContent ?? ''
+    const items = screen.getAllByRole('menuitem').filter(i => i.hasAttribute('data-model-label'))
+    const otherItem = items.find(item => item.getAttribute('data-model-label') !== defaultLabel)!
+    const newLabel = otherItem.getAttribute('data-model-label') ?? ''
     await act(async () => {
       await user.click(otherItem)
     })
@@ -125,7 +125,7 @@ describe('ChatSession', () => {
     await act(async () => {
       rerender(
         <Wrapper>
-          <ChatSession sessionId="sess-eng-1" />
+          <ChatSession sessionId="sess-passkey" />
         </Wrapper>,
       )
     })

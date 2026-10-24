@@ -1,283 +1,93 @@
-import { useParams, notFound } from '@tanstack/react-router'
 import { useState } from 'react'
-import type { Model } from '../../core/domain/types'
-import { ChannelSidebar } from './ChannelSidebar'
+import { notFound, useParams } from '@tanstack/react-router'
+import { SquarePen, Target } from 'lucide-react'
+import type { Channel, Model } from '../../core/domain/types'
+import { useChannel, useChannelGoals } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
-import { useChannel } from '../../app/queries'
-import { radii } from '../../ui/tokens'
+import { Inset, Topbar } from '../../ui/ds/Frame'
+import { Mascot } from '../../ui/ds/Mascot'
+import { ChannelSidebar } from './ChannelSidebar'
 
-// ── Channel id → display name ─────────────────────────────────────────────────
+/** /chat with no channel opens the default channel. */
+const DEFAULT_CHANNEL_ID = 'ch-general'
 
-const CHANNEL_NAMES: Record<string, string> = {
-  'ch-general':     'General',
-  'ch-engineering': 'Engineering',
-  'ch-marketing':   'Marketing',
-}
+// ── New chat hero (pen `Chat · New chat (General)`) ───────────────────────────
 
-// ── Static goal pills for the hero (visual-only) ─────────────────────────────
-
-const GOALS = [
-  { label: 'Close October books', pct: 70, color: 'var(--ok)' },
-  { label: 'Launch referral program', pct: 35, color: 'var(--helper-marketing)' },
-  { label: 'Plan Q1 offsite', pct: 10, color: 'var(--helper-brand)' },
-] as const
-
-// ── NewChatHero ───────────────────────────────────────────────────────────────
-
-/**
- * Hero displayed in the center pane when a channel has no active sessions.
- * Matches the pen.dev "New chat (General)" reference design.
- */
-function NewChatHero({ channelName }: { channelName: string }) {
+function NewChatHero({ channel }: { channel: Channel }) {
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
+  const { data: goals = [] } = useChannelGoals(channel.id)
 
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--app)',
-        padding: '0 24px 40px',
-        gap: 0,
-        overflowY: 'auto',
-      }}
-    >
-      {/* Vertically-centered column */}
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 540,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 0,
-        }}
-      >
-        {/* Mascot */}
-        <img
-          src="/chief-mascot.png"
-          alt="Chief mascot"
-          width={64}
-          height={64}
-          style={{
-            marginBottom: 20,
-            borderRadius: radii.md,
-            objectFit: 'contain',
-          }}
-        />
+    <>
+      <Topbar icon={SquarePen} title="New chat" meta={channel.name} />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[21px] overflow-y-auto px-[24px] pb-[58px]">
+        <div className="flex flex-col items-center gap-[11px] text-center">
+          <Mascot size={56} radius={15.68} title="Chief" />
+          <h2 className="m-0 font-display text-[26px] font-semibold tracking-[-0.6px] text-ink">
+            Morning, Dede. What are we figuring out?
+          </h2>
+          <p className="m-0 text-[14px] text-muted">
+            You’re in {channel.name}. Switch channel to give Chief focused context for one area.
+          </p>
+        </div>
 
-        {/* Headline */}
-        <h1
-          style={{
-            margin: '0 0 10px',
-            fontSize: 30,
-            fontWeight: 700,
-            fontFamily: 'var(--font-display)',
-            color: 'var(--ink)',
-            textAlign: 'center',
-            lineHeight: 1.2,
-            letterSpacing: '-0.01em',
-          }}
-        >
-          Morning, Dede. What are we figuring out?
-        </h1>
-
-        {/* Subline */}
-        <p
-          style={{
-            margin: '0 0 28px',
-            fontSize: 14,
-            fontFamily: 'var(--font-sans)',
-            color: 'var(--muted)',
-            textAlign: 'center',
-            lineHeight: 1.5,
-          }}
-        >
-          {`You're in ${channelName}. Switch channel to give Chief focused context for one area.`}
-        </p>
-
-        {/* Composer card */}
-        <div style={{ width: '100%', marginBottom: 20 }}>
+        <div className="w-[680px] max-w-full">
           <Composer
-            sessionId={`hero-${channelName}`}
+            sessionId={`new-${channel.id}`}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
-            placeholder="Ask a helper, or type / for commands"
           />
         </div>
 
-        {/* Goal pills section */}
-        <p
-          style={{
-            margin: '0 0 10px',
-            fontSize: 12,
-            fontFamily: 'var(--font-sans)',
-            color: 'var(--muted)',
-            textAlign: 'center',
-          }}
-        >
-          Or start from a goal in <strong style={{ fontWeight: 500, color: 'var(--ink-2)' }}>{channelName}</strong>
-        </p>
-
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 8,
-            justifyContent: 'center',
-          }}
-        >
-          {GOALS.map((goal) => (
-            <button
-              key={goal.label}
-              type="button"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 12px',
-                borderRadius: 'var(--radius-pill)',
-                border: '1px solid var(--line-strong)',
-                background: 'var(--surface)',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-sans)',
-                fontSize: 13,
-                color: 'var(--ink-2)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {/* Status dot */}
-              <span
-                aria-hidden
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: goal.color,
-                  flexShrink: 0,
-                }}
-              />
-              {goal.label}
-              {/* Percentage */}
-              <span
-                style={{
-                  marginLeft: 4,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: goal.color,
-                }}
-              >
-                {goal.pct}%
-              </span>
-            </button>
-          ))}
-        </div>
+        {goals.length > 0 && (
+          <div className="flex w-[720px] max-w-full flex-col gap-[10px]">
+            <span className="text-[12px] text-faint">Or start from a goal in {channel.name}</span>
+            <div className="flex w-full gap-[8px]">
+              {goals.slice(0, 3).map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-[8px] rounded-md outline-1 -outline-offset-1 outline-line-strong px-[9px] py-[7px] text-left transition-colors hover:bg-soft"
+                >
+                  <Target size={14} aria-hidden className="shrink-0 text-muted" />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{g.title}</span>
+                  <span className="text-[12px] text-faint">{g.progress}%</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </>
   )
 }
 
-// ── ChannelView ───────────────────────────────────────────────────────────────
-
-/** Shown when a $channelId is selected but no $sessionId yet. */
 function ChannelView({ channelId }: { channelId: string }) {
-  const { data: channel, isLoading: channelLoading } = useChannel(channelId)
-
-  if (channelLoading) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--muted)',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 14,
-        }}
-      >
-        Loading…
-      </div>
-    )
-  }
-
-  // Unknown channel — trigger not-found
-  if (!channel) {
-    throw notFound()
-  }
-
-  // Always show the new-chat hero — sessions are navigated via the sidebar
-  return <NewChatHero channelName={channel.name} />
-}
-
-// ── NoChatSelected ────────────────────────────────────────────────────────────
-
-/** Shown when no channel is selected yet (root /chat). */
-function NoChatSelected() {
-  return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--muted)',
-        fontFamily: 'var(--font-sans)',
-        fontSize: 14,
-        textAlign: 'center',
-      }}
-    >
-      Select a channel to start chatting.
-    </div>
-  )
+  const { data: channel, isLoading } = useChannel(channelId)
+  if (isLoading) return null
+  if (!channel) throw notFound()
+  return <NewChatHero channel={channel} />
 }
 
 // ── ChatRoute ─────────────────────────────────────────────────────────────────
 
 /**
- * Bound to /chat, /chat/$channelId, and /chat/$channelId/$sessionId routes.
- * Renders the channel sidebar alongside the appropriate main content.
+ * Bound to /chat, /chat/$channelId and /chat/$channelId/$sessionId.
+ * Channel sidebar + inset main (new-chat hero or the shared ChatSession).
  */
 export function ChatRoute() {
-  const { channelId, sessionId } = useParams({ strict: false })
+  const params = useParams({ strict: false })
+  const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
+  const sessionId = params.sessionId
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Channel sidebar */}
-      <div
-        aria-label="channel-sidebar"
-        style={{
-          flexShrink: 0,
-          borderRight: '1px solid var(--line-strong)',
-          background: 'var(--soft)',
-          overflowY: 'auto',
-        }}
-      >
-        <ChannelSidebar activeChannelId={channelId} />
-      </div>
-
-      {/* Main content pane */}
-      {sessionId ? (
-        <ChatSession
-          sessionId={sessionId}
-          channelName={channelId ? (CHANNEL_NAMES[channelId] ?? channelId) : undefined}
-        />
-      ) : channelId ? (
-        <ChannelView channelId={channelId} />
-      ) : (
-        <NoChatSelected />
-      )}
-    </div>
+    <>
+      <ChannelSidebar channelId={channelId} sessionId={sessionId} />
+      <Inset>
+        {sessionId ? <ChatSession key={sessionId} sessionId={sessionId} /> : <ChannelView channelId={channelId} />}
+      </Inset>
+    </>
   )
 }

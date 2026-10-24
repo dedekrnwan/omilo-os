@@ -1,342 +1,239 @@
 import { useNavigate } from '@tanstack/react-router'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import {
+  Bell,
+  Building2,
+  CircleHelp,
+  CreditCard,
+  Ellipsis,
+  Keyboard,
+  LogOut,
+  MessageCircle,
+  MessageSquareHeart,
+  Plus,
+  Settings,
+  UserRound,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useUIStore } from '../app/store'
+import { Mascot } from './ds/Mascot'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './ds/Menu'
 
-// ── Inline SVG icons ──────────────────────────────────────────────────────────
+// ── Companies ─────────────────────────────────────────────────────────────────
 
-function ActivityIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-      <polyline
-        points="1.5 9 5 3.5 8 12.5 11 6.5 13.5 9 16.5 9"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
+const COMPANIES = [
+  { id: 'sahabat-warga', name: 'Sahabat Warga', initial: 'S', color: '#EB6834', active: true },
+  { id: 'kopi-kenangan', name: 'Kopi Kenangan', initial: 'K', color: '#6366F1', badge: true },
+] as const
 
-function DotsIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-      <circle cx="4.5" cy="9" r="1.25" fill="currentColor" />
-      <circle cx="9" cy="9" r="1.25" fill="currentColor" />
-      <circle cx="13.5" cy="9" r="1.25" fill="currentColor" />
-    </svg>
-  )
-}
-
-function ChatBubbleIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M2.5 3h11a.75.75 0 0 1 .75.75V10a.75.75 0 0 1-.75.75H5.5L2 14V3.75A.75.75 0 0 1 2.5 3z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function BuildingIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect x="2" y="4" width="12" height="10" rx="1" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M5.5 14V10h5v4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M5 7h1.5M9.5 7H11M5 9.5h1.5M9.5 9.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path d="M6 4V2.5h4V4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function LockIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-      <rect
-        x="3.5" y="8" width="11" height="8" rx="1.5"
-        stroke="currentColor" strokeWidth="1.4"
-      />
-      <path
-        d="M5.5 8V6a3.5 3.5 0 0 1 7 0v2"
-        stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
-      />
-      <circle cx="9" cy="12" r="1" fill="currentColor" />
-    </svg>
-  )
-}
-
-// ── Shared button style helper ────────────────────────────────────────────────
-
-function RailIconBtn({
-  label,
-  onClick,
-  children,
-  active = false,
-}: {
-  label: string
-  onClick?: () => void
-  children: React.ReactNode
-  active?: boolean
-}) {
-  return (
-    <button
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      style={{
-        all: 'unset',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 36,
-        height: 36,
-        borderRadius: 8,
-        cursor: onClick ? 'pointer' : 'default',
-        color: active ? 'var(--ink)' : 'var(--muted)',
-        background: active ? 'var(--hover)' : 'transparent',
-        transition: 'background 100ms ease, color 100ms ease',
-        flexShrink: 0,
-      }}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLButtonElement
-        if (!active) {
-          el.style.background = 'var(--hover)'
-          el.style.color = 'var(--ink-2)'
-        }
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLButtonElement
-        if (!active) {
-          el.style.background = 'transparent'
-          el.style.color = 'var(--muted)'
-        }
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-// ── Company icon (rounded square with letter) ─────────────────────────────────
-
-function CompanyIcon({
-  letter,
+/** 40×40 company tile with a 30×30 initial avatar inset 5px; active = 2px company-colour ring. */
+function CompanyTile({
+  name,
+  initial,
   color,
   active,
-  label,
-  onClick,
+  badge,
 }: {
-  letter: string
+  name: string
+  initial: string
   color: string
   active?: boolean
+  badge?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={active ? `${name} (active)` : name}
+      aria-current={active ? 'true' : undefined}
+      className="relative size-[40px] shrink-0 rounded-lg"
+      style={active ? { outline: `2px solid ${color}`, outlineOffset: -1 } : undefined}
+    >
+      <span
+        className="absolute top-[5px] left-[5px] flex size-[30px] items-center justify-center rounded-[9px] text-[13px] font-semibold text-white"
+        style={{ background: color }}
+      >
+        {initial}
+      </span>
+      {badge && (
+        <span
+          aria-label="unread activity"
+          className="absolute top-[2px] left-[27px] size-[11px] rounded-full border-2 border-app bg-[#C2410C]"
+        />
+      )}
+    </button>
+  )
+}
+
+/** 30×30 tray button (radius 10, icon 17 ink-2). */
+function TrayButton({ label, icon: Icon, dot }: { label: string; icon: LucideIcon; dot?: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="relative flex size-[30px] items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-hover"
+    >
+      <Icon size={17} aria-hidden />
+      {dot && (
+        <span className="absolute top-[4px] left-[17px] size-[8px] rounded-full border-2 border-app bg-[#EB6834]" />
+      )}
+    </button>
+  )
+}
+
+/** Chat ↔ Office segmented switch (fill #E7E5E4 · radius 10 · p-3 · gap 2). */
+function ModeSegment({
+  label,
+  icon: Icon,
+  active,
+  onClick,
+}: {
   label: string
+  icon: LucideIcon
+  active: boolean
   onClick?: () => void
 }) {
   return (
     <button
+      type="button"
       aria-label={label}
+      aria-pressed={active}
       title={label}
       onClick={onClick}
-      style={{
-        all: 'unset',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 36,
-        height: 36,
-        borderRadius: active ? 10 : 8,
-        background: color,
-        cursor: onClick ? 'pointer' : 'default',
-        fontFamily: 'var(--font-sans)',
-        fontWeight: 700,
-        fontSize: 15,
-        color: '#fff',
-        flexShrink: 0,
-        boxShadow: active ? '0 0 0 2px var(--surface), 0 0 0 3.5px rgba(0,0,0,.18)' : 'none',
-        transition: 'border-radius 120ms ease',
-        userSelect: 'none',
-      }}
+      className={`flex size-[28px] items-center justify-center rounded-btn transition-colors ${
+        active ? 'bg-surface text-ink shadow-[0_1px_3px_#0C0A091F]' : 'text-muted hover:text-ink-2'
+      }`}
     >
-      {letter}
+      <Icon size={15} aria-hidden />
     </button>
   )
 }
 
-// ── AddCompanyBtn ─────────────────────────────────────────────────────────────
+// ── Profile menu (pen `Profile Menu` NqUoT) ──────────────────────────────────
 
-function AddCompanyBtn() {
+const PROFILE_ITEMS: { icon: LucideIcon; label: string; hint?: string }[][] = [
+  [
+    { icon: UserRound, label: 'Account' },
+    { icon: CreditCard, label: 'Subscription & billing' },
+    { icon: Settings, label: 'Settings', hint: '⌘,' },
+    { icon: Bell, label: 'Notification settings' },
+  ],
+  [
+    { icon: CircleHelp, label: 'Help & docs' },
+    { icon: MessageSquareHeart, label: 'Send feedback' },
+    { icon: Keyboard, label: 'Keyboard shortcuts', hint: '?' },
+  ],
+]
+
+function ProfileMenu() {
   return (
-    <button
-      aria-label="Add company"
-      title="Add company"
-      style={{
-        all: 'unset',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 36,
-        height: 36,
-        borderRadius: 8,
-        border: '1.5px dashed var(--line-strong)',
-        cursor: 'pointer',
-        color: 'var(--muted)',
-        fontSize: 18,
-        fontWeight: 300,
-        flexShrink: 0,
-        transition: 'border-color 100ms ease, color 100ms ease',
-      }}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLButtonElement
-        el.style.borderColor = 'var(--faint)'
-        el.style.color = 'var(--ink-2)'
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLButtonElement
-        el.style.borderColor = 'var(--line-strong)'
-        el.style.color = 'var(--muted)'
-      }}
-    >
-      +
-    </button>
-  )
-}
-
-// ── Avatar ────────────────────────────────────────────────────────────────────
-
-function UserAvatar({ initials }: { initials: string }) {
-  return (
-    <div
-      aria-label="User menu"
-      role="button"
-      tabIndex={0}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 30,
-        height: 30,
-        borderRadius: '50%',
-        background: 'var(--primary)',
-        color: 'var(--primary-ink)',
-        fontFamily: 'var(--font-sans)',
-        fontWeight: 600,
-        fontSize: 11,
-        letterSpacing: '0.02em',
-        cursor: 'pointer',
-        flexShrink: 0,
-        userSelect: 'none',
-      }}
-    >
-      {initials}
-    </div>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger
+        aria-label="User menu"
+        className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-[#D6D3D1] text-[11px] font-semibold text-ink-2 outline-none data-[state=open]:ring-2 data-[state=open]:ring-ink"
+      >
+        DK
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          side="right"
+          align="end"
+          sideOffset={10}
+          alignOffset={-4}
+          className={`z-50 w-[260px] ${menuSurface}`}
+        >
+          <div className="flex items-center gap-[10px] p-[10px]">
+            <span className="flex size-[36px] items-center justify-center rounded-full bg-[#FED7AA] text-[13px] font-semibold text-[#9A3412]">
+              DK
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+              <span className="text-[14px] font-semibold text-ink">Dede Kurniawan</span>
+              <span className="text-[12px] text-muted">dede@sahabatwarga.id</span>
+            </div>
+          </div>
+          <div className="px-[6px] pb-[6px]">
+            <div className="flex flex-col gap-[6px] rounded-base outline-1 -outline-offset-1 outline-line bg-soft px-[12px] py-[10px]">
+              <div className="flex items-center gap-[6px]">
+                <span className="text-[12px] font-semibold text-ink">Team plan</span>
+                <span className="h-px flex-1" />
+                <span className="font-mono text-[11px] text-muted">Rp 1,2 jt / 2 jt</span>
+              </div>
+              <div className="h-[4px] overflow-hidden rounded-[2px] bg-line-strong">
+                <div className="h-full w-[60%] rounded-[2px] bg-ink" />
+              </div>
+            </div>
+          </div>
+          {PROFILE_ITEMS.map((group, i) => (
+            <div key={i}>
+              <MenuSeparatorLine />
+              {group.map((item) => (
+                <DropdownMenu.Item key={item.label} className={menuItemClass}>
+                  <MenuItemBody icon={item.icon} label={item.label} hint={item.hint} />
+                </DropdownMenu.Item>
+              ))}
+            </div>
+          ))}
+          <MenuSeparatorLine />
+          <DropdownMenu.Item className={menuItemClass}>
+            <MenuItemBody icon={LogOut} label="Log out" danger />
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
 
 // ── Rail ──────────────────────────────────────────────────────────────────────
 
 /**
- * Narrow company rail (56px).
- * Top: active company icon (orange "S"), secondary company (blue "K"), "+" add.
- * Bottom: activity/bell, "…", chat glyph, lock/settings, round user avatar.
- * The Chat↔Office toggle is embedded as the chat bubble icon at the bottom.
+ * pen `Rail` (hyn98): 56 wide · fill app · padding 12/0 · gap 10 · centered.
+ * Omilo mark → companies → spacer → tray (notifications, more) →
+ * Chat/Office mode switch → you.
  */
 export function Rail() {
   const navigate = useNavigate()
   const { mode, toggleTarget } = useUIStore()
+  const isChat = mode === 'chat'
 
-  function handleModeToggle() {
+  function switchMode() {
     const target = toggleTarget()
     void navigate({ to: target.path })
   }
 
-  const isChatMode = mode === 'chat'
-
   return (
     <nav
       aria-label="main rail"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        width: 56,
-        background: 'var(--soft)',
-        borderRight: '1px solid var(--line-strong)',
-        padding: '10px 0 12px',
-        gap: 4,
-        flexShrink: 0,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-      }}
+      className="flex h-full w-[56px] shrink-0 flex-col items-center gap-[10px] bg-app py-[12px]"
     >
-      {/* ── Company icons (top) ── */}
-      {/* Active company — orange "S" */}
-      <CompanyIcon
-        letter="S"
-        color="#F97316"
-        active
-        label="Sahabat Warga (active)"
-      />
+      <Mascot size={30} radius={9} title="Omilo" />
 
-      {/* Second company — blue "K" */}
-      <CompanyIcon
-        letter="K"
-        color="#6366F1"
-        label="Koperasi"
-      />
-
-      {/* Add company */}
-      <AddCompanyBtn />
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      {/* ── Bottom controls ── */}
-      <RailIconBtn label="Activity">
-        <ActivityIcon />
-      </RailIconBtn>
-
-      <RailIconBtn label="More">
-        <DotsIcon />
-      </RailIconBtn>
-
-      {/* Mode toggle — segmented chat/office icons */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          padding: '4px 0',
-          borderTop: '1px solid var(--line-strong)',
-          width: '100%',
-          alignItems: 'center',
-        }}
-      >
-        <RailIconBtn
-          label="Chat"
-          onClick={isChatMode ? undefined : handleModeToggle}
-          active={isChatMode}
+      <div className="flex flex-col items-center gap-[8px] pt-[6px]">
+        {COMPANIES.map((c) => (
+          <CompanyTile key={c.id} {...c} />
+        ))}
+        <button
+          type="button"
+          aria-label="Add company"
+          title="Add company"
+          className="flex size-[30px] items-center justify-center rounded-[9px] text-muted transition-colors hover:bg-hover"
         >
-          <ChatBubbleIcon />
-        </RailIconBtn>
-        <RailIconBtn
-          label="Office"
-          onClick={isChatMode ? handleModeToggle : undefined}
-          active={!isChatMode}
-        >
-          <BuildingIcon />
-        </RailIconBtn>
+          <Plus size={16} aria-hidden />
+        </button>
       </div>
 
-      <RailIconBtn label="Settings">
-        <LockIcon />
-      </RailIconBtn>
+      <div className="w-px flex-1" />
 
-      {/* User avatar */}
-      <div style={{ marginTop: 4 }}>
-        <UserAvatar initials="DK" />
+      <div className="flex flex-col items-center gap-[10px] rounded-lg">
+        <TrayButton label="Notifications" icon={Bell} dot />
+        <TrayButton label="More" icon={Ellipsis} />
       </div>
+
+      <div role="group" aria-label="Mode" className="flex flex-col gap-[2px] rounded-md bg-[#E7E5E4] p-[3px]">
+        <ModeSegment label="Chat" icon={MessageCircle} active={isChat} onClick={isChat ? undefined : switchMode} />
+        <ModeSegment label="Office" icon={Building2} active={!isChat} onClick={isChat ? switchMode : undefined} />
+      </div>
+
+      <ProfileMenu />
     </nav>
   )
 }

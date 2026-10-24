@@ -57,3 +57,19 @@ export function useInboxItem(id: Id) {
     queryFn: () => repos.inbox.get(id),
   })
 }
+
+export function useChannelFolders(channelId: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['folders', 'byChannel', channelId],
+    queryFn: () => repos.folders.listByChannel(channelId),
+  })
+}
+
+export function useChannelGoals(channelId: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['goals', 'byChannel', channelId],
+    queryFn: () => repos.goals.listByChannel(channelId),
+  })
+}

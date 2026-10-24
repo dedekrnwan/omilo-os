@@ -7,6 +7,7 @@ export interface UIState {
   lastPath: Record<Mode, string>
   defaultPath: Record<Mode, string>
   rememberPath(mode: Mode, path: string): void
+  setMode(mode: Mode): void
   toggleTarget(): { mode: Mode; path: string }
 }
 
@@ -17,6 +18,10 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   rememberPath(mode: Mode, path: string) {
     set(state => ({ lastPath: { ...state.lastPath, [mode]: path } }))
+  },
+
+  setMode(mode: Mode) {
+    if (get().mode !== mode) set({ mode })
   },
 
   toggleTarget() {

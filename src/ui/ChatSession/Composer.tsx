@@ -1,267 +1,122 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { ArrowUp, AtSign, Mic, Plus } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
-import { ModelMenu } from './ModelMenu'
-import { helperColor } from '../tokens'
+import { IconButton, SquareButton } from '../ds/Button'
+import { ContextRing } from '../ds/ContextRing'
+import { Mascot } from '../ds/Mascot'
+import { ModelMenu, ThinkingMenu } from './ModelMenu'
+import type { ThinkingLevel } from './ModelMenu'
 
 export interface ComposerProps {
   sessionId: string
   selectedModel: Model
   onModelChange: (m: Model) => void
-  /** Overrides the textarea placeholder. Defaults to "Ask a helper, or type / for commands". */
+  /** Overrides the input placeholder. Defaults to "Ask a helper, or type / for commands". */
   placeholder?: string
+  /** Share of the context window in use (Context ring + %). */
+  contextUsed?: number
 }
 
-export function Composer({ sessionId, selectedModel, onModelChange, placeholder }: ComposerProps) {
+/**
+ * pen `Composer` (qSGtP): surface card · radius 12 · 1px line-strong ·
+ * shadow 0 8 12 #0000001F · padding 10 · gap 8.
+ * Rows: recipients (To · Chief · Mention agent) → input (h-44) → controls.
+ */
+export function Composer({
+  sessionId,
+  selectedModel,
+  onModelChange,
+  placeholder = 'Ask a helper, or type / for commands',
+  contextUsed = 42,
+}: ComposerProps) {
   const [text, setText] = useState('')
+  const [thinking, setThinking] = useState<ThinkingLevel>('medium')
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Reset text when session changes
   const prevSession = useRef(sessionId)
   useEffect(() => {
     if (prevSession.current !== sessionId) {
       prevSession.current = sessionId
       setText('')
+      setThinking('medium')
     }
   }, [sessionId])
+
+  // Grow with content: one line at rest (inside the 44px input row), up to ~8 lines.
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 36), 176)}px`
+  }, [text])
+
+  function send() {
+    if (text.trim()) setText('')
+  }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (text.trim()) setText('')
+      send()
     }
   }
 
-  const resolvedPlaceholder = placeholder ?? 'Ask a helper, or type / for commands'
-
   return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--line-strong)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Top row — assignee + mention */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px 6px',
-          borderBottom: '1px solid var(--line)',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 12,
-            color: 'var(--muted)',
-            fontFamily: 'var(--font-sans)',
-            marginRight: 2,
-          }}
-        >
-          To
+    <div className="flex w-full flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[10px] shadow-[0_8px_12px_#0000001F]">
+      {/* Recipients */}
+      <div className="flex items-center gap-[6px]">
+        <span className="text-[12px] text-faint">To</span>
+        <span className="inline-flex items-center gap-[5px] rounded-pill bg-[#6366F114] py-[3px] pr-[8px] pl-[4px]">
+          <Mascot size={16} radius={5} />
+          <span className="text-[12px] font-medium text-[#4338CA]">Chief</span>
         </span>
-
-        {/* Chief chip */}
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '2px 8px',
-            borderRadius: 'var(--radius-pill)',
-            background: helperColor.brand + '18',
-            border: `1px solid ${helperColor.brand}40`,
-            fontSize: 12,
-            fontFamily: 'var(--font-sans)',
-            fontWeight: 500,
-            color: helperColor.brand,
-          }}
-        >
-          <span aria-hidden style={{ fontSize: 13 }}>⚡</span>
-          Chief
-        </span>
-
-        {/* Mention affordance */}
         <button
           type="button"
           aria-label="Mention agent"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '2px 8px',
-            borderRadius: 'var(--radius-pill)',
-            border: '1px solid var(--line-strong)',
-            background: 'transparent',
-            fontSize: 12,
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-          }}
+          className="inline-flex items-center gap-[4px] rounded-pill outline-1 -outline-offset-1 outline-line-strong px-[8px] py-[3px] transition-colors hover:bg-soft"
         >
-          <span aria-hidden>@</span>
-          Mention agent
+          <AtSign size={12} aria-hidden className="text-muted" />
+          <span className="text-[12px] text-muted">Mention agent</span>
         </button>
       </div>
 
-      {/* Textarea */}
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={resolvedPlaceholder}
-        rows={3}
-        style={{
-          display: 'block',
-          width: '100%',
-          resize: 'none',
-          border: 'none',
-          outline: 'none',
-          padding: '12px 14px 8px',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 14,
-          color: 'var(--ink)',
-          background: 'transparent',
-          lineHeight: 1.5,
-          boxSizing: 'border-box',
-        }}
-      />
+      {/* Input */}
+      <div className="flex min-h-[44px] w-full p-[4px]">
+        <textarea
+          ref={inputRef}
+          value={text}
+          rows={1}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          aria-label="Message"
+          className="block w-full resize-none bg-transparent text-[14px] leading-[1.25] text-ink outline-none placeholder:text-faint"
+        />
+      </div>
 
-      {/* Bottom control row */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 10px 10px',
-        }}
-      >
-        {/* + attach button */}
+      {/* Controls */}
+      <div className="flex w-full items-center gap-[8px]">
+        <SquareButton icon={Plus} aria-label="Attach" />
+        <div className="h-px flex-1" />
         <button
           type="button"
-          aria-label="Attach"
-          style={{
-            width: 28,
-            height: 28,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-base)',
-            border: '1px solid var(--line-strong)',
-            background: 'transparent',
-            fontSize: 16,
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-            lineHeight: 1,
-            flexShrink: 0,
-          }}
+          aria-label={`Context ${contextUsed}% used`}
+          className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px] transition-colors hover:bg-hover"
         >
-          +
+          <ContextRing size={16} value={contextUsed} />
+          <span className="font-mono text-[11px] text-muted">{contextUsed}%</span>
         </button>
-
-        {/* Thinking control — crescent + token count */}
-        <button
-          type="button"
-          aria-label="Extended thinking"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '3px 8px',
-            borderRadius: 'var(--radius-pill)',
-            border: '1px solid var(--line-strong)',
-            background: 'transparent',
-            fontSize: 12,
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-            flexShrink: 0,
-          }}
-        >
-          <span aria-hidden style={{ fontSize: 13 }}>☽</span>
-          <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>429</span>
-        </button>
-
-        {/* Model menu */}
         <ModelMenu selected={selectedModel} onSelect={onModelChange} />
-
-        {/* Effort menu */}
-        <button
-          type="button"
-          aria-label="Effort level"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '3px 8px',
-            borderRadius: 'var(--radius-btn)',
-            border: '1px solid var(--line-strong)',
-            background: 'transparent',
-            fontSize: 12,
-            color: 'var(--ink-2)',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-sans)',
-            flexShrink: 0,
-          }}
-        >
-          <span aria-hidden style={{ fontSize: 11 }}>◈</span>
-          Medium
-          <span aria-hidden style={{ fontSize: 10, color: 'var(--faint)' }}>▾</span>
-        </button>
-
-        {/* Spacer */}
-        <div style={{ flex: 1 }} />
-
-        {/* Mic button */}
-        <button
-          type="button"
-          aria-label="Voice input"
-          style={{
-            width: 28,
-            height: 28,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-base)',
-            border: '1px solid var(--line-strong)',
-            background: 'transparent',
-            fontSize: 14,
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          🎙
-        </button>
-
-        {/* Send button */}
-        <button
-          type="button"
+        <ThinkingMenu model={selectedModel} level={thinking} onSelect={setThinking} />
+        <IconButton icon={Mic} aria-label="Voice input" />
+        <SquareButton
+          variant="primary"
+          icon={ArrowUp}
           aria-label="Send"
-          disabled={!text.trim()}
-          onClick={() => { if (text.trim()) setText('') }}
-          style={{
-            width: 32,
-            height: 32,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 'var(--radius-pill)',
-            border: 'none',
-            background: text.trim() ? 'var(--primary)' : 'var(--disabled-bg)',
-            color: 'var(--primary-ink)',
-            cursor: text.trim() ? 'pointer' : 'default',
-            fontSize: 16,
-            flexShrink: 0,
-            transition: 'background 120ms ease',
-          }}
-        >
-          ↑
-        </button>
+          aria-disabled={!text.trim()}
+          onClick={send}
+        />
       </div>
     </div>
   )

@@ -1,8 +1,16 @@
-import type { Channel, Id, Message, Session, InboxItem } from '../domain/types'
+import type { Channel, Folder, Goal, Id, Message, Session, InboxItem } from '../domain/types'
 
 export interface ChannelRepo {
   list(): Promise<Channel[]>
   get(id: Id): Promise<Channel | null>
+}
+
+export interface FolderRepo {
+  listByChannel(channelId: Id): Promise<Folder[]>
+}
+
+export interface GoalRepo {
+  listByChannel(channelId: Id): Promise<Goal[]>
 }
 
 export interface SessionRepo {
@@ -21,6 +29,8 @@ export interface InboxRepo {
 
 export interface Repos {
   channels: ChannelRepo
+  folders: FolderRepo
+  goals: GoalRepo
   sessions: SessionRepo
   messages: MessageRepo
   inbox: InboxRepo

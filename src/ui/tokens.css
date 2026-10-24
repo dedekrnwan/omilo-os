@@ -1,106 +1,27 @@
-/* Omilo v2 — design tokens (pinned from §6 of the spec) */
+/* Omilo v2 — design tokens.
+ * Mirrors the variables of omilo-v2.pen 1:1 (same names, same values).
+ * Tailwind utilities are generated from the @theme block below
+ * (e.g. bg-surface, text-muted, border-line-strong, rounded-lg, font-display).
+ */
 
 /* ── Font imports ──────────────────────────────────────────────────── */
 @import "@fontsource-variable/inter/index.css";
-@import "@fontsource-variable/bricolage-grotesque/index.css";
+@import "@fontsource-variable/bricolage-grotesque/opsz.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource-variable/fraunces/index.css";
 
-/* ── CSS custom properties ─────────────────────────────────────────── */
-:root {
-  /* Neutrals / surfaces */
-  --app:          #F5F5F4;
-  --surface:      #FFFFFF;
-  --soft:         #FAFAF9;
-  --line:         #E7E5E4A6;
-  --line-strong:  #E7E5E4;
-  --hover:        #E7E5E4A6;
-  --disabled-bg:  #E5E5E5A6;
-
-  /* Ink / text */
-  --ink:        #0C0A09;
-  --ink-2:      #44403C;
-  --muted:      #78716C;
-  --faint:      #A8A29E;
-  --on-ink-2:   #D6D3D1;
-
-  /* Primary */
-  --primary:        #171717;
-  --primary-hover:  #262626;
-  --primary-ink:    #FFFFFF;
-
-  /* Link */
-  --link: #2563EB;
-
-  /* Status — ok */
-  --ok:       #15803D;
-  --ok-tint:  #F0FDF4;
-  --ok-line:  #BBF7D0;
-
-  /* Status — warn */
-  --warn:       #B45309;
-  --warn-tint:  #FFFBEB;
-  --warn-line:  #FDE68A;
-
-  /* Status — bad */
-  --bad:        #B91C1C;
-  --bad-tint:   #FEF2F2;
-  --bad-line:   #FECACA;
-  --bad-solid:  #DC2626;
-
-  /* Status — info */
-  --info:       #1D4ED8;
-  --info-tint:  #EFF6FF;
-  --info-line:  #BFDBFE;
-
-  /* Helper accents */
-  --helper-brand:     #6366F1;
-  --helper-ops:       #0EA5E9;
-  --helper-dev:       #14B8A6;
-  --helper-support:   #EC4899;
-  --helper-finance:   #65A30D;
-  --helper-marketing: #F97316;
-  --helper-sales:     #8B5CF6;
-  --helper-retro:     #64748B;
-  --spark:            #F59E0B;
-  --mascot-ink:       #1C1917;
-
-  /* Field tints */
-  --field-base:   #FAFAF9;
-  --field-indigo: #E0E7FF;
-  --field-sky:    #E0F2FE;
-  --field-sage:   #ECFCCB;
-  --field-amber:  #FEF3C7;
-  --field-rose:   #FCE7F3;
-
-  /* Radii */
-  --radius-xs:     4px;
-  --radius-sm:     6px;
-  --radius-base:   8px;
-  --radius-md:     10px;
-  --radius-lg:     12px;
-  --radius-btn:    7px;
-  --radius-dialog: 20px;
-  --radius-pill:   999px;
-
-  /* Fonts */
-  --font-sans:    'Inter Variable', 'Inter', system-ui, sans-serif;
-  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
-  --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
-  --font-serif:   'Fraunces Variable', 'Fraunces', Georgia, serif;
-}
-
-/* ── Tailwind v4 @theme mapping ────────────────────────────────────── */
 @theme {
-  /* Surface / neutral colors */
+  /* Surfaces */
   --color-app:         #F5F5F4;
   --color-surface:     #FFFFFF;
   --color-soft:        #FAFAF9;
-  --color-line:        #E7E5E4;
+  --color-line:        #E7E5E4A6;
   --color-line-strong: #E7E5E4;
-  --color-hover:       #E7E5E4;
-  --color-disabled-bg: #E5E5E5;
+  --color-hover:       #E7E5E4A6;
+  --color-disabled-bg: #E5E5E5A6;
+  --color-wire:        #78716C61;
+  --color-wire-strong: #D6D3D1;
 
   /* Ink */
   --color-ink:      #0C0A09;
@@ -110,11 +31,10 @@
   --color-on-ink-2: #D6D3D1;
 
   /* Primary */
-  --color-primary:        #171717;
-  --color-primary-hover:  #262626;
-  --color-primary-ink:    #FFFFFF;
+  --color-primary:       #171717;
+  --color-primary-hover: #262626;
+  --color-primary-ink:   #FFFFFF;
 
-  /* Link */
   --color-link: #2563EB;
 
   /* Status */
@@ -152,7 +72,7 @@
   --color-field-amber:  #FEF3C7;
   --color-field-rose:   #FCE7F3;
 
-  /* Radii */
+  /* Radii (pen: r-xs, r-sm, r, r-md, r-lg, r-btn, r-dialog, r-pill) */
   --radius-xs:     4px;
   --radius-sm:     6px;
   --radius-base:   8px;
@@ -164,7 +84,24 @@
 
   /* Fonts */
   --font-sans:    'Inter Variable', 'Inter', system-ui, sans-serif;
-  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif;
   --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
   --font-serif:   'Fraunces Variable', 'Fraunces', Georgia, serif;
+}
+
+/* Plain custom properties for inline styles / non-Tailwind consumers. */
+:root {
+  --app: var(--color-app);
+  --surface: var(--color-surface);
+  --soft: var(--color-soft);
+  --line: var(--color-line);
+  --line-strong: var(--color-line-strong);
+  --hover: var(--color-hover);
+  --ink: var(--color-ink);
+  --ink-2: var(--color-ink-2);
+  --muted: var(--color-muted);
+  --faint: var(--color-faint);
+  --primary: var(--color-primary);
+  --primary-ink: var(--color-primary-ink);
+  --ok: var(--color-ok);
 }

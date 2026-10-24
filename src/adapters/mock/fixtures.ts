@@ -1,271 +1,355 @@
-import type { Channel, Session, Message, InboxItem } from '../../core/domain/types'
-// InboxSubtask and InboxAction are inlined via the InboxItem type — no direct import needed
+import type { Channel, Folder, Goal, Session, Message, InboxItem } from '../../core/domain/types'
+
+// Mock data mirrors the content of omilo-v2.pen (Chat · New chat, Chat · Session,
+// Office · Inbox) so the running app reads exactly like the design.
 
 // ── Channels ─────────────────────────────────────────────────────────────────
 
 export const channels: Channel[] = [
-  { id: 'ch-general',     name: 'General',     area: 'ops' },
-  { id: 'ch-engineering', name: 'Engineering', area: 'dev' },
-  { id: 'ch-marketing',   name: 'Marketing',   area: 'marketing' },
+  { id: 'ch-general',     name: 'General',     accent: 'general',   isDefault: true, agentCount: 0, chatCount: 31, openItems: 2 },
+  { id: 'ch-engineering', name: 'Engineering', accent: 'dev',       agentCount: 3, chatCount: 24, openItems: 5 },
+  { id: 'ch-marketing',   name: 'Marketing',   accent: 'marketing', agentCount: 2, chatCount: 18, openItems: 4 },
+  { id: 'ch-business',    name: 'Business',    accent: 'sales',     agentCount: 2, chatCount: 9, openItems: 3 },
+]
+
+// ── Goals (hero "Or start from a goal" + sidebar Goals count) ───────────────
+
+export const goals: Goal[] = [
+  { id: 'g-books',     channelId: 'ch-general', title: 'Close October books',     progress: 70 },
+  { id: 'g-referral',  channelId: 'ch-general', title: 'Launch referral program', progress: 35 },
+  { id: 'g-offsite',   channelId: 'ch-general', title: 'Plan Q1 offsite',         progress: 10 },
+
+  { id: 'g-passkeys',  channelId: 'ch-engineering', title: 'Passwordless login by Q4', progress: 40 },
+  { id: 'g-pg16',      channelId: 'ch-engineering', title: 'Postgres 16 upgrade',      progress: 55 },
+  { id: 'g-ci',        channelId: 'ch-engineering', title: 'CI under 10 minutes',      progress: 20 },
+  { id: 'g-uptime',    channelId: 'ch-engineering', title: '99.95% API uptime',        progress: 80 },
+
+  { id: 'g-ref-launch', channelId: 'ch-marketing', title: 'Referral launch',      progress: 35 },
+  { id: 'g-content',    channelId: 'ch-marketing', title: 'November content plan', progress: 60 },
+
+  { id: 'g-pilot',     channelId: 'ch-business', title: 'Close Arunika pilot', progress: 50 },
+]
+
+// ── Folders ──────────────────────────────────────────────────────────────────
+
+export const folders: Folder[] = [
+  { id: 'f-offsite',   channelId: 'ch-general', name: 'Company offsite', count: 4 },
+  { id: 'f-board',     channelId: 'ch-general', name: 'Board prep',      count: 3 },
+  { id: 'f-ideas',     channelId: 'ch-general', name: 'Ideas',           count: 2 },
+
+  { id: 'f-q4',        channelId: 'ch-engineering', name: 'Q4 Launch',        count: 6 },
+  { id: 'f-infra',     channelId: 'ch-engineering', name: 'Infra migration',  count: 3 },
+  { id: 'f-incidents', channelId: 'ch-engineering', name: 'Incident reviews', count: 2 },
+
+  { id: 'f-referral',  channelId: 'ch-marketing', name: 'Referral launch', count: 3 },
+  { id: 'f-brand',     channelId: 'ch-marketing', name: 'Brand refresh',   count: 2 },
+
+  { id: 'f-pilots',    channelId: 'ch-business', name: 'Pilots',    count: 2 },
+  { id: 'f-pricing',   channelId: 'ch-business', name: 'Pricing',   count: 1 },
 ]
 
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
+const chiefAndDev = [
+  { name: 'Chief', area: 'brand' as const },
+  { name: 'Dev',   area: 'dev' as const },
+]
+
 export const sessions: Session[] = [
-  // General
-  { id: 'sess-gen-1',  title: 'Q4 planning kickoff',        channelId: 'ch-general' },
-  { id: 'sess-gen-2',  title: 'Team onboarding checklist',  channelId: 'ch-general' },
-  // Engineering
-  { id: 'sess-eng-1',  title: 'API rate-limit investigation', channelId: 'ch-engineering' },
-  { id: 'sess-eng-2',  title: 'Database migration plan',      channelId: 'ch-engineering' },
+  // General — Recent
+  { id: 'sess-investor',  channelId: 'ch-general', title: 'October investor update',   updated: 'now' },
+  { id: 'sess-vendors',   channelId: 'ch-general', title: 'Vendor renewals owner?',    updated: '1h', unread: true },
+  { id: 'sess-weekly',    channelId: 'ch-general', title: 'Weekly cross-area summary', updated: '3h' },
+  { id: 'sess-holiday',   channelId: 'ch-general', title: 'Holiday schedule FAQ',      updated: 'Yesterday' },
+  { id: 'sess-venue',     channelId: 'ch-general', title: 'Offsite venue shortlist',   updated: 'Mon' },
+  { id: 'sess-welcome',   channelId: 'ch-general', title: 'New hire welcome note',     updated: 'Oct 18' },
+  // General — folders
+  { id: 'sess-offsite-1', channelId: 'ch-general', folderId: 'f-offsite', title: 'Offsite agenda draft',   updated: '2d' },
+  { id: 'sess-offsite-2', channelId: 'ch-general', folderId: 'f-offsite', title: 'Travel budget per head', updated: '3d' },
+  { id: 'sess-board-1',   channelId: 'ch-general', folderId: 'f-board',   title: 'Q3 board deck outline',  updated: '1w' },
+  { id: 'sess-ideas-1',   channelId: 'ch-general', folderId: 'f-ideas',   title: 'Loyalty program idea',   updated: '2w' },
+
+  // Engineering — Q4 Launch folder
+  {
+    id: 'sess-passkey', channelId: 'ch-engineering', folderId: 'f-q4',
+    title: 'Passkey rollout plan', updated: 'now',
+    goal: 'Passwordless login by Q4', participants: chiefAndDev,
+  },
+  { id: 'sess-launch-comms', channelId: 'ch-engineering', folderId: 'f-q4', title: 'Launch day comms',         updated: '2h', participants: chiefAndDev },
+  { id: 'sess-freeze',       channelId: 'ch-engineering', folderId: 'f-q4', title: 'Freeze exceptions policy', updated: '1d', participants: chiefAndDev },
+  { id: 'sess-q4-4',         channelId: 'ch-engineering', folderId: 'f-q4', title: 'Staging smoke tests',      updated: '2d' },
+  { id: 'sess-q4-5',         channelId: 'ch-engineering', folderId: 'f-q4', title: 'Feature flag cleanup',     updated: '3d' },
+  { id: 'sess-q4-6',         channelId: 'ch-engineering', folderId: 'f-q4', title: 'Release notes draft',      updated: '4d' },
+  // Engineering — other folders
+  { id: 'sess-infra-1',    channelId: 'ch-engineering', folderId: 'f-infra',     title: 'Move workers to Fargate', updated: '2d' },
+  { id: 'sess-incident-1', channelId: 'ch-engineering', folderId: 'f-incidents', title: 'Checkout 429 storm',      updated: '3d' },
+  // Engineering — Recent
+  { id: 'sess-flaky',     channelId: 'ch-engineering', title: 'Flaky e2e tests on CI',          updated: 'now' },
+  { id: 'sess-deploy',    channelId: 'ch-engineering', title: 'Why did deploy #482 fail?',      updated: '1h', unread: true },
+  { id: 'sess-pg16',      channelId: 'ch-engineering', title: 'Postgres 16 upgrade checklist',  updated: '3h' },
+  { id: 'sess-retro',     channelId: 'ch-engineering', title: 'Sprint 42 retro notes',          updated: 'Yesterday' },
+  { id: 'sess-oncall',    channelId: 'ch-engineering', title: 'On-call handover template',      updated: 'Mon' },
+  { id: 'sess-ratelimit', channelId: 'ch-engineering', title: 'Rate limiter design review',     updated: 'Oct 18' },
+
   // Marketing
-  { id: 'sess-mkt-1',  title: 'Campaign launch debrief',      channelId: 'ch-marketing' },
-  { id: 'sess-mkt-2',  title: 'Content calendar review',      channelId: 'ch-marketing' },
+  { id: 'sess-ad-budget', channelId: 'ch-marketing', folderId: 'f-referral', title: 'Referral launch budget', updated: '25m' },
+  { id: 'sess-ref-copy',  channelId: 'ch-marketing', folderId: 'f-referral', title: 'Referral email copy',    updated: '1d' },
+  { id: 'sess-brand-1',   channelId: 'ch-marketing', folderId: 'f-brand',    title: 'Logo refresh brief',     updated: '1w' },
+  { id: 'sess-campaign',  channelId: 'ch-marketing', title: 'Campaign launch debrief', updated: '2h' },
+  { id: 'sess-calendar',  channelId: 'ch-marketing', title: 'Content calendar review', updated: 'Yesterday' },
+
+  // Business
+  { id: 'sess-arunika',   channelId: 'ch-business', folderId: 'f-pilots',  title: 'Pilot contract redlines', updated: '1h', unread: true },
+  { id: 'sess-pricing',   channelId: 'ch-business', folderId: 'f-pricing', title: 'Annual pricing tiers',    updated: '3d' },
+  { id: 'sess-pipeline',  channelId: 'ch-business', title: 'Pipeline review',  updated: 'Mon' },
 ]
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
+const chief = { kind: 'helper' as const, name: 'Chief', role: 'Chief of Staff', area: 'brand' as const }
+const dev = { kind: 'helper' as const, name: 'Dev', role: 'Engineering agent', area: 'dev' as const }
+const growth = { kind: 'helper' as const, name: 'Growth', role: 'Marketing agent', area: 'marketing' as const }
+const you = { kind: 'you' as const, name: 'You' }
+
 export const messages: Message[] = [
-  // sess-gen-1 thread
+  // Passkey rollout plan — the "Chat · Session" design
   {
-    id: 'msg-gen-1-1', sessionId: 'sess-gen-1',
-    author: { kind: 'you', name: 'You' },
-    content: 'Let\'s outline our Q4 priorities. What should we tackle first?',
-    createdAt: '2026-10-20T09:00:00Z',
-  },
-  {
-    id: 'msg-gen-1-2', sessionId: 'sess-gen-1',
-    author: { kind: 'helper', name: 'Aria', area: 'ops' },
-    content: 'Based on last quarter\'s metrics, I\'d suggest focusing on customer retention and infrastructure stability before new feature work.',
-    createdAt: '2026-10-20T09:01:30Z',
-  },
-  {
-    id: 'msg-gen-1-3', sessionId: 'sess-gen-1',
-    author: { kind: 'you', name: 'You' },
-    content: 'Agreed. Can you draft a proposed timeline with milestones?',
-    createdAt: '2026-10-20T09:03:00Z',
-  },
-  {
-    id: 'msg-gen-1-4', sessionId: 'sess-gen-1',
-    author: { kind: 'helper', name: 'Aria', area: 'ops' },
-    content: 'Sure — I\'ll have a draft timeline ready within the hour, broken into four two-week sprints.',
-    createdAt: '2026-10-20T09:03:45Z',
-  },
-
-  // sess-gen-2 thread
-  {
-    id: 'msg-gen-2-1', sessionId: 'sess-gen-2',
-    author: { kind: 'you', name: 'You' },
-    content: 'We have two new engineers starting Monday. What\'s in the onboarding checklist?',
-    createdAt: '2026-10-21T10:00:00Z',
-  },
-  {
-    id: 'msg-gen-2-2', sessionId: 'sess-gen-2',
-    author: { kind: 'helper', name: 'Aria', area: 'ops' },
-    content: 'The checklist covers: account provisioning, local dev setup guide, codebase walkthrough, and a 30-60-90 day goal-setting session.',
-    createdAt: '2026-10-21T10:01:00Z',
-  },
-
-  // sess-eng-1 thread
-  {
-    id: 'msg-eng-1-1', sessionId: 'sess-eng-1',
-    author: { kind: 'you', name: 'You' },
-    content: 'We\'re seeing 429s from the payment gateway starting last night. Any ideas?',
-    createdAt: '2026-10-22T08:15:00Z',
-  },
-  {
-    id: 'msg-eng-1-2', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Byte', area: 'dev' },
-    content: 'Looking at the request logs — it appears a retry loop in the checkout service is flooding the endpoint. I\'ll pinpoint the exact commit.',
-    createdAt: '2026-10-22T08:16:30Z',
-  },
-  {
-    id: 'msg-eng-1-3', sessionId: 'sess-eng-1',
-    author: { kind: 'you', name: 'You' },
-    content: 'How bad is the blast radius? Are other services affected?',
-    createdAt: '2026-10-22T08:18:00Z',
-  },
-  {
-    id: 'msg-eng-1-4', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Byte', area: 'dev' },
-    content: 'Contained to checkout. Order service and fulfillment are clean. I recommend rolling back to v2.4.1 while we patch.',
-    createdAt: '2026-10-22T08:19:15Z',
-  },
-  {
-    id: 'msg-eng-1-5', sessionId: 'sess-eng-1',
-    author: { kind: 'you', name: 'You' },
+    id: 'msg-pk-1', sessionId: 'sess-passkey', author: you,
     content: 'Can we ship passkeys to everyone before the Q4 code freeze on Nov 28?',
+    createdAt: '2026-10-22T10:40:00Z',
+  },
+  {
+    id: 'msg-pk-2', sessionId: 'sess-passkey', author: chief,
+    content: 'Yes — if we split it in two. Your Engineering goal “Passwordless login by Q4” is at 40%, and the blocker is WebAuthn on the legacy Android app. I’m pulling Dev in to size it.',
     createdAt: '2026-10-22T10:41:00Z',
   },
   {
-    id: 'msg-eng-1-6', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Chief', area: 'brand' },
-    content: 'Yes — if we split it in two. Your Engineering goal "Passwordless login by Q4" is at 40%, and the blocker is WebAuthn on the legacy Android app. I\'m pulling Dev in to size it.',
-    createdAt: '2026-10-22T10:41:30Z',
-  },
-  // System event line — Chief added Dev
-  {
-    id: 'msg-eng-1-sys-1', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Chief', area: 'brand' },
+    id: 'msg-pk-3', sessionId: 'sess-passkey', author: dev, system: true,
     content: 'Chief added Dev to this chat',
+    createdAt: '2026-10-22T10:42:00Z',
+  },
+  {
+    id: 'msg-pk-4', sessionId: 'sess-passkey', author: dev,
+    content: 'Sized it. Web + iOS can ship Nov 14 (≈3 days). Legacy Android needs a password fallback flow, ≈5 days. Rollout doc is drafted in this channel’s Docs.',
     createdAt: '2026-10-22T10:43:00Z',
-    system: true,
+    attachment: { title: 'Passkey rollout — v1', meta: 'Doc · Engineering · edited just now' },
   },
   {
-    id: 'msg-eng-1-7', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Dev', area: 'dev' },
-    content: 'Sized it. Web + iOS can ship Nov 14 (=3 days). Legacy Android needs a password fallback flow, ≈5 days. Rollout doc is drafted in this channel\'s Docs.',
-    createdAt: '2026-10-22T10:43:30Z',
-    attachment: {
-      title: 'Passkey rollout — v1',
-      meta: 'Doc · Engineering · edited just now',
-    },
-  },
-  {
-    id: 'msg-eng-1-8', sessionId: 'sess-eng-1',
-    author: { kind: 'helper', name: 'Chief', area: 'brand' },
-    content: 'Want me to turn this into 3 tasks under the goal? They\'ll show up in Office mode for tracking and approvals.',
+    id: 'msg-pk-5', sessionId: 'sess-passkey', author: chief,
+    content: 'Want me to turn this into 3 tasks under the goal? They’ll show up in Office mode for tracking and approvals.',
     createdAt: '2026-10-22T10:44:00Z',
-    actions: [
-      { label: 'Create 3 tasks in Goal', primary: true },
-      { label: 'Not yet' },
-    ],
+    actions: [{ label: 'Create 3 tasks in Goal', primary: true }, { label: 'Not yet' }],
   },
 
-  // sess-eng-2 thread
+  // Launch day comms
   {
-    id: 'msg-eng-2-1', sessionId: 'sess-eng-2',
-    author: { kind: 'you', name: 'You' },
-    content: 'We need to migrate the users table to the new schema by end of sprint. What\'s the safest approach?',
-    createdAt: '2026-10-23T14:00:00Z',
+    id: 'msg-lc-1', sessionId: 'sess-launch-comms', author: you,
+    content: 'Draft the launch-day announcement for passkeys.',
+    createdAt: '2026-10-22T08:10:00Z',
   },
   {
-    id: 'msg-eng-2-2', sessionId: 'sess-eng-2',
-    author: { kind: 'helper', name: 'Byte', area: 'dev' },
-    content: 'I recommend a dual-write pattern: write to both old and new schema simultaneously, verify consistency, then cut over reads. Zero-downtime and fully reversible.',
-    createdAt: '2026-10-23T14:01:30Z',
+    id: 'msg-lc-2', sessionId: 'sess-launch-comms', author: chief,
+    content: 'Drafted a short in-app banner and an email. Growth will send them once web + iOS are live on Nov 14.',
+    createdAt: '2026-10-22T08:12:00Z',
   },
 
-  // sess-mkt-1 thread
+  // Flaky e2e tests
   {
-    id: 'msg-mkt-1-1', sessionId: 'sess-mkt-1',
-    author: { kind: 'you', name: 'You' },
+    id: 'msg-fl-1', sessionId: 'sess-flaky', author: you,
+    content: 'Why are the checkout e2e tests flaky again?',
+    createdAt: '2026-10-24T09:02:00Z',
+  },
+  {
+    id: 'msg-fl-2', sessionId: 'sess-flaky', author: dev,
+    content: 'Two tests wait on a fixed 2s timeout for the payment iframe. I’ll switch them to wait for the iframe’s ready event.',
+    createdAt: '2026-10-24T09:03:00Z',
+  },
+
+  // October investor update (General)
+  {
+    id: 'msg-inv-1', sessionId: 'sess-investor', author: you,
+    content: 'Start the October investor update.',
+    createdAt: '2026-10-24T08:30:00Z',
+  },
+  {
+    id: 'msg-inv-2', sessionId: 'sess-investor', author: chief,
+    content: 'Here’s a first outline: revenue up 12% month over month, two goals moved, one hire closed. Want me to pull the numbers from Finance?',
+    createdAt: '2026-10-24T08:31:00Z',
+  },
+
+  // Offsite venue shortlist (General)
+  {
+    id: 'msg-ven-1', sessionId: 'sess-venue', author: chief,
+    content: 'I found 3 venues within budget for the Q1 offsite. Pick one and I’ll hold the date.',
+    createdAt: '2026-10-23T16:00:00Z',
+  },
+
+  // Referral launch budget (Marketing)
+  {
+    id: 'msg-ad-1', sessionId: 'sess-ad-budget', author: growth,
+    content: 'The referral test returned 3.1× on $600. I’d like a $4,800 cap over 14 days across Meta and TikTok.',
+    createdAt: '2026-10-24T09:35:00Z',
+  },
+
+  // Campaign launch debrief (Marketing)
+  {
+    id: 'msg-cmp-1', sessionId: 'sess-campaign', author: you,
     content: 'The campaign wrapped up yesterday. What were the key numbers?',
     createdAt: '2026-10-24T09:00:00Z',
   },
   {
-    id: 'msg-mkt-1-2', sessionId: 'sess-mkt-1',
-    author: { kind: 'helper', name: 'Mila', area: 'marketing' },
-    content: 'Total reach: 240k impressions, 3.8% CTR, 12% conversion on landing page — above our 9% target. Cost per acquisition came in at $18, 25% under budget.',
-    createdAt: '2026-10-24T09:01:20Z',
-  },
-  {
-    id: 'msg-mkt-1-3', sessionId: 'sess-mkt-1',
-    author: { kind: 'you', name: 'You' },
-    content: 'Excellent. What drove the higher conversion — the new copy or the video creative?',
-    createdAt: '2026-10-24T09:02:30Z',
-  },
-  {
-    id: 'msg-mkt-1-4', sessionId: 'sess-mkt-1',
-    author: { kind: 'helper', name: 'Mila', area: 'marketing' },
-    content: 'A/B data shows the video variant outperformed static by 40% on conversion. Copy contributed too, but video was the primary lift.',
-    createdAt: '2026-10-24T09:03:45Z',
+    id: 'msg-cmp-2', sessionId: 'sess-campaign', author: growth,
+    content: 'Total reach: 240k impressions, 3.8% CTR, 12% conversion on the landing page — above our 9% target.',
+    createdAt: '2026-10-24T09:01:00Z',
   },
 
-  // sess-mkt-2 thread
+  // Pilot contract redlines (Business)
   {
-    id: 'msg-mkt-2-1', sessionId: 'sess-mkt-2',
-    author: { kind: 'you', name: 'You' },
-    content: 'Let\'s review the November content calendar. Are we on track for all planned posts?',
-    createdAt: '2026-10-24T11:00:00Z',
-  },
-  {
-    id: 'msg-mkt-2-2', sessionId: 'sess-mkt-2',
-    author: { kind: 'helper', name: 'Mila', area: 'marketing' },
-    content: 'We have 18 of 22 posts drafted. The four gaps are the partner spotlight series — waiting on brand assets from the partners.',
-    createdAt: '2026-10-24T11:01:10Z',
+    id: 'msg-aru-1', sessionId: 'sess-arunika', author: { kind: 'helper', name: 'Sales', role: 'Sales agent', area: 'sales' },
+    content: 'Arunika sent redlines on the pilot contract: a 60-day term instead of 90, and a data-export clause. Both look acceptable.',
+    createdAt: '2026-10-24T08:40:00Z',
   },
 ]
 
 // ── Inbox ─────────────────────────────────────────────────────────────────────
 
 export const inboxItems: InboxItem[] = [
-  // ── Full approval card #1 — task creation ──────────────────────────────────
+  // Needs you — full decision cards
   {
-    id: 'inbox-1',
-    title: 'Approve Q4 planning timeline',
-    summary: 'Aria has drafted the Q4 milestone timeline and needs your sign-off before sharing with the wider team.',
-    sessionId: 'sess-gen-1',
+    id: 'inbox-passkey-tasks',
+    title: 'Create 3 tasks for the passkey rollout',
+    summary: 'From your chat “Passkey rollout plan”. Splits the goal so web + iOS ship before the Nov 28 freeze; Android follows with a fallback.',
+    sessionId: 'sess-passkey',
+    channelId: 'ch-engineering',
     kind: 'decision',
     status: 'pending',
-    createdAt: '2026-10-20T10:00:00Z',
-    // approval card enrichment
-    asker: 'Chief',
-    askedAgo: '2m ago',
-    area: 'dev',
+    createdAt: '2026-10-24T09:58:00Z',
+    asker: 'Chief', askerArea: 'brand',
+    askedAgo: 'asked 2m ago',
     needsYou: true,
-    subtasks: [
-      { who: 'Dev', area: 'dev',       text: 'Ship passkeys on web + iOS',         due: 'Nov 14' },
-      { who: 'Dev', area: 'dev',       text: 'Android password fallback flow',      due: 'Nov 21' },
-      { who: 'Growth', area: 'marketing', text: 'Launch comms to all users',        due: 'Nov 24' },
+    proposals: [
+      { who: 'Dev',    area: 'dev',       text: 'Ship passkeys on web + iOS',     due: 'Nov 14' },
+      { who: 'Dev',    area: 'dev',       text: 'Android password fallback flow', due: 'Nov 21' },
+      { who: 'Growth', area: 'marketing', text: 'Launch comms to all users',      due: 'Nov 24' },
     ],
     actions: [
-      { label: 'Approve all 3', primary: true },
+      { label: 'Approve all 3', primary: true, icon: 'check' },
       { label: 'Review one by one' },
-      { label: 'Reply' },
+      { label: 'Reply', icon: 'reply' },
     ],
     reassurance: 'Nothing runs until you approve',
   },
-
-  // ── Full approval card #2 — budget approval ────────────────────────────────
   {
-    id: 'inbox-2',
-    title: 'API rate-limit rollback approved',
-    summary: 'Byte confirmed rollback to v2.4.1 resolved the 429 storm. The patched version is ready for review.',
-    sessionId: 'sess-eng-1',
-    kind: 'update',
+    id: 'inbox-ad-budget',
+    title: 'Approve $4,800 ad budget for the referral launch',
+    summary: '14-day spend cap across Meta and TikTok. Last test returned 3.1× on $600; Growth stops automatically at the cap.',
+    sessionId: 'sess-ad-budget',
+    channelId: 'ch-marketing',
+    kind: 'decision',
     status: 'pending',
-    createdAt: '2026-10-22T09:00:00Z',
-    // approval card enrichment
-    asker: 'Growth',
-    askedAgo: '25m ago',
-    area: 'marketing',
+    createdAt: '2026-10-24T09:35:00Z',
+    asker: 'Growth', askerArea: 'marketing',
+    askedAgo: 'asked 25m ago',
     needsYou: true,
     actions: [
-      { label: 'Approve $4,800', primary: true },
+      { label: 'Approve $4,800', primary: true, icon: 'check' },
       { label: 'Change amount' },
-      { label: 'Reply' },
+      { label: 'Reply', icon: 'reply' },
     ],
     reassurance: 'Charged only when ads run',
   },
 
-  // ── Compact row #3 ─────────────────────────────────────────────────────────
+  // Needs you — compact rows
   {
-    id: 'inbox-3',
-    title: 'Campaign debrief highlights',
-    summary: 'October campaign exceeded targets — CPA $18 vs $24 budget, 12% conversion. Mila mentioned you in the summary.',
-    sessionId: 'sess-mkt-1',
-    kind: 'mention',
+    id: 'inbox-arunika',
+    title: 'Pilot contract redlines from Arunika',
+    summary: 'Two redlines on the pilot contract need a yes or no.',
+    sessionId: 'sess-arunika',
+    channelId: 'ch-business',
+    kind: 'decision',
     status: 'pending',
-    createdAt: '2026-10-24T09:05:00Z',
-    // compact enrichment
+    createdAt: '2026-10-24T09:00:00Z',
+    asker: 'Sales', askerArea: 'sales',
     askedAgo: '1h',
-    area: 'sales',
+    needsYou: true,
+    compact: true,
+  },
+  {
+    id: 'inbox-venue',
+    title: 'Pick an offsite venue — 3 options',
+    summary: 'Three venues within budget for the Q1 offsite.',
+    sessionId: 'sess-venue',
+    channelId: 'ch-general',
+    kind: 'decision',
+    status: 'pending',
+    createdAt: '2026-10-23T16:00:00Z',
+    asker: 'Chief', askerArea: 'brand',
+    askedAgo: 'Yesterday',
+    needsYou: true,
     compact: true,
   },
 
-  // ── Compact row #4 ─────────────────────────────────────────────────────────
+  // Running now
   {
-    id: 'inbox-4',
-    title: 'Database migration plan ready',
-    summary: 'Byte has outlined the dual-write migration strategy for the users table. Decision needed on go/no-go for this sprint.',
-    sessionId: 'sess-eng-2',
-    kind: 'decision',
-    status: 'pending',
-    createdAt: '2026-10-23T15:00:00Z',
-    // compact enrichment
-    askedAgo: 'Yesterday',
-    area: 'ops',
-    compact: true,
+    id: 'run-passkeys-staging',
+    title: 'Shipping passkeys to staging',
+    summary: '',
+    sessionId: 'sess-passkey',
+    channelId: 'ch-engineering',
+    kind: 'update',
+    status: 'running',
+    createdAt: '2026-10-24T09:48:00Z',
+    asker: 'Dev', askerArea: 'dev',
+    progress: { step: 4, total: 7, elapsed: '12m' },
+  },
+  {
+    id: 'run-rollback-drill',
+    title: 'Rollback drill on api-prod',
+    summary: '',
+    sessionId: 'sess-incident-1',
+    channelId: 'ch-engineering',
+    kind: 'update',
+    status: 'running',
+    createdAt: '2026-10-24T09:57:00Z',
+    asker: 'Ops', askerArea: 'ops',
+    progress: { step: 2, total: 5, elapsed: '3m' },
+  },
+
+  // Done today
+  {
+    id: 'done-brief',
+    title: 'Wrote the morning brief',
+    summary: 'Quiet night. 2 goals moved, 1 at risk (Postgres 16). Brief sent to WhatsApp.',
+    sessionId: 'sess-weekly',
+    channelId: 'ch-general',
+    kind: 'update',
+    status: 'done',
+    createdAt: '2026-10-24T06:00:00Z',
+    asker: 'Chief', askerArea: 'brand',
+    meta: '1m 50s · 5 sources · 11 steps',
+  },
+  {
+    id: 'done-books',
+    title: 'Closed October books',
+    summary: '2 variances flagged for review: cloud spend +18%, contractor invoices late.',
+    sessionId: 'sess-investor',
+    channelId: 'ch-general',
+    kind: 'update',
+    status: 'done',
+    createdAt: '2026-10-24T05:00:00Z',
+    asker: 'Finance', askerArea: 'finance',
+    meta: '6m 12s · 3 sources · 9 steps',
+  },
+  {
+    id: 'done-calendar',
+    title: 'Content calendar synced',
+    summary: '18 of 22 posts drafted. Gaps in the partner spotlight series noted.',
+    sessionId: 'sess-calendar',
+    channelId: 'ch-marketing',
+    kind: 'update',
+    status: 'done',
+    createdAt: '2026-10-24T04:00:00Z',
+    asker: 'Growth', askerArea: 'marketing',
+    meta: '2m 4s · 2 sources · 5 steps',
   },
 ]

@@ -84,10 +84,10 @@ describe('InboxRoute — inbox list', () => {
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Approve Q4 planning timeline')).toBeInTheDocument()
-      expect(screen.getByText('API rate-limit rollback approved')).toBeInTheDocument()
-      expect(screen.getByText('Campaign debrief highlights')).toBeInTheDocument()
-      expect(screen.getByText('Database migration plan ready')).toBeInTheDocument()
+      expect(screen.getByText('Create 3 tasks for the passkey rollout')).toBeInTheDocument()
+      expect(screen.getByText('Approve $4,800 ad budget for the referral launch')).toBeInTheDocument()
+      expect(screen.getByText('Pilot contract redlines from Arunika')).toBeInTheDocument()
+      expect(screen.getByText('Pick an offsite venue — 3 options')).toBeInTheDocument()
     })
   })
 
@@ -97,7 +97,7 @@ describe('InboxRoute — inbox list', () => {
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Aria has drafted the Q4 milestone timeline/i)).toBeInTheDocument()
+      expect(screen.getByText(/Splits the goal so web \+ iOS ship before the Nov 28 freeze/i)).toBeInTheDocument()
     })
   })
 
@@ -108,8 +108,8 @@ describe('InboxRoute — inbox list', () => {
 
     await waitFor(() => {
       // Decision cards show primary approve buttons
-      expect(screen.getByRole('button', { name: /Approve all 3/i })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Approve \$4,800/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Approve all 3$/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Approve \$4,800$/i })).toBeInTheDocument()
       // "Needs you" badge is present for flagged items
       expect(screen.getAllByText(/Needs you/i).length).toBeGreaterThanOrEqual(1)
     })
@@ -117,10 +117,10 @@ describe('InboxRoute — inbox list', () => {
 })
 
 describe('InboxRoute — keystone: same primitive both modes', () => {
-  test('opening inbox-1 renders ChatSession with messages from sess-gen-1', async () => {
+  test('opening inbox-passkey-tasks renders ChatSession with messages from sess-passkey', async () => {
     // inbox-1 → sessionId: 'sess-gen-1'
     // sess-gen-1 has message: "Let's outline our Q4 priorities"
-    const { router } = makeTestRouter('/office/inbox/inbox-1')
+    const { router } = makeTestRouter('/office/inbox/inbox-passkey-tasks')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -128,65 +128,65 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
     // this proves the item→sessionId→ChatSession chain is wired correctly.
     await waitFor(() => {
       expect(
-        screen.getByText(/Let's outline our Q4 priorities/i),
+        screen.getByText(/WebAuthn on the legacy Android app/i),
       ).toBeInTheDocument()
     })
   })
 
-  test('opening inbox-2 renders ChatSession with messages from sess-eng-1', async () => {
+  test('opening inbox-ad-budget renders ChatSession with messages from sess-ad-budget', async () => {
     // inbox-2 → sessionId: 'sess-eng-1'
     // sess-eng-1 has message: "429s from the payment gateway"
-    const { router } = makeTestRouter('/office/inbox/inbox-2')
+    const { router } = makeTestRouter('/office/inbox/inbox-ad-budget')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
       expect(
-        screen.getByText(/429s from the payment gateway/i),
+        screen.getByText(/I’d like a \$4,800 cap/i),
       ).toBeInTheDocument()
     })
   })
 
-  test('opening inbox-3 renders ChatSession with messages from sess-mkt-1', async () => {
+  test('opening inbox-arunika renders ChatSession with messages from sess-arunika', async () => {
     // inbox-3 → sessionId: 'sess-mkt-1'
     // sess-mkt-1 has message about campaign numbers
-    const { router } = makeTestRouter('/office/inbox/inbox-3')
+    const { router } = makeTestRouter('/office/inbox/inbox-arunika')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
       expect(
-        screen.getByText(/240k impressions/i),
+        screen.getByText(/data-export clause/i),
       ).toBeInTheDocument()
     })
   })
 
   test('switching between two inbox items swaps the correct session thread', async () => {
     // Open inbox-1 first (sess-gen-1)
-    const { router } = makeTestRouter('/office/inbox/inbox-1')
+    const { router } = makeTestRouter('/office/inbox/inbox-passkey-tasks')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Let's outline our Q4 priorities/i),
+        screen.getByText(/WebAuthn on the legacy Android app/i),
       ).toBeInTheDocument()
     })
 
     // Navigate to inbox-2 (sess-eng-1)
     await act(async () => {
-      await router.navigate({ to: '/office/inbox/$itemId', params: { itemId: 'inbox-2' } })
+      await router.navigate({ to: '/office/inbox/$itemId', params: { itemId: 'inbox-ad-budget' } })
     })
 
     await waitFor(() => {
       expect(
-        screen.getByText(/429s from the payment gateway/i),
+        screen.getByText(/I’d like a \$4,800 cap/i),
       ).toBeInTheDocument()
     })
 
     // Q4 message from inbox-1's session must be gone
     expect(
-      screen.queryByText(/Let's outline our Q4 priorities/i),
+      screen.queryByText(/WebAuthn on the legacy Android app/i),
     ).not.toBeInTheDocument()
   })
 })
@@ -242,7 +242,7 @@ describe('OfficeSidebar', () => {
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      const inboxBtn = screen.getByRole('button', { name: /inbox/i })
+      const inboxBtn = screen.getByRole('button', { name: /^inbox/i })
       expect(inboxBtn).toHaveAttribute('aria-current', 'true')
     })
   })
