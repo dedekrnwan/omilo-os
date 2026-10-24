@@ -1,5 +1,5 @@
 import { Button } from '../../../ui/ds/Button'
-import { Modal } from '../ControlPanelShared'
+import { Modal } from '../legacyShared'
 
 interface Props {
   onClose: () => void

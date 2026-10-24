@@ -1,299 +1,198 @@
 /**
- * AuthLayout — shared split-screen wrapper used by sign-in / sign-up family.
- * Left: lavender panel with mascot illustration + tagline.
- * Right: white panel with the form content.
- * This is STANDALONE (no Shell / Rail).
+ * Auth layouts (pen: `Auth · *` screens).
+ *
+ * - `AuthLayout` — split screen: 600px Brand panel (Omilo mark, mascot team,
+ *   headline) + centred 360px form column with fine print.
+ * - `OnboardingLayout` — company setup flow (Create company → Payment → All set):
+ *   64px top bar with the 4-step stepper, body centred on the app background.
+ *
+ * Standalone (no Shell / Rail). Every mascot is the DS `<Mascot>`.
  */
 
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { Check } from 'lucide-react'
+import type { HelperArea } from '../../core/domain/types'
+import { Mascot } from '../../ui/ds/Mascot'
 
-// ---------------------------------------------------------------------------
-// Omilo mascot agents illustrated row (SVG paths from Mascot.tsx geometry)
-// ---------------------------------------------------------------------------
-const BODY   = 'M10 70c0-36 9-54 22-54 13 0 22 18 22 54z'
-const CHEEKS = 'M17.9 41a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0z m23 0a2.6 2.6 0 1 0 5.2 0 2.6 2.6 0 1 0-5.2 0z'
-const EYES   = 'M21.4 34a3.6 3.6 0 1 0 7.2 0 3.6 3.6 0 1 0-7.2 0z m14 0a3.6 3.6 0 1 0 7.2 0 3.6 3.6 0 1 0-7.2 0z'
-const SHINE  = 'M25 32.8a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0z m14 0a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0z'
-const MOUTH  = 'M27.5 42.5q4.5 4.5 9 0'
+// ── Mascot team (pen "Team" frame, layout none) ─────────────────────────────
 
-function MascotBlob({
-  color,
-  size,
-  style,
-}: {
-  color: string
+export interface TeamMember {
+  area: HelperArea
   size: number
-  style?: React.CSSProperties
-}) {
+  radius: number
+  x: number
+  y: number
+}
+
+/**
+ * A plain `Mascot` with the pen instance's 3px `$app` stroke (centred: half
+ * painted over the tile, half outside) — it separates the overlapping tiles.
+ */
+export function RingedMascot({ area, size, radius, style }: Omit<TeamMember, 'x' | 'y'> & { style?: CSSProperties }) {
   return (
     <span
-      aria-hidden
-      style={{
-        display: 'inline-block',
-        width: size,
-        height: size,
-        borderRadius: (size * 18) / 64,
-        background: `linear-gradient(${color}29, ${color}29), #FFFFFF`,
-        position: 'relative',
-        flexShrink: 0,
-        ...style,
-      }}
+      className="absolute"
+      style={{ width: size, height: size, borderRadius: radius, boxShadow: '0 0 0 1.5px var(--color-app)', ...style }}
     >
-      <svg viewBox="0 0 64 64" width={size} height={size} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
-        <path d={BODY}   fill={color} />
-        <path d={CHEEKS} fill="#FFFFFF4D" />
-        <path d={EYES}   fill="#1C1917" />
-        <path d={SHINE}  fill="#FFFFFF" />
-        <path d={MOUTH}  fill="none" stroke="#1C1917" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <Mascot area={area} size={size} radius={radius} className="!block" />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{ borderRadius: radius, boxShadow: 'inset 0 0 0 1.5px var(--color-app)' }}
+      />
     </span>
   )
 }
 
-/** The five-agent illustration shown on the left panel. */
-function AgentRow() {
-  // Colors: teal/sage (ops, dev), orange (marketing), indigo (brand/Chief), sky (ops2), green (finance)
-  const agents: { color: string; size: number; marginTop?: number }[] = [
-    { color: '#14B8A6', size: 48, marginTop: 12 },
-    { color: '#F97316', size: 44, marginTop: 18 },
-    { color: '#6366F1', size: 64, marginTop: 0  },
-    { color: '#0EA5E9', size: 48, marginTop: 12 },
-    { color: '#65A30D', size: 40, marginTop: 22 },
-  ]
+export function MascotTeam({ members, width, height }: { members: TeamMember[]; width: number; height: number }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 32 }}>
-      {agents.map((a, i) => (
-        <MascotBlob key={i} color={a.color} size={a.size} style={{ marginBottom: a.marginTop ? -a.marginTop : 0 }} />
+    <div className="relative shrink-0" style={{ width, height }}>
+      {members.map((m) => (
+        <RingedMascot key={m.area} area={m.area} size={m.size} radius={m.radius} style={{ left: m.x, top: m.y }} />
       ))}
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Left panel
-// ---------------------------------------------------------------------------
-function LeftPanel() {
+const BRAND_TEAM: TeamMember[] = [
+  { area: 'dev', size: 72, radius: 20, x: 0, y: 40 },
+  { area: 'marketing', size: 64, radius: 18, x: 62, y: 62 },
+  { area: 'brand', size: 104, radius: 29, x: 124, y: 10 },
+  { area: 'ops', size: 66, radius: 18, x: 224, y: 58 },
+  { area: 'finance', size: 58, radius: 16, x: 282, y: 44 },
+]
+
+// ── Split layout ─────────────────────────────────────────────────────────────
+
+function BrandPanel() {
   return (
-    <div
-      style={{
-        width: '42%',
-        maxWidth: 600,
-        minHeight: '100vh',
-        flexShrink: 0,
-        background: '#F5F5F4',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '20px 28px 28px',
-        position: 'relative',
-      }}
+    <aside
+      className="flex w-[600px] shrink-0 flex-col justify-between bg-app p-[48px]"
+      style={{ boxShadow: 'inset -1px 0 0 var(--color-line-strong)' }}
     >
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'auto' }}>
-        <MascotBlob color="#6366F1" size={28} />
-        <span style={{ fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-sans, sans-serif)', color: '#0C0A09' }}>
-          Omilo
-        </span>
+      <div className="flex items-center gap-[10px]">
+        <Mascot size={30} radius={8} title="Omilo" />
+        <span className="font-display text-[20px] font-semibold text-ink">Omilo</span>
       </div>
 
-      {/* Illustration */}
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1, paddingBottom: 40 }}>
-        <AgentRow />
-        <h2
-          style={{
-            margin: '0 0 12px',
-            fontSize: 26,
-            lineHeight: 1.25,
-            fontFamily: 'var(--font-display, sans-serif)',
-            fontWeight: 700,
-            color: '#0C0A09',
-          }}
-        >
-          Your company, run with a small team of agents.
-        </h2>
-        <p style={{ margin: 0, fontSize: 14, color: '#78716C', fontFamily: 'var(--font-sans, sans-serif)', lineHeight: 1.5 }}>
-          Chief plans, the team does the work, and you make the calls that matter.
-        </p>
+      <div className="flex w-full flex-col gap-[28px]">
+        <MascotTeam members={BRAND_TEAM} width={340} height={150} />
+        <div className="flex w-full flex-col gap-[10px]">
+          <h2 className="font-display w-full text-[34px] leading-[1.15] font-semibold tracking-[-0.8px] text-ink">
+            Your company, run with a small team of agents.
+          </h2>
+          <p className="w-[440px] text-[15px] leading-[1.5] text-ink-2">
+            Chief plans, the team does the work, and you make the calls that matter.
+          </p>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#A8A29E', fontFamily: 'var(--font-sans, sans-serif)' }}>
-        <span>© 2026 Saga</span>
-        <a href="#" style={{ color: '#A8A29E', textDecoration: 'none' }}>Privacy</a>
-        <a href="#" style={{ color: '#A8A29E', textDecoration: 'none' }}>Terms</a>
-      </div>
-    </div>
+      <p className="text-[12px] whitespace-pre text-faint">© 2026 Saga  ·  Privacy  ·  Terms</p>
+    </aside>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Right panel (form area)
-// ---------------------------------------------------------------------------
-function RightPanel({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: '100vh',
-        background: '#FFFFFF',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px 24px',
-        position: 'relative',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        {children}
-      </div>
-      {/* Bottom legal */}
-      <p style={{
-        position: 'absolute',
-        bottom: 20,
-        left: 0,
-        right: 0,
-        textAlign: 'center',
-        fontSize: 11.5,
-        color: '#A8A29E',
-        fontFamily: 'var(--font-sans, sans-serif)',
-        margin: 0,
-      }}>
-        By continuing you agree to the Terms and Privacy Policy.
-      </p>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
 export interface AuthLayoutProps {
   children: ReactNode
+  /** Top-right step hint, e.g. "Step 1 of 4" (Confirm your email). */
+  step?: string
 }
 
-/** Split-screen auth layout: illustrated left panel + white form right panel. */
-export function AuthLayout({ children }: AuthLayoutProps) {
+/** Split-screen auth layout: Brand panel + centred 360px form. */
+export function AuthLayout({ children, step }: AuthLayoutProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100vh',
-        width: '100%',
-        fontFamily: 'var(--font-sans, sans-serif)',
-      }}
-    >
-      <LeftPanel />
-      <RightPanel>{children}</RightPanel>
+    <div className="relative flex h-svh min-h-[640px] w-full overflow-hidden bg-surface">
+      <BrandPanel />
+      <main className="relative flex min-w-0 flex-1 flex-col items-center justify-center">
+        <div className="flex w-[360px] flex-col gap-[18px]">{children}</div>
+        <div className="absolute inset-x-0 bottom-[34px] flex justify-center">
+          <p className="text-[11.5px] text-faint">By continuing you agree to the Terms and Privacy Policy.</p>
+        </div>
+      </main>
+      {step && (
+        <div className="absolute top-[24px] right-[24px] flex items-center justify-end gap-[6px]">
+          <span className="text-[12px] text-muted">{step}</span>
+        </div>
+      )}
     </div>
   )
 }
 
-/**
- * Onboarding layout — full-screen with top stepper bar (no split panel).
- * Used for: Create company, Choose plan, Payment, All set.
- */
+// ── Onboarding (company setup) layout ───────────────────────────────────────
+
+const SETUP_STEPS = ['Account', 'Company', 'Plan', 'Payment'] as const
+
+function Stepper({ current }: { current: number }) {
+  return (
+    <nav aria-label="Setup steps" className="flex flex-1 items-center justify-center gap-[10px]">
+      {SETUP_STEPS.map((label, i) => {
+        const n = i + 1
+        const done = n < current
+        const active = n === current
+        return (
+          <div key={label} className="flex items-center gap-[10px]">
+            {i > 0 && (
+              <span
+                aria-hidden
+                className="h-[1.5px] w-[36px]"
+                style={{ background: n <= current ? '#171717' : '#D6D3D1' }}
+              />
+            )}
+            <div className="flex items-center gap-[7px]" aria-current={active ? 'step' : undefined}>
+              <span
+                aria-hidden
+                className={`flex size-[22px] items-center justify-center rounded-full ${done ? 'bg-primary' : active ? 'bg-surface' : ''}`}
+                style={
+                  done
+                    ? undefined
+                    : { boxShadow: `inset 0 0 0 1.5px ${active ? '#171717' : '#D6D3D1'}` }
+                }
+              >
+                {done ? (
+                  <Check size={12} className="text-white" />
+                ) : (
+                  <span className={`text-[11px] font-semibold ${active ? 'text-ink' : 'text-faint'}`}>{n}</span>
+                )}
+              </span>
+              <span
+                className={`text-[13px] ${active ? 'font-semibold text-ink' : done ? 'text-ink' : 'text-faint'}`}
+              >
+                {label}
+              </span>
+            </div>
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
+
 export interface OnboardingLayoutProps {
   children: ReactNode
-  /** Step indicator: which step is active (1-based) and how many total. */
-  steps?: { labels: string[]; current: number }
-  /** Right side of the top bar (e.g. email + sign out). */
-  topRight?: ReactNode
+  /** Active setup step, 1-based (Account, Company, Plan, Payment). 5 = all done. */
+  step: number
 }
 
-export function OnboardingLayout({ children, steps, topRight }: OnboardingLayoutProps) {
+export function OnboardingLayout({ children, step }: OnboardingLayoutProps) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        background: '#F5F5F4',
-        fontFamily: 'var(--font-sans, sans-serif)',
-      }}
-    >
-      {/* Top bar */}
+    <div className="flex h-svh min-h-[640px] w-full flex-col overflow-hidden bg-app">
       <header
-        style={{
-          height: 52,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 24px',
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E7E5E4',
-          gap: 16,
-          flexShrink: 0,
-        }}
+        className="flex h-[64px] w-full shrink-0 items-center bg-surface px-[32px]"
+        style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}
       >
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <MascotBlob color="#6366F1" size={28} />
-          <span style={{ fontSize: 15, fontWeight: 600, color: '#0C0A09' }}>Omilo</span>
+        <div className="flex w-[240px] items-center gap-[10px]">
+          <Mascot size={26} radius={7} title="Omilo" />
+          <span className="font-display text-[17px] font-semibold text-ink">Omilo</span>
         </div>
-
-        {/* Stepper */}
-        {steps && (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
-            {steps.labels.map((label, i) => {
-              const n = i + 1
-              const done    = n < steps.current
-              const active  = n === steps.current
-              const pending = n > steps.current
-              return (
-                <div key={n} style={{ display: 'flex', alignItems: 'center' }}>
-                  {i > 0 && (
-                    <div style={{
-                      width: 48,
-                      height: 1,
-                      background: done ? '#0C0A09' : '#E7E5E4',
-                      margin: '0 2px',
-                    }} />
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      border: active ? '2px solid #0C0A09' : done ? 'none' : '2px solid #D6D3D1',
-                      background: done ? '#0C0A09' : 'transparent',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: done ? '#FFFFFF' : active ? '#0C0A09' : '#A8A29E',
-                      flexShrink: 0,
-                    }}>
-                      {done ? '✓' : n}
-                    </span>
-                    <span style={{
-                      fontSize: 12.5,
-                      fontWeight: active ? 600 : 400,
-                      color: pending ? '#A8A29E' : '#0C0A09',
-                    }}>
-                      {label}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Top right */}
-        {topRight && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-            {topRight}
-          </div>
-        )}
+        <Stepper current={step} />
+        <div className="flex w-[240px] items-center justify-end gap-[8px]">
+          <span className="text-[12.5px] text-muted">dede@saga.co.id</span>
+          <a href="/auth/sign-in" className="text-[12.5px] font-medium text-link">
+            Sign out
+          </a>
+        </div>
       </header>
-
-      {/* Content */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
-        {children}
-      </main>
+      <main className="flex min-h-0 w-full flex-1 flex-col items-center justify-center pb-[40px]">{children}</main>
     </div>
   )
 }
-
-// Re-export mascot for screens that need it standalone
-export { MascotBlob }

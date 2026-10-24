@@ -1,31 +1,26 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { menuSurface, MenuSeparatorLine } from '../ds/Menu'
-import { ContextRing } from '../ds/ContextRing'
-import { ChevronRight, ToggleRight } from 'lucide-react'
+import { FoldVertical, Info } from 'lucide-react'
+import { Ring } from './Ring'
 
-// ── Context menu (pen ref C9Glat) — "#context" token opens a popover menu ───
+// ── Context menu (pen `Composer/Context Menu` VJCPi) — opened from the composer's ring ──
 
-interface ContextSource {
-  label: string
-  count: number
-  color: string
-}
+const WINDOW_K = 200
 
-const CONTEXT_SOURCES: ContextSource[] = [
-  { label: 'Helper files & rules', count: 54, color: '#6366F1' },
-  { label: 'Chat history',         count: 43, color: '#14B8A6' },
-  { label: 'Files & tools',        count: 18, color: '#F97316' },
-  { label: 'Free',                 count: 131, color: 'var(--color-line-strong)' },
+/** Breakdown of what fills the window (k tokens) — bar widths are the pen's (20/76/26 of 292). */
+const SOURCES = [
+  { label: 'Helper files & rules', k: 14, color: '#6366F1', bar: 20 },
+  { label: 'Chat history', k: 52, color: 'var(--color-ink-2)', bar: 76 },
+  { label: 'Files & tools', k: 18, color: '#14B8A6', bar: 26 },
 ]
 
-const TOTAL_TOKENS = 200
-
 interface ContextMenuProps {
-  contextUsed?: number  // 0-100 percentage
+  /** Share of the window in use, 0-100. */
+  contextUsed?: number
   children: React.ReactNode
   onAutoCompactToggle?: () => void
   autoCompact?: boolean
   onCompactNow?: () => void
+  defaultOpen?: boolean
 }
 
 export function ContextMenu({
@@ -34,102 +29,91 @@ export function ContextMenu({
   onAutoCompactToggle,
   autoCompact = true,
   onCompactNow,
+  defaultOpen,
 }: ContextMenuProps) {
-  const used = Math.round((contextUsed / 100) * TOTAL_TOKENS)
-  const free = TOTAL_TOKENS - used
-  const freeTokens = Math.round((free / TOTAL_TOKENS) * 131)
+  const usedK = Math.round((contextUsed / 100) * WINDOW_K)
+  const freeK = WINDOW_K - usedK
 
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root defaultOpen={defaultOpen} modal={false}>
       <DropdownMenu.Trigger asChild>{children}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           side="top"
-          align="end"
+          align="center"
           sideOffset={8}
-          className={`z-50 w-[300px] ${menuSurface} overflow-hidden`}
+          avoidCollisions={false}
+          className="z-50 flex w-[320px] flex-col gap-[12px] rounded-md bg-surface p-[14px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_10px_24px_#0C0A0929]"
         >
-          {/* Header */}
-          <div className="px-[12px] pt-[12px] pb-[10px]">
-            <div className="flex items-start gap-[10px]">
-              <ContextRing size={36} value={contextUsed} />
-              <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="text-[13px] font-semibold text-ink">
-                  {used}k of {TOTAL_TOKENS}k tokens
-                </span>
-                <span className="text-[11.5px] text-muted">
-                  This chat · Opus 5.5 200k context window
-                </span>
-              </div>
-            </div>
-
-            {/* Progress bar breakdown */}
-            <div className="mt-[10px] flex h-[6px] w-full overflow-hidden rounded-full gap-[1px]">
-              {CONTEXT_SOURCES.slice(0, -1).map((src) => (
-                <div
-                  key={src.label}
-                  className="h-full rounded-sm"
-                  style={{ background: src.color, flex: src.count }}
-                />
-              ))}
-              <div
-                className="h-full flex-1 rounded-sm"
-                style={{ background: 'var(--color-line-strong)' }}
-              />
-            </div>
-
-            {/* Legend */}
-            <div className="mt-[10px] flex flex-col gap-[4px]">
-              {CONTEXT_SOURCES.map((src) => (
-                <div key={src.label} className="flex items-center gap-[8px]">
-                  <span
-                    className="size-[8px] shrink-0 rounded-full"
-                    style={{ background: src.color }}
-                  />
-                  <span className="flex-1 text-[12px] text-muted">{src.label}</span>
-                  <span className="font-mono text-[12px] text-faint">
-                    {src.label === 'Free' ? freeTokens : src.count}k
-                  </span>
-                </div>
-              ))}
+          {/* Head */}
+          <div className="flex w-full items-center gap-[12px]">
+            <Ring size={40} value={contextUsed} inner={0.78} />
+            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+              <span className="text-[13px] font-semibold text-ink">
+                {usedK}k of {WINDOW_K}k tokens
+              </span>
+              <span className="text-[12px] text-muted">{contextUsed}% used · Opus 5.5 context window</span>
             </div>
           </div>
 
-          <MenuSeparatorLine />
+          {/* Breakdown bar */}
+          <div aria-hidden className="flex h-[8px] w-full overflow-hidden rounded-pill bg-soft">
+            {SOURCES.map((s) => (
+              <span key={s.label} className="h-full" style={{ width: s.bar, background: s.color }} />
+            ))}
+          </div>
 
-          {/* Auto-compact toggle */}
-          <div className="px-[12px] py-[8px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[12.5px] font-medium text-ink">Auto-compact</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={autoCompact}
-                aria-label="Auto-compact messages"
-                onClick={onAutoCompactToggle}
-                className="inline-flex items-center justify-center"
-              >
-                <ToggleRight
-                  size={22}
-                  className={autoCompact ? 'text-ok' : 'text-muted'}
+          {/* Legend */}
+          <div className="flex w-full flex-col gap-[6px]">
+            {[...SOURCES, { label: 'Free', k: freeK, color: '' }].map((s) => (
+              <div key={s.label} className="flex items-center gap-[8px]">
+                <span
+                  className={`size-[8px] shrink-0 rounded-full ${s.color ? '' : 'bg-soft outline-1 -outline-offset-1 outline-line-strong'}`}
+                  style={s.color ? { background: s.color } : undefined}
                 />
-              </button>
+                <span className="flex-1 text-[12.5px] text-ink-2">{s.label}</span>
+                <span className="font-mono text-[12px] text-muted">{s.k}k</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="h-px w-full bg-line" />
+
+          {/* Auto-compact */}
+          <div className="flex w-full items-center gap-[10px]">
+            <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+              <span className="text-[13px] font-medium text-ink">Auto-compact</span>
+              <span className="text-[12px] text-muted">Summarises older messages at 85% full</span>
             </div>
-            <p className="m-0 mt-[2px] text-[11.5px] text-muted">
-              Summarises older messages at 85% full
+            {/* pen `Switch/On` (y1lHE): 32×18 · radius 9 · p-2 · 14px white knob */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoCompact}
+              aria-label="Auto-compact"
+              onClick={onAutoCompactToggle}
+              className={`flex h-[18px] w-[32px] shrink-0 rounded-[9px] p-[2px] ${
+                autoCompact ? 'justify-end bg-primary' : 'justify-start bg-line-strong'
+              }`}
+            >
+              <span className="size-[14px] rounded-full bg-white shadow-[0_1px_2px_#0000002E]" />
+            </button>
+          </div>
+
+          <DropdownMenu.Item
+            onSelect={onCompactNow}
+            className="flex h-[34px] w-full cursor-pointer items-center justify-center gap-[6px] rounded-btn bg-surface px-[14px] text-[13px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong select-none data-[highlighted]:bg-soft"
+          >
+            <FoldVertical size={16} aria-hidden />
+            Compact now · frees ~45k
+          </DropdownMenu.Item>
+
+          <div className="flex w-full gap-[6px]">
+            <Info size={12} aria-hidden className="mt-[2px] shrink-0 text-faint" />
+            <p className="m-0 flex-1 text-[11.5px] leading-[1.45] text-faint">
+              Window size comes from the model. Switching to GPT-5.5 gives 400k; Haiku 5.5 has 200k.
             </p>
           </div>
-
-          <MenuSeparatorLine />
-
-          {/* Compact now */}
-          <DropdownMenu.Item
-            className="flex cursor-pointer items-center gap-[8px] rounded-sm px-[12px] py-[8px] outline-none select-none data-[highlighted]:bg-hover"
-            onSelect={onCompactNow}
-          >
-            <ChevronRight size={14} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[12.5px] text-ink">Compact now · frees ~45k</span>
-          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

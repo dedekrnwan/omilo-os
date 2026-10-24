@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { notFound, useParams } from '@tanstack/react-router'
-import { SquarePen, Target } from 'lucide-react'
+import { Ellipsis, SquarePen, Target } from 'lucide-react'
 import type { Channel, Model } from '../../core/domain/types'
 import { useChannel, useChannelGoals } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
@@ -11,13 +11,22 @@ import { Mascot } from '../../ui/ds/Mascot'
 
 // ── New chat hero (pen `Chat · New chat (General)`) ───────────────────────────
 
-function NewChatHero({ channel }: { channel: Channel }) {
+export function NewChatHero({ channel }: { channel: Channel }) {
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
   const { data: goals = [] } = useChannelGoals(channel.id)
 
   return (
     <>
-      <Topbar icon={SquarePen} title="New chat" meta={channel.name} />
+      <Topbar
+        icon={SquarePen}
+        title="New chat"
+        meta={channel.name}
+        actions={
+          <button type="button" aria-label="More" className="flex text-muted hover:text-ink">
+            <Ellipsis size={18} aria-hidden />
+          </button>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[21px] overflow-y-auto px-[24px] pb-[58px]">
         <div className="flex flex-col items-center gap-[11px] text-center">
           <Mascot size={56} radius={15.68} title="Chief" />
@@ -25,7 +34,7 @@ function NewChatHero({ channel }: { channel: Channel }) {
             Morning, Dede. What are we figuring out?
           </h2>
           <p className="m-0 text-[14px] text-muted">
-            You're in {channel.name}. Switch channel to give Chief focused context for one area.
+            You’re in {channel.name}. Switch channel to give Chief focused context for one area.
           </p>
         </div>
 

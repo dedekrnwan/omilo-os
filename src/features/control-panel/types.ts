@@ -16,27 +16,32 @@ export type ControlPanelSection =
   | 'account'
   | 'notifications'
 
+/**
+ * Overlay states. Each is a state of a base section screen (never a route);
+ * `?state=<kind>` on /control-panel/$section opens it for review.
+ */
 export type DialogKind =
+  | 'delete-workspace'
   | 'invite'
   | 'seats-full'
   | 'add-seats'
   | 'pay-mayar'
   | 'plan-max'
-  | 'self-hosted'
-  | 'delete-workspace'
   | 'connect-key'
   | 'add-mcp'
   | 'build-oas'
   | 'oas-tools'
   | 'connect-drive'
   | 'write-skill'
-  | 'cloud-credits'
   | 'buy-credits'
-  | 'low-credits'
   | 'change-plan'
-  | 'add-company'
-  | 'help'
-  | 'feedback'
-  | 'shortcuts'
-  | 'logout'
   | null
+
+/** Page variants that change the base screen (not overlays). */
+export type PageVariant = 'self-hosted' | 'cloud' | 'credits-low' | 'policies' | null
+
+export const DIALOG_KINDS: Exclude<DialogKind, null>[] = [
+  'delete-workspace', 'invite', 'seats-full', 'add-seats', 'pay-mayar', 'plan-max',
+  'connect-key', 'add-mcp', 'build-oas', 'oas-tools', 'connect-drive', 'write-skill',
+  'buy-credits', 'change-plan',
+]

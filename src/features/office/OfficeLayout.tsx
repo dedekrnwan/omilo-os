@@ -8,13 +8,17 @@ function OfficeLayoutInner() {
   const matchRoute = useMatchRoute()
   const onGoals = !!matchRoute({ to: '/office/goals', fuzzy: false })
   const onInbox = !!matchRoute({ to: '/office/inbox', fuzzy: true })
+  const onRoutines = !!matchRoute({ to: '/office/routines', fuzzy: true })
+  const onAnalytics = !!matchRoute({ to: '/office/analytics', fuzzy: false })
 
   return (
     <>
       <OfficeSidebar
         area={area}
         onAreaChange={setArea}
-        activeNav={onGoals ? 'Goals' : onInbox ? 'Inbox' : undefined}
+        activeNav={
+          onGoals ? 'Goals' : onInbox ? 'Inbox' : onRoutines ? 'Routines' : onAnalytics ? 'Analytics' : undefined
+        }
       />
       <Inset>
         <Outlet />

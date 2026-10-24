@@ -10,7 +10,7 @@ import {
   SubHeading,
   TextInput,
   Toggle,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 
 const ROLES = [

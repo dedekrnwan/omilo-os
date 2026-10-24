@@ -1,6 +1,6 @@
 import { Server } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Modal, TextInput, SelectField } from '../ControlPanelShared'
+import { Modal, TextInput, SelectField } from '../legacyShared'
 
 interface Props {
   onClose: () => void

@@ -55,9 +55,13 @@ const rowClass =
 interface ModelMenuProps {
   selected: Model
   onSelect: (model: Model) => void
+  defaultOpen?: boolean
 }
 
-export function ModelMenu({ selected, onSelect }: ModelMenuProps) {
+/** Open trigger: pen draws a 1.5px ink stroke instead of the resting 1px line. */
+const openTrigger = 'data-[state=open]:outline-[1.5px] data-[state=open]:-outline-offset-[1.5px] data-[state=open]:outline-ink'
+
+export function ModelMenu({ selected, onSelect, defaultOpen }: ModelMenuProps) {
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const groups = (['anthropic', 'openai'] as const).map((provider) => ({
@@ -66,12 +70,12 @@ export function ModelMenu({ selected, onSelect }: ModelMenuProps) {
   }))
 
   return (
-    <DropdownMenu.Root onOpenChange={(open) => !open && setQuery('')}>
+    <DropdownMenu.Root defaultOpen={defaultOpen} modal={false} onOpenChange={(open) => !open && setQuery('')}>
       <DropdownMenu.Trigger
         role="combobox"
         aria-label="model"
         data-model-label={selected.label}
-        className="inline-flex shrink-0 items-center gap-[6px] rounded-base outline-1 -outline-offset-1 outline-line py-[4px] pr-[8px] pl-[6px] transition-colors hover:bg-soft data-[state=open]:bg-hover"
+        className={`inline-flex shrink-0 items-center gap-[6px] rounded-base outline-1 -outline-offset-1 outline-line py-[4px] pr-[8px] pl-[6px] transition-colors hover:bg-soft ${openTrigger}`}
       >
         <ProviderTile provider={providerOf(selected)} size={16} />
         <span className="text-[12.5px] font-medium whitespace-nowrap text-ink-2">{selected.label}</span>
@@ -164,17 +168,19 @@ export function ThinkingMenu({
   model,
   level,
   onSelect,
+  defaultOpen,
 }: {
   model: Model
   level: ThinkingLevel
   onSelect: (level: ThinkingLevel) => void
+  defaultOpen?: boolean
 }) {
   const current = THINKING_LEVELS.find((l) => l.id === level) ?? THINKING_LEVELS[2]
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root defaultOpen={defaultOpen} modal={false}>
       <DropdownMenu.Trigger
         aria-label="Thinking"
-        className="inline-flex shrink-0 items-center gap-[5px] rounded-base outline-1 -outline-offset-1 outline-line py-[4px] pr-[8px] pl-[7px] transition-colors hover:bg-soft data-[state=open]:bg-hover"
+        className={`inline-flex shrink-0 items-center gap-[5px] rounded-base outline-1 -outline-offset-1 outline-line py-[4px] pr-[8px] pl-[7px] transition-colors hover:bg-soft ${openTrigger}`}
       >
         <Brain size={13} aria-hidden className="text-ink-2" />
         <span className="text-[12.5px] font-medium text-ink-2">{current.label}</span>

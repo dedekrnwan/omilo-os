@@ -1,6 +1,6 @@
 import { Download } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane } from '../ControlPanelShared'
+import { Breadcrumb, SectionPane } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 
 const FILTERS = ['All', 'Agents', 'People', 'Approvals', 'Settings']

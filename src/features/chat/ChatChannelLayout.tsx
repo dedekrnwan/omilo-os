@@ -10,9 +10,9 @@ function useActiveNav(): ChannelNav | undefined {
 
   if (matchRoute({ to: '/chat/$channelId/goals',    fuzzy: false })) return 'Goals'
   if (matchRoute({ to: '/chat/$channelId/flows',    fuzzy: false })) return 'Flows'
-  if (matchRoute({ to: '/chat/$channelId/docs',      fuzzy: false })) return 'Docs'
+  if (matchRoute({ to: '/chat/$channelId/docs',     fuzzy: false })) return 'Docs'
+  if (matchRoute({ to: '/chat/$channelId/archived', fuzzy: false })) return 'Archived'
   if (matchRoute({ to: '/chat/$channelId/analytics', fuzzy: false })) return 'Analytics'
-  if (matchRoute({ to: '/chat/$channelId/archived',  fuzzy: false })) return 'Archived'
   // Session routes, folder routes, and index all map to Chats (undefined lets
   // ChannelSidebar highlight Chats when a sessionId is present via its own logic)
   return undefined
@@ -36,7 +36,12 @@ export function ChatChannelLayout() {
 
   return (
     <>
-      <ChannelSidebar channelId={channelId} sessionId={sessionId} activeNav={activeNav} />
+      <ChannelSidebar
+        channelId={channelId}
+        sessionId={sessionId}
+        folderId={params.folderId}
+        activeNav={activeNav}
+      />
       <Inset>
         <Outlet />
       </Inset>

@@ -1,82 +1,77 @@
-import { Minus, Plus } from 'lucide-react'
-import { Modal } from '../ControlPanelShared'
+import { ExternalLink, Minus, Plus, UserPlus } from 'lucide-react'
+import { DialogCard, PenButton, SumRow } from '../ControlPanelShared'
 
-interface Props {
-  onClose: () => void
+const BAR = [
+  ...Array(4).fill('var(--color-ink)'),
+  'var(--color-spark)',
+  'var(--color-ok)',
+  'var(--color-ok)',
+  ...Array(8).fill('var(--color-line-strong)'),
+] as string[]
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-[5px]">
+      <span className="size-[8px] rounded-[2px]" style={{ background: color }} />
+      <span className="text-[11.5px] text-muted">{label}</span>
+    </span>
+  )
 }
 
-export function DialogAddSeats({ onClose }: Props) {
+/** pen rWvit · Members · Add seats */
+export function DialogAddSeats({ onClose, onPay }: { onClose: () => void; onPay?: () => void }) {
   return (
-    <Modal
+    <DialogCard
+      width={480}
+      icon={UserPlus}
       title="Add seats to Team"
-      subtitle="Anyone you invite as a member or admin uses a seat."
-      width={420}
+      sub="Anyone you invite as a member or admin uses a seat."
       onClose={onClose}
       footer={
-        <button
-          type="button"
-          className="flex h-[30px] items-center gap-[6px] rounded-btn bg-ink px-[12px] text-[12.5px] font-medium text-white hover:bg-primary-hover transition-colors"
-        >
-          💳 Pay Rp 77 rb with Mayar
-        </button>
+        <>
+          <PenButton fs={13} onClick={onClose}>Cancel</PenButton>
+          <div className="h-px flex-1" />
+          <PenButton variant="primary" fs={13} icon={ExternalLink} onClick={onPay}>Pay Rp 77 rb with Mayar</PenButton>
+        </>
       }
     >
-      <div className="flex flex-col gap-[20px]">
-        {/* Stepper */}
-        <div>
-          <p className="mb-[8px] text-[12.5px] font-medium text-ink">Extra seats</p>
-          <div className="flex items-center gap-[12px]">
-            <button type="button" className="flex size-[28px] items-center justify-center rounded-sm border border-line-strong bg-surface text-muted hover:bg-hover">
-              <Minus size={14} aria-hidden />
-            </button>
-            <span className="text-[20px] font-semibold text-ink">2</span>
-            <button type="button" className="flex size-[28px] items-center justify-center rounded-sm border border-line-strong bg-surface text-muted hover:bg-hover">
-              <Plus size={14} aria-hidden />
-            </button>
-            <span className="text-[12.5px] text-muted">7 of 15 seats on Team after this</span>
-          </div>
-          {/* Seat visualiser */}
-          <div className="mt-[10px] flex h-[8px] gap-[2px]">
-            {Array.from({ length: 15 }).map((_, i) => (
-              <span
-                key={i}
-                className={`flex-1 rounded-sm ${
-                  i < 4 ? 'bg-ink' : i === 4 ? 'bg-warn' : i < 7 ? 'bg-ok' : 'bg-line-strong'
-                }`}
-              />
-            ))}
-          </div>
-          <div className="mt-[4px] flex gap-[10px] text-[11px] text-muted">
-            <span className="flex items-center gap-[4px]"><span className="size-[6px] rounded-full bg-ink" />4 people</span>
-            <span className="flex items-center gap-[4px]"><span className="size-[6px] rounded-full bg-warn" />1 pending</span>
-            <span className="flex items-center gap-[4px]"><span className="size-[6px] rounded-full bg-ok" />2 new</span>
-            <span className="flex items-center gap-[4px]"><span className="size-[6px] rounded-full bg-line-strong" />8 more available</span>
-          </div>
+      <div className="flex w-full items-center gap-[12px]">
+        <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <span className="text-[13px] font-semibold text-ink">Extra seats</span>
+          <span className="text-[12px] text-muted">7 of 15 seats on Team after this</span>
         </div>
-
-        {/* Pricing breakdown */}
-        <div className="flex flex-col gap-[6px] rounded-lg border border-line-strong bg-soft px-[14px] py-[12px] text-[12.5px]">
-          <div className="flex items-center justify-between">
-            <span className="text-muted">Team plan · 5 seats included</span>
-            <span className="text-ink">Rp 2 jt</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted">2 extra seats × Rp 150 rb</span>
-            <span className="text-ink">Rp 300 rb</span>
-          </div>
-          <div className="h-px bg-line-strong my-[4px]" />
-          <div className="flex items-center justify-between font-semibold">
-            <span className="text-ink">Monthly from Nov 1</span>
-            <span className="text-ink">Rp 2,3 jt</span>
-          </div>
-          <div className="flex items-center justify-between text-muted text-[11.5px]">
-            <span>Due today · prorated, 8 days left</span>
-            <span>Rp 77 rb</span>
-          </div>
+        <div className="flex h-[34px] items-center rounded-base outline-1 -outline-offset-1 outline-line-strong">
+          <button type="button" aria-label="Fewer seats" className="flex size-[34px] items-center justify-center">
+            <Minus size={15} aria-hidden className="text-ink-2" />
+          </button>
+          <span className="flex h-[34px] w-[44px] items-center justify-center font-mono text-[15px] font-medium text-ink shadow-[inset_1px_0_0_var(--color-line-strong),inset_-1px_0_0_var(--color-line-strong)]">
+            2
+          </span>
+          <button type="button" aria-label="More seats" className="flex size-[34px] items-center justify-center">
+            <Plus size={15} aria-hidden className="text-ink-2" />
+          </button>
         </div>
-
-        <p className="text-[12px] text-muted">Remove a seat any time. Unused days are credited on your next invoice.</p>
       </div>
-    </Modal>
+      <div className="flex w-full flex-col gap-[6px]">
+        <div className="flex h-[8px] w-full gap-[3px]">
+          {BAR.map((c, i) => (
+            <span key={i} className="h-[8px] flex-1 rounded-[2px]" style={{ background: c }} />
+          ))}
+        </div>
+        <div className="flex gap-[12px]">
+          <Legend color="var(--color-ink)" label="4 people" />
+          <Legend color="var(--color-spark)" label="1 pending" />
+          <Legend color="var(--color-ok)" label="2 new" />
+          <Legend color="var(--color-line-strong)" label="8 more available" />
+        </div>
+      </div>
+      <div className="flex w-full flex-col overflow-hidden rounded-md outline-1 -outline-offset-1 outline-line-strong">
+        <SumRow first label="Team plan · 5 seats included" value="Rp 2 jt" />
+        <SumRow label="2 extra seats × Rp 150 rb" value="Rp 300 rb" />
+        <SumRow soft strong label="Monthly from Nov 1" value="Rp 2,3 jt" />
+        <SumRow soft label="Due today · prorated, 8 days left" value="Rp 77 rb" />
+      </div>
+      <span className="text-[12px] text-muted">Remove a seat any time. Unused days are credited on your next invoice.</span>
+    </DialogCard>
   )
 }

@@ -1,4 +1,4 @@
-import { Toggle, Modal } from '../ControlPanelShared'
+import { Toggle, Modal } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 
 interface Props {

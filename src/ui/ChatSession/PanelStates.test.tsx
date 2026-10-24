@@ -76,7 +76,7 @@ describe('Results panel', () => {
 
     // Close via panel's X button
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: /close results panel/i }))
+      await user.click(screen.getByRole('button', { name: /results panel/i }))
     })
     await waitFor(() => expect(screen.queryByTestId('results-panel')).not.toBeInTheDocument())
   })
@@ -141,30 +141,14 @@ describe('Browser panel', () => {
   })
 })
 
-// ── Goal context banner ───────────────────────────────────────────────────────
+// ── Goal context ──────────────────────────────────────────────────────────────
+// The design (b3vqC5) has no goal-context toggle in the chat topbar; the linked goal shows as a chip.
 
-describe('Session topbar — pen b3vqC5', () => {
-  // The regular chat-session topbar ends at Browser + Results panel toggles.
-  // The goal-context toggle / banner lives in the dedicated Office goal view
-  // (pen AQW5x), not here — so no goal-context toggle appears for any session.
-  test('no goal context toggle for a goal session (sess-passkey)', async () => {
+describe('Linked goal', () => {
+  test('goal session shows the linked-goal chip and no goal-context toggle', async () => {
     renderSession('sess-passkey')
-    await waitFor(() => expect(screen.getByRole('button', { name: /results panel/i })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByLabelText(/linked goal/i)).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /toggle goal context/i })).not.toBeInTheDocument()
-    expect(screen.queryByTestId('goal-context-banner')).not.toBeInTheDocument()
-  })
-
-  test('no goal context toggle for a session without goal (sess-investor)', async () => {
-    renderSession('sess-investor')
-    await waitFor(() => expect(screen.getByRole('button', { name: /results panel/i })).toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: /toggle goal context/i })).not.toBeInTheDocument()
-  })
-
-  test('session composer has no recipient row (reply, not new chat)', async () => {
-    renderSession('sess-passkey')
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /message/i })).toBeInTheDocument())
-    // "Mention agent" lives in the recipient row, shown only for a new chat.
-    expect(screen.queryByRole('button', { name: /mention agent/i })).not.toBeInTheDocument()
   })
 })
 

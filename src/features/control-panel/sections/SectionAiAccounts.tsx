@@ -1,7 +1,7 @@
 import { Key, RefreshCw } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane, StatusBadge } from '../ControlPanelShared'
-import type { DialogKind } from '../types'
+import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
+import type { DialogKind } from '../legacyTypes'
 
 const POOL_ACCOUNTS = [
   { name: 'cloud', tag: '_paáA', status: 'Working', tokens: '17.5k tokens', pct: 42, lastUsed: 'now' },

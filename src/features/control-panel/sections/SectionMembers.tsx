@@ -1,128 +1,142 @@
-import { ChevronDown, Ellipsis, UserPlus } from 'lucide-react'
-import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane } from '../ControlPanelShared'
-import type { DialogKind } from '../types'
+import { Crown, Ellipsis, Mail, Plus, Server, UserPlus } from 'lucide-react'
+import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
+import { PEOPLE } from '../data'
+import type { SectionProps } from '../ControlPanel'
 
-const MEMBERS = [
-  { initials: 'DK', color: '#FED7AA', textColor: '#9A3412', name: 'Dede Kurniawan', email: 'dede@saga.co.id', status: 'active now', channels: 'All channels', role: 'Owner', roleIcon: true },
-  { initials: 'RA', color: '#E0E7FF', textColor: '#4338CA', name: 'Rina Ayu', email: 'rina@saga.co.id', status: 'active 2h ago', channels: 'All channels', role: 'Admin' },
-  { initials: 'BY', color: '#CCFBF1', textColor: '#0F766E', name: 'Bayu Pratama', email: 'bayu@saga.co.id', status: 'active now', channels: 'Engineering, General', role: 'Member' },
-  { initials: 'SN', color: '#FCE7F3', textColor: '#9D174D', name: 'Sari Nur', email: 'sari@saga.co.id', status: 'active Yesterday', channels: 'Marketing, General', role: 'Member' },
-  { initials: null, color: '#F5F5F4', textColor: '#78716C', name: 'and@saga.co.id', email: 'Invite sent · expires in 6 days', status: null, channels: 'Business', role: 'Member', pending: true },
+const ROLES = [
+  { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
+  { r: 'Admin', d: 'Settings, connectors and approving spend. No billing.' },
+  { r: 'Member', d: 'Chat, goals and flows in their channels. Approves their own flows.' },
+  { r: 'Viewer', d: 'Reads goals, docs and runs. Can’t approve or change anything. Free — doesn’t use a seat.' },
 ]
 
-const ROLE_DESCRIPTIONS = [
-  { role: 'Owner', desc: 'Everything, including billing and deleting the company.' },
-  { role: 'Admin', desc: 'Settings, connectors and approving spend. No billing.' },
-  { role: 'Member', desc: "Chat, goals and flows in their channels. Approves their own flows." },
-  { role: 'Viewer', desc: "Reads goals, docs and runs. Can't approve or change anything. Free — doesn't use a seat." },
-]
+const COL = 'text-[10.5px] font-medium tracking-[0.8px] text-faint'
 
-interface Props {
-  onDialog: (d: DialogKind) => void
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-[6px]">
+      <span className="size-[8px] rounded-[2px]" style={{ background: color }} />
+      <span className="text-[12px] text-muted">{label}</span>
+    </span>
+  )
 }
 
-export function SectionMembers({ onDialog }: Props) {
-  const seats = 5
-  const used = 4
-  const pct = (used / seats) * 100
-
+function MoreButton() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
-        <Breadcrumb section="Members & roles" />
-        <div className="ml-auto">
-          <Button variant="primary" height={28} icon={UserPlus} onClick={() => onDialog('invite')}>
+    <button type="button" aria-label="More" className="flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover">
+      <Ellipsis size={16} aria-hidden />
+    </button>
+  )
+}
+
+/** pen ZDdLD · Members & roles — and X16ZX · Self-hosted (variant). */
+export function SectionMembers({ onDialog, variant }: SectionProps) {
+  const selfHosted = variant === 'self-hosted'
+  return (
+    <PageShell crumb="Members & roles">
+      <PageHeader
+        title="Members & roles"
+        sub="People in Sahabat Warga and what they can approve."
+        actions={
+          <PenButton variant="primary" icon={UserPlus} onClick={() => onDialog(selfHosted ? 'invite' : 'seats-full')}>
             Invite people
-          </Button>
+          </PenButton>
+        }
+      />
+
+      <div className="flex w-full items-center gap-[20px] rounded-lg bg-soft px-[16px] py-[14px] outline-1 -outline-offset-1 outline-line-strong">
+        {selfHosted ? (
+          <div className="flex min-w-0 flex-1 items-center gap-[8px]">
+            <span className="text-[13px] font-semibold text-ink">4 people, 1 invite · unlimited seats</span>
+            <Chip tone="ok" icon={Server}>Self-hosted · free</Chip>
+            <div className="h-px flex-1" />
+            <span className="text-[12px] text-muted">Free — invite as many people as you like</span>
+          </div>
+        ) : (
+          <>
+            <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
+              <div className="flex w-full items-center gap-[8px]">
+                <span className="text-[13px] font-semibold text-ink">5 of 5 seats</span>
+                <Chip tone="warn">Full</Chip>
+                <div className="h-px flex-1" />
+                <span className="text-[12px] text-muted">Team plan · 5 included, up to 15</span>
+              </div>
+              <div className="flex h-[6px] w-full gap-[3px]">
+                {[0, 1, 2, 3].map((i) => (
+                  <span key={i} className="h-[6px] flex-1 rounded-[3px] bg-ink" />
+                ))}
+                <span className="h-[6px] flex-1 rounded-[3px] bg-spark" />
+              </div>
+              <div className="flex items-center gap-[14px]">
+                <Legend color="var(--color-ink)" label="4 people" />
+                <Legend color="var(--color-spark)" label="1 pending invite (holds a seat)" />
+                <Legend color="var(--color-wire-strong)" label="Viewers are free · 0 of 20" />
+              </div>
+            </div>
+            <span className="h-[44px] w-px shrink-0 bg-line-strong" />
+            <div className="flex flex-col items-end gap-[6px]">
+              <PenButton h={30} fs={13} icon={Plus} onClick={() => onDialog('add-seats')}>Add seats</PenButton>
+              <span className="text-[11.5px] text-muted">Rp 150 rb / seat / month</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex w-full flex-col overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong">
+        <div className={`flex w-full gap-[14px] bg-soft px-[14px] py-[8px] ${lineBottom}`}>
+          <span className={`flex-1 ${COL}`}>PERSON</span>
+          <span className={`w-[190px] ${COL}`}>CHANNELS</span>
+          <span className={`w-[150px] ${COL}`}>ROLE</span>
+          <span className="w-[28px]" />
+        </div>
+        {PEOPLE.map((p) => (
+          <div key={p.email} className={`flex w-full items-center gap-[14px] px-[14px] py-[10px] ${lineBottom}`}>
+            <div className="flex min-w-0 flex-1 items-center gap-[10px]">
+              <Initials text={p.initials} color={p.color} />
+              <div className="flex flex-col gap-px">
+                <span className="text-[13px] font-medium text-ink">{p.name}</span>
+                <span className="text-[11.5px] text-muted">{p.email} · {p.seen}</span>
+              </div>
+            </div>
+            <span className="w-[190px] text-[12px] text-ink-2">{p.channels}</span>
+            <div className="w-[150px]">
+              {p.role === 'Owner' ? (
+                <Chip icon={Crown}>Owner</Chip>
+              ) : (
+                <Field width={150} value={p.role} select />
+              )}
+            </div>
+            <MoreButton />
+          </div>
+        ))}
+        <div className="flex w-full items-center gap-[14px] px-[14px] py-[10px]">
+          <div className="flex min-w-0 flex-1 items-center gap-[10px]">
+            <span className="flex size-[28px] shrink-0 items-center justify-center rounded-full outline-[1.5px] -outline-offset-[1.5px] outline-wire-strong">
+              <Mail size={13} aria-hidden className="text-muted" />
+            </span>
+            <div className="flex flex-col gap-px">
+              <span className="text-[13px] font-medium text-ink">andi@saga.co.id</span>
+              <span className="text-[11.5px] text-muted">Invite sent · expires in 6 days</span>
+            </div>
+          </div>
+          <span className="w-[190px] text-[12px] text-ink-2">Business</span>
+          <div className="w-[150px]">
+            <Field width={150} value="Member" select />
+          </div>
+          <MoreButton />
         </div>
       </div>
 
-      <SectionPane>
-        <div className="mb-[24px] flex items-start justify-between">
-          <div>
-            <h1 className="m-0 font-display text-[28px] font-semibold text-ink">Members & roles</h1>
-            <p className="mt-[4px] text-[13px] text-muted">People in Sahabat Warga and what they can approve.</p>
-          </div>
-        </div>
-
-        {/* Seat bar */}
-        <div className="mb-[20px] rounded-lg border border-line-strong bg-surface p-[16px]">
-          <div className="mb-[8px] flex items-center gap-[8px]">
-            <span className="text-[13px] font-medium text-ink">{used} of {seats} seats</span>
-            <span className="rounded-pill bg-ok-tint px-[8px] py-[1px] text-[11px] font-medium text-ok">Full</span>
-            <span className="text-[12px] text-muted">Team plan · {seats} included, up to 15</span>
-            <div className="ml-auto flex flex-col items-end gap-[1px]">
-              <Button variant="secondary" height={28} onClick={() => onDialog('add-seats')}>+ Add seats</Button>
-              <span className="text-[11px] text-muted">Rp 150 rb / seat / month</span>
-            </div>
-          </div>
-          <div className="h-[6px] overflow-hidden rounded-full bg-line-strong">
-            <div className="h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="mt-[6px] flex items-center gap-[16px] text-[11.5px] text-muted">
-            <span className="flex items-center gap-[4px]"><span className="inline-block size-[6px] rounded-full bg-ink" />{used} people</span>
-            <span className="flex items-center gap-[4px]"><span className="inline-block size-[6px] rounded-full bg-warn" />1 pending invite (holds a seat)</span>
-            <span className="flex items-center gap-[4px]"><span className="inline-block size-[6px] rounded-full bg-line-strong" />Viewers are free · 0 of 20</span>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="mb-[32px] overflow-hidden rounded-lg border border-line-strong bg-surface">
-          {/* Header */}
-          <div className="grid grid-cols-[1fr_180px_140px_32px] items-center border-b border-line bg-soft px-[16px] py-[8px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">
-            <span>Person</span>
-            <span>Channels</span>
-            <span>Role</span>
-            <span />
-          </div>
-          {MEMBERS.map((m, i) => (
-            <div
-              key={m.email}
-              className={`grid grid-cols-[1fr_180px_140px_32px] items-center px-[16px] py-[10px] ${
-                i < MEMBERS.length - 1 ? 'border-b border-line' : ''
-              }`}
-            >
-              {/* Person */}
-              <div className="flex items-center gap-[10px]">
-                <span
-                  className="flex size-[28px] shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  style={{ background: m.color, color: m.textColor, opacity: m.pending ? 0.5 : 1 }}
-                >
-                  {m.initials ?? '?'}
-                </span>
-                <div>
-                  <p className={`text-[13px] ${m.pending ? 'text-muted' : 'font-medium text-ink'}`}>{m.name}</p>
-                  <p className="text-[11.5px] text-muted">{m.pending ? m.email : `${m.email} · ${m.status}`}</p>
-                </div>
-              </div>
-              {/* Channels */}
-              <span className="text-[12.5px] text-ink">{m.channels}</span>
-              {/* Role */}
-              <button type="button" className="flex items-center gap-[4px] text-[12.5px] text-ink">
-                {m.roleIcon && <span aria-hidden className="text-ok">✓</span>}
-                {m.role}
-                {m.role !== 'Owner' && <ChevronDown size={12} className="text-muted" aria-hidden />}
-              </button>
-              {/* Actions */}
-              <button type="button" aria-label="Member options" className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
-                <Ellipsis size={14} aria-hidden />
-              </button>
+      <Group title="What each role can do">
+        <div className="flex w-full gap-[10px]">
+          {ROLES.map((r) => (
+            <div key={r.r} className="flex min-w-0 flex-1 flex-col gap-[4px] rounded-md bg-soft p-[12px]">
+              <span className="text-[12.5px] font-semibold text-ink">{r.r}</span>
+              <span className="text-[11.5px] leading-[1.45] text-muted">{r.d}</span>
             </div>
           ))}
         </div>
-
-        {/* Role descriptions */}
-        <h2 className="mb-[12px] text-[15px] font-semibold text-ink">What each role can do</h2>
-        <div className="grid grid-cols-4 gap-[12px]">
-          {ROLE_DESCRIPTIONS.map((r) => (
-            <div key={r.role} className="rounded-lg border border-line-strong bg-soft p-[12px]">
-              <p className="mb-[4px] text-[13px] font-semibold text-ink">{r.role}</p>
-              <p className="text-[12px] text-muted">{r.desc}</p>
-            </div>
-          ))}
-        </div>
-      </SectionPane>
-    </div>
+      </Group>
+    </PageShell>
   )
 }

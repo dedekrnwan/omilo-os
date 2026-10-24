@@ -1,121 +1,130 @@
-import { Edit, ExternalLink } from 'lucide-react'
-import type { HelperRecord } from '../teamData'
+import { CalendarSync, ChevronRight, History, Pencil, Sparkles } from 'lucide-react'
+import { Mascot } from '../../../ui/ds/Mascot'
+import { FILE_ICON } from '../teamData'
+import type { HelperRecord, WorkingFile } from '../teamData'
+import { Btn, IconTile, Switch } from '../ui'
 
-// ── JobTab ────────────────────────────────────────────────────────────────────
-
-interface JobTabProps {
-  helper: HelperRecord
+function FileCard({
+  file,
+  active,
+  onOpen,
+}: {
+  file: WorkingFile
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`flex min-w-0 flex-1 items-center gap-[12px] rounded-lg px-[16px] py-[14px] text-left transition-colors hover:bg-soft ${
+        active ? 'outline-2 -outline-offset-2 outline-ink' : 'outline-1 -outline-offset-1 outline-line-strong'
+      }`}
+    >
+      <IconTile icon={FILE_ICON[file.name]} />
+      <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <span className="font-mono text-[13.5px] font-medium text-ink">{file.name}</span>
+        <span className="text-[12.5px] text-muted">{file.description}</span>
+      </span>
+      <ChevronRight size={16} aria-hidden className="shrink-0 text-muted" />
+    </button>
+  )
 }
 
-export function JobTab({ helper }: JobTabProps) {
+/** Job tab — pen ZOLDU / mM9lI / TVKhl / koZok / w6dUO3 / XB1kX "Tab Content". */
+export function JobTab({
+  helper,
+  activeFile,
+  onOpenFile,
+}: {
+  helper: HelperRecord
+  activeFile?: WorkingFile['name']
+  onOpenFile: (f: WorkingFile['name']) => void
+}) {
+  const files = helper.files
   return (
-    <div className="flex flex-col gap-[24px]">
+    <div className="flex w-full flex-col gap-[20px]">
       {/* Job description */}
-      <section>
-        <div className="flex items-center justify-between mb-[8px]">
-          <div>
-            <h3 className="m-0 text-[13px] font-medium text-ink">Job description</h3>
-            <p className="m-0 text-[12px] text-muted">
+      <section className="flex w-full flex-col gap-[12px] rounded-lg p-[18px] outline-1 -outline-offset-1 outline-line-strong">
+        <div className="flex w-full items-center gap-[8px]">
+          <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <h3 className="m-0 text-[14px] font-semibold text-ink">Job description</h3>
+            <p className="m-0 text-[12.5px] text-muted">
               The one paragraph {helper.name} reads before every conversation.
             </p>
           </div>
-          <button
-            type="button"
-            className="flex items-center gap-[4px] text-[12px] text-muted hover:text-ink transition-colors"
-          >
-            <Edit size={13} aria-hidden />
+          <Btn variant="quiet" icon={Pencil} h={30}>
             Edit
-          </button>
+          </Btn>
         </div>
-        <div className="rounded-md bg-soft px-[16px] py-[12px] outline-1 -outline-offset-1 outline-line-strong font-mono text-[12px] text-ink-2 leading-relaxed whitespace-pre-wrap">
-          {helper.description}
+        <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
+          <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">{helper.description}</p>
         </div>
-        <p className="mt-[6px] m-0 text-[11.5px] text-faint">
-          Edited by you · 2 days ago · v7
-        </p>
+        <div className="flex items-center gap-[6px]">
+          <History size={12} aria-hidden className="text-muted" />
+          <span className="text-[11.5px] text-faint">Edited by you · 2 days ago · v7</span>
+        </div>
       </section>
 
       {/* Routines */}
-      {helper.routines.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-[8px]">
-            <div className="flex items-center gap-[8px]">
-              <h3 className="m-0 text-[13px] font-medium text-ink">Routines</h3>
-              <span className="text-[12px] text-muted">
-                {helper.routines.length === 1
-                  ? `Recurring work Chief scheduled for ${helper.name}.`
-                  : `Chief also manages ${helper.routines.length} routines for the whole team.`}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="flex items-center gap-[4px] text-[12px] text-link hover:underline"
-            >
-              Open in Routines
-              <ExternalLink size={11} aria-hidden />
-            </button>
+      <section className="flex w-full flex-col gap-[10px]">
+        <div className="flex w-full items-center gap-[8px]">
+          <CalendarSync size={15} aria-hidden className="shrink-0 text-muted" />
+          <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+            <h3 className="m-0 text-[14px] font-semibold text-ink">Routines</h3>
+            <p className="m-0 text-[12.5px] text-muted">{helper.routinesNote}</p>
           </div>
-          <div className="flex flex-col gap-[1px]">
-            {helper.routines.map((r) => (
+          <a href="/office/routines" className="text-[12.5px] font-medium text-link hover:underline">
+            Open in Routines ↗
+          </a>
+        </div>
+        {helper.routines.length > 0 ? (
+          <div className="flex w-full flex-col rounded-lg outline-1 -outline-offset-1 outline-line-strong">
+            {helper.routines.map((r, i) => (
               <div
                 key={r.label}
-                className="flex items-center gap-[12px] rounded-md px-[12px] py-[9px] hover:bg-soft transition-colors"
+                className={`flex w-full items-center gap-[12px] px-[14px] py-[10px] ${
+                  i < helper.routines.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
+                }`}
               >
-                <span className="w-[36px] shrink-0 font-mono text-[12px] font-medium text-muted">
+                <span className="flex w-[52px] shrink-0 justify-center rounded-sm bg-soft py-[3px] font-mono text-[12px] font-medium text-ink">
                   {r.time}
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                  <span className="text-[13px] font-medium text-ink">{r.label}</span>
-                  <span className="text-[11.5px] text-muted">{r.schedule}</span>
+                  <span className="text-[13.5px] font-medium text-ink">{r.label}</span>
+                  <span className="text-[12px] text-muted">{r.schedule}</span>
                 </div>
-                <span className={`text-[12px] ${r.paused ? 'text-faint' : 'text-muted'}`}>
-                  {r.paused ? 'Paused' : r.nextRun}
+                <span className={`text-[12px] ${r.nextRun ? 'text-ink-2' : 'text-warn'}`}>
+                  {r.nextRun ?? 'Paused'}
                 </span>
-                {/* Toggle */}
-                <div
-                  className={`relative h-[18px] w-[30px] rounded-full transition-colors ${
-                    r.paused ? 'bg-line-strong' : 'bg-ok'
-                  }`}
-                  aria-hidden
-                >
-                  <span
-                    className={`absolute top-[2px] size-[14px] rounded-full bg-surface shadow-sm transition-transform ${
-                      r.paused ? 'left-[2px]' : 'translate-x-[12px] left-[2px]'
-                    }`}
-                  />
-                </div>
+                <Switch on={!!r.nextRun} label={`${r.label} on`} />
               </div>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="flex w-full items-center gap-[10px] rounded-lg bg-soft p-[14px]">
+            <Mascot size={22} radius={6} area="brand" title="Chief" />
+            <p className="m-0 min-w-0 flex-1 text-[12.5px] text-ink-2">{helper.emptyRoutines}</p>
+            <Btn icon={Sparkles} h={28} fs={12}>
+              Ask Chief
+            </Btn>
+          </div>
+        )}
+      </section>
 
       {/* Working files */}
-      <section>
-        <h3 className="m-0 text-[13px] font-medium text-ink mb-[2px]">Working files</h3>
-        <p className="m-0 mb-[10px] text-[12px] text-muted">
-          {helper.name} keeps these up to date as it learns
-        </p>
-        <div className="grid grid-cols-2 gap-[8px]">
-          {helper.workingFiles.map((f) => (
-            <button
-              key={f.name}
-              type="button"
-              className="flex items-center gap-[10px] rounded-md px-[12px] py-[10px] outline-1 -outline-offset-1 outline-line-strong bg-surface text-left hover:bg-soft transition-colors"
-            >
-              <span className="text-[16px]">
-                {f.name.startsWith('PERSONA') ? '👤' :
-                 f.name.startsWith('STYLE')   ? 'T' :
-                 f.name.startsWith('PLAYBOOK') ? '☰' : '🧠'}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                <span className="text-[12.5px] font-medium text-ink">{f.name}</span>
-                <span className="text-[11.5px] text-muted truncate">{f.description}</span>
-              </div>
-              <ExternalLink size={12} aria-hidden className="text-faint" />
-            </button>
-          ))}
+      <section className="flex w-full flex-col gap-[10px]">
+        <div className="flex w-full items-center gap-[8px]">
+          <h3 className="m-0 text-[14px] font-semibold text-ink">Working files</h3>
+          <span className="text-[12.5px] text-muted">{helper.name} keeps these up to date as it learns</span>
         </div>
+        {[files.slice(0, 2), files.slice(2, 4)].map((row, i) => (
+          <div key={i} className="flex w-full gap-[12px]">
+            {row.map((f) => (
+              <FileCard key={f.name} file={f} active={activeFile === f.name} onOpen={() => onOpenFile(f.name)} />
+            ))}
+          </div>
+        ))}
       </section>
     </div>
   )

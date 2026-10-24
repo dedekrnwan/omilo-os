@@ -1,55 +1,65 @@
-import { useNavigate } from '@tanstack/react-router'
+import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import type { HelperArea } from '../../core/domain/types'
+import { helperColor } from '../../ui/tokens'
 import type { HelperRecord } from './teamData'
+import { Btn } from './ui'
 
-interface LetGoDialogProps {
-  helper: HelperRecord
-  onClose: () => void
-}
-
-export function LetGoDialog({ helper, onClose }: LetGoDialogProps) {
-  const navigate = useNavigate()
-
-  function handleLetGo() {
-    onClose()
-    void navigate({ to: '/team' })
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20">
+/** Let go — pen HX7PZ (Confirm Dialog x70TQk, worried mascot). */
+export function LetGoDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+  const n = helper.name
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const c = helperColor[helper.area]
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-[#0C0A0940]" onClick={onClose} aria-hidden />
       <div
-        className="flex w-[360px] flex-col items-center gap-[16px] rounded-[20px] bg-surface p-[32px] shadow-[0_20px_60px_#0C0A0929] outline-1 -outline-offset-1 outline-line-strong"
-        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={`Let ${n} go?`}
+        className="relative flex w-[420px] flex-col items-center rounded-dialog bg-surface px-[24px] pt-[26px] pb-[20px] shadow-[0_30px_80px_#1C191747]"
       >
-        <Mascot size={56} radius={14} area={helper.area as HelperArea} title={helper.name} />
-
-        <div className="text-center">
-          <h2 className="m-0 font-display text-[18px] font-semibold text-ink">
-            Let {helper.name} go?
-          </h2>
-          <p className="m-0 mt-[8px] text-[13px] text-muted leading-relaxed">
-            {helper.name} stops answering on WhatsApp and Omilo chat, and hands its open chats back to you. Its files and memory are kept for 30 days — rehire anytime.
-          </p>
+        <div
+          className="flex size-[104px] items-center justify-center rounded-[37px]"
+          style={{
+            background: `radial-gradient(ellipse 50% 50% at 50% 35%, color-mix(in srgb, ${c} 10%, white) 0%, color-mix(in srgb, ${c} 5%, white) 60%, transparent 70%)`,
+          }}
+        >
+          <Mascot helper size={72} radius={18} area={helper.area} mood="worried" title={n} />
         </div>
-
-        <div className="flex w-full gap-[8px] mt-[4px]">
-          <button
-            type="button"
+        <div className="h-[12px]" />
+        <h2 className="m-0 font-serif text-[22px] leading-[1.25] font-medium tracking-[-0.22px] text-ink">
+          Let {n} go?
+        </h2>
+        <div className="h-[8px]" />
+        <p className="m-0 w-[340px] text-center text-[14px] leading-[1.55] text-ink-2">
+          {n} stops answering on WhatsApp and Omilo chat, and hands its 3 open chats back to you. Its files and memory
+          are kept for 30 days — rehire anytime.
+        </p>
+        <div className="flex w-full gap-[8px] pt-[20px]">
+          <Btn h={40} radius={12} fs={14} labelClass="font-semibold" className="min-w-0 flex-1" onClick={onClose}>
+            Keep {n}
+          </Btn>
+          <Btn
+            variant="danger-solid"
+            icon={UserMinus}
+            h={40}
+            radius={12}
+            fs={14}
+            labelClass="font-semibold"
+            className="min-w-0 flex-1"
             onClick={onClose}
-            className="flex-1 h-[36px] rounded-btn text-[13px] font-medium text-ink bg-soft outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors"
-          >
-            Keep {helper.name}
-          </button>
-          <button
-            type="button"
-            onClick={handleLetGo}
-            className="flex-1 h-[36px] rounded-btn text-[13px] font-medium text-bad bg-bad-tint outline-1 -outline-offset-1 outline-bad-line hover:bg-bad-tint/80 transition-colors"
           >
             Let go
-          </button>
+          </Btn>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

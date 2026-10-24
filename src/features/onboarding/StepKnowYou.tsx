@@ -1,259 +1,194 @@
-import { Mic, Paperclip, ArrowUp, SkipForward, Clock, Check, Pencil } from 'lucide-react'
+/** Onboarding 3 · Get to know you (pen sG2L3). */
+import { useState } from 'react'
+import {
+  ArrowUp,
+  BookmarkCheck,
+  Check,
+  CircleCheck,
+  Globe,
+  Mic,
+  Paperclip,
+  Pause,
+  Pencil,
+  SkipForward,
+  Sparkles,
+} from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { COMPANY_NAME, KNOWLEDGE_NOTES } from './data'
+import { IconButton } from '../../ui/ds/Button'
+import { INTERVIEW, KNOWLEDGE_NOTES, LEARNED } from './data'
+import { Pill, QuietButton, Stroke } from './parts'
 
-interface StepKnowYouProps {
-  onNext: () => void
+function ChiefSays({ text, ideas, children }: { text: string; ideas: string[]; children?: React.ReactNode }) {
+  return (
+    <div className="flex w-full gap-[10px]">
+      <Mascot helper area="brand" size={24} radius={7} title="Chief of Staff" />
+      <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
+        <p className="w-full text-[16px] leading-[1.55] text-ink">{text}</p>
+        <div className="flex w-full flex-wrap gap-[8px]">
+          {ideas.map((i) => (
+            <Pill key={i} icon={Sparkles}>
+              {i}
+            </Pill>
+          ))}
+        </div>
+        {children}
+      </div>
+    </div>
+  )
 }
 
-/** Static snapshot of the "Get to know you" conversation — Topic 3 of 7: Goals */
-export function StepKnowYou({ onNext }: StepKnowYouProps) {
-  const topicIndex = 2 // 0-based; Goals is #3
-
-  const completedNotes = [
-    { id: 'company', label: 'Company', snippet: 'Community app for RT/RW neighbourhoods in Jabodetabek, 2 founders, 3 developers.' },
-    { id: 'customers', label: 'Customers', snippet: 'RT heads and residents. Each neighbourhood pays monthly.' },
-  ]
-
-  const currentNote = { id: 'goals', label: 'Goals', status: 'writing' }
-
-  const upcomingNotes = [
-    { id: 'offer', label: 'Offer', meta: 'Next: what you sell and for how much' },
-    { id: 'rules', label: 'Rules' },
-    { id: 'systems', label: 'Systems' },
-    { id: 'voice', label: 'Voice' },
-  ]
-
+function LearnedPanel() {
+  const done = LEARNED.filter((n) => n.state === 'done').length
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      {/* Main chat area */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* Progress bar header */}
-        <div
-          className="flex h-[40px] shrink-0 items-center gap-[16px] px-[24px]"
-          style={{ borderBottom: '1px solid var(--color-line-strong)' }}
-        >
-          <span className="text-[12.5px] font-medium text-ink">
-            Topic {topicIndex + 1} of {KNOWLEDGE_NOTES.length} · Goals
-          </span>
-          {/* Progress bar */}
-          <div
-            className="h-[3px] w-[80px] rounded-pill overflow-hidden"
-            style={{ background: 'var(--color-line-strong)' }}
-          >
-            <div
-              className="h-full rounded-pill"
-              style={{
-                width: `${((topicIndex) / KNOWLEDGE_NOTES.length) * 100}%`,
-                background: 'var(--color-helper-brand)',
-              }}
+    <aside
+      aria-label="What I've learned"
+      className="relative flex h-full w-[400px] shrink-0 flex-col overflow-hidden rounded-lg bg-surface"
+    >
+      <div className="flex w-full items-center gap-[8px] px-[18px] py-[14px]" style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}>
+        <h2 className="text-[14px] font-semibold text-ink">What I've learned</h2>
+        <span className="h-px flex-1" />
+        <span className="text-[12px] text-muted">{done} of 7 done</span>
+      </div>
+      <ul className="flex min-h-0 w-full flex-1 flex-col gap-[6px] px-[12px] py-[10px]">
+        {LEARNED.map((n) => {
+          const note = KNOWLEDGE_NOTES.find((k) => k.id === n.id)!
+          const Icon = note.icon
+          const active = n.state === 'done' || n.state === 'writing'
+          return (
+            <li
+              key={n.id}
+              className="relative flex w-full flex-col gap-[4px] rounded-md px-[12px] py-[10px]"
+              style={n.state === 'writing' ? { background: '#6366F10D' } : undefined}
+            >
+              <div className="flex w-full items-center gap-[8px]">
+                <Icon size={14} aria-hidden className={active ? 'text-ink-2' : 'text-faint'} />
+                <span className={`text-[13px] font-semibold ${active ? 'text-ink' : 'text-muted'}`}>{note.label}</span>
+                <span className="h-px flex-1" />
+                {n.state === 'done' && (
+                  <>
+                    <CircleCheck size={14} aria-label="done" className="text-ok" />
+                    <Pencil size={13} aria-label="edit" className="text-muted" />
+                  </>
+                )}
+                {n.state === 'writing' && <span className="text-[11px] font-medium text-helper-brand">writing…</span>}
+              </div>
+              {n.text && (
+                <p className={`w-full text-[12px] leading-[1.45] ${n.state === 'next' ? 'text-muted' : 'text-ink-2'}`}>
+                  {n.text}
+                </p>
+              )}
+              {n.state === 'done' && <Stroke color="var(--color-line)" />}
+              {n.state === 'writing' && <Stroke color="#6366F14D" />}
+            </li>
+          )
+        })}
+      </ul>
+      <div className="flex w-full flex-col gap-[8px] bg-soft px-[16px] py-[12px]" style={{ boxShadow: 'inset 0 1px 0 var(--color-line)' }}>
+        <p className="w-full text-[12px] text-ink-2">Skip questions: let me read your website or a doc first.</p>
+        <div className="flex w-full items-center gap-[6px]">
+          <label className="flex h-[32px] min-w-0 flex-1 items-center gap-[6px] rounded-btn bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong">
+            <Globe size={13} aria-hidden className="shrink-0 text-muted" />
+            <input
+              aria-label="Website"
+              placeholder="sahabatwarga.id"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-faint"
             />
-          </div>
+          </label>
+          <IconButton icon={Paperclip} aria-label="Upload a doc" />
+        </div>
+      </div>
+      <Stroke />
+    </aside>
+  )
+}
+
+export function StepKnowYou({ onNext }: { onNext: () => void }) {
+  const [draft, setDraft] = useState('')
+  return (
+    <div className="flex min-h-0 w-full flex-1 gap-[16px] px-[24px] pt-[8px] pb-[24px]">
+      <section aria-label="Interview" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface">
+        <div className="flex w-full items-center gap-[12px] px-[24px] py-[14px]" style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}>
+          <h2 className="text-[14px] font-semibold text-ink">Topic 3 of 7 · Goals</h2>
+          <span
+            role="progressbar"
+            aria-valuenow={3}
+            aria-valuemin={0}
+            aria-valuemax={7}
+            className="relative h-[6px] w-[180px] overflow-hidden rounded-[3px] bg-soft"
+          >
+            <span className="absolute inset-y-0 left-0 w-[64px] rounded-[3px] bg-helper-brand" />
+            <Stroke color="var(--color-line)" />
+          </span>
           <span className="text-[12px] text-muted">~6 min left</span>
-          <div className="flex-1" />
-          <button
-            type="button"
-            className="flex items-center gap-[5px] text-[12px] text-muted hover:text-ink transition-colors"
-          >
-            <SkipForward size={12} aria-hidden />
+          <span className="h-px flex-1" />
+          <QuietButton icon={SkipForward} onClick={onNext}>
             Skip this topic
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-[5px] text-[12px] text-muted hover:text-ink transition-colors"
-          >
-            <Clock size={12} aria-hidden />
-            Finish later
-          </button>
+          </QuietButton>
+          <QuietButton icon={Pause}>Finish later</QuietButton>
         </div>
 
-        {/* Conversation */}
-        <div className="flex min-h-0 flex-1 flex-col gap-[20px] overflow-y-auto px-[32px] py-[24px]">
-          {/* Context line */}
-          <div className="flex items-center gap-[6px]">
-            <Check size={12} className="text-ok" />
-            <span className="text-[12px] text-muted">Company and Customers covered · 9 answers</span>
-          </div>
-
-          {/* Chief question */}
-          <div className="flex items-start gap-[10px]">
-            <Mascot size={28} radius={8} area="brand" />
-            <div className="flex flex-col gap-[10px]">
-              <p className="m-0 text-[14px] font-medium text-ink">
-                What would make the next 3 months a win for {COMPANY_NAME}?
-              </p>
-              {/* Suggestion chips */}
-              <div className="flex flex-wrap gap-[6px]">
-                {[
-                  '100 paying neighbourhoods',
-                  'Launch the WhatsApp sign-up',
-                  'Fewer support chats',
-                ].map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    className="flex items-center gap-[4px] rounded-pill px-[10px] py-[5px] text-[12px] text-ink transition-colors"
-                    style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-                  >
-                    <span style={{ color: 'var(--color-helper-brand)' }}>↗</span>
-                    {chip}
-                  </button>
-                ))}
-              </div>
-              <p className="m-0 text-[12px] text-muted">
-                Not sure? Pick one to start, or say &quot;give me ideas&quot;
-              </p>
-            </div>
-          </div>
-
-          {/* User reply */}
-          <div className="flex flex-col items-end gap-[0]">
-            <div
-              className="max-w-[480px] rounded-lg px-[14px] py-[10px] text-[13.5px] leading-[1.5] text-ink"
-              style={{ background: 'var(--color-field-indigo)' }}
-            >
-              100 paying neighbourhoods using the app by December. And I want fewer manual support
-              chats, they eat my whole day.
-            </div>
-          </div>
-
-          {/* Chief follow-up */}
-          <div className="flex items-start gap-[10px]">
-            <Mascot size={28} radius={8} area="brand" />
-            <div className="flex flex-col gap-[10px]">
-              <p className="m-0 text-[14px] font-medium text-ink">
-                Got it, two goals. How do you count a &quot;paying neighbourhood&quot; today?
-              </p>
-              <div className="flex flex-wrap gap-[6px]">
-                {[
-                  'An RT that paid this month',
-                  'Any RT with an active admin',
-                  "I don't track it yet",
-                ].map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    className="flex items-center gap-[4px] rounded-pill px-[10px] py-[5px] text-[12px] text-ink transition-colors"
-                    style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-                  >
-                    <span style={{ color: 'var(--color-helper-brand)' }}>↗</span>
-                    {chip}
-                  </button>
-                ))}
-              </div>
-              <div
-                className="flex items-center gap-[6px] rounded-base px-[10px] py-[5px] text-[12px] text-ok"
-                style={{ background: 'var(--color-ok-tint)', border: '1px solid var(--color-ok-line)' }}
-              >
-                <Check size={11} />
-                Saved to Goals: 100 paying neighbourhoods by Dec · fewer support chats
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Composer */}
-        <div
-          className="flex shrink-0 flex-col gap-[8px] px-[32px] pb-[16px] pt-[10px]"
-          style={{ borderTop: '1px solid var(--color-line-strong)' }}
-        >
-          <div
-            className="flex min-h-[42px] items-center gap-[8px] rounded-lg px-[14px] py-[10px]"
-            style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-          >
-            <span className="flex-1 text-[13px] text-muted">
-              Type your answer, or hold space to talk…
+        <div className="flex min-h-0 w-full flex-1 flex-col justify-end gap-[16px] px-[48px] py-[20px]">
+          <div className="flex w-full items-center gap-[10px]">
+            <span className="h-px flex-1 bg-line" />
+            <span className="relative flex items-center gap-[6px] rounded-pill bg-soft px-[10px] py-[4px]">
+              <Check size={12} aria-hidden className="text-muted" />
+              <span className="text-[12px] font-medium text-muted">{INTERVIEW.covered}</span>
+              <Stroke color="var(--color-line)" />
             </span>
-            <button
-              type="button"
-              className="flex size-[28px] shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover"
-            >
-              <Mic size={14} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={onNext}
-              className="flex size-[28px] shrink-0 items-center justify-center rounded-md text-primary-ink transition-colors hover:bg-primary-hover"
-              style={{ background: 'var(--color-primary)' }}
-            >
-              <ArrowUp size={14} aria-hidden />
-            </button>
+            <span className="h-px flex-1 bg-line" />
           </div>
-
-          {/* URL skip input */}
-          <div className="flex items-center gap-[6px]">
-            <span className="text-[12px] text-muted">Skip questions: let me read your website or a doc first.</span>
-            <div
-              className="flex flex-1 items-center gap-[6px] rounded-base px-[10px] py-[5px]"
-              style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-            >
-              <span className="text-[12px] text-muted">sahabatbisa.id</span>
+          <ChiefSays text={INTERVIEW.q1} ideas={INTERVIEW.ideas1}>
+            <p className="text-[12px] text-muted">{INTERVIEW.hint1}</p>
+          </ChiefSays>
+          <div className="flex w-full justify-end">
+            <div className="relative w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
+              <p className="w-full text-[14px] leading-[1.55] text-ink">{INTERVIEW.answer}</p>
+              <Stroke color="var(--color-line)" />
             </div>
-            <button type="button" className="shrink-0 text-muted hover:text-ink transition-colors">
-              <Paperclip size={14} aria-hidden />
-            </button>
           </div>
-        </div>
-      </div>
-
-      {/* Right panel — What I've learned */}
-      <div
-        className="flex w-[280px] shrink-0 flex-col gap-[16px] overflow-y-auto px-[20px] py-[24px]"
-        style={{ borderLeft: '1px solid var(--color-line-strong)' }}
-      >
-        <div className="flex items-center justify-between">
-          <p className="m-0 text-[12px] font-semibold text-ink">What I&apos;ve learned</p>
-          <span className="text-[12px] text-muted">2 of 7 done</span>
+          <ChiefSays text={INTERVIEW.q2} ideas={INTERVIEW.ideas2}>
+            <p className="flex items-center gap-[6px] pt-[2px] text-[12px] text-helper-brand">
+              <BookmarkCheck size={13} aria-hidden />
+              {INTERVIEW.saved}
+            </p>
+          </ChiefSays>
         </div>
 
-        {/* Completed */}
-        {completedNotes.map((note) => (
-          <div
-            key={note.id}
-            className="flex flex-col gap-[4px] rounded-base p-[10px]"
-            style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
+        <div className="w-full px-[48px] pb-[20px]">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              setDraft('')
+            }}
+            className="relative flex w-full items-center gap-[12px] rounded-lg py-[10px] pr-[10px] pl-[16px]"
+            style={{ boxShadow: 'inset 0 0 0 1px var(--color-line-strong), 0 2px 8px #0C0A090D' }}
           >
-            <div className="flex items-center gap-[6px]">
-              <Check size={12} className="text-ok shrink-0" />
-              <span className="flex-1 text-[12.5px] font-medium text-ink">{note.label}</span>
-              <Pencil size={11} className="text-muted cursor-pointer hover:text-ink" />
-            </div>
-            <p className="m-0 pl-[18px] text-[11.5px] leading-[1.45] text-muted">{note.snippet}</p>
-          </div>
-        ))}
-
-        {/* Writing */}
-        <div
-          className="flex items-center gap-[6px] rounded-base p-[10px]"
-          style={{
-            border: '1px solid var(--color-helper-brand)',
-            background: 'var(--color-field-indigo)',
-          }}
-        >
-          <div
-            className="size-[10px] shrink-0 rounded-full animate-pulse"
-            style={{ background: 'var(--color-helper-brand)' }}
-          />
-          <span className="text-[12.5px] font-medium text-ink">{currentNote.label}</span>
-          <span className="ml-auto text-[11px] text-muted">writing…</span>
+            <input
+              aria-label="Your answer"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Type your answer, or hold space to talk…"
+              className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
+            />
+            <button
+              type="button"
+              aria-label="Talk"
+              className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-soft outline-1 -outline-offset-1 outline-line-strong"
+            >
+              <Mic size={16} aria-hidden className="text-ink" />
+            </button>
+            <button
+              type="submit"
+              aria-label="Send"
+              className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-primary"
+            >
+              <ArrowUp size={16} aria-hidden className="text-primary-ink" />
+            </button>
+          </form>
         </div>
-
-        {/* Upcoming */}
-        {upcomingNotes.map((note) => (
-          <div key={note.id} className="flex flex-col gap-[2px] px-[2px]">
-            <div className="flex items-center gap-[6px]">
-              <div
-                className="size-[10px] shrink-0 rounded-full"
-                style={{ border: '1.5px solid var(--color-line-strong)' }}
-              />
-              <span className="text-[12.5px] text-muted">{note.label}</span>
-            </div>
-            {note.meta && (
-              <p className="m-0 pl-[16px] text-[11.5px] leading-[1.4] text-faint">{note.meta}</p>
-            )}
-          </div>
-        ))}
-      </div>
+        <Stroke />
+      </section>
+      <LearnedPanel />
     </div>
   )
 }

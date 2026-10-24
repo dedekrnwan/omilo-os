@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { ArrowUpRight, Check, ChevronRight, Inbox, ListFilter, Reply, Undo2 } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarSync, Check, ChevronRight, CircleCheck, Inbox, ListFilter, Reply } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import type React from 'react'
 import type { Channel, InboxItem } from '../../core/domain/types'
 import { useChannels, useInbox, useInboxItem } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
@@ -13,6 +14,8 @@ import type { AreaFilter } from './OfficeSidebar'
 import { InboxReviewDialog } from './InboxReviewDialog'
 import type { ReviewResult } from './InboxReviewDialog'
 import { InboxChangeAmountDialog } from './InboxChangeAmountDialog'
+import { APPROVED_TOAST, BUDGET, ROUTINE_SUGGESTION } from './data'
+import { Toast } from './ui'
 
 /** Next scheduled routine under "Running now" (routines aren't wired yet). */
 const nextRoutine = { area: 'brand' as const, text: 'Thursday check-in · 09:00' }
@@ -42,37 +45,54 @@ function AreaFor({ channel }: { channel?: Channel }) {
   return channel ? <AreaChip accent={channel.accent} label={channel.name} /> : null
 }
 
-// ── Inbox interactive state types ─────────────────────────────────────────────
+// ── Approved banner (pen U6qpL8 `Approved`) ──────────────────────────────────
 
-interface ApprovedToast {
-  count: number
-  label: string
+function ApprovedBanner({ text, onUndo }: { text: string; onUndo: () => void }) {
+  return (
+    <div className="flex w-full items-center gap-[8px] rounded-base bg-ok-tint px-[12px] py-[8px] outline-1 -outline-offset-1 outline-ok-line">
+      <CircleCheck size={14} aria-hidden className="shrink-0 text-ok" />
+      <span className="min-w-0 truncate text-[12.5px] font-medium text-ok">{text}</span>
+      <span className="h-px flex-1" />
+      <button type="button" onClick={onUndo} className="text-[12px] whitespace-nowrap text-link hover:underline">
+        Undo · 5 min
+      </button>
+    </div>
+  )
 }
 
-// ── ApprovedCardBanner — green toast chip (top-right, auto-dismisses) ─────────
-
-function ApprovedCardBanner({ toast, onUndo, onDismiss }: { toast: ApprovedToast; onUndo: () => void; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 6000)
-    return () => clearTimeout(t)
-  }, [onDismiss])
-
+function OpenLink({ title, onOpen }: { title: string; onOpen: () => void }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed top-[16px] right-[16px] z-40 flex items-center gap-[10px] rounded-pill bg-ink px-[14px] py-[9px] shadow-[0_8px_24px_#0C0A0933]"
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open ${title}`}
+      className="flex items-center gap-[3px] pl-[8px] text-[12px] font-medium text-ink-2 hover:text-ink"
     >
-      <Check size={13} aria-hidden className="text-ok" />
-      <span className="text-[12.5px] font-medium text-primary-ink">{toast.label}</span>
-      <button
-        type="button"
-        onClick={onUndo}
-        className="flex items-center gap-[4px] text-[12px] text-on-ink-2 hover:text-primary-ink transition-colors ml-[4px]"
-      >
-        <Undo2 size={12} aria-hidden />
-        Undo
-      </button>
+      Open
+      <ArrowUpRight size={12} aria-hidden />
+    </button>
+  )
+}
+
+function CardTop({
+  area,
+  who,
+  when,
+  chip,
+}: {
+  area: InboxItem['askerArea']
+  who: string
+  when?: string
+  chip?: React.ReactNode
+}) {
+  return (
+    <div className="flex w-full items-center gap-[7px]">
+      <Mascot size={20} radius={6} area={area} />
+      <span className="text-[12.5px] font-medium text-ink">{who}</span>
+      {when && <span className="text-[12px] text-muted">{when}</span>}
+      {chip}
+      <span className="h-px flex-1" />
+      <StatusChip kind="needs" />
     </div>
   )
 }
@@ -85,8 +105,8 @@ function DecisionCard({
   onApprove,
   onReviewOneByOne,
   onChangeAmount,
-  approved,
-  approvedResults,
+  approvedText,
+  onUndo,
 }: {
   item: InboxItem
   channel?: Channel
@@ -94,100 +114,24 @@ function DecisionCard({
   onApprove: () => void
   onReviewOneByOne: () => void
   onChangeAmount: () => void
-  approved?: boolean
-  approvedResults?: ReviewResult[]
+  /** Set once approved: the green banner replaces the action row. */
+  approvedText?: string
+  onUndo: () => void
 }) {
-  const approvedCount = approvedResults ? approvedResults.filter((r) => r.decision === 'approved').length : 0
-
-  // Detect if it has multiple proposals (multi-task review)
-  const hasProposals = item.proposals && item.proposals.length > 0
-
-  if (approved) {
-    // ── Approved state (matches U6qpL8.png) ───────────────────────────────────
-    return (
-      <article
-        aria-label={item.title}
-        className="flex w-full flex-col gap-[12px] rounded-lg outline-1 -outline-offset-1 outline-ok-line bg-ok-tint/60 p-[16px]"
-      >
-        <div className="flex w-full items-center gap-[7px]">
-          <Mascot size={20} radius={6} area={item.askerArea} />
-          <span className="text-[12.5px] font-medium text-ink">{item.asker}</span>
-          {item.askedAgo && <span className="text-[12px] text-muted">{item.askedAgo}</span>}
-          <AreaFor channel={channel} />
-          <span className="h-px flex-1" />
-        </div>
-
-        <div className="flex w-full flex-col gap-[4px]">
-          <h3 className="m-0 text-[14.5px] font-semibold text-ink">{item.title}</h3>
-          <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{item.summary}</p>
-        </div>
-
-        {hasProposals && item.proposals && (
-          <ul className="m-0 flex w-full list-none flex-col rounded-md outline-1 -outline-offset-1 outline-ok-line bg-ok-tint/40 p-0">
-            {item.proposals.map((p, i) => {
-              const result = approvedResults?.find((r) => r.proposalIndex === i)
-              return (
-                <li
-                  key={p.text}
-                  className={`flex items-center gap-[10px] px-[12px] py-[9px] ${
-                    i < item.proposals!.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-ok-line)]' : ''
-                  }`}
-                >
-                  <Mascot size={18} radius={5} area={p.area} />
-                  <span className="w-[56px] shrink-0 text-[12.5px] font-medium text-ink">{p.who}</span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{p.text}</span>
-                  <span className="text-[12px] text-muted">{p.due}</span>
-                  {result ? (
-                    result.decision === 'approved' ? (
-                      <Check size={13} aria-label="Approved" className="text-ok" />
-                    ) : (
-                      <span className="text-[11px] text-muted capitalize">{result.decision}</span>
-                    )
-                  ) : (
-                    <ChevronRight size={14} aria-hidden className="text-faint" />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-
-        <div className="flex w-full items-center gap-[6px]">
-          <span className="flex items-center gap-[5px] rounded-pill bg-ok-tint px-[8px] py-[3px] outline-1 -outline-offset-1 outline-ok-line text-[12px] font-medium text-ok">
-            <Check size={12} aria-hidden />
-            {hasProposals
-              ? `You approved ${approvedCount} task${approvedCount !== 1 ? 's' : ''}${item.asker ? ` · ${item.asker} and Growth started` : ''}`
-              : `You approved ${item.title}`}
-          </span>
-          <span className="h-px flex-1" />
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-label={`Open ${item.title}`}
-            className="flex items-center gap-[3px] pl-[8px] text-[12px] font-medium text-ink-2 hover:text-ink"
-          >
-            Open
-            <ArrowUpRight size={12} aria-hidden />
-          </button>
-        </div>
-      </article>
-    )
+  function handlerFor(label: string) {
+    const l = label.toLowerCase()
+    if (l.startsWith('approve')) return onApprove
+    if (l.startsWith('review')) return onReviewOneByOne
+    if (l.startsWith('change')) return onChangeAmount
+    return onOpen // Reply → open the thread
   }
 
-  // ── Default (pending) state ───────────────────────────────────────────────
   return (
     <article
       aria-label={item.title}
-      className="flex w-full flex-col gap-[12px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[16px]"
+      className="flex w-full flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong"
     >
-      <div className="flex w-full items-center gap-[7px]">
-        <Mascot size={20} radius={6} area={item.askerArea} />
-        <span className="text-[12.5px] font-medium text-ink">{item.asker}</span>
-        {item.askedAgo && <span className="text-[12px] text-muted">{item.askedAgo}</span>}
-        <AreaFor channel={channel} />
-        <span className="h-px flex-1" />
-        {item.needsYou && <StatusChip kind="needs" />}
-      </div>
+      <CardTop area={item.askerArea} who={item.asker} when={item.askedAgo} chip={<AreaFor channel={channel} />} />
 
       <div className="flex w-full flex-col gap-[4px]">
         <h3 className="m-0 text-[14.5px] font-semibold text-ink">{item.title}</h3>
@@ -195,7 +139,7 @@ function DecisionCard({
       </div>
 
       {item.proposals && item.proposals.length > 0 && (
-        <ul className="m-0 flex w-full list-none flex-col rounded-md outline-1 -outline-offset-1 outline-line bg-soft p-0">
+        <ul className="m-0 flex w-full list-none flex-col rounded-md bg-soft p-0 outline-1 -outline-offset-1 outline-line">
           {item.proposals.map((p, i) => (
             <li
               key={p.text}
@@ -213,40 +157,96 @@ function DecisionCard({
         </ul>
       )}
 
-      <div className="flex w-full items-center gap-[6px]">
-        {/* Actions row (pen hR0PJ): primary approve + secondary buttons (Review one by one / Change amount / Reply) */}
-        {item.actions?.map((a) => {
-          const label = a.label.toLowerCase()
-          const isApprove = a.icon === 'check' || a.primary
-          const isReview = label.includes('review one')
-          const isChange = label.includes('change amount')
-          return (
+      {approvedText ? (
+        <ApprovedBanner text={approvedText} onUndo={onUndo} />
+      ) : (
+        <div className="flex w-full items-center gap-[6px]">
+          {item.actions?.map((a) => (
             <Button
               key={a.label}
               height={28}
               variant={a.primary ? 'primary' : 'secondary'}
               icon={a.icon === 'check' ? Check : a.icon === 'reply' ? Reply : undefined}
-              onClick={
-                isApprove ? onApprove : isReview ? onReviewOneByOne : isChange ? onChangeAmount : undefined
-              }
+              onClick={handlerFor(a.label)}
             >
               {a.label}
             </Button>
-          )
-        })}
+          ))}
+          <span className="h-px flex-1" />
+          {item.reassurance && <span className="text-[12px] text-muted">{item.reassurance}</span>}
+          <OpenLink title={item.title} onOpen={onOpen} />
+        </div>
+      )}
+    </article>
+  )
+}
 
-        <span className="h-px flex-1" />
-        {item.reassurance && <span className="text-[12px] text-muted">{item.reassurance}</span>}
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-label={`Open ${item.title}`}
-          className="flex items-center gap-[3px] pl-[8px] text-[12px] font-medium text-ink-2 hover:text-ink"
-        >
-          Open
-          <ArrowUpRight size={12} aria-hidden />
-        </button>
+/** Chief's routine suggestion (pen BoenW `Decision · Spread Monday routines`). */
+function RoutineSuggestionCard({
+  applied,
+  onApply,
+  onUndo,
+  onSee,
+  onDismiss,
+}: {
+  applied: boolean
+  onApply: () => void
+  onUndo: () => void
+  onSee: () => void
+  onDismiss: () => void
+}) {
+  const s = ROUTINE_SUGGESTION
+  return (
+    <article
+      aria-label={s.title}
+      className="flex w-full flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong"
+    >
+      <CardTop
+        area="brand"
+        who={s.asker}
+        when={s.askedAgo}
+        chip={
+          <span className="inline-flex h-[22px] items-center gap-[4px] rounded-sm bg-soft px-[8px] outline-1 -outline-offset-1 outline-line-strong">
+            <CalendarSync size={12} aria-hidden className="text-ink-2" />
+            <span className="text-[12px] font-medium text-ink-2">Routines</span>
+          </span>
+        }
+      />
+      <div className="flex w-full flex-col gap-[4px]">
+        <h3 className="m-0 text-[14.5px] font-semibold text-ink">{s.title}</h3>
+        <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{s.summary}</p>
       </div>
+      <ul className="m-0 flex w-full list-none flex-col rounded-md bg-soft p-0 outline-1 -outline-offset-1 outline-line">
+        {s.moves.map((m, i) => (
+          <li
+            key={m.name}
+            className={`flex items-center gap-[10px] px-[12px] py-[9px] ${
+              i < s.moves.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
+            }`}
+          >
+            <Mascot size={18} radius={5} area={m.area} />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{m.name}</span>
+            <span className="text-[12px] text-faint">{m.from}</span>
+            <ArrowRight size={12} aria-hidden className="text-faint" />
+            <span className="text-[12px] font-semibold text-ink">{m.to}</span>
+          </li>
+        ))}
+      </ul>
+      {applied ? (
+        <ApprovedBanner text="Applied · 2 routines moved" onUndo={onUndo} />
+      ) : (
+        <div className="flex w-full items-center gap-[6px]">
+          <Button height={28} variant="primary" icon={Check} onClick={onApply}>
+            Apply both
+          </Button>
+          <Button height={28} variant="secondary" icon={CalendarSync} onClick={onSee}>
+            See in Routines
+          </Button>
+          <Button height={28} variant="secondary" onClick={onDismiss}>
+            Not now
+          </Button>
+        </div>
+      )}
     </article>
   )
 }
@@ -329,66 +329,88 @@ function DoneCard({ item }: { item: InboxItem }) {
 /** "Done today" shows the latest cards; the rest live behind "See all activity". */
 const DONE_PREVIEW = 2
 
+/** Screenshot-able states: `?state=review|approved|amount|routine`. */
+type InboxState = 'review' | 'approved' | 'amount' | 'routine'
+
+function readState(): InboxState | undefined {
+  if (typeof window === 'undefined') return undefined
+  const v = new URLSearchParams(window.location.search).get('state')
+  return v === 'review' || v === 'approved' || v === 'amount' || v === 'routine' ? v : undefined
+}
+
+function approvedTextFor(item: InboxItem, results: ReviewResult[]) {
+  if (!item.proposals?.length) {
+    const amount = /\$[\d,]+/.exec(item.actions?.find((a) => a.primary)?.label ?? '')?.[0]
+    return `You approved ${amount ?? 'this'} · ${item.asker} started`
+  }
+  const ok = results.filter((r) => r.decision === 'approved')
+  const who = [...new Set(ok.map((r) => item.proposals![r.proposalIndex].who))]
+  const n = ok.length
+  return `You approved ${n} task${n === 1 ? '' : 's'}${who.length ? ` · ${who.join(' and ')} started` : ''}`
+}
+
 function InboxList({ area }: { area: AreaFilter }) {
   const navigate = useNavigate()
   const { data: all = [], isLoading } = useInbox()
   const { data: channels = [] } = useChannels()
   const channelOf = (id: string) => channels.find((c) => c.id === id)
+  const [initial] = useState(readState)
 
   const items = area ? all.filter((i) => i.channelId === area) : all
-  const needs = items.filter((i) => i.status === 'pending')
-  const cards = needs.filter((i) => !i.compact)
-  const rows = needs.filter((i) => i.compact)
+  const pending = items.filter((i) => i.status === 'pending')
+  const cards = pending.filter((i) => !i.compact)
+  const rows = pending.filter((i) => i.compact)
   const running = items.filter((i) => i.status === 'running')
   const done = items.filter((i) => i.status === 'done')
   const open = (item: InboxItem) =>
     void navigate({ to: '/office/inbox/$itemId', params: { itemId: item.id } })
-
   const areaName = area ? channelOf(area)?.name : undefined
+  const multi = cards.find((c) => c.proposals?.length)
+  const budget = cards.find((c) => c.actions?.some((a) => a.label.toLowerCase().startsWith('change')))
 
   // ── Interactive state ──────────────────────────────────────────────────────
-  /** itemId → { approved, results } */
-  const [approvedMap, setApprovedMap] = useState<Record<string, { results: ReviewResult[] }>>({})
-  /** Currently open review dialog */
-  const [reviewingItem, setReviewingItem] = useState<InboxItem | null>(null)
-  /** Currently open change-amount dialog */
-  const [changingItem, setChangingItem] = useState<InboxItem | null>(null)
-  /** Toast shown after an approve action */
-  const [toast, setToast] = useState<(ApprovedToast & { id: string }) | null>(null)
+  const [approved, setApproved] = useState<Record<string, ReviewResult[]>>({})
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const [changing, setChanging] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ title: string; body?: string } | null>(null)
+  const [suggestion, setSuggestion] = useState<'open' | 'applied' | 'hidden'>(
+    initial === 'routine' ? 'open' : 'hidden',
+  )
+
+  // Seed the requested design state once the mock items are loaded.
+  const [seeded, setSeeded] = useState(false)
+  useEffect(() => {
+    if (seeded || isLoading) return
+    setSeeded(true)
+    if (initial === 'review' && multi) setReviewing(multi.id)
+    if (initial === 'amount' && budget) setChanging(budget.id)
+    if (initial === 'approved' && multi) {
+      setApproved({ [multi.id]: multi.proposals!.map((_, i) => ({ proposalIndex: i, decision: 'approved' })) })
+      setToast(APPROVED_TOAST)
+    }
+  }, [seeded, isLoading, initial, multi, budget])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 6000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   function markApproved(item: InboxItem, results: ReviewResult[]) {
-    setApprovedMap((prev) => ({ ...prev, [item.id]: { results } }))
-    const approvedCount = results.filter((r) => r.decision === 'approved').length || 1
-    const label = item.proposals?.length
-      ? `${approvedCount} task${approvedCount !== 1 ? 's' : ''} approved`
-      : `${item.title} approved`
-    setToast({ id: item.id, count: approvedCount, label })
+    if (!results.some((r) => r.decision === 'approved')) return
+    setApproved((prev) => ({ ...prev, [item.id]: results }))
+    const n = results.filter((r) => r.decision === 'approved').length
+    setToast(
+      item.proposals?.length
+        ? n === item.proposals.length && item.id === multi?.id
+          ? APPROVED_TOAST
+          : { title: `${n} task${n === 1 ? '' : 's'} approved` }
+        : { title: `${item.title.replace(/^Approve /, '')} approved` },
+    )
   }
 
-  function handleApproveAll(item: InboxItem) {
-    const results: ReviewResult[] = (item.proposals ?? []).map((_, i) => ({
-      proposalIndex: i,
-      decision: 'approved',
-    }))
-    markApproved(item, results)
-  }
-
-  function handleReviewClose(results: ReviewResult[]) {
-    if (reviewingItem) markApproved(reviewingItem, results)
-    setReviewingItem(null)
-  }
-
-  function handleChangeAmountApprove(amount: number, _note: string) {
-    if (changingItem) {
-      markApproved(changingItem, [{ proposalIndex: 0, decision: 'approved' }])
-    }
-    setChangingItem(null)
-    // amount + _note would go to real adapter; visual-only here
-    void amount
-  }
-
-  function handleUndo(id: string) {
-    setApprovedMap((prev) => {
+  function undo(id: string) {
+    setApproved((prev) => {
       const next = { ...prev }
       delete next[id]
       return next
@@ -396,15 +418,17 @@ function InboxList({ area }: { area: AreaFilter }) {
     setToast(null)
   }
 
-  // Static budget options (visual-only) — used for all budget-style cards.
-  const BUDGET_OPTIONS: [number, number, number] = [1900, 3000, 4800]
+  const reviewingItem = cards.find((c) => c.id === reviewing)
+  const changingItem = cards.find((c) => c.id === changing)
+  const needsCount =
+    pending.filter((i) => !approved[i.id]).length + (suggestion === 'open' ? 1 : 0)
 
   return (
     <>
       <Topbar
         icon={Inbox}
         title="Inbox"
-        meta={`${needs.length} need you`}
+        meta={`${pending.length} need you`}
         actions={
           <Button variant="secondary" height={28} icon={ListFilter}>
             {areaName ?? 'All areas'}
@@ -423,22 +447,41 @@ function InboxList({ area }: { area: AreaFilter }) {
           <p className="m-0 text-[13px] text-muted">No items in this area yet.</p>
         ) : (
           <div className="flex w-full gap-[20px]">
-            {/* Main column */}
             <section aria-label="Needs you" className="flex min-w-0 flex-1 flex-col gap-[10px]">
-              <SectionTitle title="Needs you" count={needs.length} />
+              <SectionTitle title="Needs you" count={needsCount} />
+              {suggestion !== 'hidden' && (
+                <RoutineSuggestionCard
+                  applied={suggestion === 'applied'}
+                  onApply={() => {
+                    setSuggestion('applied')
+                    setToast({ title: 'Routines moved', body: 'Instagram report → Mon 11:00 · Dependency updates → Tue 10:00.' })
+                  }}
+                  onUndo={() => {
+                    setSuggestion('open')
+                    setToast(null)
+                  }}
+                  onSee={() => void navigate({ to: '/office/routines' })}
+                  onDismiss={() => setSuggestion('hidden')}
+                />
+              )}
               {cards.map((item) => {
-                const approvedState = approvedMap[item.id]
+                const results = approved[item.id]
                 return (
                   <DecisionCard
                     key={item.id}
                     item={item}
                     channel={channelOf(item.channelId)}
                     onOpen={() => open(item)}
-                    onApprove={() => handleApproveAll(item)}
-                    onReviewOneByOne={() => setReviewingItem(item)}
-                    onChangeAmount={() => setChangingItem(item)}
-                    approved={!!approvedState}
-                    approvedResults={approvedState?.results}
+                    onApprove={() =>
+                      markApproved(
+                        item,
+                        (item.proposals ?? [{}]).map((_, i) => ({ proposalIndex: i, decision: 'approved' as const })),
+                      )
+                    }
+                    onReviewOneByOne={() => setReviewing(item.id)}
+                    onChangeAmount={() => setChanging(item.id)}
+                    approvedText={results ? approvedTextFor(item, results) : undefined}
+                    onUndo={() => undo(item.id)}
                   />
                 )
               })}
@@ -457,7 +500,6 @@ function InboxList({ area }: { area: AreaFilter }) {
               )}
             </section>
 
-            {/* Side column */}
             <aside className="flex w-[320px] shrink-0 flex-col gap-[10px]">
               {running.length > 0 && (
                 <>
@@ -473,7 +515,7 @@ function InboxList({ area }: { area: AreaFilter }) {
                   ))}
                 </>
               )}
-              <a href="#" className="text-[12px] text-muted hover:text-ink-2">
+              <a href="#" className="self-start text-[12px] text-muted hover:text-ink-2">
                 See all activity →
               </a>
             </aside>
@@ -481,34 +523,47 @@ function InboxList({ area }: { area: AreaFilter }) {
         )}
       </div>
 
-      {/* ── Dialogs & toast ─────────────────────────────────────────────── */}
       {reviewingItem && (
         <InboxReviewDialog
-          open={!!reviewingItem}
+          open
           item={reviewingItem}
-          onClose={handleReviewClose}
+          initialStep={initial === 'review' ? 1 : 0}
+          onClose={(results) => {
+            markApproved(reviewingItem, results)
+            setReviewing(null)
+          }}
         />
       )}
 
       {changingItem && (
         <InboxChangeAmountDialog
-          open={!!changingItem}
-          context={`${changingItem.asker} asked for ${changingItem.reassurance ?? '14 days'} for the referral launch.`}
-          options={BUDGET_OPTIONS}
-          defaultOption={1}
-          runFor="14 days"
-          dailyCap="$215"
-          onClose={() => setChangingItem(null)}
-          onApprove={handleChangeAmountApprove}
+          open
+          asker={changingItem.asker}
+          asked={BUDGET.asked}
+          options={BUDGET.options}
+          defaultAmount={BUDGET.defaultAmount}
+          runFor={BUDGET.runFor}
+          dailyCap={BUDGET.dailyCap}
+          defaultNote={BUDGET.note}
+          onClose={() => setChanging(null)}
+          onApprove={(amount) => {
+            setApproved((prev) => ({ ...prev, [changingItem.id]: [{ proposalIndex: 0, decision: 'approved' }] }))
+            setToast({ title: `$${amount.toLocaleString('en-US')} budget approved`, body: `${changingItem.asker} starts the referral ads.` })
+            setChanging(null)
+          }}
         />
       )}
 
       {toast && (
-        <ApprovedCardBanner
-          toast={toast}
-          onUndo={() => handleUndo(toast.id)}
-          onDismiss={() => setToast(null)}
-        />
+        <div className="fixed top-[60px] right-[24px] z-40">
+          <Toast
+            icon={CircleCheck}
+            iconClassName="text-ok"
+            title={toast.title}
+            body={toast.body}
+            onClose={() => setToast(null)}
+          />
+        </div>
       )}
     </>
   )

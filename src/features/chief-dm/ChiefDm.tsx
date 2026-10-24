@@ -1,222 +1,244 @@
 /**
- * ChiefDm — self-contained floating Chief DM widget.
+ * ChiefDm — the private Chief drawer, mounted once in the Shell.
  *
- * States (all internal):
- *   closed   → floating "Talk to Chief" button (ozMOv.png)
- *   nudge    → proactive nudge bubble above the button (pHj0k.png)
- *   panel    → 360×520 DM panel, bottom-right (nkqAN.png)
- *   expanded → full-screen dialog (N30qNb.png)
- *   threads  → threads list replacing the message list (hM9k9.png)
+ * pen states:
+ *   closed  ozMOv  → Chat FAB (BVgZF) + "Talk to Chief ⌘J" hint on hover — the resting state
+ *   nudge   pHj0k  → proactive nudge card above the FAB
+ *   open    nkqAN  → 400×628 drawer, FAB turns into a dark chevron-down
+ *   full    N30qNb → 1040 wide panel over a scrim
+ *   threads hM9k9  → the drawer listing private chats
  *
- * Mount once in the Shell: <ChiefDm />  (no props required).
+ * ⌘/Ctrl-J toggles the drawer. `?chief=<state>` opens a state directly
+ * (deep links + screenshots); `window.dispatchEvent(new Event('omilo:chief-nudge'))` shows the nudge.
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import {
-  ArrowUp,
-  ChevronDown,
-  History,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Search,
-  X,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
+import { ChevronDown, History, Lock, Maximize2, Pin, Search, SquarePen, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { CHIEF_MESSAGES, CHIEF_THREADS, NUDGE, QUICK_PROMPTS } from './data'
+import { ChiefComposer } from './ChiefComposer'
+import {
+  CHIEF_DAY_LABEL,
+  CHIEF_MESSAGES,
+  CHIEF_THREADS,
+  NUDGE,
+  QUICK_PROMPTS,
+  THREADS_NOTE,
+} from './data'
 import type { ChiefMessage, ChiefThread } from './data'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+export type ChiefDmState = 'closed' | 'nudge' | 'open' | 'full' | 'threads'
+const STATES: ChiefDmState[] = ['closed', 'nudge', 'open', 'full', 'threads']
 
-type PanelState = 'closed' | 'nudge' | 'panel' | 'expanded' | 'threads'
+function initialState(): ChiefDmState {
+  if (typeof window === 'undefined') return 'closed'
+  const s = new URLSearchParams(window.location.search).get('chief') as ChiefDmState | null
+  return s && STATES.includes(s) ? s : 'closed'
+}
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Bits ──────────────────────────────────────────────────────────────────────
 
-/** Floating "Talk to Chief" button with optional unread badge (ozMOv.png). */
-function FloatingButton({
-  unreadCount,
+/** pen `Icon Button` (u1cQLT), optionally active (fill hover, ink icon). */
+function HeadButton({
+  icon: Icon,
+  label,
   onClick,
+  active = false,
+  size = 28,
+  iconSize = 16,
 }: {
-  unreadCount: number
-  onClick: () => void
+  icon: LucideIcon
+  label: string
+  onClick?: () => void
+  active?: boolean
+  size?: number
+  iconSize?: number
 }) {
   return (
     <button
       type="button"
-      aria-label="Talk to Chief"
+      aria-label={label}
+      aria-pressed={active || undefined}
+      title={label}
       onClick={onClick}
-      className="relative inline-flex h-[36px] items-center gap-[8px] rounded-pill bg-primary pl-[10px] pr-[12px] text-primary-ink shadow-[0_4px_16px_#0000002A] transition-all hover:bg-primary-hover active:scale-95"
+      style={{ width: size, height: size }}
+      className={`inline-flex shrink-0 items-center justify-center rounded-sm transition-colors hover:bg-hover ${
+        active ? 'bg-hover text-ink' : 'text-muted'
+      }`}
     >
-      <Mascot size={22} radius={7} area="brand" tile={false} />
-      <span className="text-[13px] font-medium">Talk to Chief</span>
-      {unreadCount > 0 && (
-        <span
-          aria-label={`${unreadCount} unread`}
-          className="absolute -top-[6px] -right-[6px] flex h-[18px] min-w-[18px] items-center justify-center rounded-pill bg-bad-solid px-[4px] text-[10.5px] font-semibold text-white"
-        >
-          {unreadCount}
-        </span>
-      )}
+      <Icon size={iconSize} aria-hidden />
     </button>
   )
 }
 
-/** Proactive nudge bubble from Chief (pHj0k.png). */
-function NudgeBubble({
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return (
+    <span
+      aria-label={`${count} unread`}
+      className="absolute top-[-2px] left-[34px] flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-warn px-[5px] font-mono text-[10.5px] font-semibold text-white shadow-[inset_0_0_0_2px_var(--color-surface)]"
+    >
+      {count}
+    </span>
+  )
+}
+
+/** Closed: pen `Chat FAB` (BVgZF) + hover hint (d2naq8). */
+function Fab({ unread, onOpen }: { unread: number; onOpen: () => void }) {
+  return (
+    <div className="group fixed right-[24px] bottom-[24px] z-40 size-[52px]">
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute top-[12px] right-[60px] flex h-[28px] items-center gap-[8px] rounded-base bg-primary pr-[8px] pl-[10px] whitespace-nowrap opacity-0 shadow-[0_4px_12px_#0C0A0929] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        <span className="text-[12.5px] font-medium text-white">Talk to Chief</span>
+        <span className="flex h-[18px] items-center rounded-xs bg-[#FFFFFF1F] px-[5px] font-mono text-[10.5px] text-on-ink-2">
+          ⌘ J
+        </span>
+      </span>
+      <button
+        type="button"
+        aria-label="Talk to Chief"
+        onClick={onOpen}
+        className="flex size-[52px] items-center justify-center rounded-[26px] bg-surface shadow-[0_6px_18px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong transition-transform active:scale-95"
+      >
+        <Mascot size={34} radius={10} area="brand" helper />
+      </button>
+      <UnreadBadge count={unread} />
+    </div>
+  )
+}
+
+/** Open: dark FAB with chevron-down (CbjuE) — collapses the drawer. */
+function FabOpen({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Close Chief"
+      onClick={onClose}
+      className="fixed right-[24px] bottom-[24px] z-40 flex size-[52px] items-center justify-center rounded-[26px] bg-primary text-white shadow-[0_6px_18px_#0C0A0929] transition-colors hover:bg-primary-hover"
+    >
+      <ChevronDown size={20} aria-hidden />
+    </button>
+  )
+}
+
+/** pen Nudge (Yjkrc). */
+function Nudge({
   onDismiss,
-  onOpen,
-  onAction,
+  onAccept,
+  onLater,
 }: {
   onDismiss: () => void
-  onOpen: () => void
-  onAction: (label: string) => void
+  onAccept: () => void
+  onLater: () => void
 }) {
   return (
     <div
       role="dialog"
       aria-label="Chief nudge"
-      className="w-[320px] rounded-lg bg-surface shadow-[0_8px_32px_#0000001F] outline-1 -outline-offset-1 outline-line-strong"
+      className="fixed right-[24px] bottom-[88px] z-40 flex w-[320px] flex-col gap-[10px] rounded-[14px] bg-surface p-[14px] shadow-[0_12px_32px_#0C0A091F] outline-1 -outline-offset-1 outline-line-strong"
     >
-      {/* Header */}
-      <div className="flex items-center gap-[8px] border-b border-line px-[12px] py-[10px]">
-        <Mascot size={24} radius={7} area="brand" />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="text-[12.5px] font-semibold text-ink">{NUDGE.title}</span>
-          <span className="text-[11px] text-faint">{NUDGE.subtitle}</span>
-        </div>
+      <div className="flex w-full items-center gap-[8px]">
+        <Mascot size={24} radius={7} area="brand" helper />
+        <span className="text-[13px] font-semibold text-ink">{NUDGE.name}</span>
+        <span className="flex items-center gap-[3px] text-muted">
+          <Lock size={11} aria-hidden />
+          <span className="text-[11.5px]">{NUDGE.scope}</span>
+        </span>
+        <span className="h-px flex-1" />
+        <HeadButton icon={X} label="Dismiss" onClick={onDismiss} size={24} iconSize={14} />
+      </div>
+      <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{NUDGE.body}</p>
+      <div className="flex gap-[6px]">
         <button
           type="button"
-          aria-label="Dismiss"
-          onClick={onDismiss}
-          className="inline-flex size-[24px] shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
+          onClick={onAccept}
+          className="inline-flex h-[28px] items-center rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary transition-colors hover:bg-primary-hover"
         >
-          <X size={14} aria-hidden />
+          {NUDGE.primary}
         </button>
-      </div>
-
-      {/* Body */}
-      <button
-        type="button"
-        onClick={onOpen}
-        className="w-full cursor-pointer px-[12px] pt-[10px] pb-[8px] text-left transition-colors hover:bg-soft"
-      >
-        <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{NUDGE.body}</p>
-      </button>
-
-      {/* Actions */}
-      <div className="flex gap-[6px] px-[12px] pb-[12px]">
-        {NUDGE.actions.map((label) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => onAction(label)}
-            className="inline-flex h-[28px] items-center rounded-btn px-[10px] text-[12px] font-medium outline-1 -outline-offset-1 outline-line-strong bg-surface text-ink transition-colors hover:bg-soft"
-          >
-            {label}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={onLater}
+          className="inline-flex h-[28px] items-center rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
+        >
+          {NUDGE.secondary}
+        </button>
       </div>
     </div>
   )
 }
 
-/** Single message bubble. */
-function MessageBubble({ msg }: { msg: ChiefMessage }) {
+/** Drawer header (ww3Y7): mini Chief · who · 3 icon buttons. */
+function Header({ title, sub, actions }: { title: string; sub: string; actions: ReactNode }) {
+  return (
+    <div className="flex w-full shrink-0 items-center gap-[10px] py-[12px] pr-[10px] pl-[14px] shadow-[inset_0_-1px_0_var(--color-line)]">
+      <Mascot size={24} radius={7} area="brand" helper />
+      <div className="flex min-w-0 flex-1 flex-col gap-px">
+        <span className="text-[13px] font-semibold text-ink">{title}</span>
+        <span className="flex items-center gap-[4px] text-muted">
+          <Lock size={11} aria-hidden className="shrink-0" />
+          <span className="truncate text-[11.5px]">{sub}</span>
+        </span>
+      </div>
+      {actions}
+    </div>
+  )
+}
+
+function Message({ msg }: { msg: ChiefMessage }) {
   if (msg.kind === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[260px] rounded-[14px_14px_4px_14px] bg-app px-[10px] py-[7px]">
-          <p className="m-0 text-[13px] leading-[1.5] text-ink whitespace-pre-wrap">{msg.text}</p>
+      <div className="flex w-full justify-end">
+        <div className="rounded-[16px_16px_4px_16px] bg-app px-[12px] py-[8px]">
+          <p className="m-0 max-w-[280px] text-[13px] leading-[1.55] whitespace-pre-wrap text-ink">{msg.text}</p>
         </div>
       </div>
     )
   }
   return (
-    <div className="flex gap-[8px]">
-      <Mascot size={20} radius={6} area="brand" className="mt-[2px] shrink-0" />
-      <div className="max-w-[260px]">
-        <p className="m-0 text-[13px] leading-[1.5] text-ink-2 whitespace-pre-wrap">{msg.text}</p>
-      </div>
-    </div>
+    <p className="m-0 w-full text-[13px] leading-[1.55] whitespace-pre-wrap text-ink-2">{msg.text}</p>
   )
 }
 
-/** Scrollable message list. */
-function MessageListPanel({ messages }: { messages: ChiefMessage[] }) {
-  const bottomRef = useRef<HTMLDivElement>(null)
+function Messages({ messages, wide }: { messages: ChiefMessage[]; wide: boolean }) {
+  const end = useRef<HTMLDivElement>(null)
+  const first = useRef(true)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (first.current) {
+      first.current = false
+      return
+    }
+    end.current?.scrollIntoView?.({ behavior: 'smooth' })
   }, [messages.length])
-
   return (
-    <div className="flex flex-1 flex-col gap-[12px] overflow-y-auto px-[12px] py-[14px]">
+    <div
+      className={`flex min-h-0 w-full flex-1 flex-col gap-[14px] overflow-y-auto ${
+        wide ? 'px-[160px] py-[24px]' : 'px-[14px] py-[12px]'
+      }`}
+    >
+      <div className="flex w-full justify-center">
+        <span className="font-mono text-[10.5px] text-faint">{CHIEF_DAY_LABEL}</span>
+      </div>
       {messages.map((m) => (
-        <MessageBubble key={m.id} msg={m} />
+        <Message key={m.id} msg={m} />
       ))}
-      <div ref={bottomRef} />
+      <div ref={end} />
     </div>
   )
 }
 
-/** Compact message composer bar. */
-function MiniComposer({
-  value,
-  onChange,
-  onSend,
-  onKeyDown,
-  placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  onSend: () => void
-  onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void
-  placeholder: string
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = '0px'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 20), 80)}px`
-  }, [value])
-
+function Suggestions({ onPick }: { onPick: (p: string) => void }) {
   return (
-    <div className="flex items-end gap-[6px] rounded-lg border border-line-strong bg-surface px-[10px] py-[8px] shadow-[0_4px_12px_#0000001A]">
-      <textarea
-        ref={ref}
-        rows={1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        aria-label="Message Chief"
-        className="flex-1 resize-none bg-transparent text-[13px] leading-[1.4] text-ink outline-none placeholder:text-faint"
-      />
-      <button
-        type="button"
-        aria-label="Send"
-        aria-disabled={!value.trim()}
-        onClick={onSend}
-        className="inline-flex size-[26px] shrink-0 items-center justify-center rounded-btn bg-primary text-primary-ink transition-colors hover:bg-primary-hover disabled:opacity-40"
-      >
-        <ArrowUp size={14} aria-hidden />
-      </button>
-    </div>
-  )
-}
-
-/** Quick prompt chips shown below the messages. */
-function QuickPrompts({ onSelect }: { onSelect: (p: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-[6px] px-[12px] pb-[6px]">
+    <div className="flex w-full shrink-0 gap-[6px] px-[14px] pb-[8px]">
       {QUICK_PROMPTS.map((p) => (
         <button
           key={p}
           type="button"
-          onClick={() => onSelect(p)}
-          className="inline-flex h-[26px] items-center rounded-pill border border-line-strong bg-surface px-[10px] text-[11.5px] text-muted transition-colors hover:bg-soft"
+          onClick={() => onPick(p)}
+          className="inline-flex h-[26px] items-center rounded-pill px-[10px] text-[12px] whitespace-nowrap text-ink-2 outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
         >
           {p}
         </button>
@@ -225,294 +247,229 @@ function QuickPrompts({ onSelect }: { onSelect: (p: string) => void }) {
   )
 }
 
-/** Thread row in the threads list (hM9k9.png). */
-function ThreadRow({
-  thread,
-  onOpen,
-}: {
-  thread: ChiefThread
-  onOpen: (id: string) => void
-}) {
+function ThreadRow({ thread, active, onOpen }: { thread: ChiefThread; active: boolean; onOpen: () => void }) {
   return (
     <button
       type="button"
-      onClick={() => onOpen(thread.id)}
-      className="flex w-full items-start gap-[8px] px-[12px] py-[10px] text-left transition-colors hover:bg-soft"
+      onClick={onOpen}
+      className={`flex w-full gap-[10px] rounded-base px-[10px] py-[9px] text-left transition-colors hover:bg-hover ${
+        active ? 'bg-hover' : ''
+      }`}
     >
-      {thread.unread && (
-        <span
-          aria-label="Unread"
-          className="mt-[6px] size-[6px] shrink-0 rounded-pill bg-info"
-        />
-      )}
-      {!thread.unread && <span className="mt-[6px] size-[6px] shrink-0" />}
       <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <span className="truncate text-[12.5px] leading-[1.4] text-ink">{thread.preview}</span>
+        <span className="flex w-full items-center gap-[6px]">
+          {thread.pinned && <Pin size={12} aria-hidden className="shrink-0 text-muted" />}
+          <span
+            className={`min-w-0 flex-1 truncate text-[13px] text-ink ${thread.unread ? 'font-semibold' : 'font-medium'}`}
+          >
+            {thread.title}
+          </span>
+          <span className="shrink-0 font-mono text-[10.5px] text-faint">{thread.time}</span>
+        </span>
+        <span className="flex w-full items-center gap-[8px]">
+          <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{thread.preview}</span>
+          {thread.unread && (
+            <span aria-label="Unread" className="size-[7px] shrink-0 rounded-pill bg-warn" />
+          )}
+        </span>
       </span>
-      <span className="shrink-0 text-[11px] text-faint">{thread.time}</span>
     </button>
   )
 }
 
-/** Threads list panel (hM9k9.png). */
-function ThreadsPanel({
-  onClose,
-  onSelectThread,
-}: {
-  onClose: () => void
-  onSelectThread: (id: string) => void
-}) {
-  return (
-    <>
-      {/* Header */}
-      <div className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[12px]">
-        <Mascot size={22} radius={7} area="brand" />
-        <span className="flex-1 text-[13px] font-medium text-ink">Private chats</span>
-        <button
-          type="button"
-          aria-label="Search"
-          className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-        >
-          <Search size={15} aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label="Settings"
-          className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-        >
-          <History size={15} aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-        >
-          <X size={15} aria-hidden />
-        </button>
-      </div>
-
-      {/* Label */}
-      <div className="px-[12px] py-[6px]">
-        <span className="text-[10.5px] font-medium uppercase tracking-[0.6px] text-faint">LATEST</span>
-      </div>
-
-      {/* Threads */}
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        {CHIEF_THREADS.map((t) => (
-          <ThreadRow key={t.id} thread={t} onOpen={onSelectThread} />
-        ))}
-        {/* Footer note */}
-        <p className="px-[12px] py-[10px] text-[11.5px] text-faint">
-          Chief never posts to a channel or acts on them unless you see that you start a private chat.
-        </p>
-        <button
-          type="button"
-          className="mx-[12px] mb-[10px] text-left text-[12px] font-medium text-link hover:underline"
-        >
-          Start a new private chat...
-        </button>
-      </div>
-    </>
+function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) => void }) {
+  const [q, setQ] = useState('')
+  const query = q.trim().toLowerCase()
+  const list = CHIEF_THREADS.filter(
+    (t) => !query || `${t.title} ${t.preview}`.toLowerCase().includes(query),
   )
-}
-
-/** Panel header shared by open panel and full-screen. */
-function PanelHeader({
-  isExpanded,
-  onToggleExpand,
-  onShowThreads,
-  onClose,
-}: {
-  isExpanded: boolean
-  onToggleExpand: () => void
-  onShowThreads: () => void
-  onClose: () => void
-}) {
   return (
-    <div className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[12px]">
-      <Mascot size={22} radius={7} area="brand" />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[13px] font-medium text-ink">Chief</span>
-        <span className="text-[11px] text-faint">Private · not in any channel</span>
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-[2px] overflow-y-auto px-[8px] py-[10px]">
+      <div className="w-full px-[6px] pb-[8px]">
+        <label className="flex h-[32px] w-full items-center gap-[8px] rounded-base bg-soft px-[10px] outline-1 -outline-offset-1 outline-line-strong">
+          <Search size={14} aria-hidden className="shrink-0 text-faint" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search private chats"
+            aria-label="Search private chats"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
+          />
+        </label>
       </div>
-      <button
-        type="button"
-        aria-label="Conversation history"
-        onClick={onShowThreads}
-        className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-      >
-        <RotateCcw size={14} aria-hidden />
-      </button>
-      <button
-        type="button"
-        aria-label={isExpanded ? 'Collapse' : 'Expand to full screen'}
-        onClick={onToggleExpand}
-        className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-      >
-        {isExpanded ? <Minimize2 size={14} aria-hidden /> : <Maximize2 size={14} aria-hidden />}
-      </button>
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="inline-flex size-[28px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-      >
-        <X size={15} aria-hidden />
-      </button>
+      {(['TODAY', 'EARLIER'] as const).map((g) => {
+        const rows = list.filter((t) => t.group === g)
+        if (!rows.length) return null
+        return (
+          <div key={g} className="contents">
+            <div className="px-[10px] pt-[10px] pb-[4px] text-[10.5px] leading-[1.21] font-semibold tracking-[1px] text-faint">
+              {g}
+            </div>
+            {rows.map((t) => (
+              <ThreadRow key={t.id} thread={t} active={t.id === activeId} onOpen={() => onOpen(t.id)} />
+            ))}
+          </div>
+        )
+      })}
+      <div className="flex w-full gap-[8px] px-[10px] pt-[16px] pb-[4px]">
+        <Lock size={12} aria-hidden className="mt-[2px] shrink-0 text-faint" />
+        <p className="m-0 flex-1 text-[11.5px] leading-[1.45] text-muted">{THREADS_NOTE}</p>
+      </div>
     </div>
   )
 }
 
-// ── Main widget ───────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
-/**
- * Self-contained floating Chief DM widget.
- * Mount once in the Shell as <ChiefDm /> — no props needed.
- */
-export function ChiefDm() {
-  const [state, setState] = useState<PanelState>('nudge')
+export function ChiefDm({ initial }: { initial?: ChiefDmState } = {}) {
+  const [state, setState] = useState<ChiefDmState>(() => initial ?? initialState())
   const [messages, setMessages] = useState<ChiefMessage[]>(CHIEF_MESSAGES)
   const [draft, setDraft] = useState('')
+  const [activeThread, setActiveThread] = useState('t1')
+  const [seen, setSeen] = useState(false)
 
-  // Show nudge after 3s if still closed — simulate proactive Chief
+  // ⌘/Ctrl-J toggles; Esc closes.
   useEffect(() => {
-    if (state !== 'closed') return
-    const t = setTimeout(() => setState('nudge'), 3000)
-    return () => clearTimeout(t)
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'j' || e.key === 'J')) {
+        e.preventDefault()
+        setState((s) => (s === 'open' || s === 'full' || s === 'threads' ? 'closed' : 'open'))
+      } else if (e.key === 'Escape') {
+        setState((s) => (s === 'full' ? 'open' : s === 'closed' ? s : 'closed'))
+      }
+    }
+    function onNudge() {
+      setState((s) => (s === 'closed' ? 'nudge' : s))
+    }
+    /** Command menu "Ask Chief" / "Talk to Chief privately": open, prefill the question. */
+    function onAsk(e: Event) {
+      const text = (e as CustomEvent<string>).detail
+      if (text) setDraft(text)
+      setState('open')
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('omilo:chief-nudge', onNudge)
+    window.addEventListener('omilo:chief-ask', onAsk)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('omilo:chief-nudge', onNudge)
+      window.removeEventListener('omilo:chief-ask', onAsk)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state === 'open' || state === 'full' || state === 'threads') setSeen(true)
   }, [state])
 
-  const unread = CHIEF_THREADS.filter((t) => t.unread).length
+  const unread = seen ? 0 : CHIEF_THREADS.filter((t) => t.unread).length
 
-  function send() {
-    const text = draft.trim()
-    if (!text) return
+  function send(text: string) {
     const now = new Date()
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, kind: 'user', text, time }])
-    setDraft('')
+    setMessages((prev) => [...prev, { id: `u-${prev.length}-${time}`, kind: 'user', text, time }])
+    if (state === 'threads') setState('open')
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
-  }
-
-  function handleQuickPrompt(p: string) {
-    setDraft(p)
-  }
-
-  function handleSelectThread(_id: string) {
-    // Re-open the chat panel (single-thread mode for now)
-    setState('panel')
-  }
-
-  // ── Closed state ─────────────────────────────────────────────────────────
-  if (state === 'closed') {
+  if (state === 'closed' || state === 'nudge') {
     return (
-      <div className="fixed bottom-[20px] right-[20px] z-50 flex flex-col items-end gap-[10px]">
-        <FloatingButton unreadCount={unread} onClick={() => setState('panel')} />
-      </div>
+      <>
+        {state === 'nudge' && (
+          <Nudge
+            onDismiss={() => setState('closed')}
+            onAccept={() => {
+              setDraft('Walk me through the 3pm with Pak RT')
+              setState('open')
+            }}
+            onLater={() => setState('closed')}
+          />
+        )}
+        <Fab unread={unread} onOpen={() => setState('open')} />
+      </>
     )
   }
 
-  // ── Nudge state ───────────────────────────────────────────────────────────
-  if (state === 'nudge') {
-    return (
-      <div className="fixed bottom-[20px] right-[20px] z-50 flex flex-col items-end gap-[10px]">
-        <NudgeBubble
-          onDismiss={() => setState('closed')}
-          onOpen={() => setState('panel')}
-          onAction={() => setState('panel')}
-        />
-        <FloatingButton unreadCount={unread} onClick={() => setState('panel')} />
-      </div>
-    )
-  }
+  const full = state === 'full'
+  const threads = state === 'threads'
 
-  // ── Expanded (full-screen dialog via Radix) ───────────────────────────────
-  if (state === 'expanded') {
-    return (
-      <Dialog.Root open onOpenChange={(open) => !open && setState('panel')}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]" />
-          <Dialog.Content
-            aria-label="Chief DM — full screen"
-            className="fixed inset-0 z-50 m-auto flex h-[520px] w-[640px] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0000002A] outline-1 -outline-offset-1 outline-line-strong"
-          >
-            <PanelHeader
-              isExpanded
-              onToggleExpand={() => setState('panel')}
-              onShowThreads={() => setState('threads')}
-              onClose={() => setState('closed')}
-            />
-            <MessageListPanel messages={messages} />
-            <div className="shrink-0 px-[16px] pb-[16px] pt-[8px]">
-              <QuickPrompts onSelect={handleQuickPrompt} />
-              <MiniComposer
-                value={draft}
-                onChange={setDraft}
-                onSend={send}
-                onKeyDown={handleKeyDown}
-                placeholder="Think out loud with Chief..."
+  const panel = (
+    <section
+      role="dialog"
+      aria-label={threads ? 'Private chats with Chief' : 'Chief — private chat'}
+      className={`fixed z-50 flex flex-col overflow-hidden rounded-[16px] bg-surface shadow-[0_16px_40px_#0C0A0926] outline-1 -outline-offset-1 outline-line-strong ${
+        full
+          ? 'top-[24px] bottom-[24px] left-1/2 w-[min(1040px,calc(100vw-48px))] -translate-x-1/2'
+          : 'right-[24px] bottom-[88px] h-[min(628px,calc(100vh-112px))] w-[400px]'
+      }`}
+    >
+      {threads ? (
+        <Header
+          title="Private chats"
+          sub={`${CHIEF_THREADS.length - 1} with Chief · only you see these`}
+          actions={
+            <>
+              <HeadButton icon={History} label="Back to chat" active onClick={() => setState('open')} />
+              <HeadButton
+                icon={SquarePen}
+                label="New chat"
+                onClick={() => {
+                  setMessages([])
+                  setState('open')
+                }}
               />
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-    )
-  }
-
-  // ── Threads list (floats, replacing panel body) ───────────────────────────
-  if (state === 'threads') {
-    return (
-      <div className="fixed bottom-[20px] right-[20px] z-50">
-        <div className="flex h-[480px] w-[320px] flex-col overflow-hidden rounded-lg bg-surface shadow-[0_8px_32px_#0000001F] outline-1 -outline-offset-1 outline-line-strong">
-          <ThreadsPanel
-            onClose={() => setState('closed')}
-            onSelectThread={handleSelectThread}
-          />
-        </div>
-        {/* Scroll-to-bottom button shown at bottom edge */}
-        <div className="pointer-events-none absolute right-[12px] -bottom-[46px] flex justify-end">
-          <button
-            type="button"
-            aria-label="Back to chat"
-            onClick={() => setState('panel')}
-            className="pointer-events-auto inline-flex size-[36px] items-center justify-center rounded-pill bg-surface shadow-[0_2px_10px_#0000001A] outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
-          >
-            <ChevronDown size={16} aria-hidden className="text-muted" />
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Open panel (nkqAN.png) ────────────────────────────────────────────────
-  // state === 'panel'
-  return (
-    <div className="fixed bottom-[20px] right-[20px] z-50">
-      <div className="flex h-[480px] w-[320px] flex-col overflow-hidden rounded-lg bg-surface shadow-[0_8px_32px_#0000001F] outline-1 -outline-offset-1 outline-line-strong">
-        <PanelHeader
-          isExpanded={false}
-          onToggleExpand={() => setState('expanded')}
-          onShowThreads={() => setState('threads')}
-          onClose={() => setState('closed')}
+              <HeadButton icon={X} label="Close" onClick={() => setState('closed')} />
+            </>
+          }
         />
-        <MessageListPanel messages={messages} />
-        <div className="shrink-0 px-[10px] pb-[10px] pt-[4px]">
-          <QuickPrompts onSelect={handleQuickPrompt} />
-          <MiniComposer
-            value={draft}
-            onChange={setDraft}
-            onSend={send}
-            onKeyDown={handleKeyDown}
-            placeholder="Think out loud with Chief..."
-          />
-        </div>
+      ) : (
+        <Header
+          title="Chief"
+          sub="Private · not in any channel"
+          actions={
+            <>
+              <HeadButton icon={History} label="Private chats" onClick={() => setState('threads')} />
+              <HeadButton
+                icon={Maximize2}
+                label={full ? 'Back to drawer' : 'Open full screen'}
+                onClick={() => setState(full ? 'open' : 'full')}
+              />
+              <HeadButton icon={X} label="Close" onClick={() => setState('closed')} />
+            </>
+          }
+        />
+      )}
+      {threads ? (
+        <Threads
+          activeId={activeThread}
+          onOpen={(id) => {
+            setActiveThread(id)
+            setState('open')
+          }}
+        />
+      ) : (
+        <>
+          <Messages messages={messages} wide={full} />
+          <Suggestions onPick={setDraft} />
+        </>
+      )}
+      <div className="w-full shrink-0 px-[12px] pb-[12px]">
+        <ChiefComposer
+          placeholder={threads ? 'Start a new private chat…' : 'Think out loud with Chief…'}
+          compact={!full}
+          value={draft}
+          onChange={setDraft}
+          onSend={send}
+        />
       </div>
-    </div>
+    </section>
+  )
+
+  return (
+    <>
+      {full && (
+        <div aria-hidden className="fixed inset-0 z-50 bg-[#0C0A0933]" onClick={() => setState('open')} />
+      )}
+      {panel}
+      {!full && <FabOpen onClose={() => setState('closed')} />}
+    </>
   )
 }

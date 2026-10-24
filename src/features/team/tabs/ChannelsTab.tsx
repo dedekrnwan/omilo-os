@@ -1,207 +1,171 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import { Button } from '../../../ui/ds/Button'
-import type { HelperRecord, ConnectedChannel } from '../teamData'
-import { ConnectTelegramDialog } from '../channel-dialogs/ConnectTelegramDialog'
-import { ConnectWhatsAppDialog } from '../channel-dialogs/ConnectWhatsAppDialog'
-import { ConnectEmailDialog } from '../channel-dialogs/ConnectEmailDialog'
+import { Check, ChevronDown, ChevronUp, Mail, MessageCircle, MessagesSquare, Plus, Send } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { HelperRecord } from '../teamData'
+import { SlackIcon } from '../brandIcons'
+import { Btn, Chip, Eyebrow, IconBtn, Segmented, Switch } from '../ui'
 
-// ── Channel row ────────────────────────────────────────────────────────────────
+export const TG_BLUE = '#229ED9'
+export const WA_GREEN = '#25D366'
 
-function ChannelIcon({ id }: { id: string }) {
-  if (id === 'omilo') return <span className="text-[16px]">💬</span>
-  if (id === 'whatsapp') return <span className="text-[16px]" style={{ color: '#25D366' }}>●</span>
-  if (id === 'telegram') return <span className="text-[16px]" style={{ color: '#2AABEE' }}>✈</span>
-  if (id === 'email') return <span className="text-[16px]">✉</span>
-  if (id === 'slack') return <span className="text-[16px]">#</span>
-  return <span className="text-[16px]">📡</span>
-}
-
-function BuiltInBadge() {
+export function ChannelLogo({ icon: Icon, bg, ink = '#FFFFFF' }: { icon: LucideIcon; bg?: string; ink?: string }) {
   return (
-    <span className="rounded-pill bg-line-strong px-[8px] py-[2px] text-[11px] text-muted">
-      Built in · always on
+    <span
+      className={`flex size-[36px] shrink-0 items-center justify-center rounded-md ${bg ? '' : 'bg-soft'}`}
+      style={bg ? { background: bg } : undefined}
+    >
+      <Icon size={18} aria-hidden style={{ color: bg ? ink : 'var(--color-ink)' }} />
     </span>
   )
 }
 
-function ConnectedBadge() {
+function SettingLine({
+  title,
+  desc,
+  last,
+  children,
+}: {
+  title: string
+  desc?: string
+  last?: boolean
+  children: React.ReactNode
+}) {
   return (
-    <span className="flex items-center gap-[4px] rounded-pill bg-ok-tint px-[8px] py-[2px] text-[11px] font-medium text-ok">
-      ✓ Connected
-    </span>
-  )
-}
-
-function ComingSoonBadge() {
-  return (
-    <span className="rounded-pill bg-line-strong px-[8px] py-[2px] text-[11px] text-muted">
-      Coming soon
-    </span>
-  )
-}
-
-interface ConnectedWhatsAppExpandedProps {
-  channel: ConnectedChannel
-}
-
-function ConnectedWhatsAppExpanded({ channel }: ConnectedWhatsAppExpandedProps) {
-  return (
-    <div className="mt-[10px] flex flex-col gap-[12px] pl-[36px]">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[12px] font-medium text-ink">Who can start a chat</div>
-          <div className="text-[11.5px] text-muted">Unknown numbers get a short intro first.</div>
-        </div>
-        <div className="flex gap-[4px]">
-          <button type="button" className="h-[24px] rounded-pill bg-primary px-[10px] text-[11.5px] font-medium text-primary-ink">
-            Anyone
-          </button>
-          <button type="button" className="h-[24px] rounded-pill bg-soft px-[10px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-            Known residents
-          </button>
-        </div>
+    <div className={`flex w-full items-center gap-[16px] py-[12px] ${last ? '' : 'shadow-[inset_0_-1px_0_var(--color-line)]'}`}>
+      <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+        <span className="text-[13px] font-medium text-ink">{title}</span>
+        {desc && <span className="text-[12px] text-muted">{desc}</span>}
       </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[12px] font-medium text-ink">When {channel.name} replies</div>
-        </div>
-        <div className="flex gap-[4px]">
-          <button type="button" className="h-[24px] rounded-pill bg-primary px-[10px] text-[11.5px] font-medium text-primary-ink">
-            Always
-          </button>
-          <button type="button" className="h-[24px] rounded-pill bg-soft px-[10px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-            Work hours
-          </button>
-        </div>
-      </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[12px] font-medium text-ink">Hand off to a person</div>
-          <div className="text-[11.5px] text-muted">After 2 tries without an answer, Support pings you and tells the resident.</div>
-        </div>
-        {/* toggle on */}
-        <div className="relative h-[18px] w-[30px] rounded-full bg-ok" aria-hidden>
-          <span className="absolute top-[2px] left-[14px] size-[14px] rounded-full bg-surface shadow-sm" />
-        </div>
-      </div>
-      <button
-        type="button"
-        className="self-start rounded-md bg-bad-tint px-[10px] py-[5px] text-[12px] font-medium text-bad outline-1 -outline-offset-1 outline-bad-line hover:bg-bad-tint/80 transition-colors"
-      >
-        Disconnect
-      </button>
+      {children}
     </div>
   )
 }
 
-// ── ChannelsTab ────────────────────────────────────────────────────────────────
-
-interface ChannelsTabProps {
-  helper: HelperRecord
+function AvailableRow({
+  icon,
+  bg,
+  name,
+  desc,
+  last,
+  children,
+}: {
+  icon: LucideIcon
+  bg?: string
+  name: string
+  desc: string
+  last?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className={`flex w-full items-center gap-[12px] px-[16px] py-[12px] ${last ? '' : 'shadow-[inset_0_-1px_0_var(--color-line)]'}`}>
+      <ChannelLogo icon={icon} bg={bg} />
+      <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+        <span className="text-[13.5px] font-semibold text-ink">{name}</span>
+        <span className="text-[12.5px] text-muted">{desc}</span>
+      </div>
+      {children}
+    </div>
+  )
 }
 
-export function ChannelsTab({ helper }: ChannelsTabProps) {
-  const [whatsappExpanded, setWhatsappExpanded] = useState(false)
-  const [telegramOpen, setTelegramOpen] = useState(false)
-  const [whatsappOpen, setWhatsappOpen] = useState(false)
-  const [emailOpen, setEmailOpen] = useState(false)
-
-  const connected = helper.channels.filter((c) => c.builtIn || c.connected)
-  const addable = helper.channels.filter((c) => !c.builtIn && !c.connected)
-
+/** Channels tab — pen wwL68. */
+export function ChannelsTab({
+  helper,
+  onConnect,
+}: {
+  helper: HelperRecord
+  onConnect: (c: 'telegram' | 'whatsapp' | 'email') => void
+}) {
+  const n = helper.name
+  const [open, setOpen] = useState(true)
+  const [who, setWho] = useState<'Anyone' | 'Known residents'>('Anyone')
+  const [when, setWhen] = useState<'Always' | 'Work hours'>('Always')
+  const [handoff, setHandoff] = useState(true)
   return (
-    <>
-      <div className="flex flex-col gap-[24px]">
-        {/* Intro */}
-        <div>
-          <h3 className="m-0 text-[13px] font-medium text-ink mb-[4px]">
-            Where people can reach {helper.name}
-          </h3>
-          <p className="m-0 text-[12.5px] text-muted">
-            Omilo chat is always on. Connect another app and {helper.name} answers there too — same memory, same rules, every conversation lands back in #{helper.name.toLowerCase()}.
-          </p>
-        </div>
-
-        {/* Connected channels */}
-        {connected.length > 0 && (
-          <div>
-            <div className="text-[10.5px] font-medium tracking-[0.55px] text-faint uppercase mb-[8px]">
-              Connected {connected.length}
-            </div>
-            <div className="flex flex-col gap-[1px]">
-              {connected.map((ch) => (
-                <div key={ch.id}>
-                  <div className="flex items-center gap-[10px] rounded-md px-[2px] py-[10px]">
-                    <ChannelIcon id={ch.id} />
-                    <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                      <span className="text-[13px] font-medium text-ink">{ch.name}</span>
-                      <span className="text-[11.5px] text-muted">{ch.meta}</span>
-                    </div>
-                    {ch.builtIn && <BuiltInBadge />}
-                    {ch.connected && !ch.builtIn && (
-                      <button
-                        type="button"
-                        onClick={() => setWhatsappExpanded((v) => !v)}
-                        className="flex items-center gap-[4px]"
-                      >
-                        <ConnectedBadge />
-                        {whatsappExpanded ? (
-                          <ChevronUp size={13} className="text-muted" />
-                        ) : (
-                          <ChevronDown size={13} className="text-muted" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  {ch.connected && whatsappExpanded && (
-                    <ConnectedWhatsAppExpanded channel={ch} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Add a channel */}
-        {addable.length > 0 && (
-          <div>
-            <div className="text-[10.5px] font-medium tracking-[0.55px] text-faint uppercase mb-[8px]">
-              Add a channel
-            </div>
-            <div className="flex flex-col gap-[1px]">
-              {addable.map((ch) => (
-                <div key={ch.id} className="flex items-center gap-[10px] rounded-md px-[2px] py-[10px]">
-                  <ChannelIcon id={ch.id} />
-                  <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                    <span className="text-[13px] font-medium text-ink">{ch.name}</span>
-                    <span className="text-[11.5px] text-muted">{ch.meta}</span>
-                  </div>
-                  {ch.comingSoon ? (
-                    <ComingSoonBadge />
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      height={28}
-                      onClick={() => {
-                        if (ch.id === 'telegram') setTelegramOpen(true)
-                        if (ch.id === 'whatsapp') setWhatsappOpen(true)
-                        if (ch.id === 'email') setEmailOpen(true)
-                      }}
-                    >
-                      + Connect
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+    <div className="flex w-full flex-col gap-[20px]">
+      <div className="flex w-full flex-col gap-[2px]">
+        <h3 className="m-0 text-[14px] font-semibold text-ink">Where people can reach {n}</h3>
+        <p className="m-0 text-[12.5px] leading-[1.5] text-muted">
+          Omilo chat is always on. Connect another app and {n} answers there too — same memory, same rules, every
+          conversation lands back in #support.
+        </p>
       </div>
 
-      {telegramOpen && <ConnectTelegramDialog onClose={() => setTelegramOpen(false)} />}
-      {whatsappOpen && <ConnectWhatsAppDialog onClose={() => setWhatsappOpen(false)} />}
-      {emailOpen && <ConnectEmailDialog onClose={() => setEmailOpen(false)} />}
-    </>
+      <section className="flex w-full flex-col gap-[10px]">
+        <Eyebrow>CONNECTED · 2</Eyebrow>
+        <div className="flex w-full items-center gap-[12px] overflow-hidden rounded-lg px-[16px] py-[14px] outline-1 -outline-offset-1 outline-line-strong">
+          <ChannelLogo icon={MessagesSquare} />
+          <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <span className="text-[14px] font-semibold text-ink">Omilo chat</span>
+            <span className="text-[12.5px] text-muted">In-app · #support, #general and direct messages</span>
+          </div>
+          <Chip tone="neutral">Built in · always on</Chip>
+        </div>
+        <div className="flex w-full flex-col overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong">
+          <div className="flex w-full items-center gap-[12px] px-[16px] py-[14px]">
+            <ChannelLogo icon={MessageCircle} bg={WA_GREEN} />
+            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+              <span className="text-[14px] font-semibold text-ink">WhatsApp Business</span>
+              <span className="text-[12.5px] text-muted">+62 812 •••• 4410 · Sahabat Warga · 214 chats this month</span>
+            </div>
+            <Chip tone="ok" icon={Check}>
+              Connected
+            </Chip>
+            <IconBtn
+              icon={open ? ChevronUp : ChevronDown}
+              label={open ? 'Collapse' : 'Expand'}
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+            />
+          </div>
+          {open && (
+            <div className="flex w-full flex-col shadow-[inset_0_1px_0_var(--color-line)] bg-soft px-[16px]">
+              <SettingLine title="Who can start a chat" desc="Unknown numbers get a short intro first.">
+                <Segmented
+                  items={['Anyone', 'Known residents'] as const}
+                  value={who}
+                  onChange={setWho}
+                  bg="bg-surface"
+                  onBg="bg-soft"
+                />
+              </SettingLine>
+              <SettingLine title={`When ${n} replies`}>
+                <Segmented items={['Always', 'Work hours'] as const} value={when} onChange={setWhen} bg="bg-surface" onBg="bg-soft" />
+              </SettingLine>
+              <SettingLine
+                title="Hand off to a person"
+                desc={`After 2 tries without an answer, ${n} pings you and tells the resident.`}
+              >
+                <Switch on={handoff} onChange={setHandoff} label="Hand off to a person" />
+              </SettingLine>
+              <SettingLine title="Disconnect" desc={`Stops replies on WhatsApp. Past chats stay in #support.`} last>
+                <Btn variant="danger" h={30}>
+                  Disconnect
+                </Btn>
+              </SettingLine>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="flex w-full flex-col gap-[10px]">
+        <Eyebrow>ADD A CHANNEL</Eyebrow>
+        <div className="flex w-full flex-col rounded-lg outline-1 -outline-offset-1 outline-line-strong">
+          <AvailableRow icon={Send} bg={TG_BLUE} name="Telegram" desc="Connect a bot from @BotFather — paste its token, done.">
+            <Btn icon={Plus} h={30} onClick={() => onConnect('telegram')}>
+              Connect
+            </Btn>
+          </AvailableRow>
+          <AvailableRow icon={Mail} name="Email" desc={`${n} answers from support@sahabatwarga.id`}>
+            <Btn icon={Plus} h={30} onClick={() => onConnect('email')}>
+              Connect
+            </Btn>
+          </AvailableRow>
+          <AvailableRow icon={SlackIcon} name="Slack" desc="For teams that live in Slack" last>
+            <Chip tone="idle">Coming soon</Chip>
+          </AvailableRow>
+        </div>
+      </section>
+    </div>
   )
 }

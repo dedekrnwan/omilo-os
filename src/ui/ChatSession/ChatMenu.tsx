@@ -1,17 +1,9 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import {
-  Archive,
-  ExternalLink,
-  FolderOpen,
-  Link2,
-  MapPin,
-  Pencil,
-  Target,
-  Trash2,
-} from 'lucide-react'
-import { menuSurface, menuItemClass, MenuSeparatorLine } from '../ds/Menu'
+import type { LucideIcon } from 'lucide-react'
+import { Archive, FileDown, FolderInput, Link, Pencil, Pin, Target, Trash2 } from 'lucide-react'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../ds/Menu'
 
-// ── Chat menu (pen ref ERnYB) — the topbar "…" dropdown ──────────────────────
+// ── Chat menu (pen `Chat · Session · Chat menu` ERnYB) — the topbar "…" dropdown ──
 
 interface ChatMenuProps {
   onRename?: () => void
@@ -22,7 +14,16 @@ interface ChatMenuProps {
   onCopyLink?: () => void
   onArchive?: () => void
   onDelete?: () => void
+  defaultOpen?: boolean
   children: React.ReactNode
+}
+
+function Item({ icon, label, hint, danger, onSelect }: { icon: LucideIcon; label: string; hint?: string; danger?: boolean; onSelect?: () => void }) {
+  return (
+    <DropdownMenu.Item className={menuItemClass} onSelect={onSelect}>
+      <MenuItemBody icon={icon} label={label} hint={hint} danger={danger} />
+    </DropdownMenu.Item>
+  )
 }
 
 export function ChatMenu({
@@ -34,88 +35,24 @@ export function ChatMenu({
   onCopyLink,
   onArchive,
   onDelete,
+  defaultOpen,
   children,
 }: ChatMenuProps) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root defaultOpen={defaultOpen} modal={false}>
       <DropdownMenu.Trigger asChild>{children}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          side="bottom"
-          align="end"
-          sideOffset={6}
-          className={`z-50 w-[220px] ${menuSurface}`}
-        >
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onRename}
-          >
-            <Pencil size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Rename</span>
-            <span className="font-mono text-[11px] text-faint">⌘2</span>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onMoveToFolder}
-          >
-            <FolderOpen size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Move to folder</span>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onLinkToGoal}
-          >
-            <Target size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Link to goal</span>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onPinToSidebar}
-          >
-            <MapPin size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Pin to sidebar</span>
-          </DropdownMenu.Item>
-
+        <DropdownMenu.Content side="bottom" align="end" sideOffset={7} alignOffset={4} className={`z-50 w-[240px] ${menuSurface}`}>
+          <Item icon={Pencil} label="Rename" hint="F2" onSelect={onRename} />
+          <Item icon={FolderInput} label="Move to folder" onSelect={onMoveToFolder} />
+          <Item icon={Target} label="Link to goal" onSelect={onLinkToGoal} />
+          <Item icon={Pin} label="Pin to sidebar" onSelect={onPinToSidebar} />
           <MenuSeparatorLine />
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onExportMarkdown}
-          >
-            <ExternalLink size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Export as Markdown</span>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onCopyLink}
-          >
-            <Link2 size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Copy link</span>
-            <span className="font-mono text-[11px] text-faint">⌘L</span>
-          </DropdownMenu.Item>
-
+          <Item icon={FileDown} label="Export as Markdown" onSelect={onExportMarkdown} />
+          <Item icon={Link} label="Copy link" hint="⌘L" onSelect={onCopyLink} />
           <MenuSeparatorLine />
-
-          <DropdownMenu.Item
-            className={menuItemClass}
-            onSelect={onArchive}
-          >
-            <Archive size={15} aria-hidden className="text-muted" />
-            <span className="flex-1 text-[13px] text-ink">Archive chat</span>
-            <span className="font-mono text-[11px] text-faint">⌨</span>
-          </DropdownMenu.Item>
-
-          <DropdownMenu.Item
-            className={`${menuItemClass} group`}
-            onSelect={onDelete}
-          >
-            <Trash2 size={15} aria-hidden className="text-bad" />
-            <span className="flex-1 text-[13px] text-bad">Delete chat</span>
-          </DropdownMenu.Item>
+          <Item icon={Archive} label="Archive chat" hint="E" onSelect={onArchive} />
+          <Item icon={Trash2} label="Delete chat" danger onSelect={onDelete} />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

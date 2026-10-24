@@ -42,7 +42,7 @@ export function Shell() {
 
   return (
     <div role="application" className="flex h-svh w-full overflow-hidden bg-app">
-      <Rail onOpenCommandMenu={() => setCmdOpen(true)} />
+      <Rail />
       <Outlet />
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
       <ChiefDm />

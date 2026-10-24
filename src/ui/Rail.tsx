@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
@@ -13,7 +13,6 @@ import {
   MessageCircle,
   MessageSquareHeart,
   Plus,
-  Search,
   Settings,
   ShieldCheck,
   UserRound,
@@ -129,6 +128,8 @@ function TrayButton({
   current,
   context = 'rail',
   onClick,
+  onMouseEnter,
+  onFocus,
   iconClassName,
   expanded,
 }: {
@@ -141,6 +142,8 @@ function TrayButton({
   current?: boolean
   context?: TrayContext
   onClick?: () => void
+  onMouseEnter?: () => void
+  onFocus?: () => void
   iconClassName?: string
   expanded?: boolean
 }) {
@@ -159,6 +162,8 @@ function TrayButton({
       aria-current={current ? 'page' : undefined}
       aria-expanded={expanded}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onFocus={onFocus}
       className={`group relative flex size-[30px] shrink-0 items-center justify-center ${
         glyph ? 'rounded-[9px]' : 'rounded-md'
       } transition-colors ${look}`}
@@ -192,7 +197,30 @@ interface BottomActionsProps {
  */
 function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage }: BottomActionsProps) {
   const [open, setOpen] = useState(false)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navigate = useNavigate()
+  // ⋯ opens the tray on hover (click/focus too, for keyboard and touch);
+  // leaving the tray closes it after a short grace period.
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    closeTimer.current = null
+  }
+  const openTray = () => {
+    cancelClose()
+    setOpen(true)
+  }
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => setOpen(false), 250)
+  }
+  useEffect(() => cancelClose, [])
+  const hoverProps = {
+    onMouseEnter: cancelClose,
+    onMouseLeave: scheduleClose,
+    onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose()
+    },
+  }
   const yolo = autonomy === 'yolo'
   const autonomyProps = {
     label: 'Autonomy',
@@ -233,7 +261,12 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
 
   if (open) {
     return (
-      <div role="group" aria-label="Rail actions" className="flex flex-col items-center gap-[2px] rounded-lg bg-[#E7E5E4] p-[3px]">
+      <div
+        role="group"
+        aria-label="Rail actions"
+        {...hoverProps}
+        className="flex flex-col items-center gap-[2px] rounded-lg bg-[#E7E5E4] p-[3px]"
+      >
         <TrayButton context="tray" {...items.team} />
         <TrayButton context="tray" {...items.notifications} />
         <TrayButton context="tray" {...items.settings} />
@@ -253,7 +286,7 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
 
   const bellOut = unread > 0 || items.notifications.current
   return (
-    <div role="group" aria-label="Rail actions" className="flex flex-col items-center gap-[10px] rounded-lg">
+    <div role="group" aria-label="Rail actions" {...hoverProps} className="flex flex-col items-center gap-[10px] rounded-lg">
       {items.team.current && <TrayButton {...items.team} />}
       {bellOut && <TrayButton {...items.notifications} />}
       {items.settings.current && <TrayButton {...items.settings} />}
@@ -264,7 +297,9 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
         icon={Ellipsis}
         dot={!bellOut && unread > 0}
         expanded={false}
-        onClick={() => setOpen(true)}
+        onClick={openTray}
+        onMouseEnter={openTray}
+        onFocus={openTray}
       />
     </div>
   )
@@ -379,7 +414,7 @@ function ProfileMenu() {
  * Omilo mark → companies → spacer → tray (notifications, more) →
  * Chat/Office mode switch → you.
  */
-export function Rail({ onOpenCommandMenu }: { onOpenCommandMenu?: () => void } = {}) {
+export function Rail() {
   const navigate = useNavigate()
   const location = useLocation()
   const { mode, toggleTarget } = useUIStore()
@@ -420,16 +455,6 @@ export function Rail({ onOpenCommandMenu }: { onOpenCommandMenu?: () => void } =
       </div>
 
       <div className="w-px flex-1" />
-
-      {onOpenCommandMenu && (
-        <TrayButton
-          label="Search"
-          tooltip="Search"
-          kbd="⌘K"
-          icon={Search}
-          onClick={onOpenCommandMenu}
-        />
-      )}
 
       <BottomActions currentPage={currentPage} />
 

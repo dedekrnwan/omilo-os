@@ -12,7 +12,7 @@ import {
   SettingRow,
   SubHeading,
   Toggle,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 
 const AGENTS: Array<{ area: 'ops' | 'dev' | 'marketing' | 'finance' | 'support' | 'sales'; active: boolean }> = [

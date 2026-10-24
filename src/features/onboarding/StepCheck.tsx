@@ -1,106 +1,86 @@
-import { ArrowLeft, ArrowRight, Pencil, Plus, AlertTriangle } from 'lucide-react'
+/** Onboarding 4 · Check (pen M1ZiO). */
+import { ArrowLeft, ArrowRight, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { Button } from '../../ui/ds/Button'
-import { COMPANY_NAME, CHECK_NOTES } from './data'
+import { CHECK_NOTES, COMPANY_NAME, KNOWLEDGE_NOTES } from './data'
+import type { CheckNote } from './data'
+import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
 
-interface StepCheckProps {
-  onBack: () => void
-  onNext: () => void
-}
-
-export function StepCheck({ onBack, onNext }: StepCheckProps) {
+function NoteCard({ note }: { note: CheckNote }) {
+  const meta = KNOWLEDGE_NOTES.find((k) => k.id === note.id)!
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Content */}
-      <div className="flex min-h-0 flex-1 flex-col gap-[24px] overflow-y-auto px-[40px] py-[32px]">
-        {/* Heading */}
-        <div className="flex items-center gap-[14px]">
-          <Mascot size={44} radius={12} area="brand" />
-          <div className="flex flex-col gap-[4px]">
-            <h2
-              className="m-0 font-display text-[26px] font-semibold leading-tight tracking-[-0.4px] text-ink"
-              style={{ fontVariationSettings: '"opsz" 96' }}
-            >
-              Here&apos;s what I understood about {COMPANY_NAME}
-            </h2>
-            <p className="m-0 text-[13px] text-muted">
-              Fix anything that&apos;s off. Helpers read these 7 notes before every job, and you can
-              edit them later in Company.
-            </p>
-          </div>
-        </div>
-
-        {/* Grid of notes */}
-        <div className="grid grid-cols-4 gap-[8px]">
-          {CHECK_NOTES.map((note) => (
-            <NoteCard key={note.id} note={note} />
-          ))}
-          {/* Add something I missed */}
-          <button
-            type="button"
-            className="flex flex-col items-center justify-center gap-[6px] rounded-lg p-[16px] text-muted transition-colors hover:bg-soft"
-            style={{
-              border: '1px dashed var(--color-line-strong)',
-              minHeight: 120,
-            }}
-          >
-            <Plus size={18} aria-hidden />
-            <span className="text-[12.5px]">Add something I missed</span>
-          </button>
-        </div>
+    <article className="relative flex min-w-0 flex-1 flex-col gap-[8px] self-start rounded-md bg-surface p-[14px]">
+      <div className="flex w-full items-center gap-[8px]">
+        <IconTile icon={meta.icon} />
+        <h3 className="text-[14px] font-semibold text-ink">{meta.label}</h3>
+        <span className="h-px flex-1" />
+        <button type="button" aria-label={`Edit ${meta.label}`} className="text-muted hover:text-ink">
+          <Pencil size={14} aria-hidden />
+        </button>
       </div>
-
-      {/* Footer */}
-      <div
-        className="flex h-[56px] shrink-0 items-center gap-[12px] px-[40px]"
-        style={{ borderTop: '1px solid var(--color-line-strong)' }}
-      >
-        <Button variant="secondary" icon={ArrowLeft} onClick={onBack}>
-          Back to our chat
-        </Button>
-        <span className="flex-1 text-[12px] text-muted">Took 9 minutes · 23 answers</span>
-        <Button variant="primary" icon={ArrowRight} onClick={onNext}>
-          Looks right, build my team
-        </Button>
-      </div>
-    </div>
+      <p className="w-full text-[13px] leading-[1.5] whitespace-pre-line text-ink-2">{note.content}</p>
+      {note.kpi && (
+        <div className="flex w-full gap-[8px] pt-[2px]">
+          <span aria-hidden className="mt-[4px] size-[7px] shrink-0 rounded-full bg-helper-brand" />
+          <span className="min-w-0 flex-1 text-[12px] text-muted">{note.kpi}</span>
+        </div>
+      )}
+      {note.suggested && (
+        <div className="flex items-center gap-[6px]">
+          <TriangleAlert size={12} aria-hidden className="text-warn" />
+          <span className="text-[11px] font-medium text-warn">{note.suggested}</span>
+        </div>
+      )}
+      <Stroke />
+    </article>
   )
 }
 
-function NoteCard({ note }: { note: (typeof CHECK_NOTES)[0] }) {
+export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const rows = [CHECK_NOTES.slice(0, 4), CHECK_NOTES.slice(4)]
   return (
-    <div
-      className="flex flex-col gap-[10px] rounded-lg p-[14px]"
-      style={{
-        border: '1px solid var(--color-line-strong)',
-        background: 'var(--color-surface)',
-        minHeight: 120,
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold text-ink">{note.label}</span>
-        <button
-          type="button"
-          className="flex size-[22px] shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-        >
-          <Pencil size={12} aria-hidden />
-        </button>
-      </div>
-
-      <p className="m-0 flex-1 text-[12.5px] leading-[1.5] text-ink-2 whitespace-pre-line">
-        {note.content}
-      </p>
-
-      {note.extra && (
-        <p className="m-0 text-[11.5px] leading-[1.4] text-muted">{note.extra}</p>
-      )}
-
-      {note.suggested && (
-        <div className="flex items-center gap-[5px] text-[11.5px] text-warn">
-          <AlertTriangle size={11} aria-hidden />
-          <span>I suggested these two. Check them.</span>
+    <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
+      <div className="flex w-full items-center gap-[14px]">
+        <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />
+        <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">
+            Here's what I understood about {COMPANY_NAME}
+          </h1>
+          <p className="text-[14px] text-muted">
+            Fix anything that's off. Helpers read these 7 notes before every job, and you can edit them later in
+            Company.
+          </p>
         </div>
-      )}
-    </div>
+      </div>
+      <div className="flex w-full flex-col gap-[12px]">
+        {rows.map((row, i) => (
+          <div key={i} className="flex w-full gap-[12px]">
+            {row.map((n) => (
+              <NoteCard key={n.id} note={n} />
+            ))}
+            {i === 1 && (
+              <button
+                type="button"
+                className="relative flex h-[128px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-md p-[14px] text-muted hover:bg-soft"
+              >
+                <Plus size={18} aria-hidden />
+                <span className="text-[13px]">Add something I missed</span>
+                <Stroke color="var(--color-wire-strong)" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="w-full flex-1" />
+      <div className="flex w-full items-center gap-[10px]">
+        <QuietButton icon={ArrowLeft} onClick={onBack}>
+          Back to our chat
+        </QuietButton>
+        <span className="h-px flex-1" />
+        <span className="text-[12px] text-muted">Took 9 minutes · 23 answers</span>
+        <PrimaryButton icon={ArrowRight} onClick={onNext}>
+          Looks right, build my team
+        </PrimaryButton>
+      </div>
+    </WizardCard>
   )
 }

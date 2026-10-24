@@ -19,104 +19,98 @@ import { SectionNotifications } from './sections/SectionNotifications'
 import { DialogDeleteWorkspace } from './dialogs/DialogDeleteWorkspace'
 import { DialogInvite } from './dialogs/DialogInvite'
 import { DialogAddSeats } from './dialogs/DialogAddSeats'
+import { DialogPayMayar } from './dialogs/DialogPayMayar'
+import { DialogPlanMax } from './dialogs/DialogPlanMax'
 import { DialogConnectKey } from './dialogs/DialogConnectKey'
 import { DialogAddMcp } from './dialogs/DialogAddMcp'
 import { DialogWriteSkill } from './dialogs/DialogWriteSkill'
 import { DialogChangePlan } from './dialogs/DialogChangePlan'
 import { DialogBuyCredits } from './dialogs/DialogBuyCredits'
-import type { ControlPanelSection, DialogKind } from './types'
+import { DIALOG_KINDS } from './types'
+import type { ControlPanelSection, DialogKind, PageVariant } from './types'
+import type { DialogKind as LegacyDialogKind } from './legacyTypes'
 
-interface Props {
-  /** Initial section to show; defaults to 'general'. */
-  section?: ControlPanelSection
-  onSection?: (s: ControlPanelSection) => void
+export interface SectionProps {
+  onDialog: (d: DialogKind) => void
+  variant?: PageVariant
+  onVariant?: (v: PageVariant) => void
 }
 
-/** Renders the correct section screen based on the active section id. */
-function SectionContent({
-  section,
-  onDialog,
-}: {
-  section: ControlPanelSection
-  onDialog: (d: DialogKind) => void
-}) {
+interface Props {
+  section?: ControlPanelSection
+  onSection?: (s: ControlPanelSection) => void
+  /** Initial overlay (from `?state=`). */
+  dialog?: DialogKind
+  /** Page variant (from `?state=`), e.g. self-hosted. */
+  variant?: PageVariant
+}
+
+function SectionContent({ section, ...p }: SectionProps & { section: ControlPanelSection }) {
+  // Sections not yet rebuilt to the v2 design still use the legacy dialog kinds.
+  const legacy = (d: LegacyDialogKind) =>
+    p.onDialog(DIALOG_KINDS.includes(d as never) ? (d as DialogKind) : null)
   switch (section) {
-    case 'general':      return <SectionGeneral onDialog={onDialog} />
-    case 'handbook':     return <SectionHandbook />
-    case 'members':      return <SectionMembers onDialog={onDialog} />
-    case 'channels':     return <SectionChannels />
-    case 'safety':       return <SectionSafety />
-    case 'ai-engine':    return <SectionAiEngine />
-    case 'ai-accounts':  return <SectionAiAccounts onDialog={onDialog} />
-    case 'knowledge':    return <SectionKnowledge />
-    case 'connectors':   return <SectionConnectors onDialog={onDialog} />
-    case 'skills':       return <SectionSkills onDialog={onDialog} />
-    case 'usage':        return <SectionUsage onDialog={onDialog} />
-    case 'activity':     return <SectionActivity />
-    case 'data':         return <SectionData />
-    case 'account':      return <SectionAccount />
+    case 'general':       return <SectionGeneral {...p} />
+    case 'handbook':      return <SectionHandbook {...p} />
+    case 'members':       return <SectionMembers {...p} />
+    case 'channels':      return <SectionChannels />
+    case 'safety':        return <SectionSafety />
+    case 'ai-engine':     return <SectionAiEngine />
+    case 'ai-accounts':   return <SectionAiAccounts onDialog={legacy} />
+    case 'knowledge':     return <SectionKnowledge />
+    case 'connectors':    return <SectionConnectors onDialog={legacy} />
+    case 'skills':        return <SectionSkills onDialog={legacy} />
+    case 'usage':         return <SectionUsage onDialog={legacy} />
+    case 'activity':      return <SectionActivity />
+    case 'data':          return <SectionData />
+    case 'account':       return <SectionAccount />
     case 'notifications': return <SectionNotifications />
-    default:             return <SectionGeneral onDialog={onDialog} />
+    default:              return <SectionGeneral {...p} />
   }
 }
 
-/** Renders the appropriate dialog overlay based on the active dialog kind. */
-function DialogOverlay({
-  dialog,
-  onClose,
-}: {
-  dialog: DialogKind
-  onClose: () => void
-}) {
-  if (!dialog) return null
+function DialogOverlay({ dialog, onClose, onDialog }: { dialog: DialogKind; onClose: () => void; onDialog: (d: DialogKind) => void }) {
   switch (dialog) {
     case 'delete-workspace': return <DialogDeleteWorkspace onClose={onClose} />
     case 'invite':           return <DialogInvite onClose={onClose} />
     case 'seats-full':       return <DialogInvite onClose={onClose} seatsFull />
-    case 'add-seats':        return <DialogAddSeats onClose={onClose} />
+    case 'add-seats':        return <DialogAddSeats onClose={onClose} onPay={() => onDialog('pay-mayar')} />
+    case 'pay-mayar':        return <DialogPayMayar onClose={onClose} />
+    case 'plan-max':         return <DialogPlanMax onClose={onClose} />
     case 'connect-key':      return <DialogConnectKey onClose={onClose} />
     case 'add-mcp':          return <DialogAddMcp onClose={onClose} />
     case 'build-oas':        return <DialogAddMcp onClose={onClose} mode="oas" />
     case 'write-skill':      return <DialogWriteSkill onClose={onClose} />
     case 'change-plan':      return <DialogChangePlan onClose={onClose} />
     case 'buy-credits':      return <DialogBuyCredits onClose={onClose} />
+    // oas-tools, connect-drive: not built yet
     default:                 return null
   }
 }
 
 /**
- * Control Panel — a full-screen settings surface opened from the gear in the rail.
- * Rendered inside the app Shell's <Outlet />; fills Rail's right side via Inset.
- *
- * Layout: ControlPanelNav (144px) | divider | SectionContent (flex-1)
- * Section selection is held in local state (+ optional prop/callback for URL sync).
+ * Control panel (pen `Control panel · …` screens): Control Panel Sidebar (232)
+ * next to the Rail, then the Inset with Topbar · page · save bar.
+ * Props seed the initial state; the route remounts it (key) when the URL changes.
  */
-export function ControlPanel({ section: initialSection = 'general', onSection }: Props) {
+export function ControlPanel({ section: initialSection = 'general', onSection, dialog: initialDialog = null, variant: initialVariant = null }: Props) {
   const [section, setSection] = useState<ControlPanelSection>(initialSection)
-  const [dialog, setDialog] = useState<DialogKind>(null)
+  const [dialog, setDialog] = useState<DialogKind>(initialDialog)
+  const [variant, setVariant] = useState<PageVariant>(initialVariant)
 
   function handleSection(s: ControlPanelSection) {
     setSection(s)
+    setVariant(null)
     onSection?.(s)
   }
 
   return (
-    <Inset label="Control panel">
-      <div className="flex h-full w-full overflow-hidden">
-        {/* Left nav */}
-        <ControlPanelNav section={section} onSection={handleSection} />
-
-        {/* Vertical divider */}
-        <div className="w-px shrink-0 bg-line-strong" />
-
-        {/* Content pane */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <SectionContent section={section} onDialog={setDialog} />
-        </div>
-      </div>
-
-      {/* Dialog overlay */}
-      <DialogOverlay dialog={dialog} onClose={() => setDialog(null)} />
-    </Inset>
+    <>
+      <ControlPanelNav section={section} onSection={handleSection} />
+      <Inset label="Control panel">
+        <SectionContent section={section} onDialog={setDialog} variant={variant} onVariant={setVariant} />
+      </Inset>
+      <DialogOverlay dialog={dialog} onClose={() => setDialog(null)} onDialog={setDialog} />
+    </>
   )
 }

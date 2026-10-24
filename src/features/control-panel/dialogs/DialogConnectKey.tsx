@@ -1,5 +1,5 @@
 import { ChevronDown, CircleHelp, Key } from 'lucide-react'
-import { Modal, TextInput } from '../ControlPanelShared'
+import { Modal, TextInput } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 
 interface Props {

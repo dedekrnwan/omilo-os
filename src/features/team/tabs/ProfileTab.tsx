@@ -1,190 +1,156 @@
 import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
-import { Mascot } from '../../../ui/ds/Mascot'
-import { Button } from '../../../ui/ds/Button'
+import { Crown, ImagePlus, Pause, UserMinus } from 'lucide-react'
+import { HELPER_LOOK, Mascot } from '../../../ui/ds/Mascot'
+import type { MascotProp, MascotShape } from '../../../ui/ds/Mascot'
 import { helperColor } from '../../../ui/tokens'
-import type { HelperArea } from '../../../core/domain/types'
 import type { HelperRecord } from '../teamData'
-import { LetGoDialog } from '../LetGoDialog'
+import { Btn, InputField, SelectField, SettingRow } from '../ui'
 
-// Color swatches matching design ref
-const COLORS: string[] = [
-  '#6366F1', '#3B82F6', '#0EA5E9', '#06B6D4',
-  '#10B981', '#65A30D', '#F59E0B', '#F97316',
-  '#EF4444', '#EC4899', '#8B5CF6', '#64748B',
-  '#D97706', '#059669',
-]
+const COLOURS = ['#EC4899', '#6366F1', '#14B8A6', '#F97316', '#8B5CF6', '#0EA5E9', '#65A30D', '#F59E0B', '#EF4444', '#64748B', '#A16207', '#06B6D4']
+const SHAPES: MascotShape[] = ['bean', 'blob', 'box']
+const PROPS: MascotProp[] = ['headset', 'crown', 'glasses', 'megaphone', 'tie', 'coin', 'gear', 'spark', 'magnifier', 'none']
 
-interface ProfileTabProps {
-  helper: HelperRecord
+function Label({ children }: { children: string }) {
+  return <span className="text-[12.5px] font-medium text-ink-2">{children}</span>
 }
 
-export function ProfileTab({ helper }: ProfileTabProps) {
-  const [letGoOpen, setLetGoOpen] = useState(false)
-  const color = helperColor[helper.area]
+function optRing(on: boolean) {
+  return on ? 'outline-2 -outline-offset-2 outline-ink' : 'outline-1 -outline-offset-1 outline-line'
+}
+
+/** Profile tab — pen JVnGn. */
+export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo: () => void }) {
+  const n = helper.name
+  const look = HELPER_LOOK[helper.area]
+  const base = helperColor[helper.area]
+  const [colour, setColour] = useState<string>(COLOURS.find((c) => c.toLowerCase() === String(base).toLowerCase()) ?? COLOURS[0])
+  const [shape, setShape] = useState<MascotShape>(look.shape)
+  const [prop, setProp] = useState<MascotProp>(look.prop)
+  const reset = () => {
+    setShape(look.shape)
+    setProp(look.prop)
+  }
+  // Order the options so the helper's own shape / prop comes first, as in pen.
+  const shapes = [look.shape, ...SHAPES.filter((s) => s !== look.shape)]
+  const props = [look.prop, ...PROPS.filter((p) => p !== look.prop)]
 
   return (
-    <>
-      <div className="flex flex-col gap-[28px]">
-        {/* Look section */}
-        <section>
-          <h3 className="m-0 text-[13px] font-medium text-ink mb-[2px]">Look</h3>
-          <p className="m-0 mb-[14px] text-[12px] text-muted">
-            How {helper.name} appears in chats, the team list and notifications.
+    <div className="flex w-full flex-col gap-[20px]">
+      <section className="flex w-full flex-col gap-[14px]">
+        <div className="flex flex-col gap-[2px]">
+          <h3 className="m-0 text-[14px] font-semibold text-ink">Look</h3>
+          <p className="m-0 text-[12.5px] text-muted">
+            How {n} appears in chats, the team list and notifications.
           </p>
-
-          <div className="flex gap-[24px]">
-            {/* Preview */}
-            <Mascot size={72} radius={18} area={helper.area as HelperArea} title={helper.name} />
-
-            <div className="flex flex-col gap-[12px]">
-              {/* Color swatches */}
-              <div>
-                <div className="text-[11.5px] font-medium text-muted mb-[6px]">Colour</div>
-                <div className="flex flex-wrap gap-[4px]">
-                  {COLORS.map((c) => (
+        </div>
+        <div className="flex w-full gap-[24px]">
+          <div className="flex size-[168px] shrink-0 items-center justify-center rounded-lg bg-soft outline-1 -outline-offset-1 outline-line">
+            <Mascot size={128} radius={36} color={colour} shape={shape} prop={prop} title={`${n} preview`} />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-[16px]">
+            <div className="flex flex-col gap-[8px]">
+              <Label>Colour</Label>
+              <div className="flex items-center gap-[8px]">
+                {COLOURS.map((c) => {
+                  const on = c === colour
+                  return (
                     <button
                       key={c}
                       type="button"
-                      aria-label={c}
-                      className="size-[18px] rounded-full transition-transform hover:scale-110"
-                      style={{
-                        background: c,
-                        outline: c === color ? `2px solid ${c}` : undefined,
-                        outlineOffset: c === color ? '2px' : undefined,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Shape */}
-              <div>
-                <div className="text-[11.5px] font-medium text-muted mb-[6px]">Shape</div>
-                <div className="flex gap-[6px]">
-                  {[18, 8, 2].map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      aria-label={`Shape ${r}`}
-                      className={`size-[32px] rounded-sm outline-1 -outline-offset-1 outline-line-strong flex items-center justify-center transition-colors hover:bg-soft ${
-                        r === 18 ? 'bg-hover outline-2 outline-primary' : 'bg-surface'
-                      }`}
+                      aria-label={`Colour ${c}`}
+                      aria-pressed={on}
+                      onClick={() => setColour(c)}
+                      className={`flex size-[30px] items-center justify-center rounded-pill ${optRing(on)}`}
                     >
-                      <Mascot size={20} radius={r * 20 / 64} area={helper.area as HelperArea} tile={false} />
+                      <span className="rounded-full" style={{ background: c, width: on ? 22 : 24, height: on ? 22 : 24 }} />
                     </button>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
-
-              {/* Prop */}
-              <div>
-                <div className="text-[11.5px] font-medium text-muted mb-[6px]">Prop</div>
-                <div className="flex gap-[4px] flex-wrap">
-                  {['👑', '🔧', '🎙', '📊', '💰', '🌿', '🏆', '🔍', '⚡', '🌐'].map((emoji, i) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className={`size-[30px] rounded-sm text-[16px] flex items-center justify-center transition-colors ${
-                        i === 0 ? 'bg-hover outline-2 outline-primary -outline-offset-1' : 'hover:bg-soft'
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
+            </div>
+            <div className="flex flex-col gap-[8px]">
+              <Label>Shape</Label>
+              <div className="flex items-center gap-[8px]">
+                {shapes.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-label={`Shape ${s}`}
+                    aria-pressed={s === shape}
+                    onClick={() => setShape(s)}
+                    className={`flex size-[52px] items-center justify-center rounded-md ${optRing(s === shape)}`}
+                  >
+                    <Mascot size={42} radius={12} color={colour} shape={s} prop={prop} still />
+                  </button>
+                ))}
               </div>
-
-              <div className="flex gap-[10px] mt-[2px]">
-                <button type="button" className="text-[12px] text-link hover:underline flex items-center gap-[4px]">
-                  Use a picture
-                </button>
-                <button type="button" className="text-[12px] text-muted hover:text-ink transition-colors">
-                  Back to the original
-                </button>
+            </div>
+            <div className="flex flex-col gap-[8px]">
+              <Label>Prop</Label>
+              <div className="flex flex-wrap items-center gap-[8px]">
+                {props.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-label={`Prop ${p}`}
+                    aria-pressed={p === prop}
+                    onClick={() => setProp(p)}
+                    className={`flex size-[52px] items-center justify-center rounded-md ${optRing(p === prop)}`}
+                  >
+                    <Mascot size={42} radius={12} color={colour} shape={shape} prop={p} still />
+                  </button>
+                ))}
               </div>
+            </div>
+            <div className="flex items-center gap-[12px]">
+              <Btn icon={ImagePlus} h={30}>
+                Use a picture
+              </Btn>
+              <Btn variant="quiet" h={30} onClick={reset}>
+                Back to the original
+              </Btn>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* Name & role */}
-        <section>
-          <h3 className="m-0 text-[13px] font-medium text-ink mb-[12px]">Name &amp; role</h3>
-          <div className="flex flex-col divide-y divide-line">
-            <div className="flex items-start justify-between py-[10px]">
-              <div>
-                <div className="text-[13px] text-ink">Name</div>
-                <div className="text-[11.5px] text-muted">What residents and the team call it.</div>
-              </div>
-              <input
-                type="text"
-                defaultValue={helper.name}
-                className="w-[200px] rounded-md bg-soft px-[10px] py-[6px] text-[12.5px] text-ink text-right outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-1 focus:outline-primary"
-              />
-            </div>
-            <div className="flex items-start justify-between py-[10px]">
-              <div>
-                <div className="text-[13px] text-ink">Job title</div>
-                <div className="text-[11.5px] text-muted">Shown under the name in chats.</div>
-              </div>
-              <input
-                type="text"
-                defaultValue={helper.roleArea}
-                className="w-[200px] rounded-md bg-soft px-[10px] py-[6px] text-[12.5px] text-ink text-right outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-1 focus:outline-primary"
-              />
-            </div>
-            <div className="flex items-start justify-between py-[10px]">
-              <div>
-                <div className="text-[13px] text-ink">Reports to</div>
-                <div className="text-[11.5px] text-muted">Gets its updates and escalations.</div>
-              </div>
-              <button
-                type="button"
-                className="flex items-center gap-[6px] rounded-md bg-soft px-[10px] py-[6px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors"
-              >
-                <Mascot size={14} radius={4} area="brand" tile={false} />
-                {helper.reportsTo}
-                <ChevronDown size={12} aria-hidden className="text-muted" />
-              </button>
-            </div>
-          </div>
-        </section>
+      <section className="flex w-full flex-col gap-[10px]">
+        <h3 className="m-0 text-[14px] font-semibold text-ink">Name &amp; role</h3>
+        <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
+          <SettingRow title="Name" desc="What residents and the team call it.">
+            <InputField value={n} width={240} />
+          </SettingRow>
+          <SettingRow title="Job title" desc="Shown under the name in chats.">
+            <InputField value={helper.id === 'support' ? 'Resident support · WhatsApp' : helper.roleArea} width={280} />
+          </SettingRow>
+          <SettingRow title="Reports to" desc="Gets its updates and escalations." last>
+            <SelectField icon={Crown} value={helper.id === 'chief' ? 'You (Dede)' : 'Chief of Staff'} width={240} />
+          </SettingRow>
+        </div>
+      </section>
 
-        {/* Pause or let go */}
-        <section>
-          <h3 className="m-0 text-[13px] font-medium text-ink mb-[12px]">Pause or let go</h3>
-          <div className="flex flex-col divide-y divide-line">
-            <div className="flex items-start justify-between py-[10px]">
-              <div>
-                <div className="text-[13px] text-ink">Pause {helper.name}</div>
-                <div className="text-[11.5px] text-muted">
-                  Stops all replies and loops. Residents see "we'll be right back". Resume anytime.
-                </div>
-              </div>
-              <Button variant="secondary" height={28}>
-                Pause
-              </Button>
-            </div>
-            <div className="flex items-start justify-between py-[10px]">
-              <div>
-                <div className="text-[13px] text-ink">Let {helper.name} go</div>
-                <div className="text-[11.5px] text-muted">
-                  Open chats go back to you. Files and memory are kept 30 days so you can rehire it.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setLetGoOpen(true)}
-                className="flex items-center gap-[5px] rounded-btn px-[10px] h-[28px] text-[12.5px] font-medium text-bad bg-bad-tint outline-1 -outline-offset-1 outline-bad-line hover:bg-bad-tint/80 transition-colors"
-              >
-                Let {helper.name} go
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {letGoOpen && <LetGoDialog helper={helper} onClose={() => setLetGoOpen(false)} />}
-    </>
+      <section className="flex w-full flex-col gap-[10px]">
+        <h3 className="m-0 text-[14px] font-semibold text-ink">Pause or let go</h3>
+        <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
+          <SettingRow
+            title={`Pause ${n}`}
+            desc="Stops all replies and loops. Residents see “we'll be right back”. Resume anytime."
+          >
+            <Btn icon={Pause} h={30}>
+              Pause
+            </Btn>
+          </SettingRow>
+          <SettingRow
+            title={`Let ${n} go`}
+            desc="Open chats go back to you. Files and memory are kept 30 days so you can rehire it."
+            last
+          >
+            <Btn variant="danger" icon={UserMinus} h={30} onClick={onLetGo}>
+              Let {n} go
+            </Btn>
+          </SettingRow>
+        </div>
+      </section>
+    </div>
   )
 }

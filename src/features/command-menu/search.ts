@@ -1,73 +1,92 @@
-/**
- * Pure search / filter helpers — no React, no side effects.
- */
+/** Pure search helpers for the command menu — no React. */
+import { CORPUS, DEFAULT_ACTIONS, GROUP_ORDER, JUMP_TO, RECENT, tabOf } from './data'
+import type { Group, Item, TabId } from './data'
 
-import type { TabId } from './data'
-import {
-  RECENT_ITEMS,
-  PAGES,
-  ACTIONS,
-  HELPERS,
-  CHANNELS,
-} from './data'
-
-export interface SearchResults {
-  recent: typeof RECENT_ITEMS
-  pages: typeof PAGES
-  actions: typeof ACTIONS
-  helpers: typeof HELPERS
-  channels: typeof CHANNELS
-  /** True when no results at all and we should show the Ask-Chief fallback. */
-  empty: boolean
-  /** Leading `@` was detected — filter to helpers. */
-  atMode: boolean
-  /** Leading `#` was detected — filter to channels. */
-  hashMode: boolean
+export interface Section {
+  heading: string
+  items: Item[]
 }
 
-function match(haystack: string, needle: string) {
-  return haystack.toLowerCase().includes(needle.toLowerCase())
+export type SearchResult =
+  | { mode: 'empty'; sections: Section[] }
+  | { mode: 'results'; sections: Section[]; count: number }
+  | { mode: 'ask'; question: string; closest: Item[] }
+
+const norm = (s: string) => s.toLowerCase()
+const STOP = new Set(['why', 'did', 'the', 'last', 'what', 'how', 'when', 'who', 'does', 'is', 'are', 'was', 'our', 'we', 'a', 'an', 'to', 'of', 'in', 'on', 'for', 'and', 'do'])
+
+function inTab(item: Item, tab: TabId) {
+  return tab === 'all' || tabOf(item.group) === tab
 }
 
-export function search(query: string, tab: TabId): SearchResults {
+/** Leading prefixes from the footer: `>` actions · `@` helpers · `#` channels. */
+function prefixTab(raw: string): { tab: TabId | null; needle: string } {
+  if (raw.startsWith('>')) return { tab: 'actions', needle: raw.slice(1).trim() }
+  if (raw.startsWith('@')) return { tab: 'helpers', needle: raw.slice(1).trim() }
+  if (raw.startsWith('#')) return { tab: 'chats', needle: raw.slice(1).trim() }
+  return { tab: null, needle: raw }
+}
+
+function isQuestion(q: string) {
+  return q.endsWith('?') || /^(why|how|what|when|who|which|should|can|is|are|do|does)\b/i.test(q)
+}
+
+export function search(query: string, tab: TabId): SearchResult {
   const raw = query.trim()
-  const atMode  = raw.startsWith('@')
-  const hashMode = !atMode && raw.startsWith('#')
-  const needle  = atMode ? raw.slice(1) : hashMode ? raw.slice(1) : raw
+  const { tab: forced, needle } = prefixTab(raw)
+  const t = forced ?? tab
 
   if (!needle) {
-    // Empty query: show defaults (recent + jump-to pages + actions)
-    return {
-      recent:   tab === 'all' || tab === 'chats' ? RECENT_ITEMS : [],
-      pages:    tab === 'all' || tab === 'pages' ? PAGES : [],
-      actions:  tab === 'all' || tab === 'actions' ? ACTIONS : [],
-      helpers:  atMode || tab === 'helpers' ? HELPERS : [],
-      channels: hashMode || tab === 'pages' ? [] : [],
-      empty: false,
-      atMode,
-      hashMode,
+    if (t === 'all') {
+      return {
+        mode: 'empty',
+        sections: [
+          { heading: 'RECENT', items: RECENT },
+          { heading: 'JUMP TO', items: JUMP_TO },
+          { heading: 'ACTIONS', items: DEFAULT_ACTIONS },
+        ],
+      }
     }
+    return { mode: 'empty', sections: grouped(CORPUS.filter((i) => inTab(i, t))) }
   }
 
-  if (atMode) {
-    const helpers = HELPERS.filter(h =>
-      match(h.name, needle) || match(h.role, needle)
-    )
-    return { recent: [], pages: [], actions: [], helpers, channels: [], empty: helpers.length === 0, atMode, hashMode }
+  const n = norm(needle)
+  const hits = CORPUS.filter(
+    (i) => inTab(i, t) && norm(`${i.label} ${i.meta ?? ''} ${i.keywords ?? ''}`).includes(n),
+  )
+  if (hits.length && !(isQuestion(needle) && needle.includes(' '))) {
+    const sections = grouped(hits)
+    return { mode: 'results', sections, count: hits.length }
   }
 
-  if (hashMode) {
-    const channels = CHANNELS.filter(c => match(c.name, needle))
-    return { recent: [], pages: [], actions: [], helpers: [], channels, empty: channels.length === 0, atMode, hashMode }
+  // Nothing matches the phrase itself → Ask Chief, with the closest word matches.
+  const words = n.split(/[^a-z0-9-]+/).filter((w) => w.length > 2 && !STOP.has(w))
+  const scored = CORPUS.map((i) => {
+    const hay = norm(`${i.label} ${i.meta ?? ''} ${i.keywords ?? ''}`)
+    return { i, s: words.filter((w) => hay.includes(w)).length }
+  })
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+  const seen = new Set<string>()
+  const closest: Item[] = []
+  for (const { i } of scored) {
+    if (seen.has(i.label)) continue
+    seen.add(i.label)
+    closest.push(i)
+    if (closest.length === 3) break
   }
+  const order: Group[] = ['GOALS', 'DOCS', 'CHATS', 'PAGES', 'FLOWS', 'ACTIONS', 'HELPERS', 'SETTINGS']
+  closest.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+  return { mode: 'ask', question: needle, closest }
+}
 
-  const recent   = (tab === 'all' || tab === 'chats')   ? RECENT_ITEMS.filter(r => match(r.label, needle)) : []
-  const pages    = (tab === 'all' || tab === 'pages')   ? PAGES.filter(p => match(p.label, needle) || match(p.meta, needle)) : []
-  const actions  = (tab === 'all' || tab === 'actions') ? ACTIONS.filter(a => match(a.label, needle)) : []
-  const helpers  = (tab === 'all' || tab === 'helpers') ? HELPERS.filter(h => match(h.name, needle) || match(h.role, needle)) : []
-  const channels = (tab === 'all' || tab === 'pages')   ? CHANNELS.filter(c => match(c.name, needle)) : []
+function grouped(items: Item[]): Section[] {
+  return GROUP_ORDER.map((g) => ({ heading: g, items: items.filter((i) => i.group === g) })).filter(
+    (s) => s.items.length > 0,
+  )
+}
 
-  const total = recent.length + pages.length + actions.length + helpers.length + channels.length
-
-  return { recent, pages, actions, helpers, channels, empty: total === 0, atMode, hashMode }
+/** Flat list of selectable items, in display order. */
+export function flatten(sections: Section[]): Item[] {
+  return sections.flatMap((s) => s.items)
 }

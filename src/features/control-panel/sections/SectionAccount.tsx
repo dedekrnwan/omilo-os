@@ -11,7 +11,7 @@ import {
   SubHeading,
   TextInput,
   Toggle,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 
 const DEVICES = [

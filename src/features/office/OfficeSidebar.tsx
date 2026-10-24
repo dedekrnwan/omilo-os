@@ -7,7 +7,7 @@ import { GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar
 /** Areas filter value: a channel id, or null for "All areas". */
 export type AreaFilter = string | null
 
-export type OfficeNav = 'Goals' | 'Inbox'
+export type OfficeNav = 'Goals' | 'Inbox' | 'Flows' | 'Routines' | 'Docs' | 'Analytics'
 
 interface OfficeSidebarProps {
   area?: AreaFilter
@@ -21,7 +21,6 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
   const matchRoute = useMatchRoute()
   const onFlows = !!matchRoute({ to: '/office/flows', fuzzy: true })
   const onDocs = !!matchRoute({ to: '/office/docs', fuzzy: true })
-  const onAnalytics = !!matchRoute({ to: '/office/analytics', fuzzy: true })
   const { data: channels = [] } = useChannels()
   const { data: items = [] } = useInbox()
   const needsYou = items.filter((i) => i.status === 'pending' && i.needsYou).length
@@ -62,7 +61,12 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
           active={onFlows}
           onClick={() => void navigate({ to: '/office/flows' })}
         />
-        <NavLink icon={CalendarSync} label="Routines" onClick={() => {}} />
+        <NavLink
+          icon={CalendarSync}
+          label="Routines"
+          active={activeNav === 'Routines'}
+          onClick={() => void navigate({ to: '/office/routines' })}
+        />
         <NavLink
           icon={FileText}
           label="Docs"
@@ -72,7 +76,7 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
         <NavLink
           icon={ChartLine}
           label="Analytics"
-          active={onAnalytics}
+          active={activeNav === 'Analytics'}
           onClick={() => void navigate({ to: '/office/analytics' })}
         />
       </NavGroup>

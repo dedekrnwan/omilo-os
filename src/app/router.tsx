@@ -27,7 +27,6 @@ import {
   OfficeFlowRunsRoute,
 } from '../features/office/flows'
 import { OfficeDocsRoute } from '../features/office/docs/OfficeDocsRoute'
-import { ChatAnalyticsRoute, OfficeAnalyticsRoute } from '../features/analytics'
 import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { HelperDetail } from '../features/team/HelperDetail'
@@ -53,6 +52,8 @@ import {
   AcceptInvitePage,
 } from '../features/auth'
 import { OnboardingRoute } from '../features/onboarding'
+import { ChatAnalyticsRoute, OfficeAnalyticsRoute } from '../features/analytics'
+import { RoutinesRoute, RoutineDetailRoute } from '../features/routines'
 
 /**
  * Root route renders a bare <Outlet /> (no Shell). Two kinds of children hang
@@ -160,16 +161,16 @@ const chatDocsRoute = createRoute({
   component: DocsRoute,
 })
 
-const chatAnalyticsRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
-  path: 'analytics',
-  component: ChatAnalyticsRoute,
-})
-
 const chatArchivedRoute = createRoute({
   getParentRoute: () => chatChannelRoute,
   path: 'archived',
   component: ArchivedRoute,
+})
+
+const chatAnalyticsRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'analytics',
+  component: ChatAnalyticsRoute,
 })
 
 const chatFolderRoute = createRoute({
@@ -237,16 +238,28 @@ const officeFlowRunsRoute = createRoute({
   component: OfficeFlowRunsRoute,
 })
 
-const officeDocsRoute = createRoute({
+const officeRoutinesRoute = createRoute({
   getParentRoute: () => officeRoute,
-  path: 'docs',
-  component: OfficeDocsRoute,
+  path: 'routines',
+  component: RoutinesRoute,
+})
+
+const officeRoutineDetailRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'routines/$routineId',
+  component: RoutineDetailRoute,
 })
 
 const officeAnalyticsRoute = createRoute({
   getParentRoute: () => officeRoute,
   path: 'analytics',
   component: OfficeAnalyticsRoute,
+})
+
+const officeDocsRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'docs',
+  component: OfficeDocsRoute,
 })
 
 /**
@@ -426,9 +439,9 @@ const routeTree = rootRoute.addChildren([
         chatGoalsRoute,
         chatFlowsRoute,
         chatDocsRoute,
-        chatAnalyticsRoute,
         chatArchivedRoute,
         chatFolderRoute,
+        chatAnalyticsRoute,
       ]),
     ]),
     officeRoute.addChildren([
@@ -440,6 +453,8 @@ const routeTree = rootRoute.addChildren([
         officeFlowRunsRoute,
       ]),
       officeDocsRoute,
+      officeRoutinesRoute,
+      officeRoutineDetailRoute,
       officeAnalyticsRoute,
     ]),
     teamRoute.addChildren([teamIndexRoute, teamHelperRoute]),

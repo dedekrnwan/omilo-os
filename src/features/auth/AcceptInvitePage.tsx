@@ -1,118 +1,69 @@
-/**
- * Accept invite — /auth/invite (ref: kIAtu)
- * Shown when following an invite link to join a company as a Member.
- * Standalone full-screen page. No Shell / Rail.
- */
+/** Accept invite — /auth/invite (pen kIAtu). */
+import { Mail } from 'lucide-react'
+import type { HelperArea } from '../../core/domain/types'
+import { Mascot } from '../../ui/ds/Mascot'
+import { AuthLayout } from './AuthLayout'
+import { AuthButton, AuthTitle, GoogleButton } from './AuthPrimitives'
 
-import { AuthLayout, MascotBlob } from './AuthLayout'
-import { GoogleLogo, AuthButton } from './AuthPrimitives'
-
-/** Two overlapping avatar initials bubbles (inviter + company) */
-function InviteAvatars() {
-  return (
-    <div style={{ display: 'flex', marginBottom: 20 }}>
-      {/* Inviter avatar */}
-      <span style={{
-        width: 40,
-        height: 40,
-        borderRadius: '50%',
-        background: '#E0E7FF',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 14,
-        fontWeight: 700,
-        color: '#4338CA',
-        border: '2px solid #FFFFFF',
-        zIndex: 1,
-        flexShrink: 0,
-      }}>
-        RA
-      </span>
-      {/* Company mascot */}
-      <span style={{ marginLeft: -10, zIndex: 0 }}>
-        <MascotBlob color="#F97316" size={40} style={{ border: '2px solid #FFFFFF', borderRadius: '50%' }} />
-      </span>
-    </div>
-  )
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '10px 0',
-      borderBottom: '1px solid #F5F5F4',
-      fontSize: 13.5,
-    }}>
-      <span style={{ color: '#78716C' }}>{label}</span>
-      <span style={{ color: '#0C0A09', fontWeight: 500 }}>{value}</span>
-    </div>
-  )
-}
-
-/** 3 agent mascots stacked */
-function AgentStack() {
-  const colors = ['#6366F1', '#0EA5E9', '#65A30D']
-  return (
-    <div style={{ display: 'flex' }}>
-      {colors.map((c, i) => (
-        <span key={i} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: colors.length - i }}>
-          <MascotBlob color={c} size={24} />
-        </span>
-      ))}
-    </div>
-  )
-}
+const ROWS = [
+  { k: 'Role', v: 'Member' },
+  { k: 'Channels', v: 'Business, General' },
+]
+const AGENTS: { area: HelperArea; name: string }[] = [
+  { area: 'brand', name: 'Chief' },
+  { area: 'sales', name: 'Sales' },
+  { area: 'finance', name: 'Finance' },
+]
+const ring = '0 0 0 3px var(--color-surface)'
 
 export function AcceptInvitePage() {
   return (
     <AuthLayout>
-      <InviteAvatars />
-
-      <h1 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: '#0C0A09', fontFamily: 'var(--font-display, sans-serif)' }}>
-        Rina invited you to Sahabat Warga
-      </h1>
-      <p style={{ margin: '0 0 24px', fontSize: 13.5, color: '#78716C' }}>
-        You'll join as a Member. Sign in with and@saga.co.id to accept.
-      </p>
-
-      {/* Details card */}
-      <div style={{
-        border: '1px solid #E7E5E4',
-        borderRadius: 10,
-        background: '#FAFAF9',
-        padding: '0 16px',
-        marginBottom: 20,
-      }}>
-        <DetailRow label="Role" value="Member" />
-        <DetailRow label="Channels" value="Business, General" />
-        <DetailRow
-          label="Agents you'll work with"
-          value={<AgentStack />}
-        />
+      <div className="flex items-center">
+        <span
+          className="relative flex size-[44px] items-center justify-center rounded-full bg-[#0EA5E9] text-[14px] font-semibold text-white"
+          style={{ boxShadow: ring }}
+          aria-label="Rina"
+        >
+          RA
+        </span>
+        <span
+          className="relative -ml-[8px] flex size-[44px] items-center justify-center rounded-lg bg-[#EB6834] text-[17px] font-bold text-white"
+          style={{ boxShadow: ring }}
+          aria-label="Sahabat Warga"
+        >
+          S
+        </span>
       </div>
-
-      {/* Accept actions */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <AuthButton variant="secondary">
-          <GoogleLogo size={18} />
-          Accept with Google
-        </AuthButton>
-        <AuthButton variant="secondary">
-          <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
-            <rect x={1} y={3} width={14} height={10} rx={2} stroke="#44403C" strokeWidth={1.5}/>
-            <path d="M1 6l7 4 7-4" stroke="#44403C" strokeWidth={1.5}/>
-          </svg>
-          Accept with an email code
-        </AuthButton>
-      </div>
-
-      <p style={{ marginTop: 16, textAlign: 'center', fontSize: 12.5, color: '#A8A29E' }}>
-        Invite expires in 6 days
-      </p>
+      <AuthTitle
+        title="Rina invited you to Sahabat Warga"
+        sub="You’ll join as a Member. Sign in with andi@saga.co.id to accept."
+      />
+      <dl className="flex w-full flex-col rounded-lg bg-soft px-[14px] py-[4px]">
+        {ROWS.map((r) => (
+          <div
+            key={r.k}
+            className="flex w-full items-center gap-[10px] py-[10px]"
+            style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}
+          >
+            <dt className="flex-1 text-[12.5px] text-muted">{r.k}</dt>
+            <dd className="text-[12.5px] font-medium text-ink">{r.v}</dd>
+          </div>
+        ))}
+        <div className="flex w-full items-center gap-[10px] py-[10px]">
+          <dt className="flex-1 text-[12.5px] text-muted">Agents you’ll work with</dt>
+          <dd className="flex gap-[3px]">
+            {AGENTS.map((a) => (
+              <Mascot key={a.area} area={a.area} size={20} radius={6} title={a.name} />
+            ))}
+          </dd>
+        </div>
+      </dl>
+      <GoogleButton>Accept with Google</GoogleButton>
+      <AuthButton variant="secondary" icon={Mail}>
+        Accept with an email code
+      </AuthButton>
+      <p className="w-full text-center text-[12px] text-faint">Invite expires in 6 days</p>
     </AuthLayout>
   )
 }

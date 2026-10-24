@@ -10,7 +10,7 @@ import {
   SubHeading,
   Toggle,
   TextInput,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 
 type AutonomyMode = 'strict' | 'ask' | 'yolo'
 

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   Archive,
   ChartLine,
   Check,
+  ChevronDown,
   ChevronsUpDown,
+  Ellipsis,
   FileText,
+  FolderOpen,
   MessageSquare,
   Plus,
   Search,
@@ -19,6 +22,7 @@ import { Button } from '../../ui/ds/Button'
 import { accents } from '../../ui/ds/accents'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
 import { CreateChannelDialog } from './CreateChannelDialog'
+import { ARCHIVED_COUNT, DEFAULT_OPEN_FOLDERS, SIDEBAR_GOAL_COUNT } from './data'
 
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
@@ -147,24 +151,56 @@ function ChannelPopover({
   )
 }
 
+/**
+ * pen `Folder Row` (s0CjkQ) in its selected state (Chat · Folder): hover fill,
+ * open chevron/icon in ink, label 500, count swapped for the ⋯ "More" icon.
+ */
+function ActiveFolderRow({ name, onToggle }: { name: string; onToggle: () => void }) {
+  return (
+    <div
+      aria-current="page"
+      className="flex h-[28px] w-full items-center gap-[6px] rounded-sm bg-hover pr-[8px] pl-[6px]"
+    >
+      <button
+        type="button"
+        aria-expanded
+        aria-label={`Collapse ${name}`}
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
+      >
+        <ChevronDown size={12} aria-hidden className="text-faint" />
+        <FolderOpen size={15} aria-hidden className="text-ink" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{name}</span>
+      </button>
+      <button type="button" aria-label={`${name} options`} className="text-muted hover:text-ink">
+        <Ellipsis size={14} aria-hidden />
+      </button>
+    </div>
+  )
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 interface ChannelSidebarProps {
   channelId: string
   sessionId?: string
+  /** Folder whose page is open (/chat/$channelId/folder/$folderId) — its row is highlighted. */
+  folderId?: string
   /** Which top nav item is active. Defaults to 'Chats' when sessionId is set, else none. */
   activeNav?: ChannelNav
 }
 
 /** pen `Chat Sidebar` (XKoGs). */
-export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSidebarProps) {
+export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: ChannelSidebarProps) {
   const navigate = useNavigate()
+  // `?state=switcher` / `?state=create-channel` open those states (design screenshots)
+  const { state } = useSearch({ strict: false }) as { state?: string }
   const { data: channels = [] } = useChannels()
   const { data: folders = [] } = useChannelFolders(channelId)
   const { data: sessions = [] } = useChannelSessions(channelId)
   const { data: goals = [] } = useChannelGoals(channelId)
-  const [popoverOpen, setPopoverOpen] = useState(false)
-  const [createChannelOpen, setCreateChannelOpen] = useState(false)
+  const [popoverOpen, setPopoverOpen] = useState(state === 'switcher')
+  const [createChannelOpen, setCreateChannelOpen] = useState(state === 'create-channel')
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -178,7 +214,8 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
   }, [sessions])
   const recent = sessions.filter((s) => !s.folderId)
 
-  const isOpen = (folderId: string) => toggled[folderId] ?? activeSession?.folderId === folderId
+  const isOpen = (id: string) =>
+    toggled[id] ?? (activeSession?.folderId === id || folderId === id || DEFAULT_OPEN_FOLDERS.has(id))
 
   function openSession(id: string) {
     void navigate({ to: '/chat/$channelId/$sessionId', params: { channelId, sessionId: id } })
@@ -197,6 +234,8 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
       void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     } else if (nav === 'Archived') {
       void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
+    } else if (nav === 'Analytics') {
+      void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     }
   }
 
@@ -257,7 +296,7 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
         <NavLink
           icon={Target}
           label="Goals"
-          count={goals.length || undefined}
+          count={(SIDEBAR_GOAL_COUNT[channelId] ?? goals.length) || undefined}
           active={activeNav === 'Goals'}
           onClick={() => navTo('Goals')}
         />
@@ -293,16 +332,23 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
             const more = f.count - shown.length
             return (
               <div key={f.id} className="flex flex-col gap-px">
-                <FolderRow
-                  name={f.name}
-                  count={f.count}
-                  open={open}
-                  onToggle={() => {
-                    setToggled((t) => ({ ...t, [f.id]: !open }))
-                    // Navigate to folder view when opening a folder row
-                    if (!open) openFolder(f.id)
-                  }}
-                />
+                {f.id === folderId ? (
+                  <ActiveFolderRow
+                    name={f.name}
+                    onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))}
+                  />
+                ) : (
+                  <FolderRow
+                    name={f.name}
+                    count={f.count}
+                    open={open}
+                    onToggle={() => {
+                      setToggled((t) => ({ ...t, [f.id]: !open }))
+                      // Navigate to folder view when opening a folder row
+                      if (!open) openFolder(f.id)
+                    }}
+                  />
+                )}
                 {open && (
                   <div className="pb-[2px] pl-[20px]">
                     <div className="flex flex-col gap-px shadow-[inset_1px_0_0_var(--color-line-strong)] pl-[6px]">
@@ -351,7 +397,7 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
       <NavLink
         icon={Archive}
         label="Archived"
-        count={12}
+        count={ARCHIVED_COUNT}
         labelClassName="text-muted"
         active={activeNav === 'Archived'}
         onClick={() => navTo('Archived')}

@@ -1,249 +1,539 @@
-import type { ReactNode } from 'react'
-import { X } from 'lucide-react'
-import { Button } from '../../ui/ds/Button'
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
+import { ChevronDown, Settings, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { Topbar } from '../../ui/ds/Frame'
 
-// ── Page layout ────────────────────────────────────────────────────────────────
-
-/** Full-width scrollable content pane for a section. */
-export function SectionPane({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[48px] py-[40px]">
-      {children}
-    </div>
-  )
-}
-
-/** Section heading (h1) + optional subtitle. */
-export function SectionHeading({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string
-  subtitle?: string
-  action?: ReactNode
-}) {
-  return (
-    <div className="mb-[28px] flex items-start justify-between">
-      <div>
-        <h1 className="m-0 font-display text-[28px] font-semibold text-ink">{title}</h1>
-        {subtitle && <p className="mt-[4px] text-[13px] text-muted">{subtitle}</p>}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
-  )
-}
-
-/** h2-level section group title inside a section. */
-export function SubHeading({ label }: { label: string }) {
-  return <h2 className="mb-[12px] text-[16px] font-semibold text-ink">{label}</h2>
-}
-
-/** Horizontal divider rule. */
-export function Rule() {
-  return <div className="my-[24px] h-px bg-line-strong" />
-}
-
-// ── Form row ──────────────────────────────────────────────────────────────────
-
-/**
- * A labelled setting row: label+desc on left, control on right.
- * Used extensively across sections.
+/*
+ * Control-panel primitives, mirroring the pen components used by every
+ * `Control panel · …` screen in omilo-v2.pen. Strokes never take layout space
+ * in pen, so row dividers are inset shadows and boxes use outlines.
  */
-export function SettingRow({
-  label,
-  desc,
+
+// ── Buttons (pen Button/Secondary sqbAw, Primary Upfho, Danger DUk7e, Quiet p38fT, Danger Solid YSMba) ──
+
+export type PenButtonVariant = 'secondary' | 'primary' | 'danger' | 'quiet' | 'danger-solid'
+
+export interface PenButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: PenButtonVariant
+  /** Height in px; pen default is 32. */
+  h?: number
+  /** Label size; pen default is 14. */
+  fs?: number
+  icon?: LucideIcon
+  /** Icon size; pen default is 16. */
+  iconSize?: number
+  /** Horizontal padding; pen default 14. */
+  px?: number
+}
+
+const BTN_LOOK: Record<PenButtonVariant, string> = {
+  secondary: 'bg-surface text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft font-medium',
+  primary: 'bg-primary text-primary-ink outline-1 -outline-offset-1 outline-primary hover:bg-primary-hover font-medium',
+  danger: 'bg-surface text-bad outline-1 -outline-offset-1 outline-bad-line hover:bg-bad-tint font-medium',
+  quiet: 'text-muted hover:bg-hover',
+  'danger-solid': 'bg-bad-solid text-primary-ink outline-1 -outline-offset-1 outline-bad-solid font-medium',
+}
+
+export function PenButton({
+  variant = 'secondary',
+  h = 32,
+  fs = 14,
+  px = 14,
+  icon: Icon,
+  iconSize = 16,
   children,
-}: {
-  label: string
-  desc?: string
-  children?: ReactNode
-}) {
-  return (
-    <div className="flex min-h-[48px] items-center gap-[16px] py-[8px]">
-      <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <span className="text-[13px] font-medium text-ink">{label}</span>
-        {desc && <span className="text-[12px] text-muted">{desc}</span>}
-      </div>
-      {children && <div className="shrink-0">{children}</div>}
-    </div>
-  )
-}
-
-/** Row separator (thin line between setting rows). */
-export function RowDivider() {
-  return <div className="h-px bg-line" />
-}
-
-/** Card that wraps a group of setting rows. */
-export function SettingCard({ children }: { children: ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface">
-      {children}
-    </div>
-  )
-}
-
-/** Vertical stack of SettingRow + RowDivider. Pass rows as children. */
-export function SettingCardRows({ children }: { children: ReactNode }) {
-  return <SettingCard><div className="px-[16px]">{children}</div></SettingCard>
-}
-
-// ── Text input ────────────────────────────────────────────────────────────────
-
-export function TextInput({
-  value,
-  placeholder,
   className = '',
-}: {
-  value?: string
-  placeholder?: string
-  className?: string
-}) {
-  return (
-    <input
-      readOnly
-      value={value}
-      placeholder={placeholder}
-      className={`h-[34px] min-w-[240px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none ${className}`}
-    />
-  )
-}
-
-// ── Toggle ────────────────────────────────────────────────────────────────────
-
-export function Toggle({ on = false }: { on?: boolean }) {
+  type = 'button',
+  style,
+  ...rest
+}: PenButtonProps) {
   return (
     <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      className={`relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors ${
-        on ? 'bg-ink' : 'bg-line-strong'
-      }`}
+      type={type}
+      className={`inline-flex shrink-0 items-center justify-center gap-[6px] rounded-btn whitespace-nowrap transition-colors ${BTN_LOOK[variant]} ${className}`}
+      style={{ height: h, fontSize: fs, paddingLeft: px, paddingRight: px, ...style }}
+      {...rest}
     >
-      <span
-        className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white shadow transition-transform ${
-          on ? 'translate-x-[18px]' : 'translate-x-[2px]'
-        }`}
-      />
+      {Icon && <Icon size={iconSize} aria-hidden className="shrink-0" />}
+      {children}
     </button>
   )
 }
 
-// ── Badge ─────────────────────────────────────────────────────────────────────
+// ── Chips (pen Chip/Neutral KMRv6, Chip/Warn XnZud, Chip/Run y85gB, Chip/Up Elczk) ──
 
-export function StatusBadge({ label, color }: { label: string; color: 'ok' | 'warn' | 'bad' | 'info' | 'neutral' }) {
-  const colors = {
-    ok: 'bg-ok-tint text-ok border-ok-line',
-    warn: 'bg-warn-tint text-warn border-warn-line',
-    bad: 'bg-bad-tint text-bad border-bad-line',
-    info: 'bg-info-tint text-info border-info-line',
-    neutral: 'bg-soft text-muted border-line-strong',
-  }
+export type ChipTone = 'neutral' | 'warn' | 'info' | 'ok' | 'bad'
+
+const CHIP_LOOK: Record<ChipTone, string> = {
+  neutral: 'bg-soft outline-line-strong text-ink-2',
+  warn: 'bg-warn-tint outline-warn-line text-warn',
+  info: 'bg-info-tint outline-info-line text-info',
+  ok: 'bg-ok-tint outline-ok-line text-ok',
+  bad: 'bg-bad-tint outline-bad-line text-bad',
+}
+
+export function Chip({
+  tone = 'neutral',
+  icon: Icon,
+  children,
+  className = '',
+}: {
+  tone?: ChipTone
+  icon?: LucideIcon
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <span className={`inline-flex items-center rounded-pill border px-[8px] py-[2px] text-[11px] font-medium ${colors[color]}`}>
-      {label}
+    <span
+      className={`inline-flex h-[22px] shrink-0 items-center gap-[4px] rounded-sm px-[8px] text-[12px] font-medium whitespace-nowrap outline-1 -outline-offset-1 ${CHIP_LOOK[tone]} ${className}`}
+    >
+      {Icon && <Icon size={12} aria-hidden className="shrink-0" />}
+      {children}
     </span>
   )
 }
 
-// ── Select (visual-only) ──────────────────────────────────────────────────────
+// ── Fields (pen Input PzYhe, Select gVDns) ────────────────────────────────────
 
-export function SelectField({ value }: { value: string }) {
+export function FieldLabel({ children }: { children: ReactNode }) {
+  return <span className="text-[13px] font-medium text-ink-2">{children}</span>
+}
+
+export function Field({
+  label,
+  value,
+  placeholder,
+  icon: Icon,
+  help,
+  width,
+  fs = 14,
+  mono,
+  trailing,
+  select,
+  h = 36,
+  className = '',
+  valueClassName = '',
+}: {
+  label?: ReactNode
+  value?: ReactNode
+  placeholder?: string
+  icon?: LucideIcon
+  help?: ReactNode
+  width?: number | string
+  fs?: number
+  mono?: boolean
+  trailing?: ReactNode
+  /** Draw the select chevron (pen Select). */
+  select?: boolean
+  h?: number
+  className?: string
+  valueClassName?: string
+}) {
+  return (
+    <div
+      className={`flex shrink-0 flex-col gap-[6px] ${width === undefined ? 'w-full' : ''} ${className}`}
+      style={width !== undefined ? { width } : undefined}
+    >
+      {label && <FieldLabel>{label}</FieldLabel>}
+      <div
+        className="flex w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong"
+        style={{ height: h }}
+      >
+        {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
+        <span
+          className={`min-w-0 flex-1 truncate ${value !== undefined ? 'text-ink' : 'text-faint'} ${mono ? 'font-mono' : ''} ${valueClassName}`}
+          style={{ fontSize: fs }}
+        >
+          {value ?? placeholder}
+        </span>
+        {trailing}
+        {select && <ChevronDown size={16} aria-hidden className="shrink-0 text-muted" />}
+      </div>
+      {help && <span className="text-[12.5px] text-muted">{help}</span>}
+    </div>
+  )
+}
+
+// ── Icon tile (pen Icon Tile vwHMT) ───────────────────────────────────────────
+
+export function IconTile({
+  icon: Icon,
+  size = 32,
+  iconSize = 16,
+  className = '',
+  iconClassName = 'text-ink-2',
+  style,
+}: {
+  icon: LucideIcon
+  size?: number
+  iconSize?: number
+  className?: string
+  iconClassName?: string
+  style?: CSSProperties
+}) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line ${className}`}
+      style={{ width: size, height: size, ...style }}
+    >
+      <Icon size={iconSize} aria-hidden className={iconClassName} />
+    </span>
+  )
+}
+
+// ── Radio (pen Radio/On hufFB, Radio/Off XCuSG) ──────────────────────────────
+
+export function Radio({ on }: { on?: boolean }) {
+  return on ? (
+    <span className="flex size-[16px] shrink-0 items-center justify-center rounded-full bg-primary">
+      <span className="size-[6px] rounded-full bg-primary-ink" />
+    </span>
+  ) : (
+    <span className="size-[16px] shrink-0 rounded-full bg-surface outline-1 -outline-offset-1 outline-faint" />
+  )
+}
+
+// ── Toggle ───────────────────────────────────────────────────────────────────
+
+export function Toggle({ on = false, label }: { on?: boolean; label?: string }) {
+  return (
+    <span
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      className={`relative inline-flex h-[20px] w-[34px] shrink-0 rounded-full transition-colors ${on ? 'bg-primary' : 'bg-wire-strong'}`}
+    >
+      <span
+        className={`absolute top-[2px] size-[16px] rounded-full bg-surface shadow-[0_1px_2px_#0C0A0933] transition-transform ${on ? 'translate-x-[16px]' : 'translate-x-[2px]'}`}
+      />
+    </span>
+  )
+}
+
+// ── Avatars ──────────────────────────────────────────────────────────────────
+
+export function Initials({
+  text,
+  color,
+  size = 28,
+  fs = 11,
+  ring,
+}: {
+  text: string
+  color: string
+  size?: number
+  fs?: number
+  /** Surface ring (stacked avatars) */
+  ring?: boolean
+}) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${ring ? 'outline-2 outline-surface' : ''}`}
+      style={{ width: size, height: size, background: color, fontSize: fs }}
+    >
+      {text}
+    </span>
+  )
+}
+
+// ── Page layout ──────────────────────────────────────────────────────────────
+
+/** Topbar + centred 860 page in a scroll + optional save bar. */
+export function PageShell({
+  crumb,
+  children,
+  gap = 18,
+  saveBar,
+  width = 860,
+  pad = '20px 0 16px 0',
+}: {
+  crumb: string
+  children: ReactNode
+  gap?: number
+  saveBar?: boolean
+  width?: number
+  pad?: string
+}) {
+  return (
+    <>
+      <Topbar icon={Settings} title="Control panel" meta={`/  ${crumb}`} />
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto">
+        <div className="flex shrink-0 flex-col" style={{ width, gap, padding: pad }}>
+          {children}
+        </div>
+      </div>
+      {saveBar && <SaveBar />}
+    </>
+  )
+}
+
+export function PageHeader({
+  title,
+  sub,
+  actions,
+  gap = 12,
+}: {
+  title: string
+  sub?: ReactNode
+  actions?: ReactNode
+  gap?: number
+}) {
+  return (
+    <div className="flex w-full items-end" style={{ gap }}>
+      <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+        <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">{title}</h1>
+        {sub && <p className="m-0 text-[13px] text-muted">{sub}</p>}
+      </div>
+      {actions}
+    </div>
+  )
+}
+
+/** A titled group: head (T 14/600 + optional D 12.5 muted) then content, gap 10. */
+export function Group({
+  title,
+  desc,
+  right,
+  children,
+  gap = 10,
+  inlineDesc,
+}: {
+  title: ReactNode
+  desc?: ReactNode
+  right?: ReactNode
+  children?: ReactNode
+  gap?: number
+  /** Head lays T and D out in a row (gap 8). */
+  inlineDesc?: boolean
+}) {
+  return (
+    <section className="flex w-full flex-col" style={{ gap }}>
+      <div className={`flex w-full ${inlineDesc ? 'items-center gap-[8px]' : 'items-end gap-[8px]'}`}>
+        <div className={`flex min-w-0 ${inlineDesc ? 'items-center gap-[8px]' : 'flex-1 flex-col gap-[2px]'}`}>
+          <h2 className="m-0 text-[14px] font-semibold text-ink">{title}</h2>
+          {desc && <p className="m-0 text-[12.5px] text-muted">{desc}</p>}
+        </div>
+        {right && (
+          <>
+            <div className="h-px min-w-0 flex-1" />
+            {right}
+          </>
+        )}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** pen setting Box: radius 12 · line-strong stroke · padding 4 14. */
+export function Box({
+  children,
+  className = '',
+  pad = '4px 14px',
+  style,
+}: {
+  children: ReactNode
+  className?: string
+  pad?: string
+  style?: CSSProperties
+}) {
+  return (
+    <div
+      className={`flex w-full flex-col rounded-lg outline-1 -outline-offset-1 outline-line-strong ${className}`}
+      style={{ padding: pad, ...style }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Bottom hairline that takes no layout space (pen stroke bottom). */
+export const lineBottom = 'shadow-[inset_0_-1px_0_var(--color-line)]'
+export const lineTop = 'shadow-[inset_0_1px_0_var(--color-line)]'
+
+/** A setting row: T 13.5/500 + D 12 muted, control on the right; padding 12 0. */
+export function Row({
+  title,
+  desc,
+  children,
+  last,
+  gap = 16,
+  pad = '12px 0',
+  leading,
+}: {
+  title: ReactNode
+  desc?: ReactNode
+  children?: ReactNode
+  last?: boolean
+  gap?: number
+  pad?: string
+  leading?: ReactNode
+}) {
+  return (
+    <div className={`flex w-full items-center ${last ? '' : lineBottom}`} style={{ gap, padding: pad }}>
+      {leading}
+      <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+        <span className="text-[13.5px] font-medium text-ink">{title}</span>
+        {desc && <span className="text-[12px] text-muted">{desc}</span>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+export function SaveBar({ state = 'No unsaved changes' }: { state?: string }) {
+  return (
+    <div className={`flex w-full shrink-0 items-center gap-[8px] px-[20px] py-[10px] ${lineTop}`}>
+      <span className="min-w-0 flex-1 text-[12px] text-muted">{state}</span>
+      <PenButton>Discard</PenButton>
+      <PenButton variant="primary">Save changes</PenButton>
+    </div>
+  )
+}
+
+// ── Dialog / Drawer shells ───────────────────────────────────────────────────
+
+/** Scrim (#0C0A0940) over the whole window. */
+export function Scrim({ onClose, children, align = 'center' }: { onClose?: () => void; children: ReactNode; align?: 'center' | 'right' }) {
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex bg-[#0C0A0940] ${align === 'center' ? 'items-center justify-center' : 'justify-end'}`}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.()
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function CloseButton({ onClose }: { onClose?: () => void }) {
   return (
     <button
       type="button"
-      className="flex h-[34px] min-w-[200px] items-center gap-[8px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink"
+      aria-label="Close"
+      onClick={onClose}
+      className="inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
     >
-      <span className="flex-1 text-left">{value}</span>
-      <svg width="12" height="12" viewBox="0 0 12 12" className="text-muted" aria-hidden>
-        <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <X size={16} aria-hidden />
     </button>
   )
 }
 
-// ── Modal / Dialog ────────────────────────────────────────────────────────────
-
-/** Lightweight modal backdrop + card. No portal needed for static visual. */
-export function Modal({
+/** pen Dialog: radius 20 · line-strong · shadow 0 24 48 #1C19173D · head / body / footer. */
+export function DialogCard({
+  width,
   title,
-  subtitle,
-  width = 480,
+  sub,
+  icon,
+  tile,
   onClose,
   children,
   footer,
+  bodyGap = 16,
+  label,
+  offsetY = 0,
 }: {
-  title: string
-  subtitle?: string
-  width?: number
+  width: number
+  title: ReactNode
+  sub?: ReactNode
+  icon?: LucideIcon
+  tile?: ReactNode
   onClose?: () => void
   children: ReactNode
   footer?: ReactNode
+  bodyGap?: number
+  label?: string
+  /** Shift from the vertical centre (pen dialogs are not always centred). */
+  offsetY?: number
+}) {
+  return (
+    <Scrim onClose={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label ?? (typeof title === 'string' ? title : undefined)}
+        className="flex flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong"
+        style={{ width, transform: offsetY ? `translateY(${offsetY}px)` : undefined }}
+      >
+        <div className={`flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] ${lineBottom}`}>
+          {tile ?? (icon && <IconTile icon={icon} />)}
+          <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+            <h2 className="m-0 text-[16px] font-semibold text-ink">{title}</h2>
+            {sub && <p className="m-0 text-[12.5px] text-muted">{sub}</p>}
+          </div>
+          <CloseButton onClose={onClose} />
+        </div>
+        <div className="flex w-full flex-col p-[20px]" style={{ gap: bodyGap }}>
+          {children}
+        </div>
+        {footer && (
+          <div className={`flex w-full items-center gap-[8px] px-[20px] py-[12px] ${lineTop}`}>{footer}</div>
+        )}
+      </div>
+    </Scrim>
+  )
+}
+
+/** pen Drawer: right-anchored full-height panel. */
+export function DrawerCard({
+  width,
+  children,
+  onClose,
+  label,
+  className = '',
+}: {
+  width: number
+  children: ReactNode
+  onClose?: () => void
+  label: string
+  className?: string
+}) {
+  return (
+    <Scrim onClose={onClose} align="right">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
+        className={`flex h-full flex-col overflow-hidden bg-surface ${className}`}
+        style={{ width }}
+      >
+        {children}
+      </div>
+    </Scrim>
+  )
+}
+
+/** Summary table row (label left, mono value right). */
+export function SumRow({
+  label,
+  value,
+  strong,
+  soft,
+  first,
+}: {
+  label: ReactNode
+  value: ReactNode
+  strong?: boolean
+  soft?: boolean
+  first?: boolean
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0940] backdrop-blur-sm"
-      aria-modal="true"
-      role="dialog"
+      className={`flex w-full gap-[8px] px-[14px] py-[10px] ${soft ? 'bg-soft' : ''} ${first ? '' : lineTop}`}
     >
-      <div
-        className="relative flex max-h-[90vh] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A091F]"
-        style={{ width }}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between px-[24px] pt-[24px] pb-[16px]">
-          <div>
-            <h2 className="m-0 text-[17px] font-semibold text-ink">{title}</h2>
-            {subtitle && <p className="mt-[4px] text-[13px] text-muted">{subtitle}</p>}
-          </div>
-          {onClose && (
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={onClose}
-              className="ml-[12px] flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover"
-            >
-              <X size={16} aria-hidden />
-            </button>
-          )}
-        </div>
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-[24px] pb-[24px]">{children}</div>
-        {/* Footer */}
-        {footer && (
-          <div className="flex items-center justify-end gap-[8px] border-t border-line px-[24px] py-[16px]">
-            {footer}
-          </div>
-        )}
-      </div>
+      <span className={`min-w-0 flex-1 text-[13px] ${strong ? 'font-semibold text-ink' : 'text-ink-2'}`}>{label}</span>
+      <span className={`font-mono text-[12.5px] text-ink ${strong ? 'font-semibold' : ''}`}>{value}</span>
     </div>
   )
 }
 
-// ── Footer bar (save / discard) ───────────────────────────────────────────────
-
-export function SaveBar({ dirty = false }: { dirty?: boolean }) {
+/** pen Spinner g4C5A: 14px ring, line-strong track, ink 90° arc. */
+export function Spinner({ size = 14 }: { size?: number }) {
   return (
-    <div className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-[48px]">
-      <span className="text-[12px] text-muted">{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span>
-      <div className="flex items-center gap-[8px]">
-        <Button variant="secondary" height={30}>Discard</Button>
-        <Button variant="primary" height={30}>Save changes</Button>
-      </div>
-    </div>
-  )
-}
-
-// ── Breadcrumb ─────────────────────────────────────────────────────────────────
-
-export function Breadcrumb({ section }: { section: string }) {
-  return (
-    <div className="flex items-center gap-[6px] text-[12px] text-muted">
-      <span>Control panel</span>
-      <span>/</span>
-      <span className="text-ink">{section}</span>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 14 14" aria-hidden className="shrink-0 animate-spin">
+      <circle cx="7" cy="7" r="6.02" fill="none" stroke="var(--color-line-strong)" strokeWidth="1.96" />
+      <path d="M11.26 2.74 A6.02 6.02 0 0 1 11.26 11.26" fill="none" stroke="var(--color-ink)" strokeWidth="1.96" />
+    </svg>
   )
 }

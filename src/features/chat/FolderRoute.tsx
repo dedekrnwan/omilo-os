@@ -1,225 +1,336 @@
-import { useParams } from '@tanstack/react-router'
-import { ChevronRight, Folder, MoreHorizontal, Pencil, Share2, Plus } from 'lucide-react'
-import type { Session } from '../../core/domain/types'
-import { useChannelFolders, useChannelSessions } from '../../app/queries'
+import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { notFound, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import {
+  Archive,
+  Check,
+  ChevronRight,
+  Ellipsis,
+  File,
+  Folder,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  Paperclip,
+  Pencil,
+  Pin,
+  Plus,
+  ScrollText,
+  Target,
+  Trash2,
+  UserPlus,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { Folder as FolderT, Session } from '../../core/domain/types'
+import { useChannel, useChannelFolders, useChannelSessions } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
+import { Topbar } from '../../ui/ds/Frame'
+import { Mascot } from '../../ui/ds/Mascot'
+import { accents } from '../../ui/ds/accents'
+import { FOLDER_PAGES } from './data'
+import type { FolderChat, FolderPage } from './data'
 
-// ── Folder instruction panel ──────────────────────────────────────────────────
+// ── pen `Chat · Folder` (A8lWSN) ─────────────────────────────────────────────
 
-interface FolderInstructionsProps {
-  instructions: string
+/** Folder page content: the design's copy for Q4 Launch, derived from fixtures otherwise. */
+function folderPage(folder: FolderT, sessions: Session[]): FolderPage {
+  const known = FOLDER_PAGES[folder.id]
+  if (known) return known
+  return {
+    instructions: 'Add instructions to tell helpers what every chat in this folder is about.',
+    files: [],
+    chats: sessions
+      .filter((s) => s.folderId === folder.id)
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        snippet: s.goal ? `Linked to ${s.goal}` : 'No linked goal',
+        agents: (s.participants ?? [{ area: 'brand' as const }]).map((p) => p.area),
+        time: s.updated,
+      })),
+  }
 }
 
-function FolderInstructions({ instructions }: FolderInstructionsProps) {
+// ── Chat menu (pen `Chat Menu` mXyV3 + `Folder Submenu` LiRnp) ────────────────
+
+const menuSurface =
+  'z-50 flex flex-col gap-px rounded-lg bg-surface p-[6px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong'
+const itemClass =
+  'flex w-full cursor-pointer items-center gap-[10px] rounded-btn px-[7px] py-[8px] text-left outline-none select-none data-[highlighted]:bg-hover data-[state=open]:bg-hover hover:bg-hover'
+
+function ItemBody({
+  icon: Icon,
+  label,
+  trail,
+  danger,
+  sub,
+}: {
+  icon: LucideIcon
+  label: string
+  trail?: ReactNode
+  danger?: boolean
+  sub?: boolean
+}) {
   return (
-    <div className="flex items-start gap-[10px] rounded-base bg-soft px-[14px] py-[11px] outline-1 -outline-offset-1 outline-line-strong">
-      <p className="min-w-0 flex-1 text-[12.5px] text-ink-2 leading-[1.5]">{instructions}</p>
-      <button
-        type="button"
-        aria-label="Edit folder instructions"
-        className="shrink-0 text-[12px] font-medium text-ink-2 hover:text-ink transition-colors"
-      >
-        Edit
-      </button>
-    </div>
+    <>
+      <Icon size={15} aria-hidden className={danger ? 'text-bad' : 'text-ink-2'} />
+      <span className={`min-w-0 flex-1 text-[12.5px] ${danger ? 'text-bad' : 'text-ink'}`}>{label}</span>
+      {trail && <span className="text-[12px] text-faint">{trail}</span>}
+      {sub && <ChevronRight size={14} aria-hidden className="text-faint" />}
+    </>
   )
 }
 
-// ── Folder file attachment ────────────────────────────────────────────────────
-
-interface FolderFile {
-  name: string
+function Divider() {
+  return <div className="h-px w-full bg-line-strong" />
 }
 
-function FileChip({ name }: { name: string }) {
+function ChatMenu({
+  chat,
+  folders,
+  currentFolderId,
+  open,
+  onOpenChange,
+  subOpen,
+}: {
+  chat: FolderChat
+  folders: FolderT[]
+  currentFolderId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Force the Move-to-folder submenu open (design state). */
+  subOpen?: boolean
+}) {
   return (
-    <button
-      type="button"
-      className="flex items-center gap-[6px] rounded-sm px-[9px] py-[5px] text-[12px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong bg-surface hover:bg-soft transition-colors truncate"
+    <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label={`More actions for ${chat.title}`}
+          className={`flex shrink-0 hover:text-ink ${open ? 'text-ink' : 'text-faint'}`}
+        >
+          <Ellipsis size={16} aria-hidden />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} alignOffset={-8} className={`w-[228px] ${menuSurface}`}>
+          <DropdownMenu.Item className={itemClass}>
+            <ItemBody icon={Pencil} label="Rename" />
+          </DropdownMenu.Item>
+          <DropdownMenu.Sub open={subOpen || undefined}>
+            <DropdownMenu.SubTrigger className={itemClass}>
+              <ItemBody icon={FolderInput} label="Move to folder" sub />
+            </DropdownMenu.SubTrigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.SubContent sideOffset={10} alignOffset={-6} className={`w-[200px] ${menuSurface}`}>
+                {folders.map((f) => (
+                  <DropdownMenu.Item key={f.id} className={itemClass}>
+                    <ItemBody
+                      icon={Folder}
+                      label={f.name}
+                      trail={f.id === currentFolderId ? <Check size={14} aria-label="Current folder" className="text-ink" /> : undefined}
+                    />
+                  </DropdownMenu.Item>
+                ))}
+                <Divider />
+                <DropdownMenu.Item className={itemClass}>
+                  <ItemBody icon={FolderPlus} label="New folder…" />
+                </DropdownMenu.Item>
+              </DropdownMenu.SubContent>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Sub>
+          <DropdownMenu.Item className={itemClass}>
+            <ItemBody icon={Target} label="Link to goal" sub />
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={itemClass}>
+            <ItemBody icon={Pin} label="Pin to sidebar" />
+          </DropdownMenu.Item>
+          <Divider />
+          <DropdownMenu.Item className={itemClass}>
+            <ItemBody icon={Archive} label="Archive" trail="E" />
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={itemClass}>
+            <ItemBody icon={Trash2} label="Delete" trail="⌫" danger />
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+// ── Chat row ──────────────────────────────────────────────────────────────────
+
+function FolderChatRow({
+  chat,
+  highlighted,
+  onOpen,
+  menu,
+}: {
+  chat: FolderChat
+  highlighted: boolean
+  onOpen: () => void
+  menu: ReactNode
+}) {
+  const topRule = !highlighted
+  return (
+    <div
+      data-highlighted={highlighted || undefined}
+      className={`group flex w-full items-center gap-[11px] px-[9px] py-[11px] hover:rounded-md hover:bg-soft data-[highlighted]:rounded-md data-[highlighted]:bg-soft ${
+        topRule ? 'shadow-[inset_0_1px_0_var(--color-line-strong)] hover:shadow-none' : ''
+      }`}
     >
-      <Folder size={13} aria-hidden className="text-muted shrink-0" />
-      <span className="truncate">{name}</span>
-    </button>
-  )
-}
-
-// ── Chat row in folder view ───────────────────────────────────────────────────
-
-function FolderChatRow({ session }: { session: Session }) {
-  return (
-    <div className="flex w-full items-start gap-[12px] rounded-base px-[14px] py-[12px] transition-colors hover:bg-soft group">
-      {/* Participant avatars */}
-      <div className="flex shrink-0 items-center" aria-hidden>
-        {(session.participants ?? [{ name: 'Chief', area: 'brand' as const }]).slice(0, 2).map((p, i) => (
-          <span
-            key={p.name}
-            title={p.name}
-            className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-line-strong text-[10px] font-medium text-ink-2 outline-2 outline-surface"
-            style={{ marginLeft: i > 0 ? -6 : 0 }}
-          >
-            {p.name.charAt(0)}
-          </span>
-        ))}
-      </div>
-
-      {/* Title + preview */}
-      <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-        <div className="flex items-center gap-[8px]">
-          <span className="text-[13px] font-medium text-ink truncate">{session.title}</span>
-          <span className="ml-auto shrink-0 text-[11.5px] text-faint whitespace-nowrap">{session.updated}</span>
-        </div>
-        <span className="text-[12px] text-muted truncate">
-          {session.participants?.map((p) => p.name).join(', ') ?? 'Chief'} ·{' '}
-          {session.goal ?? 'No linked goal'}
-        </span>
-      </div>
-
-      {/* Options button */}
-      <button
-        type="button"
-        aria-label={`Options for "${session.title}"`}
-        className="shrink-0 flex h-[24px] w-[24px] items-center justify-center rounded-xs text-faint opacity-0 group-hover:opacity-100 transition-opacity hover:bg-hover hover:text-muted"
-      >
-        <MoreHorizontal size={14} aria-hidden />
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-[3px] text-left">
+        <span className="truncate text-[13px] font-medium text-ink">{chat.title}</span>
+        <span className="truncate text-[12.5px] text-muted">{chat.snippet}</span>
       </button>
+      <span className="flex shrink-0 gap-[4px]">
+        {chat.agents.map((a, i) => (
+          <Mascot key={`${a}-${i}`} size={18} radius={5} area={a} />
+        ))}
+      </span>
+      <span className="text-[12px] whitespace-nowrap text-faint">{chat.time}</span>
+      {menu}
     </div>
   )
 }
 
-// ── Static folder-level file stubs ───────────────────────────────────────────
-
-const FOLDER_FILES: FolderFile[] = [
-  { name: 'Passkey rollout — v1' },
-  { name: 'Launch checklist.xlsx' },
-  { name: 'Freeze calendar.pdf' },
-]
-
-const FOLDER_DEFAULT_INSTRUCTIONS =
-  'Everything here is about the Nov 28 launch. Keep answers short, cite the rollout doc, and flag anything that risks the code freeze.'
-
-// ── FolderRoute ───────────────────────────────────────────────────────────────
+// ── Route ─────────────────────────────────────────────────────────────────────
 
 /**
  * Route: /chat/$channelId/folder/$folderId
- * Renders the folder view matching A8lWSN.png.
- * Layout (ChatChannelLayout) provides sidebar + Inset wrapper.
+ * `?state=menu` opens the chat menu + Move-to-folder submenu on the third chat (design state).
  */
 export function FolderRoute() {
   const params = useParams({ strict: false })
-  const channelId = params.channelId ?? 'ch-engineering'
+  const channelId = params.channelId ?? ''
   const folderId = params.folderId ?? ''
-
-  const { data: folders = [] } = useChannelFolders(channelId)
+  const navigate = useNavigate()
+  const { state } = useSearch({ strict: false }) as { state?: string }
+  const { data: channel } = useChannel(channelId)
+  const { data: folders = [], isLoading } = useChannelFolders(channelId)
   const { data: sessions = [] } = useChannelSessions(channelId)
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const designMenu = state === 'menu'
 
-  const folder = folders.find((f) => f.id === folderId) ?? folders[0]
-  const folderSessions = sessions.filter((s) => s.folderId === (folder?.id ?? folderId))
+  if (isLoading) return null
+  const folder = folders.find((f) => f.id === folderId)
+  if (!folder) throw notFound()
 
-  if (!folder) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
-        Folder not found.
-      </div>
-    )
+  const page = folderPage(folder, sessions)
+  const accent = accents[channel?.accent ?? 'general']
+  const openChatId = menuFor ?? (designMenu ? page.chats[2]?.id : null)
+  const highlightedIndex = page.chats.findIndex((c) => c.id === openChatId)
+  const sub = [
+    `${page.chats.length} chats`,
+    `${page.files.length} files`,
+    page.sharedWith ? `shared with ${page.sharedWith}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  function openChat(id: string) {
+    if (sessions.some((s) => s.id === id)) {
+      void navigate({ to: '/chat/$channelId/$sessionId', params: { channelId, sessionId: id } })
+    }
   }
 
   return (
     <>
-      {/* Topbar */}
-      <header className="flex h-[44px] w-full shrink-0 items-center gap-[8px] border-b border-line px-[16px]">
-        <Folder size={15} aria-hidden className="shrink-0 text-muted" />
-        {/* Breadcrumb */}
-        <div className="flex min-w-0 items-center gap-[5px] text-[13px]">
-          <span className="text-muted">Folder</span>
-          <ChevronRight size={13} aria-hidden className="text-faint shrink-0" />
-          <span className="font-medium text-ink truncate">{folder.name}</span>
-        </div>
-        <div className="h-px min-w-0 flex-1" />
-        {/* Actions */}
-        <button
-          type="button"
-          aria-label="Share folder"
-          className="flex h-[28px] items-center gap-[5px] rounded-sm px-[9px] text-[12px] font-medium text-ink-2 outline-1 -outline-offset-1 outline-line-strong bg-surface hover:bg-hover transition-colors"
-        >
-          <Share2 size={13} aria-hidden className="text-muted" />
-          Share
-        </button>
-        <Button icon={Plus} height={28} variant="primary">
-          New chat in folder
-        </Button>
-      </header>
+      <Topbar
+        icon={FolderOpen}
+        title={folder.name}
+        meta={`Folder · ${channel?.name ?? ''}`}
+        actions={
+          <div className="flex items-center gap-[8px]">
+            <Button variant="secondary" icon={UserPlus}>
+              Share
+            </Button>
+            <Button icon={Plus} onClick={() => void navigate({ to: '/chat/$channelId', params: { channelId } })}>
+              New chat in folder
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {/* Folder meta hero */}
-        <div className="flex flex-col gap-[14px] border-b border-line px-[20px] py-[18px]">
-          {/* Title + count */}
-          <div className="flex items-center gap-[12px]">
-            <span className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-md bg-hover">
-              <Folder size={20} aria-hidden className="text-muted" />
-            </span>
-            <div className="flex flex-col gap-[1px]">
-              <h1 className="m-0 text-[18px] font-semibold text-ink tracking-[-0.3px]">{folder.name}</h1>
-              <span className="text-[12.5px] text-muted">
-                {folder.count} chats · 3 files · shared with Rina, Bayu
-              </span>
-            </div>
-            <div className="flex-1" />
-            <button
-              type="button"
-              aria-label="Rename folder"
-              className="flex h-[28px] w-[28px] items-center justify-center rounded-xs text-faint hover:text-muted hover:bg-hover transition-colors"
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto">
+        <div className="flex w-[860px] max-w-full flex-col gap-[21px] pt-[26px] pb-[29px]">
+          {/* Head */}
+          <div className="flex w-full items-center gap-[12px]">
+            <span
+              aria-hidden
+              className="flex size-[48px] shrink-0 items-center justify-center rounded-lg"
+              style={{ background: accent.chipBg, color: accent.chipInk }}
             >
-              <Pencil size={14} aria-hidden />
-            </button>
+              <FolderOpen size={22} />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+              <h2 className="m-0 font-display text-[22px] font-semibold tracking-[-0.5px] text-ink">
+                {folder.name}
+              </h2>
+              <p className="m-0 text-[13px] text-muted">{sub}</p>
+            </div>
           </div>
 
-          {/* Two-column: instructions + files */}
-          <div className="flex gap-[16px]">
-            <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
-              <span className="text-[11px] font-medium tracking-[0.8px] text-faint">FOLDER INSTRUCTIONS</span>
-              <FolderInstructions instructions={FOLDER_DEFAULT_INSTRUCTIONS} />
-            </div>
-            <div className="flex w-[200px] shrink-0 flex-col gap-[6px]">
-              <div className="flex items-center gap-[4px]">
-                <span className="text-[11px] font-medium tracking-[0.8px] text-faint">FILES</span>
-                <div className="flex-1" />
-                <button
-                  type="button"
-                  aria-label="Add file to folder"
-                  className="flex h-[18px] w-[18px] items-center justify-center rounded-xs text-faint hover:text-muted hover:bg-hover transition-colors"
-                >
-                  <Plus size={12} aria-hidden />
+          {/* Context: instructions + files */}
+          <div className="flex w-full items-start gap-[12px]">
+            <section
+              aria-label="Folder instructions"
+              className="flex min-w-0 flex-1 flex-col gap-[8px] rounded-md bg-soft p-[13px] outline-1 -outline-offset-1 outline-line"
+            >
+              <div className="flex w-full items-center gap-[6px]">
+                <ScrollText size={14} aria-hidden className="text-muted" />
+                <span className="flex-1 text-[12.5px] font-medium text-ink-2">Folder instructions</span>
+                <button type="button" aria-label="Edit folder instructions" className="text-[12.5px] text-link hover:underline">
+                  Edit
                 </button>
               </div>
-              <div className="flex flex-col gap-[4px]">
-                {FOLDER_FILES.map((f) => (
-                  <FileChip key={f.name} name={f.name} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Chats in folder */}
-        <div className="flex flex-col">
-          <div className="flex items-center gap-[8px] px-[20px] py-[10px]">
-            <span className="text-[12px] font-medium text-ink-2">Chats in this folder</span>
-            <div className="flex-1" />
-            <button
-              type="button"
-              className="text-[12px] text-muted hover:text-ink-2 transition-colors"
+              <p className="m-0 text-[12.5px] leading-[1.55] text-ink-2">{page.instructions}</p>
+            </section>
+            <section
+              aria-label="Files"
+              className="flex w-[300px] shrink-0 flex-col gap-[8px] rounded-md p-[13px] outline-1 -outline-offset-1 outline-line-strong"
             >
-              Recent first
-            </button>
+              <div className="flex w-full items-center gap-[6px]">
+                <Paperclip size={14} aria-hidden className="text-muted" />
+                <span className="flex-1 text-[12.5px] font-medium text-ink-2">Files</span>
+                <button type="button" aria-label="Add file" className="flex text-muted hover:text-ink">
+                  <Plus size={14} aria-hidden />
+                </button>
+              </div>
+              {page.files.map((name) => (
+                <div key={name} className="flex w-full items-center gap-[8px]">
+                  <File size={13} aria-hidden className="text-faint" />
+                  <span className="truncate text-[12.5px] text-ink-2">{name}</span>
+                </div>
+              ))}
+            </section>
           </div>
 
-          <div className="flex flex-col gap-px px-[8px] pb-[8px]">
-            {folderSessions.length > 0 ? (
-              folderSessions.map((s) => <FolderChatRow key={s.id} session={s} />)
-            ) : (
-              <p className="px-[14px] py-[12px] text-[13px] text-muted">No chats in this folder yet.</p>
-            )}
+          {/* Chats */}
+          <div className="flex w-full items-center">
+            <span className="flex-1 text-[12.5px] font-semibold text-ink">Chats in this folder</span>
+            <span className="text-[12.5px] text-muted">Recent first</span>
+          </div>
+          <div className="flex w-full flex-col">
+            {page.chats.map((chat, i) => (
+              <FolderChatRow
+                key={chat.id}
+                chat={chat}
+                highlighted={i === highlightedIndex}
+                onOpen={() => openChat(chat.id)}
+                menu={
+                  <ChatMenu
+                    chat={chat}
+                    folders={folders}
+                    currentFolderId={folder.id}
+                    open={openChatId === chat.id}
+                    subOpen={designMenu && menuFor === null}
+                    onOpenChange={(o) => setMenuFor(o ? chat.id : null)}
+                  />
+                }
+              />
+            ))}
           </div>
         </div>
       </div>

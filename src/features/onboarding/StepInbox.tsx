@@ -1,259 +1,339 @@
-import { Check, Filter, Edit } from 'lucide-react'
-import { Mascot } from '../../ui/ds/Mascot'
-import { Button } from '../../ui/ds/Button'
-import { COMPANY_NAME, INBOX_JOBS, GETTING_STARTED_ITEMS } from './data'
-import type { HelperArea } from '../../core/domain/types'
+/**
+ * Onboarding 6 · Team ready — the first Inbox (pen FZ9LR).
+ * The real app frame (Rail · Office sidebar · Inset) with the team's first jobs.
+ */
+import { useEffect, useState } from "react";
+import {
+  CalendarSync,
+  ChartLine,
+  Check,
+  Circle,
+  CircleCheck,
+  FileText,
+  Inbox,
+  Layers,
+  ListFilter,
+  MessageCircle,
+  Target,
+  Workflow,
+} from "lucide-react";
+import { useUIStore } from "../../app/store";
+import { Rail } from "../../ui/Rail";
+import { Button } from "../../ui/ds/Button";
+import { Inset, Topbar } from "../../ui/ds/Frame";
+import { Mascot } from "../../ui/ds/Mascot";
+import {
+  GroupLabel,
+  NavGroup,
+  NavLink,
+  SidebarFrame,
+} from "../../ui/ds/Sidebar";
+import {
+  COMPANY_NAME,
+  GETTING_STARTED_ITEMS,
+  INBOX_AREAS,
+  INBOX_JOBS,
+} from "./data";
+import type { InboxJob } from "./data";
+import { Stroke } from "./parts";
 
-interface StepInboxProps {
-  /** Called when user clicks "Approve all" or any individual "Approve" — leads into the real app. */
-  onApproveAll: () => void
-}
-
-const NAV_ITEMS = [
-  { label: 'Goals', icon: '○' },
-  { label: 'Inbox', icon: '□', active: true, badge: 5 },
-  { label: 'Flows', icon: '↺' },
-  { label: 'Routines', icon: '⟳' },
-  { label: 'Docs', icon: '📄' },
-  { label: 'Analytics', icon: '📊' },
-]
-
-const AREAS = [
-  { label: 'All areas', count: 14, active: true },
-  { label: 'General', count: 2, color: '#A8A29E' },
-  { label: 'Engineering', count: 5, color: 'var(--color-helper-dev)' },
-  { label: 'Marketing', count: 4, color: 'var(--color-helper-marketing)' },
-  { label: 'Business', count: 3, color: 'var(--color-helper-sales)' },
-]
-
-export function StepInbox({ onApproveAll }: StepInboxProps) {
+function Sidebar() {
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      {/* Simulated app sidebar — Office layout */}
-      <div
-        className="flex w-[180px] shrink-0 flex-col py-[14px]"
-        style={{ borderRight: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-      >
-        {/* Workspace */}
-        <div className="flex items-center gap-[8px] px-[12px] pb-[12px]">
-          <div
-            className="flex size-[28px] shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-primary-ink"
-            style={{ background: 'var(--color-primary)' }}
-          >
-            SW
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[12.5px] font-semibold text-ink">{COMPANY_NAME}</span>
-            <span className="text-[11px] text-muted">Office · 5 areas</span>
-          </div>
-        </div>
-
-        {/* Nav */}
-        <div className="flex flex-col gap-[1px] px-[6px]">
-          {NAV_ITEMS.map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center gap-[8px] rounded-md px-[8px] py-[5px]"
-              style={{
-                background: item.active ? 'var(--color-hover)' : 'transparent',
-              }}
-            >
-              <span className="text-[12px] text-muted">{item.icon}</span>
-              <span
-                className="flex-1 text-[12.5px]"
-                style={{
-                  fontWeight: item.active ? 500 : 400,
-                  color: item.active ? 'var(--color-ink)' : 'var(--color-ink-2)',
-                }}
-              >
-                {item.label}
-              </span>
-              {item.badge && (
-                <span
-                  className="flex h-[16px] items-center rounded-pill px-[5px] text-[10.5px] font-semibold text-primary-ink"
-                  style={{ background: 'var(--color-primary)' }}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="px-[14px] py-[8px]">
-          <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
-            Areas
+    <SidebarFrame label="Office">
+      <div className="flex w-full items-center gap-[8px] px-[8px] py-[6px]">
+        <div className="flex min-w-0 flex-1 flex-col gap-px">
+          <span className="truncate text-[13.5px] font-semibold text-ink">
+            {COMPANY_NAME}
+          </span>
+          <span className="truncate text-[11.5px] text-muted">
+            Office · 5 areas
           </span>
         </div>
-
-        <div className="flex flex-col gap-[1px] px-[6px]">
-          {AREAS.map((area) => (
-            <div
-              key={area.label}
-              className="flex items-center gap-[8px] rounded-md px-[8px] py-[5px]"
-              style={{ background: area.active ? 'var(--color-hover)' : 'transparent' }}
-            >
-              {area.color ? (
+      </div>
+      <NavGroup>
+        <NavLink icon={Target} label="Goals" />
+        <NavLink
+          icon={Inbox}
+          label="Inbox"
+          active
+          count={5}
+          countClassName="font-semibold text-[#EB6834]"
+        />
+        <NavLink icon={Workflow} label="Flows" />
+        <NavLink icon={CalendarSync} label="Routines" />
+        <NavLink icon={FileText} label="Docs" />
+        <NavLink icon={ChartLine} label="Analytics" />
+      </NavGroup>
+      <NavGroup>
+        <GroupLabel label="AREAS" />
+        <NavLink
+          icon={Layers}
+          label="All areas"
+          count={14}
+          labelClassName="text-ink-2"
+          active
+        />
+        {INBOX_AREAS.map((a) => (
+          <NavLink
+            key={a.label}
+            label={a.label}
+            count={a.count}
+            labelClassName="text-ink-2"
+            leading={
+              <span
+                aria-hidden
+                className="flex size-[16px] shrink-0 items-center justify-center"
+              >
                 <span
-                  className="size-[6px] shrink-0 rounded-full"
-                  style={{ background: area.color }}
+                  className="size-[8px] rounded-full"
+                  style={{ background: a.color }}
                 />
-              ) : (
-                <span className="size-[6px]" />
-              )}
-              <span
-                className="flex-1 text-[12px]"
-                style={{
-                  fontWeight: area.active ? 500 : 400,
-                  color: area.active ? 'var(--color-ink)' : 'var(--color-ink-2)',
-                }}
-              >
-                {area.label}
               </span>
-              <span className="text-[11px] text-muted">{area.count}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Main inbox content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Inbox header */}
-        <div
-          className="flex h-[44px] shrink-0 items-center gap-[10px] px-[20px]"
-          style={{ borderBottom: '1px solid var(--color-line-strong)' }}
-        >
-          <h1 className="m-0 text-[16px] font-semibold text-ink">Inbox</h1>
-          <div className="flex-1" />
-          <button
-            type="button"
-            className="flex items-center gap-[5px] rounded-btn px-[8px] py-[4px] text-[12px] text-muted transition-colors hover:bg-hover"
-          >
-            <Filter size={12} aria-hidden />
-            All areas
-          </button>
-        </div>
-
-        <div className="flex min-h-0 flex-1 overflow-y-auto px-[20px] py-[16px]">
-          {/* Team ready banner */}
-          <div
-            className="mb-[20px] flex items-center gap-[14px] rounded-lg p-[16px]"
-            style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-soft)' }}
-          >
-            <div className="flex items-center" style={{ gap: -6 }}>
-              {(['brand', 'dev', 'marketing', 'support'] as HelperArea[]).map((area, i) => (
-                <div key={area} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 4 - i }}>
-                  <Mascot size={28} radius={8} area={area} />
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col gap-[2px]">
-              <p className="m-0 text-[13.5px] font-semibold text-ink">Your team is ready, Dede</p>
-              <p className="m-0 text-[12.5px] text-muted">
-                Chief, Builder, Grower and Support each proposed a first job based on what you told
-                me. Nothing runs until you approve.
-              </p>
-            </div>
-          </div>
-
-          {/* First jobs to approve */}
-          <div className="mb-[12px] flex items-center gap-[8px]">
-            <h2 className="m-0 text-[13px] font-semibold text-ink">First jobs to approve</h2>
-            <span
-              className="flex h-[18px] items-center rounded-pill px-[6px] text-[11px] font-semibold text-primary-ink"
-              style={{ background: 'var(--color-primary)' }}
-            >
-              {INBOX_JOBS.length}
-            </span>
-            <div className="flex-1" />
-            <Button variant="secondary" height={28} icon={Check} onClick={onApproveAll}>
-              Approve all
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-[6px]">
-            {INBOX_JOBS.map((job) => (
-              <InboxJobRow key={job.id} job={job} onApprove={onApproveAll} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Right — Getting started */}
-      <div
-        className="flex w-[240px] shrink-0 flex-col gap-[14px] overflow-y-auto px-[20px] py-[20px]"
-        style={{ borderLeft: '1px solid var(--color-line-strong)' }}
-      >
-        <div className="flex items-center justify-between">
-          <span className="text-[12.5px] font-semibold text-ink">Getting started</span>
-          <span className="text-[12px] text-muted">2 of 6</span>
-        </div>
-
-        <div className="flex flex-col gap-[8px]">
-          {GETTING_STARTED_ITEMS.map((item) => (
-            <div key={item.id} className="flex items-start gap-[8px]">
-              <div
-                className="mt-[1px] flex size-[16px] shrink-0 items-center justify-center rounded-full"
-                style={{
-                  background: item.done ? 'var(--color-ok)' : 'transparent',
-                  border: item.done ? 'none' : '1.5px solid var(--color-line-strong)',
-                }}
-              >
-                {item.done && <Check size={9} className="text-primary-ink" strokeWidth={3} />}
-              </div>
-              <span
-                className="text-[12.5px] leading-[1.4]"
-                style={{
-                  color: item.done ? 'var(--color-muted)' : 'var(--color-ink)',
-                  textDecoration: item.done ? 'line-through' : 'none',
-                }}
-              >
-                {item.label}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div
-          className="mt-[4px] rounded-base p-[10px] text-[12px] leading-[1.5] text-ink-2"
-          style={{ background: 'var(--color-soft)', border: '1px solid var(--color-line-strong)' }}
-        >
-          Not sure? Ask Chief anything with ⌘J. It knows what your team is doing.
-        </div>
-      </div>
-    </div>
-  )
+            }
+          />
+        ))}
+      </NavGroup>
+    </SidebarFrame>
+  );
 }
 
-function InboxJobRow({
+function JobCard({
   job,
+  approved,
   onApprove,
 }: {
-  job: (typeof INBOX_JOBS)[0]
-  onApprove: () => void
+  job: InboxJob;
+  approved: boolean;
+  onApprove: () => void;
 }) {
   return (
-    <div
-      className="flex items-center gap-[12px] rounded-lg px-[14px] py-[12px]"
-      style={{ border: '1px solid var(--color-line-strong)', background: 'var(--color-surface)' }}
-    >
-      <Mascot size={32} radius={9} area={job.area} />
+    <article className="relative flex w-full items-center gap-[12px] rounded-lg bg-surface px-[16px] py-[15px]">
+      <Mascot helper area={job.area} size={28} radius={8} title={job.helper} />
       <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <div className="flex items-center gap-[6px]">
-          <span className="text-[12px] text-muted">{job.helper}</span>
-          <span className="text-[11.5px] text-muted">·</span>
-          <span className="text-[12px] text-muted">{job.cost}</span>
-        </div>
-        <p className="m-0 text-[13px] font-semibold text-ink">{job.title}</p>
-        <p className="m-0 text-[12px] text-muted">{job.desc}</p>
+        <p className="flex items-center gap-[6px] text-[12px] text-muted">
+          <span>{job.helper}</span>
+          <span>·</span>
+          <span className="font-mono text-[11.5px]">{job.cost}</span>
+        </p>
+        <h3 className="text-[14px] font-semibold text-ink">{job.title}</h3>
+        <p className="text-[12px] text-ink-2">{job.desc}</p>
       </div>
-      <span className="shrink-0 text-[12px] text-muted">Not now</span>
-      <Button variant="secondary" height={28} icon={Edit}>
-        Edit
-      </Button>
-      <Button variant="primary" height={28} onClick={onApprove}>
-        Approve
-      </Button>
+      {approved ? (
+        <span className="flex items-center gap-[6px] text-[13px] font-medium text-ok">
+          <CircleCheck size={15} aria-hidden />
+          Approved
+        </span>
+      ) : (
+        <div className="flex items-center gap-[10px]">
+          <button
+            type="button"
+            className="h-[32px] px-[14px] text-[14px] text-muted hover:text-ink"
+          >
+            Not now
+          </button>
+          <button
+            type="button"
+            className="h-[32px] rounded-btn bg-surface px-[14px] text-[14px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onApprove}
+            className="h-[32px] rounded-btn bg-primary px-[14px] text-[14px] font-medium text-primary-ink hover:bg-primary-hover"
+          >
+            Approve
+          </button>
+        </div>
+      )}
+      <Stroke />
+    </article>
+  );
+}
+
+function GettingStarted() {
+  const done = GETTING_STARTED_ITEMS.filter((i) => i.done).length;
+  return (
+    <section
+      aria-label="Getting started"
+      className="relative flex w-full flex-col gap-[12px] rounded-lg bg-surface p-[16px]"
+    >
+      <div className="flex w-full items-center">
+        <h2 className="flex-1 text-[14px] font-semibold text-ink">
+          Getting started
+        </h2>
+        <span className="font-mono text-[11.5px] text-muted">
+          {done} of {GETTING_STARTED_ITEMS.length}
+        </span>
+      </div>
+      <div className="relative h-[4px] w-full overflow-hidden rounded-pill bg-line-strong">
+        <span
+          className="absolute inset-y-0 left-0 rounded-pill bg-ok"
+          style={{ width: `${(done / GETTING_STARTED_ITEMS.length) * 100}%` }}
+        />
+      </div>
+      <ul className="-mt-[5px] -mb-[6px] flex w-full flex-col">
+        {GETTING_STARTED_ITEMS.map((i) => (
+          <li key={i.id} className="flex h-[28px] items-center gap-[10px]">
+            {i.done ? (
+              <CircleCheck size={14} aria-label="done" className="text-ok" />
+            ) : (
+              <Circle size={14} aria-hidden className="text-faint" />
+            )}
+            <span
+              className={`text-[13px] ${i.done ? "text-muted" : "text-ink"}`}
+            >
+              {i.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Stroke />
+    </section>
+  );
+}
+
+export function StepInbox() {
+  const [approved, setApproved] = useState<Record<string, boolean>>({});
+  const left = INBOX_JOBS.filter((j) => !approved[j.id]).length;
+
+  useEffect(() => {
+    // The first Inbox is the Office: the rail's mode switch should show it.
+    useUIStore.getState().setMode("office");
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 w-full">
+      <Rail />
+      <Sidebar />
+      <Inset label="Inbox">
+        <Topbar
+          icon={Inbox}
+          title="Inbox"
+          meta={`${left} need you`}
+          actions={
+            <Button variant="secondary" height={28} icon={ListFilter}>
+              All areas
+            </Button>
+          }
+        />
+        <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[24px] pt-[20px] pb-[24px]">
+          <div className="flex flex-col gap-[4px]">
+            <h1 className="font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
+              Inbox
+            </h1>
+            <p className="text-[13px] text-muted">
+              Your team just joined. Approve their first jobs and they start
+              working.
+            </p>
+          </div>
+          <div className="flex w-full items-start gap-[20px]">
+            <div className="flex min-w-0 flex-1 flex-col gap-[16px]">
+              <section
+                aria-label="Your team is ready"
+                className="relative flex w-full items-center gap-[16px] rounded-lg bg-[#EEF2FF] px-[20px] pt-[19px] pb-[18px]"
+              >
+                <div className="flex items-end">
+                  <Mascot
+                    helper
+                    area="brand"
+                    size={44}
+                    radius={12}
+                    title="Chief of Staff"
+                  />
+                  <Mascot
+                    helper
+                    area="dev"
+                    size={40}
+                    radius={11}
+                    title="Builder"
+                    className="-ml-[3px]"
+                  />
+                  <Mascot
+                    helper
+                    area="ops"
+                    size={40}
+                    radius={11}
+                    title="Grower"
+                    className="-ml-[8px]"
+                  />
+                  <Mascot
+                    helper
+                    area="support"
+                    size={40}
+                    radius={11}
+                    title="Support"
+                    className="-ml-[8px]"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
+                  <h2 className="font-display text-[20px] font-semibold tracking-[-0.4px] text-ink">
+                    Your team is ready, Dede
+                  </h2>
+                  <p className="w-full text-[13px] leading-[1.5] text-ink-2">
+                    Chief, Builder, Grower and Support each proposed a first job
+                    based on what you told me. Nothing runs until you approve.
+                  </p>
+                </div>
+                <Stroke color="#C7D2FE" />
+              </section>
+
+              <div className="flex w-full items-center gap-[8px]">
+                <h2 className="text-[14px] font-semibold text-ink">
+                  First jobs to approve
+                </h2>
+                <span className="flex size-[20px] items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-ink">
+                  {left}
+                </span>
+                <span className="h-px flex-1" />
+                {left > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setApproved(
+                        Object.fromEntries(INBOX_JOBS.map((j) => [j.id, true])),
+                      )
+                    }
+                    className="flex h-[32px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[14px] font-medium text-primary-ink hover:bg-primary-hover"
+                  >
+                    <Check size={16} aria-hidden />
+                    Approve all {left}
+                  </button>
+                )}
+              </div>
+
+              <div className="flex w-full flex-col gap-[16px]">
+                {INBOX_JOBS.map((j) => (
+                  <JobCard
+                    key={j.id}
+                    job={j}
+                    approved={!!approved[j.id]}
+                    onApprove={() =>
+                      setApproved((a) => ({ ...a, [j.id]: true }))
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+
+            <aside className="flex w-[320px] shrink-0 flex-col gap-[12px]">
+              <GettingStarted />
+              <div className="relative flex w-full gap-[10px] rounded-lg bg-soft px-[14px] py-[12px]">
+                <MessageCircle
+                  size={16}
+                  aria-hidden
+                  className="mt-[2px] shrink-0 text-ink-2"
+                />
+                <p className="min-w-0 flex-1 text-[14px] leading-[1.45] text-ink-2">
+                  Not sure? Ask Chief anything with ⌘J. It knows what your team
+                  is doing.
+                </p>
+                <Stroke />
+              </div>
+            </aside>
+          </div>
+        </div>
+      </Inset>
     </div>
-  )
+  );
 }

@@ -8,7 +8,7 @@ import {
   SubHeading,
   TextInput,
   Toggle,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 
 type Channel = 'app' | 'whatsapp' | 'email'
 

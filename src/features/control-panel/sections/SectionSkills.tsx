@@ -1,8 +1,8 @@
 import { Plus } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane, Toggle } from '../ControlPanelShared'
+import { Breadcrumb, SectionPane, Toggle } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
-import type { DialogKind } from '../types'
+import type { DialogKind } from '../legacyTypes'
 
 const SKILLS = [
   {

@@ -1,7 +1,7 @@
 import { Download } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane } from '../ControlPanelShared'
-import type { DialogKind } from '../types'
+import { Breadcrumb, SectionPane } from '../legacyShared'
+import type { DialogKind } from '../legacyTypes'
 
 const INVOICES = [
   { date: 'Oct 1, 2026', desc: 'Team plan · paid via QRIS', amount: 'Rp 2.000.000', status: 'Paid' },

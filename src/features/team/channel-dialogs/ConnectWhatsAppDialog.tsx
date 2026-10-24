@@ -1,110 +1,104 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
-import { Button } from '../../../ui/ds/Button'
+import { CircleHelp, History, MessageCircle, QrCode, ShieldCheck, UserCheck } from 'lucide-react'
+import type { HelperRecord } from '../teamData'
+import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, Radio, choiceRing } from '../ui'
+import { ChannelLogo, WA_GREEN } from '../tabs/ChannelsTab'
 
-interface ConnectWhatsAppDialogProps {
-  onClose: () => void
+/** pen `Spinner` (g4C5A): 14px ring, 90° ink arc. */
+function Spinner() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 14 14" className="shrink-0 animate-spin" aria-hidden>
+      <circle cx="7" cy="7" r="5.74" fill="none" stroke="var(--color-line-strong)" strokeWidth="2.52" />
+      <path d="M11.06 2.94A5.74 5.74 0 0 0 2.94 2.94" fill="none" stroke="var(--color-ink)" strokeWidth="2.52" />
+    </svg>
+  )
 }
 
-export function ConnectWhatsAppDialog({ onClose }: ConnectWhatsAppDialogProps) {
+/** Channels · WhatsApp — pen pyuhG (Channel Drawer taFU5, 520 wide). */
+export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+  const n = helper.name
   const [method, setMethod] = useState<'app' | 'cloud'>('app')
-
+  const methods = [
+    { id: 'app' as const, t: 'WhatsApp Business app', d: 'Scan a QR code with the phone that runs your business number. Best for small teams.' },
+    { id: 'cloud' as const, t: 'WhatsApp Cloud API', d: 'For higher volume. Needs a verified Meta Business account and a dedicated number.' },
+  ]
+  const after = [
+    { icon: History, t: `${n} reads the last 30 days so it knows ongoing chats` },
+    { icon: UserCheck, t: 'Your phone keeps working — you can still reply yourself' },
+    { icon: ShieldCheck, t: `${n} never messages anyone who hasn't messaged first` },
+  ]
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end bg-ink/10" onClick={onClose}>
-      <div
-        className="relative mr-[6px] mt-[6px] mb-[6px] flex h-auto max-h-[calc(100%-12px)] w-[380px] flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong shadow-[0_10px_40px_#0C0A091F]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-[10px] border-b border-line px-[20px] pt-[20px] pb-[14px]">
-          <span className="text-[22px]" style={{ color: '#25D366' }}>●</span>
-          <div className="flex-1">
-            <h2 className="m-0 text-[15px] font-semibold text-ink">Connect WhatsApp Business</h2>
-            <p className="m-0 text-[12px] text-muted">Residents message Support on your business number</p>
-          </div>
-          <button type="button" aria-label="Close" onClick={onClose} className="flex size-[24px] items-center justify-center rounded-sm text-muted hover:bg-hover transition-colors">
-            <X size={14} aria-hidden />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-[20px] py-[16px] flex flex-col gap-[16px]">
-          {/* Method selector */}
-          <div>
-            <div className="text-[11px] font-medium tracking-[0.55px] text-faint uppercase mb-[8px]">How to connect</div>
-            <div className="flex flex-col gap-[6px]">
-              <label className={`flex items-start gap-[10px] rounded-md p-[10px] outline-1 -outline-offset-1 cursor-pointer transition-colors ${
-                method === 'app' ? 'outline-primary bg-field-indigo' : 'outline-line-strong bg-surface hover:bg-soft'
-              }`}>
-                <input type="radio" name="wa-method" checked={method === 'app'} onChange={() => setMethod('app')} className="mt-[1px]" />
-                <div>
-                  <div className="text-[12.5px] font-medium text-ink">WhatsApp Business app</div>
-                  <div className="text-[11.5px] text-muted">Scan a QR code with the phone that runs your business number. Best for small teams.</div>
-                </div>
-              </label>
-              <label className={`flex items-start gap-[10px] rounded-md p-[10px] outline-1 -outline-offset-1 cursor-pointer transition-colors ${
-                method === 'cloud' ? 'outline-primary bg-field-indigo' : 'outline-line-strong bg-surface hover:bg-soft'
-              }`}>
-                <input type="radio" name="wa-method" checked={method === 'cloud'} onChange={() => setMethod('cloud')} className="mt-[1px]" />
-                <div>
-                  <div className="text-[12.5px] font-medium text-ink">WhatsApp Cloud API</div>
-                  <div className="text-[11.5px] text-muted">For higher volume. Needs a verified Meta Business account and a dedicated number.</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* QR code placeholder */}
-          {method === 'app' && (
-            <div className="flex items-start gap-[16px]">
-              {/* QR placeholder */}
-              <div className="flex size-[120px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line-strong">
-                <div className="grid grid-cols-6 gap-[2px] p-[8px]">
-                  {Array.from({ length: 36 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="size-[10px] rounded-[1px]"
-                      style={{ background: ((i * 7 + 3) % 11) > 4 ? '#0C0A09' : 'transparent' }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-[6px] pt-[4px]">
-                <ol className="m-0 pl-[16px] flex flex-col gap-[4px]">
-                  <li className="text-[12px] text-ink-2">Open WhatsApp Business on your phone</li>
-                  <li className="text-[12px] text-ink-2">Tap ⋯ → Linked devices</li>
-                  <li className="text-[12px] text-ink-2">Tap Link a device and point it here</li>
-                </ol>
-                <span className="text-[11.5px] text-muted">Waiting for scan · new code in 0:45</span>
-              </div>
-            </div>
-          )}
-
-          {/* After connecting bullets */}
-          <div>
-            <div className="text-[11px] font-medium tracking-[0.55px] text-faint uppercase mb-[6px]">After connecting</div>
-            <ul className="m-0 pl-0 list-none flex flex-col gap-[4px]">
-              {[
-                'Support reads the last 30 days so it knows ongoing chats',
-                'Your phone keeps working — you can still reply yourself',
-                'Support never messages anyone who hasn\'t messaged first',
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-[6px] text-[12px] text-muted">
-                  <span className="text-ok mt-[1px]">✓</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-line px-[16px] py-[12px]">
-          <button type="button" className="text-[12px] text-link hover:underline" onClick={() => setMethod(method === 'app' ? 'cloud' : 'app')}>
+    <Drawer
+      width={520}
+      label="Connect WhatsApp Business"
+      onClose={onClose}
+      bodyClass="gap-[18px] p-[20px]"
+      head={
+        <>
+          <ChannelLogo icon={MessageCircle} bg={WA_GREEN} />
+          <DrawerTitle title="Connect WhatsApp Business" sub={`Residents message ${n} on your business number`} />
+          <DrawerClose onClose={onClose} />
+        </>
+      }
+      footer={
+        <>
+          <Btn variant="quiet" icon={CircleHelp} onClick={() => setMethod('cloud')}>
             Use Cloud API instead
+          </Btn>
+          <span className="h-px flex-1" />
+          <Btn onClick={onClose}>Cancel</Btn>
+        </>
+      }
+    >
+      <div className="flex w-full flex-col gap-[8px]">
+        <Eyebrow>HOW TO CONNECT</Eyebrow>
+        {methods.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={method === m.id}
+            onClick={() => setMethod(m.id)}
+            className={`flex w-full gap-[10px] rounded-md px-[12px] py-[10px] text-left ${choiceRing(method === m.id)}`}
+          >
+            <Radio on={method === m.id} />
+            <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+              <span className="text-[13px] font-medium text-ink">{m.t}</span>
+              <span className="text-[12px] text-muted">{m.d}</span>
+            </span>
           </button>
-          <Button onClick={onClose}>Cancel</Button>
+        ))}
+      </div>
+      <div className="flex w-full items-center gap-[18px] rounded-lg bg-soft p-[16px] outline-1 -outline-offset-1 outline-line">
+        <div className="flex size-[148px] shrink-0 items-center justify-center rounded-md bg-white outline-1 -outline-offset-1 outline-line-strong">
+          <QrCode size={124} aria-label="QR code" className="text-ink" />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
+          {['Open WhatsApp Business on your phone', 'Tap ⋮ → Linked devices', 'Tap Link a device and point it here'].map(
+            (t, i) => (
+              <div key={t} className="flex w-full gap-[8px]">
+                <span className="font-mono text-[12.5px] text-muted">{i + 1}.</span>
+                <span className="min-w-0 flex-1 text-[13px] text-ink-2">{t}</span>
+              </div>
+            ),
+          )}
+          <div className="flex items-center gap-[8px] pt-[6px]">
+            <Spinner />
+            <span className="text-[12px] text-muted">Waiting for scan · new code in 0:45</span>
+          </div>
         </div>
       </div>
-    </div>
+      <div className="flex w-full flex-col gap-[8px]">
+        <Eyebrow>AFTER CONNECTING</Eyebrow>
+        <div className="flex w-full flex-col gap-[6px]">
+          {after.map((a) => (
+            <div key={a.t} className="flex w-full items-center gap-[8px]">
+              <a.icon size={14} aria-hidden className="text-ok" />
+              <span className="text-[12.5px] text-ink-2">{a.t}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Drawer>
   )
 }

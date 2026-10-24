@@ -9,7 +9,7 @@ import {
   SettingCardRows,
   SettingRow,
   SubHeading,
-} from '../ControlPanelShared'
+} from '../legacyShared'
 
 const STORAGE_TOTAL = 10
 const STORAGE_USED = 3.7

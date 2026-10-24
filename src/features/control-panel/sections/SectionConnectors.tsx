@@ -1,7 +1,7 @@
 import { Ellipsis, Plus, Server } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
-import { Breadcrumb, SectionPane, StatusBadge } from '../ControlPanelShared'
-import type { DialogKind } from '../types'
+import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
+import type { DialogKind } from '../legacyTypes'
 
 const CONNECTED = [
   { name: 'GitHub', desc: 'saga-bot · org saga', agents: '4 flows · Dev, Ops', permissions: 'Read + open PRs', status: 'ok' as const },

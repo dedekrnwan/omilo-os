@@ -1,153 +1,55 @@
-/**
- * All set — /auth/onboarding/all-set (ref: CXuxX)
- * All 4 onboarding steps complete. Company is ready.
- * Standalone full-screen page. No Shell / Rail.
- */
+/** All set — /auth/onboarding/all-set (pen CXuxX). */
+import { ArrowRight, CircleCheck, UserPlus } from 'lucide-react'
+import { MascotTeam, OnboardingLayout } from './AuthLayout'
+import type { TeamMember } from './AuthLayout'
+import { AuthButton } from './AuthPrimitives'
 
-import { OnboardingLayout, MascotBlob } from './AuthLayout'
+const TEAM: TeamMember[] = [
+  { area: 'dev', size: 64, radius: 18, x: 0, y: 36 },
+  { area: 'marketing', size: 56, radius: 16, x: 54, y: 54 },
+  { area: 'brand', size: 96, radius: 27, x: 108, y: 4 },
+  { area: 'ops', size: 58, radius: 16, x: 196, y: 50 },
+  { area: 'finance', size: 52, radius: 15, x: 246, y: 38 },
+]
 
-const STEPS = { labels: ['Account', 'Company', 'Plan', 'Payment'], current: 5 } // 5 = all done
-
-const TOP_RIGHT = (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12.5, color: '#44403C' }}>
-    <span>dede@saga.co.id</span>
-    <a href="#" style={{ color: '#2563EB', textDecoration: 'none', fontWeight: 500 }}>Sign out</a>
-  </div>
-)
-
-/** The celebration mascot cluster shown on the all-set screen */
-function AgentCluster() {
-  const agents: { color: string; size: number; zIndex?: number }[] = [
-    { color: '#14B8A6', size: 52 },
-    { color: '#F97316', size: 48 },
-    { color: '#6366F1', size: 72, zIndex: 1 },
-    { color: '#0EA5E9', size: 52 },
-    { color: '#65A30D', size: 44 },
-  ]
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 8, marginBottom: 28 }}>
-      {agents.map((a, i) => (
-        <MascotBlob key={i} color={a.color} size={a.size} style={{ position: 'relative', zIndex: a.zIndex ?? 0 }} />
-      ))}
-    </div>
-  )
-}
-
-interface SummaryRow {
-  label: string
-  value: string
-}
-
-function SummaryItem({ label, value }: SummaryRow) {
-  return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '14px 0',
-      borderBottom: '1px solid #F5F5F4',
-      fontSize: 13.5,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ color: '#15803D', fontSize: 16 }}>✓</span>
-        <span style={{ fontWeight: 500, color: '#0C0A09' }}>{label}</span>
-      </div>
-      <span style={{ color: '#78716C' }}>{value}</span>
-    </div>
-  )
-}
+const DONE = [
+  { t: 'Account created', d: 'dede@saga.co.id' },
+  { t: 'Company set up', d: 'Sahabat Warga · Asia/Jakarta' },
+  { t: 'Team plan · trial', d: '5 seats · $20 AI credit' },
+  { t: 'Agents hired', d: 'Chief, Dev, Ops, Growth, Finance' },
+]
 
 export function AllSetPage() {
-  const summary: SummaryRow[] = [
-    { label: 'Account created',  value: 'dede@saga.co.id' },
-    { label: 'Company set up',   value: 'Sahabat Warga · Asia/Jakarta' },
-    { label: 'Team plan · trial', value: '5 seats · $20 AI credit' },
-    { label: 'Agents hired',     value: 'Chief, Dev, Ops, Growth, Finance' },
-  ]
-
   return (
-    <OnboardingLayout steps={STEPS} topRight={TOP_RIGHT}>
-      <div style={{ width: '100%', maxWidth: 520, textAlign: 'center' }}>
-        <AgentCluster />
-
-        <h1 style={{
-          margin: '0 0 8px',
-          fontSize: 28,
-          fontWeight: 700,
-          color: '#0C0A09',
-          fontFamily: 'var(--font-display, sans-serif)',
-        }}>
-          Sahabat Warga is ready
-        </h1>
-        <p style={{ margin: '0 0 28px', fontSize: 13.5, color: '#78716C' }}>
-          Your Team trial runs until Nov 7. Chief is waiting to meet you.
-        </p>
-
-        {/* Summary card */}
-        <div style={{
-          border: '1px solid #E7E5E4',
-          borderRadius: 12,
-          background: '#FFFFFF',
-          padding: '0 20px',
-          marginBottom: 24,
-          textAlign: 'left',
-        }}>
-          {summary.map((row) => (
-            <SummaryItem key={row.label} {...row} />
-          ))}
+    <OnboardingLayout step={5}>
+      <div className="flex w-[520px] flex-col items-center gap-[22px]">
+        <MascotTeam members={TEAM} width={300} height={130} />
+        <div className="flex w-full flex-col items-center gap-[6px]">
+          <h1 className="font-display text-[30px] font-semibold tracking-[-0.6px] text-ink">Sahabat Warga is ready</h1>
+          <p className="text-center text-[14px] text-muted">
+            Your Team trial runs until Nov 7. Chief is waiting to meet you.
+          </p>
         </div>
-
-        {/* CTA row */}
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 8,
-              border: '1px solid #E7E5E4',
-              background: '#FFFFFF',
-              color: '#0C0A09',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
-            <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
-              <circle cx={8} cy={5} r={3} stroke="#0C0A09" strokeWidth={1.4}/>
-              <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="#0C0A09" strokeWidth={1.4} strokeLinecap="round"/>
-            </svg>
+        <ul className="flex w-full flex-col gap-[2px] rounded-[14px] bg-surface px-[16px] py-[6px] outline-1 -outline-offset-1 outline-line-strong">
+          {DONE.map((r, i) => (
+            <li
+              key={r.t}
+              className="flex w-full items-center gap-[10px] py-[10px]"
+              style={i < DONE.length - 1 ? { boxShadow: 'inset 0 -1px 0 var(--color-line)' } : undefined}
+            >
+              <CircleCheck size={16} aria-hidden className="shrink-0 text-ok" />
+              <span className="flex-1 text-[13.5px] font-medium text-ink">{r.t}</span>
+              <span className="text-[12.5px] text-muted">{r.d}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex w-full gap-[10px]">
+          <AuthButton variant="secondary" icon={UserPlus}>
             Invite teammates
-          </button>
-          <button
-            type="button"
-            style={{
-              flex: 1,
-              height: 44,
-              borderRadius: 8,
-              border: 'none',
-              background: '#171717',
-              color: '#FFFFFF',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
+          </AuthButton>
+          <AuthButton icon={ArrowRight} onClick={() => (window.location.href = '/onboarding')}>
             Meet Chief
-            <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path d="M3 8h10M9 4l4 4-4 4" stroke="#FFFFFF" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+          </AuthButton>
         </div>
       </div>
     </OnboardingLayout>

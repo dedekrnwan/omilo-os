@@ -71,7 +71,7 @@ describe('ArchivedRoute', () => {
     })
   })
 
-  test('archived route shows distinct content — NOT the new-chat hero', async () => {
+  test('archived route opens the Archived drawer over the new-chat hero (pen PHRy6)', async () => {
     const router = makeArchivedTestRouter('/chat/ch-general/archived')
     await router.load()
     render(<RouterProvider router={router} />)
@@ -80,8 +80,9 @@ describe('ArchivedRoute', () => {
       expect(screen.getByText('Sprint 41 planning')).toBeInTheDocument()
     })
 
-    // The new-chat hero headline must NOT be present
-    expect(screen.queryByText(/what are we figuring out/i)).not.toBeInTheDocument()
+    // The drawer is a dialog titled with the channel; the hero stays underneath
+    expect(screen.getByRole('dialog', { name: 'Archived · General' })).toBeInTheDocument()
+    expect(screen.getByText(/what are we figuring out/i)).toBeInTheDocument()
   })
 
   test('archived route has a search input', async () => {

@@ -1,4 +1,5 @@
-import { Fragment } from 'react'
+import { createContext, Fragment, useContext } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowUpRight, FileText, ListChecks } from 'lucide-react'
 import type { Message } from '../../core/domain/types'
 import { Button } from '../ds/Button'
@@ -11,10 +12,12 @@ export function formatTime(iso: string): string {
 }
 
 /** Thread column: 680px, centred (shrinks with the window). */
-const col = 'w-[680px] max-w-[calc(100%-48px)]'
+const DEFAULT_COL = 'w-[680px] max-w-[calc(100%-48px)]'
+const ColContext = createContext(DEFAULT_COL)
 
 /** pen `User Message` (p7b22O): right-aligned app-grey bubble, radius 16 16 4 16. */
 function UserMessage({ message }: { message: Message }) {
+  const col = useContext(ColContext)
   return (
     <div className={`${col} flex justify-end`}>
       <div className="max-w-[444px] rounded-[16px_16px_4px_16px] bg-app px-[12px] py-[8px]">
@@ -26,6 +29,7 @@ function UserMessage({ message }: { message: Message }) {
 
 /** pen `Agent Message` (gkzJ4): 24px mascot · name/role/time · body 13.5/1.55 ink-2. */
 function AgentMessage({ message }: { message: Message }) {
+  const col = useContext(ColContext)
   const { author } = message
   return (
     <div className={`${col} flex gap-[10px]`}>
@@ -46,6 +50,7 @@ function AgentMessage({ message }: { message: Message }) {
 
 /** pen `Event · Mention`: hairlines either side of a mascot + muted caption. */
 function EventLine({ message }: { message: Message }) {
+  const col = useContext(ColContext)
   return (
     <div role="note" className={`${col} flex items-center justify-center gap-[8px]`}>
       <div className="h-px flex-1 bg-line-strong" />
@@ -60,6 +65,7 @@ function EventLine({ message }: { message: Message }) {
 
 /** pen `Attachment · Doc`: 360px card indented under the message body (34px). */
 function DocCard({ title, meta }: { title: string; meta: string }) {
+  const col = useContext(ColContext)
   return (
     <div className={`${col} pl-[34px]`}>
       <button
@@ -87,6 +93,7 @@ function SuggestedActions({
   actions: NonNullable<Message['actions']>
   onTasksAction?: () => void
 }) {
+  const col = useContext(ColContext)
   return (
     <div className={`${col} flex gap-[8px] pl-[34px]`}>
       {actions.map((a) =>
@@ -107,12 +114,20 @@ function SuggestedActions({
 interface MessageListProps {
   messages: Message[]
   onTasksAction?: () => void
+  /** Column width classes (the browser split keeps 28px gutters). */
+  columnClass?: string
+  /** Rendered at the top of the thread (e.g. the compacted marker). */
+  before?: ReactNode
+  /** Rendered instead of the last message's suggested actions (e.g. "Tasks created"). */
+  replaceActions?: ReactNode
 }
 
 /** pen `Thread`: centred column · gap 20 · padding 23 0 13 0. */
-export function MessageList({ messages, onTasksAction }: MessageListProps) {
+export function MessageList({ messages, onTasksAction, columnClass = DEFAULT_COL, before, replaceActions }: MessageListProps) {
   return (
+    <ColContext.Provider value={columnClass}>
     <div role="log" aria-label="Messages" className="flex flex-col items-center gap-[20px] pt-[23px] pb-[13px]">
+      {before}
       {messages.map((m) => (
         <Fragment key={m.id}>
           {m.system ? (
@@ -123,11 +138,11 @@ export function MessageList({ messages, onTasksAction }: MessageListProps) {
             <AgentMessage message={m} />
           )}
           {m.attachment && <DocCard {...m.attachment} />}
-          {m.actions && m.actions.length > 0 && (
-            <SuggestedActions actions={m.actions} onTasksAction={onTasksAction} />
-          )}
+          {m.actions && m.actions.length > 0 &&
+            (replaceActions ?? <SuggestedActions actions={m.actions} onTasksAction={onTasksAction} />)}
         </Fragment>
       ))}
     </div>
+    </ColContext.Provider>
   )
 }
