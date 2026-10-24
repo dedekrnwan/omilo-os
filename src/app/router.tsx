@@ -14,6 +14,8 @@ import { DocsRoute } from '../features/chat/DocsRoute'
 import { ArchivedRoute } from '../features/chat/ArchivedRoute'
 import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
+import { OfficeLayout } from '../features/office/OfficeLayout'
+import { OfficeGoalsRoute } from '../features/office/OfficeGoalsRoute'
 
 /** Root route renders the Shell; the Shell renders <Outlet /> for child routes. */
 const rootRoute = createRootRoute({
@@ -97,12 +99,18 @@ const chatFolderRoute = createRoute({
 })
 
 /**
- * Office routes — Task 8 replaces OfficeRoute with the real feature UI.
+ * Office routes — OfficeLayout renders the sidebar once; child routes render
+ * main content only (no sidebar duplication).
+ *
+ * /office                            → layout passthrough
+ * /office/inbox          (index)     → InboxRoute (inbox list)
+ * /office/inbox/$itemId              → InboxRoute (inbox item → ChatSession)
+ * /office/goals                      → OfficeGoalsRoute (company-wide goals)
  */
 const officeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/office',
-  component: () => <Outlet />,
+  component: OfficeLayout,
 })
 
 const officeInboxRoute = createRoute({
@@ -115,6 +123,12 @@ const officeInboxItemRoute = createRoute({
   getParentRoute: () => officeInboxRoute,
   path: '$itemId',
   component: InboxRoute,
+})
+
+const officeGoalsRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'goals',
+  component: OfficeGoalsRoute,
 })
 
 const routeTree = rootRoute.addChildren([
@@ -131,6 +145,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   officeRoute.addChildren([
     officeInboxRoute.addChildren([officeInboxItemRoute]),
+    officeGoalsRoute,
   ]),
 ])
 

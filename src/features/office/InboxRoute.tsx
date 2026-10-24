@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowUpRight, Check, ChevronRight, Inbox, ListFilter, Reply } from 'lucide-react'
 import type { Channel, InboxItem } from '../../core/domain/types'
@@ -6,9 +5,9 @@ import { useChannels, useInbox, useInboxItem } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { AreaChip } from '../../ui/ds/AreaChip'
 import { Button } from '../../ui/ds/Button'
-import { Inset, Topbar } from '../../ui/ds/Frame'
+import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { OfficeSidebar } from './OfficeSidebar'
+import { useOfficeArea } from './OfficeAreaContext'
 import type { AreaFilter } from './OfficeSidebar'
 
 /** Next scheduled routine under "Running now" (routines aren't wired yet). */
@@ -292,15 +291,13 @@ function InboxItemView({ itemId }: { itemId: string }) {
 
 // ── InboxRoute ────────────────────────────────────────────────────────────────
 
-/** Bound to /office/inbox and /office/inbox/$itemId. */
+/**
+ * Main content for /office/inbox and /office/inbox/$itemId.
+ * The OfficeSidebar and Inset wrapper are provided by OfficeLayout.
+ */
 export function InboxRoute() {
   const { itemId } = useParams({ strict: false })
-  const [area, setArea] = useState<AreaFilter>(null)
+  const { area } = useOfficeArea()
 
-  return (
-    <>
-      <OfficeSidebar area={area} onAreaChange={setArea} />
-      <Inset>{itemId ? <InboxItemView itemId={itemId} /> : <InboxList area={area} />}</Inset>
-    </>
-  )
+  return itemId ? <InboxItemView itemId={itemId} /> : <InboxList area={area} />
 }

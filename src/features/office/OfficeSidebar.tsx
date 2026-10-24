@@ -7,13 +7,16 @@ import { GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar
 /** Areas filter value: a channel id, or null for "All areas". */
 export type AreaFilter = string | null
 
+export type OfficeNav = 'Goals' | 'Inbox'
+
 interface OfficeSidebarProps {
   area?: AreaFilter
   onAreaChange?: (area: AreaFilter) => void
+  activeNav?: OfficeNav
 }
 
 /** pen `Office Sidebar` (EuKqr). */
-export function OfficeSidebar({ area = null, onAreaChange }: OfficeSidebarProps) {
+export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }: OfficeSidebarProps) {
   const navigate = useNavigate()
   const { data: channels = [] } = useChannels()
   const { data: items = [] } = useInbox()
@@ -35,11 +38,16 @@ export function OfficeSidebar({ area = null, onAreaChange }: OfficeSidebarProps)
       </div>
 
       <NavGroup>
-        <NavLink icon={Target} label="Goals" />
+        <NavLink
+          icon={Target}
+          label="Goals"
+          active={activeNav === 'Goals'}
+          onClick={() => void navigate({ to: '/office/goals' })}
+        />
         <NavLink
           icon={Inbox}
           label="Inbox"
-          active
+          active={activeNav === 'Inbox'}
           count={needsYou || undefined}
           countClassName="font-semibold text-[#EB6834]"
           onClick={() => void navigate({ to: '/office/inbox' })}
