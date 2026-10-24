@@ -239,7 +239,7 @@ interface ContextPickerPopoverProps {
 }
 
 export function ContextPickerPopover({ open, onOpenChange, onSelect, children }: ContextPickerPopoverProps) {
-  const [activeTab, setActiveTab] = [CONTEXT_TABS[0], (_: ContextTab) => {}] as [ContextTab, (t: ContextTab) => void]
+  const [activeTab, setActiveTab] = [CONTEXT_TABS[0], () => {}] as [ContextTab, (t: ContextTab) => void]
 
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>

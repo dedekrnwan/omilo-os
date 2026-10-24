@@ -93,40 +93,45 @@ function filterHelper(h: HelperRecord, tab: FilterTab): boolean {
 
 function HelperCard({ helper }: { helper: HelperRecord }) {
   return (
-    <Link
-      to="/team/$helperId"
-      params={{ helperId: helper.id }}
-      className="relative flex flex-col gap-[10px] rounded-lg p-[14px] outline-1 -outline-offset-1 outline-line-strong bg-surface hover:bg-soft transition-colors"
-    >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-[10px]">
-          <Mascot size={36} radius={10} area={helper.area as HelperArea} title={helper.name} />
-          <div className="flex flex-col gap-[2px]">
-            <span className="text-[13.5px] font-semibold text-ink">{helper.name}</span>
-            <span className="text-[12px] text-muted">{helper.roleArea}</span>
+    <div className="relative">
+      <Link
+        to="/team/$helperId"
+        params={{ helperId: helper.id }}
+        className="relative flex flex-col gap-[10px] rounded-lg p-[14px] outline-1 -outline-offset-1 outline-line-strong bg-surface hover:bg-soft transition-colors"
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-[10px]">
+            <Mascot size={36} radius={10} area={helper.area as HelperArea} title={helper.name} />
+            <div className="flex flex-col gap-[2px]">
+              <span className="text-[13.5px] font-semibold text-ink">{helper.name}</span>
+              <span className="text-[12px] text-muted">{helper.roleArea}</span>
+            </div>
           </div>
+          {/* spacer to keep layout aligned with the sibling button */}
+          <span className="size-[24px] shrink-0" aria-hidden />
         </div>
-        <button
-          type="button"
-          aria-label="More options"
-          onClick={(e) => e.preventDefault()}
-          className="flex size-[24px] items-center justify-center rounded-sm text-faint hover:text-muted hover:bg-hover transition-colors"
-        >
-          <MoreHorizontal size={14} aria-hidden />
-        </button>
-      </div>
 
-      <StatusChip status={helper.status} />
+        <StatusChip status={helper.status} />
 
-      <p className="m-0 text-[12px] text-ink-2 line-clamp-2">{helper.now}</p>
+        <p className="m-0 text-[12px] text-ink-2 line-clamp-2">{helper.now}</p>
 
-      <div className="flex items-center justify-between pt-[2px]">
-        <span className="text-[11.5px] text-muted">
-          {helper.loopCount} loop{helper.loopCount !== 1 ? 's' : ''} · {helper.loopTags}
-        </span>
-        <span className="text-[11.5px] text-muted">{helper.earnings}</span>
-      </div>
-    </Link>
+        <div className="flex items-center justify-between pt-[2px]">
+          <span className="text-[11.5px] text-muted">
+            {helper.loopCount} loop{helper.loopCount !== 1 ? 's' : ''} · {helper.loopTags}
+          </span>
+          <span className="text-[11.5px] text-muted">{helper.earnings}</span>
+        </div>
+      </Link>
+
+      {/* ⋯ button is a sibling of the anchor, absolutely positioned */}
+      <button
+        type="button"
+        aria-label="More options"
+        className="absolute top-[14px] right-[14px] flex size-[24px] items-center justify-center rounded-sm text-faint hover:text-muted hover:bg-hover transition-colors"
+      >
+        <MoreHorizontal size={14} aria-hidden />
+      </button>
+    </div>
   )
 }
 

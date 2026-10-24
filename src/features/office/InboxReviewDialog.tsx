@@ -11,7 +11,7 @@
  * Visual-only; no network calls. Parent controls `open` + `onClose`.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Calendar, UserPlus, Check } from 'lucide-react'
 import type { InboxItem, InboxProposal } from '../../core/domain/types'
 import { Button } from '../../ui/ds/Button'
@@ -117,12 +117,14 @@ export function InboxReviewDialog({ open, item, onClose }: InboxReviewDialogProp
   const [step, setStep] = useState(0)
   const [results, setResults] = useState<ReviewResult[]>([])
 
-  // Reset when re-opened
+  // Reset when re-opened — guard so we only reset on false→true transition
+  const prevOpen = useRef(open)
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpen.current) {
       setStep(0)
       setResults([])
     }
+    prevOpen.current = open
   }, [open])
 
   if (!open || proposals.length === 0) return null

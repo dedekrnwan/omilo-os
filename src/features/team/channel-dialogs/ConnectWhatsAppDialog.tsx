@@ -63,7 +63,7 @@ export function ConnectWhatsAppDialog({ onClose }: ConnectWhatsAppDialogProps) {
                     <div
                       key={i}
                       className="size-[10px] rounded-[1px]"
-                      style={{ background: Math.random() > 0.5 ? '#0C0A09' : 'transparent' }}
+                      style={{ background: ((i * 7 + 3) % 11) > 4 ? '#0C0A09' : 'transparent' }}
                     />
                   ))}
                 </div>
