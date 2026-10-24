@@ -7,6 +7,9 @@ import {
 } from '@tanstack/react-router'
 import { Shell } from './Shell'
 import { ChatRoute } from '../features/chat/ChatRoute'
+import { GoalsRoute } from '../features/chat/GoalsRoute'
+import { FlowsRoute } from '../features/chat/FlowsRoute'
+import { DocsRoute } from '../features/chat/DocsRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
 
 /** Root route renders the Shell; the Shell renders <Outlet /> for child routes. */
@@ -44,6 +47,24 @@ const chatSessionRoute = createRoute({
   component: ChatRoute,
 })
 
+const chatGoalsRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'goals',
+  component: GoalsRoute,
+})
+
+const chatFlowsRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'flows',
+  component: FlowsRoute,
+})
+
+const chatDocsRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'docs',
+  component: DocsRoute,
+})
+
 /**
  * Office routes — Task 8 replaces OfficeRoute with the real feature UI.
  */
@@ -67,7 +88,7 @@ const officeInboxItemRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   chatRoute.addChildren([
-    chatChannelRoute.addChildren([chatSessionRoute]),
+    chatChannelRoute.addChildren([chatSessionRoute, chatGoalsRoute, chatFlowsRoute, chatDocsRoute]),
   ]),
   officeRoute.addChildren([
     officeInboxRoute.addChildren([officeInboxItemRoute]),

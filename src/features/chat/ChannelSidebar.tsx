@@ -22,6 +22,8 @@ import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from 
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
 
+export type ChannelNav = 'Chats' | 'Goals' | 'Flows' | 'Docs' | 'Analytics'
+
 function channelSidebarMeta(c: Channel) {
   return c.isDefault ? 'Default channel · Chief' : `Channel · Chief + ${c.agentCount} agents`
 }
@@ -145,10 +147,12 @@ function ChannelPopover({
 interface ChannelSidebarProps {
   channelId: string
   sessionId?: string
+  /** Which top nav item is active. Defaults to 'Chats' when sessionId is set, else none. */
+  activeNav?: ChannelNav
 }
 
 /** pen `Chat Sidebar` (XKoGs). */
-export function ChannelSidebar({ channelId, sessionId }: ChannelSidebarProps) {
+export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSidebarProps) {
   const navigate = useNavigate()
   const { data: channels = [] } = useChannels()
   const { data: folders = [] } = useChannelFolders(channelId)
@@ -172,6 +176,18 @@ export function ChannelSidebar({ channelId, sessionId }: ChannelSidebarProps) {
 
   function openSession(id: string) {
     void navigate({ to: '/chat/$channelId/$sessionId', params: { channelId, sessionId: id } })
+  }
+
+  function navTo(nav: ChannelNav) {
+    if (nav === 'Chats') {
+      void navigate({ to: '/chat/$channelId', params: { channelId } })
+    } else if (nav === 'Goals') {
+      void navigate({ to: '/chat/$channelId/goals', params: { channelId } })
+    } else if (nav === 'Flows') {
+      void navigate({ to: '/chat/$channelId/flows', params: { channelId } })
+    } else if (nav === 'Docs') {
+      void navigate({ to: '/chat/$channelId/docs', params: { channelId } })
+    }
   }
 
   function selectChannel(id: string) {
@@ -217,10 +233,31 @@ export function ChannelSidebar({ channelId, sessionId }: ChannelSidebarProps) {
       </Button>
 
       <NavGroup>
-        <NavLink icon={MessageSquare} label="Chats" active={Boolean(sessionId)} />
-        <NavLink icon={Target} label="Goals" count={goals.length || undefined} />
-        <NavLink icon={Workflow} label="Flows" />
-        <NavLink icon={FileText} label="Docs" />
+        <NavLink
+          icon={MessageSquare}
+          label="Chats"
+          active={activeNav === 'Chats' || (activeNav === undefined && Boolean(sessionId))}
+          onClick={() => navTo('Chats')}
+        />
+        <NavLink
+          icon={Target}
+          label="Goals"
+          count={goals.length || undefined}
+          active={activeNav === 'Goals'}
+          onClick={() => navTo('Goals')}
+        />
+        <NavLink
+          icon={Workflow}
+          label="Flows"
+          active={activeNav === 'Flows'}
+          onClick={() => navTo('Flows')}
+        />
+        <NavLink
+          icon={FileText}
+          label="Docs"
+          active={activeNav === 'Docs'}
+          onClick={() => navTo('Docs')}
+        />
         <NavLink icon={ChartLine} label="Analytics" />
       </NavGroup>
 
