@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ellipsis, Globe, MessageCircle, PanelRight, ShieldCheck, Target, UserPlus } from 'lucide-react'
+import { Check, Ellipsis, Globe, MessageCircle, PanelRight, ShieldCheck, Target, Undo2, UserPlus } from 'lucide-react'
 import type { Model, SessionParticipant } from '../../core/domain/types'
 import { useChannel, useChannelFolders, useMessages, useSession } from '../../app/queries'
 import { Button, IconButton } from '../ds/Button'
@@ -8,6 +8,8 @@ import { Mascot } from '../ds/Mascot'
 import { MessageList } from './MessageList'
 import { DEFAULT_MODEL } from './ModelMenu'
 import { Composer } from './Composer'
+import { ShareDialog } from './ShareDialog'
+import { ChatMenu } from './ChatMenu'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
 
@@ -20,6 +22,53 @@ interface ChatSessionProps {
   sessionId: string
   /** Channel name used in the composer footer. Falls back to the session's channel. */
   channelName?: string
+}
+
+/** Tasks created confirmation (pen ref n9NI9G) */
+function TasksCreatedConfirmation({ goal, onUndo }: { goal: string; onUndo: () => void }) {
+  const TASKS = [
+    { label: 'Ship WebAuthn on web + iOS',         who: 'Dev',     when: 'Nov 14' },
+    { label: 'Password fallback for legacy Android', who: 'Dev',     when: 'Nov 20' },
+    { label: 'Write rollout comms for residents',   who: 'Grower', when: 'Nov 16' },
+  ]
+  return (
+    <div
+      role="status"
+      className="w-[680px] max-w-[calc(100%-48px)] rounded-md bg-ok-tint px-[14px] py-[10px] outline-1 -outline-offset-1 outline-ok-line"
+    >
+      <div className="flex items-center gap-[8px]">
+        <Check size={14} aria-hidden className="shrink-0 text-ok" />
+        <span className="flex-1 text-[13px] font-medium text-ok">
+          3 tasks added to &ldquo;{goal}&rdquo;
+        </span>
+        <button
+          type="button"
+          onClick={onUndo}
+          className="inline-flex items-center gap-[4px] text-[12px] font-medium text-ok hover:underline"
+        >
+          <Undo2 size={12} aria-hidden />
+          Undo
+        </button>
+      </div>
+      <ul className="mt-[8px] flex flex-col gap-[4px] pl-[22px]">
+        {TASKS.map((t) => (
+          <li key={t.label} className="flex items-center gap-[8px]">
+            <span className="size-[6px] shrink-0 rounded-full bg-ok" />
+            <span className="flex-1 text-[12.5px] text-ok">{t.label}</span>
+            <span className="text-[11.5px] text-ok/70">
+              {t.who} · {t.when}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="mt-[6px] pl-[22px] text-[12px] text-ok underline hover:no-underline"
+      >
+        Open goal
+      </button>
+    </div>
+  )
 }
 
 /**
@@ -42,6 +91,12 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       setSelectedModel(DEFAULT_MODEL)
     }
   }, [sessionId])
+
+  // Topbar dialog / menu state
+  const [shareOpen, setShareOpen] = useState(false)
+
+  // Tasks created confirmation state (n9NI9G)
+  const [tasksCreated, setTasksCreated] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -76,16 +131,20 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 <span className="text-[12px] font-medium whitespace-nowrap text-ink-2">{session.goal}</span>
               </span>
             )}
-            <Button variant="secondary" icon={UserPlus}>
+            {/* Share button → opens ShareDialog */}
+            <Button variant="secondary" icon={UserPlus} onClick={() => setShareOpen(true)}>
               Share
             </Button>
-            <button
-              type="button"
-              aria-label="More options"
-              className="flex items-center justify-center rounded-xs text-muted hover:text-ink-2"
-            >
-              <Ellipsis size={18} aria-hidden />
-            </button>
+            {/* "…" → opens ChatMenu */}
+            <ChatMenu>
+              <button
+                type="button"
+                aria-label="More options"
+                className="flex items-center justify-center rounded-xs text-muted hover:text-ink-2"
+              >
+                <Ellipsis size={18} aria-hidden />
+              </button>
+            </ChatMenu>
             <div className="flex items-center gap-[2px] pr-[2px] pl-[6px]">
               <IconButton icon={Globe} aria-label="Browser" />
               <IconButton icon={PanelRight} aria-label="Results panel" />
@@ -103,7 +162,17 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
           </div>
         ) : (
-          <MessageList messages={messages} />
+          <>
+            <MessageList messages={messages} onTasksAction={() => setTasksCreated(true)} />
+            {tasksCreated && session?.goal && (
+              <div className="flex flex-col items-center pb-[13px]">
+                <TasksCreatedConfirmation
+                  goal={session.goal}
+                  onUndo={() => setTasksCreated(false)}
+                />
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -124,6 +193,13 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
           Agents here only read {area} goals, docs and chats
         </p>
       </div>
+
+      {/* Share dialog */}
+      <ShareDialog
+        title={session?.title ?? 'this chat'}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </div>
   )
 }
