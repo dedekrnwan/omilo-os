@@ -21,6 +21,7 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
   const matchRoute = useMatchRoute()
   const onFlows = !!matchRoute({ to: '/office/flows', fuzzy: true })
   const onDocs = !!matchRoute({ to: '/office/docs', fuzzy: true })
+  const onAnalytics = !!matchRoute({ to: '/office/analytics', fuzzy: true })
   const { data: channels = [] } = useChannels()
   const { data: items = [] } = useInbox()
   const needsYou = items.filter((i) => i.status === 'pending' && i.needsYou).length
@@ -68,7 +69,12 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
           active={onDocs}
           onClick={() => void navigate({ to: '/office/docs' })}
         />
-        <NavLink icon={ChartLine} label="Analytics" onClick={() => {}} />
+        <NavLink
+          icon={ChartLine}
+          label="Analytics"
+          active={onAnalytics}
+          onClick={() => void navigate({ to: '/office/analytics' })}
+        />
       </NavGroup>
 
       <NavGroup>

@@ -1,8 +1,6 @@
 // ── Shared primitives used across Office Flows screens ────────────────────────
 
 import type { FlowRunStatus, NodeKind } from './data'
-import { Mascot } from '../../../ui/ds/Mascot'
-import type { HelperArea } from '../../../core/domain/types'
 
 // ── Run status style map ──────────────────────────────────────────────────────
 
@@ -56,18 +54,6 @@ export function Toggle({ on }: { on: boolean }) {
         style={{ transform: on ? 'translateX(14px)' : 'translateX(2px)' }}
       />
     </span>
-  )
-}
-
-// ── MascotRow ─────────────────────────────────────────────────────────────────
-
-export function MascotRow({ areas }: { areas: HelperArea[] }) {
-  return (
-    <div className="flex items-center gap-[4px]">
-      {areas.map((area, i) => (
-        <Mascot key={i} size={20} radius={5} area={area} />
-      ))}
-    </div>
   )
 }
 

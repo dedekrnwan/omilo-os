@@ -27,6 +27,7 @@ interface GoalRow {
   chats: number
   lastActive: string
   area: 'brand' | 'dev' | 'ops'
+  ownerName: string
   subtasks?: SubTask[]
 }
 
@@ -39,6 +40,7 @@ const GOALS: GoalRow[] = [
     chats: 6,
     lastActive: '2m ago',
     area: 'brand',
+    ownerName: 'Chief',
     subtasks: [
       { id: 'st-1', title: 'Passkey rollout plan',          owner: 'Chief, Dev', time: 'now' },
       { id: 'st-2', title: 'Android WebAuthn fallback',      owner: 'Dev',        time: 'Yesterday' },
@@ -53,6 +55,7 @@ const GOALS: GoalRow[] = [
     chats: 4,
     lastActive: '1h ago',
     area: 'dev',
+    ownerName: 'Dev',
   },
   {
     id: 'g-pg16',
@@ -62,40 +65,38 @@ const GOALS: GoalRow[] = [
     chats: 3,
     lastActive: '3h ago',
     area: 'dev',
+    ownerName: 'Dev',
   },
   {
     id: 'g-oncall',
     title: 'On-call load under 5 pages/week',
     status: 'Ahead',
-    progress: 90,
+    progress: 80,
     chats: 2,
     lastActive: 'Yesterday',
     area: 'ops',
+    ownerName: 'Ops',
   },
 ]
 
-const STATUS_STYLE: Record<GoalStatus, { bg: string; ink: string }> = {
-  'On track': { bg: 'var(--color-ok-tint)',  ink: 'var(--color-ok)' },
-  'At risk':  { bg: 'var(--color-warn-tint)', ink: 'var(--color-warn)' },
-  'Ahead':    { bg: 'var(--color-info-tint)', ink: 'var(--color-info)' },
-}
-
-const RING_COLOR: Record<GoalStatus, string> = {
+// Status text + ring arc share one colour per status (pen SdvDS):
+// On track & Ahead → ok green, At risk → warn amber.
+const STATUS_COLOR: Record<GoalStatus, string> = {
   'On track': 'var(--color-ok)',
   'At risk':  'var(--color-warn)',
-  'Ahead':    'var(--color-helper-brand)',
+  'Ahead':    'var(--color-ok)',
 }
 
-// ── StatusRing: ContextRing with coloured arc per status ─────────────────────
+// ── StatusRing: 22px donut with coloured arc per status (pen ring r=22, innerRadius 0.68) ──
 
 function StatusRing({ value, status }: { value: number; status: GoalStatus }) {
-  const size = 28
+  const size = 22
   const outer = size / 2
-  const width = outer * 0.28
+  const width = outer * 0.32
   const r = outer - width / 2
   const c = 2 * Math.PI * r
   const pct = Math.max(0, Math.min(100, value)) / 100
-  const color = RING_COLOR[status]
+  const color = STATUS_COLOR[status]
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="shrink-0">
       <circle
@@ -115,12 +116,11 @@ function StatusRing({ value, status }: { value: number; status: GoalStatus }) {
 // ── GoalItem ─────────────────────────────────────────────────────────────────
 
 function GoalItem({ goal, expanded, onToggle }: { goal: GoalRow; expanded: boolean; onToggle: () => void }) {
-  const st = STATUS_STYLE[goal.status]
   return (
     <div className="flex flex-col">
       {/* Main row */}
       <div className="flex w-full items-center gap-[12px] py-[10px]">
-        {/* Expand toggle: left part only (ring + title/meta) */}
+        {/* Expand toggle: ring + title + inline meta (status · pct · chats) */}
         <button
           type="button"
           onClick={onToggle}
@@ -132,24 +132,21 @@ function GoalItem({ goal, expanded, onToggle }: { goal: GoalRow; expanded: boole
           <span className="min-w-0 flex-1 flex flex-col gap-[2px]">
             <span className="text-[13.5px] font-medium text-ink truncate">{goal.title}</span>
             <span className="text-[11.5px] text-muted">
+              <span className="font-medium" style={{ color: STATUS_COLOR[goal.status] }}>
+                {goal.status}
+              </span>
+              {' · '}
+              {goal.progress}%{' · '}
               {goal.chats} chats · active {goal.lastActive}
             </span>
           </span>
         </button>
 
-        {/* Status chip */}
-        <span
-          className="inline-flex h-[20px] shrink-0 items-center rounded-pill px-[8px] text-[11.5px] font-medium"
-          style={{ background: st.bg, color: st.ink }}
-        >
-          {goal.status}
+        {/* Owner avatar + name */}
+        <span className="flex shrink-0 items-center gap-[6px]">
+          <Mascot size={18} radius={5} area={goal.area} title={goal.ownerName} />
+          <span className="text-[12px] text-ink-2">{goal.ownerName}</span>
         </span>
-
-        {/* Progress label */}
-        <span className="w-[34px] shrink-0 text-right text-[12px] text-muted">{goal.progress}%</span>
-
-        {/* Owner avatar */}
-        <Mascot size={22} radius={6} area={goal.area} title={goal.area} />
 
         {/* Chat button */}
         <Button variant="secondary" height={28} icon={MessageSquare}>

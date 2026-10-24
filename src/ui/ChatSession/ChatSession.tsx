@@ -12,7 +12,6 @@ import { ShareDialog } from './ShareDialog'
 import { ChatMenu } from './ChatMenu'
 import { ResultsPanel } from './ResultsPanel'
 import { BrowserPanel } from './BrowserPanel'
-import { GoalContextBanner } from './GoalContext'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
 
@@ -103,9 +102,6 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [browserOpen, setBrowserOpen] = useState(false)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
 
-  // Goal context banner state — shown when session has a goal prop passed
-  const [goalContextOpen, setGoalContextOpen] = useState(false)
-
   // Tasks created confirmation state (n9NI9G)
   const [tasksCreated, setTasksCreated] = useState(false)
 
@@ -175,29 +171,9 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 className={resultsOpen ? 'bg-hover text-ink' : ''}
               />
             </div>
-            {session?.goal && (
-              <IconButton
-                icon={Target}
-                aria-label="Toggle goal context"
-                aria-pressed={goalContextOpen}
-                onClick={() => setGoalContextOpen((v) => !v)}
-                className={goalContextOpen ? 'bg-hover text-ok' : ''}
-              />
-            )}
           </div>
         }
       />
-
-      {/* Goal context banner (AQW5x) — shown when session has a goal and banner is toggled */}
-      {goalContextOpen && session?.goal && (
-        <GoalContextBanner
-          goalTitle={session.goal}
-          progress={40}
-          status="On track"
-          due="due Nov 28"
-          area={channel?.name ?? 'Engineering'}
-        />
-      )}
 
       {/* Main content area: thread + optional split panel */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -233,6 +209,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 sessionId={sessionId}
                 selectedModel={selectedModel}
                 onModelChange={setSelectedModel}
+                showRecipients={false}
                 placeholder={`Reply — ${joinNames(participants.map((p) => p.name))} ${
                   participants.length > 1 ? 'are' : 'is'
                 } in this chat`}

@@ -193,6 +193,8 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
       void navigate({ to: '/chat/$channelId/flows', params: { channelId } })
     } else if (nav === 'Docs') {
       void navigate({ to: '/chat/$channelId/docs', params: { channelId } })
+    } else if (nav === 'Analytics') {
+      void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     } else if (nav === 'Archived') {
       void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
     }
@@ -271,7 +273,12 @@ export function ChannelSidebar({ channelId, sessionId, activeNav }: ChannelSideb
           active={activeNav === 'Docs'}
           onClick={() => navTo('Docs')}
         />
-        <NavLink icon={ChartLine} label="Analytics" />
+        <NavLink
+          icon={ChartLine}
+          label="Analytics"
+          active={activeNav === 'Analytics'}
+          onClick={() => navTo('Analytics')}
+        />
       </NavGroup>
 
       {/* Folders + Recent scroll together when the window is short */}

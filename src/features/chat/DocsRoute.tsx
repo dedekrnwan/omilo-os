@@ -3,15 +3,9 @@ import {
   FileText,
   Plus,
   Search,
-  Star,
   Link2,
   Clock,
-  Tag,
-  History,
-  Eye,
-  Edit3,
-  Share2,
-  MoreHorizontal,
+  Target,
 } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
@@ -63,39 +57,47 @@ const ACTIVE_DOC: ActiveDoc = {
   id: 'd-passkey',
   title: 'Passkey rollout — v1',
   editor: 'Dev',
-  editedAgo: '21h ago',
+  editedAgo: '2h ago',
   linkedTo: 'Passwordless login by Q4',
-  body: `Ship passkeys to every user before the Nov 28 code freeze, in two waves. Owner: Dev. Approved by Dede on Nov 5.
+  body: `Ship passkeys to every user before the Nov 28 code freeze, in two waves. Owner: Dev. Approved by Dede on Nov 3.
 
 **Wave 1 — web + iOS**
 
-- Ship in staging Nov 10, to 10% of users Nov 12, to 100% Nov 14.
-- Fallback stays on; password login remains for anyone without a passkey.
+- Ship to staging Nov 10, to 10% of users Nov 12, to 100% Nov 14.
+- Fallback stays on: password login remains for anyone without a passkey.
 - Release notes reuse [[Launch checklist]].
 
 **Wave 2 — Android**
 
-Every morning → find PRs idle 5 days → label stale and ping the author
-
-Legacy Android blocks WebAuthn, so Android gets a password fallback flow first. Two extra days, now due Nov 23.
+The legacy WebView blocks WebAuthn, so Android gets a password fallback flow first. Two extra days, now due Nov 23.
 
 - Risk tracked in [[Freeze exceptions policy]]
 
 **Rollback**
 
-Feature flag passkeys_enabled. Ops can flip it in under a minute; drill done Oct 19 (11 minutes end-to-end).`,
+Feature flag passkeys_enabled. Ops can flip it in under a minute; drill done Oct 18 (11 minutes end to end).`,
 }
 
 // ── Right panel: linked items ─────────────────────────────────────────────────
 
-const LINKED_DOCS = [
-  { id: 'ln-1', title: 'Launch checklist',  meta: 'Q4 Launch · 12 items · 7 done' },
-  { id: 'ln-2', title: 'Freeze exceptions policy', meta: 'After Nov 23, with Chief sign-off' },
+const LINKS_FROM_HERE = [
+  { id: 'ln-1', title: 'Launch checklist', meta: 'Engineering / Q4 Launch · 12 items, 7 done', chief: false },
+  { id: 'ln-2', title: 'Freeze exceptions policy', meta: 'Only P0 fixes after Nov 28, with Chief sign-off.', chief: true },
 ]
 
-const LINKED_GOALS = [
-  { id: 'lg-1', title: 'Passwordless login by Q4', meta: 'Goal · 40%  · Cited in this doc as a check-in' },
+const LINKED_HERE = [
+  { id: 'lg-1', title: 'Passwordless login by Q4', meta: 'Goal · 40% · Chief cites this doc in 3 check-ins', chief: false },
 ]
+
+const DOC_OUTLINE = ['Wave 1 — web + iOS', 'Wave 2 — Android', 'Rollback']
+
+const DOC_HISTORY = [
+  { who: 'Dev',   time: '2h ago', note: 'Updated wave 2 timeline' },
+  { who: 'Chief', time: '2d ago', note: 'Added rollback section' },
+]
+
+const PANEL_TABS = ['Links', 'Outline', 'Related', 'History'] as const
+type PanelTab = (typeof PANEL_TABS)[number]
 
 // ── DocListItem ───────────────────────────────────────────────────────────────
 
@@ -140,8 +142,11 @@ function DocListItem({
 
 // ── DocViewer ─────────────────────────────────────────────────────────────────
 
+type DocMode = 'edit' | 'both' | 'read'
+
 function DocViewer({ doc }: { doc: ActiveDoc }) {
-  const [mode, setMode] = useState<'read' | 'edit'>('read')
+  const [mode, setMode] = useState<DocMode>('read')
+  const [panelTab, setPanelTab] = useState<PanelTab>('Links')
 
   // Render body: bold **text** and [[link]] as styled spans
   function renderBody(text: string) {
@@ -192,55 +197,43 @@ function DocViewer({ doc }: { doc: ActiveDoc }) {
     <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Doc main area */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* Doc topbar */}
-        <div className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[16px]">
-          <div className="flex items-center gap-[6px] min-w-0 flex-1">
+        {/* Doc head — byline · goal chip · spacer · Edit/Both/Read segmented (pen DBF9W) */}
+        <div className="flex flex-col gap-[14px] px-[40px] pt-[24px]">
+          <div className="flex items-center gap-[10px]">
             <Mascot size={18} radius={5} area="dev" />
-            <span className="text-[12px] text-muted shrink-0">Dev edited {doc.editedAgo}</span>
+            <span className="text-[12px] text-muted shrink-0">Dev · edited {doc.editedAgo}</span>
+            <span className="inline-flex items-center gap-[6px] rounded-pill outline-1 -outline-offset-1 outline-line-strong bg-soft px-[10px] py-[3px]">
+              <Target size={12} aria-hidden className="text-ok" />
+              <span className="text-[12px] font-medium whitespace-nowrap text-ink-2">{doc.linkedTo}</span>
+            </span>
+            <div className="flex-1" />
+            {/* Segmented: Edit · Both · Read */}
+            <div className="flex gap-[2px] rounded-base bg-soft p-[2px]">
+              {(['edit', 'both', 'read'] as const).map((m) => {
+                const on = mode === m
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    aria-pressed={on}
+                    className={`flex h-[22px] items-center rounded-sm px-[10px] text-[12px] font-medium capitalize transition-colors ${
+                      on ? 'bg-surface text-ink shadow-[0_1px_2px_#00000014]' : 'text-muted hover:text-ink-2'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-
-          {/* View / Edit tabs */}
-          <div className="flex gap-[2px]">
-            {(['edit', 'read'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className="flex h-[26px] items-center gap-[4px] rounded-btn px-[8px] text-[12px] font-medium transition-colors"
-                style={{
-                  background: mode === m ? 'var(--color-hover)' : 'transparent',
-                  color: mode === m ? 'var(--color-ink)' : 'var(--color-muted)',
-                }}
-              >
-                {m === 'edit' ? <Edit3 size={12} aria-hidden /> : <Eye size={12} aria-hidden />}
-                {m === 'edit' ? 'Edit' : 'Read'}
-              </button>
-            ))}
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-[4px]">
-            <button type="button" className="flex h-[26px] items-center gap-[4px] rounded-btn px-[8px] text-[12px] text-muted hover:text-ink transition-colors">
-              <Star size={13} aria-hidden />
-              Saves +3
-            </button>
-            <button type="button" className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover transition-colors">
-              <Share2 size={14} aria-hidden />
-            </button>
-            <button type="button" className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover transition-colors">
-              <Link2 size={14} aria-hidden />
-            </button>
-            <button type="button" className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover transition-colors">
-              <MoreHorizontal size={14} aria-hidden />
-            </button>
-          </div>
+          <h1 className="m-0 font-display text-[28px] font-semibold tracking-[-0.6px] text-ink">
+            {doc.title}
+          </h1>
         </div>
 
         {/* Doc body */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-[40px] py-[32px]">
-          <h1 className="mb-[20px] font-display text-[28px] font-semibold tracking-[-0.6px] text-ink">
-            {doc.title}
-          </h1>
+        <div className="min-h-0 flex-1 overflow-y-auto px-[40px] pt-[20px] pb-[32px]">
           <div className="flex flex-col gap-[6px]">{renderBody(doc.body)}</div>
 
           {/* Agent memory strip at bottom */}
@@ -254,85 +247,107 @@ function DocViewer({ doc }: { doc: ActiveDoc }) {
         </div>
       </div>
 
-      {/* Right panel */}
-      <aside className="flex w-[220px] shrink-0 flex-col gap-[16px] overflow-y-auto border-l border-line px-[14px] py-[16px]">
-        {/* Links */}
-        <div className="flex flex-col gap-[6px]">
-          <div className="flex items-center gap-[4px] mb-[2px]">
-            <Link2 size={12} aria-hidden className="text-faint" />
-            <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">LINKS</span>
-            <span className="ml-auto text-[10.5px] text-faint">8</span>
-          </div>
-          {LINKED_DOCS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              className="flex flex-col gap-[1px] rounded-sm px-[6px] py-[4px] text-left transition-colors hover:bg-hover"
-            >
-              <span className="text-[12px] text-ink-2">{d.title}</span>
-              <span className="text-[11px] text-faint">{d.meta}</span>
-            </button>
-          ))}
+      {/* Right panel — tabbed: Links / Outline / Related / History (pen IIxA0) */}
+      <aside className="flex w-[260px] shrink-0 flex-col gap-[14px] overflow-y-auto border-l border-line px-[14px] py-[14px]">
+        {/* Tabs */}
+        <div className="flex gap-[2px] rounded-base bg-soft p-[2px]">
+          {PANEL_TABS.map((t) => {
+            const on = panelTab === t
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setPanelTab(t)}
+                aria-pressed={on}
+                className={`flex h-[22px] flex-1 items-center justify-center rounded-sm text-[11.5px] font-medium transition-colors ${
+                  on ? 'bg-surface text-ink shadow-[0_1px_2px_#00000014]' : 'text-muted hover:text-ink-2'
+                }`}
+              >
+                {t}
+              </button>
+            )
+          })}
         </div>
 
-        <div className="h-px w-full bg-line" />
-
-        {/* Linked in this doc */}
-        <div className="flex flex-col gap-[6px]">
-          <div className="flex items-center gap-[4px] mb-[2px]">
-            <Tag size={12} aria-hidden className="text-faint" />
-            <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">LINKED HERE</span>
-            <span className="ml-auto text-[10.5px] text-faint">4</span>
-          </div>
-          {LINKED_GOALS.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              className="flex flex-col gap-[1px] rounded-sm px-[6px] py-[4px] text-left transition-colors hover:bg-hover"
-            >
-              <span className="text-[12px] text-ink-2">{g.title}</span>
-              <span className="text-[11px] text-faint">{g.meta}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="h-px w-full bg-line" />
-
-        {/* Outline */}
-        <div className="flex flex-col gap-[6px]">
-          <div className="flex items-center gap-[4px] mb-[2px]">
-            <FileText size={12} aria-hidden className="text-faint" />
-            <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">OUTLINE</span>
-          </div>
-          {['Wave 1 — web + iOS', 'Wave 2 — Android', 'Rollback'].map((h) => (
-            <button
-              key={h}
-              type="button"
-              className="rounded-sm px-[6px] py-[3px] text-left text-[12px] text-muted transition-colors hover:text-ink"
-            >
-              {h}
-            </button>
-          ))}
-        </div>
-
-        <div className="h-px w-full bg-line" />
-
-        {/* Related / history */}
-        <div className="flex flex-col gap-[6px]">
-          <div className="flex items-center gap-[4px] mb-[2px]">
-            <History size={12} aria-hidden className="text-faint" />
-            <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">HISTORY</span>
-          </div>
-          {[
-            { who: 'Dev',   time: '21h ago', note: 'Updated wave 2 timeline' },
-            { who: 'Chief', time: '2d ago',  note: 'Added rollback section' },
-          ].map((h, i) => (
-            <div key={i} className="flex flex-col gap-[1px] px-[6px] py-[3px]">
-              <span className="text-[12px] text-ink-2">{h.who} · {h.time}</span>
-              <span className="text-[11px] text-faint">{h.note}</span>
+        {panelTab === 'Links' && (
+          <>
+            {/* Links from here */}
+            <div className="flex flex-col gap-[4px]">
+              <div className="flex items-center gap-[6px] px-[2px] pb-[2px]">
+                <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">LINKS FROM HERE</span>
+                <span className="rounded-pill bg-soft px-[5px] text-[10px] text-muted">{LINKS_FROM_HERE.length}</span>
+              </div>
+              {LINKS_FROM_HERE.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className="flex flex-col gap-[2px] rounded-sm px-[6px] py-[5px] text-left transition-colors hover:bg-hover"
+                >
+                  <span className="flex items-center gap-[6px]">
+                    <FileText size={12} aria-hidden className="shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{d.title}</span>
+                    {d.chief && <Mascot size={16} radius={4} area="brand" title="Chief" />}
+                  </span>
+                  <span className="text-[11px] text-faint">{d.meta}</span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
+
+            {/* Linked here */}
+            <div className="flex flex-col gap-[4px]">
+              <div className="flex items-center gap-[6px] px-[2px] pb-[2px]">
+                <span className="text-[10.5px] font-medium tracking-[0.5px] text-faint">LINKED HERE</span>
+                <span className="rounded-pill bg-soft px-[5px] text-[10px] text-muted">{LINKED_HERE.length}</span>
+              </div>
+              {LINKED_HERE.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  className="flex flex-col gap-[2px] rounded-sm px-[6px] py-[5px] text-left transition-colors hover:bg-hover"
+                >
+                  <span className="flex items-center gap-[6px]">
+                    <Target size={12} aria-hidden className="shrink-0 text-ok" />
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{g.title}</span>
+                  </span>
+                  <span className="text-[11px] text-faint">{g.meta}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {panelTab === 'Outline' && (
+          <div className="flex flex-col gap-[2px]">
+            {DOC_OUTLINE.map((h) => (
+              <button
+                key={h}
+                type="button"
+                className="rounded-sm px-[6px] py-[4px] text-left text-[12px] text-muted transition-colors hover:text-ink"
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {panelTab === 'Related' && (
+          <div className="flex flex-col items-center gap-[6px] px-[6px] py-[24px] text-center">
+            <Link2 size={18} aria-hidden className="text-faint" />
+            <span className="text-[12px] text-muted">No related docs yet</span>
+            <span className="text-[11px] text-faint">Chief surfaces docs that cover the same work.</span>
+          </div>
+        )}
+
+        {panelTab === 'History' && (
+          <div className="flex flex-col gap-[6px]">
+            {DOC_HISTORY.map((h, i) => (
+              <div key={i} className="flex flex-col gap-[1px] px-[6px] py-[3px]">
+                <span className="text-[12px] text-ink-2">{h.who} · {h.time}</span>
+                <span className="text-[11px] text-faint">{h.note}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </aside>
     </div>
   )

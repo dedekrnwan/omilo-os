@@ -76,10 +76,11 @@ function LeftPanel() {
   return (
     <div
       style={{
-        width: 308,
+        width: '42%',
+        maxWidth: 600,
         minHeight: '100vh',
         flexShrink: 0,
-        background: '#EEEDF7',
+        background: '#F5F5F4',
         display: 'flex',
         flexDirection: 'column',
         padding: '20px 28px 28px',

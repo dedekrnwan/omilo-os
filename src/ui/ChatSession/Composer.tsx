@@ -17,6 +17,12 @@ export interface ComposerProps {
   onModelChange: (m: Model) => void
   /** Overrides the input placeholder. Defaults to "Ask a helper, or type / for commands". */
   placeholder?: string
+  /**
+   * Show the "To · Chief · Mention agent" recipient row. True for a new chat
+   * (pen gTI4y), false for a reply inside an existing session (pen b3vqC5) where
+   * participants are already established.
+   */
+  showRecipients?: boolean
   /** Share of the context window in use (Context ring + %). 0-100. */
   contextUsed?: number
   /** Whether the context is almost full (≥85%). Shows a warning banner. */
@@ -42,6 +48,7 @@ export function Composer({
   selectedModel,
   onModelChange,
   placeholder = 'Ask a helper, or type / for commands',
+  showRecipients = true,
   contextUsed = 42,
   contextAlmostFull = false,
   isCompacted = false,
@@ -200,19 +207,15 @@ export function Composer({
       {/* Composer card */}
       {/* Wrap the textarea in a Popover.Anchor via the popover components below */}
       <div className="flex w-full flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[10px] shadow-[0_8px_12px_#0000001F]">
-        {/* Recipients */}
-        <div className="flex items-center gap-[6px]">
-          <span className="text-[12px] text-faint">To</span>
-          <span className="inline-flex items-center gap-[5px] rounded-pill bg-[#6366F114] py-[3px] pr-[8px] pl-[4px]">
-            <Mascot size={16} radius={5} />
-            <span className="text-[12px] font-medium text-[#4338CA]">Chief</span>
-          </span>
-          {/* Mention agent button — triggers @mention popover */}
-          <MentionPopover
-            open={activePopover === 'mention'}
-            onOpenChange={(open) => !open && closePopover()}
-            onSelect={insertMention}
-          >
+        {/* Recipients — only for a new chat; a session reply omits this row (pen b3vqC5) */}
+        {showRecipients && (
+          <div className="flex items-center gap-[6px]">
+            <span className="text-[12px] text-faint">To</span>
+            <span className="inline-flex items-center gap-[5px] rounded-pill bg-[#6366F114] py-[3px] pr-[8px] pl-[4px]">
+              <Mascot size={16} radius={5} />
+              <span className="text-[12px] font-medium text-[#4338CA]">Chief</span>
+            </span>
+            {/* Mention agent button — triggers the @mention popover anchored to the input */}
             <button
               type="button"
               aria-label="Mention agent"
@@ -222,34 +225,40 @@ export function Composer({
               <AtSign size={12} aria-hidden className="text-muted" />
               <span className="text-[12px] text-muted">Mention agent</span>
             </button>
-          </MentionPopover>
-        </div>
+          </div>
+        )}
 
-        {/* Input — wrap in Popover anchors for command + context */}
-        <CommandPopover
-          open={activePopover === 'command'}
+        {/* Input — wrap in Popover anchors for mention + command + context */}
+        <MentionPopover
+          open={activePopover === 'mention'}
           onOpenChange={(open) => !open && closePopover()}
-          onSelect={insertCommand}
+          onSelect={insertMention}
         >
-          <ContextPickerPopover
-            open={activePopover === 'context'}
+          <CommandPopover
+            open={activePopover === 'command'}
             onOpenChange={(open) => !open && closePopover()}
-            onSelect={insertContext}
+            onSelect={insertCommand}
           >
-            <div className="flex min-h-[44px] w-full p-[4px]">
-              <textarea
-                ref={inputRef}
-                value={text}
-                rows={1}
-                onChange={(e) => handleTextChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={placeholder}
-                aria-label="Message"
-                className="block w-full resize-none bg-transparent text-[14px] leading-[1.25] text-ink outline-none placeholder:text-faint"
-              />
-            </div>
-          </ContextPickerPopover>
-        </CommandPopover>
+            <ContextPickerPopover
+              open={activePopover === 'context'}
+              onOpenChange={(open) => !open && closePopover()}
+              onSelect={insertContext}
+            >
+              <div className="flex min-h-[44px] w-full p-[4px]">
+                <textarea
+                  ref={inputRef}
+                  value={text}
+                  rows={1}
+                  onChange={(e) => handleTextChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={placeholder}
+                  aria-label="Message"
+                  className="block w-full resize-none bg-transparent text-[14px] leading-[1.25] text-ink outline-none placeholder:text-faint"
+                />
+              </div>
+            </ContextPickerPopover>
+          </CommandPopover>
+        </MentionPopover>
 
         {/* Controls */}
         <div className="flex w-full items-center gap-[8px]">

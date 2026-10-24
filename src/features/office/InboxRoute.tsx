@@ -99,8 +99,6 @@ function DecisionCard({
 }) {
   const approvedCount = approvedResults ? approvedResults.filter((r) => r.decision === 'approved').length : 0
 
-  // Detect if this card has a "Change amount" style action (budget approval)
-  const hasChangeAmount = item.actions?.some((a) => a.label.toLowerCase().includes('approve $') || a.label.toLowerCase().includes('approve'))
   // Detect if it has multiple proposals (multi-task review)
   const hasProposals = item.proposals && item.proposals.length > 0
 
@@ -216,52 +214,26 @@ function DecisionCard({
       )}
 
       <div className="flex w-full items-center gap-[6px]">
-        {/* "Review one by one" replaces / augments the Approve button for multi-proposal cards */}
-        {hasProposals ? (
-          <>
+        {/* Actions row (pen hR0PJ): primary approve + secondary buttons (Review one by one / Change amount / Reply) */}
+        {item.actions?.map((a) => {
+          const label = a.label.toLowerCase()
+          const isApprove = a.icon === 'check' || a.primary
+          const isReview = label.includes('review one')
+          const isChange = label.includes('change amount')
+          return (
             <Button
+              key={a.label}
               height={28}
-              variant="primary"
-              icon={Check}
-              onClick={onApprove}
+              variant={a.primary ? 'primary' : 'secondary'}
+              icon={a.icon === 'check' ? Check : a.icon === 'reply' ? Reply : undefined}
+              onClick={
+                isApprove ? onApprove : isReview ? onReviewOneByOne : isChange ? onChangeAmount : undefined
+              }
             >
-              Approve all {item.proposals?.length}
+              {a.label}
             </Button>
-            <Button
-              height={28}
-              variant="secondary"
-              onClick={onReviewOneByOne}
-            >
-              Review one by one
-            </Button>
-          </>
-        ) : (
-          item.actions?.map((a) => {
-            const isApprove = a.icon === 'check' || a.primary
-            return (
-              <Button
-                key={a.label}
-                height={28}
-                variant={a.primary ? 'primary' : 'secondary'}
-                icon={a.icon === 'check' ? Check : a.icon === 'reply' ? Reply : undefined}
-                onClick={isApprove ? onApprove : undefined}
-              >
-                {a.label}
-              </Button>
-            )
-          })
-        )}
-
-        {/* "Change amount" link for budget-type cards */}
-        {hasChangeAmount && !hasProposals && (
-          <button
-            type="button"
-            onClick={onChangeAmount}
-            className="flex items-center gap-[3px] text-[12px] font-medium text-ink-2 hover:text-ink transition-colors"
-          >
-            Change amount
-          </button>
-        )}
+          )
+        })}
 
         <span className="h-px flex-1" />
         {item.reassurance && <span className="text-[12px] text-muted">{item.reassurance}</span>}

@@ -143,35 +143,28 @@ describe('Browser panel', () => {
 
 // ── Goal context banner ───────────────────────────────────────────────────────
 
-describe('Goal context banner', () => {
-  test('goal context toggle button present for goal session (sess-passkey)', async () => {
+describe('Session topbar — pen b3vqC5', () => {
+  // The regular chat-session topbar ends at Browser + Results panel toggles.
+  // The goal-context toggle / banner lives in the dedicated Office goal view
+  // (pen AQW5x), not here — so no goal-context toggle appears for any session.
+  test('no goal context toggle for a goal session (sess-passkey)', async () => {
     renderSession('sess-passkey')
-    await waitFor(() => expect(screen.getByRole('button', { name: /toggle goal context/i })).toBeInTheDocument())
-  })
-
-  test('goal context banner hidden by default', async () => {
-    renderSession('sess-passkey')
-    await waitFor(() => expect(screen.getByRole('button', { name: /toggle goal context/i })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /results panel/i })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /toggle goal context/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('goal-context-banner')).not.toBeInTheDocument()
   })
 
-  test('clicking goal context toggle shows the banner', async () => {
-    const user = userEvent.setup()
-    renderSession('sess-passkey')
-    await waitFor(() => expect(screen.getByRole('button', { name: /toggle goal context/i })).toBeInTheDocument())
-
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: /toggle goal context/i }))
-    })
-
-    expect(screen.getByTestId('goal-context-banner')).toBeInTheDocument()
+  test('no goal context toggle for a session without goal (sess-investor)', async () => {
+    renderSession('sess-investor')
+    await waitFor(() => expect(screen.getByRole('button', { name: /results panel/i })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /toggle goal context/i })).not.toBeInTheDocument()
   })
 
-  test('no goal context toggle for session without goal', async () => {
-    renderSession('sess-investor')
-    await waitFor(() => expect(screen.queryByRole('button', { name: /results panel/i })).toBeInTheDocument())
-    // sess-investor has no goal
-    expect(screen.queryByRole('button', { name: /toggle goal context/i })).not.toBeInTheDocument()
+  test('session composer has no recipient row (reply, not new chat)', async () => {
+    renderSession('sess-passkey')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /message/i })).toBeInTheDocument())
+    // "Mention agent" lives in the recipient row, shown only for a new chat.
+    expect(screen.queryByRole('button', { name: /mention agent/i })).not.toBeInTheDocument()
   })
 })
 

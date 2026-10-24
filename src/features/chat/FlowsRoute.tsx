@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Activity, GitFork, Plus } from 'lucide-react'
+import { Activity, GitFork, Plus, Sparkles } from 'lucide-react'
 import { useParams } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
+import { FlowChain } from '../../ui/ds/FlowChain'
+import type { FlowIconId } from '../../ui/ds/FlowChain'
 
 const DEFAULT_CHANNEL_ID = 'ch-general'
 
@@ -17,7 +19,9 @@ interface FlowCard {
   title: string
   status: string
   enabled: boolean
-  areas: Array<'brand' | 'dev' | 'ops' | 'marketing'>
+  from: FlowIconId
+  to: FlowIconId
+  count: number
   bars: number[]
 }
 
@@ -27,7 +31,9 @@ const YOUR_FLOWS: FlowCard[] = [
     title: 'Deploy failure triage',
     status: '12m ago',
     enabled: true,
-    areas: ['brand', 'dev', 'ops'],
+    from: 'github',
+    to: 'slack',
+    count: 2,
     bars: [2, 4, 3, 5, 4, 3, 5, 4, 5, 4, 3, 4, 5, 4, 3],
   },
   {
@@ -35,7 +41,9 @@ const YOUR_FLOWS: FlowCard[] = [
     title: 'Weekly latency report',
     status: 'Mon',
     enabled: false,
-    areas: ['brand', 'ops'],
+    from: 'chart-line',
+    to: 'mail',
+    count: 1,
     bars: [1, 1, 2, 1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5, 4],
   },
   {
@@ -43,7 +51,9 @@ const YOUR_FLOWS: FlowCard[] = [
     title: 'Freeze-window guard',
     status: 'waiting for you',
     enabled: true,
-    areas: ['brand', 'dev'],
+    from: 'github',
+    to: 'user-check',
+    count: 1,
     bars: [5, 4, 5, 4, 5, 3, 4, 3, 5, 4, 5, 4, 3, 4, 5],
   },
   {
@@ -51,7 +61,9 @@ const YOUR_FLOWS: FlowCard[] = [
     title: 'On-call digest',
     status: 'today 08:00',
     enabled: true,
-    areas: ['brand'],
+    from: 'siren',
+    to: 'message-circle',
+    count: 1,
     bars: [3, 2, 3, 2, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3],
   },
 ]
@@ -148,13 +160,9 @@ function Toggle({ on }: { on: boolean }) {
 function FlowCardItem({ card }: { card: FlowCard }) {
   return (
     <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px]">
-      {/* icons row + toggle */}
+      {/* flow chain + toggle */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-[4px]">
-          {card.areas.map((area, i) => (
-            <Mascot key={i} size={20} radius={5} area={area} />
-          ))}
-        </div>
+        <FlowChain from={card.from} to={card.to} count={card.count} />
         <Toggle on={card.enabled} />
       </div>
       {/* title */}
@@ -172,23 +180,34 @@ function FlowCardItem({ card }: { card: FlowCard }) {
 
 function SuggestedCard({
   title,
-  sub,
-  suggested,
+  why,
+  from,
+  to,
+  count,
 }: {
   title: string
-  sub: string
-  suggested: string
+  why: string
+  from: FlowIconId
+  to: FlowIconId
+  count: number
 }) {
   return (
-    <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
-      <div className="flex items-start justify-between gap-[8px]">
-        <div className="flex flex-col gap-[4px] min-w-0">
-          <span className="text-[13px] font-medium text-ink">{title}</span>
-          <span className="text-[11.5px] text-muted">{sub}</span>
-        </div>
-        <Button variant="primary" height={28}>Create</Button>
+    <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
+      {/* chain + suggesting helper */}
+      <div className="flex items-center justify-between">
+        <FlowChain from={from} to={to} count={count} />
+        <Mascot size={22} radius={6} area="dev" title="Dev" />
       </div>
-      <span className="text-[11.5px] text-faint">{suggested}</span>
+      {/* title */}
+      <span className="text-[13px] font-medium text-ink">{title}</span>
+      {/* why + create */}
+      <div className="flex items-center justify-between gap-[8px]">
+        <span className="flex min-w-0 items-center gap-[5px] text-[11.5px] text-muted">
+          <Sparkles size={12} aria-hidden className="shrink-0 text-[#4338CA]" />
+          <span className="truncate">{why}</span>
+        </span>
+        <Button variant="primary" height={28} icon={Plus}>Create</Button>
+      </div>
     </div>
   )
 }
@@ -428,8 +447,10 @@ function YoursTab() {
         {/* Suggested card in grid */}
         <SuggestedCard
           title="Triage failed deploys for you?"
-          sub="Dev saw you do it 4× this week"
-          suggested="Suggested by Dev"
+          why="Dev saw you do it 4× this week"
+          from="github"
+          to="message-circle"
+          count={2}
         />
         {/* New flow card */}
         <NewFlowCard />
@@ -440,18 +461,16 @@ function YoursTab() {
         <span className="text-[12px] font-medium text-muted">Start from a template</span>
         <div className="flex gap-[10px] overflow-x-auto pb-[4px]">
           {[
-            { id: 'tr1', title: 'Incident → postmortem', areas: ['brand', 'dev'] as const },
-            { id: 'tr2', title: 'PR digest to chat', areas: ['brand', 'dev', 'ops'] as const },
-            { id: 'tr3', title: 'Weekly uptime report', areas: ['brand', 'ops'] as const },
+            { id: 'tr1', title: 'Incident → postmortem', from: 'siren' as FlowIconId, to: 'file-text' as FlowIconId, count: 1 },
+            { id: 'tr2', title: 'PR digest to chat', from: 'github' as FlowIconId, to: 'message-circle' as FlowIconId, count: 1 },
+            { id: 'tr3', title: 'Weekly uptime report', from: 'clock' as FlowIconId, to: 'mail' as FlowIconId, count: 1 },
           ].map((t) => (
             <div
               key={t.id}
-              className="flex min-w-[200px] shrink-0 items-center justify-between gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface px-[12px] py-[8px]"
+              className="flex min-w-[200px] shrink-0 items-center justify-between gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface px-[12px] py-[8px]"
             >
-              <div className="flex items-center gap-[6px]">
-                {t.areas.map((area, i) => (
-                  <Mascot key={i} size={16} radius={4} area={area} />
-                ))}
+              <div className="flex items-center gap-[8px]">
+                <FlowChain from={t.from} to={t.to} count={t.count} />
                 <span className="text-[12px] text-ink-2">{t.title}</span>
               </div>
               <button
@@ -473,7 +492,7 @@ function YoursTab() {
 
 const TABS: Array<{ key: FlowTab; label: string; count?: number }> = [
   { key: 'Yours',     label: 'Yours',                count: 4 },
-  { key: 'Suggested', label: 'Suggested by agents',  count: 4 },
+  { key: 'Suggested', label: 'Suggested by agents',  count: 2 },
   { key: 'Templates', label: 'Templates' },
   { key: 'Runs',      label: 'Runs' },
 ]

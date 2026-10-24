@@ -27,6 +27,7 @@ import {
   OfficeFlowRunsRoute,
 } from '../features/office/flows'
 import { OfficeDocsRoute } from '../features/office/docs/OfficeDocsRoute'
+import { ChatAnalyticsRoute, OfficeAnalyticsRoute } from '../features/analytics'
 import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { HelperDetail } from '../features/team/HelperDetail'
@@ -159,6 +160,12 @@ const chatDocsRoute = createRoute({
   component: DocsRoute,
 })
 
+const chatAnalyticsRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'analytics',
+  component: ChatAnalyticsRoute,
+})
+
 const chatArchivedRoute = createRoute({
   getParentRoute: () => chatChannelRoute,
   path: 'archived',
@@ -234,6 +241,12 @@ const officeDocsRoute = createRoute({
   getParentRoute: () => officeRoute,
   path: 'docs',
   component: OfficeDocsRoute,
+})
+
+const officeAnalyticsRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'analytics',
+  component: OfficeAnalyticsRoute,
 })
 
 /**
@@ -413,6 +426,7 @@ const routeTree = rootRoute.addChildren([
         chatGoalsRoute,
         chatFlowsRoute,
         chatDocsRoute,
+        chatAnalyticsRoute,
         chatArchivedRoute,
         chatFolderRoute,
       ]),
@@ -426,6 +440,7 @@ const routeTree = rootRoute.addChildren([
         officeFlowRunsRoute,
       ]),
       officeDocsRoute,
+      officeAnalyticsRoute,
     ]),
     teamRoute.addChildren([teamIndexRoute, teamHelperRoute]),
     controlPanelRoute.addChildren([controlPanelSectionRoute]),

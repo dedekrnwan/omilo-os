@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
-  ArrowUpRight,
   CalendarDays,
+  Layers,
+  MessageCircle,
   MessageSquare,
   Plus,
   Target,
@@ -53,13 +54,6 @@ interface AreaGroup {
   goals: OfficeGoalRow[]
 }
 
-const STATUS_STYLE: Record<GoalStatus, { bg: string; ink: string }> = {
-  'On track': { bg: 'var(--color-ok-tint)',   ink: 'var(--color-ok)' },
-  'At risk':  { bg: 'var(--color-warn-tint)',  ink: 'var(--color-warn)' },
-  'Blocked':  { bg: 'var(--color-bad-tint)',   ink: 'var(--color-bad)' },
-  'Needs you': { bg: '#EB68341A',              ink: '#C2410C' },
-}
-
 const RING_COLOR: Record<GoalStatus, string> = {
   'On track': 'var(--color-ok)',
   'At risk':  'var(--color-warn)',
@@ -96,7 +90,7 @@ const AREA_GROUPS: AreaGroup[] = [
         area: 'Engineering',
         badge: 'Needs you',
         subItems: [
-          { id: 's1', title: 'Ship passkeys on web → iOS', meta: '', statusLabel: 'In review', statusKind: 'review', date: 'Nov 14' },
+          { id: 's1', title: 'Ship passkeys on web + iOS', meta: '', statusLabel: 'In review', statusKind: 'review', date: 'Nov 14' },
           { id: 's2', title: 'Android password fallback flow', meta: '', statusLabel: 'Slipping 2d', statusKind: 'slipping', date: 'Nov 23' },
           { id: 's3', title: 'Launch comms to all users', meta: '', statusLabel: 'To do', statusKind: 'todo', date: 'Nov 26' },
           { id: 's4', title: 'Open goal session · Chief asked you something 2h ago', meta: '', statusLabel: '', statusKind: 'todo', date: '' },
@@ -223,20 +217,6 @@ function NeedsYouBadge() {
   )
 }
 
-// ── StatusChip ────────────────────────────────────────────────────────────────
-
-function StatusChip({ status }: { status: GoalStatus }) {
-  const s = STATUS_STYLE[status]
-  return (
-    <span
-      className="inline-flex h-[20px] shrink-0 items-center rounded-pill px-[8px] text-[11.5px] font-medium"
-      style={{ background: s.bg, color: s.ink }}
-    >
-      {status}
-    </span>
-  )
-}
-
 // ── SubItemRow ────────────────────────────────────────────────────────────────
 
 function SubItemRow({ item }: { item: OfficeSubItem }) {
@@ -275,7 +255,7 @@ function GoalRow({
     <div className="flex flex-col">
       {/* Main row */}
       <div className="flex w-full items-center gap-[10px] py-[10px]">
-        {/* Left clickable: ring + title/meta */}
+        {/* Left clickable: ring + title (+ Needs you) + inline status meta */}
         <button
           type="button"
           onClick={onToggle}
@@ -284,36 +264,27 @@ function GoalRow({
         >
           <StatusRing value={goal.progress} status={goal.status} />
           <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="truncate text-[13.5px] font-medium text-ink">{goal.title}</span>
+            <span className="flex min-w-0 items-center gap-[8px]">
+              <span className="truncate text-[13.5px] font-medium text-ink">{goal.title}</span>
+              {goal.badge && <NeedsYouBadge />}
+            </span>
             <span className="text-[11.5px] text-muted">
-              {goal.progress}% · {goal.tasks} · due {goal.due}
+              <span className="font-medium" style={{ color: RING_COLOR[goal.status] }}>{goal.status}</span>
+              {' · '}{goal.progress}% · {goal.tasks} · due {goal.due}
             </span>
           </span>
         </button>
 
-        {/* Badge */}
-        {goal.badge && <NeedsYouBadge />}
+        {/* Owner avatar + name */}
+        <span className="flex shrink-0 items-center gap-[6px]">
+          <Mascot size={18} radius={5} area={goal.ownerArea} title={goal.ownerLabel} />
+          <span className="text-[12px] text-ink-2">{goal.ownerLabel}</span>
+        </span>
 
-        {/* Status chip */}
-        <StatusChip status={goal.status} />
-
-        {/* Owner */}
-        <Mascot size={22} radius={6} area={goal.ownerArea} title={goal.ownerLabel} />
-
-        {/* Chat action */}
-        <Button variant="secondary" height={28} icon={MessageSquare}>
-          Chat
+        {/* Session action */}
+        <Button variant="secondary" height={28} icon={MessageCircle}>
+          Session
         </Button>
-
-        {/* Open action */}
-        <button
-          type="button"
-          aria-label={`Open ${goal.title}`}
-          className="flex items-center gap-[3px] pl-[4px] text-[12px] font-medium text-ink-2 transition-colors hover:text-ink"
-        >
-          Open
-          <ArrowUpRight size={12} aria-hidden />
-        </button>
       </div>
 
       {/* Expanded sub-items */}
@@ -370,51 +341,7 @@ function AreaGroupSection({
   )
 }
 
-// ── Area filter tabs ──────────────────────────────────────────────────────────
-
-type AreaTab = 'All' | OfficeArea
-
-const AREA_TABS: AreaTab[] = ['All', 'Engineering', 'Marketing', 'Business']
-
 const ALL_GOALS_COUNT = AREA_GROUPS.reduce((n, g) => n + g.goals.length, 0)
-
-function AreaTabs({
-  active,
-  onChange,
-}: {
-  active: AreaTab
-  onChange: (tab: AreaTab) => void
-}) {
-  const countFor = (tab: AreaTab) => {
-    if (tab === 'All') return ALL_GOALS_COUNT
-    return AREA_GROUPS.find((g) => g.area === tab)?.goals.length ?? 0
-  }
-
-  return (
-    <div className="flex items-center gap-[2px]">
-      {AREA_TABS.map((tab) => {
-        const isActive = active === tab
-        return (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => onChange(tab)}
-            className={`inline-flex h-[28px] items-center gap-[5px] rounded-sm px-[8px] text-[12.5px] transition-colors ${
-              isActive
-                ? 'bg-hover font-medium text-ink'
-                : 'text-muted hover:bg-hover hover:text-ink-2'
-            }`}
-          >
-            {tab}
-            <span className={`text-[11.5px] ${isActive ? 'text-muted' : 'text-faint'}`}>
-              {countFor(tab)}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 // ── StatusFilter tabs ─────────────────────────────────────────────────────────
 
@@ -693,24 +620,20 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
 
 function OfficeGoalsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(AREA_GROUPS[0].goals[0].id)
-  const [areaTab, setAreaTab] = useState<AreaTab>('All')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const visibleGroups =
-    areaTab === 'All' ? AREA_GROUPS : AREA_GROUPS.filter((g) => g.area === areaTab)
-
-  // Compute status counts across visible goals
-  const allVisible = visibleGroups.flatMap((g) => g.goals)
+  // Status counts across all goals (list is grouped by area, not area-filtered)
+  const allGoals = AREA_GROUPS.flatMap((g) => g.goals)
   const statusCounts: Record<StatusFilter, number> = {
-    All: allVisible.length,
-    'Needs you': allVisible.filter((g) => g.badge === 'Needs you').length,
-    'At risk': allVisible.filter((g) => g.status === 'At risk').length,
-    Blocked: allVisible.filter((g) => g.status === 'Blocked').length,
-    'On track': allVisible.filter((g) => g.status === 'On track').length,
+    All: allGoals.length,
+    'Needs you': allGoals.filter((g) => g.badge === 'Needs you').length,
+    'At risk': allGoals.filter((g) => g.status === 'At risk').length,
+    Blocked: allGoals.filter((g) => g.status === 'Blocked').length,
+    'On track': allGoals.filter((g) => g.status === 'On track').length,
   }
 
-  const filteredGroups = visibleGroups.map((g) => ({
+  const filteredGroups = AREA_GROUPS.map((g) => ({
     ...g,
     goals:
       statusFilter === 'All'
@@ -727,9 +650,14 @@ function OfficeGoalsPage() {
         title="Goals"
         meta="All areas · Q4 2026"
         actions={
-          <Button icon={Plus} onClick={() => setDialogOpen(true)}>
-            New goal
-          </Button>
+          <div className="flex items-center gap-[6px]">
+            <Button variant="secondary" height={28} icon={Layers}>
+              Group: Area
+            </Button>
+            <Button icon={Plus} height={28} onClick={() => setDialogOpen(true)}>
+              New goal
+            </Button>
+          </div>
         }
       />
 
@@ -744,11 +672,8 @@ function OfficeGoalsPage() {
           </p>
         </header>
 
-        {/* Filter bar */}
-        <div className="mt-[14px] mb-[6px] flex flex-col gap-[8px]">
-          {/* Area tabs */}
-          <AreaTabs active={areaTab} onChange={(t) => { setAreaTab(t); setStatusFilter('All') }} />
-          {/* Status filter */}
+        {/* Filter bar — status only (list is grouped by area) */}
+        <div className="mt-[14px] mb-[6px]">
           <StatusFilterTabs active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
         </div>
 

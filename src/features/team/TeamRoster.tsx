@@ -113,7 +113,12 @@ function HelperCard({ helper }: { helper: HelperRecord }) {
 
         <StatusChip status={helper.status} />
 
-        <p className="m-0 text-[12px] text-ink-2 line-clamp-2">{helper.now}</p>
+        <div className="flex flex-col gap-[3px]">
+          <span className="text-[10px] font-medium uppercase tracking-[0.5px] text-faint">
+            {helper.status === 'Idle' ? 'Next' : 'Now'}
+          </span>
+          <p className="m-0 text-[12px] text-ink-2 line-clamp-2">{helper.now}</p>
+        </div>
 
         <div className="flex items-center justify-between pt-[2px]">
           <span className="text-[11.5px] text-muted">

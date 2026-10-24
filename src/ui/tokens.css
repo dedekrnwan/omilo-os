@@ -64,6 +64,11 @@
   --color-spark:            #F59E0B;
   --color-mascot-ink:       #1C1917;
 
+  /* Channel integrations (Telegram) */
+  --color-tg-blue: #229ED9;
+  --color-tg-out:  #E4F7CF;
+  --color-tg-bg:   #E7EBEE;
+
   /* Field tints */
   --color-field-base:   #FAFAF9;
   --color-field-indigo: #E0E7FF;

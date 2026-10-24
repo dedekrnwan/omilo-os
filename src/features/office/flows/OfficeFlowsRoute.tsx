@@ -3,10 +3,11 @@
 
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { GitFork, Plus, X } from 'lucide-react'
+import { GitFork, Plus, Sparkles, X } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { FlowChain } from '../../../ui/ds/FlowChain'
 import {
   OFFICE_FLOWS,
   TEMPLATES,
@@ -14,7 +15,7 @@ import {
   OFFICE_FLOW_RUNS,
 } from './data'
 import type { FlowTab } from './data'
-import { MascotRow, RunStatusChip, Sparkline, Toggle } from './shared'
+import { RunStatusChip, Sparkline, Toggle } from './shared'
 
 // ── FlowCard ──────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function FlowCardItem({ card, onClick }: { card: (typeof OFFICE_FLOWS)[number]; 
       className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px] text-left transition-colors hover:bg-soft w-full"
     >
       <div className="flex items-center justify-between">
-        <MascotRow areas={card.areas} />
+        <FlowChain from={card.from} to={card.to} count={card.count} />
         <Toggle on={card.enabled} />
       </div>
       <span className="text-[13px] font-medium text-ink">{card.title}</span>
@@ -42,13 +43,19 @@ function FlowCardItem({ card, onClick }: { card: (typeof OFFICE_FLOWS)[number]; 
 
 function SuggestedCard({ item }: { item: (typeof SUGGESTED_FLOWS)[number] }) {
   return (
-    <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
-      <div className="flex items-start justify-between gap-[8px]">
-        <div className="flex flex-col gap-[4px] min-w-0">
-          <span className="text-[13px] font-medium text-ink">{item.title}</span>
-          <span className="text-[11.5px] text-muted">{item.sub}</span>
-        </div>
-        <Button variant="primary" height={28}>Create</Button>
+    <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
+      {/* chain + suggesting helper */}
+      <div className="flex items-center justify-between">
+        <FlowChain from={item.from} to={item.to} count={item.count} />
+        <Mascot size={22} radius={6} area="dev" title="Dev" />
+      </div>
+      <span className="text-[13px] font-medium text-ink">{item.title}</span>
+      <div className="flex items-center justify-between gap-[8px]">
+        <span className="flex min-w-0 items-center gap-[5px] text-[11.5px] text-muted">
+          <Sparkles size={12} aria-hidden className="shrink-0 text-[#4338CA]" />
+          <span className="truncate">{item.sub}</span>
+        </span>
+        <Button variant="primary" height={28} icon={Plus}>Create</Button>
       </div>
       <span className="text-[11.5px] text-faint">{item.hint}</span>
     </div>
@@ -79,7 +86,7 @@ function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
   return (
     <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[12px]">
       <div className="flex items-start justify-between gap-[8px]">
-        <MascotRow areas={t.areas} />
+        <FlowChain from={t.from} to={t.to} count={t.count} />
         <button
           type="button"
           aria-label={`Use ${t.title}`}
@@ -118,10 +125,8 @@ function YoursTab({ onCardClick, onNewClick }: { onCardClick?: () => void; onNew
               key={t.id}
               className="flex min-w-[200px] shrink-0 items-center justify-between gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface px-[12px] py-[8px]"
             >
-              <div className="flex items-center gap-[6px]">
-                {t.areas.slice(0, 3).map((area, i) => (
-                  <Mascot key={i} size={16} radius={4} area={area} />
-                ))}
+              <div className="flex items-center gap-[8px]">
+                <FlowChain from={t.from} to={t.to} count={t.count} />
                 <span className="text-[12px] text-ink-2">{t.title}</span>
               </div>
               <button
@@ -447,7 +452,7 @@ function NewFlowDialog({ open, onOpenChange }: NewFlowDialogProps) {
                   key={t.id}
                   className="flex items-center gap-[10px] rounded-base outline-1 -outline-offset-1 outline-line-strong px-[12px] py-[10px] bg-surface hover:bg-soft transition-colors"
                 >
-                  <MascotRow areas={t.areas} />
+                  <FlowChain from={t.from} to={t.to} count={t.count} />
                   <div className="flex flex-col gap-[1px] min-w-0 flex-1">
                     <span className="text-[12.5px] font-medium text-ink">{t.title}</span>
                     <span className="text-[11.5px] text-muted truncate">{t.desc}</span>

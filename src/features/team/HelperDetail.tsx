@@ -126,9 +126,10 @@ function HelperDetailPage({ helperId }: { helperId: string }) {
     }
   }
 
-  // Tab badge for Channels and Skills
+  // Tab badge for Channels, Tools and Skills
   function tabBadge(tab: HelperTab): string | null {
-    if (tab === 'Channels') return helper!.channelCount > 0 ? String(helper!.channelCount) : null
+    // Channels shows connected / total (pen "2/5")
+    if (tab === 'Channels') return helper!.channelCount > 0 ? `${helper!.channelCount}/${helper!.channels.length}` : null
     if (tab === 'Tools') return helper!.tools.filter(t => !t.builtIn).length > 0
       ? String(helper!.tools.filter(t => !t.builtIn).length)
       : null
@@ -192,33 +193,35 @@ function HelperDetailPage({ helperId }: { helperId: string }) {
           <p className="m-0 text-center text-[12.5px] text-muted">{helper.statsLine}</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-px border-b border-line px-[24px]">
-          {ALL_TABS.map(({ id, label }) => {
-            const badge = tabBadge(id)
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => { setActiveTab(id); setPlaybookOpen(false) }}
-                className={`flex h-[38px] items-center gap-[4px] border-b-2 px-[12px] text-[13px] transition-colors ${
-                  activeTab === id && !playbookOpen
-                    ? 'border-ink font-medium text-ink'
-                    : 'border-transparent text-muted hover:text-ink'
-                }`}
-              >
-                {label}
-                {badge && (
-                  <span className="text-[11.5px] text-muted">{badge}</span>
-                )}
-              </button>
-            )
-          })}
+        {/* Tabs — centered pill row (pen XB1kX) */}
+        <div className="flex justify-center px-[24px] pb-[4px]">
+          <div className="flex items-center gap-[2px]">
+            {ALL_TABS.map(({ id, label }) => {
+              const badge = tabBadge(id)
+              const on = activeTab === id && !playbookOpen
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setActiveTab(id); setPlaybookOpen(false) }}
+                  aria-current={on ? 'true' : undefined}
+                  className={`flex h-[30px] items-center gap-[5px] rounded-pill px-[12px] text-[13px] transition-colors ${
+                    on ? 'bg-soft font-medium text-ink outline-1 -outline-offset-1 outline-line-strong' : 'text-muted hover:bg-hover hover:text-ink'
+                  }`}
+                >
+                  {label}
+                  {badge && <span className="text-[11.5px] text-faint">{badge}</span>}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {/* Tab content */}
+        {/* Tab content — centered column */}
         <div className="flex-1 px-[24px] py-[20px]">
-          {renderTab()}
+          <div className="mx-auto w-full max-w-[760px]">
+            {renderTab()}
+          </div>
         </div>
 
         {/* Playbook floating link — shown on Job tab when helper has playbook */}
