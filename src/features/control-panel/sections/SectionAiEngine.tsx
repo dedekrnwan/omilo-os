@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Breadcrumb,
   RowDivider,
@@ -37,7 +38,33 @@ const ROLES = [
   },
 ]
 
+const INITIAL = {
+  warnAt80: true,
+  askOverDollar: true,
+  fallback: false,
+  autoCompact: true,
+}
+
 export function SectionAiEngine() {
+  const [warnAt80, setWarnAt80] = useState(INITIAL.warnAt80)
+  const [askOverDollar, setAskOverDollar] = useState(INITIAL.askOverDollar)
+  const [fallback, setFallback] = useState(INITIAL.fallback)
+  const [autoCompact, setAutoCompact] = useState(INITIAL.autoCompact)
+  const [showContextMeter, setShowContextMeter] = useState(true)
+  const [dirty, setDirty] = useState(false)
+
+  const mark = () => setDirty(true)
+
+  function handleSave() { setDirty(false) }
+  function handleDiscard() {
+    setWarnAt80(INITIAL.warnAt80)
+    setAskOverDollar(INITIAL.askOverDollar)
+    setFallback(INITIAL.fallback)
+    setAutoCompact(INITIAL.autoCompact)
+    setShowContextMeter(true)
+    setDirty(false)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -97,15 +124,15 @@ export function SectionAiEngine() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Warn me at 80%" desc="WhatsApp + inbox when this month passes $320.">
-            <Toggle on />
+            <Toggle on={warnAt80} onClick={() => { setWarnAt80((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Ask before a single run over $1" desc="Long research or big documents wait for your OK.">
-            <Toggle on />
+            <Toggle on={askOverDollar} onClick={() => { setAskOverDollar((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Fall back when a model is busy" desc="Chief drops to Sonnet 5.5 instead of waiting.">
-            <Toggle />
+            <Toggle on={fallback} onClick={() => { setFallback((v) => !v); mark() }} />
           </SettingRow>
         </SettingCardRows>
 
@@ -116,7 +143,7 @@ export function SectionAiEngine() {
         <p className="mb-[12px] text-[12px] text-muted">Every model has a context limit. When a chat gets close, helpers summarise older messages so they can keep going.</p>
         <SettingCardRows>
           <SettingRow label="Auto-compact" desc="Summarise older messages automatically. People can still turn it off per chat.">
-            <Toggle on />
+            <Toggle on={autoCompact} onClick={() => { setAutoCompact((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Compact when the chat is" desc="Percent of the model's window. Opus 5.5 = 200k, GPT 4.1 = 410k.">
@@ -134,12 +161,12 @@ export function SectionAiEngine() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Show context meter in composer" desc="The small ring next to the model picker.">
-            <Toggle on />
+            <Toggle on={showContextMeter} onClick={() => { setShowContextMeter((v) => !v); mark() }} />
           </SettingRow>
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar />
+      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

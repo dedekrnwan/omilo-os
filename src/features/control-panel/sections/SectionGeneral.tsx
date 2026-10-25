@@ -1,11 +1,14 @@
 import { BookOpen, Globe, Languages } from 'lucide-react'
-import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row } from '../ControlPanelShared'
+import { useNavigate } from '@tanstack/react-router'
+import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useDirtyState } from '../ControlPanelShared'
 import type { SectionProps } from '../ControlPanel'
 
 /** pen xVE7r · Control panel · General */
 export function SectionGeneral({ onDialog }: SectionProps) {
+  const navigate = useNavigate()
+  const { dirty, save, discard } = useDirtyState()
   return (
-    <PageShell crumb="General" saveBar>
+    <PageShell crumb="General" saveBar dirty={dirty} onSave={save} onDiscard={discard}>
       <PageHeader title="General" sub="Your company’s name, language and hours. Every agent is told these." />
 
       <Group title="Company">
@@ -33,7 +36,7 @@ export function SectionGeneral({ onDialog }: SectionProps) {
             The brief, policies, services and FAQ — read by every helper, pinned in Docs for your staff. 6 files · 1 suggested edit.
           </span>
         </div>
-        <PenButton h={30} fs={13}>Open handbook</PenButton>
+        <PenButton h={30} fs={13} onClick={() => navigate({ to: '/control-panel/$section', params: { section: 'handbook' } })}>Open handbook</PenButton>
       </div>
 
       <Group title="Language & hours" desc="Agents only message people and run deploys inside work hours.">

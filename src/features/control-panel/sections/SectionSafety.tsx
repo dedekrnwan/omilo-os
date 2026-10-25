@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ShieldCheck, Zap } from 'lucide-react'
 import {
   Breadcrumb,
@@ -21,6 +22,7 @@ function AutonomyOption({
   checks,
   selected,
   isDefault,
+  onClick,
 }: {
   id: AutonomyMode
   title: string
@@ -28,11 +30,14 @@ function AutonomyOption({
   checks: { label: string; wait?: boolean }[]
   selected: boolean
   isDefault?: boolean
+  onClick?: () => void
 }) {
   return (
-    <div
-      className={`flex flex-1 flex-col gap-[8px] rounded-lg border p-[14px] ${
-        selected ? 'border-ink bg-surface shadow-[0_2px_8px_#0C0A091A]' : 'border-line-strong bg-soft'
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-1 flex-col gap-[8px] rounded-lg border p-[14px] text-left transition-colors ${
+        selected ? 'border-ink bg-surface shadow-[0_2px_8px_#0C0A091A]' : 'border-line-strong bg-soft hover:border-ink-2'
       }`}
     >
       <div className="flex items-center gap-[6px]">
@@ -58,11 +63,38 @@ function AutonomyOption({
           </li>
         ))}
       </ul>
-    </div>
+    </button>
   )
 }
 
+const INITIAL = {
+  autonomy: 'ask' as AutonomyMode,
+  postPublicly: true,
+  messageCustomers: true,
+  deployProd: true,
+  noDelete: true,
+}
+
 export function SectionSafety() {
+  const [autonomy, setAutonomy] = useState<AutonomyMode>(INITIAL.autonomy)
+  const [postPublicly, setPostPublicly] = useState(INITIAL.postPublicly)
+  const [messageCustomers, setMessageCustomers] = useState(INITIAL.messageCustomers)
+  const [deployProd, setDeployProd] = useState(INITIAL.deployProd)
+  const [noDelete, setNoDelete] = useState(INITIAL.noDelete)
+  const [dirty, setDirty] = useState(false)
+
+  const mark = () => setDirty(true)
+
+  function handleSave() { setDirty(false) }
+  function handleDiscard() {
+    setAutonomy(INITIAL.autonomy)
+    setPostPublicly(INITIAL.postPublicly)
+    setMessageCustomers(INITIAL.messageCustomers)
+    setDeployProd(INITIAL.deployProd)
+    setNoDelete(INITIAL.noDelete)
+    setDirty(false)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -92,7 +124,8 @@ export function SectionSafety() {
               { label: 'Edits, flows and messages wait', wait: true },
               { label: 'Good for week one, or audits', wait: false },
             ]}
-            selected={false}
+            selected={autonomy === 'strict'}
+            onClick={() => { setAutonomy('strict'); mark() }}
           />
           <AutonomyOption
             id="ask"
@@ -102,8 +135,9 @@ export function SectionSafety() {
               { label: 'Drafts, edits and runs go ahead' },
               { label: 'Posting, sending, spending wait', wait: true },
             ]}
-            selected
+            selected={autonomy === 'ask'}
             isDefault
+            onClick={() => { setAutonomy('ask'); mark() }}
           />
           <AutonomyOption
             id="yolo"
@@ -113,7 +147,8 @@ export function SectionSafety() {
               { label: 'Posting, sending, deploying go' },
               { label: 'Spend cap and no-delete still hold' },
             ]}
-            selected={false}
+            selected={autonomy === 'yolo'}
+            onClick={() => { setAutonomy('yolo'); mark() }}
           />
         </div>
 
@@ -122,15 +157,15 @@ export function SectionSafety() {
         <p className="mb-[12px] text-[12px] text-muted">Agents draft these, then ask in your inbox.</p>
         <SettingCardRows>
           <SettingRow label="Posting publicly" desc="Social posts, website changes, public replies.">
-            <Toggle on />
+            <Toggle on={postPublicly} onClick={() => { setPostPublicly((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Messaging customers" desc="WhatsApp and email to anyone outside the team.">
-            <Toggle on />
+            <Toggle on={messageCustomers} onClick={() => { setMessageCustomers((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Deploying to production" desc="Merges to main and production deploys.">
-            <Toggle on />
+            <Toggle on={deployProd} onClick={() => { setDeployProd((v) => !v); mark() }} />
           </SettingRow>
         </SettingCardRows>
 
@@ -154,12 +189,12 @@ export function SectionSafety() {
         <SubHeading label="Guardrails" />
         <SettingCardRows>
           <SettingRow label="Agents can't delete data" desc="Archiving is allowed. Deleting needs a person.">
-            <Toggle on />
+            <Toggle on={noDelete} onClick={() => { setNoDelete((v) => !v); mark() }} />
           </SettingRow>
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar />
+      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

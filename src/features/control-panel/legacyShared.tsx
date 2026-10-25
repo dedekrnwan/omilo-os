@@ -112,12 +112,14 @@ export function TextInput({
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
 
-export function Toggle({ on = false }: { on?: boolean }) {
+export function Toggle({ on = false, onClick, label }: { on?: boolean; onClick?: () => void; label?: string }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      aria-label={label}
+      onClick={onClick}
       className={`relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer rounded-full transition-colors ${
         on ? 'bg-ink' : 'bg-line-strong'
       }`}
@@ -224,13 +226,21 @@ export function Modal({
 
 // ── Footer bar (save / discard) ───────────────────────────────────────────────
 
-export function SaveBar({ dirty = false }: { dirty?: boolean }) {
+export function SaveBar({
+  dirty = false,
+  onSave,
+  onDiscard,
+}: {
+  dirty?: boolean
+  onSave?: () => void
+  onDiscard?: () => void
+}) {
   return (
     <div className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-[48px]">
       <span className="text-[12px] text-muted">{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span>
       <div className="flex items-center gap-[8px]">
-        <Button variant="secondary" height={30}>Discard</Button>
-        <Button variant="primary" height={30}>Save changes</Button>
+        <Button variant="secondary" height={30} disabled={!dirty} onClick={onDiscard}>Discard</Button>
+        <Button variant="primary" height={30} disabled={!dirty} onClick={onSave}>Save changes</Button>
       </div>
     </div>
   )

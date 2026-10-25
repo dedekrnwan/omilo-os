@@ -1,5 +1,8 @@
-import { Crown, Ellipsis, Mail, Plus, Server, UserPlus } from 'lucide-react'
+import { useState } from 'react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Crown, Ellipsis, Mail, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
 import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
 
@@ -7,8 +10,11 @@ const ROLES = [
   { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
   { r: 'Admin', d: 'Settings, connectors and approving spend. No billing.' },
   { r: 'Member', d: 'Chat, goals and flows in their channels. Approves their own flows.' },
-  { r: 'Viewer', d: 'Reads goals, docs and runs. Can’t approve or change anything. Free — doesn’t use a seat.' },
+  { r: "Viewer", d: "Reads goals, docs and runs. Cannot approve or change anything. Free. Does not use a seat." },
 ]
+
+const ROLE_OPTIONS = ['Admin', 'Member', 'Viewer'] as const
+type RoleOption = (typeof ROLE_OPTIONS)[number]
 
 const COL = 'text-[10.5px] font-medium tracking-[0.8px] text-faint'
 
@@ -21,17 +27,67 @@ function Legend({ color, label }: { color: string; label: string }) {
   )
 }
 
-function MoreButton() {
+/** Role dropdown for non-Owner members. */
+function RoleDropdown({ role, onChange }: { role: string; onChange: (r: RoleOption) => void }) {
   return (
-    <button type="button" aria-label="More" className="flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover">
-      <Ellipsis size={16} aria-hidden />
-    </button>
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className="w-[150px]">
+          <Field width={150} value={role} select />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side="bottom" align="start" sideOffset={4} className={`z-50 w-[180px] ${menuSurface}`}>
+          {ROLE_OPTIONS.map((r) => (
+            <DropdownMenu.Item key={r} className={menuItemClass} onSelect={() => onChange(r)}>
+              <span className="text-[13px] text-ink">{r}</span>
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
+
+/** ⋯ options menu for a member row. */
+function MemberMoreMenu({ name }: { name: string }) {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" aria-label={`${name} options`} className="flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover">
+          <Ellipsis size={16} aria-hidden />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+            <MenuItemBody icon={Pencil} label="Edit" />
+          </DropdownMenu.Item>
+          <MenuSeparatorLine />
+          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+            <MenuItemBody icon={Trash2} label="Remove" danger />
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+type PersonRow = { email: string; name: string; initials: string; color: string; channels: string; role: string; seen: string }
 
 /** pen ZDdLD · Members & roles — and X16ZX · Self-hosted (variant). */
 export function SectionMembers({ onDialog, variant }: SectionProps) {
   const selfHosted = variant === 'self-hosted'
+
+  // Local state: role per person (keyed by email)
+  const [roles, setRoles] = useState<Record<string, string>>(() =>
+    Object.fromEntries(PEOPLE.map((p) => [p.email, p.role])),
+  )
+
+  function changeRole(email: string, r: RoleOption) {
+    setRoles((prev) => ({ ...prev, [email]: r }))
+  }
+
   return (
     <PageShell crumb="Members & roles">
       <PageHeader
@@ -89,7 +145,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           <span className={`w-[150px] ${COL}`}>ROLE</span>
           <span className="w-[28px]" />
         </div>
-        {PEOPLE.map((p) => (
+        {([...PEOPLE] as PersonRow[]).map((p) => (
           <div key={p.email} className={`flex w-full items-center gap-[14px] px-[14px] py-[10px] ${lineBottom}`}>
             <div className="flex min-w-0 flex-1 items-center gap-[10px]">
               <Initials text={p.initials} color={p.color} />
@@ -100,13 +156,13 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
             </div>
             <span className="w-[190px] text-[12px] text-ink-2">{p.channels}</span>
             <div className="w-[150px]">
-              {p.role === 'Owner' ? (
+              {roles[p.email] === 'Owner' ? (
                 <Chip icon={Crown}>Owner</Chip>
               ) : (
-                <Field width={150} value={p.role} select />
+                <RoleDropdown role={roles[p.email] ?? p.role} onChange={(r) => changeRole(p.email, r)} />
               )}
             </div>
-            <MoreButton />
+            <MemberMoreMenu name={p.name} />
           </div>
         ))}
         <div className="flex w-full items-center gap-[14px] px-[14px] py-[10px]">
@@ -121,9 +177,9 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           </div>
           <span className="w-[190px] text-[12px] text-ink-2">Business</span>
           <div className="w-[150px]">
-            <Field width={150} value="Member" select />
+            <RoleDropdown role="Member" onChange={() => {}} />
           </div>
-          <MoreButton />
+          <MemberMoreMenu name="andi@saga.co.id" />
         </div>
       </div>
 
