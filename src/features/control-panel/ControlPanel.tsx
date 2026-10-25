@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Inset } from '../../ui/ds/Frame'
-import { ControlPanelNav } from './ControlPanelNav'
+import { ControlPanelSidebar } from './ControlPanelSidebar'
 import { SectionGeneral } from './sections/SectionGeneral'
 import { SectionHandbook } from './sections/SectionHandbook'
 import { SectionMembers } from './sections/SectionMembers'
@@ -106,7 +106,7 @@ export function ControlPanel({ section: initialSection = 'general', onSection, d
 
   return (
     <>
-      <ControlPanelNav section={section} onSection={handleSection} />
+      <ControlPanelSidebar section={section} onSection={handleSection} />
       <Inset label="Control panel">
         <SectionContent section={section} onDialog={setDialog} variant={variant} onVariant={setVariant} />
       </Inset>

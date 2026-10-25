@@ -1,5 +1,5 @@
 export { ControlPanel } from './ControlPanel'
 export { ControlPanelRoute } from './ControlPanelRoute'
-export { ControlPanelNav } from './ControlPanelNav'
+export { ControlPanelSidebar } from './ControlPanelSidebar'
 export { CONTROL_PANEL_PATH, CONTROL_PANEL_SECTION_PATH } from './routes'
 export type { ControlPanelSection, DialogKind } from './types'

@@ -1,7 +1,8 @@
+// TODO(pen): refine against omilo-v2.pen
 import { Search } from 'lucide-react'
-import { NavLink } from '../../ui/ds/Sidebar'
-import type { ControlPanelSection } from './types'
+import { SidebarFrame, NavGroup, NavLink, GroupLabel } from '../../ui/ds/Sidebar'
 import { NAV_GROUPS } from './data'
+import type { ControlPanelSection } from './types'
 
 interface Props {
   section: ControlPanelSection
@@ -10,20 +11,20 @@ interface Props {
 }
 
 /**
- * pen `Control Panel Sidebar` (Ljoml): 232 wide · app fill · padding 12 8 10 8 · gap 10.
- * Head (14/600 + 11.5 muted) · Search (h-28, radius 7) · nav groups (gap 8, links gap 1).
+ * pen `Control Panel Sidebar` (Ljoml): promotes the section nav into the
+ * standard 232px app sidebar so the layout matches Chat/Office:
+ *   Rail → ControlPanelSidebar → Inset(section content).
  */
-export function ControlPanelNav({ section, onSection, workspace = 'Sahabat Warga' }: Props) {
+export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat Warga' }: Props) {
   return (
-    <nav
-      aria-label="Control panel sections"
-      className="flex h-full w-[232px] shrink-0 flex-col gap-[10px] bg-app pt-[12px] pr-[8px] pb-[10px] pl-[8px]"
-    >
+    <SidebarFrame label="Control panel sections">
+      {/* Workspace header */}
       <div className="flex w-full flex-col gap-px px-[8px] pt-[2px] pb-[4px]">
         <p className="m-0 text-[14px] font-semibold text-ink">Control panel</p>
         <p className="m-0 truncate text-[11.5px] text-muted">{workspace}</p>
       </div>
 
+      {/* Find a setting search */}
       <label className="flex h-[28px] w-full items-center gap-[6px] rounded-btn bg-surface px-[8px] outline-1 -outline-offset-1 outline-line-strong">
         <Search size={13} aria-hidden className="shrink-0 text-faint" />
         <input
@@ -34,12 +35,11 @@ export function ControlPanelNav({ section, onSection, workspace = 'Sahabat Warga
         />
       </label>
 
+      {/* Nav groups */}
       <div className="flex min-h-0 w-full flex-1 flex-col gap-[8px] overflow-y-auto">
         {NAV_GROUPS.map((g) => (
-          <div key={g.group} className="flex w-full flex-col gap-px">
-            <div className="flex w-full items-center px-[8px] pb-[4px]">
-              <span className="flex-1 text-[10.5px] font-medium tracking-[1px] text-faint">{g.group}</span>
-            </div>
+          <NavGroup key={g.group}>
+            <GroupLabel label={g.group} />
             {g.items.map((item) => (
               <NavLink
                 key={item.id}
@@ -50,9 +50,9 @@ export function ControlPanelNav({ section, onSection, workspace = 'Sahabat Warga
                 onClick={() => onSection(item.id)}
               />
             ))}
-          </div>
+          </NavGroup>
         ))}
       </div>
-    </nav>
+    </SidebarFrame>
   )
 }
