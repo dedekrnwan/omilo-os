@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { Bell, CheckCheck, Settings } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Inset, Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { filterNotifs } from './data'
+import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
 import { NotificationsSidebar } from './NotificationsSidebar'
 import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 
@@ -29,7 +30,7 @@ function GroupLabel({ label }: { label: string }) {
 }
 
 /** Full decision card with coloured left border, body, and action buttons. */
-function DecisionCard({ decision }: { decision: Decision }) {
+function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: (id: string) => void }) {
   return (
     <article
       aria-label={decision.title}
@@ -64,6 +65,7 @@ function DecisionCard({ decision }: { decision: Decision }) {
             key={a.label}
             height={28}
             variant={a.primary ? 'primary' : 'secondary'}
+            onClick={() => onResolve(decision.id)}
           >
             {a.label}
           </Button>
@@ -74,10 +76,12 @@ function DecisionCard({ decision }: { decision: Decision }) {
 }
 
 /** A single notification row (compact, single-line with optional preview). */
-function NotifRow({ notif, last }: { notif: Notif; last: boolean }) {
+function NotifRow({ notif, last, onClick }: { notif: Notif; last: boolean; onClick: () => void }) {
   return (
-    <div
-      className={`flex w-full items-start gap-[10px] py-[11px] ${
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-[10px] py-[11px] text-left transition-colors hover:bg-hover ${
         last ? '' : 'border-b border-line'
       }`}
     >
@@ -100,12 +104,12 @@ function NotifRow({ notif, last }: { notif: Notif; last: boolean }) {
       {notif.unread && (
         <span className="mt-[4px] size-[7px] shrink-0 rounded-full bg-info" aria-label="unread" />
       )}
-    </div>
+    </button>
   )
 }
 
 /** One date group with its notification rows. */
-function NotifGroupSection({ group }: { group: NotifGroup }) {
+function NotifGroupSection({ group, onRowClick }: { group: NotifGroup; onRowClick: (notif: Notif) => void }) {
   return (
     <section aria-label={group.label}>
       <GroupLabel label={group.label} />
@@ -115,6 +119,7 @@ function NotifGroupSection({ group }: { group: NotifGroup }) {
             key={notif.id}
             notif={notif}
             last={i === group.items.length - 1}
+            onClick={() => onRowClick(notif)}
           />
         ))}
       </div>
@@ -128,13 +133,48 @@ function NotifGroupSection({ group }: { group: NotifGroup }) {
  * /notifications — Everything helpers sent you.
  * A filter sidebar scopes the decisions + notification list.
  * Decisions waiting on you are pinned at the top; grouped notifications follow.
+ *
+ * Local state owns decisions + groups (copy of static data) so actions can
+ * mutate (remove resolved decisions, mark all read) without touching data.ts.
  */
 export function NotificationsRoute() {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<NotifFilter>('all')
-  const { decisions, groups } = filterNotifs(filter)
+
+  // Lift static data into local state so we can mutate it
+  const [allDecisions, setAllDecisions] = useState(DECISIONS)
+  const [allGroups, setAllGroups] = useState(NOTIF_GROUPS)
+
+  // Re-filter from local state
+  const { decisions, groups } = filterNotifs(filter, allDecisions, allGroups)
 
   const totalDecisions = decisions.length
   const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
+
+  function resolveDecision(id: string) {
+    setAllDecisions((prev) => prev.filter((d) => d.id !== id))
+  }
+
+  function markAllRead() {
+    setAllGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        items: g.items.map((n) => ({ ...n, unread: false })),
+      })),
+    )
+  }
+
+  function handleRowClick(notif: Notif) {
+    // Navigate to the most relevant area based on the notification tag
+    const tag = notif.tag.slice(1) // strip '#'
+    if (tag === 'engineering') {
+      void navigate({ to: '/chat' })
+    } else if (tag === 'marketing' || tag === 'sales' || tag === 'finance' || tag === 'support') {
+      void navigate({ to: '/chat' })
+    } else {
+      void navigate({ to: '/chat' })
+    }
+  }
 
   return (
     <>
@@ -152,10 +192,14 @@ export function NotificationsRoute() {
           }
           actions={
             <>
-              <Button variant="secondary" height={28} icon={CheckCheck}>
+              <Button variant="secondary" height={28} icon={CheckCheck} onClick={markAllRead}>
                 Mark all read
               </Button>
-              <IconButton icon={Settings} aria-label="Notification settings" />
+              <IconButton
+                icon={Settings}
+                aria-label="Notification settings"
+                onClick={() => void navigate({ to: '/control-panel/$section', params: { section: 'notifications' } })}
+              />
             </>
           }
         />
@@ -177,7 +221,7 @@ export function NotificationsRoute() {
             <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
               <NeedsYouLabel count={decisions.length} />
               {decisions.map((d) => (
-                <DecisionCard key={d.id} decision={d} />
+                <DecisionCard key={d.id} decision={d} onResolve={resolveDecision} />
               ))}
             </section>
           )}
@@ -185,7 +229,7 @@ export function NotificationsRoute() {
           {/* Grouped notification list */}
           <div className="flex flex-col gap-[4px]">
             {groups.map((group) => (
-              <NotifGroupSection key={group.label} group={group} />
+              <NotifGroupSection key={group.label} group={group} onRowClick={handleRowClick} />
             ))}
           </div>
         </div>
