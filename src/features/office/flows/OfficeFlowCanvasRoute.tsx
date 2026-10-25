@@ -17,6 +17,7 @@ import {
   Clock,
   SkipForward,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import { Mascot } from '../../../ui/ds/Mascot'
 import {
@@ -455,6 +456,7 @@ function OfficeFlowCanvasPage() {
   const [activeTab, setActiveTab] = useState<CanvasTab>('Canvas')
   const [flowOn, setFlowOn] = useState(true)
   const [showTestResult, setShowTestResult] = useState(false)
+  const navigate = useNavigate()
 
   const selectedNode = CANVAS_NODES.find((n) => n.id === selectedNodeId)
 
@@ -466,6 +468,7 @@ function OfficeFlowCanvasPage() {
         <button
           type="button"
           aria-label="Back to Flows"
+          onClick={() => navigate({ to: '/office/flows' })}
           className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
         >
           <ArrowLeft size={13} aria-hidden />

@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { GitFork, Plus, Sparkles, X } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
@@ -13,6 +14,7 @@ import {
   TEMPLATES,
   SUGGESTED_FLOWS,
   OFFICE_FLOW_RUNS,
+  newDraftId,
 } from './data'
 import type { FlowTab } from './data'
 import { RunStatusChip, Sparkline, Toggle } from './shared'
@@ -41,7 +43,7 @@ function FlowCardItem({ card, onClick }: { card: (typeof OFFICE_FLOWS)[number]; 
 
 // ── SuggestedCard ─────────────────────────────────────────────────────────────
 
-function SuggestedCard({ item }: { item: (typeof SUGGESTED_FLOWS)[number] }) {
+function SuggestedCard({ item, onCreate }: { item: (typeof SUGGESTED_FLOWS)[number]; onCreate?: () => void }) {
   return (
     <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
       {/* chain + suggesting helper */}
@@ -55,7 +57,7 @@ function SuggestedCard({ item }: { item: (typeof SUGGESTED_FLOWS)[number] }) {
           <Sparkles size={12} aria-hidden className="shrink-0 text-[#4338CA]" />
           <span className="truncate">{item.sub}</span>
         </span>
-        <Button variant="primary" height={28} icon={Plus}>Create</Button>
+        <Button variant="primary" height={28} icon={Plus} onClick={onCreate}>Create</Button>
       </div>
       <span className="text-[11.5px] text-faint">{item.hint}</span>
     </div>
@@ -82,7 +84,7 @@ function NewFlowCard({ onClick }: { onClick?: () => void }) {
 
 // ── TemplateCard ─────────────────────────────────────────────────────────────
 
-function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
+function TemplateCard({ t, onUse }: { t: (typeof TEMPLATES)[number]; onUse?: () => void }) {
   return (
     <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[12px]">
       <div className="flex items-start justify-between gap-[8px]">
@@ -90,6 +92,7 @@ function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
         <button
           type="button"
           aria-label={`Use ${t.title}`}
+          onClick={onUse}
           className="flex size-[22px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong text-muted transition-colors hover:bg-soft"
         >
           <Plus size={13} aria-hidden />
@@ -103,15 +106,25 @@ function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
 
 // ── YoursTab ──────────────────────────────────────────────────────────────────
 
-function YoursTab({ onCardClick, onNewClick }: { onCardClick?: () => void; onNewClick?: () => void }) {
+function YoursTab({
+  onCardClick,
+  onNewClick,
+  onTemplateUse,
+  onSuggestedCreate,
+}: {
+  onCardClick?: (flowId: string) => void
+  onNewClick?: () => void
+  onTemplateUse?: (templateId: string) => void
+  onSuggestedCreate?: (suggestedId: string) => void
+}) {
   return (
     <div className="flex flex-col gap-[20px]">
       <div className="grid grid-cols-3 gap-[12px]">
         {OFFICE_FLOWS.map((card) => (
-          <FlowCardItem key={card.id} card={card} onClick={onCardClick} />
+          <FlowCardItem key={card.id} card={card} onClick={() => onCardClick?.(card.id)} />
         ))}
         {SUGGESTED_FLOWS.map((item) => (
-          <SuggestedCard key={item.id} item={item} />
+          <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item.id)} />
         ))}
         <NewFlowCard onClick={onNewClick} />
       </div>
@@ -132,6 +145,7 @@ function YoursTab({ onCardClick, onNewClick }: { onCardClick?: () => void; onNew
               <button
                 type="button"
                 aria-label={`Use ${t.title}`}
+                onClick={() => onTemplateUse?.(t.id)}
                 className="flex size-[20px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong text-muted transition-colors hover:bg-soft"
               >
                 <Plus size={12} aria-hidden />
@@ -146,7 +160,7 @@ function YoursTab({ onCardClick, onNewClick }: { onCardClick?: () => void; onNew
 
 // ── SuggestedTab ──────────────────────────────────────────────────────────────
 
-function SuggestedTab() {
+function SuggestedTab({ onCreateFlow }: { onCreateFlow?: (suggestedId: string) => void }) {
   return (
     <div className="flex flex-col gap-[12px]">
       <p className="text-[13px] text-muted">
@@ -167,7 +181,7 @@ function SuggestedTab() {
             </div>
             <div className="flex gap-[6px] shrink-0">
               <Button variant="secondary" height={28}>Preview</Button>
-              <Button variant="primary" height={28} icon={Plus}>Create flow</Button>
+              <Button variant="primary" height={28} icon={Plus} onClick={() => onCreateFlow?.(s.id)}>Create flow</Button>
             </div>
           </div>
           <span className="text-[11.5px] text-faint">{s.hint}</span>
@@ -195,7 +209,7 @@ function SuggestedTab() {
 const TEMPLATE_CATS = ['All', 'Engineering', 'Ops', 'Reporting', 'Support'] as const
 type TemplateCat = (typeof TEMPLATE_CATS)[number]
 
-function TemplatesTab() {
+function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (templateId: string) => void }) {
   const [cat, setCat] = useState<TemplateCat>('All')
   return (
     <div className="flex flex-col gap-[16px]">
@@ -220,7 +234,7 @@ function TemplatesTab() {
       </div>
       <div className="grid grid-cols-3 gap-[12px]">
         {TEMPLATES.map((t) => (
-          <TemplateCard key={t.id} t={t} />
+          <TemplateCard key={t.id} t={t} onUse={() => onTemplateUse?.(t.id)} />
         ))}
       </div>
     </div>
@@ -316,11 +330,12 @@ function RunsTab() {
 interface NewFlowDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onDraft?: () => void
 }
 
 type NewFlowMode = 'describe' | 'blank' | 'template'
 
-function NewFlowDialog({ open, onOpenChange }: NewFlowDialogProps) {
+function NewFlowDialog({ open, onOpenChange, onDraft }: NewFlowDialogProps) {
   const [mode, setMode] = useState<NewFlowMode>('describe')
   const [description, setDescription] = useState(
     "Every Friday 16:00, pull this week's Stripe payouts, match them to referral signups, and send me a summary on WhatsApp. Ask me before paying anyone over Rp 5jt."
@@ -460,6 +475,7 @@ function NewFlowDialog({ open, onOpenChange }: NewFlowDialogProps) {
                   <button
                     type="button"
                     aria-label={`Use ${t.title}`}
+                    onClick={() => { onOpenChange(false); onDraft?.() }}
                     className="text-[12px] text-muted transition-colors hover:text-ink-2 shrink-0"
                   >
                     Use
@@ -473,7 +489,7 @@ function NewFlowDialog({ open, onOpenChange }: NewFlowDialogProps) {
           <div className="flex items-center gap-[8px] border-t border-line px-[22px] py-[14px]">
             <span className="flex-1" />
             <Button variant="secondary" height={30} onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button variant="primary" height={30} onClick={() => onOpenChange(false)}>
+            <Button variant="primary" height={30} onClick={() => { onOpenChange(false); onDraft?.() }}>
               Draft with Chief
             </Button>
           </div>
@@ -495,6 +511,15 @@ const TABS: Array<{ key: FlowTab; label: string; count?: number }> = [
 function OfficeFlowsPage() {
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const navigate = useNavigate()
+
+  function goToCanvas(flowId: string) {
+    navigate({ to: '/office/flows/$flowId/canvas', params: { flowId } })
+  }
+
+  function goToDraft(sourceId?: string) {
+    navigate({ to: '/office/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
+  }
 
   return (
     <>
@@ -538,13 +563,20 @@ function OfficeFlowsPage() {
           ))}
         </div>
 
-        {activeTab === 'Yours'     && <YoursTab onNewClick={() => setDialogOpen(true)} />}
-        {activeTab === 'Suggested' && <SuggestedTab />}
-        {activeTab === 'Templates' && <TemplatesTab />}
+        {activeTab === 'Yours'     && (
+          <YoursTab
+            onCardClick={goToCanvas}
+            onNewClick={() => setDialogOpen(true)}
+            onTemplateUse={(id) => goToDraft(id)}
+            onSuggestedCreate={(id) => goToDraft(id)}
+          />
+        )}
+        {activeTab === 'Suggested' && <SuggestedTab onCreateFlow={(id) => goToDraft(id)} />}
+        {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToDraft(id)} />}
         {activeTab === 'Runs'      && <RunsTab />}
       </div>
 
-      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} onDraft={() => goToDraft()} />
     </>
   )
 }

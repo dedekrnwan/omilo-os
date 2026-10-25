@@ -10,6 +10,7 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import {
   OFFICE_FLOW_RUNS,
@@ -220,6 +221,7 @@ const RUN_FILTERS: Array<'All' | FlowRunStatus> = ['All', 'Needs you', 'Failed',
 function OfficeFlowRunsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string>('r214')
   const [filter, setFilter] = useState<'All' | FlowRunStatus>('All')
+  const navigate = useNavigate()
 
   const shown = filter === 'All' ? OFFICE_FLOW_RUNS : OFFICE_FLOW_RUNS.filter((r) => r.status === filter)
   const selectedRun = OFFICE_FLOW_RUNS.find((r) => r.id === selectedRunId) ?? OFFICE_FLOW_RUNS[0]
@@ -231,7 +233,12 @@ function OfficeFlowRunsPage() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top bar */}
       <header className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[14px]">
-        <button type="button" aria-label="Back" className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => navigate({ to: '/office/flows' })}
+          className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
+        >
           <ArrowLeft size={13} aria-hidden />
           Flows
         </button>

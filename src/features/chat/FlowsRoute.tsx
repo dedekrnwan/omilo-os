@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { Activity, GitFork, Plus, Sparkles } from 'lucide-react'
-import { useParams } from '@tanstack/react-router'
+import { useParams, useNavigate } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { FlowChain } from '../../ui/ds/FlowChain'
 import type { FlowIconId } from '../../ui/ds/FlowChain'
+import { newDraftId } from '../office/flows/data'
 
 const DEFAULT_CHANNEL_ID = 'ch-general'
 
@@ -157,9 +158,13 @@ function Toggle({ on }: { on: boolean }) {
 
 // ── FlowCard ──────────────────────────────────────────────────────────────────
 
-function FlowCardItem({ card }: { card: FlowCard }) {
+function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void }) {
   return (
-    <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px]">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px] text-left transition-colors hover:bg-soft w-full"
+    >
       {/* flow chain + toggle */}
       <div className="flex items-center justify-between">
         <FlowChain from={card.from} to={card.to} count={card.count} />
@@ -172,7 +177,7 @@ function FlowCardItem({ card }: { card: FlowCard }) {
         <span className="text-[11.5px] text-muted">{card.status}</span>
         <Sparkline bars={card.bars} />
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -184,12 +189,14 @@ function SuggestedCard({
   from,
   to,
   count,
+  onCreate,
 }: {
   title: string
   why: string
   from: FlowIconId
   to: FlowIconId
   count: number
+  onCreate?: () => void
 }) {
   return (
     <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
@@ -206,7 +213,7 @@ function SuggestedCard({
           <Sparkles size={12} aria-hidden className="shrink-0 text-[#4338CA]" />
           <span className="truncate">{why}</span>
         </span>
-        <Button variant="primary" height={28} icon={Plus}>Create</Button>
+        <Button variant="primary" height={28} icon={Plus} onClick={onCreate}>Create</Button>
       </div>
     </div>
   )
@@ -214,21 +221,25 @@ function SuggestedCard({
 
 // ── NewFlowCard ───────────────────────────────────────────────────────────────
 
-function NewFlowCard() {
+function NewFlowCard({ onClick }: { onClick?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-[8px] rounded-lg border-2 border-dashed border-line-strong p-[14px] min-h-[120px] text-center transition-colors hover:bg-soft">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center gap-[8px] rounded-lg border-2 border-dashed border-line-strong p-[14px] min-h-[120px] text-center transition-colors hover:bg-soft w-full"
+    >
       <span className="flex size-[28px] items-center justify-center rounded-full bg-line-strong">
         <Plus size={14} aria-hidden className="text-muted" />
       </span>
       <span className="text-[12.5px] text-muted">New flow</span>
       <span className="text-[11.5px] text-faint">Describe it — Chief drafts it</span>
-    </div>
+    </button>
   )
 }
 
 // ── TemplateCard ─────────────────────────────────────────────────────────────
 
-function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
+function TemplateCard({ t, onUse }: { t: (typeof TEMPLATES)[number]; onUse?: () => void }) {
   return (
     <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[12px]">
       <div className="flex items-start justify-between gap-[8px]">
@@ -240,6 +251,7 @@ function TemplateCard({ t }: { t: (typeof TEMPLATES)[number] }) {
         <button
           type="button"
           aria-label={`Use ${t.title}`}
+          onClick={onUse}
           className="flex size-[22px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong text-muted transition-colors hover:bg-soft"
         >
           <Plus size={13} aria-hidden />
@@ -350,7 +362,7 @@ function RunsTab() {
 const TEMPLATE_CATEGORIES = ['All', 'Engineering', 'Ops', 'Reporting', 'Support'] as const
 type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number]
 
-function TemplatesTab() {
+function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (id: string) => void }) {
   const [cat, setCat] = useState<TemplateCategory>('All')
 
   return (
@@ -379,7 +391,7 @@ function TemplatesTab() {
       {/* Grid */}
       <div className="grid grid-cols-3 gap-[12px]">
         {TEMPLATES.map((t) => (
-          <TemplateCard key={t.id} t={t} />
+          <TemplateCard key={t.id} t={t} onUse={() => onTemplateUse?.(t.id)} />
         ))}
       </div>
     </div>
@@ -403,7 +415,7 @@ const SUGGESTED = [
   },
 ]
 
-function SuggestedTab() {
+function SuggestedTab({ onCreateFlow }: { onCreateFlow?: (id: string) => void }) {
   return (
     <div className="flex flex-col gap-[12px]">
       <p className="text-[13px] text-muted">
@@ -424,7 +436,7 @@ function SuggestedTab() {
             </div>
             <div className="flex gap-[6px] shrink-0">
               <Button variant="secondary" height={28}>Preview</Button>
-              <Button variant="primary" height={28} icon={Plus}>Create flow</Button>
+              <Button variant="primary" height={28} icon={Plus} onClick={() => onCreateFlow?.(s.id)}>Create flow</Button>
             </div>
           </div>
           <span className="text-[11.5px] text-faint">{s.suggested}</span>
@@ -436,13 +448,23 @@ function SuggestedTab() {
 
 // ── YoursTab ─────────────────────────────────────────────────────────────────
 
-function YoursTab() {
+function YoursTab({
+  onCardClick,
+  onNewClick,
+  onSuggestedCreate,
+  onTemplateUse,
+}: {
+  onCardClick?: (flowId: string) => void
+  onNewClick?: () => void
+  onSuggestedCreate?: () => void
+  onTemplateUse?: (id: string) => void
+}) {
   return (
     <div className="flex flex-col gap-[20px]">
       {/* Flow cards grid */}
       <div className="grid grid-cols-3 gap-[12px]">
         {YOUR_FLOWS.map((card) => (
-          <FlowCardItem key={card.id} card={card} />
+          <FlowCardItem key={card.id} card={card} onClick={() => onCardClick?.(card.id)} />
         ))}
         {/* Suggested card in grid */}
         <SuggestedCard
@@ -451,9 +473,10 @@ function YoursTab() {
           from="github"
           to="message-circle"
           count={2}
+          onCreate={onSuggestedCreate}
         />
         {/* New flow card */}
-        <NewFlowCard />
+        <NewFlowCard onClick={onNewClick} />
       </div>
 
       {/* Templates row */}
@@ -476,6 +499,7 @@ function YoursTab() {
               <button
                 type="button"
                 aria-label={`Use ${t.title}`}
+                onClick={() => onTemplateUse?.(t.id)}
                 className="flex size-[20px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong text-muted transition-colors hover:bg-soft"
               >
                 <Plus size={12} aria-hidden />
@@ -499,6 +523,19 @@ const TABS: Array<{ key: FlowTab; label: string; count?: number }> = [
 
 function FlowsPage({ channelName }: { channelName: string }) {
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
+  const navigate = useNavigate()
+
+  function goToOfficeFlows() {
+    navigate({ to: '/office/flows' })
+  }
+
+  function goToOfficeDraft(sourceId?: string) {
+    navigate({ to: '/office/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
+  }
+
+  function goToOfficeCanvas(flowId: string) {
+    navigate({ to: '/office/flows/$flowId/canvas', params: { flowId } })
+  }
 
   return (
     <>
@@ -507,7 +544,7 @@ function FlowsPage({ channelName }: { channelName: string }) {
         title="Flows"
         meta={`in ${channelName}`}
         actions={
-          <Button icon={Plus}>
+          <Button icon={Plus} onClick={goToOfficeFlows}>
             New flow
           </Button>
         }
@@ -543,9 +580,16 @@ function FlowsPage({ channelName }: { channelName: string }) {
         </div>
 
         {/* Tab content */}
-        {activeTab === 'Yours'     && <YoursTab />}
-        {activeTab === 'Suggested' && <SuggestedTab />}
-        {activeTab === 'Templates' && <TemplatesTab />}
+        {activeTab === 'Yours'     && (
+          <YoursTab
+            onCardClick={goToOfficeCanvas}
+            onNewClick={goToOfficeFlows}
+            onSuggestedCreate={() => goToOfficeDraft()}
+            onTemplateUse={(id) => goToOfficeDraft(id)}
+          />
+        )}
+        {activeTab === 'Suggested' && <SuggestedTab onCreateFlow={(id) => goToOfficeDraft(id)} />}
+        {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToOfficeDraft(id)} />}
         {activeTab === 'Runs'      && <RunsTab />}
       </div>
     </>

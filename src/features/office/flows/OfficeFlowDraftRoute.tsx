@@ -12,6 +12,7 @@ import {
   Trash2,
   Check,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import { Mascot } from '../../../ui/ds/Mascot'
 import {
@@ -298,6 +299,7 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
 function OfficeFlowDraftPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string>('n-read-logs')
   const [dismissedAnnotations, setDismissedAnnotations] = useState<Set<string>>(new Set())
+  const navigate = useNavigate()
 
   const selectedNode = CANVAS_NODES.find((n) => n.id === selectedNodeId)
 
@@ -320,7 +322,12 @@ function OfficeFlowDraftPage() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top bar */}
       <header className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[14px]">
-        <button type="button" aria-label="Back" className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => navigate({ to: '/office/flows' })}
+          className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
+        >
           <ArrowLeft size={13} aria-hidden />
           Flows
         </button>
