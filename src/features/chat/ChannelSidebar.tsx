@@ -277,8 +277,6 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
       void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     } else if (nav === 'Archived') {
       void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
-    } else if (nav === 'Analytics') {
-      void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     }
   }
 

@@ -45,7 +45,7 @@ function PermissionMenu({
           className={`${menuItemClass} ${value === p ? 'bg-hover' : ''}`}
           onClick={() => { onPick(p); onClose() }}
         >
-          <MenuItemBody icon={value === p ? Check : Check} label={p} />
+          <MenuItemBody icon={value === p ? Check : undefined} label={p} />
         </button>
       ))}
     </div>

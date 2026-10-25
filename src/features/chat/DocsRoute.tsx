@@ -190,6 +190,7 @@ function DocViewer({ doc }: { doc: ActiveDoc }) {
             type="button"
             className="text-link underline underline-offset-2 cursor-pointer"
             aria-label={`Link to ${label}`}
+            onClick={() => void navigate({ to: '/office/docs' })}
           >
             {label}
           </button>

@@ -164,16 +164,8 @@ export function NotificationsRoute() {
     )
   }
 
-  function handleRowClick(notif: Notif) {
-    // Navigate to the most relevant area based on the notification tag
-    const tag = notif.tag.slice(1) // strip '#'
-    if (tag === 'engineering') {
-      void navigate({ to: '/chat' })
-    } else if (tag === 'marketing' || tag === 'sales' || tag === 'finance' || tag === 'support') {
-      void navigate({ to: '/chat' })
-    } else {
-      void navigate({ to: '/chat' })
-    }
+  function handleRowClick(_notif: Notif) {
+    void navigate({ to: '/chat' })
   }
 
   return (

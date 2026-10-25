@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, ExternalLink, Feather, Pause, Play, UserMinus, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, Zap } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
@@ -194,7 +194,7 @@ function RoleMenu({
           onClick={() => { onPick(r); onClose() }}
           className={`${menuItemClass} ${currentRole === r ? 'bg-hover' : ''}`}
         >
-          <MenuItemBody icon={currentRole === r ? Check : ExternalLink} label={r} />
+          <MenuItemBody icon={currentRole === r ? Check : undefined} label={r} />
         </button>
       ))}
     </div>
