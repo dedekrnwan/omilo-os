@@ -3,7 +3,11 @@ import type { LucideIcon } from 'lucide-react'
 
 /** Popover surface used by Profile / Model / Thinking menus: radius 10 · line-strong · shadow 0 10 24 #0C0A0929 · p-4. */
 export const menuSurface =
-  'rounded-md outline-1 -outline-offset-1 outline-line-strong bg-surface p-[4px] shadow-[0_10px_24px_#0C0A0929]'
+  'rounded-md outline-1 -outline-offset-1 outline-line-strong bg-surface p-[4px] shadow-[0_10px_24px_#0C0A0929] ' +
+  'duration-150 ease-soft data-[state=open]:animate-in data-[state=closed]:animate-out ' +
+  'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 ' +
+  'data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 ' +
+  'data-[side=right]:slide-in-from-left-1 data-[side=left]:slide-in-from-right-1'
 
 /** pen `Menu Item` (UoNGm) / `Menu Item/Danger` (SiRcv): h-30 · radius 6 · gap 9 · padding 0 10 0 8. */
 export function MenuItemBody({

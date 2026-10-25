@@ -92,6 +92,12 @@
   --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif;
   --font-mono:    'IBM Plex Mono', ui-monospace, monospace;
   --font-serif:   'Fraunces Variable', 'Fraunces', Georgia, serif;
+
+  /* Motion — generates `ease-spring` / `ease-soft` utilities.
+   * spring: slight overshoot for playful lifts (shared with the mascot).
+   * soft:   quick-out-then-settle for overlays sliding/zooming in. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-soft:   cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* Plain custom properties for inline styles / non-Tailwind consumers. */

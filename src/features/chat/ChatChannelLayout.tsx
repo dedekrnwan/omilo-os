@@ -10,6 +10,7 @@ function useActiveNav(): ChannelNav | undefined {
 
   if (matchRoute({ to: '/chat/$channelId/goals',    fuzzy: false })) return 'Goals'
   if (matchRoute({ to: '/chat/$channelId/flows',    fuzzy: false })) return 'Flows'
+  if (matchRoute({ to: '/chat/$channelId/routines', fuzzy: true  })) return 'Routines'
   if (matchRoute({ to: '/chat/$channelId/docs',     fuzzy: false })) return 'Docs'
   if (matchRoute({ to: '/chat/$channelId/archived', fuzzy: false })) return 'Archived'
   if (matchRoute({ to: '/chat/$channelId/analytics', fuzzy: false })) return 'Analytics'

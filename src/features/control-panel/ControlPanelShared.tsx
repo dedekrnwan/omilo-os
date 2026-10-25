@@ -2,6 +2,7 @@ import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 import { ChevronDown, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Topbar } from '../../ui/ds/Frame'
+import { useEscapeKey } from '../../ui/ds/useEscapeKey'
 
 /*
  * Control-panel primitives, mirroring the pen components used by every
@@ -395,9 +396,10 @@ export function SaveBar({ state = 'No unsaved changes' }: { state?: string }) {
 
 /** Scrim (#0C0A0940) over the whole window. */
 export function Scrim({ onClose, children, align = 'center' }: { onClose?: () => void; children: ReactNode; align?: 'center' | 'right' }) {
+  useEscapeKey(() => onClose?.(), !!onClose)
   return (
     <div
-      className={`fixed inset-0 z-50 flex bg-[#0C0A0940] ${align === 'center' ? 'items-center justify-center' : 'justify-end'}`}
+      className={`fixed inset-0 z-50 flex bg-[#0C0A0940] duration-150 animate-in fade-in-0 ${align === 'center' ? 'items-center justify-center' : 'justify-end'}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.()
       }}
@@ -453,7 +455,7 @@ export function DialogCard({
         role="dialog"
         aria-modal="true"
         aria-label={label ?? (typeof title === 'string' ? title : undefined)}
-        className="flex flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong"
+        className="flex flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 zoom-in-95"
         style={{ width, transform: offsetY ? `translateY(${offsetY}px)` : undefined }}
       >
         <div className={`flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] ${lineBottom}`}>

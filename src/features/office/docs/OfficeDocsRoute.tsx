@@ -47,6 +47,7 @@ import {
   POLICIES_MD_CONTENT,
 } from './data'
 import type { DocFile, KnowledgeMemory } from './data'
+import { ForceGraph } from './ForceGraph'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -464,13 +465,7 @@ function NoteDocViewer() {
 // ── Graph view ────────────────────────────────────────────────────────────────
 
 function GraphView() {
-  const [hovered, setHovered] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>('n-passkey')
-  const hoveredOrSelected = selected ?? hovered
-
-  const selectedNode = hoveredOrSelected
-    ? GRAPH_NODES.find((n) => n.id === hoveredOrSelected)
-    : null
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -549,131 +544,49 @@ function GraphView() {
         </div>
       </div>
 
-      {/* Graph canvas */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-surface">
-        {/* Popover for selected node */}
-        {selectedNode && (
-          <div
-            className="absolute z-10 w-[200px] rounded-lg bg-surface shadow-lg outline-1 -outline-offset-1 outline-line-strong"
-            style={{
-              left: Math.min(selectedNode.x - 20, 500),
-              top: Math.max(selectedNode.y - 120, 8),
-            }}
-          >
-            <div className="px-[12px] py-[10px]">
-              <div className="flex items-center gap-[6px] mb-[2px]">
-                <span
-                  className="size-[8px] shrink-0 rounded-full"
-                  style={{ background: GRAPH_AREA_COLORS[selectedNode.area] }}
-                />
-                <span className="text-[11px] text-faint">
-                  Engineering / Q4 Launch · 6 links · edited 2h ago
-                </span>
-              </div>
-              <p className="text-[13px] font-medium text-ink mb-[4px]">{selectedNode.label}</p>
-              <p className="text-[12px] text-muted mb-[8px]">
-                Ship passkeys to every user before the Nov 28 code freeze, in two waves…
-              </p>
-              <div className="flex gap-[4px]">
-                <button
-                  type="button"
-                  className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors"
-                >
-                  <ArrowUpRight size={11} aria-hidden /> Open note
-                </button>
-                <button
-                  type="button"
-                  className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors"
-                >
-                  <MessageSquare size={11} aria-hidden /> Ask Chief
-                </button>
+      {/* Graph canvas — real d3-force simulation: drag nodes, pan, zoom, click to open. */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <ForceGraph
+          nodes={GRAPH_NODES}
+          edges={GRAPH_EDGES}
+          colorOf={(n) => GRAPH_AREA_COLORS[n.area]}
+          selected={selected}
+          onSelect={setSelected}
+          renderCard={(node, pos) => (
+            <div
+              className="absolute z-10 w-[220px] rounded-lg bg-surface shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong duration-150 ease-soft animate-in fade-in-0 zoom-in-95"
+              style={{ left: pos.left + 16, top: pos.top - 10, maxWidth: 'calc(100% - 24px)' }}
+            >
+              <div className="px-[12px] py-[10px]">
+                <div className="mb-[2px] flex items-center gap-[6px]">
+                  <span className="size-[8px] shrink-0 rounded-full" style={{ background: GRAPH_AREA_COLORS[node.area] }} />
+                  <span className="text-[11px] text-faint">Engineering / Q4 Launch · 6 links · edited 2h ago</span>
+                </div>
+                <p className="mb-[4px] text-[13px] font-medium text-ink">{node.label}</p>
+                <p className="mb-[8px] text-[12px] text-muted">
+                  Ship passkeys to every user before the Nov 28 code freeze, in two waves…
+                </p>
+                <div className="flex gap-[4px]">
+                  <button
+                    type="button"
+                    className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
+                  >
+                    <ArrowUpRight size={11} aria-hidden /> Open note
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
+                  >
+                    <MessageSquare size={11} aria-hidden /> Ask Chief
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* SVG graph */}
-        <svg
-          width="100%"
-          height="100%"
-          viewBox="0 0 720 460"
-          preserveAspectRatio="xMidYMid meet"
-          aria-label="Document relationship graph"
-        >
-          {/* Edges */}
-          {GRAPH_EDGES.map((e, i) => {
-            const from = GRAPH_NODES.find((n) => n.id === e.from)
-            const to = GRAPH_NODES.find((n) => n.id === e.to)
-            if (!from || !to) return null
-            return (
-              <line
-                key={i}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke="var(--color-line-strong)"
-                strokeWidth={1.5}
-              />
-            )
-          })}
-
-          {/* Nodes */}
-          {GRAPH_NODES.map((n) => {
-            const isSelected = n.id === selected
-            const r = n.size === 'lg' ? 8 : 5
-            const color = GRAPH_AREA_COLORS[n.area]
-            return (
-              <g
-                key={n.id}
-                role="button"
-                tabIndex={0}
-                aria-label={n.label}
-                onClick={() => setSelected(n.id === selected ? null : n.id)}
-                onMouseEnter={() => setHovered(n.id)}
-                onMouseLeave={() => setHovered(null)}
-                style={{ cursor: 'pointer' }}
-              >
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={r + 4}
-                  fill="transparent"
-                />
-                {isSelected && (
-                  <circle
-                    cx={n.x}
-                    cy={n.y}
-                    r={r + 3}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth={1.5}
-                    strokeOpacity={0.4}
-                  />
-                )}
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={r}
-                  fill={color}
-                />
-                <text
-                  x={n.x}
-                  y={n.y + r + 11}
-                  textAnchor="middle"
-                  fontSize={10}
-                  fill="var(--color-muted)"
-                  style={{ pointerEvents: 'none', userSelect: 'none' }}
-                >
-                  {n.label.length > 22 ? n.label.slice(0, 20) + '…' : n.label}
-                </text>
-              </g>
-            )
-          })}
-        </svg>
+          )}
+        />
 
         {/* Legend */}
-        <div className="absolute bottom-[16px] left-[16px] flex items-center gap-[12px]">
+        <div className="pointer-events-none absolute bottom-[16px] left-[16px] flex items-center gap-[12px]">
           {[
             { label: 'Engineering', color: 'var(--color-helper-dev)' },
             { label: 'Marketing',   color: 'var(--color-helper-marketing)' },
@@ -682,16 +595,10 @@ function GraphView() {
             { label: 'Goal',        color: '#6366F1' },
           ].map((l) => (
             <div key={l.label} className="flex items-center gap-[4px]">
-              <span className="size-[6px] rounded-full shrink-0" style={{ background: l.color }} />
+              <span className="size-[6px] shrink-0 rounded-full" style={{ background: l.color }} />
               <span className="text-[11px] text-muted">{l.label}</span>
             </div>
           ))}
-        </div>
-
-        {/* Zoom controls */}
-        <div className="absolute bottom-[16px] right-[16px] flex flex-col gap-[2px]">
-          <button type="button" className="flex size-[28px] items-center justify-center rounded-sm bg-surface text-muted outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors text-[16px] font-light">+</button>
-          <button type="button" className="flex size-[28px] items-center justify-center rounded-sm bg-surface text-muted outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors text-[16px] font-light">−</button>
         </div>
       </div>
     </div>
@@ -1032,38 +939,42 @@ function KnowledgeGraph({
           )}
 
           {/* Agent nodes */}
-          {KNOWLEDGE_NODES.map((n) => (
-            <g key={n.id}>
-              <circle
-                cx={n.x}
-                cy={n.y}
-                r={n.size === 'lg' ? 22 : 14}
-                fill={`${helperColor[n.area]}1A`}
-                stroke={helperColor[n.area]}
-                strokeWidth={1.5}
-              />
-              <foreignObject
-                x={n.x - 12}
-                y={n.y - 12}
-                width={24}
-                height={24}
-                style={{ overflow: 'visible' }}
-              >
-                <Mascot size={24} radius={6} area={n.area} />
-              </foreignObject>
-              <text
-                x={n.x}
-                y={n.y + (n.size === 'lg' ? 34 : 24)}
-                textAnchor="middle"
-                fontSize={11}
-                fontWeight={500}
-                fill="var(--color-ink-2)"
-                style={{ userSelect: 'none' }}
-              >
-                {n.label}
-              </text>
-            </g>
-          ))}
+          {KNOWLEDGE_NODES.map((n) => {
+            const r = n.size === 'lg' ? 16 : 11
+            const m = n.size === 'lg' ? 18 : 13
+            return (
+              <g key={n.id}>
+                <circle
+                  cx={n.x}
+                  cy={n.y}
+                  r={r}
+                  fill={`${helperColor[n.area]}1A`}
+                  stroke={helperColor[n.area]}
+                  strokeWidth={1.5}
+                />
+                <foreignObject
+                  x={n.x - m / 2}
+                  y={n.y - m / 2}
+                  width={m}
+                  height={m}
+                  style={{ overflow: 'visible' }}
+                >
+                  <Mascot size={m} radius={5} area={n.area} />
+                </foreignObject>
+                <text
+                  x={n.x}
+                  y={n.y + r + 12}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={500}
+                  fill="var(--color-ink-2)"
+                  style={{ userSelect: 'none' }}
+                >
+                  {n.label}
+                </text>
+              </g>
+            )
+          })}
         </svg>
       </div>
 
@@ -1164,15 +1075,19 @@ function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
                   stroke="var(--color-line-strong)" strokeWidth={1.5} />
               )
             })}
-            {KNOWLEDGE_NODES.map((n) => (
-              <g key={n.id}>
-                <circle cx={n.x} cy={n.y} r={n.size === 'lg' ? 22 : 14}
-                  fill={`${helperColor[n.area]}1A`} stroke={helperColor[n.area]} strokeWidth={1.5} />
-                <foreignObject x={n.x - 12} y={n.y - 12} width={24} height={24} style={{ overflow: 'visible' }}>
-                  <Mascot size={24} radius={6} area={n.area} />
-                </foreignObject>
-              </g>
-            ))}
+            {KNOWLEDGE_NODES.map((n) => {
+              const r = n.size === 'lg' ? 16 : 11
+              const m = n.size === 'lg' ? 18 : 13
+              return (
+                <g key={n.id}>
+                  <circle cx={n.x} cy={n.y} r={r}
+                    fill={`${helperColor[n.area]}1A`} stroke={helperColor[n.area]} strokeWidth={1.5} />
+                  <foreignObject x={n.x - m / 2} y={n.y - m / 2} width={m} height={m} style={{ overflow: 'visible' }}>
+                    <Mascot size={m} radius={5} area={n.area} />
+                  </foreignObject>
+                </g>
+              )
+            })}
           </svg>
           {/* Highlighted memory dots */}
           <div className="absolute inset-0 pointer-events-none">

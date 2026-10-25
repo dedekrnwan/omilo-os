@@ -53,7 +53,12 @@ import {
 } from '../features/auth'
 import { OnboardingRoute } from '../features/onboarding'
 import { ChatAnalyticsRoute, OfficeAnalyticsRoute } from '../features/analytics'
-import { RoutinesRoute, RoutineDetailRoute } from '../features/routines'
+import {
+  RoutinesRoute,
+  RoutineDetailRoute,
+  ChatRoutinesRoute,
+  ChatRoutineDetailRoute,
+} from '../features/routines'
 
 /**
  * Root route renders a bare <Outlet /> (no Shell). Two kinds of children hang
@@ -177,6 +182,18 @@ const chatFolderRoute = createRoute({
   getParentRoute: () => chatChannelRoute,
   path: 'folder/$folderId',
   component: FolderRoute,
+})
+
+const chatRoutinesRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'routines',
+  component: ChatRoutinesRoute,
+})
+
+const chatRoutineDetailRoute = createRoute({
+  getParentRoute: () => chatChannelRoute,
+  path: 'routines/$routineId',
+  component: ChatRoutineDetailRoute,
 })
 
 /**
@@ -442,6 +459,8 @@ const routeTree = rootRoute.addChildren([
         chatArchivedRoute,
         chatFolderRoute,
         chatAnalyticsRoute,
+        chatRoutinesRoute,
+        chatRoutineDetailRoute,
       ]),
     ]),
     officeRoute.addChildren([

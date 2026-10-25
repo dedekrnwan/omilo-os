@@ -25,7 +25,7 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const base =
-    'inline-flex shrink-0 items-center justify-center gap-[5px] rounded-btn px-[10px] text-[12.5px] font-medium whitespace-nowrap transition-colors'
+    'inline-flex shrink-0 items-center justify-center gap-[5px] rounded-btn px-[10px] text-[12.5px] font-medium whitespace-nowrap outline-none transition focus-visible:ring-2 focus-visible:ring-ink active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50'
   const look =
     variant === 'primary'
       ? 'bg-primary text-primary-ink hover:bg-primary-hover'
@@ -62,7 +62,7 @@ export function SquareButton({
   return (
     <button
       type={type}
-      className={`inline-flex size-[28px] shrink-0 items-center justify-center rounded-btn transition-colors ${look} ${className}`}
+      className={`inline-flex size-[28px] shrink-0 items-center justify-center rounded-btn outline-none transition focus-visible:ring-2 focus-visible:ring-ink active:scale-90 disabled:pointer-events-none disabled:opacity-50 ${look} ${className}`}
       {...rest}
     >
       <Icon size={16} aria-hidden />
@@ -81,7 +81,7 @@ export function IconButton({
   return (
     <button
       type={type}
-      className={`inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover ${className}`}
+      className={`inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted outline-none transition hover:bg-hover hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-ink active:scale-90 disabled:pointer-events-none disabled:opacity-50 ${className}`}
       {...rest}
     >
       <Icon size={size} aria-hidden />

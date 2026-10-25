@@ -26,7 +26,7 @@ import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './d
 // ── Companies ─────────────────────────────────────────────────────────────────
 
 const COMPANIES = [
-  { id: 'sahabat-warga', name: 'Sahabat Warga', initial: 'S', color: '#EB6834', active: true },
+  { id: 'sahabat-warga', name: 'Sahabat Warga', initial: 'S', color: '#EB6834' },
   { id: 'kopi-kenangan', name: 'Kopi Kenangan', initial: 'K', color: '#6366F1', badge: true },
 ] as const
 
@@ -37,23 +37,29 @@ function CompanyTile({
   color,
   active,
   badge,
+  onClick,
 }: {
   name: string
   initial: string
   color: string
   active?: boolean
   badge?: boolean
+  onClick?: () => void
 }) {
   return (
     <button
       type="button"
       aria-label={active ? `${name} (active)` : name}
       aria-current={active ? 'true' : undefined}
-      className="relative size-[40px] shrink-0 rounded-lg"
+      title={name}
+      onClick={onClick}
+      className="group relative size-[40px] shrink-0 rounded-lg transition-transform outline-none focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
       style={active ? { outline: `2px solid ${color}`, outlineOffset: -1 } : undefined}
     >
       <span
-        className="absolute top-[5px] left-[5px] flex size-[30px] items-center justify-center rounded-[9px] text-[13px] font-semibold text-white"
+        className={`absolute top-[5px] left-[5px] flex size-[30px] items-center justify-center rounded-[9px] text-[13px] font-semibold text-white transition group-hover:brightness-110 ${
+          active ? '' : 'opacity-85 group-hover:opacity-100'
+        }`}
         style={{ background: color }}
       >
         {initial}
@@ -166,7 +172,7 @@ function TrayButton({
       onFocus={onFocus}
       className={`group relative flex size-[30px] shrink-0 items-center justify-center ${
         glyph ? 'rounded-[9px]' : 'rounded-md'
-      } transition-colors ${look}`}
+      } outline-none transition focus-visible:ring-2 focus-visible:ring-ink active:scale-90 ${look}`}
     >
       {glyph ??
         (Icon && (
@@ -276,7 +282,7 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
           aria-label="Close tray"
           aria-expanded
           onClick={() => setOpen(false)}
-          className="flex h-[18px] w-[30px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-[#FFFFFF99]"
+          className="flex h-[18px] w-[30px] items-center justify-center rounded-sm text-muted outline-none transition hover:bg-[#FFFFFF99] focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
         >
           <ChevronDown size={14} aria-hidden />
         </button>
@@ -324,8 +330,8 @@ function ModeSegment({
       aria-pressed={active}
       title={label}
       onClick={onClick}
-      className={`flex size-[28px] items-center justify-center rounded-btn transition-colors ${
-        active ? 'bg-surface text-ink shadow-[0_1px_3px_#0C0A091F]' : 'text-muted hover:text-ink-2'
+      className={`flex size-[28px] items-center justify-center rounded-btn outline-none transition focus-visible:ring-2 focus-visible:ring-ink active:scale-90 ${
+        active ? 'bg-surface text-ink shadow-[0_1px_3px_#0C0A091F]' : 'text-muted hover:text-ink-2 hover:bg-[#FFFFFF80]'
       }`}
     >
       <Icon size={15} aria-hidden />
@@ -354,7 +360,7 @@ function ProfileMenu() {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         aria-label="User menu"
-        className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-[#D6D3D1] text-[11px] font-semibold text-ink-2 outline-none data-[state=open]:ring-2 data-[state=open]:ring-ink"
+        className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-[#D6D3D1] text-[11px] font-semibold text-ink-2 outline-none transition hover:bg-[#C8C4C1] focus-visible:ring-2 focus-visible:ring-ink active:scale-90 data-[state=open]:ring-2 data-[state=open]:ring-ink"
       >
         DK
       </DropdownMenu.Trigger>
@@ -417,7 +423,7 @@ function ProfileMenu() {
 export function Rail() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { mode, toggleTarget } = useUIStore()
+  const { mode, companyId, setCompany, homePath, toggleTarget } = useUIStore()
   const isChat = mode === 'chat'
 
   const currentPage: RailPage | undefined = location.pathname.startsWith('/team')
@@ -433,6 +439,12 @@ export function Rail() {
     void navigate({ to: target.path })
   }
 
+  // Clicking a company switches workspace and lands on the current mode's home page.
+  function selectCompany(id: string) {
+    setCompany(id)
+    void navigate({ to: homePath() })
+  }
+
   return (
     <nav
       aria-label="main rail"
@@ -442,13 +454,13 @@ export function Rail() {
 
       <div className="flex flex-col items-center gap-[8px] pt-[6px]">
         {COMPANIES.map((c) => (
-          <CompanyTile key={c.id} {...c} />
+          <CompanyTile key={c.id} {...c} active={c.id === companyId} onClick={() => selectCompany(c.id)} />
         ))}
         <button
           type="button"
           aria-label="Add company"
           title="Add company"
-          className="flex size-[30px] items-center justify-center rounded-[9px] text-muted transition-colors hover:bg-hover"
+          className="flex size-[30px] items-center justify-center rounded-[9px] text-muted outline-none transition hover:bg-hover hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
         >
           <Plus size={16} aria-hidden />
         </button>

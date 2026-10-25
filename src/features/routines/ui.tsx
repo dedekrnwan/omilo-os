@@ -5,6 +5,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Check, ChevronDown, X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
+import { useEscapeKey } from '../../ui/ds/useEscapeKey'
 
 /** pen `Switch/On` (y1lHE) / `Switch/Off` (o4QgH): 32×18 · r9 · p2 · knob 14. */
 export function Switch({
@@ -232,7 +233,13 @@ export function SectionLabel({ children, tracking = true }: { children: ReactNod
 
 /** Full-screen scrim (#0C0A0959). */
 export function Scrim({ onClick }: { onClick?: () => void }) {
-  return <div aria-hidden className="fixed inset-0 z-40 bg-[#0C0A0959]" onClick={onClick} />
+  return (
+    <div
+      aria-hidden
+      className="fixed inset-0 z-40 bg-[#0C0A0959] duration-150 animate-in fade-in-0"
+      onClick={onClick}
+    />
+  )
 }
 
 /**
@@ -254,6 +261,7 @@ export function Drawer({
   footer: ReactNode
   bodyClass?: string
 }) {
+  useEscapeKey(onClose)
   return (
     <>
       <Scrim onClick={onClose} />
@@ -261,7 +269,7 @@ export function Drawer({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[480px] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940]"
+        className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[480px] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-6"
       >
         <header className="flex w-full shrink-0 gap-[12px] shadow-[inset_0_-1px_0_var(--color-line)] pt-[20px] pr-[16px] pb-[16px] pl-[24px]">
           <div className="flex min-w-0 flex-1 flex-col gap-[4px]">

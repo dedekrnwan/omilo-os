@@ -16,11 +16,13 @@ interface OfficeSidebarProps {
 }
 
 /** pen `Office Sidebar` (EuKqr). */
-export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }: OfficeSidebarProps) {
+export function OfficeSidebar({ area = null, onAreaChange, activeNav }: OfficeSidebarProps) {
   const navigate = useNavigate()
   const matchRoute = useMatchRoute()
   const onFlows = !!matchRoute({ to: '/office/flows', fuzzy: true })
   const onDocs = !!matchRoute({ to: '/office/docs', fuzzy: true })
+  // The area filter only scopes the Inbox, so areas highlight only while it's open.
+  const onInbox = !!matchRoute({ to: '/office/inbox', fuzzy: true })
   const { data: channels = [] } = useChannels()
   const { data: items = [] } = useInbox()
   const needsYou = items.filter((i) => i.status === 'pending' && i.needsYou).length
@@ -88,7 +90,7 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
           label="All areas"
           count={total}
           labelClassName="text-ink-2"
-          active={area === null}
+          active={onInbox && area === null}
           onClick={() => pickArea(null)}
         />
         {channels.map((c) => (
@@ -97,7 +99,7 @@ export function OfficeSidebar({ area = null, onAreaChange, activeNav = 'Inbox' }
             label={c.name}
             count={c.openItems}
             labelClassName="text-ink-2"
-            active={area === c.id}
+            active={onInbox && area === c.id}
             onClick={() => pickArea(c.id)}
             leading={
               <span aria-hidden className="flex size-[16px] shrink-0 items-center justify-center">

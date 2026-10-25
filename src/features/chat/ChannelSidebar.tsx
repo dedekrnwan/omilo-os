@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   Archive,
+  CalendarSync,
   ChartLine,
   Check,
   ChevronDown,
@@ -27,7 +28,7 @@ import { ARCHIVED_COUNT, DEFAULT_OPEN_FOLDERS, SIDEBAR_GOAL_COUNT } from './data
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
 
-export type ChannelNav = 'Chats' | 'Goals' | 'Flows' | 'Docs' | 'Analytics' | 'Archived'
+export type ChannelNav = 'Chats' | 'Goals' | 'Flows' | 'Routines' | 'Docs' | 'Analytics' | 'Archived'
 
 function channelSidebarMeta(c: Channel) {
   return c.isDefault ? 'Default channel · Chief' : `Channel · Chief + ${c.agentCount} agents`
@@ -228,14 +229,14 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
       void navigate({ to: '/chat/$channelId/goals', params: { channelId } })
     } else if (nav === 'Flows') {
       void navigate({ to: '/chat/$channelId/flows', params: { channelId } })
+    } else if (nav === 'Routines') {
+      void navigate({ to: '/chat/$channelId/routines', params: { channelId } })
     } else if (nav === 'Docs') {
       void navigate({ to: '/chat/$channelId/docs', params: { channelId } })
     } else if (nav === 'Analytics') {
       void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     } else if (nav === 'Archived') {
       void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
-    } else if (nav === 'Analytics') {
-      void navigate({ to: '/chat/$channelId/analytics', params: { channelId } })
     }
   }
 
@@ -305,6 +306,12 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
           label="Flows"
           active={activeNav === 'Flows'}
           onClick={() => navTo('Flows')}
+        />
+        <NavLink
+          icon={CalendarSync}
+          label="Routines"
+          active={activeNav === 'Routines'}
+          onClick={() => navTo('Routines')}
         />
         <NavLink
           icon={FileText}
