@@ -1,8 +1,9 @@
 // ── Office Flow Canvas editor ─────────────────────────────────────────────────
 // Matches design ref: ck4Kt.png + emtFw.png (canvas + test-run overlay)
-// Static node graph — no drag, no pan. Layout faithfully reproduces the ref.
+// Interactive canvas: node selection, add-step from palette, toolbar tool modes,
+// test-run mock state, publish. All local state only.
 
-import { useState } from 'react'
+import { useReducer, useState } from 'react'
 import {
   ArrowLeft,
   ChevronRight,
@@ -17,7 +18,7 @@ import {
   Clock,
   SkipForward,
 } from 'lucide-react'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import { Mascot } from '../../../ui/ds/Mascot'
 import {
@@ -25,14 +26,100 @@ import {
   CANVAS_EDGES,
   STEP_PALETTE,
   TEST_RUN_RESULT,
+  OFFICE_FLOWS,
 } from './data'
-import type { CanvasNode } from './data'
+import type { CanvasNode, CanvasEdge, NodeKind } from './data'
 import { NODE_COLORS, NODE_KIND_LABEL } from './shared'
+
+// ── Canvas state / reducer ────────────────────────────────────────────────────
+
+interface CanvasState {
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+  selectedNodeId: string | null
+  activeTool: 'Move' | 'Connect' | 'Settings'
+  testRunStatus: 'idle' | 'running' | 'done'
+}
+
+type CanvasAction =
+  | { type: 'SELECT_NODE'; id: string | null }
+  | { type: 'ADD_NODE'; kind: NodeKind; label: string }
+  | { type: 'UPDATE_NODE_LABEL'; id: string; label: string }
+  | { type: 'SET_TOOL'; tool: CanvasState['activeTool'] }
+  | { type: 'START_TEST_RUN' }
+  | { type: 'FINISH_TEST_RUN' }
+  | { type: 'CLOSE_TEST_RUN' }
+
+function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
+  switch (action.type) {
+    case 'SELECT_NODE':
+      return { ...state, selectedNodeId: action.id }
+
+    case 'ADD_NODE': {
+      const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y + n.height), 0)
+      const newNode: CanvasNode = {
+        id: `n-new-${Date.now()}`,
+        kind: action.kind,
+        label: action.label,
+        sublabel: '',
+        x: 320,
+        y: maxY + 40,
+        width: 220,
+        height: 68,
+      }
+      return {
+        ...state,
+        nodes: [...state.nodes, newNode],
+        selectedNodeId: newNode.id,
+      }
+    }
+
+    case 'UPDATE_NODE_LABEL':
+      return {
+        ...state,
+        nodes: state.nodes.map((n) =>
+          n.id === action.id ? { ...n, label: action.label } : n
+        ),
+      }
+
+    case 'SET_TOOL':
+      return { ...state, activeTool: action.tool }
+
+    case 'START_TEST_RUN':
+      return { ...state, testRunStatus: 'running' }
+
+    case 'FINISH_TEST_RUN':
+      return { ...state, testRunStatus: 'done' }
+
+    case 'CLOSE_TEST_RUN':
+      return { ...state, testRunStatus: 'idle' }
+
+    default:
+      return state
+  }
+}
+
+function initCanvasState(): CanvasState {
+  return {
+    nodes: CANVAS_NODES.map((n) => ({ ...n, selected: undefined })),
+    edges: [...CANVAS_EDGES],
+    selectedNodeId: 'n-read-logs',
+    activeTool: 'Move',
+    testRunStatus: 'idle',
+  }
+}
 
 // ── Step palette sidebar ──────────────────────────────────────────────────────
 
-function StepPalette() {
+function StepPalette({ onAddNode }: { onAddNode: (kind: NodeKind, label: string) => void }) {
   const [search, setSearch] = useState('')
+
+  const filteredGroups = STEP_PALETTE.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      search.length === 0 || item.label.toLowerCase().includes(search.toLowerCase())
+    ),
+  })).filter((g) => g.items.length > 0)
 
   return (
     <div
@@ -50,7 +137,7 @@ function StepPalette() {
         />
       </div>
 
-      {STEP_PALETTE.map((group) => (
+      {filteredGroups.map((group) => (
         <div key={group.label} className="flex flex-col gap-px">
           <span className="px-[4px] pb-[4px] text-[10px] font-semibold tracking-[1px] text-faint">
             {group.label}
@@ -59,7 +146,9 @@ function StepPalette() {
             <button
               key={item.label}
               type="button"
+              onClick={() => onAddNode(item.kind, item.label)}
               className="flex h-[28px] w-full items-center gap-[8px] rounded-sm px-[8px] text-left text-[12.5px] text-ink-2 transition-colors hover:bg-hover"
+              aria-label={`Add ${item.label}`}
             >
               <span
                 className="size-[8px] shrink-0 rounded-full"
@@ -161,10 +250,10 @@ function CanvasNodeCard({
 
 // ── SVG edges ─────────────────────────────────────────────────────────────────
 
-function CanvasEdges() {
+function CanvasEdgesView({ nodes, edges }: { nodes: CanvasNode[]; edges: CanvasEdge[] }) {
   // Build a map of node centers for edge routing
   const centers = Object.fromEntries(
-    CANVAS_NODES.map((n) => [
+    nodes.map((n) => [
       n.id,
       {
         cx: n.x + n.width / 2,
@@ -184,7 +273,7 @@ function CanvasEdges() {
       overflow="visible"
       aria-hidden
     >
-      {CANVAS_EDGES.map((edge) => {
+      {edges.map((edge) => {
         const from = centers[edge.from]
         const to = centers[edge.to]
         if (!from || !to) return null
@@ -233,7 +322,13 @@ function CanvasEdges() {
 
 // ── Right detail panel (selected step) ───────────────────────────────────────
 
-function StepDetailPanel({ node }: { node: CanvasNode }) {
+function StepDetailPanel({
+  node,
+  onLabelChange,
+}: {
+  node: CanvasNode
+  onLabelChange: (id: string, label: string) => void
+}) {
   return (
     <div
       className="flex h-full w-[260px] shrink-0 flex-col gap-[0px] overflow-y-auto border-l border-line bg-surface"
@@ -247,7 +342,12 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
         >
           {NODE_KIND_LABEL[node.kind]}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{node.label}</span>
+        <span
+          className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink"
+          data-testid="detail-panel-label"
+        >
+          {node.label}
+        </span>
         <button
           type="button"
           className="flex size-[22px] shrink-0 items-center justify-center rounded-sm text-faint hover:bg-hover hover:text-muted"
@@ -255,6 +355,18 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
         >
           <MoreHorizontal size={13} aria-hidden />
         </button>
+      </div>
+
+      {/* Editable label field */}
+      <div className="flex flex-col gap-[6px] border-b border-line px-[14px] py-[12px]">
+        <span className="text-[11px] font-semibold tracking-[0.8px] text-faint">Step label</span>
+        <input
+          type="text"
+          value={node.label}
+          onChange={(e) => onLabelChange(node.id, e.target.value)}
+          className="rounded-base bg-soft px-[8px] py-[5px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
+          aria-label="Step label"
+        />
       </div>
 
       {/* Agent */}
@@ -348,8 +460,40 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
 
 // ── Test run result overlay ────────────────────────────────────────────────────
 
-function TestRunOverlay({ onClose }: { onClose: () => void }) {
+function TestRunOverlay({
+  status,
+  onClose,
+  onRunAgain,
+}: {
+  status: 'running' | 'done'
+  onClose: () => void
+  onRunAgain: () => void
+}) {
   const r = TEST_RUN_RESULT
+
+  if (status === 'running') {
+    return (
+      <div
+        className="absolute bottom-[60px] left-1/2 z-20 flex w-[420px] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-[0_8px_32px_#0C0A0929] outline-1 -outline-offset-1 outline-line-strong"
+        role="region"
+        aria-label="Test run running"
+        aria-live="polite"
+      >
+        <div className="flex items-center gap-[8px] px-[14px] py-[12px]">
+          <span className="inline-block size-[14px] animate-spin rounded-full border-2 border-line-strong border-t-primary shrink-0" aria-hidden />
+          <span className="text-[12.5px] font-medium text-ink">Running test…</span>
+          <button
+            type="button"
+            aria-label="Close test result"
+            onClick={onClose}
+            className="ml-auto flex size-[22px] shrink-0 items-center justify-center rounded-sm text-faint hover:bg-hover hover:text-muted"
+          >
+            <X size={13} aria-hidden />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -395,12 +539,13 @@ function TestRunOverlay({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           className="flex items-center gap-[5px] text-[12px] text-muted hover:text-ink-2 transition-colors"
+          onClick={onClose}
         >
           <Clock size={12} aria-hidden />
           View full log
         </button>
         <span className="flex-1" />
-        <Button variant="secondary" height={28}>Run again</Button>
+        <Button variant="secondary" height={28} onClick={onRunAgain}>Run again</Button>
         <Button variant="primary" height={28}>Publish changes</Button>
       </div>
     </div>
@@ -409,13 +554,21 @@ function TestRunOverlay({ onClose }: { onClose: () => void }) {
 
 // ── Canvas toolbar (bottom) ───────────────────────────────────────────────────
 
-const CANVAS_TOOLS = [
+const CANVAS_TOOLS: Array<{ icon: typeof GitFork; label: 'Move' | 'Connect' | 'Settings' }> = [
   { icon: GitFork, label: 'Move' },
   { icon: ToggleLeft, label: 'Connect' },
   { icon: Settings, label: 'Settings' },
 ]
 
-function CanvasBottomBar({ onTestRun }: { onTestRun: () => void }) {
+function CanvasBottomBar({
+  activeTool,
+  onToolChange,
+  onTestRun,
+}: {
+  activeTool: CanvasState['activeTool']
+  onToolChange: (t: CanvasState['activeTool']) => void
+  onTestRun: () => void
+}) {
   return (
     <div className="absolute bottom-0 left-0 right-0 flex h-[48px] items-center gap-[8px] border-t border-line bg-surface px-[16px]">
       {/* Tool icons */}
@@ -425,7 +578,13 @@ function CanvasBottomBar({ onTestRun }: { onTestRun: () => void }) {
             key={label}
             type="button"
             aria-label={label}
-            className="flex size-[30px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover hover:text-ink-2"
+            aria-pressed={activeTool === label}
+            onClick={() => onToolChange(label)}
+            className="flex size-[30px] items-center justify-center rounded-sm transition-colors"
+            style={{
+              background: activeTool === label ? 'var(--color-hover)' : 'transparent',
+              color: activeTool === label ? 'var(--color-ink)' : 'var(--color-muted)',
+            }}
           >
             <Icon size={14} aria-hidden />
           </button>
@@ -451,14 +610,28 @@ function CanvasBottomBar({ onTestRun }: { onTestRun: () => void }) {
 type CanvasTab = 'Canvas' | 'Runs' | 'Settings'
 const CANVAS_TABS: CanvasTab[] = ['Canvas', 'Runs', 'Settings']
 
-function OfficeFlowCanvasPage() {
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('n-read-logs')
+function OfficeFlowCanvasPage({ flowId }: { flowId?: string }) {
+  const [state, dispatch] = useReducer(canvasReducer, undefined, initCanvasState)
   const [activeTab, setActiveTab] = useState<CanvasTab>('Canvas')
   const [flowOn, setFlowOn] = useState(true)
-  const [showTestResult, setShowTestResult] = useState(false)
   const navigate = useNavigate()
 
-  const selectedNode = CANVAS_NODES.find((n) => n.id === selectedNodeId)
+  // Resolve flow title from route param (fall back gracefully for draft/chat ids)
+  const resolvedFlow = flowId ? OFFICE_FLOWS.find((f) => f.id === flowId) : undefined
+  const flowTitle = resolvedFlow?.title ?? 'Deploy failure triage'
+
+  const selectedNode = state.nodes.find((n) => n.id === state.selectedNodeId)
+
+  function handleTestRun() {
+    dispatch({ type: 'START_TEST_RUN' })
+    // Simulate async completion after 1.2s
+    setTimeout(() => dispatch({ type: 'FINISH_TEST_RUN' }), 1200)
+  }
+
+  function handleRunAgain() {
+    dispatch({ type: 'CLOSE_TEST_RUN' })
+    handleTestRun()
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -475,7 +648,7 @@ function OfficeFlowCanvasPage() {
           Flows
         </button>
         <ChevronRight size={12} aria-hidden className="text-faint" />
-        <span className="text-[12.5px] font-medium text-ink">Deploy failure triage</span>
+        <span className="text-[12.5px] font-medium text-ink">{flowTitle}</span>
 
         {/* Area chip */}
         <span className="inline-flex h-[20px] items-center gap-[5px] rounded-pill px-[7px] text-[11px] font-medium" style={{ background: '#14B8A620', color: '#14B8A6' }}>
@@ -519,7 +692,7 @@ function OfficeFlowCanvasPage() {
 
         <span className="text-[11.5px] text-faint">~$0.01 a run</span>
 
-        <Button variant="secondary" height={28} icon={Play} onClick={() => setShowTestResult(true)}>
+        <Button variant="secondary" height={28} icon={Play} onClick={handleTestRun}>
           Test run
         </Button>
         <Button variant="primary" height={28}>
@@ -531,33 +704,52 @@ function OfficeFlowCanvasPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {activeTab === 'Canvas' ? (
           <>
-            <StepPalette />
+            <StepPalette
+              onAddNode={(kind, label) => dispatch({ type: 'ADD_NODE', kind, label })}
+            />
 
             {/* Canvas area */}
             <div className="relative flex-1 overflow-auto bg-[#F7F6F3]" style={{ backgroundImage: 'radial-gradient(circle, var(--color-line-strong) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
               {/* Nodes */}
-              <div className="relative" style={{ minWidth: 900, minHeight: 640 }}>
-                <CanvasEdges />
-                {CANVAS_NODES.map((node) => (
+              <div
+                className="relative"
+                style={{ minWidth: 900, minHeight: 640 }}
+                data-testid="canvas-area"
+              >
+                <CanvasEdgesView nodes={state.nodes} edges={state.edges} />
+                {state.nodes.map((node) => (
                   <CanvasNodeCard
                     key={node.id}
                     node={node}
-                    selected={node.id === selectedNodeId}
-                    onClick={() => setSelectedNodeId(node.id)}
+                    selected={node.id === state.selectedNodeId}
+                    onClick={() => dispatch({ type: 'SELECT_NODE', id: node.id })}
                   />
                 ))}
               </div>
 
               {/* Test run overlay */}
-              {showTestResult && (
-                <TestRunOverlay onClose={() => setShowTestResult(false)} />
+              {state.testRunStatus !== 'idle' && (
+                <TestRunOverlay
+                  status={state.testRunStatus}
+                  onClose={() => dispatch({ type: 'CLOSE_TEST_RUN' })}
+                  onRunAgain={handleRunAgain}
+                />
               )}
 
-              <CanvasBottomBar onTestRun={() => setShowTestResult(true)} />
+              <CanvasBottomBar
+                activeTool={state.activeTool}
+                onToolChange={(t) => dispatch({ type: 'SET_TOOL', tool: t })}
+                onTestRun={handleTestRun}
+              />
             </div>
 
             {/* Right panel */}
-            {selectedNode && <StepDetailPanel node={selectedNode} />}
+            {selectedNode && (
+              <StepDetailPanel
+                node={selectedNode}
+                onLabelChange={(id, label) => dispatch({ type: 'UPDATE_NODE_LABEL', id, label })}
+              />
+            )}
           </>
         ) : activeTab === 'Runs' ? (
           <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
@@ -568,7 +760,7 @@ function OfficeFlowCanvasPage() {
             <h3 className="m-0 text-[15px] font-semibold text-ink">Flow settings</h3>
             <div className="flex flex-col gap-[10px] max-w-[400px]">
               {[
-                { label: 'Flow name', value: 'Deploy failure triage' },
+                { label: 'Flow name', value: flowTitle },
                 { label: 'Area', value: 'Engineering' },
                 { label: 'Runs as', value: 'Ops' },
               ].map(({ label, value }) => (
@@ -597,5 +789,7 @@ function OfficeFlowCanvasPage() {
  * the step palette is the in-canvas sidebar).
  */
 export function OfficeFlowCanvasRoute() {
-  return <OfficeFlowCanvasPage />
+  // useParams returns unknown shape; access flowId safely
+  const params = useParams({ strict: false }) as Record<string, string>
+  return <OfficeFlowCanvasPage flowId={params.flowId} />
 }
