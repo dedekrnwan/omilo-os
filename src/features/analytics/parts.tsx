@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Activity, Check, ChevronDown, LayoutDashboard, Repeat, ShieldCheck, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DAYS, UPDATED_AT } from './data'
+import { DAY_LABELS, DAYS, UPDATED_AT } from './data'
 import type { BarChart, ChipTone, HelperStat, HelperStatus, Stat } from './data'
 
 // ── Small primitives (pen Chip/*, Status Dot/*, Switch/*, Checkbox/*, Radio/*) ──
@@ -267,7 +267,39 @@ export function StatRow({ stats }: { stats: Stat[] }) {
 
 // ── Stacked bar chart (plain divs, exactly as drawn in pen) ───────────────────
 
+/** Hover tooltip: date header, day total, and a per-series breakdown (pen chart popover). */
+function ChartTip({ chart, i }: { chart: BarChart; i: number }) {
+  const segs = chart.stack
+    .map((s) => ({ label: s.label, color: s.color, v: s.values[i] }))
+    .filter((s) => s.v > 0)
+    .sort((a, b) => b.v - a.v)
+  const total = segs.reduce((n, s) => n + s.v, 0)
+  // Flip to the left of the bar for the right half so it never runs off the card.
+  const side = i <= 3 ? 'left-full ml-[10px]' : 'right-full mr-[10px]'
+  return (
+    <div className={`pointer-events-none absolute top-1/2 z-20 w-[228px] -translate-y-1/2 ${side}`}>
+      <div className="flex flex-col gap-[8px] rounded-lg bg-surface p-[12px] shadow-[0_8px_28px_#0000001f] outline-1 -outline-offset-1 outline-line-strong">
+        <span className="text-[12px] font-medium text-muted">{DAY_LABELS[i]}</span>
+        <span className="font-mono text-[15px] text-ink">
+          {chart.fmt(total)}
+          {chart.unit && ` ${chart.unit}`} <span className="text-muted">total</span>
+        </span>
+        <ul className="m-0 flex list-none flex-col gap-[6px] p-0">
+          {segs.map((s) => (
+            <li key={s.label} className="flex items-center gap-[8px]">
+              <span className="size-[8px] shrink-0 rounded-[2px]" style={{ background: s.color }} />
+              <span className="w-[48px] shrink-0 font-mono text-[12px] text-ink">{chart.fmt(s.v)}</span>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{s.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 export function BarChartCard({ chart, className = '' }: { chart: BarChart; className?: string }) {
+  const [hover, setHover] = useState<number | null>(null)
   return (
     <Card className={`flex flex-col gap-[14px] p-[16px] ${className}`}>
       <div className="flex w-full items-center gap-[8px]">
@@ -291,12 +323,21 @@ export function BarChartCard({ chart, className = '' }: { chart: BarChart; class
         {DAYS.map((d, i) => {
           const segs = chart.stack.filter((s) => s.values[i] > 0)
           return (
-            <div key={d} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
-              <div className="flex w-[28px] flex-col gap-px overflow-hidden rounded-t-[3px]">
+            <div
+              key={d}
+              className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end"
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+            >
+              {hover === i && (
+                <span className="pointer-events-none absolute inset-x-[2px] inset-y-0 z-0 rounded-[4px] bg-soft" />
+              )}
+              <div className="relative z-[1] flex w-[28px] flex-col gap-px overflow-hidden rounded-t-[3px]">
                 {segs.map((s) => (
                   <div key={s.label} style={{ height: s.values[i], background: s.color }} />
                 ))}
               </div>
+              {hover === i && <ChartTip chart={chart} i={i} />}
             </div>
           )
         })}

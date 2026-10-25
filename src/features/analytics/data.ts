@@ -4,6 +4,17 @@ import type { HelperArea } from '../../core/domain/types'
 
 export const DAYS = ['Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue'] as const
 
+/** Full weekday + date per bar, matching DAYS (week of 2026-10-21 → 10-27). */
+export const DAY_LABELS = [
+  'Wednesday, October 21',
+  'Thursday, October 22',
+  'Friday, October 23',
+  'Saturday, October 24',
+  'Sunday, October 25',
+  'Monday, October 26',
+  'Tuesday, October 27',
+] as const
+
 export type ChipTone = 'up' | 'warn' | 'neutral' | 'down' | 'run'
 
 export interface Stat {
@@ -27,7 +38,19 @@ export interface BarChart {
   /** Series listed top of stack first (= legend order reversed where the pen does so). */
   stack: Series[]
   legend: { label: string; color: string }[]
+  /** Format a raw bar value (and the day total) for the hover tooltip. */
+  fmt: (v: number) => string
+  /** Unit word after the day total in the tooltip, e.g. 'tokens' ('' = none). */
+  unit: string
 }
+
+/** Tooltip formatters — the bar values are px heights, scaled back to figures. */
+const fmtTokens = (px: number): string => {
+  const n = px * 10_000
+  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`
+}
+const fmtJobs = (px: number): string => String(px)
+const fmtSpend = (px: number): string => `$${(px * 0.1).toFixed(2)}`
 
 export type HelperStatus = 'working' | 'idle' | 'needs' | 'paused'
 
@@ -99,9 +122,11 @@ export const tokensByHelper: BarChart = {
     { label: 'Grower', color: C.ops },
     { label: 'Support', color: C.support },
   ],
+  fmt: fmtTokens,
+  unit: 'tokens',
 }
 
-export const channelJobs: BarChart = { title: 'Jobs', sub: '142 · 6 failed', stack: jobsStack, legend: jobsLegend }
+export const channelJobs: BarChart = { title: 'Jobs', sub: '142 · 6 failed', stack: jobsStack, legend: jobsLegend, fmt: fmtJobs, unit: 'jobs' }
 
 export const spendByChannel: BarChart = {
   title: 'Spend by channel',
@@ -118,9 +143,11 @@ export const spendByChannel: BarChart = {
     { label: 'Business', color: C.finance },
     { label: 'General', color: C.brand },
   ],
+  fmt: fmtSpend,
+  unit: '',
 }
 
-export const officeJobs: BarChart = { title: 'Jobs', sub: '418 · 24 failed', stack: jobsStack, legend: jobsLegend }
+export const officeJobs: BarChart = { title: 'Jobs', sub: '418 · 24 failed', stack: jobsStack, legend: jobsLegend, fmt: fmtJobs, unit: 'jobs' }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
