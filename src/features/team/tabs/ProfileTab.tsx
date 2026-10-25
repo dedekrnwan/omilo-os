@@ -1,12 +1,14 @@
-import { useState } from 'react'
-import { Crown, ImagePlus, Pause, UserMinus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, Crown, ImagePlus, Pause, Play, UserMinus } from 'lucide-react'
 import { HELPER_LOOK, Mascot } from '../../../ui/ds/Mascot'
 import type { MascotProp, MascotShape } from '../../../ui/ds/Mascot'
 import { helperColor } from '../../../ui/tokens'
 import type { HelperRecord } from '../teamData'
-import { Btn, InputField, SelectField, SettingRow } from '../ui'
+import { Btn, InputField, SettingRow } from '../ui'
+import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 
 const COLOURS = ['#EC4899', '#6366F1', '#14B8A6', '#F97316', '#8B5CF6', '#0EA5E9', '#65A30D', '#F59E0B', '#EF4444', '#64748B', '#A16207', '#06B6D4']
+const REPORTS_TO_OPTIONS = ['You (Dede)', 'Chief of Staff'] as const
 const SHAPES: MascotShape[] = ['bean', 'blob', 'box']
 const PROPS: MascotProp[] = ['headset', 'crown', 'glasses', 'megaphone', 'tie', 'coin', 'gear', 'spark', 'magnifier', 'none']
 
@@ -18,6 +20,51 @@ function optRing(on: boolean) {
   return on ? 'outline-2 -outline-offset-2 outline-ink' : 'outline-1 -outline-offset-1 outline-line'
 }
 
+function ReportsToMenu({
+  value,
+  onPick,
+  onClose,
+}: {
+  value: string
+  onPick: (v: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Reports to"
+      className={`absolute top-[calc(100%+4px)] right-0 z-40 flex w-[200px] flex-col ${menuSurface}`}
+    >
+      {REPORTS_TO_OPTIONS.map((o) => (
+        <button
+          key={o}
+          type="button"
+          role="menuitemradio"
+          aria-checked={value === o}
+          className={`${menuItemClass} ${value === o ? 'bg-hover' : ''}`}
+          onClick={() => { onPick(o); onClose() }}
+        >
+          <MenuItemBody icon={value === o ? Check : Crown} label={o} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** Profile tab — pen JVnGn. */
 export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo: () => void }) {
   const n = helper.name
@@ -26,6 +73,11 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
   const [colour, setColour] = useState<string>(COLOURS.find((c) => c.toLowerCase() === String(base).toLowerCase()) ?? COLOURS[0])
   const [shape, setShape] = useState<MascotShape>(look.shape)
   const [prop, setProp] = useState<MascotProp>(look.prop)
+  const [paused, setPaused] = useState(false)
+  const [reportsTo, setReportsTo] = useState<string>(helper.id === 'chief' ? 'You (Dede)' : 'Chief of Staff')
+  const [reportsToOpen, setReportsToOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const reset = () => {
     setShape(look.shape)
     setProp(look.prop)
@@ -103,7 +155,15 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
               </div>
             </div>
             <div className="flex items-center gap-[12px]">
-              <Btn icon={ImagePlus} h={30}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                aria-label="Upload picture"
+                onChange={() => { /* stub — would set custom avatar */ }}
+              />
+              <Btn icon={ImagePlus} h={30} onClick={() => fileInputRef.current?.click()}>
                 Use a picture
               </Btn>
               <Btn variant="quiet" h={30} onClick={reset}>
@@ -124,7 +184,23 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
             <InputField value={helper.id === 'support' ? 'Resident support · WhatsApp' : helper.roleArea} width={280} />
           </SettingRow>
           <SettingRow title="Reports to" desc="Gets its updates and escalations." last>
-            <SelectField icon={Crown} value={helper.id === 'chief' ? 'You (Dede)' : 'Chief of Staff'} width={240} />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setReportsToOpen((v) => !v)}
+                className="flex h-[36px] w-[240px] items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
+              >
+                <Crown size={16} aria-hidden className="shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{reportsTo}</span>
+              </button>
+              {reportsToOpen && (
+                <ReportsToMenu
+                  value={reportsTo}
+                  onPick={setReportsTo}
+                  onClose={() => setReportsToOpen(false)}
+                />
+              )}
+            </div>
           </SettingRow>
         </div>
       </section>
@@ -133,11 +209,11 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
         <h3 className="m-0 text-[14px] font-semibold text-ink">Pause or let go</h3>
         <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
           <SettingRow
-            title={`Pause ${n}`}
-            desc="Stops all replies and loops. Residents see “we'll be right back”. Resume anytime."
+            title={`${paused ? 'Resume' : 'Pause'} ${n}`}
+            desc={paused ? `${n} is paused. Click Resume to restart replies and loops.` : `Stops all replies and loops. Residents see "we'll be right back". Resume anytime.`}
           >
-            <Btn icon={Pause} h={30}>
-              Pause
+            <Btn icon={paused ? Play : Pause} h={30} onClick={() => setPaused((p) => !p)}>
+              {paused ? 'Resume' : 'Pause'}
             </Btn>
           </SettingRow>
           <SettingRow

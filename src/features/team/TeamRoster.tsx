@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { Cpu, Ellipsis, Plus } from 'lucide-react'
+import { ArrowUpRight, Cpu, Ellipsis, Pause, Plus, UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
 import type { HelperArea } from '../../core/domain/types'
 import { HELPERS } from './teamData'
 import type { HelperRecord } from './teamData'
@@ -52,10 +53,63 @@ function Stat({ value, label, warn }: { value: string; label: string; warn?: boo
   )
 }
 
+// ── Helper card more-options menu ────────────────────────────────────────────
+
+function CardMoreMenu({
+  helper,
+  onClose,
+}: {
+  helper: HelperRecord
+  onClose: () => void
+}) {
+  const navigate = useNavigate()
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={`Actions for ${helper.name}`}
+      className={`absolute top-[44px] right-[16px] z-40 flex w-[180px] flex-col ${menuSurface}`}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className={menuItemClass}
+        onClick={() => {
+          onClose()
+          void navigate({ to: '/team/$helperId', params: { helperId: helper.id } })
+        }}
+      >
+        <MenuItemBody icon={ArrowUpRight} label={`Open ${helper.name}`} />
+      </button>
+      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
+        <MenuItemBody icon={Pause} label={`Pause ${helper.name}`} />
+      </button>
+      <MenuSeparatorLine />
+      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
+        <MenuItemBody icon={UserMinus} label={`Let ${helper.name} go`} danger />
+      </button>
+    </div>
+  )
+}
+
 // ── Helper card (pen "Helper · Builder" QbN3H) ────────────────────────────────
 
 function HelperCard({ helper }: { helper: HelperRecord }) {
   const area = (helper.rosterArea ?? helper.area) as HelperArea
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div className="relative flex h-[218px] min-w-0 flex-1">
       <Link
@@ -82,7 +136,13 @@ function HelperCard({ helper }: { helper: HelperRecord }) {
           <span className="font-mono text-[11.5px] text-ink-2">{helper.cost}</span>
         </div>
       </Link>
-      <IconBtn icon={Ellipsis} label={`More for ${helper.name}`} className="absolute top-[16px] right-[16px]" />
+      <IconBtn
+        icon={Ellipsis}
+        label={`More for ${helper.name}`}
+        className="absolute top-[16px] right-[16px]"
+        onClick={(e) => { e.preventDefault(); setMenuOpen((v) => !v) }}
+      />
+      {menuOpen && <CardMoreMenu helper={helper} onClose={() => setMenuOpen(false)} />}
     </div>
   )
 }

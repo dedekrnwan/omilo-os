@@ -1,4 +1,5 @@
-import { CalendarSync, ChevronRight, History, Pencil, Sparkles } from 'lucide-react'
+import { CalendarSync, Check, ChevronRight, History, Pencil, Sparkles, X } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { FILE_ICON } from '../teamData'
@@ -44,6 +45,14 @@ export function JobTab({
 }) {
   const navigate = useNavigate()
   const files = helper.files
+  const [editing, setEditing] = useState(false)
+  const [jobDesc, setJobDesc] = useState(helper.description)
+  const [draft, setDraft] = useState(helper.description)
+
+  const startEdit = () => { setDraft(jobDesc); setEditing(true) }
+  const saveEdit = () => { setJobDesc(draft); setEditing(false) }
+  const cancelEdit = () => { setDraft(jobDesc); setEditing(false) }
+
   return (
     <div className="flex w-full flex-col gap-[20px]">
       {/* Job description */}
@@ -55,13 +64,30 @@ export function JobTab({
               The one paragraph {helper.name} reads before every conversation.
             </p>
           </div>
-          <Btn variant="quiet" icon={Pencil} h={30}>
-            Edit
-          </Btn>
+          {editing ? (
+            <div className="flex items-center gap-[6px]">
+              <Btn variant="quiet" icon={X} h={30} onClick={cancelEdit}>Cancel</Btn>
+              <Btn icon={Check} h={30} onClick={saveEdit}>Save</Btn>
+            </div>
+          ) : (
+            <Btn variant="quiet" icon={Pencil} h={30} onClick={startEdit}>
+              Edit
+            </Btn>
+          )}
         </div>
-        <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
-          <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">{helper.description}</p>
-        </div>
+        {editing ? (
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full resize-none rounded-md bg-soft px-[14px] py-[12px] font-mono text-[12.5px] leading-[1.6] text-ink-2 outline-1 -outline-offset-1 outline-ink"
+            rows={5}
+          />
+        ) : (
+          <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
+            <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">{jobDesc}</p>
+          </div>
+        )}
         <div className="flex items-center gap-[6px]">
           <History size={12} aria-hidden className="text-muted" />
           <span className="text-[11.5px] text-faint">Edited by you · 2 days ago · v7</span>
