@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle, PanelRight, ScrollText, ShieldCheck, Target, UserPlus, X } from 'lucide-react'
 import type { Model, SessionParticipant } from '../../core/domain/types'
 import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession } from '../../app/queries'
@@ -201,6 +202,7 @@ function BesideInset({ anchor, children }: { anchor: React.RefObject<HTMLElement
  */
 export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [screen] = useState(readScreenState)
+  const navigate = useNavigate()
   const { data: messages, isLoading } = useMessages(sessionId)
   const { data: session } = useSession(sessionId)
   const channelId = session?.channelId ?? ''
@@ -319,6 +321,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   function handleArchive() {
     archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
     setActionToast('Chat archived')
+    void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
   }
 
   function handleDelete() {
@@ -330,6 +333,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
     archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
     setDeleteConfirmOpen(false)
     setActionToast('Chat deleted')
+    void navigate({ to: '/chat/$channelId', params: { channelId } })
   }
 
   return (

@@ -185,7 +185,7 @@ export function ArchivedDrawer({
           </div>
 
           <div className="flex w-full shrink-0 items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] px-[20px] py-[12px]">
-            <DrawerButton quiet icon={Trash2} onClick={deleteAllArchived}>
+            <DrawerButton quiet icon={Trash2} onClick={() => deleteAllArchived(staticChats.map(c => c.id))}>
               Delete all
             </DrawerButton>
             <div className="h-px flex-1" />

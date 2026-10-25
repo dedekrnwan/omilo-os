@@ -74,8 +74,8 @@ export interface ChatStoreState {
   restoreSession(id: string): void
   /** Delete an archived entry (dynamic or static) */
   deleteArchived(id: string): void
-  /** Delete all archived entries */
-  deleteAllArchived(): void
+  /** Delete all archived entries. Pass `staticIds` to also remove static fixture entries. */
+  deleteAllArchived(staticIds?: string[]): void
   /** Create a new local folder */
   createFolder(channelId: string, name: string): string
 }
@@ -131,10 +131,14 @@ export const useChatStore = create<ChatStoreState>((set, _get) => ({
     }))
   },
 
-  deleteAllArchived() {
+  deleteAllArchived(staticIds?: string[]) {
     set(state => ({
       archived: [],
-      removedStaticIds: new Set([...state.removedStaticIds, ...state.archived.map(a => a.id)]),
+      removedStaticIds: new Set([
+        ...state.removedStaticIds,
+        ...state.archived.map(a => a.id),
+        ...(staticIds ?? []),
+      ]),
     }))
   },
 
