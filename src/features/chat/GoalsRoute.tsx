@@ -1,5 +1,5 @@
 import { MessageCircle, MessageSquare, Plus, Target } from 'lucide-react'
-import { useParams } from '@tanstack/react-router'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import type { HelperArea } from '../../core/domain/types'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
@@ -72,8 +72,15 @@ function ProgressRing({ progress, color }: { progress: number; color: string }) 
   )
 }
 
-function GoalItem({ goal }: { goal: GoalRow }) {
+function GoalItem({ goal, channelId }: { goal: GoalRow; channelId: string }) {
+  const navigate = useNavigate()
   const color = STATUS_COLOR[goal.status]
+
+  function startChatAboutGoal() {
+    // Navigate to new chat — no dedicated goal-chat route, so go to the channel new-chat
+    void navigate({ to: '/chat/$channelId', params: { channelId } })
+  }
+
   return (
     <li className="flex w-full flex-col gap-[11px] px-[4px] py-[15px] shadow-[inset_0_1px_0_var(--color-line-strong)]">
       <div className="flex w-full items-center gap-[11px]">
@@ -94,7 +101,7 @@ function GoalItem({ goal }: { goal: GoalRow }) {
           <Mascot size={18} radius={5} area={goal.owner.area} title={goal.owner.name} />
           <span className="text-[12.5px] text-ink-2">{goal.owner.name}</span>
         </span>
-        <Button variant="secondary" height={28} icon={MessageCircle}>
+        <Button variant="secondary" height={28} icon={MessageCircle} onClick={startChatAboutGoal}>
           Chat
         </Button>
       </div>
@@ -116,6 +123,7 @@ function GoalItem({ goal }: { goal: GoalRow }) {
           ))}
           <button
             type="button"
+            onClick={startChatAboutGoal}
             className="flex items-center gap-[8px] self-start px-[7px] py-[8px] text-[12.5px] text-muted hover:text-ink-2"
           >
             <Plus size={14} aria-hidden />
@@ -130,7 +138,8 @@ function GoalItem({ goal }: { goal: GoalRow }) {
 /** Route: /chat/$channelId/goals */
 export function GoalsRoute() {
   const params = useParams({ strict: false })
-  const { data: channel } = useChannel(params.channelId ?? 'ch-general')
+  const channelId = params.channelId ?? 'ch-general'
+  const { data: channel } = useChannel(channelId)
   const name = channel?.name ?? ''
 
   return (
@@ -149,7 +158,7 @@ export function GoalsRoute() {
           </div>
           <ul className="m-0 flex w-full list-none flex-col p-0">
             {GOALS.map((g) => (
-              <GoalItem key={g.id} goal={g} />
+              <GoalItem key={g.id} goal={g} channelId={channelId} />
             ))}
           </ul>
         </div>

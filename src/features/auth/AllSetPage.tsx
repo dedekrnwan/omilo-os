@@ -44,10 +44,10 @@ export function AllSetPage() {
           ))}
         </ul>
         <div className="flex w-full gap-[10px]">
-          <AuthButton variant="secondary" icon={UserPlus}>
+          <AuthButton variant="secondary" icon={UserPlus} to="/control-panel/members">
             Invite teammates
           </AuthButton>
-          <AuthButton icon={ArrowRight} onClick={() => (window.location.href = '/onboarding')}>
+          <AuthButton icon={ArrowRight} to="/chat/ch-general">
             Meet Chief
           </AuthButton>
         </div>

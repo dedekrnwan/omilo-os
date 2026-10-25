@@ -42,8 +42,12 @@ export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecor
       }
       footer={
         <>
-          <Btn variant="quiet" icon={CircleHelp} onClick={() => setMethod('cloud')}>
-            Use Cloud API instead
+          <Btn
+            variant="quiet"
+            icon={method === 'cloud' ? MessageCircle : CircleHelp}
+            onClick={() => setMethod((m) => (m === 'app' ? 'cloud' : 'app'))}
+          >
+            {method === 'cloud' ? 'Use Business app instead' : 'Use Cloud API instead'}
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>

@@ -428,6 +428,18 @@ export const DRAFT_ANNOTATIONS: DraftAnnotation[] = [
   },
 ]
 
+// ── Navigation helpers ────────────────────────────────────────────────────────
+
+/**
+ * Returns a stable draft route id for a given template or suggested flow id.
+ * Uses the source id to keep ids deterministic (no timestamp).
+ * e.g. newDraftId('t1') → 'draft-t1'
+ *      newDraftId()     → 'draft-new'
+ */
+export function newDraftId(sourceId?: string): string {
+  return sourceId ? `draft-${sourceId}` : 'draft-new'
+}
+
 // ── Runs history detail (GMEPK.png) ──────────────────────────────────────────
 
 export type RunDetailStepStatus = 'done' | 'running' | 'waiting' | 'queued' | 'skipped'

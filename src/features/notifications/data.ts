@@ -94,6 +94,11 @@ export const DECISIONS: Decision[] = [
   },
 ]
 
+// ── Filter type ───────────────────────────────────────────────────────────────
+
+/** Sidebar filter selection for the Notifications page. */
+export type NotifFilter = 'all' | 'needs-you' | 'mentions' | string /* area */
+
 // ── Notification groups data ────────────────────────────────────────────────
 
 export const NOTIF_GROUPS: NotifGroup[] = [
@@ -148,3 +153,50 @@ export const NOTIF_GROUPS: NotifGroup[] = [
     ],
   },
 ]
+
+// ── Filter helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Return the subset of decisions + notification groups that match `filter`.
+ * - 'all'       → everything unchanged
+ * - 'needs-you' → decisions only; empty groups
+ * - 'mentions'  → notifs whose title/preview contains "@"; decisions filtered the same
+ * - area string → items whose senderArea matches (both decisions and groups)
+ *
+ * Pass `decisions` and `groups` to operate on local state instead of static data.
+ */
+export function filterNotifs(
+  filter: NotifFilter,
+  decisions: Decision[] = DECISIONS,
+  groups: NotifGroup[] = NOTIF_GROUPS,
+): { decisions: Decision[]; groups: NotifGroup[] } {
+  if (filter === 'all') {
+    return { decisions, groups }
+  }
+
+  if (filter === 'needs-you') {
+    return { decisions, groups: [] }
+  }
+
+  if (filter === 'mentions') {
+    const hasMention = (text: string) => text.includes('@')
+    const filteredDecisions = decisions.filter(
+      (d) => hasMention(d.title) || hasMention(d.body),
+    )
+    const filteredGroups = groups.map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (n) => hasMention(n.title) || (n.preview != null && hasMention(n.preview)),
+      ),
+    })).filter((g) => g.items.length > 0)
+    return { decisions: filteredDecisions, groups: filteredGroups }
+  }
+
+  // area filter
+  const filteredDecisions = decisions.filter((d) => d.senderArea === filter)
+  const filteredGroups = groups.map((g) => ({
+    ...g,
+    items: g.items.filter((n) => n.senderArea === filter),
+  })).filter((g) => g.items.length > 0)
+  return { decisions: filteredDecisions, groups: filteredGroups }
+}

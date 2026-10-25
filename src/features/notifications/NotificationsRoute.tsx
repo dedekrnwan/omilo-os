@@ -1,14 +1,12 @@
+import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { Bell, CheckCheck, Settings } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Inset, Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DECISIONS, NOTIF_GROUPS } from './data'
-import type { Decision, Notif, NotifGroup } from './data'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const totalDecisions = DECISIONS.length
-const totalUnread = NOTIF_GROUPS.flatMap((g) => g.items).filter((n) => n.unread).length
+import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
+import { NotificationsSidebar } from './NotificationsSidebar'
+import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +30,7 @@ function GroupLabel({ label }: { label: string }) {
 }
 
 /** Full decision card with coloured left border, body, and action buttons. */
-function DecisionCard({ decision }: { decision: Decision }) {
+function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: (id: string) => void }) {
   return (
     <article
       aria-label={decision.title}
@@ -67,6 +65,7 @@ function DecisionCard({ decision }: { decision: Decision }) {
             key={a.label}
             height={28}
             variant={a.primary ? 'primary' : 'secondary'}
+            onClick={() => onResolve(decision.id)}
           >
             {a.label}
           </Button>
@@ -77,10 +76,12 @@ function DecisionCard({ decision }: { decision: Decision }) {
 }
 
 /** A single notification row (compact, single-line with optional preview). */
-function NotifRow({ notif, last }: { notif: Notif; last: boolean }) {
+function NotifRow({ notif, last, onClick }: { notif: Notif; last: boolean; onClick: () => void }) {
   return (
-    <div
-      className={`flex w-full items-start gap-[10px] py-[11px] ${
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-[10px] py-[11px] text-left transition-colors hover:bg-hover ${
         last ? '' : 'border-b border-line'
       }`}
     >
@@ -103,12 +104,12 @@ function NotifRow({ notif, last }: { notif: Notif; last: boolean }) {
       {notif.unread && (
         <span className="mt-[4px] size-[7px] shrink-0 rounded-full bg-info" aria-label="unread" />
       )}
-    </div>
+    </button>
   )
 }
 
 /** One date group with its notification rows. */
-function NotifGroupSection({ group }: { group: NotifGroup }) {
+function NotifGroupSection({ group, onRowClick }: { group: NotifGroup; onRowClick: (notif: Notif) => void }) {
   return (
     <section aria-label={group.label}>
       <GroupLabel label={group.label} />
@@ -118,6 +119,7 @@ function NotifGroupSection({ group }: { group: NotifGroup }) {
             key={notif.id}
             notif={notif}
             last={i === group.items.length - 1}
+            onClick={() => onRowClick(notif)}
           />
         ))}
       </div>
@@ -129,59 +131,101 @@ function NotifGroupSection({ group }: { group: NotifGroup }) {
 
 /**
  * /notifications — Everything helpers sent you.
+ * A filter sidebar scopes the decisions + notification list.
  * Decisions waiting on you are pinned at the top; grouped notifications follow.
+ *
+ * Local state owns decisions + groups (copy of static data) so actions can
+ * mutate (remove resolved decisions, mark all read) without touching data.ts.
  */
 export function NotificationsRoute() {
+  const navigate = useNavigate()
+  const [filter, setFilter] = useState<NotifFilter>('all')
+
+  // Lift static data into local state so we can mutate it
+  const [allDecisions, setAllDecisions] = useState(DECISIONS)
+  const [allGroups, setAllGroups] = useState(NOTIF_GROUPS)
+
+  // Re-filter from local state
+  const { decisions, groups } = filterNotifs(filter, allDecisions, allGroups)
+
+  const totalDecisions = decisions.length
+  const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
+
+  function resolveDecision(id: string) {
+    setAllDecisions((prev) => prev.filter((d) => d.id !== id))
+  }
+
+  function markAllRead() {
+    setAllGroups((prev) =>
+      prev.map((g) => ({
+        ...g,
+        items: g.items.map((n) => ({ ...n, unread: false })),
+      })),
+    )
+  }
+
+  function handleRowClick(_notif: Notif) {
+    void navigate({ to: '/chat' })
+  }
+
   return (
-    <Inset label="Notifications">
-      {/* Topbar */}
-      <Topbar
-        icon={Bell}
-        title="Notifications"
-        meta={
-          totalDecisions > 0
-            ? `${totalDecisions} decisions waiting on you · ${totalUnread} unread`
-            : `${totalUnread} unread`
-        }
-        actions={
-          <>
-            <Button variant="secondary" height={28} icon={CheckCheck}>
-              Mark all read
-            </Button>
-            <IconButton icon={Settings} aria-label="Notification settings" />
-          </>
-        }
-      />
+    <>
+      <NotificationsSidebar filter={filter} onFilter={setFilter} />
 
-      {/* Scrollable content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
-        {/* Page heading */}
-        <header className="flex flex-col gap-[2px] pb-[20px]">
-          <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
-            Notifications
-          </h1>
-          <p className="m-0 text-[13px] text-muted">
-            {totalDecisions} decisions waiting on you · {totalUnread} unread
-          </p>
-        </header>
+      <Inset label="Notifications">
+        {/* Topbar */}
+        <Topbar
+          icon={Bell}
+          title="Notifications"
+          meta={
+            totalDecisions > 0
+              ? `${totalDecisions} decisions waiting on you · ${totalUnread} unread`
+              : `${totalUnread} unread`
+          }
+          actions={
+            <>
+              <Button variant="secondary" height={28} icon={CheckCheck} onClick={markAllRead}>
+                Mark all read
+              </Button>
+              <IconButton
+                icon={Settings}
+                aria-label="Notification settings"
+                onClick={() => void navigate({ to: '/control-panel/$section', params: { section: 'notifications' } })}
+              />
+            </>
+          }
+        />
 
-        {/* Pinned decisions */}
-        {DECISIONS.length > 0 && (
-          <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
-            <NeedsYouLabel count={DECISIONS.length} />
-            {DECISIONS.map((d) => (
-              <DecisionCard key={d.id} decision={d} />
+        {/* Scrollable content */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
+          {/* Page heading */}
+          <header className="flex flex-col gap-[2px] pb-[20px]">
+            <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
+              Notifications
+            </h1>
+            <p className="m-0 text-[13px] text-muted">
+              {totalDecisions} decisions waiting on you · {totalUnread} unread
+            </p>
+          </header>
+
+          {/* Pinned decisions */}
+          {decisions.length > 0 && (
+            <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
+              <NeedsYouLabel count={decisions.length} />
+              {decisions.map((d) => (
+                <DecisionCard key={d.id} decision={d} onResolve={resolveDecision} />
+              ))}
+            </section>
+          )}
+
+          {/* Grouped notification list */}
+          <div className="flex flex-col gap-[4px]">
+            {groups.map((group) => (
+              <NotifGroupSection key={group.label} group={group} onRowClick={handleRowClick} />
             ))}
-          </section>
-        )}
-
-        {/* Grouped notification list */}
-        <div className="flex flex-col gap-[4px]">
-          {NOTIF_GROUPS.map((group) => (
-            <NotifGroupSection key={group.label} group={group} />
-          ))}
+          </div>
         </div>
-      </div>
-    </Inset>
+      </Inset>
+    </>
   )
 }

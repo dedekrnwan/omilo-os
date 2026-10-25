@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowUpRight, BookOpen, Maximize2, Pencil, Sparkles } from 'lucide-react'
+import { ArrowUpRight, BookOpen, Check, Maximize2, Pencil, Sparkles, X } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../../ui/ds/Mascot'
 import type { HelperRecord } from '../teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconBtn, IconTile, Segmented } from '../ui'
@@ -27,8 +28,18 @@ const MODES = ['View', 'Edit', 'History · 7'] as const
 
 /** PLAYBOOK.md doc drawer — pen vDIEL (Doc Drawer TfYVJ, 520 wide). */
 export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<(typeof MODES)[number]>('View')
   const [learned, setLearned] = useState(true)
+  const [editContent, setEditContent] = useState('')
+
+  const handleModeChange = (m: (typeof MODES)[number]) => {
+    if (m === 'Edit' && editContent === '') {
+      setEditContent('Dues questions\n\n1. Look up their unit in sahabat-db — never guess the amount.\n2. Reply with the balance and the last payment date.\n3. Offer the payment link. If they say they already paid, check Midtrans before answering.\n\nLetter requests (surat pengantar)\n\n• Ask for full name, unit and purpose in one message.\n• Fill the RT letter form and send it to the RT head for signing.\n\nAlways hand to the owner\n\n• Disputes about money or fines\n• Complaints about an RT head\n• Anything legal')
+    }
+    setMode(m)
+  }
+
   return (
     <Drawer
       width={520}
@@ -39,32 +50,59 @@ export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onCl
         <>
           <IconTile icon={BookOpen} />
           <DrawerTitle mono title="PLAYBOOK.md" sub={`${helper.name} · step-by-step answers for common cases`} />
-          <IconBtn icon={Maximize2} label="Open full screen" />
+          <IconBtn icon={Maximize2} label="Open full screen" onClick={() => void navigate({ to: '/office/docs' })} />
           <DrawerClose onClose={onClose} />
         </>
       }
       footer={
         <>
-          <Btn variant="quiet" icon={ArrowUpRight}>
+          <Btn
+            variant="quiet"
+            icon={ArrowUpRight}
+            onClick={() => {
+              onClose()
+              void navigate({ to: '/office/docs' })
+            }}
+          >
             Open in Docs
           </Btn>
           <span className="h-px flex-1" />
-          <span className="text-[11.5px] text-faint">Your edits always win over {helper.name}&apos;s</span>
-          <Btn variant="primary" icon={Pencil}>
-            Edit
-          </Btn>
+          {mode === 'Edit' ? (
+            <>
+              <Btn variant="quiet" icon={X} onClick={() => setMode('View')}>Cancel</Btn>
+              <Btn variant="primary" icon={Check} onClick={() => setMode('View')}>Save</Btn>
+            </>
+          ) : (
+            <>
+              <span className="text-[11.5px] text-faint">Your edits always win over {helper.name}&apos;s</span>
+              <Btn variant="primary" icon={Pencil} onClick={() => handleModeChange('Edit')}>
+                Edit
+              </Btn>
+            </>
+          )}
         </>
       }
     >
       <div className="flex w-full items-center gap-[10px] px-[20px] py-[10px]">
-        <Segmented items={MODES} value={mode} onChange={setMode} />
+        <Segmented items={MODES} value={mode} onChange={handleModeChange} />
         <span className="h-px flex-1" />
         <span className="flex items-center gap-[6px]">
           <Mascot helper size={18} radius={7} area={helper.area} />
           <span className="text-[12px] text-muted">Updated by {helper.name} · 2 days ago</span>
         </span>
       </div>
-      <div className="flex w-full flex-1 flex-col gap-[12px] px-[28px] pt-[8px] pb-[24px]">
+      {mode === 'Edit' && (
+        <div className="flex w-full flex-1 flex-col px-[28px] pt-[8px] pb-[24px]">
+          <textarea
+            autoFocus
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="w-full flex-1 resize-none rounded-md bg-soft px-[14px] py-[12px] font-mono text-[12.5px] leading-[1.6] text-ink-2 outline-1 -outline-offset-1 outline-ink"
+            rows={16}
+          />
+        </div>
+      )}
+      {mode !== 'Edit' && <div className="flex w-full flex-1 flex-col gap-[12px] px-[28px] pt-[8px] pb-[24px]">
         <H2>Dues questions</H2>
         <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2">When a resident asks how much they owe:</p>
         <List
@@ -102,7 +140,7 @@ export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onCl
         )}
         <H2>Always hand to the owner</H2>
         <List items={['Disputes about money or fines', 'Complaints about an RT head', 'Anything legal']} />
-      </div>
+      </div>}
     </Drawer>
   )
 }

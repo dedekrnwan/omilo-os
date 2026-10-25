@@ -20,11 +20,11 @@ export function GoogleNotAllowedPage() {
           </p>
         </div>
       </div>
-      <GoogleButton>Use another Google account</GoogleButton>
-      <AuthButton variant="secondary" icon={Mail}>
+      <GoogleButton to="/auth/sign-in">Use another Google account</GoogleButton>
+      <AuthButton variant="secondary" icon={Mail} to="/auth/check-email">
         Email me a code instead
       </AuthButton>
-      <AuthLinks q="Wrong company?" a="Ask an admin for an invite" />
+      <AuthLinks q="Wrong company?" a="Ask an admin for an invite" to="/auth/invite" />
     </AuthLayout>
   )
 }

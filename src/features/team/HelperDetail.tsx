@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, Zap } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
@@ -66,9 +66,26 @@ function Pill({
   )
 }
 
+const MODELS = [
+  { id: 'Opus 5.5', icon: Zap, hint: undefined },
+  { id: 'Sonnet 5.5', icon: Zap, hint: '~3× cheaper' },
+  { id: 'Haiku 5.5', icon: Feather, hint: 'Fastest' },
+] as const
+
 /** Model menu — pen dcvvQ Popover TTWx4 (260 wide, 6px under the pill). */
-function ModelMenu({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+function ModelMenu({
+  helper,
+  currentModel,
+  onPick,
+  onClose,
+}: {
+  helper: HelperRecord
+  currentModel: string
+  onPick: (m: string) => void
+  onClose: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
   const [hover, setHover] = useState<string | null>(null)
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
@@ -82,12 +99,7 @@ function ModelMenu({ helper, onClose }: { helper: HelperRecord; onClose: () => v
       window.removeEventListener('keydown', onKey)
     }
   }, [onClose])
-  const models = [
-    { id: 'Opus 5.5', icon: Check, hint: undefined },
-    { id: 'Sonnet 5.5', icon: Zap, hint: '~3× cheaper' },
-    { id: 'Haiku 5.5', icon: Feather, hint: 'Fastest' },
-  ]
-  const hl = hover ?? helper.model
+  const hl = hover ?? currentModel
   return (
     <div
       ref={ref}
@@ -99,25 +111,136 @@ function ModelMenu({ helper, onClose }: { helper: HelperRecord; onClose: () => v
       <div className="px-[10px] pt-[6px] pb-[2px] text-[11px] font-medium tracking-[0.55px] text-muted">
         {`MODEL FOR ${helper.name.toUpperCase()}`}
       </div>
-      {models.map((m) => (
+      {MODELS.map((m) => (
         <button
           key={m.id}
           type="button"
           role="menuitemradio"
-          aria-checked={helper.model === m.id}
+          aria-checked={currentModel === m.id}
           onPointerEnter={() => setHover(m.id)}
-          onClick={onClose}
+          onClick={() => { onPick(m.id); onClose() }}
           className={`${menuItemClass} ${hl === m.id ? 'bg-hover' : ''}`}
         >
-          <MenuItemBody icon={helper.model === m.id ? Check : m.icon} label={m.id} hint={m.hint} />
+          <MenuItemBody icon={currentModel === m.id ? Check : m.icon} label={m.id} hint={m.hint} />
         </button>
       ))}
       <MenuSeparatorLine />
-      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
+      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onPick(helper.model); onClose() }}>
         <MenuItemBody icon={Building2} label="Use company default" />
       </button>
-      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
+      <button
+        type="button"
+        role="menuitem"
+        className={menuItemClass}
+        onClick={() => {
+          onClose()
+          void navigate({ to: '/control-panel/$section', params: { section: 'ai-accounts' } })
+        }}
+      >
         <MenuItemBody icon={ArrowUpRight} label="Manage AI accounts" />
+      </button>
+    </div>
+  )
+}
+
+/** Role selector menu — opens below the Role pill, local state only. */
+const ROLE_OPTIONS = [
+  'Chief of Staff',
+  'Dev',
+  'Growth',
+  'Sales',
+  'Finance',
+  'Support',
+  'Ops',
+  'Custom',
+] as const
+
+function RoleMenu({
+  currentRole,
+  onPick,
+  onClose,
+}: {
+  currentRole: string
+  onPick: (r: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Select role"
+      className={`absolute top-[calc(100%+6px)] left-0 z-40 flex w-[220px] flex-col ${menuSurface}`}
+    >
+      <div className="px-[10px] pt-[6px] pb-[2px] text-[11px] font-medium tracking-[0.55px] text-muted">ROLE</div>
+      {ROLE_OPTIONS.map((r) => (
+        <button
+          key={r}
+          type="button"
+          role="menuitemradio"
+          aria-checked={currentRole === r}
+          onClick={() => { onPick(r); onClose() }}
+          className={`${menuItemClass} ${currentRole === r ? 'bg-hover' : ''}`}
+        >
+          <MenuItemBody icon={currentRole === r ? Check : undefined} label={r} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** More-options menu for a helper page. */
+function MoreMenu({
+  helperName,
+  paused,
+  onTogglePause,
+  onLetGo,
+  onClose,
+}: {
+  helperName: string
+  paused: boolean
+  onTogglePause: () => void
+  onLetGo: () => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="More actions"
+      className={`absolute top-[calc(100%+4px)] right-0 z-40 flex w-[200px] flex-col ${menuSurface}`}
+    >
+      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onTogglePause(); onClose() }}>
+        <MenuItemBody icon={paused ? Play : Pause} label={paused ? `Resume ${helperName}` : `Pause ${helperName}`} />
+      </button>
+      <MenuSeparatorLine />
+      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onLetGo(); onClose() }}>
+        <MenuItemBody icon={UserMinus} label={`Let ${helperName} go`} danger />
       </button>
     </div>
   )
@@ -140,6 +263,13 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
   const setState = (st?: HelperState) => go({ state: st })
   const close = () => setState(undefined)
 
+  // Local state for controls
+  const [paused, setPaused] = useState(false)
+  const [model, setModel] = useState(helper.model)
+  const [role, setRole] = useState(helper.role)
+  const [showRoleMenu, setShowRoleMenu] = useState(false)
+  const [showMoreMenu, setShowMoreMenu] = useState(false)
+
   return (
     <>
       <Inset label={`Team · ${helper.name}`}>
@@ -153,10 +283,25 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
                 <span className="text-[13px]">Team</span>
               </Link>
               <span className="h-px flex-1" />
-              <Btn icon={Pause} h={30}>
-                Pause
+              <Btn icon={paused ? Play : Pause} h={30} onClick={() => setPaused((p) => !p)}>
+                {paused ? 'Resume' : 'Pause'}
               </Btn>
-              <IconBtn icon={Ellipsis} label="More actions" />
+              <div className="relative">
+                <IconBtn
+                  icon={Ellipsis}
+                  label="More actions"
+                  onClick={() => setShowMoreMenu((v) => !v)}
+                />
+                {showMoreMenu && (
+                  <MoreMenu
+                    helperName={helper.name}
+                    paused={paused}
+                    onTogglePause={() => setPaused((p) => !p)}
+                    onLetGo={() => { setShowMoreMenu(false); setState('letgo') }}
+                    onClose={() => setShowMoreMenu(false)}
+                  />
+                )}
+              </div>
             </div>
 
             {/* Hero */}
@@ -164,15 +309,36 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
               <Mascot helper size={80} radius={18} area={helper.area} title={helper.name} />
               <h2 className="m-0 font-display text-[28px] font-semibold tracking-[-0.5px] text-ink">{helper.name}</h2>
               <div className="flex items-center gap-[10px]">
-                <Pill icon={helper.roleIcon} label={`Role · ${helper.role}`} />
+                <div className="relative">
+                  <Pill
+                    icon={helper.roleIcon}
+                    label={`Role · ${role}`}
+                    active={showRoleMenu}
+                    onClick={() => setShowRoleMenu((v) => !v)}
+                  />
+                  {showRoleMenu && (
+                    <RoleMenu
+                      currentRole={role}
+                      onPick={setRole}
+                      onClose={() => setShowRoleMenu(false)}
+                    />
+                  )}
+                </div>
                 <div className="relative">
                   <Pill
                     icon={Cpu}
-                    label={helper.model}
+                    label={model}
                     active={state === 'model'}
                     onClick={() => setState(state === 'model' ? undefined : 'model')}
                   />
-                  {state === 'model' && <ModelMenu helper={helper} onClose={close} />}
+                  {state === 'model' && (
+                    <ModelMenu
+                      helper={helper}
+                      currentModel={model}
+                      onPick={setModel}
+                      onClose={close}
+                    />
+                  )}
                 </div>
                 <StatusChip status={helper.status} />
               </div>

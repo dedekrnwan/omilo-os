@@ -1,8 +1,28 @@
+import { useCallback, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 import { ChevronDown, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Topbar } from '../../ui/ds/Frame'
 import { useEscapeKey } from '../../ui/ds/useEscapeKey'
+
+// ── Dirty-state hook ─────────────────────────────────────────────────────────
+
+/**
+ * Minimal dirty-state hook for the SaveBar.
+ * - `markDirty()` — call whenever a setting changes.
+ * - `save()` — clears dirty (callers can also show a toast).
+ * - `discard()` — resets via the provided `reset` callback, then clears dirty.
+ */
+export function useDirtyState(reset?: () => void) {
+  const [dirty, setDirty] = useState(false)
+  const markDirty = useCallback(() => setDirty(true), [])
+  const save = useCallback(() => setDirty(false), [])
+  const discard = useCallback(() => {
+    reset?.()
+    setDirty(false)
+  }, [reset])
+  return { dirty, markDirty, save, discard }
+}
 
 /*
  * Control-panel primitives, mirroring the pen components used by every
@@ -245,13 +265,21 @@ export function PageShell({
   children,
   gap = 18,
   saveBar,
+  dirty,
+  onSave,
+  onDiscard,
   width = 860,
   pad = '20px 0 16px 0',
 }: {
   crumb: string
   children: ReactNode
   gap?: number
+  /** Show the save bar. */
   saveBar?: boolean
+  /** Whether there are unsaved changes (passed down from the section). */
+  dirty?: boolean
+  onSave?: () => void
+  onDiscard?: () => void
   width?: number
   pad?: string
 }) {
@@ -263,7 +291,7 @@ export function PageShell({
           {children}
         </div>
       </div>
-      {saveBar && <SaveBar />}
+      {saveBar && <SaveBar dirty={dirty} onSave={onSave} onDiscard={onDiscard} />}
     </>
   )
 }
@@ -382,12 +410,22 @@ export function Row({
   )
 }
 
-export function SaveBar({ state = 'No unsaved changes' }: { state?: string }) {
+export function SaveBar({
+  dirty = false,
+  onSave,
+  onDiscard,
+}: {
+  dirty?: boolean
+  onSave?: () => void
+  onDiscard?: () => void
+}) {
   return (
     <div className={`flex w-full shrink-0 items-center gap-[8px] px-[20px] py-[10px] ${lineTop}`}>
-      <span className="min-w-0 flex-1 text-[12px] text-muted">{state}</span>
-      <PenButton>Discard</PenButton>
-      <PenButton variant="primary">Save changes</PenButton>
+      <span className="min-w-0 flex-1 text-[12px] text-muted">
+        {dirty ? 'Unsaved changes' : 'No unsaved changes'}
+      </span>
+      <PenButton disabled={!dirty} onClick={onDiscard}>Discard</PenButton>
+      <PenButton variant="primary" disabled={!dirty} onClick={onSave}>Save changes</PenButton>
     </div>
   )
 }

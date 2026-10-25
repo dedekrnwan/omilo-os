@@ -1,5 +1,6 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -12,8 +13,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
+import { useChatStore } from '../../app/store'
 import { ChatChannelLayout } from './ChatChannelLayout'
 import { ChatIndexRoute, ChatSessionRoute } from './ChatRoute'
+import { ArchivedRoute } from './ArchivedRoute'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,9 +80,16 @@ function makeTestRouter(
     component: ChatSessionRoute,
   })
 
+  // Archived child — renders the archived drawer
+  const chatArchivedRoute = createRoute({
+    getParentRoute: () => chatChannelRoute,
+    path: 'archived',
+    component: ArchivedRoute,
+  })
+
   const routeTree = rootRoute.addChildren([
     chatRoute.addChildren([
-      chatChannelRoute.addChildren([chatChannelIndexRoute, chatSessionRoute]),
+      chatChannelRoute.addChildren([chatChannelIndexRoute, chatSessionRoute, chatArchivedRoute]),
     ]),
   ])
 
@@ -240,6 +250,166 @@ describe('ChatRoute — unknown channel id', () => {
       const alert = screen.queryByRole('alert') ?? screen.queryByText(/not found/i)
       expect(alert).not.toBeNull()
     })
+  })
+})
+
+// ── Archive / restore via useChatStore (state-layer tests) ──────────────────
+
+describe('Archive / restore — useChatStore', () => {
+  beforeEach(() => {
+    // Reset chat store before each test
+    useChatStore.setState({
+      overrides: {},
+      archived: [],
+      removedStaticIds: new Set(),
+      newFolders: [],
+    })
+  })
+
+  test('archiveSession adds the session to the archived list', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    const { archived, overrides } = useChatStore.getState()
+    expect(archived).toHaveLength(1)
+    expect(archived[0].id).toBe('sess-passkey')
+    expect(archived[0].title).toBe('Passkey rollout plan')
+    expect(overrides['sess-passkey']?.archived).toBe(true)
+  })
+
+  test('restoreSession removes the session from archived and clears the flag', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    useChatStore.getState().restoreSession('sess-passkey')
+    const { archived, overrides } = useChatStore.getState()
+    expect(archived).toHaveLength(0)
+    expect(overrides['sess-passkey']?.archived).toBe(false)
+  })
+
+  test('archiving then restoring leaves no other sessions affected', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
+    useChatStore.getState().restoreSession('sess-passkey')
+    const { archived } = useChatStore.getState()
+    expect(archived).toHaveLength(1)
+    expect(archived[0].id).toBe('sess-investor')
+  })
+
+  test('deleteArchived removes a specific entry without affecting others', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
+    useChatStore.getState().deleteArchived('sess-passkey')
+    const { archived } = useChatStore.getState()
+    expect(archived).toHaveLength(1)
+    expect(archived[0].id).toBe('sess-investor')
+  })
+
+  test('deleteAllArchived clears all entries', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
+    useChatStore.getState().deleteAllArchived()
+    expect(useChatStore.getState().archived).toHaveLength(0)
+  })
+
+  test('patchSession renames a session', () => {
+    useChatStore.getState().patchSession('sess-passkey', { title: 'Renamed chat' })
+    expect(useChatStore.getState().overrides['sess-passkey']?.title).toBe('Renamed chat')
+  })
+
+  test('patchSession can pin a session', () => {
+    useChatStore.getState().patchSession('sess-passkey', { pinned: true })
+    expect(useChatStore.getState().overrides['sess-passkey']?.pinned).toBe(true)
+  })
+})
+
+// ── Step 4: archive navigation (router-level) ───────────────────────────────
+
+describe('ChatRoute — archive navigates away from session', () => {
+  beforeEach(() => {
+    useChatStore.setState({
+      overrides: {},
+      archived: [],
+      removedStaticIds: new Set(),
+      newFolders: [],
+    })
+  })
+
+  test('archiving a chat session navigates to /chat/$channelId/archived', async () => {
+    const user = userEvent.setup()
+    const { router } = makeTestRouter('/chat/ch-engineering/sess-passkey')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    // Wait for session content to appear
+    await waitFor(() => {
+      expect(screen.getByText(/WebAuthn on the legacy Android app/i)).toBeInTheDocument()
+    })
+
+    // Open the "…" ChatMenu and click "Archive chat"
+    const moreButton = screen.getByRole('button', { name: /more options/i })
+    await user.click(moreButton)
+
+    const archiveItem = await screen.findByText('Archive chat')
+    await user.click(archiveItem)
+
+    // Router should have navigated to the archived route for this channel
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/chat/ch-engineering/archived')
+    })
+  })
+
+  test('deleting a chat session navigates to /chat/$channelId (channel index)', async () => {
+    const user = userEvent.setup()
+    const { router } = makeTestRouter('/chat/ch-engineering/sess-passkey')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/WebAuthn on the legacy Android app/i)).toBeInTheDocument()
+    })
+
+    // Open the "…" ChatMenu and click "Delete chat"
+    const moreButton = screen.getByRole('button', { name: /more options/i })
+    await user.click(moreButton)
+
+    const deleteItem = await screen.findByText('Delete chat')
+    await user.click(deleteItem)
+
+    // Confirm the delete in the dialog
+    const confirmButton = await screen.findByRole('button', { name: /^delete$/i })
+    await user.click(confirmButton)
+
+    // Router should have navigated back to the channel index
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/chat/ch-engineering')
+    })
+  })
+})
+
+describe('ChatRoute — deleteAllArchived clears static entries', () => {
+  beforeEach(() => {
+    useChatStore.setState({
+      overrides: {},
+      archived: [],
+      removedStaticIds: new Set(),
+      newFolders: [],
+    })
+  })
+
+  test('deleteAllArchived with staticIds adds static IDs to removedStaticIds', () => {
+    const staticIds = ['a-1', 'a-2', 'a-3']
+    useChatStore.getState().deleteAllArchived(staticIds)
+    const { removedStaticIds, archived } = useChatStore.getState()
+    expect(archived).toHaveLength(0)
+    staticIds.forEach(id => expect(removedStaticIds.has(id)).toBe(true))
+  })
+
+  test('deleteAllArchived clears both dynamic and static entries together', () => {
+    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
+    const staticIds = ['a-1', 'a-2']
+    useChatStore.getState().deleteAllArchived(staticIds)
+    const { archived, removedStaticIds } = useChatStore.getState()
+    expect(archived).toHaveLength(0)
+    expect(removedStaticIds.has('sess-passkey')).toBe(true)
+    expect(removedStaticIds.has('a-1')).toBe(true)
+    expect(removedStaticIds.has('a-2')).toBe(true)
   })
 })
 

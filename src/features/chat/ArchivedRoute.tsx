@@ -3,9 +3,9 @@ import { notFound, useNavigate, useParams, useSearch } from '@tanstack/react-rou
 import * as Dialog from '@radix-ui/react-dialog'
 import { Archive, ArchiveRestore, MessageCircle, Search, Trash2, X } from 'lucide-react'
 import { useChannel } from '../../app/queries'
+import { useChatStore } from '../../app/store'
 import { IconButton } from '../../ui/ds/Button'
 import { NewChatHero } from './ChatRoute'
-import { ARCHIVED_COUNT } from './data'
 
 // ── Archived chats (pen `Chat · Archived chats` PHRy6 → Drawer xZuqV) ───────
 
@@ -16,7 +16,7 @@ interface ArchivedChat {
   archivedAt: string
 }
 
-const ARCHIVED_CHATS: ArchivedChat[] = [
+const STATIC_ARCHIVED_CHATS: ArchivedChat[] = [
   { id: 'a-1', title: 'Sprint 41 planning',       helper: 'Chief',   archivedAt: 'Sep 30' },
   { id: 'a-2', title: 'Old CI runner migration',  helper: 'Dev',     archivedAt: 'Sep 22' },
   { id: 'a-3', title: 'Logo refresh feedback',    helper: 'Grower',  archivedAt: 'Sep 18' },
@@ -60,7 +60,17 @@ function DrawerButton({
 }
 
 /** One archived chat (radius 8 · gap 10 · padding 10/8); hover reveals Restore + Delete. */
-function ArchivedChatRow({ chat, highlighted }: { chat: ArchivedChat; highlighted?: boolean }) {
+function ArchivedChatRow({
+  chat,
+  highlighted,
+  onRestore,
+  onDelete,
+}: {
+  chat: ArchivedChat
+  highlighted?: boolean
+  onRestore?: () => void
+  onDelete?: () => void
+}) {
   return (
     <div
       data-highlighted={highlighted || undefined}
@@ -74,10 +84,10 @@ function ArchivedChatRow({ chat, highlighted }: { chat: ArchivedChat; highlighte
         </span>
       </div>
       <div className="hidden shrink-0 items-center gap-[10px] group-hover:flex group-data-[highlighted]:flex">
-        <DrawerButton icon={ArchiveRestore} height={28} label={`Restore "${chat.title}"`}>
+        <DrawerButton icon={ArchiveRestore} height={28} label={`Restore "${chat.title}"`} onClick={onRestore}>
           Restore
         </DrawerButton>
-        <IconButton icon={Trash2} aria-label={`Delete "${chat.title}"`} />
+        <IconButton icon={Trash2} aria-label={`Delete "${chat.title}"`} onClick={onDelete} />
       </div>
     </div>
   )
@@ -97,8 +107,24 @@ export function ArchivedDrawer({
   highlightId?: string
 }) {
   const [query, setQuery] = useState('')
+  const { archived, removedStaticIds, restoreSession, deleteArchived, deleteAllArchived } = useChatStore()
   const q = query.trim().toLowerCase()
-  const chats = ARCHIVED_CHATS.filter((c) => c.title.toLowerCase().includes(q))
+
+  // Merge: static list + dynamic store entries. Dynamic ones go at top.
+  // Static entries that are in removedStaticIds (restored or deleted) are hidden.
+  const dynamicIds = new Set(archived.map(a => a.id))
+  const staticChats: ArchivedChat[] = STATIC_ARCHIVED_CHATS.filter(
+    c => !dynamicIds.has(c.id) && !removedStaticIds.has(c.id)
+  )
+  const dynamicChats: ArchivedChat[] = archived.map(a => ({
+    id: a.id,
+    title: a.title,
+    helper: 'Chief',
+    archivedAt: a.archivedAt,
+  }))
+  const allChats = [...dynamicChats, ...staticChats].filter(c => c.title.toLowerCase().includes(q))
+
+  const count = allChats.length
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -118,7 +144,7 @@ export function ArchivedDrawer({
                 Archived · {channelName}
               </Dialog.Title>
               <p className="m-0 text-[12.5px] text-muted">
-                {ARCHIVED_COUNT} chats · helpers don't reply in archived chats
+                {count} chats · helpers don't reply in archived chats
               </p>
             </div>
             <Dialog.Close asChild>
@@ -139,8 +165,18 @@ export function ArchivedDrawer({
               />
             </label>
             <div className="flex flex-col">
-              {chats.map((chat) => (
-                <ArchivedChatRow key={chat.id} chat={chat} highlighted={chat.id === highlightId} />
+              {allChats.map((chat) => (
+                <ArchivedChatRow
+                  key={chat.id}
+                  chat={chat}
+                  highlighted={chat.id === highlightId}
+                  onRestore={() => {
+                    // Dynamic entries: restore to active sessions. Static entries: just hide from archived view.
+                    if (dynamicIds.has(chat.id)) restoreSession(chat.id)
+                    else deleteArchived(chat.id)
+                  }}
+                  onDelete={() => deleteArchived(chat.id)}
+                />
               ))}
             </div>
             <p className="m-0 text-[12px] text-faint">
@@ -149,7 +185,7 @@ export function ArchivedDrawer({
           </div>
 
           <div className="flex w-full shrink-0 items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] px-[20px] py-[12px]">
-            <DrawerButton quiet icon={Trash2}>
+            <DrawerButton quiet icon={Trash2} onClick={() => deleteAllArchived(staticChats.map(c => c.id))}>
               Delete all
             </DrawerButton>
             <div className="h-px flex-1" />

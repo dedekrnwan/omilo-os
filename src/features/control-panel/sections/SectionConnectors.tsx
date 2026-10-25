@@ -1,5 +1,7 @@
-import { Ellipsis, Plus, Server } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Ellipsis, Link, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 
@@ -38,6 +40,33 @@ interface Props {
   onDialog: (d: DialogKind) => void
 }
 
+/** ⋯ options menu for a connected app row. */
+function ConnectorMoreMenu({ name }: { name: string }) {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" aria-label={`${name} options`} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
+          <Ellipsis size={14} aria-hidden />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+            <MenuItemBody icon={RefreshCw} label="Reconnect" />
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+            <MenuItemBody icon={Link} label="Copy webhook URL" />
+          </DropdownMenu.Item>
+          <MenuSeparatorLine />
+          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+            <MenuItemBody icon={Trash2} label="Disconnect" danger />
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
 export function SectionConnectors({ onDialog }: Props) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -74,9 +103,7 @@ export function SectionConnectors({ onDialog }: Props) {
                 label={c.statusLabel ?? (c.status === 'ok' ? 'Healthy' : 'Warning')}
                 color={c.status}
               />
-              <button type="button" aria-label={`${c.name} options`} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
-                <Ellipsis size={14} aria-hidden />
-              </button>
+              <ConnectorMoreMenu name={c.name} />
             </div>
           ))}
         </div>
@@ -93,7 +120,7 @@ export function SectionConnectors({ onDialog }: Props) {
                 <span className="text-[13px] font-medium text-ink">{app.name}</span>
                 <span className="text-[11px] text-muted">{app.desc}</span>
               </div>
-              <Button variant="secondary" height={28}>Connect</Button>
+              <Button variant="secondary" height={28} onClick={() => onDialog('connect-key')}>Connect</Button>
             </div>
           ))}
         </div>

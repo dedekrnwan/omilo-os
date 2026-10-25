@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   Archive,
@@ -19,11 +20,49 @@ import {
 } from 'lucide-react'
 import type { Channel, Session } from '../../core/domain/types'
 import { useChannelFolders, useChannelGoals, useChannelSessions, useChannels } from '../../app/queries'
+import { useChatStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { accents } from '../../ui/ds/accents'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import { ARCHIVED_COUNT, DEFAULT_OPEN_FOLDERS, SIDEBAR_GOAL_COUNT } from './data'
+
+/** Minimal create-folder dialog (local only). */
+function CreateFolderDialog({ open, onOpenChange, onConfirm }: { open: boolean; onOpenChange: (v: boolean) => void; onConfirm: (name: string) => void }) {
+  const [name, setName] = useState('')
+  function submit() {
+    const trimmed = name.trim()
+    if (trimmed) { onConfirm(trimmed); setName(''); onOpenChange(false) }
+  }
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0926]" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="fixed left-1/2 top-1/2 z-50 flex w-[360px] -translate-x-1/2 -translate-y-1/2 flex-col gap-[16px] rounded-lg bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924] focus:outline-none"
+        >
+          <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">New folder</Dialog.Title>
+          <input
+            autoFocus
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onOpenChange(false) }}
+            placeholder="Folder name"
+            aria-label="Folder name"
+            className="h-[36px] w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong"
+          />
+          <div className="flex justify-end gap-[8px]">
+            <Button variant="secondary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="primary" style={{ height: 32 }} onClick={submit}>Create</Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
 
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
@@ -62,12 +101,14 @@ function ChannelPopover({
   onSelect,
   onClose,
   onCreateChannel,
+  onManageChannels,
 }: {
   channels: Channel[]
   activeId: string
   onSelect: (id: string) => void
   onClose: () => void
   onCreateChannel: () => void
+  onManageChannels: () => void
 }) {
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -142,7 +183,7 @@ function ChannelPopover({
       </button>
       <button
         type="button"
-        onClick={onClose}
+        onClick={onManageChannels}
         className="flex w-full items-center gap-[10px] rounded-base px-[7px] py-[8px] text-left transition-colors hover:bg-hover"
       >
         <Settings2 size={15} aria-hidden className="text-ink-2" />
@@ -202,9 +243,11 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
   const { data: goals = [] } = useChannelGoals(channelId)
   const [popoverOpen, setPopoverOpen] = useState(state === 'switcher')
   const [createChannelOpen, setCreateChannelOpen] = useState(state === 'create-channel')
+  const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
+  const { createFolder } = useChatStore()
   const channel = channels.find((c) => c.id === channelId)
   const activeSession = sessions.find((s) => s.id === sessionId)
 
@@ -276,6 +319,10 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
           onSelect={selectChannel}
           onClose={() => setPopoverOpen(false)}
           onCreateChannel={() => setCreateChannelOpen(true)}
+          onManageChannels={() => {
+            setPopoverOpen(false)
+            void navigate({ to: '/control-panel/$section', params: { section: 'channels' } })
+          }}
         />
       )}
 
@@ -330,7 +377,7 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
       {/* Folders + Recent scroll together when the window is short */}
       <div className="-mx-[8px] flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto px-[8px]">
         <NavGroup>
-          <GroupLabel label="FOLDERS" action={{ label: 'New folder' }} />
+          <GroupLabel label="FOLDERS" action={{ label: 'New folder', onClick: () => setCreateFolderOpen(true) }} />
           {folders.map((f) => {
             const open = isOpen(f.id)
             const chats = byFolder[f.id] ?? []
@@ -413,6 +460,14 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
       <CreateChannelDialog
         open={createChannelOpen}
         onOpenChange={setCreateChannelOpen}
+      />
+
+      <CreateFolderDialog
+        open={createFolderOpen}
+        onOpenChange={setCreateFolderOpen}
+        onConfirm={(name) => {
+          createFolder(channelId, name)
+        }}
       />
     </SidebarFrame>
   )

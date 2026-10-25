@@ -59,8 +59,8 @@ export function AcceptInvitePage() {
           </dd>
         </div>
       </dl>
-      <GoogleButton>Accept with Google</GoogleButton>
-      <AuthButton variant="secondary" icon={Mail}>
+      <GoogleButton to="/office/inbox">Accept with Google</GoogleButton>
+      <AuthButton variant="secondary" icon={Mail} to="/auth/check-email">
         Accept with an email code
       </AuthButton>
       <p className="w-full text-center text-[12px] text-faint">Invite expires in 6 days</p>

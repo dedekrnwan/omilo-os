@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from '@tanstack/react-router'
 import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle, PanelRight, ScrollText, ShieldCheck, Target, UserPlus, X } from 'lucide-react'
 import type { Model, SessionParticipant } from '../../core/domain/types'
-import { useChannel, useChannelFolders, useMessages, useSession } from '../../app/queries'
+import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession } from '../../app/queries'
+import { useChatStore } from '../../app/store'
 import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
@@ -135,7 +137,8 @@ function Toast({ title, body, onClose }: { title: string; body: string; onClose:
 }
 
 /** pen `Compacted marker` (GNF2E): hairline pill + "What Chief kept" summary, top of the thread. */
-function CompactedMarker() {
+function CompactedMarker({ onViewFullHistory }: { onViewFullHistory?: () => void }) {
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="flex w-[680px] max-w-[calc(100%-48px)] flex-col gap-[8px]">
       <div role="note" aria-label="Context compacted" className="flex w-full items-center gap-[10px]">
@@ -153,14 +156,24 @@ function CompactedMarker() {
           <ScrollText size={13} aria-hidden className="text-muted" />
           <span className="text-[12.5px] font-semibold text-ink">What Chief kept</span>
           <span className="h-px flex-1" />
-          <button type="button" className="text-[12px] text-link hover:underline">
-            View full history
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => { setExpanded(v => !v); onViewFullHistory?.() }}
+            className="text-[12px] text-link hover:underline"
+          >
+            {expanded ? 'Collapse' : 'View full history'}
           </button>
         </div>
         <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
           Goal: passkeys for 80% of users by Nov 28 · Dev owns web + iOS (Nov 14) and Android fallback (Nov 20) ·
           Grower drafts resident comms · 3 decisions and 2 files kept word-for-word.
         </p>
+        {expanded && (
+          <p className="m-0 text-[12.5px] leading-[1.5] text-muted">
+            (Full history is stored locally — in a real app, older messages would load here.)
+          </p>
+        )}
       </div>
     </div>
   )
@@ -189,11 +202,21 @@ function BesideInset({ anchor, children }: { anchor: React.RefObject<HTMLElement
  */
 export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [screen] = useState(readScreenState)
+  const navigate = useNavigate()
   const { data: messages, isLoading } = useMessages(sessionId)
   const { data: session } = useSession(sessionId)
   const channelId = session?.channelId ?? ''
   const { data: channel } = useChannel(channelId)
   const { data: folders = [] } = useChannelFolders(channelId)
+  const { data: goals = [] } = useChannelGoals(channelId)
+
+  // Chat store mutations
+  const { overrides, patchSession, archiveSession } = useChatStore()
+  const override = overrides[sessionId]
+  // Effective title: from store override, then session fixture
+  const effectiveTitle = override?.title ?? session?.title ?? ''
+  // Effective goal: from store override (can be null to clear), then session fixture
+  const effectiveGoal = override && 'goal' in override ? override.goal : session?.goal
 
   // Model state keyed to sessionId — reset whenever sessionId changes
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
@@ -212,6 +235,15 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [tasksCreated, setTasksCreated] = useState(screen === 'tasks')
   const [toast, setToast] = useState(screen === 'tasks')
 
+  // Chat menu dialog states
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const [goalPickerOpen, setGoalPickerOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [actionToast, setActionToast] = useState<string | null>(null)
+  const [autoCompact, setAutoCompact] = useState(true)
+
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -220,7 +252,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   }, [messages])
 
   const area = channelName ?? channel?.name ?? 'channel'
-  const folder = folders.find((f) => f.id === session?.folderId)
+  const folder = folders.find((f) => f.id === (override?.folderId ?? session?.folderId))
   const meta = [channel?.name, folder?.name].filter(Boolean).join(' / ')
   const participants = session?.participants?.length ? session.participants : [CHIEF]
   const composerState = screen ? COMPOSER_STATE[screen] : undefined
@@ -230,9 +262,78 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   // With the 600px browser beside it the thread and composer keep 28px gutters (pen E5554m).
   const col = browser ? 'w-[680px] max-w-[calc(100%-56px)]' : 'w-[680px] max-w-[calc(100%-48px)]'
 
+  const isPinned = override?.pinned ?? false
+
   function createTasks() {
     setTasksCreated(true)
     setToast(true)
+  }
+
+  // ── ChatMenu handlers ────────────────────────────────────────────────────────
+
+  function handleRename() {
+    setRenameValue(effectiveTitle)
+    setRenameOpen(true)
+  }
+
+  function commitRename() {
+    const trimmed = renameValue.trim()
+    if (trimmed) patchSession(sessionId, { title: trimmed })
+    setRenameOpen(false)
+  }
+
+  function handleMoveToFolder() {
+    setFolderPickerOpen(true)
+  }
+
+  function handleLinkToGoal() {
+    setGoalPickerOpen(true)
+  }
+
+  function handlePinToSidebar() {
+    patchSession(sessionId, { pinned: !isPinned })
+    setActionToast(isPinned ? 'Unpinned from sidebar' : 'Pinned to sidebar')
+  }
+
+  function handleExportMarkdown() {
+    const title = effectiveTitle || 'chat'
+    const lines: string[] = [`# ${title}`, '']
+    for (const m of messages ?? []) {
+      if (m.system) continue
+      const who = m.author.kind === 'you' ? 'You' : m.author.name
+      lines.push(`**${who}:** ${m.content}`, '')
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title.replace(/\s+/g, '-').toLowerCase()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    setActionToast('Exported as Markdown')
+  }
+
+  function handleCopyLink() {
+    void navigator.clipboard.writeText(window.location.href)
+    setActionToast('Link copied')
+  }
+
+  function handleArchive() {
+    archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
+    setActionToast('Chat archived')
+    void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
+  }
+
+  function handleDelete() {
+    setDeleteConfirmOpen(true)
+  }
+
+  function confirmDelete() {
+    // Mark as archived+deleted in store — simplest mock-only approach
+    archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
+    setDeleteConfirmOpen(false)
+    setActionToast('Chat deleted')
+    void navigate({ to: '/chat/$channelId', params: { channelId } })
   }
 
   return (
@@ -245,9 +346,121 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
         setBrowserOpen(false)
       }}
     >
+      {/* Rename dialog */}
+      {renameOpen && (
+        <div
+          role="dialog"
+          aria-label="Rename chat"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]"
+        >
+          <div className="flex w-[380px] flex-col gap-[16px] rounded-lg bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Rename chat</h3>
+            <input
+              autoFocus
+              type="text"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenameOpen(false) }}
+              aria-label="Chat title"
+              className="h-[36px] w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong"
+            />
+            <div className="flex justify-end gap-[8px]">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setRenameOpen(false)}>Cancel</Button>
+              <Button variant="primary" style={{ height: 32 }} onClick={commitRename}>Rename</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Folder picker dialog */}
+      {folderPickerOpen && (
+        <div
+          role="dialog"
+          aria-label="Move to folder"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]"
+        >
+          <div className="flex w-[320px] flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Move to folder</h3>
+            <div className="flex flex-col gap-[4px]">
+              {folders.map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => { patchSession(sessionId, { folderId: f.id }); setFolderPickerOpen(false); setActionToast(`Moved to "${f.name}"`) }}
+                  className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
+                >
+                  {f.name}
+                </button>
+              ))}
+              {folders.length === 0 && <p className="m-0 text-[13px] text-muted">No folders in this channel.</p>}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setFolderPickerOpen(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Goal picker dialog */}
+      {goalPickerOpen && (
+        <div
+          role="dialog"
+          aria-label="Link to goal"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]"
+        >
+          <div className="flex w-[360px] flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Link to goal</h3>
+            <div className="flex flex-col gap-[4px]">
+              {goals.map(g => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => { patchSession(sessionId, { goal: g.title }); setGoalPickerOpen(false); setActionToast(`Linked to "${g.title}"`) }}
+                  className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
+                >
+                  <Target size={13} aria-hidden className="text-ok" />
+                  {g.title}
+                </button>
+              ))}
+              {goals.length === 0 && <p className="m-0 text-[13px] text-muted">No goals in this channel.</p>}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setGoalPickerOpen(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm dialog */}
+      {deleteConfirmOpen && (
+        <div
+          role="dialog"
+          aria-label="Delete chat"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]"
+        >
+          <div className="flex w-[360px] flex-col gap-[16px] rounded-lg bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Delete chat?</h3>
+            <p className="m-0 text-[13px] text-muted">"{effectiveTitle}" will be permanently deleted.</p>
+            <div className="flex justify-end gap-[8px]">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+              <Button style={{ height: 32, background: 'var(--color-bad)', color: '#fff' }} onClick={confirmDelete}>Delete</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action toast */}
+      {actionToast && (
+        <Toast title={actionToast} body="" onClose={() => setActionToast(null)} />
+      )}
+
       <Topbar
         icon={MessageCircle}
-        title={session?.title ?? ''}
+        title={effectiveTitle}
         meta={meta || undefined}
         actions={
           <div className="flex items-center gap-[10px]">
@@ -258,19 +471,29 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 ))}
               </div>
             )}
-            {session?.goal && !browser && (
+            {effectiveGoal && !browser && (
               <span
-                aria-label={`Linked goal: ${session.goal}`}
+                aria-label={`Linked goal: ${effectiveGoal}`}
                 className="inline-flex items-center gap-[6px] rounded-pill bg-soft px-[10px] py-[5px] outline-1 -outline-offset-1 outline-line-strong"
               >
                 <Target size={13} aria-hidden className="text-ok" />
-                <span className="text-[12px] font-medium whitespace-nowrap text-ink-2">{session.goal}</span>
+                <span className="text-[12px] font-medium whitespace-nowrap text-ink-2">{effectiveGoal}</span>
               </span>
             )}
             <Button variant="secondary" icon={UserPlus} onClick={() => setShareOpen(true)}>
               Share
             </Button>
-            <ChatMenu defaultOpen={screen === 'chat-menu'}>
+            <ChatMenu
+              defaultOpen={screen === 'chat-menu'}
+              onRename={handleRename}
+              onMoveToFolder={handleMoveToFolder}
+              onLinkToGoal={handleLinkToGoal}
+              onPinToSidebar={handlePinToSidebar}
+              onExportMarkdown={handleExportMarkdown}
+              onCopyLink={handleCopyLink}
+              onArchive={handleArchive}
+              onDelete={handleDelete}
+            >
               <button
                 type="button"
                 aria-label="More options"
@@ -319,11 +542,11 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
           <MessageList
             messages={messages}
             columnClass={col}
-            before={screen === 'compacted' ? <CompactedMarker /> : undefined}
+            before={screen === 'compacted' ? <CompactedMarker onViewFullHistory={() => setActionToast('Loading full history…')} /> : undefined}
             onTasksAction={createTasks}
             replaceActions={
-              tasksCreated && session?.goal ? (
-                <TasksCreated goal={session.goal} onUndo={() => setTasksCreated(false)} />
+              tasksCreated && effectiveGoal ? (
+                <TasksCreated goal={effectiveGoal} onUndo={() => setTasksCreated(false)} />
               ) : undefined
             }
           />
@@ -340,6 +563,9 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             onModelChange={setSelectedModel}
             contextUsed={contextUsed}
             contextAlmostFull={screen === 'almost-full'}
+            autoCompact={autoCompact}
+            onAutoCompactToggle={() => setAutoCompact(v => !v)}
+            onCompactNow={() => setActionToast('Context compacted')}
             initialText={composerState?.text}
             initialPopover={composerState?.popover}
             initialMenu={composerState?.menu}

@@ -15,8 +15,8 @@ export function ConfirmEmailPage() {
         sub="We sent a 6-digit code to dede@saga.co.id to confirm it’s yours. It expires in 10 minutes."
       />
       <CodeRow digits="482" caret={3} />
-      <AuthButton>Confirm email</AuthButton>
-      <ResendRow />
+      <AuthButton to="/auth/onboarding/company">Confirm email</AuthButton>
+      <ResendRow differentEmailTo="/auth/sign-up" />
       <AuthNote icon={<Info size={13} aria-hidden className="shrink-0 text-muted" />}>
         Can’t find it? Check spam, or open the link in the email instead.
       </AuthNote>

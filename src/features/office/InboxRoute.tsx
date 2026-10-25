@@ -515,9 +515,13 @@ function InboxList({ area }: { area: AreaFilter }) {
                   ))}
                 </>
               )}
-              <a href="#" className="self-start text-[12px] text-muted hover:text-ink-2">
+              <button
+                type="button"
+                onClick={() => void navigate({ to: '/control-panel/$section', params: { section: 'activity' } })}
+                className="self-start text-[12px] text-muted hover:text-ink-2"
+              >
                 See all activity →
-              </a>
+              </button>
             </aside>
           </div>
         )}

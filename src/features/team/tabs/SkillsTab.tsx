@@ -1,11 +1,61 @@
-import { useState } from 'react'
-import { Info, Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, Info, Plus } from 'lucide-react'
 import { SKILLS } from '../teamData'
 import type { HelperRecord, Skill } from '../teamData'
-import { Btn, IconTile, SelectField, Switch } from '../ui'
+import { Btn, IconTile, Switch } from '../ui'
+import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
+
+const PERMISSION_OPTIONS: Skill['permission'][] = ['Always allowed', 'Ask each time']
+
+function PermissionMenu({
+  value,
+  onPick,
+  onClose,
+}: {
+  value: Skill['permission']
+  onPick: (p: Skill['permission']) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Permission"
+      className={`absolute top-[calc(100%+4px)] right-0 z-40 flex w-[180px] flex-col ${menuSurface}`}
+    >
+      {PERMISSION_OPTIONS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          role="menuitemradio"
+          aria-checked={value === p}
+          className={`${menuItemClass} ${value === p ? 'bg-hover' : ''}`}
+          onClick={() => { onPick(p); onClose() }}
+        >
+          <MenuItemBody icon={value === p ? Check : undefined} label={p} />
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function SkillRow({ s, last }: { s: Skill; last: boolean }) {
   const [on, setOn] = useState(s.enabled)
+  const [permission, setPermission] = useState<Skill['permission']>(s.permission)
+  const [permOpen, setPermOpen] = useState(false)
   return (
     <div className={`flex w-full items-center gap-[12px] py-[12px] ${last ? '' : 'shadow-[inset_0_-1px_0_var(--color-line)]'}`}>
       <IconTile icon={s.icon} iconClass={on ? 'text-ink-2' : 'text-faint'} />
@@ -16,7 +66,23 @@ function SkillRow({ s, last }: { s: Skill; last: boolean }) {
         </div>
         <span className="text-[12px] text-muted">{s.description}</span>
       </div>
-      <SelectField value={s.permission} width={160} style={{ opacity: on ? 1 : 0.5 }} />
+      <div className="relative" style={{ opacity: on ? 1 : 0.5 }}>
+        <button
+          type="button"
+          onClick={() => on && setPermOpen((v) => !v)}
+          disabled={!on}
+          className="flex h-[36px] w-[160px] items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft disabled:cursor-not-allowed"
+        >
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{permission}</span>
+        </button>
+        {permOpen && (
+          <PermissionMenu
+            value={permission}
+            onPick={setPermission}
+            onClose={() => setPermOpen(false)}
+          />
+        )}
+      </div>
       <Switch on={on} onChange={setOn} label={`${s.name} on`} />
     </div>
   )
@@ -44,7 +110,7 @@ export function SkillsTab({ helper, onBrowse }: { helper: HelperRecord; onBrowse
       <div className="flex w-full items-center gap-[8px]">
         <Info size={13} aria-hidden className="text-muted" />
         <span className="text-[12px] text-muted">
-          “Ask each time” shows a skill confirmation card in the chat before it runs.
+          "Ask each time" shows a skill confirmation card in the chat before it runs.
         </span>
       </div>
     </div>

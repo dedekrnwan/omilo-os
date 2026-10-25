@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import * as Popover from '@radix-ui/react-popover'
 import type { ReactNode } from 'react'
 import type { ComponentType } from 'react'
@@ -280,32 +281,49 @@ function ContextRow({ item, active, onSelect }: { item: ContextItem; active?: bo
   )
 }
 
+const CONTEXT_ITEMS_BY_TAB: Record<string, ContextItem[]> = {
+  All: [...RECENT, ...FROM_APPS],
+  Docs: RECENT.filter(i => i.trail === 'Doc'),
+  Files: RECENT.filter(i => i.trail === 'File'),
+  Goals: RECENT.filter(i => i.trail === 'Goal'),
+  Jobs: RECENT.filter(i => i.trail === 'Job'),
+  Apps: FROM_APPS,
+}
+
 function ContextList({ onSelect }: ListProps) {
+  const [activeTab, setActiveTab] = useState<typeof CONTEXT_TABS[number]>('All')
+  const items = CONTEXT_ITEMS_BY_TAB[activeTab] ?? CONTEXT_ITEMS_BY_TAB['All']
   return (
         <>
           <div role="tablist" className="flex w-full gap-[4px] px-[6px] pt-[6px] pb-[8px] shadow-[inset_0_-1px_0_var(--color-line)]">
-            {CONTEXT_TABS.map((tab, i) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={i === 0}
-                className={`flex h-[24px] items-center rounded-pill px-[9px] text-[12px] font-medium ${
-                  i === 0 ? 'bg-ink text-primary-ink' : 'text-muted hover:bg-hover'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+            {CONTEXT_TABS.map((tab) => {
+              const active = tab === activeTab
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex h-[24px] items-center rounded-pill px-[9px] text-[12px] font-medium ${
+                    active ? 'bg-ink text-primary-ink' : 'text-muted hover:bg-hover'
+                  }`}
+                >
+                  {tab}
+                </button>
+              )
+            })}
           </div>
-          <Heading label="RECENT" />
-          {RECENT.map((item, i) => (
-            <ContextRow key={item.label} item={item} active={i === 0} onSelect={onSelect} />
-          ))}
-          <Heading label="FROM YOUR APPS" />
-          {FROM_APPS.map((item) => (
-            <ContextRow key={item.label} item={item} onSelect={onSelect} />
-          ))}
+          {items.length > 0 ? (
+            <>
+              <Heading label={activeTab === 'Apps' ? 'FROM YOUR APPS' : 'RECENT'} />
+              {items.map((item, i) => (
+                <ContextRow key={item.label} item={item} active={i === 0} onSelect={onSelect} />
+              ))}
+            </>
+          ) : (
+            <div className="px-[10px] py-[12px] text-[12px] text-muted">No items in this tab.</div>
+          )}
           <Footer hints={[['↵', 'attach'], ['tab', 'next type'], ['esc', 'close']]} />
         </>
   )

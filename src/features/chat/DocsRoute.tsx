@@ -7,7 +7,7 @@ import {
   Clock,
   Target,
 } from 'lucide-react'
-import { useParams } from '@tanstack/react-router'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { useChannel } from '../../app/queries'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
@@ -145,6 +145,7 @@ function DocListItem({
 type DocMode = 'edit' | 'both' | 'read'
 
 function DocViewer({ doc }: { doc: ActiveDoc }) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState<DocMode>('read')
   const [panelTab, setPanelTab] = useState<PanelTab>('Links')
 
@@ -184,9 +185,15 @@ function DocViewer({ doc }: { doc: ActiveDoc }) {
       if (part.startsWith('[[') && part.endsWith(']]')) {
         const label = part.slice(2, -2)
         return (
-          <a key={i} href="#" className="text-link underline underline-offset-2" onClick={(e) => e.preventDefault()}>
+          <button
+            key={i}
+            type="button"
+            className="text-link underline underline-offset-2 cursor-pointer"
+            aria-label={`Link to ${label}`}
+            onClick={() => void navigate({ to: '/office/docs' })}
+          >
             {label}
-          </a>
+          </button>
         )
       }
       return <span key={i}>{part}</span>
@@ -240,7 +247,11 @@ function DocViewer({ doc }: { doc: ActiveDoc }) {
           <div className="mt-[32px] flex items-center gap-[8px] rounded-base bg-soft px-[12px] py-[8px] outline-1 -outline-offset-1 outline-line-strong">
             <Mascot size={20} radius={5} area="brand" />
             <span className="text-[12px] text-muted">Agent memory is separate</span>
-            <button type="button" className="ml-auto text-[12px] text-link hover:underline">
+            <button
+              type="button"
+              className="ml-auto text-[12px] text-link hover:underline"
+              onClick={() => void navigate({ to: '/office/docs' })}
+            >
               Open the Knowledge View
             </button>
           </div>

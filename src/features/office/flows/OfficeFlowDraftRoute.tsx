@@ -2,8 +2,9 @@
 // Matches design ref: SgKgq.png
 // Canvas with "Draft: not running" state + Dev-authored annotations on nodes.
 // Reuses canvas node rendering from OfficeFlowCanvasRoute but adds annotation bubbles.
+// Interactive: node selection, test-run mock state, approve/discard.
 
-import { useState } from 'react'
+import { useReducer, useState } from 'react'
 import {
   ArrowLeft,
   ChevronRight,
@@ -11,7 +12,12 @@ import {
   MoreHorizontal,
   Trash2,
   Check,
+  CheckCircle2,
+  SkipForward,
+  X,
+  Clock,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import { Mascot } from '../../../ui/ds/Mascot'
 import {
@@ -19,13 +25,70 @@ import {
   CANVAS_EDGES,
   STEP_PALETTE,
   DRAFT_ANNOTATIONS,
+  TEST_RUN_RESULT,
 } from './data'
-import type { CanvasNode } from './data'
+import type { CanvasNode, NodeKind } from './data'
 import { NODE_COLORS, NODE_KIND_LABEL } from './shared'
+
+// ── Stable monotonic counter for node IDs ────────────────────────────────────
+let __nodeSeq = 0
+function nextNodeId() { return `n-new-${++__nodeSeq}` }
+
+// ── Draft local state ─────────────────────────────────────────────────────────
+
+interface DraftState {
+  nodes: CanvasNode[]
+  selectedNodeId: string | null
+  testRunStatus: 'idle' | 'running' | 'done'
+}
+
+type DraftAction =
+  | { type: 'SELECT_NODE'; id: string }
+  | { type: 'ADD_NODE'; kind: NodeKind; label: string }
+  | { type: 'START_TEST_RUN' }
+  | { type: 'FINISH_TEST_RUN' }
+  | { type: 'CLOSE_TEST_RUN' }
+
+function draftReducer(state: DraftState, action: DraftAction): DraftState {
+  switch (action.type) {
+    case 'SELECT_NODE':
+      return { ...state, selectedNodeId: action.id }
+    case 'ADD_NODE': {
+      const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y + n.height), 0)
+      const newNode: CanvasNode = {
+        id: nextNodeId(),
+        kind: action.kind,
+        label: action.label,
+        sublabel: '',
+        x: 320,
+        y: maxY + 40,
+        width: 220,
+        height: 68,
+      }
+      return { ...state, nodes: [...state.nodes, newNode], selectedNodeId: newNode.id }
+    }
+    case 'START_TEST_RUN':
+      return { ...state, testRunStatus: 'running' }
+    case 'FINISH_TEST_RUN':
+      return { ...state, testRunStatus: 'done' }
+    case 'CLOSE_TEST_RUN':
+      return { ...state, testRunStatus: 'idle' }
+    default:
+      return state
+  }
+}
 
 // ── Step palette (same as canvas, reused here inline) ────────────────────────
 
-function StepPalette() {
+function StepPalette({ onAddNode }: { onAddNode: (kind: NodeKind, label: string) => void }) {
+  const [search, setSearch] = useState('')
+  const filteredGroups = STEP_PALETTE.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      search.length === 0 || item.label.toLowerCase().includes(search.toLowerCase())
+    ),
+  })).filter((g) => g.items.length > 0)
+
   return (
     <div
       className="flex h-full w-[200px] shrink-0 flex-col gap-[12px] overflow-y-auto border-r border-line bg-app px-[8px] py-[10px]"
@@ -35,11 +98,12 @@ function StepPalette() {
         <input
           type="search"
           placeholder="Search steps and apps"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
           className="h-[28px] w-full rounded-sm bg-hover px-[8px] text-[12px] text-ink outline-none placeholder:text-faint"
-          readOnly
         />
       </div>
-      {STEP_PALETTE.map((group) => (
+      {filteredGroups.map((group) => (
         <div key={group.label} className="flex flex-col gap-px">
           <span className="px-[4px] pb-[4px] text-[10px] font-semibold tracking-[1px] text-faint">
             {group.label}
@@ -48,7 +112,9 @@ function StepPalette() {
             <button
               key={item.label}
               type="button"
+              onClick={() => onAddNode(item.kind, item.label)}
               className="flex h-[28px] w-full items-center gap-[8px] rounded-sm px-[8px] text-left text-[12.5px] text-ink-2 transition-colors hover:bg-hover"
+              aria-label={`Add ${item.label}`}
             >
               <span
                 className="size-[8px] shrink-0 rounded-full"
@@ -60,6 +126,73 @@ function StepPalette() {
           ))}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Test run overlay (draft version) ─────────────────────────────────────────
+
+function DraftTestRunOverlay({
+  status,
+  onClose,
+}: {
+  status: 'running' | 'done'
+  onClose: () => void
+}) {
+  const r = TEST_RUN_RESULT
+  if (status === 'running') {
+    return (
+      <div
+        className="absolute bottom-[60px] left-1/2 z-20 flex w-[420px] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-[0_8px_32px_#0C0A0929] outline-1 -outline-offset-1 outline-line-strong"
+        role="region"
+        aria-label="Test run running"
+        aria-live="polite"
+      >
+        <div className="flex items-center gap-[8px] px-[14px] py-[12px]">
+          <span className="inline-block size-[14px] animate-spin rounded-full border-2 border-line-strong border-t-primary shrink-0" aria-hidden />
+          <span className="text-[12.5px] font-medium text-ink">Running test…</span>
+          <button type="button" aria-label="Close" onClick={onClose} className="ml-auto flex size-[22px] items-center justify-center rounded-sm text-faint hover:bg-hover">
+            <X size={13} aria-hidden />
+          </button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="absolute bottom-[60px] left-1/2 z-20 flex w-[420px] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-[0_8px_32px_#0C0A0929] outline-1 -outline-offset-1 outline-line-strong"
+      role="region"
+      aria-label="Test run result"
+    >
+      <div className="flex items-center gap-[8px] border-b border-line px-[14px] py-[10px]">
+        <CheckCircle2 size={14} aria-hidden className="text-[var(--color-ok)] shrink-0" />
+        <span className="text-[12.5px] font-medium text-ink">Test passed</span>
+        <span className="text-[11.5px] text-muted">{r.dataNote}</span>
+        <button type="button" aria-label="Close test result" onClick={onClose} className="ml-auto flex size-[22px] shrink-0 items-center justify-center rounded-sm text-faint hover:bg-hover hover:text-muted">
+          <X size={13} aria-hidden />
+        </button>
+      </div>
+      <div className="flex flex-col divide-y divide-line">
+        {r.steps.map((step) => (
+          <div key={step.label} className="flex items-center gap-[10px] px-[14px] py-[9px]">
+            {step.skipped ? (
+              <SkipForward size={13} aria-hidden className="shrink-0 text-faint" />
+            ) : (
+              <CheckCircle2 size={13} aria-hidden className="shrink-0 text-[var(--color-ok)]" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{step.label}</span>
+            <span className="text-[11.5px] text-muted shrink-0 whitespace-nowrap">{step.detail}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-[8px] border-t border-line px-[14px] py-[10px]">
+        <button type="button" className="flex items-center gap-[5px] text-[12px] text-muted hover:text-ink-2 transition-colors" onClick={onClose}>
+          <Clock size={12} aria-hidden />
+          View full log
+        </button>
+        <span className="flex-1" />
+        <Button variant="primary" height={28}>Turn on live</Button>
+      </div>
     </div>
   )
 }
@@ -195,9 +328,9 @@ function DraftNodeCard({
 
 // ── Canvas edges (same as main canvas) ────────────────────────────────────────
 
-function CanvasEdges() {
+function CanvasEdges({ nodes }: { nodes: CanvasNode[] }) {
   const centers = Object.fromEntries(
-    CANVAS_NODES.map((n) => [
+    nodes.map((n) => [
       n.id,
       {
         cx: n.x + n.width / 2,
@@ -251,7 +384,12 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
         >
           {NODE_KIND_LABEL[node.kind]}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{node.label}</span>
+        <span
+          className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink"
+          data-testid="draft-detail-panel-label"
+        >
+          {node.label}
+        </span>
         <button type="button" className="flex size-[22px] shrink-0 items-center justify-center rounded-sm text-faint hover:bg-hover hover:text-muted" aria-label="More options">
           <MoreHorizontal size={13} aria-hidden />
         </button>
@@ -296,13 +434,23 @@ function StepDetailPanel({ node }: { node: CanvasNode }) {
 // ── OfficeFlowDraftPage ────────────────────────────────────────────────────────
 
 function OfficeFlowDraftPage() {
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('n-read-logs')
+  const [draftState, dispatch] = useReducer(draftReducer, undefined, () => ({
+    nodes: CANVAS_NODES.map((n) => ({ ...n })),
+    selectedNodeId: 'n-read-logs',
+    testRunStatus: 'idle' as const,
+  }))
   const [dismissedAnnotations, setDismissedAnnotations] = useState<Set<string>>(new Set())
+  const navigate = useNavigate()
 
-  const selectedNode = CANVAS_NODES.find((n) => n.id === selectedNodeId)
+  const selectedNode = draftState.nodes.find((n) => n.id === draftState.selectedNodeId)
 
   function dismissAnnotation(nodeId: string) {
     setDismissedAnnotations((prev) => new Set([...prev, nodeId]))
+  }
+
+  function handleTestRun() {
+    dispatch({ type: 'START_TEST_RUN' })
+    setTimeout(() => dispatch({ type: 'FINISH_TEST_RUN' }), 1200)
   }
 
   const annotationMap = Object.fromEntries(
@@ -320,7 +468,12 @@ function OfficeFlowDraftPage() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top bar */}
       <header className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[14px]">
-        <button type="button" aria-label="Back" className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => navigate({ to: '/office/flows' })}
+          className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
+        >
           <ArrowLeft size={13} aria-hidden />
           Flows
         </button>
@@ -358,7 +511,7 @@ function OfficeFlowDraftPage() {
         </div>
 
         <span className="text-[11.5px] text-faint">~$0.02 a run</span>
-        <Button variant="secondary" height={28} icon={Play}>Test run</Button>
+        <Button variant="secondary" height={28} icon={Play} onClick={handleTestRun}>Test run</Button>
         <Button variant="primary" height={28}>Turn on live</Button>
       </header>
 
@@ -376,22 +529,22 @@ function OfficeFlowDraftPage() {
 
       {/* Body */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <StepPalette />
+        <StepPalette onAddNode={(kind, label) => dispatch({ type: 'ADD_NODE', kind, label })} />
 
         {/* Canvas */}
         <div className="relative flex-1 overflow-auto bg-[#F7F6F3]" style={{ backgroundImage: 'radial-gradient(circle, var(--color-line-strong) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
           <div className="relative" style={{ minWidth: 960, minHeight: 700 }}>
-            <CanvasEdges />
+            <CanvasEdges nodes={draftState.nodes} />
 
-            {CANVAS_NODES.map((node) => {
+            {draftState.nodes.map((node) => {
               const annotation = annotationMap[node.id]
               const pos = annotationPositions[node.id]
               return (
                 <div key={node.id}>
                   <DraftNodeCard
                     node={node}
-                    selected={node.id === selectedNodeId}
-                    onClick={() => setSelectedNodeId(node.id)}
+                    selected={node.id === draftState.selectedNodeId}
+                    onClick={() => dispatch({ type: 'SELECT_NODE', id: node.id })}
                     hasAnnotation={!!annotation}
                   />
                   {annotation && pos && (
@@ -408,10 +561,19 @@ function OfficeFlowDraftPage() {
             })}
           </div>
 
+          {/* Test run overlay */}
+          {draftState.testRunStatus !== 'idle' && (
+            <DraftTestRunOverlay
+              status={draftState.testRunStatus}
+              onClose={() => dispatch({ type: 'CLOSE_TEST_RUN' })}
+            />
+          )}
+
           {/* Bottom confirm bar */}
           <div className="absolute bottom-0 left-0 right-0 flex h-[48px] items-center gap-[8px] border-t border-line bg-surface px-[16px]">
             <button
               type="button"
+              onClick={handleTestRun}
               className="flex items-center gap-[5px] rounded-btn h-[28px] px-[10px] text-[12px] font-medium text-muted outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
             >
               <Play size={12} aria-hidden />

@@ -1,4 +1,5 @@
-import { CircleHelp, Copy, Link2, Mail } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronUp, CircleHelp, Copy, Link2, Mail } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, InputField } from '../ui'
 import { ChannelLogo } from '../tabs/ChannelsTab'
@@ -6,6 +7,7 @@ import { ChannelLogo } from '../tabs/ChannelsTab'
 /** Channels · Email — pen WruOn (Channel Drawer v414hh, 520 wide). */
 export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const n = helper.name
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   return (
     <Drawer
       width={520}
@@ -21,7 +23,11 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
       }
       footer={
         <>
-          <Btn variant="quiet" icon={CircleHelp}>
+          <Btn
+            variant="quiet"
+            icon={howItWorksOpen ? ChevronUp : CircleHelp}
+            onClick={() => setHowItWorksOpen((v) => !v)}
+          >
             How it works
           </Btn>
           <span className="h-px flex-1" />
@@ -32,13 +38,21 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
         </>
       }
     >
+      {howItWorksOpen && (
+        <div className="flex w-full flex-col gap-[6px] rounded-md bg-info-tint p-[14px] outline-1 -outline-offset-1 outline-info-line text-[12.5px] text-ink-2">
+          <p className="m-0 font-medium text-ink">How email connect works</p>
+          <p className="m-0">1. Sign in with your provider or forward mail to the Omilo inbox address.</p>
+          <p className="m-0">2. {n} reads incoming emails and writes a reply draft.</p>
+          <p className="m-0">3. Replies go out from your domain once you verify it.</p>
+        </div>
+      )}
       <div className="flex w-full flex-col gap-[8px]">
         <Eyebrow>HOW TO CONNECT</Eyebrow>
         <div className="flex w-full gap-[8px]">
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1">
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { /* OAuth stub */ }}>
             Sign in with Google Workspace
           </Btn>
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1">
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { /* OAuth stub */ }}>
             Sign in with Microsoft 365
           </Btn>
         </div>

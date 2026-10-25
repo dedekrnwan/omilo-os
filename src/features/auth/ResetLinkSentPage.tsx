@@ -20,7 +20,7 @@ export function ResetLinkSentPage() {
         <span className="text-muted">Didn’t get it?</span>
         <span className="font-medium text-faint">Resend in 0:58</span>
       </div>
-      <AuthIconLink icon={ArrowLeft} href="/auth/sign-in">
+      <AuthIconLink icon={ArrowLeft} to="/auth/sign-in">
         Back to sign in
       </AuthIconLink>
     </AuthLayout>

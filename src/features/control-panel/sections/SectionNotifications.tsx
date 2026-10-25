@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react'
 import {
   Breadcrumb,
   RowDivider,
@@ -12,7 +13,7 @@ import {
 
 type Channel = 'app' | 'whatsapp' | 'email'
 
-const NOTIFICATIONS: {
+const INITIAL_NOTIFICATIONS: {
   label: string
   desc: string
   channels: Record<Channel, boolean>
@@ -25,13 +26,17 @@ const NOTIFICATIONS: {
   { label: 'Weekly brief', desc: "Chief's Friday summary", channels: { app: false, whatsapp: true, email: true } },
 ]
 
-function Checkbox({ checked }: { checked: boolean }) {
+function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <span
-      className={`flex size-[16px] shrink-0 items-center justify-center rounded-sm border ${
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onChange}
+      className={`flex size-[16px] shrink-0 items-center justify-center rounded-sm border transition-colors cursor-pointer ${
         checked
           ? 'border-ink bg-ink'
-          : 'border-line-strong bg-surface'
+          : 'border-line-strong bg-surface hover:border-ink-2'
       }`}
     >
       {checked && (
@@ -39,11 +44,46 @@ function Checkbox({ checked }: { checked: boolean }) {
           <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
-    </span>
+    </button>
   )
 }
 
+type NotifState = { label: string; desc: string; channels: Record<Channel, boolean> }[]
+
 export function SectionNotifications() {
+  const [notifs, setNotifs] = useState<NotifState>(INITIAL_NOTIFICATIONS)
+  const [weekends, setWeekends] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  const markDirty = useCallback(() => setDirty(true), [])
+
+  function toggleChannel(rowIdx: number, ch: Channel) {
+    setNotifs((prev) => {
+      const next = prev.map((n, i) =>
+        i === rowIdx
+          ? { ...n, channels: { ...n.channels, [ch]: !n.channels[ch] } }
+          : n,
+      )
+      return next
+    })
+    markDirty()
+  }
+
+  function toggleWeekends() {
+    setWeekends((v) => !v)
+    markDirty()
+  }
+
+  function handleSave() {
+    setDirty(false)
+  }
+
+  function handleDiscard() {
+    setNotifs(INITIAL_NOTIFICATIONS)
+    setWeekends(false)
+    setDirty(false)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -63,18 +103,24 @@ export function SectionNotifications() {
             <span className="text-center">WhatsApp</span>
             <span className="text-center">Email</span>
           </div>
-          {NOTIFICATIONS.map((n, i) => (
+          {notifs.map((n, i) => (
             <div
               key={n.label}
-              className={`grid grid-cols-[1fr_80px_80px_80px] items-center px-[16px] py-[10px] ${i < NOTIFICATIONS.length - 1 ? 'border-b border-line' : ''}`}
+              className={`grid grid-cols-[1fr_80px_80px_80px] items-center px-[16px] py-[10px] ${i < notifs.length - 1 ? 'border-b border-line' : ''}`}
             >
               <div>
                 <p className="text-[13px] font-medium text-ink">{n.label}</p>
                 <p className="text-[12px] text-muted">{n.desc}</p>
               </div>
-              <span className="flex justify-center"><Checkbox checked={n.channels.app} /></span>
-              <span className="flex justify-center"><Checkbox checked={n.channels.whatsapp} /></span>
-              <span className="flex justify-center"><Checkbox checked={n.channels.email} /></span>
+              <span className="flex justify-center">
+                <Checkbox checked={n.channels.app} onChange={() => toggleChannel(i, 'app')} />
+              </span>
+              <span className="flex justify-center">
+                <Checkbox checked={n.channels.whatsapp} onChange={() => toggleChannel(i, 'whatsapp')} />
+              </span>
+              <span className="flex justify-center">
+                <Checkbox checked={n.channels.email} onChange={() => toggleChannel(i, 'email')} />
+              </span>
             </div>
           ))}
         </div>
@@ -87,12 +133,12 @@ export function SectionNotifications() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Weekends" desc="Hold everything except P0 until Monday 08:00.">
-            <Toggle />
+            <Toggle on={weekends} onClick={toggleWeekends} label="Weekends" />
           </SettingRow>
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar />
+      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

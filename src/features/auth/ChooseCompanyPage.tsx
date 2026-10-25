@@ -1,5 +1,6 @@
 /** Choose company — /auth/choose-company (pen Ltj2k). */
 import { ArrowRight, Plus } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { AuthLayout } from './AuthLayout'
 import { AuthTitle, GoogleLogo } from './AuthPrimitives'
 
@@ -14,9 +15,9 @@ export function ChooseCompanyPage() {
       <AuthTitle title="Welcome back, Dede" sub="Pick a company to open. You can switch any time from the rail." />
       <div className="flex w-full flex-col gap-[8px]">
         {COMPANIES.map((c) => (
-          <a
+          <Link
             key={c.name}
-            href="/office/inbox"
+            to="/office/inbox"
             className="flex w-full items-center gap-[12px] rounded-lg p-[12px] transition-colors hover:bg-soft"
             style={{ boxShadow: c.current ? 'inset 0 0 0 1.5px #171717' : 'inset 0 0 0 1px var(--color-line-strong)' }}
           >
@@ -31,10 +32,10 @@ export function ChooseCompanyPage() {
               <span className="text-[12px] text-muted">{c.meta}</span>
             </span>
             <ArrowRight size={16} aria-hidden className={c.current ? 'text-ink' : 'text-faint'} />
-          </a>
+          </Link>
         ))}
-        <a
-          href="/auth/onboarding/company"
+        <Link
+          to="/auth/onboarding/company"
           className="flex w-full items-center gap-[12px] rounded-lg p-[12px] transition-colors hover:bg-soft"
           style={{ boxShadow: 'inset 0 0 0 1px #D6D3D1' }}
         >
@@ -45,15 +46,15 @@ export function ChooseCompanyPage() {
             <span className="text-[14px] font-medium text-ink">Create a new company</span>
             <span className="text-[12px] text-muted">Chief helps you set it up in about 5 minutes</span>
           </span>
-        </a>
+        </Link>
       </div>
       <div className="flex w-full items-center justify-center gap-[8px] text-[12.5px]">
         <GoogleLogo size={14} />
         <span className="text-muted">dede@saga.co.id</span>
         <span className="text-faint">·</span>
-        <a href="/auth/sign-in" className="font-medium text-link hover:underline">
+        <Link to="/auth/sign-in" className="font-medium text-link hover:underline">
           Switch account
-        </a>
+        </Link>
       </div>
     </AuthLayout>
   )

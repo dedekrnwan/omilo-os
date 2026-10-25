@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, CircleCheck, CircleHelp, ExternalLink, Link2, Lock, Send } from 'lucide-react'
+import { Check, CircleCheck, CircleHelp, ChevronUp, ExternalLink, Link2, Lock, Send } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, InputField, Radio, choiceRing } from '../ui'
 import { ChannelLogo, TG_BLUE } from '../tabs/ChannelsTab'
@@ -50,6 +50,7 @@ const AUDIENCE = [
 export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const n = helper.name
   const [aud, setAud] = useState('anyone')
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   return (
     <Drawer
       width={520}
@@ -65,7 +66,11 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
       }
       footer={
         <>
-          <Btn variant="quiet" icon={CircleHelp}>
+          <Btn
+            variant="quiet"
+            icon={howItWorksOpen ? ChevronUp : CircleHelp}
+            onClick={() => setHowItWorksOpen((v) => !v)}
+          >
             How it works
           </Btn>
           <span className="h-px flex-1" />
@@ -76,11 +81,24 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
         </>
       }
     >
+      {howItWorksOpen && (
+        <div className="flex w-full flex-col gap-[6px] rounded-md bg-info-tint p-[14px] outline-1 -outline-offset-1 outline-info-line text-[12.5px] text-ink-2">
+          <p className="m-0 font-medium text-ink">How Telegram connect works</p>
+          <p className="m-0">1. Create a bot via @BotFather and paste the token here.</p>
+          <p className="m-0">2. Omilo verifies the token and links the bot to {n}.</p>
+          <p className="m-0">3. Residents message the bot; {n} replies through it.</p>
+        </div>
+      )}
       <Step num={1} state="done" title="Create a bot">
         <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
-          In Telegram, open @BotFather, send /newbot and give it a name like “Sahabat Warga {n}”.
+          In Telegram, open @BotFather, send /newbot and give it a name like "Sahabat Warga {n}".
         </p>
-        <Btn icon={ExternalLink} h={30} className="self-start">
+        <Btn
+          icon={ExternalLink}
+          h={30}
+          className="self-start"
+          onClick={() => window.open('https://t.me/BotFather', '_blank', 'noopener,noreferrer')}
+        >
           Open @BotFather
         </Btn>
       </Step>

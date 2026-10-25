@@ -34,9 +34,9 @@ function Option({ option, selected, onSelect }: { option: AIOption; selected: bo
           <span className="font-mono text-[12px] text-ink-2">{option.found.value}</span>
           <span className="text-[12px] text-muted">{option.found.note}</span>
           <span className="h-px flex-1" />
-          <a href="#" onClick={(e) => e.stopPropagation()} className="text-[12px] font-medium text-link hover:underline">
+          <button type="button" onClick={(e) => e.stopPropagation()} className="text-[12px] font-medium text-link hover:underline">
             {option.found.link}
-          </a>
+          </button>
         </div>
       )}
       {option.chips && (

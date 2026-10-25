@@ -1,7 +1,8 @@
 // ── Office Flow Runs history ───────────────────────────────────────────────────
 // Matches design ref: GMEPK.png — runs list (left) + run detail (right)
+// Interactive: Approve/Decline/Cancel run/Publish changes update local run status.
 
-import { useState } from 'react'
+import { useReducer, useState } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -10,6 +11,7 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../../ui/ds/Button'
 import {
   OFFICE_FLOW_RUNS,
@@ -17,6 +19,67 @@ import {
 } from './data'
 import type { FlowRunRow, FlowRunStatus, RunDetailStep, RunDetailStepStatus } from './data'
 import { RUN_STATUS_STYLE, RunStatusChip } from './shared'
+
+// ── Runs state / reducer ──────────────────────────────────────────────────────
+
+interface RunsState {
+  runs: FlowRunRow[]
+  runDetail214Steps: RunDetailStep[]
+  publishedRunIds: Set<string>
+}
+
+type RunsAction =
+  | { type: 'APPROVE_RUN'; runId: string }
+  | { type: 'DECLINE_RUN'; runId: string }
+  | { type: 'CANCEL_RUN'; runId: string }
+  | { type: 'PUBLISH_CHANGES'; runId: string }
+
+function updateRunStatus(runs: FlowRunRow[], runId: string, status: FlowRunStatus): FlowRunRow[] {
+  return runs.map((r) => r.id === runId ? { ...r, status, waitingFor: undefined } : r)
+}
+
+function runsReducer(state: RunsState, action: RunsAction): RunsState {
+  switch (action.type) {
+    case 'APPROVE_RUN': {
+      // Approval: advance waiting → done; update detail step status
+      const newRuns = updateRunStatus(state.runs, action.runId, 'Done')
+      const newSteps = state.runDetail214Steps.map((s) =>
+        s.kind === 'approval' && s.status === 'waiting'
+          ? { ...s, status: 'done' as RunDetailStepStatus }
+          : s.status === 'queued'
+          ? { ...s, status: 'done' as RunDetailStepStatus }
+          : s
+      )
+      return { ...state, runs: newRuns, runDetail214Steps: newSteps }
+    }
+    case 'DECLINE_RUN': {
+      const newRuns = updateRunStatus(state.runs, action.runId, 'Failed')
+      const newSteps = state.runDetail214Steps.map((s) =>
+        s.kind === 'approval' && s.status === 'waiting'
+          ? { ...s, status: 'skipped' as RunDetailStepStatus }
+          : s
+      )
+      return { ...state, runs: newRuns, runDetail214Steps: newSteps }
+    }
+    case 'CANCEL_RUN': {
+      const newRuns = updateRunStatus(state.runs, action.runId, 'Failed')
+      return { ...state, runs: newRuns }
+    }
+    case 'PUBLISH_CHANGES': {
+      return { ...state, publishedRunIds: new Set([...state.publishedRunIds, action.runId]) }
+    }
+    default:
+      return state
+  }
+}
+
+function initRunsState(): RunsState {
+  return {
+    runs: OFFICE_FLOW_RUNS.map((r) => ({ ...r })),
+    runDetail214Steps: RUN_DETAIL_214.map((s) => ({ ...s })),
+    publishedRunIds: new Set(),
+  }
+}
 
 // ── Run list item ─────────────────────────────────────────────────────────────
 
@@ -99,7 +162,15 @@ const STEP_KIND_LABEL: Record<RunDetailStep['kind'], string> = {
   connector: 'SLACK',
 }
 
-function RunDetailStepRow({ step }: { step: RunDetailStep }) {
+function RunDetailStepRow({
+  step,
+  onApprove,
+  onDecline,
+}: {
+  step: RunDetailStep
+  onApprove?: () => void
+  onDecline?: () => void
+}) {
   const statusCfg = STEP_STATUS_ICON[step.status]
   const Icon = statusCfg.icon
   const kindColor = STEP_KIND_COLOR[step.kind]
@@ -152,13 +223,21 @@ function RunDetailStepRow({ step }: { step: RunDetailStep }) {
         <div className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong p-[12px]" style={{ background: '#EB68340A', borderColor: '#EB683420' }}>
           <p className="m-0 text-[12.5px] text-ink-2 leading-[1.5]">{step.approveLabel}</p>
           <div className="flex items-center gap-[6px]">
-            <Button variant="primary" height={28} icon={Check}>Approve</Button>
-            <Button variant="secondary" height={28}>Decline</Button>
+            <Button variant="primary" height={28} icon={Check} onClick={onApprove}>Approve</Button>
+            <Button variant="secondary" height={28} onClick={onDecline}>Decline</Button>
             {step.approveDetail && (
               <span className="ml-[4px] text-[11.5px] text-muted">{step.approveDetail}</span>
             )}
           </div>
         </div>
+      )}
+
+      {/* Approved/declined feedback */}
+      {step.kind === 'approval' && step.status === 'done' && (
+        <span className="text-[11.5px]" style={{ color: 'var(--color-ok)' }}>Approved</span>
+      )}
+      {step.kind === 'approval' && step.status === 'skipped' && (
+        <span className="text-[11.5px] text-faint">Declined</span>
       )}
 
       {/* Queued state */}
@@ -171,9 +250,23 @@ function RunDetailStepRow({ step }: { step: RunDetailStep }) {
 
 // ── Run detail panel ──────────────────────────────────────────────────────────
 
-function RunDetailPanel({ run }: { run: FlowRunRow }) {
-  const steps = run.id === 'r214' ? RUN_DETAIL_214 : []
-
+function RunDetailPanel({
+  run,
+  steps,
+  onApprove,
+  onDecline,
+  onCancel,
+  onPublish,
+  published,
+}: {
+  run: FlowRunRow
+  steps: RunDetailStep[]
+  onApprove: () => void
+  onDecline: () => void
+  onCancel: () => void
+  onPublish: () => void
+  published: boolean
+}) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden border-l border-line bg-surface">
       {/* Panel header */}
@@ -190,13 +283,31 @@ function RunDetailPanel({ run }: { run: FlowRunRow }) {
             Started {run.startedAt} by {run.startedBy} · {run.trigger} · {run.cost}
           </span>
         </div>
-        <Button variant="secondary" height={28} icon={X}>Cancel run</Button>
+        {run.status !== 'Done' && run.status !== 'Failed' && (
+          <Button variant="secondary" height={28} icon={X} onClick={onCancel}>Cancel run</Button>
+        )}
+        {(run.status === 'Done' || run.status === 'Failed') && (
+          <Button
+            variant={published ? 'secondary' : 'primary'}
+            height={28}
+            onClick={published ? undefined : onPublish}
+          >
+            {published ? 'Published' : 'Publish changes'}
+          </Button>
+        )}
       </div>
 
       {/* Steps */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {steps.length > 0 ? (
-          steps.map((step) => <RunDetailStepRow key={step.id} step={step} />)
+          steps.map((step) => (
+            <RunDetailStepRow
+              key={step.id}
+              step={step}
+              onApprove={onApprove}
+              onDecline={onDecline}
+            />
+          ))
         ) : (
           // For non-r214 runs: show a simpler timeline
           <div className="flex flex-col gap-[0px]">
@@ -218,20 +329,28 @@ function RunDetailPanel({ run }: { run: FlowRunRow }) {
 const RUN_FILTERS: Array<'All' | FlowRunStatus> = ['All', 'Needs you', 'Failed', 'Running', 'Done']
 
 function OfficeFlowRunsPage() {
+  const [runsState, dispatch] = useReducer(runsReducer, undefined, initRunsState)
   const [selectedRunId, setSelectedRunId] = useState<string>('r214')
   const [filter, setFilter] = useState<'All' | FlowRunStatus>('All')
+  const navigate = useNavigate()
 
-  const shown = filter === 'All' ? OFFICE_FLOW_RUNS : OFFICE_FLOW_RUNS.filter((r) => r.status === filter)
-  const selectedRun = OFFICE_FLOW_RUNS.find((r) => r.id === selectedRunId) ?? OFFICE_FLOW_RUNS[0]
+  const shown = filter === 'All' ? runsState.runs : runsState.runs.filter((r) => r.status === filter)
+  const selectedRun = runsState.runs.find((r) => r.id === selectedRunId) ?? runsState.runs[0]
+  const stepsFor214 = runsState.runDetail214Steps
 
-  const totalThisWeek = OFFICE_FLOW_RUNS.length
-  const needsYou = OFFICE_FLOW_RUNS.filter((r) => r.status === 'Needs you').length
+  const totalThisWeek = runsState.runs.length
+  const needsYou = runsState.runs.filter((r) => r.status === 'Needs you').length
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top bar */}
       <header className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[14px]">
-        <button type="button" aria-label="Back" className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors">
+        <button
+          type="button"
+          aria-label="Back"
+          onClick={() => navigate({ to: '/office/flows' })}
+          className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
+        >
           <ArrowLeft size={13} aria-hidden />
           Flows
         </button>
@@ -309,7 +428,15 @@ function OfficeFlowRunsPage() {
         </div>
 
         {/* Right: run detail */}
-        <RunDetailPanel run={selectedRun} />
+        <RunDetailPanel
+          run={selectedRun}
+          steps={selectedRun.id === 'r214' ? stepsFor214 : []}
+          onApprove={() => dispatch({ type: 'APPROVE_RUN', runId: selectedRun.id })}
+          onDecline={() => dispatch({ type: 'DECLINE_RUN', runId: selectedRun.id })}
+          onCancel={() => dispatch({ type: 'CANCEL_RUN', runId: selectedRun.id })}
+          onPublish={() => dispatch({ type: 'PUBLISH_CHANGES', runId: selectedRun.id })}
+          published={runsState.publishedRunIds.has(selectedRun.id)}
+        />
       </div>
     </div>
   )

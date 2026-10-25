@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { notFound, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -24,6 +24,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { Folder as FolderT, Session } from '../../core/domain/types'
 import { useChannel, useChannelFolders, useChannelSessions } from '../../app/queries'
+import { useChatStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
@@ -93,6 +94,11 @@ function ChatMenu({
   open,
   onOpenChange,
   subOpen,
+  onRename,
+  onMoveToFolder,
+  onPin,
+  onArchive,
+  onDelete,
 }: {
   chat: FolderChat
   folders: FolderT[]
@@ -101,6 +107,11 @@ function ChatMenu({
   onOpenChange: (open: boolean) => void
   /** Force the Move-to-folder submenu open (design state). */
   subOpen?: boolean
+  onRename?: () => void
+  onMoveToFolder?: (folderId: string) => void
+  onPin?: () => void
+  onArchive?: () => void
+  onDelete?: () => void
 }) {
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
@@ -115,7 +126,7 @@ function ChatMenu({
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={4} alignOffset={-8} className={`w-[228px] ${menuSurface}`}>
-          <DropdownMenu.Item className={itemClass}>
+          <DropdownMenu.Item className={itemClass} onSelect={onRename}>
             <ItemBody icon={Pencil} label="Rename" />
           </DropdownMenu.Item>
           <DropdownMenu.Sub open={subOpen || undefined}>
@@ -125,7 +136,7 @@ function ChatMenu({
             <DropdownMenu.Portal>
               <DropdownMenu.SubContent sideOffset={10} alignOffset={-6} className={`w-[200px] ${menuSurface}`}>
                 {folders.map((f) => (
-                  <DropdownMenu.Item key={f.id} className={itemClass}>
+                  <DropdownMenu.Item key={f.id} className={itemClass} onSelect={() => onMoveToFolder?.(f.id)}>
                     <ItemBody
                       icon={Folder}
                       label={f.name}
@@ -143,14 +154,14 @@ function ChatMenu({
           <DropdownMenu.Item className={itemClass}>
             <ItemBody icon={Target} label="Link to goal" sub />
           </DropdownMenu.Item>
-          <DropdownMenu.Item className={itemClass}>
+          <DropdownMenu.Item className={itemClass} onSelect={onPin}>
             <ItemBody icon={Pin} label="Pin to sidebar" />
           </DropdownMenu.Item>
           <Divider />
-          <DropdownMenu.Item className={itemClass}>
+          <DropdownMenu.Item className={itemClass} onSelect={onArchive}>
             <ItemBody icon={Archive} label="Archive" trail="E" />
           </DropdownMenu.Item>
-          <DropdownMenu.Item className={itemClass}>
+          <DropdownMenu.Item className={itemClass} onSelect={onDelete}>
             <ItemBody icon={Trash2} label="Delete" trail="⌫" danger />
           </DropdownMenu.Item>
         </DropdownMenu.Content>
@@ -210,7 +221,16 @@ export function FolderRoute() {
   const { data: channel } = useChannel(channelId)
   const { data: folders = [], isLoading } = useChannelFolders(channelId)
   const { data: sessions = [] } = useChannelSessions(channelId)
+  const { patchSession, archiveSession } = useChatStore()
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [renameFor, setRenameFor] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [editingInstructions, setEditingInstructions] = useState(false)
+  const [instructionsDraft, setInstructionsDraft] = useState('')
+  const [localInstructions, setLocalInstructions] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'recent' | 'oldest' | 'az'>('recent')
+  const [localFiles, setLocalFiles] = useState<string[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const designMenu = state === 'menu'
 
   if (isLoading) return null
@@ -235,8 +255,43 @@ export function FolderRoute() {
     }
   }
 
+  function startRename(chat: (typeof page.chats)[number]) {
+    setRenameFor(chat.id)
+    setRenameValue(chat.title)
+    setMenuFor(null)
+  }
+
+  function commitRename() {
+    if (renameFor && renameValue.trim()) {
+      patchSession(renameFor, { title: renameValue.trim() })
+    }
+    setRenameFor(null)
+  }
+
   return (
     <>
+      {/* Chat rename dialog */}
+      {renameFor && (
+        <div role="dialog" aria-label="Rename chat" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]">
+          <div className="flex w-[360px] flex-col gap-[16px] rounded-lg bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Rename chat</h3>
+            <input
+              autoFocus
+              type="text"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenameFor(null) }}
+              aria-label="Chat title"
+              className="h-[36px] w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong"
+            />
+            <div className="flex justify-end gap-[8px]">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setRenameFor(null)}>Cancel</Button>
+              <Button variant="primary" style={{ height: 32 }} onClick={commitRename}>Rename</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Topbar
         icon={FolderOpen}
         title={folder.name}
@@ -281,24 +336,67 @@ export function FolderRoute() {
               <div className="flex w-full items-center gap-[6px]">
                 <ScrollText size={14} aria-hidden className="text-muted" />
                 <span className="flex-1 text-[12.5px] font-medium text-ink-2">Folder instructions</span>
-                <button type="button" aria-label="Edit folder instructions" className="text-[12.5px] text-link hover:underline">
-                  Edit
-                </button>
+                {editingInstructions ? (
+                  <button
+                    type="button"
+                    onClick={() => { setLocalInstructions(instructionsDraft); setEditingInstructions(false) }}
+                    className="text-[12.5px] text-link hover:underline"
+                  >
+                    Save
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Edit folder instructions"
+                    onClick={() => { setInstructionsDraft(localInstructions ?? page.instructions); setEditingInstructions(true) }}
+                    className="text-[12.5px] text-link hover:underline"
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
-              <p className="m-0 text-[12.5px] leading-[1.55] text-ink-2">{page.instructions}</p>
+              {editingInstructions ? (
+                <textarea
+                  autoFocus
+                  value={instructionsDraft}
+                  onChange={e => setInstructionsDraft(e.target.value)}
+                  rows={4}
+                  aria-label="Folder instructions text"
+                  className="w-full resize-none rounded-base bg-surface p-[8px] text-[12.5px] leading-[1.55] text-ink-2 outline-1 -outline-offset-1 outline-line-strong"
+                />
+              ) : (
+                <p className="m-0 text-[12.5px] leading-[1.55] text-ink-2">{localInstructions ?? page.instructions}</p>
+              )}
             </section>
             <section
               aria-label="Files"
               className="flex w-[300px] shrink-0 flex-col gap-[8px] rounded-md p-[13px] outline-1 -outline-offset-1 outline-line-strong"
             >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                aria-label="File input"
+                className="sr-only"
+                onChange={e => {
+                  const names = Array.from(e.target.files ?? []).map(f => f.name)
+                  if (names.length) setLocalFiles(prev => [...prev, ...names])
+                  e.target.value = ''
+                }}
+              />
               <div className="flex w-full items-center gap-[6px]">
                 <Paperclip size={14} aria-hidden className="text-muted" />
                 <span className="flex-1 text-[12.5px] font-medium text-ink-2">Files</span>
-                <button type="button" aria-label="Add file" className="flex text-muted hover:text-ink">
+                <button
+                  type="button"
+                  aria-label="Add file"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex text-muted hover:text-ink"
+                >
                   <Plus size={14} aria-hidden />
                 </button>
               </div>
-              {page.files.map((name) => (
+              {[...page.files, ...localFiles].map((name) => (
                 <div key={name} className="flex w-full items-center gap-[8px]">
                   <File size={13} aria-hidden className="text-faint" />
                   <span className="truncate text-[12.5px] text-ink-2">{name}</span>
@@ -310,7 +408,13 @@ export function FolderRoute() {
           {/* Chats */}
           <div className="flex w-full items-center">
             <span className="flex-1 text-[12.5px] font-semibold text-ink">Chats in this folder</span>
-            <span className="text-[12.5px] text-muted">Recent first</span>
+            <button
+              type="button"
+              onClick={() => setSortOrder(o => o === 'recent' ? 'oldest' : o === 'oldest' ? 'az' : 'recent')}
+              className="text-[12.5px] text-muted hover:text-ink transition-colors"
+            >
+              {sortOrder === 'recent' ? 'Recent first' : sortOrder === 'oldest' ? 'Oldest first' : 'A–Z'}
+            </button>
           </div>
           <div className="flex w-full flex-col">
             {page.chats.map((chat, i) => (
@@ -327,6 +431,11 @@ export function FolderRoute() {
                     open={openChatId === chat.id}
                     subOpen={designMenu && menuFor === null}
                     onOpenChange={(o) => setMenuFor(o ? chat.id : null)}
+                    onRename={() => startRename(chat)}
+                    onMoveToFolder={(fId) => patchSession(chat.id, { folderId: fId })}
+                    onPin={() => patchSession(chat.id, { pinned: true })}
+                    onArchive={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}
+                    onDelete={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}
                   />
                 }
               />

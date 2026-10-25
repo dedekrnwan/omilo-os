@@ -16,14 +16,16 @@ export function MenuItemBody({
   hint,
   danger,
 }: {
-  icon: LucideIcon
+  icon?: LucideIcon
   label: string
   hint?: string
   danger?: boolean
 }) {
   return (
     <>
-      <Icon size={15} aria-hidden className={danger ? 'text-bad' : 'text-muted'} />
+      {Icon
+        ? <Icon size={15} aria-hidden className={danger ? 'text-bad' : 'text-muted'} />
+        : <span className="size-[15px] shrink-0" aria-hidden />}
       <span className={`flex-1 text-[13px] ${danger ? 'text-bad' : 'text-ink'}`}>{label}</span>
       {hint && <span className="font-mono text-[11px] text-faint">{hint}</span>}
     </>

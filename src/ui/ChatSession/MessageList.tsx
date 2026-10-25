@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext } from 'react'
+import { createContext, Fragment, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpRight, FileText, ListChecks } from 'lucide-react'
 import type { Message } from '../../core/domain/types'
@@ -94,6 +94,8 @@ function SuggestedActions({
   onTasksAction?: () => void
 }) {
   const col = useContext(ColContext)
+  const [dismissed, setDismissed] = useState(false)
+  if (dismissed) return null
   return (
     <div className={`${col} flex gap-[8px] pl-[34px]`}>
       {actions.map((a) =>
@@ -102,7 +104,7 @@ function SuggestedActions({
             {a.label}
           </Button>
         ) : (
-          <Button key={a.label} height={28} variant="secondary">
+          <Button key={a.label} height={28} variant="secondary" onClick={() => setDismissed(true)}>
             {a.label}
           </Button>
         ),

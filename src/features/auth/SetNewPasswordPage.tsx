@@ -29,7 +29,7 @@ export function SetNewPasswordPage() {
         ))}
       </ul>
       <AuthCheckbox label="Sign out of my other devices" />
-      <AuthButton>Update password</AuthButton>
+      <AuthButton to="/auth/reset-password/success">Update password</AuthButton>
     </AuthLayout>
   )
 }
