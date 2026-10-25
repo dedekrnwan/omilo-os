@@ -30,6 +30,10 @@ import {
 import type { CanvasNode, NodeKind } from './data'
 import { NODE_COLORS, NODE_KIND_LABEL } from './shared'
 
+// ── Stable monotonic counter for node IDs ────────────────────────────────────
+let __nodeSeq = 0
+function nextNodeId() { return `n-new-${++__nodeSeq}` }
+
 // ── Draft local state ─────────────────────────────────────────────────────────
 
 interface DraftState {
@@ -52,7 +56,7 @@ function draftReducer(state: DraftState, action: DraftAction): DraftState {
     case 'ADD_NODE': {
       const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y + n.height), 0)
       const newNode: CanvasNode = {
-        id: `n-new-${Date.now()}`,
+        id: nextNodeId(),
         kind: action.kind,
         label: action.label,
         sublabel: '',

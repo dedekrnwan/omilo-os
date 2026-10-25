@@ -31,6 +31,10 @@ import {
 import type { CanvasNode, CanvasEdge, NodeKind } from './data'
 import { NODE_COLORS, NODE_KIND_LABEL } from './shared'
 
+// ── Stable monotonic counter for node IDs ────────────────────────────────────
+let __nodeSeq = 0
+function nextNodeId() { return `n-new-${++__nodeSeq}` }
+
 // ── Canvas state / reducer ────────────────────────────────────────────────────
 
 interface CanvasState {
@@ -58,7 +62,7 @@ function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
     case 'ADD_NODE': {
       const maxY = state.nodes.reduce((m, n) => Math.max(m, n.y + n.height), 0)
       const newNode: CanvasNode = {
-        id: `n-new-${Date.now()}`,
+        id: nextNodeId(),
         kind: action.kind,
         label: action.label,
         sublabel: '',
