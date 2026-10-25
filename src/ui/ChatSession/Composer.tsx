@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowUp, FoldVertical, Mic, Plus } from 'lucide-react'
+import { ArrowUp, FoldVertical, Mic, MicOff, Plus } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
 import { IconButton, SquareButton } from '../ds/Button'
 import { ModelMenu, ThinkingMenu } from './ModelMenu'
@@ -65,7 +65,9 @@ export function Composer({
   const [text, setText] = useState(initialText)
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
   const [activePopover, setActivePopover] = useState<ComposerPopoverKind>(initialPopover)
+  const [isRecording, setIsRecording] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const prevSession = useRef(sessionId)
   useEffect(() => {
@@ -163,9 +165,29 @@ export function Composer({
                 />
               </div>
 
+              {/* Hidden file input for Attach */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                aria-label="File input"
+                className="sr-only"
+                onChange={e => {
+                  // File selected — in a real app, upload or append to context.
+                  // For mock: just announce the filename in the text area.
+                  const file = e.target.files?.[0]
+                  if (file) setText(prev => prev ? `${prev}\n[Attached: ${file.name}]` : `[Attached: ${file.name}]`)
+                  e.target.value = ''
+                }}
+              />
+
               {/* Controls */}
               <div className="flex w-full items-center gap-[8px]">
-                <SquareButton icon={Plus} aria-label="Attach" />
+                <SquareButton
+                  icon={Plus}
+                  aria-label="Attach"
+                  onClick={() => fileInputRef.current?.click()}
+                />
                 <div className="h-px flex-1" />
                 <ContextMenu
                   contextUsed={contextUsed}
@@ -192,7 +214,13 @@ export function Composer({
                   onSelect={setThinking}
                   defaultOpen={initialMenu === 'thinking'}
                 />
-                <IconButton icon={Mic} aria-label="Voice input" />
+                <IconButton
+                  icon={isRecording ? MicOff : Mic}
+                  aria-label={isRecording ? 'Stop recording' : 'Voice input'}
+                  aria-pressed={isRecording}
+                  className={isRecording ? 'text-bad bg-hover' : ''}
+                  onClick={() => setIsRecording(v => !v)}
+                />
                 <SquareButton
                   variant="primary"
                   icon={ArrowUp}
