@@ -68,7 +68,7 @@ function PlanCard({ plan }: { plan: Plan }) {
       <AuthButton
         variant={rec ? 'primary' : 'secondary'}
         height={40}
-        onClick={() => (window.location.href = '/auth/onboarding/payment')}
+        to="/auth/onboarding/payment"
       >
         {plan.cta}
       </AuthButton>

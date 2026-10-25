@@ -14,8 +14,8 @@ export function ResetLinkExpiredPage() {
         sub="Reset links work for 30 minutes and only once. Send a fresh one and use the newest email."
       />
       <AuthField id="email" label="Work email" icon={Mail} type="email" placeholder="dede@saga.co.id" />
-      <AuthButton>Send a new link</AuthButton>
-      <AuthIconLink icon={ArrowLeft} href="/auth/sign-in">
+      <AuthButton to="/auth/forgot-password/sent">Send a new link</AuthButton>
+      <AuthIconLink icon={ArrowLeft} to="/auth/sign-in">
         Back to sign in
       </AuthIconLink>
     </AuthLayout>

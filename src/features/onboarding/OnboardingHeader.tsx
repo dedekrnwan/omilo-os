@@ -1,4 +1,5 @@
 import { Check, LogOut } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import { COMPANY_NAME } from './data'
 import { QuietButton } from './parts'
@@ -61,6 +62,7 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
 /** pen onboarding `Top`: h-60 · px 24 · gap 10 — spark mark, company, stepper, saved + log out. */
 export function OnboardingHeader({ step }: { step: OnboardingStep }) {
   const showSteps = step !== 'welcome' && step !== 'inbox'
+  const navigate = useNavigate()
   return (
     <header className="flex h-[60px] w-full shrink-0 items-center gap-[10px] px-[24px]">
       <Mascot size={26} radius={7} prop="spark" title="Omilo" />
@@ -69,7 +71,7 @@ export function OnboardingHeader({ step }: { step: OnboardingStep }) {
       <div className="flex min-w-0 flex-1 justify-center">{showSteps && <StepIndicator current={step} />}</div>
       <div className="flex items-center gap-[12px]">
         <span className="text-[12px] text-muted">Saved as you go</span>
-        <QuietButton icon={LogOut} onClick={() => (window.location.href = '/auth/sign-in')}>
+        <QuietButton icon={LogOut} onClick={() => navigate({ to: '/auth/sign-in' })}>
           Log out
         </QuietButton>
       </div>

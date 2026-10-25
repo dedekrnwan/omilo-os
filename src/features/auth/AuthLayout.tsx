@@ -11,6 +11,7 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 import { Check } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
 
@@ -187,9 +188,9 @@ export function OnboardingLayout({ children, step }: OnboardingLayoutProps) {
         <Stepper current={step} />
         <div className="flex w-[240px] items-center justify-end gap-[8px]">
           <span className="text-[12.5px] text-muted">dede@saga.co.id</span>
-          <a href="/auth/sign-in" className="text-[12.5px] font-medium text-link">
+          <Link to="/auth/sign-in" className="text-[12.5px] font-medium text-link">
             Sign out
-          </a>
+          </Link>
         </div>
       </header>
       <main className="flex min-h-0 w-full flex-1 flex-col items-center justify-center pb-[40px]">{children}</main>

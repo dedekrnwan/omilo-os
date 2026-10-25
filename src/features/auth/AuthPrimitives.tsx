@@ -8,6 +8,7 @@
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import { Check, ChevronDown, Eye } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
 
 // ── Logo/Google ───────────────────────────────────────────────────────────────
 export function GoogleLogo({ size = 18 }: { size?: number }) {
@@ -22,11 +23,13 @@ export function GoogleLogo({ size = 18 }: { size?: number }) {
 }
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
-export function GoogleButton({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+export function GoogleButton({ children, onClick, to }: { children: ReactNode; onClick?: () => void; to?: string }) {
+  const navigate = useNavigate()
+  const handleClick = to ? () => navigate({ to }) : onClick
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       className="flex h-[44px] w-full items-center justify-center gap-[10px] rounded-[10px] bg-surface px-[16px] text-[14px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
       style={{ boxShadow: '0 1px 2px #0C0A090D' }}
     >
@@ -44,6 +47,8 @@ interface AuthButtonProps {
   height?: number
   type?: 'button' | 'submit'
   onClick?: () => void
+  /** When set, the button navigates to this path via TanStack Router. */
+  to?: string
   className?: string
 }
 
@@ -55,8 +60,11 @@ export function AuthButton({
   height = 44,
   type = 'button',
   onClick,
+  to,
   className = '',
 }: AuthButtonProps) {
+  const navigate = useNavigate()
+  const handleClick = to ? () => navigate({ to }) : onClick
   const look =
     variant === 'primary'
       ? 'bg-primary text-primary-ink hover:bg-primary-hover'
@@ -64,7 +72,7 @@ export function AuthButton({
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={handleClick}
       className={`flex w-full items-center justify-center gap-[6px] rounded-btn px-[14px] text-[14px] font-medium transition-colors ${look} ${className}`}
       style={{ height }}
     >
@@ -256,25 +264,38 @@ export function AuthNote({ icon, children, lead = false }: { icon: ReactNode; ch
 }
 
 // ── Centered "Question? Link" row ─────────────────────────────────────────────
-export function AuthLinks({ q, a, href = '#', gap = 4 }: { q: ReactNode; a: ReactNode; href?: string; gap?: number }) {
+export function AuthLinks({ q, a, href = '#', to, gap = 4 }: { q: ReactNode; a: ReactNode; href?: string; to?: string; gap?: number }) {
   return (
     <div className="flex w-full justify-center" style={{ gap }}>
       <span className="text-[13px] text-muted">{q}</span>
-      <a href={href} className="text-[13px] font-medium text-link hover:underline">
-        {a}
-      </a>
+      {to ? (
+        <Link to={to} className="text-[13px] font-medium text-link hover:underline">
+          {a}
+        </Link>
+      ) : (
+        <a href={href} className="text-[13px] font-medium text-link hover:underline">
+          {a}
+        </a>
+      )}
     </div>
   )
 }
 
 /** Centered link with a leading icon (Back to sign in, Email me a code…). */
-export function AuthIconLink({ icon: Icon, size = 14, children, href = '#' }: { icon: LucideIcon; size?: number; children: ReactNode; href?: string }) {
+export function AuthIconLink({ icon: Icon, size = 14, children, href = '#', to }: { icon: LucideIcon; size?: number; children: ReactNode; href?: string; to?: string }) {
   return (
     <div className="flex w-full justify-center">
-      <a href={href} className="flex items-center gap-[6px] text-[13px] font-medium text-link hover:underline">
-        <Icon size={size} aria-hidden />
-        {children}
-      </a>
+      {to ? (
+        <Link to={to} className="flex items-center gap-[6px] text-[13px] font-medium text-link hover:underline">
+          <Icon size={size} aria-hidden />
+          {children}
+        </Link>
+      ) : (
+        <a href={href} className="flex items-center gap-[6px] text-[13px] font-medium text-link hover:underline">
+          <Icon size={size} aria-hidden />
+          {children}
+        </a>
+      )}
     </div>
   )
 }

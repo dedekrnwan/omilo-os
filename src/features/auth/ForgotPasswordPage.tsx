@@ -14,8 +14,8 @@ export function ForgotPasswordPage() {
         sub="Enter your work email and we’ll send a link to set a new one."
       />
       <AuthField id="email" label="Work email" icon={Mail} type="email" placeholder="dede@saga.co.id" />
-      <AuthButton>Send reset link</AuthButton>
-      <AuthIconLink icon={ArrowLeft} href="/auth/sign-in">
+      <AuthButton to="/auth/forgot-password/sent">Send reset link</AuthButton>
+      <AuthIconLink icon={ArrowLeft} to="/auth/sign-in">
         Back to sign in
       </AuthIconLink>
       <AuthNote icon={<GoogleLogo size={14} />} lead>

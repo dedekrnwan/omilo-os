@@ -1,5 +1,6 @@
 /** Payment — /auth/onboarding/payment (pen rK2oH). */
 import { CreditCard, Globe, Lock, ShieldCheck } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
 
@@ -45,9 +46,9 @@ export function PaymentPage() {
               <span className="text-[15px] font-semibold text-ink">Team · yearly</span>
               <span className="text-[12.5px] text-muted">5 seats · all agents</span>
             </div>
-            <a href="/auth/onboarding/plan" className="text-[12.5px] font-medium text-link hover:underline">
+            <Link to="/auth/onboarding/plan" className="text-[12.5px] font-medium text-link hover:underline">
               Change
-            </a>
+            </Link>
           </div>
           <span className="h-px w-full bg-line" />
           {LINES.map((l) => (
@@ -59,7 +60,7 @@ export function PaymentPage() {
               {l.rule && <span className="h-px w-full bg-line" />}
             </div>
           ))}
-          <AuthButton onClick={() => (window.location.href = '/auth/onboarding/all-set')}>Start 14-day trial</AuthButton>
+          <AuthButton to="/auth/onboarding/all-set">Start 14-day trial</AuthButton>
           <p className="w-full text-center text-[11.5px] text-faint">We’ll remind you 3 days before the trial ends.</p>
         </aside>
       </div>

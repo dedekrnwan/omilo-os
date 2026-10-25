@@ -3,6 +3,7 @@
  * The real app frame (Rail · Office sidebar · Inset) with the team's first jobs.
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   CalendarSync,
   ChartLine,
@@ -196,6 +197,7 @@ function GettingStarted() {
 export function StepInbox() {
   const [approved, setApproved] = useState<Record<string, boolean>>({});
   const left = INBOX_JOBS.filter((j) => !approved[j.id]).length;
+  const navigate = useNavigate();
 
   useEffect(() => {
     // The first Inbox is the Office: the rail's mode switch should show it.
@@ -289,11 +291,12 @@ export function StepInbox() {
                 {left > 0 && (
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
                       setApproved(
                         Object.fromEntries(INBOX_JOBS.map((j) => [j.id, true])),
-                      )
-                    }
+                      );
+                      navigate({ to: '/office/inbox' });
+                    }}
                     className="flex h-[32px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[14px] font-medium text-primary-ink hover:bg-primary-hover"
                   >
                     <Check size={16} aria-hidden />

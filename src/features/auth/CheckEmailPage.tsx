@@ -15,7 +15,7 @@ export function CheckEmailPage() {
         sub="We sent a 6-digit code to dede@saga.co.id. It expires in 10 minutes."
       />
       <CodeRow digits="482" caret={3} />
-      <AuthButton>Verify</AuthButton>
+      <AuthButton to="/auth/choose-company">Verify</AuthButton>
       <ResendRow />
       <AuthNote icon={<Info size={13} aria-hidden className="shrink-0 text-muted" />}>
         Can’t find it? Check spam, or open the link in the email instead.

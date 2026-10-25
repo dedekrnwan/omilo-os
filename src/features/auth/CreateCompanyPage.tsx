@@ -41,7 +41,7 @@ export function CreateCompanyPage() {
             <AuthSelect label="Time zone" icon={Globe} value="Asia/Jakarta" />
           </div>
         </div>
-        <AuthButton onClick={() => (window.location.href = '/auth/onboarding/plan')}>Continue</AuthButton>
+        <AuthButton to="/auth/onboarding/plan">Continue</AuthButton>
       </div>
     </OnboardingLayout>
   )
