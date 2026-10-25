@@ -16,7 +16,8 @@ import { NotificationsRoute } from '../features/notifications/NotificationsRoute
 import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { ControlPanelRoute } from '../features/control-panel/ControlPanelRoute'
-import { OfficeLayout } from '../features/office/OfficeLayout'
+import { ModeLayout } from '../features/shell/ModeLayout'
+const OfficeLayout = () => <ModeLayout mode="office" />
 import { OfficeFlowsRoute } from '../features/office/flows'
 import { OfficeDocsRoute } from '../features/office/docs/OfficeDocsRoute'
 import { SignInPage } from '../features/auth'

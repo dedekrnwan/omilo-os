@@ -7,10 +7,8 @@ import {
   redirect,
 } from '@tanstack/react-router'
 
-/** Default landing: the General channel's new-chat hero. */
-const DEFAULT_CHANNEL = 'ch-general'
 import { Shell } from './Shell'
-import { ChatChannelLayout } from '../features/chat/ChatChannelLayout'
+import { ModeLayout } from '../features/shell/ModeLayout'
 import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
 import { GoalsRoute } from '../features/chat/GoalsRoute'
 import { FlowsRoute } from '../features/chat/FlowsRoute'
@@ -18,7 +16,6 @@ import { DocsRoute } from '../features/chat/DocsRoute'
 import { ArchivedRoute } from '../features/chat/ArchivedRoute'
 import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
-import { OfficeLayout } from '../features/office/OfficeLayout'
 import { OfficeGoalsRoute } from '../features/office/OfficeGoalsRoute'
 import {
   OfficeFlowsRoute,
@@ -92,106 +89,87 @@ const shellRoute = createRoute({
   component: Shell,
 })
 
-/** Root index: "/" redirects to the default channel's new-chat view. */
+/** Root index: "/" redirects to the chat new-chat view. */
 const rootIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/chat/$channelId', params: { channelId: DEFAULT_CHANNEL } })
+    throw redirect({ to: '/chat' })
   },
 })
 
 /**
- * Chat routes — layout-based nesting so the ChannelSidebar renders ONCE
- * and each child route swaps main content via <Outlet />.
+ * Chat routes — /chat is the ModeLayout(chat) shell (unified sidebar + Inset).
+ * No channel segment: the selected Area lives in the UI store and filters pages.
  *
- * /chat                              → passthrough (redirects to default channel)
- * /chat/$channelId                   → ChatChannelLayout (sidebar + Inset(<Outlet />))
- * /chat/$channelId/          (index) → ChatIndexRoute  (new-chat hero)
- * /chat/$channelId/$sessionId        → ChatSessionRoute (session thread)
- * /chat/$channelId/goals             → GoalsRoute
- * /chat/$channelId/flows             → FlowsRoute
- * /chat/$channelId/docs              → DocsRoute
+ * /chat              (index) → ChatIndexRoute  (new-chat hero)
+ * /chat/$sessionId           → ChatSessionRoute (session thread)
+ * /chat/goals|flows|docs|analytics|archived|routines
+ * /chat/folder/$folderId
  */
 const chatRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/chat',
-  component: () => <Outlet />,
+  component: () => <ModeLayout mode="chat" />,
 })
 
-/** Bare /chat redirects to the default channel. */
 const chatIndexRoute = createRoute({
   getParentRoute: () => chatRoute,
-  path: '/',
-  beforeLoad: () => {
-    throw redirect({ to: '/chat/$channelId', params: { channelId: DEFAULT_CHANNEL } })
-  },
-})
-
-const chatChannelRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: '$channelId',
-  component: ChatChannelLayout,
-})
-
-/** Index route: /chat/$channelId → new-chat hero */
-const chatChannelIndexRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
   path: '/',
   component: ChatIndexRoute,
 })
 
-/** Session route: /chat/$channelId/$sessionId → session thread */
+/** Session route: /chat/$sessionId → session thread (static siblings win, so reserved words are safe). */
 const chatSessionRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: '$sessionId',
   component: ChatSessionRoute,
 })
 
 const chatGoalsRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'goals',
   component: GoalsRoute,
 })
 
 const chatFlowsRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'flows',
   component: FlowsRoute,
 })
 
 const chatDocsRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'docs',
   component: DocsRoute,
 })
 
 const chatArchivedRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'archived',
   component: ArchivedRoute,
 })
 
 const chatAnalyticsRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'analytics',
   component: ChatAnalyticsRoute,
 })
 
 const chatFolderRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'folder/$folderId',
   component: FolderRoute,
 })
 
 const chatRoutinesRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'routines',
   component: ChatRoutinesRoute,
 })
 
 const chatRoutineDetailRoute = createRoute({
-  getParentRoute: () => chatChannelRoute,
+  getParentRoute: () => chatRoute,
   path: 'routines/$routineId',
   component: ChatRoutineDetailRoute,
 })
@@ -210,13 +188,27 @@ const chatRoutineDetailRoute = createRoute({
 const officeRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '/office',
-  component: OfficeLayout,
+  component: () => <ModeLayout mode="office" />,
 })
 
 const officeInboxRoute = createRoute({
   getParentRoute: () => officeRoute,
   path: 'inbox',
   component: InboxRoute,
+})
+
+/** Office chat thread — opens a session in the office shell (stays in office mode). */
+const officeChatSessionRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'chat/$sessionId',
+  component: ChatSessionRoute,
+})
+
+/** Office folder view — reuses the chat folder page within the office shell. */
+const officeFolderRoute = createRoute({
+  getParentRoute: () => officeRoute,
+  path: 'folder/$folderId',
+  component: FolderRoute,
 })
 
 const officeInboxItemRoute = createRoute({
@@ -450,21 +442,20 @@ const routeTree = rootRoute.addChildren([
   shellRoute.addChildren([
     chatRoute.addChildren([
       chatIndexRoute,
-      chatChannelRoute.addChildren([
-        chatChannelIndexRoute,
-        chatSessionRoute,
-        chatGoalsRoute,
-        chatFlowsRoute,
-        chatDocsRoute,
-        chatArchivedRoute,
-        chatFolderRoute,
-        chatAnalyticsRoute,
-        chatRoutinesRoute,
-        chatRoutineDetailRoute,
-      ]),
+      chatSessionRoute,
+      chatGoalsRoute,
+      chatFlowsRoute,
+      chatDocsRoute,
+      chatArchivedRoute,
+      chatFolderRoute,
+      chatAnalyticsRoute,
+      chatRoutinesRoute,
+      chatRoutineDetailRoute,
     ]),
     officeRoute.addChildren([
       officeInboxRoute.addChildren([officeInboxItemRoute]),
+      officeChatSessionRoute,
+      officeFolderRoute,
       officeGoalsRoute,
       officeFlowsRoute.addChildren([
         officeFlowCanvasRoute,

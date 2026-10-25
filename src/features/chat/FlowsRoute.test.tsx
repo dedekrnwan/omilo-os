@@ -10,13 +10,12 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
-import { ChatChannelLayout } from './ChatChannelLayout'
+import { ModeLayout } from '../shell/ModeLayout'
 import { FlowsRoute } from './FlowsRoute'
 
 /**
- * Build a test router that mirrors the real route tree for /chat/$channelId/flows.
- * Uses ChatChannelLayout as the layout so FlowsRoute is mounted through <Outlet />,
- * matching the production nesting and catching any layout-outlet bugs.
+ * Build a test router mirroring the real tree for /chat/flows.
+ * Uses ModeLayout(chat) so FlowsRoute mounts through <Outlet />.
  */
 function makeRouter(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -31,20 +30,17 @@ function makeRouter(path: string) {
     ),
   })
 
-  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
-  // Layout route — matches production: renders ChannelSidebar + Inset + <Outlet />
-  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
-  // Flows child mounted through the layout's <Outlet />
-  const flowsRoute = createRoute({ getParentRoute: () => channelRoute, path: 'flows', component: FlowsRoute })
+  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <ModeLayout mode="chat" /> })
+  const flowsRoute = createRoute({ getParentRoute: () => chatRoute, path: 'flows', component: FlowsRoute })
 
-  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([flowsRoute])])])
+  const tree = rootRoute.addChildren([chatRoute.addChildren([flowsRoute])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
 
 describe('FlowsRoute — tab switching', () => {
   test('renders Yours tab by default showing flow cards', async () => {
-    const router = makeRouter('/chat/ch-engineering/flows')
+    const router = makeRouter('/chat/flows')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -54,7 +50,7 @@ describe('FlowsRoute — tab switching', () => {
   })
 
   test('clicking Suggested tab shows suggested flows', async () => {
-    const router = makeRouter('/chat/ch-engineering/flows')
+    const router = makeRouter('/chat/flows')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -69,7 +65,7 @@ describe('FlowsRoute — tab switching', () => {
   })
 
   test('clicking Templates tab shows template grid', async () => {
-    const router = makeRouter('/chat/ch-engineering/flows')
+    const router = makeRouter('/chat/flows')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -86,7 +82,7 @@ describe('FlowsRoute — tab switching', () => {
   })
 
   test('clicking Runs tab shows stats and table', async () => {
-    const router = makeRouter('/chat/ch-engineering/flows')
+    const router = makeRouter('/chat/flows')
     await router.load()
     render(<RouterProvider router={router} />)
 

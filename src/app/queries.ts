@@ -73,3 +73,35 @@ export function useChannelGoals(channelId: Id) {
     queryFn: () => repos.goals.listByChannel(channelId),
   })
 }
+
+// ── Area-aware queries ────────────────────────────────────────────────────────
+// `areaId === null` → everything across all areas; otherwise scoped to one area.
+// Used by the unified sidebar (Folders/Recents) and the shared platform pages.
+
+/** Areas are channels (same underlying data), relabeled in the UI. */
+export const useAreas = useChannels
+export const useArea = useChannel
+
+export function useSessions(areaId: Id | null) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['sessions', areaId ?? 'all'],
+    queryFn: () => (areaId ? repos.sessions.listByChannel(areaId) : repos.sessions.listAll()),
+  })
+}
+
+export function useFolders(areaId: Id | null) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['folders', areaId ?? 'all'],
+    queryFn: () => (areaId ? repos.folders.listByChannel(areaId) : repos.folders.listAll()),
+  })
+}
+
+export function useGoals(areaId: Id | null) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['goals', areaId ?? 'all'],
+    queryFn: () => (areaId ? repos.goals.listByChannel(areaId) : repos.goals.listAll()),
+  })
+}

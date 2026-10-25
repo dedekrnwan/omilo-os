@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { notFound, useParams } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
 import { Ellipsis, SquarePen, Target } from 'lucide-react'
 import type { Channel, Model } from '../../core/domain/types'
-import { useChannel, useChannelGoals } from '../../app/queries'
+import { useArea, useGoals } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
@@ -11,16 +12,19 @@ import { Mascot } from '../../ui/ds/Mascot'
 
 // ── New chat hero (pen `Chat · New chat (General)`) ───────────────────────────
 
-export function NewChatHero({ channel }: { channel: Channel }) {
+/** `channel` is the selected area, or null for "All areas". */
+export function NewChatHero({ channel }: { channel: Channel | null }) {
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
-  const { data: goals = [] } = useChannelGoals(channel.id)
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: goals = [] } = useGoals(areaId)
+  const where = channel ? channel.name : 'all areas'
 
   return (
     <>
       <Topbar
         icon={SquarePen}
         title="New chat"
-        meta={channel.name}
+        meta={channel?.name ?? 'All areas'}
         actions={
           <button type="button" aria-label="More" className="flex text-muted hover:text-ink">
             <Ellipsis size={18} aria-hidden />
@@ -34,13 +38,13 @@ export function NewChatHero({ channel }: { channel: Channel }) {
             Morning, Dede. What are we figuring out?
           </h2>
           <p className="m-0 text-[14px] text-muted">
-            You’re in {channel.name}. Switch channel to give Chief focused context for one area.
+            You’re in {where}. Switch area to give Chief focused context for one part of the company.
           </p>
         </div>
 
         <div className="w-[680px] max-w-full">
           <Composer
-            sessionId={`new-${channel.id}`}
+            sessionId={`new-${areaId ?? 'all'}`}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
           />
@@ -48,7 +52,7 @@ export function NewChatHero({ channel }: { channel: Channel }) {
 
         {goals.length > 0 && (
           <div className="flex w-[720px] max-w-full flex-col gap-[10px]">
-            <span className="text-[12px] text-faint">Or start from a goal in {channel.name}</span>
+            <span className="text-[12px] text-faint">Or start from a goal in {where}</span>
             <div className="flex w-full gap-[8px]">
               {goals.slice(0, 3).map((g) => (
                 <button
@@ -69,27 +73,22 @@ export function NewChatHero({ channel }: { channel: Channel }) {
   )
 }
 
-// ── ChatIndexRoute: index child of $channelId — shows the new-chat hero ───────
+// ── ChatIndexRoute: index child of /chat — the new-chat hero ──────────────────
 
 /**
- * Index route under /chat/$channelId.
- * Renders ONLY the main-content hero; the layout provides the sidebar + Inset wrapper.
+ * Index route at /chat. Renders the main-content hero, driven by the selected
+ * Area (null = All areas). The layout provides the sidebar + Inset wrapper.
  */
 export function ChatIndexRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? 'ch-general'
-  const { data: channel, isLoading } = useChannel(channelId)
-
-  if (isLoading) return null
-  if (!channel) throw notFound()
-
-  return <NewChatHero channel={channel} />
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: channel } = useArea(areaId ?? '')
+  return <NewChatHero channel={areaId ? channel ?? null : null} />
 }
 
-// ── ChatSessionRoute: $sessionId child — shows the session thread ─────────────
+// ── ChatSessionRoute: $sessionId child — the session thread ───────────────────
 
 /**
- * Session route under /chat/$channelId/$sessionId.
+ * Session route at /chat/$sessionId (and /office/chat/$sessionId).
  * Renders ONLY the ChatSession main content; the layout provides sidebar + Inset.
  */
 export function ChatSessionRoute() {
@@ -97,23 +96,4 @@ export function ChatSessionRoute() {
   const sessionId = params.sessionId ?? ''
 
   return <ChatSession key={sessionId} sessionId={sessionId} />
-}
-
-/**
- * @deprecated Use ChatChannelLayout + ChatIndexRoute + ChatSessionRoute instead.
- * Kept temporarily so existing imports don't break during migration.
- * Remove once router.tsx and tests are fully updated.
- */
-export function ChatRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? 'ch-general'
-  const sessionId = params.sessionId
-  const { data: channel, isLoading } = useChannel(channelId)
-
-  if (isLoading) return null
-  if (!channel) throw notFound()
-
-  return sessionId
-    ? <ChatSession key={sessionId} sessionId={sessionId} />
-    : <NewChatHero channel={channel} />
 }

@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { Activity, GitFork, Plus, Sparkles } from 'lucide-react'
-import { useParams, useNavigate } from '@tanstack/react-router'
-import { useChannel } from '../../app/queries'
+import { useNavigate } from '@tanstack/react-router'
+import { useArea } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { FlowChain } from '../../ui/ds/FlowChain'
 import type { FlowIconId } from '../../ui/ds/FlowChain'
 import { newDraftId } from '../office/flows/data'
-
-const DEFAULT_CHANNEL_ID = 'ch-general'
 
 // ── Types & static data ───────────────────────────────────────────────────────
 
@@ -603,9 +602,8 @@ function FlowsPage({ channelName }: { channelName: string }) {
  * The sidebar and Inset wrapper are provided by ChatChannelLayout.
  */
 export function FlowsRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
-  const { data: channel } = useChannel(channelId)
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: channel } = useArea(areaId ?? '')
 
-  return <FlowsPage channelName={channel?.name ?? '…'} />
+  return <FlowsPage channelName={areaId ? channel?.name ?? '…' : 'All areas'} />
 }

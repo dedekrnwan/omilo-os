@@ -7,15 +7,21 @@ export interface ChannelRepo {
 
 export interface FolderRepo {
   listByChannel(channelId: Id): Promise<Folder[]>
+  /** Every folder across all areas (for the "All areas" view). */
+  listAll(): Promise<Folder[]>
 }
 
 export interface GoalRepo {
   listByChannel(channelId: Id): Promise<Goal[]>
+  /** Every goal across all areas (for the "All areas" view). */
+  listAll(): Promise<Goal[]>
 }
 
 export interface SessionRepo {
   get(id: Id): Promise<Session | null>
   listByChannel(channelId: Id): Promise<Session[]>
+  /** Every session across all areas (for the "All areas" view). */
+  listAll(): Promise<Session[]>
 }
 
 export interface MessageRepo {

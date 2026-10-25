@@ -9,8 +9,8 @@ import { AreaChip } from '../../ui/ds/AreaChip'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { useOfficeArea } from './OfficeAreaContext'
-import type { AreaFilter } from './OfficeSidebar'
+import { useUIStore } from '../../app/store'
+import type { AreaFilter } from '../shell/area'
 import { InboxReviewDialog } from './InboxReviewDialog'
 import type { ReviewResult } from './InboxReviewDialog'
 import { InboxChangeAmountDialog } from './InboxChangeAmountDialog'
@@ -598,7 +598,7 @@ function InboxItemView({ itemId }: { itemId: string }) {
  */
 export function InboxRoute() {
   const { itemId } = useParams({ strict: false })
-  const { area } = useOfficeArea()
+  const area = useUIStore((s) => s.areaId)
 
   return itemId ? <InboxItemView itemId={itemId} /> : <InboxList area={area} />
 }

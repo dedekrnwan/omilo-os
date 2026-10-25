@@ -6,8 +6,20 @@ describe('UIStore', () => {
     // Reset store to initial state before each test
     useUIStore.setState({
       mode: 'chat',
+      areaId: null,
       lastPath: { chat: '', office: '' },
     })
+  })
+
+  test('areaId defaults to null (All areas)', () => {
+    expect(useUIStore.getState().areaId).toBe(null)
+  })
+
+  test('setArea updates the selected area and back to null', () => {
+    useUIStore.getState().setArea('ch-engineering')
+    expect(useUIStore.getState().areaId).toBe('ch-engineering')
+    useUIStore.getState().setArea(null)
+    expect(useUIStore.getState().areaId).toBe(null)
   })
 
   test('toggleTarget from chat returns office mode with defaultPath when office never visited', () => {

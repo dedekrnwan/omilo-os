@@ -7,13 +7,12 @@ import {
   Clock,
   Target,
 } from 'lucide-react'
-import { useNavigate, useParams } from '@tanstack/react-router'
-import { useChannel } from '../../app/queries'
+import { useNavigate } from '@tanstack/react-router'
+import { useArea } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-
-const DEFAULT_CHANNEL_ID = 'ch-general'
 
 // ── static doc data matching k1bhz.png ───────────────────────────────────────
 
@@ -476,9 +475,8 @@ function DocsPage({ channelName }: { channelName: string }) {
  * The sidebar and Inset wrapper are provided by ChatChannelLayout.
  */
 export function DocsRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? DEFAULT_CHANNEL_ID
-  const { data: channel } = useChannel(channelId)
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: channel } = useArea(areaId ?? '')
 
-  return <DocsPage channelName={channel?.name ?? '…'} />
+  return <DocsPage channelName={areaId ? channel?.name ?? '…' : 'All areas'} />
 }

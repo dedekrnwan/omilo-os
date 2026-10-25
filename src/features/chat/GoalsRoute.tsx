@@ -1,7 +1,8 @@
 import { MessageCircle, MessageSquare, Plus, Target } from 'lucide-react'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import type { HelperArea } from '../../core/domain/types'
-import { useChannel } from '../../app/queries'
+import { useArea } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
@@ -72,13 +73,13 @@ function ProgressRing({ progress, color }: { progress: number; color: string }) 
   )
 }
 
-function GoalItem({ goal, channelId }: { goal: GoalRow; channelId: string }) {
+function GoalItem({ goal }: { goal: GoalRow }) {
   const navigate = useNavigate()
   const color = STATUS_COLOR[goal.status]
 
   function startChatAboutGoal() {
-    // Navigate to new chat — no dedicated goal-chat route, so go to the channel new-chat
-    void navigate({ to: '/chat/$channelId', params: { channelId } })
+    // Navigate to new chat — no dedicated goal-chat route, so go to the new-chat hero
+    void navigate({ to: '/chat' })
   }
 
   return (
@@ -135,12 +136,11 @@ function GoalItem({ goal, channelId }: { goal: GoalRow; channelId: string }) {
   )
 }
 
-/** Route: /chat/$channelId/goals */
+/** Route: /chat/goals — area-filtered via the shared store. */
 export function GoalsRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? 'ch-general'
-  const { data: channel } = useChannel(channelId)
-  const name = channel?.name ?? ''
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: channel } = useArea(areaId ?? '')
+  const name = areaId ? channel?.name ?? '' : 'the company'
 
   return (
     <>
@@ -158,7 +158,7 @@ export function GoalsRoute() {
           </div>
           <ul className="m-0 flex w-full list-none flex-col p-0">
             {GOALS.map((g) => (
-              <GoalItem key={g.id} goal={g} channelId={channelId} />
+              <GoalItem key={g.id} goal={g} />
             ))}
           </ul>
         </div>
