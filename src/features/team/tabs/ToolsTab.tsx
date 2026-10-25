@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowUpRight, Building2, CreditCard, Database, Globe, HardDrive, MessageCircle, Notebook, Search, Terminal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import type { HelperRecord } from '../teamData'
 import { GithubIcon } from '../brandIcons'
 import { Btn, Chip, SelectField, Switch } from '../ui'
@@ -60,6 +61,7 @@ function Group({ title, desc, rows }: { title: string; desc: string; rows: ToolR
 
 /** Tools tab — pen e4QAdg. */
 export function ToolsTab({ helper }: { helper: HelperRecord }) {
+  const navigate = useNavigate()
   const n = helper.name
   const company: ToolRow[] = [
     { name: 'WhatsApp Business', desc: 'Read and reply to resident chats', icon: MessageCircle, bg: '#25D366', access: 'Can act', on: true },
@@ -86,7 +88,11 @@ export function ToolsTab({ helper }: { helper: HelperRecord }) {
             Add or remove them in Control panel → Connectors. Here you only decide which ones {n} may use, and how much.
           </span>
         </div>
-        <Btn icon={ArrowUpRight} h={30}>
+        <Btn
+          icon={ArrowUpRight}
+          h={30}
+          onClick={() => void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } })}
+        >
           Open Connectors
         </Btn>
       </div>

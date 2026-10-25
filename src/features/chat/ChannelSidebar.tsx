@@ -61,12 +61,14 @@ function ChannelPopover({
   onSelect,
   onClose,
   onCreateChannel,
+  onManageChannels,
 }: {
   channels: Channel[]
   activeId: string
   onSelect: (id: string) => void
   onClose: () => void
   onCreateChannel: () => void
+  onManageChannels: () => void
 }) {
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -141,7 +143,7 @@ function ChannelPopover({
       </button>
       <button
         type="button"
-        onClick={onClose}
+        onClick={onManageChannels}
         className="flex w-full items-center gap-[10px] rounded-base px-[7px] py-[8px] text-left transition-colors hover:bg-hover"
       >
         <Settings2 size={15} aria-hidden className="text-ink-2" />
@@ -275,6 +277,10 @@ export function ChannelSidebar({ channelId, sessionId, folderId, activeNav }: Ch
           onSelect={selectChannel}
           onClose={() => setPopoverOpen(false)}
           onCreateChannel={() => setCreateChannelOpen(true)}
+          onManageChannels={() => {
+            setPopoverOpen(false)
+            void navigate({ to: '/control-panel/$section', params: { section: 'channels' } })
+          }}
         />
       )}
 

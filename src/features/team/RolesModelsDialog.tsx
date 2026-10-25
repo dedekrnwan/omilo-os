@@ -1,10 +1,12 @@
 import { ArrowUpRight, Cpu, Info } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import { HELPER_MODEL_ROWS } from './teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, SelectField } from './ui'
 
 /** Roles & models — pen JYwEe (Drawer a3egX). */
 export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
   return (
     <Drawer
       label="Roles & models"
@@ -21,7 +23,14 @@ export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
       }
       footer={
         <>
-          <Btn variant="quiet" icon={ArrowUpRight}>
+          <Btn
+            variant="quiet"
+            icon={ArrowUpRight}
+            onClick={() => {
+              onClose()
+              void navigate({ to: '/control-panel/$section', params: { section: 'ai-accounts' } })
+            }}
+          >
             Open AI accounts
           </Btn>
           <span className="h-px flex-1" />

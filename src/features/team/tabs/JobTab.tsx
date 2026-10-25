@@ -1,4 +1,5 @@
 import { CalendarSync, ChevronRight, History, Pencil, Sparkles } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { FILE_ICON } from '../teamData'
 import type { HelperRecord, WorkingFile } from '../teamData'
@@ -41,6 +42,7 @@ export function JobTab({
   activeFile?: WorkingFile['name']
   onOpenFile: (f: WorkingFile['name']) => void
 }) {
+  const navigate = useNavigate()
   const files = helper.files
   return (
     <div className="flex w-full flex-col gap-[20px]">
@@ -74,9 +76,13 @@ export function JobTab({
             <h3 className="m-0 text-[14px] font-semibold text-ink">Routines</h3>
             <p className="m-0 text-[12.5px] text-muted">{helper.routinesNote}</p>
           </div>
-          <a href="/office/routines" className="text-[12.5px] font-medium text-link hover:underline">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/office/routines' })}
+            className="text-[12.5px] font-medium text-link hover:underline"
+          >
             Open in Routines ↗
-          </a>
+          </button>
         </div>
         {helper.routines.length > 0 ? (
           <div className="flex w-full flex-col rounded-lg outline-1 -outline-offset-1 outline-line-strong">
