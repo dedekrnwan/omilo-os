@@ -94,6 +94,11 @@ export const DECISIONS: Decision[] = [
   },
 ]
 
+// ── Filter type ───────────────────────────────────────────────────────────────
+
+/** Sidebar filter selection for the Notifications page. */
+export type NotifFilter = 'all' | 'needs-you' | 'mentions' | string /* area */
+
 // ── Notification groups data ────────────────────────────────────────────────
 
 export const NOTIF_GROUPS: NotifGroup[] = [
@@ -148,3 +153,44 @@ export const NOTIF_GROUPS: NotifGroup[] = [
     ],
   },
 ]
+
+// ── Filter helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Return the subset of decisions + notification groups that match `filter`.
+ * - 'all'       → everything unchanged
+ * - 'needs-you' → decisions only; empty groups
+ * - 'mentions'  → notifs whose title/preview contains "@"; decisions filtered the same
+ * - area string → items whose senderArea matches (both decisions and groups)
+ */
+export function filterNotifs(filter: NotifFilter): { decisions: Decision[]; groups: NotifGroup[] } {
+  if (filter === 'all') {
+    return { decisions: DECISIONS, groups: NOTIF_GROUPS }
+  }
+
+  if (filter === 'needs-you') {
+    return { decisions: DECISIONS, groups: [] }
+  }
+
+  if (filter === 'mentions') {
+    const hasMention = (text: string) => text.includes('@')
+    const decisions = DECISIONS.filter(
+      (d) => hasMention(d.title) || hasMention(d.body),
+    )
+    const groups = NOTIF_GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (n) => hasMention(n.title) || (n.preview != null && hasMention(n.preview)),
+      ),
+    })).filter((g) => g.items.length > 0)
+    return { decisions, groups }
+  }
+
+  // area filter
+  const decisions = DECISIONS.filter((d) => d.senderArea === filter)
+  const groups = NOTIF_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((n) => n.senderArea === filter),
+  })).filter((g) => g.items.length > 0)
+  return { decisions, groups }
+}

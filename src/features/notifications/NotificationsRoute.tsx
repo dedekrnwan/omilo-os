@@ -1,14 +1,11 @@
+import { useState } from 'react'
 import { Bell, CheckCheck, Settings } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Inset, Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DECISIONS, NOTIF_GROUPS } from './data'
-import type { Decision, Notif, NotifGroup } from './data'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const totalDecisions = DECISIONS.length
-const totalUnread = NOTIF_GROUPS.flatMap((g) => g.items).filter((n) => n.unread).length
+import { filterNotifs } from './data'
+import { NotificationsSidebar } from './NotificationsSidebar'
+import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -129,59 +126,70 @@ function NotifGroupSection({ group }: { group: NotifGroup }) {
 
 /**
  * /notifications — Everything helpers sent you.
+ * A filter sidebar scopes the decisions + notification list.
  * Decisions waiting on you are pinned at the top; grouped notifications follow.
  */
 export function NotificationsRoute() {
+  const [filter, setFilter] = useState<NotifFilter>('all')
+  const { decisions, groups } = filterNotifs(filter)
+
+  const totalDecisions = decisions.length
+  const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
+
   return (
-    <Inset label="Notifications">
-      {/* Topbar */}
-      <Topbar
-        icon={Bell}
-        title="Notifications"
-        meta={
-          totalDecisions > 0
-            ? `${totalDecisions} decisions waiting on you · ${totalUnread} unread`
-            : `${totalUnread} unread`
-        }
-        actions={
-          <>
-            <Button variant="secondary" height={28} icon={CheckCheck}>
-              Mark all read
-            </Button>
-            <IconButton icon={Settings} aria-label="Notification settings" />
-          </>
-        }
-      />
+    <>
+      <NotificationsSidebar filter={filter} onFilter={setFilter} />
 
-      {/* Scrollable content */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
-        {/* Page heading */}
-        <header className="flex flex-col gap-[2px] pb-[20px]">
-          <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
-            Notifications
-          </h1>
-          <p className="m-0 text-[13px] text-muted">
-            {totalDecisions} decisions waiting on you · {totalUnread} unread
-          </p>
-        </header>
+      <Inset label="Notifications">
+        {/* Topbar */}
+        <Topbar
+          icon={Bell}
+          title="Notifications"
+          meta={
+            totalDecisions > 0
+              ? `${totalDecisions} decisions waiting on you · ${totalUnread} unread`
+              : `${totalUnread} unread`
+          }
+          actions={
+            <>
+              <Button variant="secondary" height={28} icon={CheckCheck}>
+                Mark all read
+              </Button>
+              <IconButton icon={Settings} aria-label="Notification settings" />
+            </>
+          }
+        />
 
-        {/* Pinned decisions */}
-        {DECISIONS.length > 0 && (
-          <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
-            <NeedsYouLabel count={DECISIONS.length} />
-            {DECISIONS.map((d) => (
-              <DecisionCard key={d.id} decision={d} />
+        {/* Scrollable content */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
+          {/* Page heading */}
+          <header className="flex flex-col gap-[2px] pb-[20px]">
+            <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
+              Notifications
+            </h1>
+            <p className="m-0 text-[13px] text-muted">
+              {totalDecisions} decisions waiting on you · {totalUnread} unread
+            </p>
+          </header>
+
+          {/* Pinned decisions */}
+          {decisions.length > 0 && (
+            <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
+              <NeedsYouLabel count={decisions.length} />
+              {decisions.map((d) => (
+                <DecisionCard key={d.id} decision={d} />
+              ))}
+            </section>
+          )}
+
+          {/* Grouped notification list */}
+          <div className="flex flex-col gap-[4px]">
+            {groups.map((group) => (
+              <NotifGroupSection key={group.label} group={group} />
             ))}
-          </section>
-        )}
-
-        {/* Grouped notification list */}
-        <div className="flex flex-col gap-[4px]">
-          {NOTIF_GROUPS.map((group) => (
-            <NotifGroupSection key={group.label} group={group} />
-          ))}
+          </div>
         </div>
-      </div>
-    </Inset>
+      </Inset>
+    </>
   )
 }
