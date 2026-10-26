@@ -50,12 +50,26 @@ describe('Composer mention picker', () => {
     await user.click(editor)
     await user.type(editor, '@')
     await screen.findByRole('listbox')
-    // active starts on the first helper (Chief); move to Builder, select
+    // rows: [Everyone(@all), Chief, Builder, …]; move down twice to Builder, select
+    await user.keyboard('{ArrowDown}')
     await user.keyboard('{ArrowDown}')
     await user.keyboard('{Enter}')
     const chip = editor.querySelector('[data-chip]')
     expect(chip).not.toBeNull()
     expect(chip).toHaveTextContent('@Builder')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  test('@all can be selected and inserts an @all chip', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const editor = screen.getByRole('textbox', { name: 'Message' })
+    await user.click(editor)
+    await user.type(editor, '@all')
+    await screen.findByRole('listbox')
+    expect(screen.getByText('Everyone')).toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    const chip = editor.querySelector('[data-chip]')
+    expect(chip).toHaveTextContent('@all')
   })
 })
