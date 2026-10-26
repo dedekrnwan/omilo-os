@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from '@tanstack/react-router'
-import { Ellipsis, SquarePen, Target } from 'lucide-react'
+import { SquarePen, Target } from 'lucide-react'
 import type { Channel, Model } from '../../core/domain/types'
 import { useArea, useGoals } from '../../app/queries'
 import { useUIStore } from '../../app/store'
@@ -25,11 +25,6 @@ export function NewChatHero({ channel }: { channel: Channel | null }) {
         icon={SquarePen}
         title="New chat"
         meta={channel?.name ?? 'All areas'}
-        actions={
-          <button type="button" aria-label="More" className="flex text-muted hover:text-ink">
-            <Ellipsis size={18} aria-hidden />
-          </button>
-        }
       />
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[21px] overflow-y-auto px-[24px] pb-[58px]">
         <div className="flex flex-col items-center gap-[11px] text-center">
