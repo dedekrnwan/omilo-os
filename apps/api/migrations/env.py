@@ -17,6 +17,7 @@ if config.config_file_name is not None:
 # ---------------------------------------------------------------------------
 from omilo.config import get_settings  # noqa: E402
 from omilo.db import Base  # noqa: E402  — also registers all models that import it
+import omilo.models  # noqa: F401, E402  — registers all ORM models onto Base.metadata
 
 target_metadata = Base.metadata
 
