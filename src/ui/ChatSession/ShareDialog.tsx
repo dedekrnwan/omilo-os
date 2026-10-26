@@ -2,6 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { ChevronDown, Link, Lock, Search, UserPlus, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { IconButton } from '../ds/Button'
+import { drawerOverlayClass, drawerContentClass } from '../ds/Drawer'
 
 // ── Share dialog (pen `Chat · Session · Share` P334a, dialog frhtA) ───────────
 
@@ -47,11 +48,12 @@ export function ShareDialog({ title, open, onOpenChange }: ShareDialogProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-[#0C0A0940]" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex w-[500px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-dialog bg-surface outline-1 -outline-offset-1 outline-line-strong shadow-[0_24px_48px_#1C19173D]"
+          style={{ width: 500 }}
+          className={drawerContentClass}
         >
           {/* Head */}
           <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">

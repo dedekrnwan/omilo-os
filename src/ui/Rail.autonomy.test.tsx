@@ -44,4 +44,17 @@ describe('Autonomy popover', () => {
     expect(useUIStore.getState().autonomy).toBe('yolo')
     expect(JSON.parse(localStorage.getItem('omilo-ui') ?? '{}').state.autonomy).toBe('yolo')
   })
+
+  test('the ⋯ tray opens on click and closes on Escape (not hover)', async () => {
+    const user = userEvent.setup()
+    await renderRail()
+    // Collapsed: tray items are hidden.
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
+    // Click opens the tray.
+    await user.click(screen.getByRole('button', { name: 'More' }))
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    // Escape closes it.
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument()
+  })
 })

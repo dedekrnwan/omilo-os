@@ -3,13 +3,16 @@ import { Modal, SelectField, TextInput } from '../legacyShared'
 
 interface Props {
   onClose: () => void
+  /** When set, the dialog opens in edit mode pre-filled with this skill. */
+  skill?: { name: string; desc: string }
 }
 
-export function DialogWriteSkill({ onClose }: Props) {
+export function DialogWriteSkill({ onClose, skill }: Props) {
+  const editing = !!skill
   return (
     <Modal
-      title="Write a skill"
-      subtitle="A skill is a short playbook any helper can run. Write it in plain words."
+      title={editing ? 'Edit skill' : 'Write a skill'}
+      subtitle={skill?.desc ?? 'A skill is a short playbook any helper can run. Write it in plain words.'}
       width={560}
       onClose={onClose}
       footer={
@@ -17,14 +20,14 @@ export function DialogWriteSkill({ onClose }: Props) {
           <button type="button" className="text-[12.5px] text-muted hover:underline">Draft with Chief</button>
           <div className="flex-1" />
           <Button variant="secondary" height={30} onClick={onClose}>Save draft</Button>
-          <Button variant="primary" height={30}>Publish skill</Button>
+          <Button variant="primary" height={30} onClick={onClose}>{editing ? 'Save skill' : 'Publish skill'}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-[14px]">
         <div>
           <p className="mb-[6px] text-[12px] font-medium text-muted">Name</p>
-          <TextInput value="Visitor pass" className="w-full min-w-0" />
+          <TextInput value={skill?.name ?? 'Visitor pass'} className="w-full min-w-0" />
         </div>
         <div className="grid grid-cols-2 gap-[10px]">
           <div>

@@ -4,7 +4,10 @@ import { Button } from '../../../ui/ds/Button'
 import { Breadcrumb, SectionPane, Toggle } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { Segmented } from '../../team/ui'
+import { DialogWriteSkill } from '../dialogs/DialogWriteSkill'
 import type { DialogKind } from '../legacyTypes'
+
+type Skill = (typeof SKILLS)[number]
 
 const SKILLS = [
   {
@@ -74,6 +77,7 @@ interface Props {
 
 export function SectionSkills({ onDialog }: Props) {
   const [filter, setFilter] = useState<SkillFilter>('All')
+  const [editing, setEditing] = useState<Skill | null>(null)
   const shown = filter === 'All' ? SKILLS : SKILLS.filter((s) => s.type === filter)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -98,13 +102,29 @@ export function SectionSkills({ onDialog }: Props) {
         {/* Grid */}
         <div className="grid grid-cols-2 gap-[12px]">
           {shown.map((s) => (
-            <div key={s.name} className="flex flex-col gap-[8px] rounded-lg border border-line-strong bg-surface p-[14px]">
+            <div
+              key={s.name}
+              role="button"
+              tabIndex={0}
+              aria-label={`Edit ${s.name}`}
+              onClick={() => setEditing(s)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setEditing(s)
+                }
+              }}
+              className="flex cursor-pointer flex-col gap-[8px] rounded-lg border border-line-strong bg-surface p-[14px] text-left outline-none transition-colors hover:border-ink-2 focus-visible:ring-2 focus-visible:ring-ink"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-[6px]">
                   <span className="text-[15px]">📋</span>
                   <span className="text-[13px] font-semibold text-ink">{s.name}</span>
                 </div>
-                <Toggle on={s.on} />
+                {/* Toggling on/off shouldn't open the editor. */}
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Toggle on={s.on} />
+                </span>
               </div>
               <p className="text-[12px] text-muted">{s.desc}</p>
               <div className="flex items-center gap-[6px]">
@@ -135,6 +155,13 @@ export function SectionSkills({ onDialog }: Props) {
           ))}
         </div>
       </SectionPane>
+
+      {editing && (
+        <DialogWriteSkill
+          skill={{ name: editing.name, desc: editing.desc }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }

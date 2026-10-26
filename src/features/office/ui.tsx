@@ -7,6 +7,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
+import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
 
 type Btn32Variant = 'primary' | 'secondary' | 'quiet' | 'danger'
 
@@ -102,7 +103,6 @@ export function OfficeDialog({
   sub,
   children,
   footer,
-  top,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -112,13 +112,13 @@ export function OfficeDialog({
   sub?: ReactNode
   children: ReactNode
   footer: ReactNode
-  /** Fixed top offset (pen y); centred vertically when omitted. */
+  /** Deprecated: drawers are full-height; accepted so existing call sites compile. */
   top?: number
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0940]" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => {
@@ -126,10 +126,8 @@ export function OfficeDialog({
             e.preventDefault()
             ;(e.currentTarget as HTMLElement).focus()
           }}
-          className={`fixed left-1/2 z-50 flex max-h-[92vh] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong ${
-            top === undefined ? 'top-1/2 -translate-y-1/2' : ''
-          }`}
-          style={{ width, top }}
+          className={drawerContentClass}
+          style={{ width }}
         >
           <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">
             <IconTile icon={icon} />

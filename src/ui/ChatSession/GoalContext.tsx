@@ -15,6 +15,7 @@
 
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
+import { drawerOverlayClass, drawerContentClass } from '../ds/Drawer'
 import * as Popover from '@radix-ui/react-popover'
 import {
   CalendarDays,
@@ -80,10 +81,11 @@ export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/20" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-label="Edit goal"
-          className="fixed left-1/2 top-1/2 z-50 w-[480px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 rounded-dialog bg-surface shadow-[0_20px_60px_#0000002E] outline-none"
+          style={{ width: 480 }}
+          className={`${drawerContentClass} outline-none`}
         >
           {/* Header */}
           <div className="flex items-start justify-between gap-[10px] px-[24px] pt-[20px] pb-[4px]">

@@ -22,6 +22,7 @@ import { DialogAddSeats } from './dialogs/DialogAddSeats'
 import { DialogPayMayar } from './dialogs/DialogPayMayar'
 import { DialogPlanMax } from './dialogs/DialogPlanMax'
 import { DialogConnectKey } from './dialogs/DialogConnectKey'
+import { DialogConnectDrive } from './dialogs/DialogConnectDrive'
 import { DialogAddMcp } from './dialogs/DialogAddMcp'
 import { DialogWriteSkill } from './dialogs/DialogWriteSkill'
 import { DialogChangePlan } from './dialogs/DialogChangePlan'
@@ -83,7 +84,8 @@ function DialogOverlay({ dialog, onClose, onDialog }: { dialog: DialogKind; onCl
     case 'write-skill':      return <DialogWriteSkill onClose={onClose} />
     case 'change-plan':      return <DialogChangePlan onClose={onClose} />
     case 'buy-credits':      return <DialogBuyCredits onClose={onClose} />
-    // oas-tools, connect-drive: not built yet
+    case 'connect-drive':    return <DialogConnectDrive onClose={onClose} />
+    // oas-tools: not built yet
     default:                 return null
   }
 }

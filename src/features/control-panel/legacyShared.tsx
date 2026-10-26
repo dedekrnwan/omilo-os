@@ -191,16 +191,20 @@ export function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0940] backdrop-blur-sm"
-      aria-modal="true"
-      role="dialog"
+      className="fixed inset-0 z-50 flex justify-end bg-[#0C0A0940] backdrop-blur-sm duration-150 animate-in fade-in-0"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.()
+      }}
     >
       <div
-        className="relative flex max-h-[90vh] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A091F]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative flex h-full flex-col overflow-hidden bg-surface shadow-[-24px_0_48px_#0C0A091F] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
         style={{ width }}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-[24px] pt-[24px] pb-[16px]">
+        <div className="flex shrink-0 items-start justify-between px-[24px] pt-[24px] pb-[16px]">
           <div>
             <h2 className="m-0 text-[17px] font-semibold text-ink">{title}</h2>
             {subtitle && <p className="mt-[4px] text-[13px] text-muted">{subtitle}</p>}
@@ -217,10 +221,10 @@ export function Modal({
           )}
         </div>
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-[24px] pb-[24px]">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-[24px] pb-[24px]">{children}</div>
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-[8px] border-t border-line px-[24px] py-[16px]">
+          <div className="flex shrink-0 items-center justify-end gap-[8px] border-t border-line px-[24px] py-[16px]">
             {footer}
           </div>
         )}

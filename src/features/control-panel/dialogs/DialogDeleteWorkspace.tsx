@@ -4,12 +4,12 @@ import { Field, PenButton, Scrim } from '../ControlPanelShared'
 /** pen JS6gc · General · Delete workspace */
 export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
   return (
-    <Scrim onClose={onClose}>
+    <Scrim onClose={onClose} align="right">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Delete Sahabat Warga?"
-        className="flex w-[460px] flex-col gap-[14px] rounded-dialog bg-surface p-[24px] shadow-[0_30px_80px_#1C191747]"
+        className="flex h-full w-[460px] flex-col gap-[14px] overflow-y-auto bg-surface p-[24px] shadow-[-24px_0_48px_#1C191747] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
       >
         <span className="flex size-[40px] items-center justify-center rounded-md bg-bad-tint">
           <TriangleAlert size={20} aria-hidden className="text-bad" />
