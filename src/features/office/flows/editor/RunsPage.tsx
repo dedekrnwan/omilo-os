@@ -56,7 +56,7 @@ function RunRow({
         aria-current={selected || undefined}
         onClick={onSelect}
         className={`flex w-full gap-[8px] pt-[12px] pb-[11px] pr-[15px] pl-[21px] text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
-          selected ? 'bg-soft shadow-[inset_1px_0_0_#7F7E7E,inset_0_-1px_0_#888888]' : 'shadow-[inset_0_-1px_0_var(--color-line)] hover:bg-soft'
+          selected ? 'bg-soft shadow-[inset_0_-1px_0_var(--color-line)]' : 'shadow-[inset_0_-1px_0_var(--color-line)] hover:bg-soft'
         } ${run.retry ? '!pb-[30px]' : ''}`}
       >
         <span className="mt-[1px] shrink-0">
