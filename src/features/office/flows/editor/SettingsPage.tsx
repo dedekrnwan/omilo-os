@@ -173,8 +173,8 @@ export function FlowSettingsPage() {
       }}
     >
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={scroller} className="flex min-h-0 flex-1 justify-center overflow-y-auto">
-          <div className="flex w-full max-w-[920px] gap-[40px] px-[32px]">
+        <div ref={scroller} className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto">
+          <div className="flex w-full max-w-[920px] items-start gap-[40px] px-[32px]">
             <nav aria-label="Settings sections" className="sticky top-0 flex h-fit w-[180px] shrink-0 flex-col gap-[1px] pt-[28px]">
               {SECTIONS.map((s) => (
                 <button
