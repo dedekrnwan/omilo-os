@@ -74,17 +74,18 @@ async def test_whoami_isolation(async_client):
     Seed company A (userA signs up → gets companyA + a channel seeded directly).
     Seed company B (userB signs up → gets companyB + a channel seeded directly).
 
-    GET /v1/_whoami as userA must:
-    - return company_id == companyA.id
-    - return channel_ids containing ONLY the channel for A, NOT B's.
+    GET /v1/channels as userA must:
+    - return ONLY the channel for A, NOT B's.
 
     This proves RLS enforcement at runtime (not app-level filtering):
     the session runs as omilo_app (non-superuser), so FORCE RLS applies.
+
+    Note: The _whoami probe route was removed in Task 7.  The isolation assertion
+    is now made via GET /v1/channels which runs through the same RLS-scoped session.
     """
     from omilo.db import SessionLocal
     from omilo.models.base import prefixed_id
     from omilo.models.workspace import Channel
-    from sqlalchemy import text
 
     email_a = f"isoa_{uuid.uuid4().hex[:8]}@test.example"
     email_b = f"isob_{uuid.uuid4().hex[:8]}@test.example"
@@ -93,7 +94,6 @@ async def test_whoami_isolation(async_client):
     body_a = await _sign_up(async_client, email=email_a, name="User A")
     body_b = await _sign_up(async_client, email=email_b, name="User B")
 
-    company_a_id = body_a["session"]  # we need the company_id from /me
     token_a = body_a["session"]["access"]
     token_b = body_b["session"]["access"]
 
@@ -121,15 +121,14 @@ async def test_whoami_isolation(async_client):
     chan_a_id = ch_a.id
     chan_b_id = ch_b.id
 
-    # GET /v1/_whoami as userA
-    resp = await async_client.get("/v1/_whoami", headers=_auth(token_a))
+    # GET /v1/channels as userA — RLS must filter to company A only
+    resp = await async_client.get("/v1/channels", headers=_auth(token_a))
     assert resp.status_code == 200, resp.text
-    body = resp.json()
+    channel_ids = [c["id"] for c in resp.json()]
 
-    assert body["company_id"] == cmp_a, f"Expected company {cmp_a}, got {body}"
-    assert chan_a_id in body["channel_ids"], f"A's channel not visible: {body}"
-    assert chan_b_id not in body["channel_ids"], (
-        f"B's channel should NOT be visible to A — RLS isolation FAILED: {body}"
+    assert chan_a_id in channel_ids, f"A's channel not visible: {channel_ids}"
+    assert chan_b_id not in channel_ids, (
+        f"B's channel should NOT be visible to A — RLS isolation FAILED: {channel_ids}"
     )
 
 
@@ -155,8 +154,9 @@ async def test_forge_x_company_id_no_membership_returns_403(async_client):
     cmp_b = me_b["company"]["id"]
 
     # userA sends X-Company-Id of companyB — has no membership there
+    # Use GET /v1/channels (Task 7 endpoint) instead of the removed _whoami probe.
     resp = await async_client.get(
-        "/v1/_whoami",
+        "/v1/channels",
         headers={**_auth(token_a), "X-Company-Id": cmp_b},
     )
     assert resp.status_code == 403, f"Expected 403 for unauthorized company override, got {resp.status_code}: {resp.text}"
