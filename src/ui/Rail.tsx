@@ -155,10 +155,10 @@ function TeamGlyph() {
   return (
     <span aria-hidden className="relative block size-[30px]">
       <span className="absolute top-[5px] left-0">
-        <Mascot size={20} radius={0} area="dev" tile={false} />
+        <Mascot helper size={20} radius={0} area="dev" tile={false} />
       </span>
       <span className="absolute top-[8px] left-[11px]">
-        <Mascot size={20} radius={0} area="marketing" tile={false} />
+        <Mascot helper size={20} radius={0} area="marketing" tile={false} />
       </span>
     </span>
   )
