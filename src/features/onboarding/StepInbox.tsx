@@ -222,6 +222,7 @@ export function StepInbox() {
           icon={Inbox}
           title="Inbox"
           meta={`${left} need you`}
+          search={false}
           actions={
             <Button variant="secondary" height={28} icon={ListFilter}>
               All areas
