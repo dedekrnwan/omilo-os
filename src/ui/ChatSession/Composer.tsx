@@ -1,13 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowUp, FoldVertical, Mic, MicOff, Plus } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { ArrowUp, AtSign, FoldVertical, Hash, Mic, MicOff, Paperclip, Plus, Slash } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
 import { IconButton, SquareButton } from '../ds/Button'
+import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../ds/Menu'
 import { ModelMenu, ThinkingMenu } from './ModelMenu'
 import type { ThinkingLevel } from './ModelMenu'
 import { ContextMenu } from './ContextMenu'
 import { ComposerPicker } from './ComposerPopovers'
 import type { ComposerPopoverKind } from './ComposerPopovers'
+import { ComposerInput } from './ComposerInput'
+import type { ComposerInputHandle } from './ComposerInput'
+import { filterItems, moveIndex } from './composerModel'
+import type { PickerItem, TriggerMatch } from './composerModel'
 import { Ring } from './Ring'
 
 export type ComposerMenu = 'model' | 'thinking' | 'context'
@@ -33,20 +39,12 @@ export interface ComposerProps {
   initialMenu?: ComposerMenu
 }
 
-const TRIGGERS: Record<string, ComposerPopoverKind> = { '@': 'mention', '/': 'command', '#': 'context' }
-
-/** Which picker the text before the caret is in: the last trigger char not followed by a space. */
-function pickerFor(value: string): ComposerPopoverKind {
-  const m = /(^|\s)([@/#])([^\s@/#]*)$/.exec(value)
-  return m ? TRIGGERS[m[2]] : 'none'
-}
-
 /**
  * pen `Composer` (qSGtP): surface card · radius 12 · 1px line-strong ·
  * shadow 0 8 12 #0000001F · padding 10 · gap 8.
- * Rows: input (h-44, p-4) → controls (Add · spacer · context · model · thinking · voice · send).
- * Typing @ / # opens the matching picker above the card.
- * The "almost full" banner (gHFPG) sits above the card in the composer area.
+ * Rows: input (contentEditable) → controls (Add · spacer · context · model · thinking · voice · send).
+ * Typing @ / # / opens the matching picker above the card; ↑↓ navigate, ↵/tab select, esc close.
+ * Selected @mentions / #context become atomic badge chips.
  */
 export function Composer({
   sessionId,
@@ -62,54 +60,79 @@ export function Composer({
   initialPopover = 'none',
   initialMenu,
 }: ComposerProps) {
-  const [text, setText] = useState(initialText)
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
-  const [activePopover, setActivePopover] = useState<ComposerPopoverKind>(initialPopover)
   const [isRecording, setIsRecording] = useState(false)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const [plusOpen, setPlusOpen] = useState(false)
+  const [picker, setPicker] = useState<TriggerMatch | null>(
+    initialPopover === 'none' ? null : { kind: initialPopover, query: '', index: 0 },
+  )
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [hasText, setHasText] = useState(initialText.trim().length > 0)
+
+  const inputRef = useRef<ComposerInputHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const prevSession = useRef(sessionId)
-  useEffect(() => {
-    if (prevSession.current !== sessionId) {
-      prevSession.current = sessionId
-      setText('')
-      setThinking('medium')
-      setActivePopover('none')
-    }
-  }, [sessionId])
+  const items = useMemo(() => (picker ? filterItems(picker.kind, picker.query) : []), [picker])
 
-  // Grow with content: one line at rest (inside the 44px input row), up to ~8 lines.
-  useLayoutEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-    el.style.height = '0px'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 36), 176)}px`
-  }, [text])
-
-  function send() {
-    if (text.trim()) setText('')
-    setActivePopover('none')
+  function onTriggerChange(match: TriggerMatch | null) {
+    // Reset the highlight only when the token itself changes — otherwise a keyUp
+    // from an arrow/nav key (which re-parses the same token) would clobber it.
+    const sameToken = !!match && !!picker && match.kind === picker.kind && match.query === picker.query
+    if (!sameToken) setActiveIndex(0)
+    setPicker((prev) => {
+      const same = !!match && !!prev && match.kind === prev.kind && match.query === prev.query
+      return same ? prev : match
+    })
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function closePicker() {
+    setPicker(null)
+  }
+
+  function handleSelect(item: PickerItem) {
+    inputRef.current?.selectItem(item)
+    setPicker(null)
+  }
+
+  function send() {
+    const text = inputRef.current?.getText() ?? ''
+    if (text.trim()) inputRef.current?.clear()
+    setHasText(false)
+    setPicker(null)
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (picker && items.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setActiveIndex((i) => moveIndex(i, items.length, 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setActiveIndex((i) => moveIndex(i, items.length, -1))
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        handleSelect(items[activeIndex] ?? items[0])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closePicker()
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       send()
     }
-    if (e.key === 'Escape') setActivePopover('none')
+    if (e.key === 'Escape') closePicker()
   }
 
-  function handleTextChange(value: string) {
-    setText(value)
-    setActivePopover(pickerFor(value))
-  }
-
-  function insert(trigger: string, value: string) {
-    const idx = text.lastIndexOf(trigger)
-    if (idx !== -1) setText(text.slice(0, idx) + value + ' ')
-    setActivePopover('none')
-    inputRef.current?.focus()
+  function pickTrigger(sigil: '@' | '#' | '/') {
+    inputRef.current?.insertTrigger(sigil)
   }
 
   const full = contextAlmostFull
@@ -146,90 +169,112 @@ export function Composer({
       )}
 
       <ComposerPicker
-        kind={activePopover}
-        onClose={() => setActivePopover('none')}
-        onSelect={(kind, v) => (kind === 'mention' ? insert('@', `@${v}`) : kind === 'command' ? insert('/', v) : insert('#', `#${v}`))}
+        kind={picker?.kind ?? 'none'}
+        items={items}
+        activeIndex={activeIndex}
+        onClose={closePicker}
+        onSelect={handleSelect}
+        onHover={setActiveIndex}
       >
-            {/* Composer card */}
-            <div className="flex w-full flex-col gap-[8px] rounded-lg bg-surface p-[10px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_8px_12px_#0000001F]">
-              <div className="flex min-h-[44px] w-full p-[4px]">
-                <textarea
-                  ref={inputRef}
-                  value={text}
-                  rows={1}
-                  onChange={(e) => handleTextChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={placeholder}
-                  aria-label="Message"
-                  className="block w-full resize-none bg-transparent text-[14px] leading-[normal] text-ink outline-none placeholder:text-faint"
-                />
-              </div>
+        {/* Composer card */}
+        <div className="flex w-full flex-col gap-[8px] rounded-lg bg-surface p-[10px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_8px_12px_#0000001F]">
+          <div className="flex min-h-[44px] w-full p-[4px]">
+            <ComposerInput
+              key={sessionId}
+              ref={inputRef}
+              placeholder={placeholder}
+              initialText={initialText}
+              onTextChange={(t) => setHasText(t.trim().length > 0)}
+              onTriggerChange={onTriggerChange}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
 
-              {/* Hidden file input for Attach */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                aria-label="File input"
-                className="sr-only"
-                onChange={e => {
-                  // File selected — in a real app, upload or append to context.
-                  // For mock: just announce the filename in the text area.
-                  const file = e.target.files?.[0]
-                  if (file) setText(prev => prev ? `${prev}\n[Attached: ${file.name}]` : `[Attached: ${file.name}]`)
-                  e.target.value = ''
-                }}
-              />
+          {/* Hidden file input for Attach */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            aria-label="File input"
+            className="sr-only"
+            onChange={(e) => {
+              e.target.value = ''
+            }}
+          />
 
-              {/* Controls */}
-              <div className="flex w-full items-center gap-[8px]">
-                <SquareButton
-                  icon={Plus}
-                  aria-label="Attach"
-                  onClick={() => fileInputRef.current?.click()}
-                />
-                <div className="h-px flex-1" />
-                <ContextMenu
-                  contextUsed={contextUsed}
-                  onAutoCompactToggle={onAutoCompactToggle}
-                  autoCompact={autoCompact}
-                  onCompactNow={onCompactNow}
-                  defaultOpen={initialMenu === 'context'}
+          {/* Controls */}
+          <div className="flex w-full items-center gap-[8px]">
+            <DropdownMenu.Root open={plusOpen} onOpenChange={setPlusOpen}>
+              <DropdownMenu.Trigger asChild>
+                <SquareButton icon={Plus} aria-label="Add" />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className={`z-50 w-[220px] ${menuSurface}`}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
                 >
-                  <button
-                    type="button"
-                    aria-label={`Context ${contextUsed}% used`}
-                    className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px] transition-colors hover:bg-hover data-[state=open]:bg-hover"
-                  >
-                    <Ring size={16} value={contextUsed} color={ringColor} />
-                    <span className={`font-mono text-[11px] ${full ? 'font-semibold text-bad' : 'text-muted'}`}>
-                      {contextUsed}%
-                    </span>
-                  </button>
-                </ContextMenu>
-                <ModelMenu selected={selectedModel} onSelect={onModelChange} defaultOpen={initialMenu === 'model'} />
-                <ThinkingMenu
-                  model={selectedModel}
-                  level={thinking}
-                  onSelect={setThinking}
-                  defaultOpen={initialMenu === 'thinking'}
-                />
-                <IconButton
-                  icon={isRecording ? MicOff : Mic}
-                  aria-label={isRecording ? 'Stop recording' : 'Voice input'}
-                  aria-pressed={isRecording}
-                  className={isRecording ? 'text-bad bg-hover' : ''}
-                  onClick={() => setIsRecording(v => !v)}
-                />
-                <SquareButton
-                  variant="primary"
-                  icon={ArrowUp}
-                  aria-label="Send"
-                  aria-disabled={!text.trim()}
-                  onClick={send}
-                />
-              </div>
-            </div>
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => pickTrigger('@')}>
+                    <MenuItemBody icon={AtSign} label="Mention someone" />
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => pickTrigger('#')}>
+                    <MenuItemBody icon={Hash} label="Add context" />
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => pickTrigger('/')}>
+                    <MenuItemBody icon={Slash} label="Commands" />
+                  </DropdownMenu.Item>
+                  <MenuSeparatorLine />
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => fileInputRef.current?.click()}>
+                    <MenuItemBody icon={Paperclip} label="Attach file" />
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+
+            <div className="h-px flex-1" />
+            <ContextMenu
+              contextUsed={contextUsed}
+              onAutoCompactToggle={onAutoCompactToggle}
+              autoCompact={autoCompact}
+              onCompactNow={onCompactNow}
+              defaultOpen={initialMenu === 'context'}
+            >
+              <button
+                type="button"
+                aria-label={`Context ${contextUsed}% used`}
+                className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px] transition-colors hover:bg-hover data-[state=open]:bg-hover"
+              >
+                <Ring size={16} value={contextUsed} color={ringColor} />
+                <span className={`font-mono text-[11px] ${full ? 'font-semibold text-bad' : 'text-muted'}`}>
+                  {contextUsed}%
+                </span>
+              </button>
+            </ContextMenu>
+            <ModelMenu selected={selectedModel} onSelect={onModelChange} defaultOpen={initialMenu === 'model'} />
+            <ThinkingMenu
+              model={selectedModel}
+              level={thinking}
+              onSelect={setThinking}
+              defaultOpen={initialMenu === 'thinking'}
+            />
+            <IconButton
+              icon={isRecording ? MicOff : Mic}
+              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
+              aria-pressed={isRecording}
+              className={isRecording ? 'text-bad bg-hover' : ''}
+              onClick={() => setIsRecording((v) => !v)}
+            />
+            <SquareButton
+              variant="primary"
+              icon={ArrowUp}
+              aria-label="Send"
+              aria-disabled={!hasText}
+              onClick={send}
+            />
+          </div>
+        </div>
       </ComposerPicker>
     </div>
   )
