@@ -238,63 +238,33 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   )
 }
 
-/** Routes to the office routines URLs (`/office/routines…`). */
-function useOfficeRoutinesNav(): RoutinesNav {
+/** Routes to the mode-neutral routines URLs (`/routines…`). */
+function useRoutinesNav(): RoutinesNav {
   const navigate = useNavigate()
   return {
     openRoutine: (id, state) =>
       void navigate({
-        to: '/office/routines/$routineId',
+        to: '/routines/$routineId',
         params: { routineId: id },
         search: state && state !== 'detail' ? { state } : {},
       } as never),
-    closeDrawer: () => void navigate({ to: '/office/routines', search: { view: 'list' } } as never),
-  }
-}
-
-/** Routes to the chat routines URLs (`/chat/$channelId/routines…`). */
-function useChatRoutinesNav(channelId: string): RoutinesNav {
-  const navigate = useNavigate()
-  return {
-    openRoutine: (id, state) =>
-      void navigate({
-        to: '/chat/$channelId/routines/$routineId',
-        params: { channelId, routineId: id },
-        search: state && state !== 'detail' ? { state } : {},
-      } as never),
-    closeDrawer: () =>
-      void navigate({ to: '/chat/$channelId/routines', params: { channelId }, search: { view: 'list' } } as never),
+    closeDrawer: () => void navigate({ to: '/routines', search: { view: 'list' } } as never),
   }
 }
 
 const drawerStateFrom = (state?: string): RoutineDrawerState =>
   (['running', 'paused', 'output', 'reassign'] as const).find((s) => s === state) ?? 'detail'
 
-/** Office · Routines — pen diQBZ (Empty) / I5rrK (Week) / VUmu8 (List) + states. */
+/** Routines — pen diQBZ (Empty) / I5rrK (Week) / VUmu8 (List) + states. */
 export function RoutinesRoute() {
-  const nav = useOfficeRoutinesNav()
+  const nav = useRoutinesNav()
   return <RoutinesBoard nav={nav} />
 }
 
-/** Office · Routines · Detail — pen xuAoe (+ a2xdN, oTi8l, SHLKI, H4Cdpf, rljUL). */
+/** Routines · Detail — pen xuAoe (+ a2xdN, oTi8l, SHLKI, H4Cdpf, rljUL). */
 export function RoutineDetailRoute() {
   const { routineId } = useParams({ strict: false }) as { routineId: string }
   const { state } = useSearch({ strict: false }) as { state?: string }
-  const nav = useOfficeRoutinesNav()
-  return <RoutinesBoard key="board" nav={nav} routineId={routineId} drawerState={drawerStateFrom(state)} />
-}
-
-/** Chat · Routines (channel) — same board, routed under the active channel. */
-export function ChatRoutinesRoute() {
-  const { channelId } = useParams({ strict: false }) as { channelId?: string }
-  const nav = useChatRoutinesNav(channelId ?? '')
-  return <RoutinesBoard nav={nav} />
-}
-
-/** Chat · Routines · Detail — routine drawer over the channel's routines board. */
-export function ChatRoutineDetailRoute() {
-  const { channelId, routineId } = useParams({ strict: false }) as { channelId?: string; routineId: string }
-  const { state } = useSearch({ strict: false }) as { state?: string }
-  const nav = useChatRoutinesNav(channelId ?? '')
+  const nav = useRoutinesNav()
   return <RoutinesBoard key="board" nav={nav} routineId={routineId} drawerState={drawerStateFrom(state)} />
 }

@@ -104,7 +104,7 @@ export function JobTab({
           </div>
           <button
             type="button"
-            onClick={() => void navigate({ to: '/office/routines' })}
+            onClick={() => void navigate({ to: '/routines' })}
             className="text-[12.5px] font-medium text-link hover:underline"
           >
             Open in Routines ↗

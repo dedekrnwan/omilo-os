@@ -295,7 +295,7 @@ export function StepInbox() {
                       setApproved(
                         Object.fromEntries(INBOX_JOBS.map((j) => [j.id, true])),
                       );
-                      navigate({ to: '/office/inbox' });
+                      navigate({ to: '/inbox' });
                     }}
                     className="flex h-[32px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[14px] font-medium text-primary-ink hover:bg-primary-hover"
                   >

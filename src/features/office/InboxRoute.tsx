@@ -363,7 +363,7 @@ function InboxList({ area }: { area: AreaFilter }) {
   const running = items.filter((i) => i.status === 'running')
   const done = items.filter((i) => i.status === 'done')
   const open = (item: InboxItem) =>
-    void navigate({ to: '/office/inbox/$itemId', params: { itemId: item.id } })
+    void navigate({ to: '/inbox/$itemId', params: { itemId: item.id } })
   const areaName = area ? channelOf(area)?.name : undefined
   const multi = cards.find((c) => c.proposals?.length)
   const budget = cards.find((c) => c.actions?.some((a) => a.label.toLowerCase().startsWith('change')))
@@ -460,7 +460,7 @@ function InboxList({ area }: { area: AreaFilter }) {
                     setSuggestion('open')
                     setToast(null)
                   }}
-                  onSee={() => void navigate({ to: '/office/routines' })}
+                  onSee={() => void navigate({ to: '/routines' })}
                   onDismiss={() => setSuggestion('hidden')}
                 />
               )}
@@ -593,7 +593,7 @@ function InboxItemView({ itemId }: { itemId: string }) {
 // ── InboxRoute ────────────────────────────────────────────────────────────────
 
 /**
- * Main content for /office/inbox and /office/inbox/$itemId.
+ * Main content for /inbox and /inbox/$itemId.
  * The OfficeSidebar and Inset wrapper are provided by OfficeLayout.
  */
 export function InboxRoute() {

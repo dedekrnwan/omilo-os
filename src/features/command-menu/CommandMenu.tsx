@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useNavigate } from '@tanstack/react-router'
+import { useUIStore, MODE_HOME } from '../../app/store'
 import {
   Bell,
   Building2,
@@ -257,6 +258,7 @@ type Step = { kind: 'search' } | { kind: 'hire' }
 
 function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: string }) {
   const navigate = useNavigate()
+  const setMode = useUIStore((s) => s.setMode)
   const hireFirst = initial === ':hire'
   const [query, setQuery] = useState(hireFirst ? '' : initial)
   const [tab, setTab] = useState<TabId>('all')
@@ -294,10 +296,18 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
   function run(item: Item) {
     switch (item.run.kind) {
       case 'go':
-      case 'mode':
         onClose()
         void navigate({ to: item.run.to })
         return
+      case 'mode': {
+        // Mode is persisted client state, not a route — flip it, then land on
+        // that mode's home.
+        onClose()
+        const next = item.run.to.startsWith('/inbox') ? 'office' : 'chat'
+        setMode(next)
+        void navigate({ to: MODE_HOME[next] })
+        return
+      }
       case 'chief':
         askChief('')
         return
