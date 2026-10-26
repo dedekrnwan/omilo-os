@@ -40,7 +40,7 @@ function EventRow({
     <div className="flex items-center gap-[10px] px-[16px] py-[10px] border-b border-line last:border-b-0">
       <span className="w-[36px] text-[12px] text-muted">{time}</span>
       {actorType === 'agent' && area ? (
-        <Mascot size={20} radius={0} area={area as any} tile={false} />
+        <Mascot helper size={20} radius={0} area={area as any} tile={false} />
       ) : (
         <PersonAvatar initials={actor.slice(0, 2).toUpperCase()} />
       )}

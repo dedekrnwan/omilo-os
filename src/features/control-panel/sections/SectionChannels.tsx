@@ -33,7 +33,7 @@ function AgentStack({ agents }: { agents: string[] }) {
     <span className="flex items-center gap-[-4px]">
       {agents.slice(0, 4).map((a, i) => (
         <span key={a} style={{ marginLeft: i === 0 ? 0 : -6, zIndex: 4 - i }} className="inline-flex">
-          <Mascot size={20} radius={0} area={AREA_MAP[a] ?? 'ops'} tile={false} />
+          <Mascot helper size={20} radius={0} area={AREA_MAP[a] ?? 'ops'} tile={false} />
         </span>
       ))}
     </span>
@@ -134,7 +134,7 @@ export function SectionChannels() {
               }`}
             >
               <div className="flex items-center gap-[10px]">
-                <Mascot size={28} radius={8} area={AREA_MAP[ch.area] ?? 'ops'} tile />
+                <Mascot helper size={28} radius={8} area={AREA_MAP[ch.area] ?? 'ops'} tile />
                 <div>
                   <p className="text-[13px] font-medium text-ink">{ch.name}</p>
                   <p className="text-[11.5px] text-muted">

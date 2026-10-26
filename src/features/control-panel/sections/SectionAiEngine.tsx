@@ -117,7 +117,7 @@ export function SectionAiEngine() {
         <div className="mb-[24px] flex flex-col gap-px overflow-hidden rounded-lg border border-line-strong bg-surface">
           {ROLES.map((r, i) => (
             <div key={r.role} className={`flex items-center gap-[14px] px-[16px] py-[12px] ${i < ROLES.length - 1 ? 'border-b border-line' : ''}`}>
-              <Mascot size={28} radius={8} area={r.area} tile />
+              <Mascot helper size={28} radius={8} area={r.area} tile />
               <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
                 <span className="text-[13px] font-semibold text-ink">{r.role}</span>
                 <span className="text-[12px] text-muted">{r.desc}</span>

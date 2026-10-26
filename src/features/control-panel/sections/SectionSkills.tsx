@@ -138,7 +138,7 @@ export function SectionSkills({ onDialog }: Props) {
                   <span className="rounded-sm bg-line-strong px-[4px] py-[1px] font-mono text-[10.5px] text-muted">{s.slug}</span>
                 )}
                 {s.agents.map((a) => (
-                  <Mascot key={a} size={16} radius={0} area={AREA_MAP[a] ?? 'ops'} tile={false} />
+                  <Mascot key={a} helper size={16} radius={0} area={AREA_MAP[a] ?? 'ops'} tile={false} />
                 ))}
                 <span className="ml-auto text-[11px] text-muted">{s.usage}</span>
               </div>

@@ -99,7 +99,7 @@ export function SectionKnowledge() {
                   style={{ marginLeft: i === 0 ? 0 : -6, zIndex: AGENTS.length - i, opacity: a.active ? 1 : 0.3 }}
                   className="inline-flex"
                 >
-                  <Mascot size={22} radius={0} area={a.area} tile={false} />
+                  <Mascot helper size={22} radius={0} area={a.area} tile={false} />
                 </span>
               ))}
               <span className="ml-[8px] text-[12px] text-muted">5 of 6</span>
