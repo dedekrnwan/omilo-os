@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Button } from '../../ui/ds/Button'
+import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
 
 /** Minimal create-folder dialog (local only). */
 export function CreateFolderDialog({
@@ -24,11 +25,12 @@ export function CreateFolderDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0926] duration-150 animate-in fade-in-0" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed left-1/2 top-1/2 z-50 flex w-[360px] -translate-x-1/2 -translate-y-1/2 flex-col gap-[16px] rounded-lg bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924] duration-200 ease-soft animate-in fade-in-0 zoom-in-95 focus:outline-none"
+          style={{ width: 360 }}
+          className={`${drawerContentClass} gap-[16px] p-[24px] focus:outline-none`}
         >
           <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">New folder</Dialog.Title>
           <input

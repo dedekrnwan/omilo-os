@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import * as Dialog from '@radix-ui/react-dialog'
+import { drawerOverlayClass, drawerContentClass } from './ds/Drawer'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import {
@@ -486,10 +487,11 @@ function KeyboardShortcutsDialog({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0933]" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-label="Keyboard shortcuts"
-          className="fixed top-1/2 left-1/2 z-50 w-[400px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[14px] bg-surface shadow-[0_24px_64px_#0C0A0933] outline-1 -outline-offset-1 outline-line-strong"
+          style={{ width: 400 }}
+          className={drawerContentClass}
         >
           <Dialog.Title className="flex items-center justify-between px-[18px] pt-[16px] pb-[12px] text-[15px] font-semibold text-ink">
             Keyboard shortcuts
@@ -521,10 +523,11 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0933]" />
+        <Dialog.Overlay className={drawerOverlayClass} />
         <Dialog.Content
           aria-label="Add company"
-          className="fixed top-1/2 left-1/2 z-50 w-[380px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[14px] bg-surface shadow-[0_24px_64px_#0C0A0933] outline-1 -outline-offset-1 outline-line-strong"
+          style={{ width: 380 }}
+          className={drawerContentClass}
         >
           <Dialog.Title className="px-[18px] pt-[16px] pb-[4px] text-[15px] font-semibold text-ink">
             Add company

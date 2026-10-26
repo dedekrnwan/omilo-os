@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
+import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
 import {
   CalendarDays,
   Layers,
@@ -440,11 +441,12 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0940] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Overlay className={drawerOverlayClass} />
 
         <Dialog.Content
           aria-describedby="new-goal-desc"
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-[440px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0929] outline-1 -outline-offset-1 outline-line-strong data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          style={{ width: 440 }}
+          className={drawerContentClass}
         >
           {/* Header */}
           <div className="flex items-start gap-[8px] px-[22px] pt-[22px] pb-[14px]">

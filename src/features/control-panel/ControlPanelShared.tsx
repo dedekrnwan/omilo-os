@@ -460,7 +460,12 @@ export function CloseButton({ onClose }: { onClose?: () => void }) {
   )
 }
 
-/** pen Dialog: radius 20 · line-strong · shadow 0 24 48 #1C19173D · head / body / footer. */
+/**
+ * Right-anchored drawer with the classic dialog API (icon/title/sub, body,
+ * footer). All app "dialogs" render as right drawers: full viewport height,
+ * fixed width, scrollable body, pinned footer. `offsetY` is accepted for
+ * back-compat but ignored (drawers are full-height).
+ */
 export function DialogCard({
   width,
   title,
@@ -472,7 +477,6 @@ export function DialogCard({
   footer,
   bodyGap = 16,
   label,
-  offsetY = 0,
 }: {
   width: number
   title: ReactNode
@@ -484,19 +488,19 @@ export function DialogCard({
   footer?: ReactNode
   bodyGap?: number
   label?: string
-  /** Shift from the vertical centre (pen dialogs are not always centred). */
+  /** Deprecated: drawers are full-height; kept so existing call sites compile. */
   offsetY?: number
 }) {
   return (
-    <Scrim onClose={onClose}>
+    <Scrim onClose={onClose} align="right">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={label ?? (typeof title === 'string' ? title : undefined)}
-        className="flex flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 zoom-in-95"
-        style={{ width, transform: offsetY ? `translateY(${offsetY}px)` : undefined }}
+        className="flex h-full flex-col overflow-hidden bg-surface shadow-[-24px_0_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
+        style={{ width }}
       >
-        <div className={`flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] ${lineBottom}`}>
+        <div className={`flex w-full shrink-0 items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] ${lineBottom}`}>
           {tile ?? (icon && <IconTile icon={icon} />)}
           <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
             <h2 className="m-0 text-[16px] font-semibold text-ink">{title}</h2>
@@ -504,11 +508,11 @@ export function DialogCard({
           </div>
           <CloseButton onClose={onClose} />
         </div>
-        <div className="flex w-full flex-col p-[20px]" style={{ gap: bodyGap }}>
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-[20px]" style={{ gap: bodyGap }}>
           {children}
         </div>
         {footer && (
-          <div className={`flex w-full items-center gap-[8px] px-[20px] py-[12px] ${lineTop}`}>{footer}</div>
+          <div className={`flex w-full shrink-0 items-center gap-[8px] px-[20px] py-[12px] ${lineTop}`}>{footer}</div>
         )}
       </div>
     </Scrim>
