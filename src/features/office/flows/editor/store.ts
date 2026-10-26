@@ -118,6 +118,8 @@ interface Actions {
   moveNode(flowId: string, id: string, x: number, y: number, commit: boolean): void
   addStep(flowId: string, item: PaletteItem, at?: { x: number; y: number }): void
   insertOnEdge(flowId: string, edge: FlowEdge, item: PaletteItem): void
+  /** Manually connect two steps (drag from one node's out-port to another's in-port). */
+  addEdge(flowId: string, from: string, to: string): void
   removeStep(flowId: string, id: string): void
   duplicateStep(flowId: string, id: string): void
   updateNode(flowId: string, id: string, patch: Partial<FlowNode>): void
@@ -232,6 +234,14 @@ export const useFlowStore = create<Store>()((set, get) => {
         }),
         () => ({ selected: node.id }),
       )
+    },
+    addEdge: (flowId, from, to) => {
+      const f = get().get(flowId)
+      const target = f.graph.nodes.find((n) => n.id === to)
+      // No self-loops, no duplicates, and a trigger can't be a target (it starts the flow).
+      if (from === to || !target || target.kind === 'trigger') return
+      if (f.graph.edges.some((e) => e.from === from && e.to === to)) return
+      commit(flowId, (g) => ({ ...g, edges: [...g.edges, { from, to, plus: true }] }), () => ({ selected: to }))
     },
     removeStep: (flowId, id) =>
       commit(

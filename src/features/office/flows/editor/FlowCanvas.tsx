@@ -174,6 +174,8 @@ export interface CanvasProps {
   onMove: (id: string, x: number, y: number, commit: boolean) => void
   onDrop: (item: PaletteItem, at: Pt) => void
   onInsert: (edge: FlowEdge, item: PaletteItem) => void
+  /** Manually connect two steps by dragging from an out-port to an in-port. */
+  onConnect?: (from: string, to: string) => void
   onUndo: () => void
   onRedo: () => void
   canUndo: boolean
@@ -201,6 +203,7 @@ export function FlowCanvas({
   onMove,
   onDrop,
   onInsert,
+  onConnect,
   onUndo,
   onRedo,
   canUndo,
@@ -217,7 +220,19 @@ export function FlowCanvas({
   const [grabbing, setGrabbing] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ kind: 'pan' | 'node'; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
+  // Drag-to-connect: from an out-port, wire to the cursor; drop on a node's in-port.
+  const [connect, setConnect] = useState<{ from: string; cursor: Pt; over: string | null } | null>(null)
   const panning = tool === 'pan' || space
+
+  function nodeAt(pt: Pt): FlowNode | undefined {
+    // Topmost first so overlapping cards resolve to the one on top.
+    for (let i = graph.nodes.length - 1; i >= 0; i--) {
+      const n = graph.nodes[i]
+      if (pt.x >= n.x && pt.x <= n.x + nodeWidth(n) && pt.y >= n.y && pt.y <= n.y + nodeHeight(n)) return n
+    }
+    return undefined
+  }
+  const canTarget = (n: FlowNode | undefined, from: string) => !!n && n.id !== from && n.kind !== 'trigger'
 
   // Keyboard: Delete removes the selected step, ⌘Z/⇧⌘Z undo/redo, space pans
   useEffect(() => {
@@ -234,6 +249,7 @@ export function FlowCanvas({
       } else if (e.key === ' ' && !e.repeat) {
         setSpace(true)
       } else if (e.key === 'Escape') {
+        setConnect(null)
         onSelect(null)
       }
     }
@@ -272,7 +288,23 @@ export function FlowCanvas({
     }
   }
 
+  function startConnect(nodeId: string) {
+    return (e: ReactPointerEvent) => {
+      if (panning || e.button !== 0) return
+      e.stopPropagation()
+      e.preventDefault()
+      ref.current?.setPointerCapture?.(e.pointerId)
+      setConnect({ from: nodeId, cursor: toCanvas(e.clientX, e.clientY), over: null })
+    }
+  }
+
   function onPointerMove(e: ReactPointerEvent) {
+    if (connect) {
+      const pt = toCanvas(e.clientX, e.clientY)
+      const over = nodeAt(pt)
+      setConnect({ ...connect, cursor: pt, over: canTarget(over, connect.from) ? over!.id : null })
+      return
+    }
     const d = drag.current
     if (!d) return
     const dx = e.clientX - d.sx
@@ -284,6 +316,12 @@ export function FlowCanvas({
   }
 
   function onPointerUp(e: ReactPointerEvent) {
+    if (connect) {
+      const over = nodeAt(toCanvas(e.clientX, e.clientY))
+      if (canTarget(over, connect.from)) onConnect?.(connect.from, over!.id)
+      setConnect(null)
+      return
+    }
     const d = drag.current
     drag.current = null
     setGrabbing(false)
@@ -377,6 +415,15 @@ export function FlowCanvas({
           {routes.map(({ e, r }) => (
             <path key={`${e.from}-${e.to}`} d={r!.d} fill="none" stroke={WIRE} strokeWidth={2} />
           ))}
+          {connect && (() => {
+            const from = graph.nodes.find((n) => n.id === connect.from)
+            if (!from) return null
+            const sx = from.x + nodeWidth(from) / 2
+            const sy = from.y + nodeHeight(from)
+            const { x: tx, y: ty } = connect.cursor
+            const d = `M ${sx} ${sy} C ${sx} ${sy + 48}, ${tx} ${ty - 48}, ${tx} ${ty}`
+            return <path d={d} fill="none" stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="5 4" />
+          })()}
         </svg>
         {routes.map(({ e, r }) =>
           e.branch ? (
@@ -413,6 +460,38 @@ export function FlowCanvas({
             </ContextMenuArea>
           ) : (
             card
+          )
+        })}
+
+        {/* Ports: top = in, bottom = out. Drag an out-port to another node to connect. */}
+        {!panning && graph.nodes.map((n) => {
+          const cx = n.x + nodeWidth(n) / 2
+          const isSource = connect?.from === n.id
+          const isTarget = connect?.over === n.id
+          const dim = connect && !isSource && !isTarget ? 'opacity-40' : ''
+          return (
+            <div key={`ports-${n.id}`}>
+              {n.kind !== 'trigger' && (
+                <span
+                  aria-hidden
+                  className={`pointer-events-none absolute z-20 size-[11px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-surface transition ${
+                    isTarget ? 'scale-150 border-primary' : `border-line-strong ${dim}`
+                  }`}
+                  style={{ left: cx, top: n.y }}
+                />
+              )}
+              <button
+                type="button"
+                aria-label={`Connect from ${n.title}`}
+                onPointerDown={startConnect(n.id)}
+                className={`absolute z-20 flex size-[16px] -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full border-2 bg-surface transition hover:scale-150 hover:border-primary ${
+                  isSource ? 'scale-150 border-primary' : `border-line-strong ${dim}`
+                }`}
+                style={{ left: cx, top: n.y + nodeHeight(n) }}
+              >
+                <span className="size-[5px] rounded-full bg-current text-line-strong" aria-hidden />
+              </button>
+            </div>
           )
         })}
       </div>

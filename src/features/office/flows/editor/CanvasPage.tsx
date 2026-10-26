@@ -93,6 +93,7 @@ function Editor({ flowId, draft }: { flowId: string; draft: boolean }) {
         onMove={(id, x, y, commit) => s.moveNode(flowId, id, x, y, commit)}
         onDrop={(item, at) => s.addStep(flowId, item, at)}
         onInsert={(edge, item) => s.insertOnEdge(flowId, edge, item)}
+        onConnect={(from, to) => s.addEdge(flowId, from, to)}
         onUndo={() => s.undo(flowId)}
         onRedo={() => s.redo(flowId)}
         canUndo={f.past.length > 0}
