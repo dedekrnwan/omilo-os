@@ -4,11 +4,19 @@ import { Button } from '../../ui/ds/Button'
 
 // ── Page layout ────────────────────────────────────────────────────────────────
 
-/** Full-width scrollable content pane for a section. */
+/**
+ * Full-width scrollable content pane for a section.
+ *
+ * The scroll container and the flex-column content wrapper are deliberately
+ * SEPARATE elements. If they were the same, cards with `overflow-hidden` (which
+ * get `min-height: 0` as flex items) would shrink and clip their last rows when
+ * a page overflows, instead of the pane scrolling. The inner wrapper is auto-
+ * height, so its children always keep their natural size.
+ */
 export function SectionPane({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[48px] py-[40px]">
-      {children}
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex flex-col px-[48px] py-[40px]">{children}</div>
     </div>
   )
 }
