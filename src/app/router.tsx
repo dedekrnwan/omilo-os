@@ -20,6 +20,7 @@ import {
   OfficeFlowCanvasRoute as FlowCanvasRoute,
   OfficeFlowDraftRoute as FlowDraftRoute,
   OfficeFlowRunsRoute as FlowRunsRoute,
+  OfficeFlowSettingsRoute as FlowSettingsRoute,
 } from '../features/office/flows'
 import { OfficeDocsRoute as DocsRoute } from '../features/office/docs/OfficeDocsRoute'
 import { TeamLayout } from '../features/team/TeamLayout'
@@ -218,6 +219,12 @@ const flowRunsRoute = createRoute({
   component: FlowRunsRoute,
 })
 
+const flowSettingsRoute = createRoute({
+  getParentRoute: () => editorLayoutRoute,
+  path: '/flows/$flowId/settings',
+  component: FlowSettingsRoute,
+})
+
 /**
  * Team routes — TeamLayout renders <Outlet /> (no sidebar); children render
  * their own Inset.
@@ -401,6 +408,7 @@ const routeTree = rootRoute.addChildren([
       flowCanvasRoute,
       flowDraftRoute,
       flowRunsRoute,
+      flowSettingsRoute,
     ]),
     teamRoute.addChildren([teamIndexRoute, teamHelperRoute]),
     controlPanelRoute.addChildren([controlPanelSectionRoute]),

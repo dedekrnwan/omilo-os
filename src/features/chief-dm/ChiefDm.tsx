@@ -321,7 +321,7 @@ function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) 
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export function ChiefDm({ initial }: { initial?: ChiefDmState } = {}) {
+export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; hideFab?: boolean } = {}) {
   const [state, setState] = useState<ChiefDmState>(() => initial ?? initialState())
   const [messages, setMessages] = useState<ChiefMessage[]>(CHIEF_MESSAGES)
   const [draft, setDraft] = useState('')
@@ -383,7 +383,7 @@ export function ChiefDm({ initial }: { initial?: ChiefDmState } = {}) {
             onLater={() => setState('closed')}
           />
         )}
-        <Fab unread={unread} onOpen={() => setState('open')} />
+        {!hideFab && <Fab unread={unread} onOpen={() => setState('open')} />}
       </>
     )
   }
