@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BookOpen, Globe, Languages } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useDirtyState } from '../ControlPanelShared'
@@ -9,6 +10,17 @@ import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
 import { useCompanyLook } from '../../../ui/ds/looks'
 import { LookPicker } from '../../../ui/ds/LookPicker'
 
+const INITIAL_GENERAL = {
+  name: 'Sahabat Warga',
+  about: 'SaaS for RT/RW neighborhoods',
+  timezone: 'Asia/Jakarta (UTC+7)',
+  language: 'Bahasa Indonesia',
+  hours: '08:00 – 21:00',
+}
+
+const TIMEZONES = ['Asia/Jakarta (UTC+7)', 'Asia/Singapore (UTC+8)', 'Asia/Kuala_Lumpur (UTC+8)', 'Australia/Sydney (UTC+11)', 'Europe/London (UTC+0)', 'America/New_York (UTC-5)']
+const LANGUAGES = ['Bahasa Indonesia', 'English', 'Bahasa Melayu', 'Tiếng Việt', 'ไทย', '中文']
+
 /** pen xVE7r · Control panel · General */
 export function SectionGeneral({ onDialog }: SectionProps) {
   const navigate = useNavigate()
@@ -16,7 +28,14 @@ export function SectionGeneral({ onDialog }: SectionProps) {
   const company = COMPANIES.find((c) => c.id === companyId) ?? COMPANIES[0]
   const look = useCompanyLook(company)
   const { setLook, resetLook } = useAppearance()
-  const { dirty, save, discard } = useDirtyState()
+
+  const [general, setGeneral] = useState(INITIAL_GENERAL)
+  const { dirty, markDirty, save, discard } = useDirtyState(() => setGeneral(INITIAL_GENERAL))
+  const edit = (key: keyof typeof INITIAL_GENERAL) => (v: string) => {
+    setGeneral((prev) => ({ ...prev, [key]: v }))
+    markDirty()
+  }
+
   return (
     <PageShell crumb="General" saveBar dirty={dirty} onSave={save} onDiscard={discard}>
       <PageHeader title="General" sub="Your company’s name, language and hours. Every agent is told these." />
@@ -37,10 +56,10 @@ export function SectionGeneral({ onDialog }: SectionProps) {
             </LookPicker>
           </Row>
           <Row title="Company name" desc="Told to every agent and used in messages.">
-            <Field width={240} value="Sahabat Warga" />
+            <Field width={240} value={general.name} onChange={edit('name')} />
           </Row>
           <Row title="What you do" desc="One line agents use to explain the company." last>
-            <Field width={300} value="SaaS for RT/RW neighborhoods" />
+            <Field width={300} value={general.about} onChange={edit('about')} />
           </Row>
         </Box>
       </Group>
@@ -59,13 +78,13 @@ export function SectionGeneral({ onDialog }: SectionProps) {
       <Group title="Language & hours" desc="Agents only message people and run deploys inside work hours.">
         <Box>
           <Row title="Time zone" desc="Schedules and the weekly retro run in this zone. It’s 12:38 there now.">
-            <Field width={240} icon={Globe} value="Asia/Jakarta (UTC+7)" select />
+            <Field width={240} icon={Globe} value={general.timezone} onChange={edit('timezone')} select options={TIMEZONES} />
           </Row>
           <Row title="Agent language" desc="Agents reply in this language unless you write in another.">
-            <Field width={240} icon={Languages} value="Bahasa Indonesia" select />
+            <Field width={240} icon={Languages} value={general.language} onChange={edit('language')} select options={LANGUAGES} />
           </Row>
           <Row title="Work hours" desc="Quiet hours outside these — only P0 alerts get through." last>
-            <Field width={240} value="08:00 – 21:00" />
+            <Field width={240} value={general.hours} onChange={edit('hours')} />
           </Row>
         </Box>
       </Group>

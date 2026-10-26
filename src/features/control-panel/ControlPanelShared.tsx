@@ -131,6 +131,8 @@ export function Field({
   mono,
   trailing,
   select,
+  options,
+  onChange,
   h = 36,
   className = '',
   valueClassName = '',
@@ -146,10 +148,16 @@ export function Field({
   trailing?: ReactNode
   /** Draw the select chevron (pen Select). */
   select?: boolean
+  /** Options for an editable select (only used with onChange + select). */
+  options?: string[]
+  /** Make the field editable. When set, an input/select is rendered instead of static text. */
+  onChange?: (value: string) => void
   h?: number
   className?: string
   valueClassName?: string
 }) {
+  const editable = onChange !== undefined
+  const textValue = typeof value === 'string' || typeof value === 'number' ? String(value) : ''
   return (
     <div
       className={`flex shrink-0 flex-col gap-[6px] ${width === undefined ? 'w-full' : ''} ${className}`}
@@ -157,16 +165,37 @@ export function Field({
     >
       {label && <FieldLabel>{label}</FieldLabel>}
       <div
-        className="flex w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong"
+        className={`flex w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong ${editable ? 'focus-within:outline-[1.5px] focus-within:outline-primary' : ''}`}
         style={{ height: h }}
       >
         {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
-        <span
-          className={`min-w-0 flex-1 truncate ${value !== undefined ? 'text-ink' : 'text-faint'} ${mono ? 'font-mono' : ''} ${valueClassName}`}
-          style={{ fontSize: fs }}
-        >
-          {value ?? placeholder}
-        </span>
+        {editable && select ? (
+          <select
+            value={textValue}
+            onChange={(e) => onChange(e.target.value)}
+            className={`min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none ${mono ? 'font-mono' : ''}`}
+            style={{ fontSize: fs }}
+          >
+            {(options ?? [textValue]).map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        ) : editable ? (
+          <input
+            value={textValue}
+            placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className={`min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint ${mono ? 'font-mono' : ''}`}
+            style={{ fontSize: fs }}
+          />
+        ) : (
+          <span
+            className={`min-w-0 flex-1 truncate ${value !== undefined ? 'text-ink' : 'text-faint'} ${mono ? 'font-mono' : ''} ${valueClassName}`}
+            style={{ fontSize: fs }}
+          >
+            {value ?? placeholder}
+          </span>
+        )}
         {trailing}
         {select && <ChevronDown size={16} aria-hidden className="shrink-0 text-muted" />}
       </div>
