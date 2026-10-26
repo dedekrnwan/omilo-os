@@ -11,10 +11,11 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
+import { useUIStore } from '../../app/store'
 import type { Repos } from '../../core/ports/repos'
 import { InboxRoute } from './InboxRoute'
 import { ModeLayout } from '../shell/ModeLayout'
-const OfficeLayout = () => <ModeLayout mode="office" />
+const OfficeLayout = () => <ModeLayout />
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ function makeTestRouter(
   initialPath: string,
   repos: Repos = createMockRepos(),
 ) {
+  useUIStore.setState({ mode: 'office' })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -50,7 +52,7 @@ function makeTestRouter(
 
   const officeRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/office',
+    id: 'office',
     component: OfficeLayout,
   })
 
@@ -82,7 +84,7 @@ function makeTestRouter(
 
 describe('InboxRoute — inbox list', () => {
   test('lists all mock inbox items with titles', async () => {
-    const { router } = makeTestRouter('/office/inbox')
+    const { router } = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -95,7 +97,7 @@ describe('InboxRoute — inbox list', () => {
   })
 
   test('shows item summaries in the list', async () => {
-    const { router } = makeTestRouter('/office/inbox')
+    const { router } = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -105,7 +107,7 @@ describe('InboxRoute — inbox list', () => {
   })
 
   test('shows approve actions and needs-you badges for inbox cards', async () => {
-    const { router } = makeTestRouter('/office/inbox')
+    const { router } = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -123,7 +125,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
   test('opening inbox-passkey-tasks renders ChatSession with messages from sess-passkey', async () => {
     // inbox-1 → sessionId: 'sess-gen-1'
     // sess-gen-1 has message: "Let's outline our Q4 priorities"
-    const { router } = makeTestRouter('/office/inbox/inbox-passkey-tasks')
+    const { router } = makeTestRouter('/inbox/inbox-passkey-tasks')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -139,7 +141,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
   test('opening inbox-ad-budget renders ChatSession with messages from sess-ad-budget', async () => {
     // inbox-2 → sessionId: 'sess-eng-1'
     // sess-eng-1 has message: "429s from the payment gateway"
-    const { router } = makeTestRouter('/office/inbox/inbox-ad-budget')
+    const { router } = makeTestRouter('/inbox/inbox-ad-budget')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -153,7 +155,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
   test('opening inbox-arunika renders ChatSession with messages from sess-arunika', async () => {
     // inbox-3 → sessionId: 'sess-mkt-1'
     // sess-mkt-1 has message about campaign numbers
-    const { router } = makeTestRouter('/office/inbox/inbox-arunika')
+    const { router } = makeTestRouter('/inbox/inbox-arunika')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -166,7 +168,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
 
   test('switching between two inbox items swaps the correct session thread', async () => {
     // Open inbox-1 first (sess-gen-1)
-    const { router } = makeTestRouter('/office/inbox/inbox-passkey-tasks')
+    const { router } = makeTestRouter('/inbox/inbox-passkey-tasks')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -178,7 +180,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
 
     // Navigate to inbox-2 (sess-eng-1)
     await act(async () => {
-      await router.navigate({ to: '/office/inbox/$itemId', params: { itemId: 'inbox-ad-budget' } })
+      await router.navigate({ to: '/inbox/$itemId', params: { itemId: 'inbox-ad-budget' } })
     })
 
     await waitFor(() => {
@@ -196,7 +198,7 @@ describe('InboxRoute — keystone: same primitive both modes', () => {
 
 describe('InboxRoute — unknown route id', () => {
   test('navigating to an unknown $itemId shows a not-found panel, not a crash', async () => {
-    const { router } = makeTestRouter('/office/inbox/inbox-does-not-exist')
+    const { router } = makeTestRouter('/inbox/inbox-does-not-exist')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -218,7 +220,7 @@ describe('InboxRoute — empty inbox', () => {
       },
     }
 
-    const { router } = makeTestRouter('/office/inbox', emptyInboxRepos)
+    const { router } = makeTestRouter('/inbox', emptyInboxRepos)
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -230,7 +232,7 @@ describe('InboxRoute — empty inbox', () => {
 
 describe('OfficeSidebar', () => {
   test('office sidebar is visible in inbox list view', async () => {
-    const { router } = makeTestRouter('/office/inbox')
+    const { router } = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -240,7 +242,7 @@ describe('OfficeSidebar', () => {
   })
 
   test('inbox nav entry is highlighted when on /office/inbox', async () => {
-    const { router } = makeTestRouter('/office/inbox')
+    const { router } = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 

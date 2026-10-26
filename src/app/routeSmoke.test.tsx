@@ -17,7 +17,8 @@ import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { ControlPanelRoute } from '../features/control-panel/ControlPanelRoute'
 import { ModeLayout } from '../features/shell/ModeLayout'
-const OfficeLayout = () => <ModeLayout mode="office" />
+import { useUIStore } from './store'
+const OfficeLayout = () => <ModeLayout />
 import { OfficeFlowsRoute } from '../features/office/flows'
 import { OfficeDocsRoute } from '../features/office/docs/OfficeDocsRoute'
 import { SignInPage } from '../features/auth'
@@ -86,20 +87,22 @@ describe('feature route smoke tests', () => {
     expect(screen.queryByTestId('not-found')).not.toBeInTheDocument()
   })
 
-  test('/office/flows renders the Flows page', async () => {
+  test('/flows renders the Flows page', async () => {
+    useUIStore.setState({ mode: 'office' })
     const root = makeRoot()
-    const office = createRoute({ getParentRoute: () => root, path: '/office', component: OfficeLayout })
-    const flows = createRoute({ getParentRoute: () => office, path: 'flows', component: OfficeFlowsRoute })
-    renderRouter(root.addChildren([office.addChildren([flows])]), '/office/flows')
+    const app = createRoute({ getParentRoute: () => root, id: 'app', component: OfficeLayout })
+    const flows = createRoute({ getParentRoute: () => app, path: '/flows', component: OfficeFlowsRoute })
+    renderRouter(root.addChildren([app.addChildren([flows])]), '/flows')
     expect(await screen.findByRole('heading', { name: 'Flows' })).toBeInTheDocument()
     expect(screen.queryByTestId('not-found')).not.toBeInTheDocument()
   })
 
-  test('/office/docs renders the Docs page', async () => {
+  test('/docs renders the Docs page', async () => {
+    useUIStore.setState({ mode: 'office' })
     const root = makeRoot()
-    const office = createRoute({ getParentRoute: () => root, path: '/office', component: OfficeLayout })
-    const docs = createRoute({ getParentRoute: () => office, path: 'docs', component: OfficeDocsRoute })
-    renderRouter(root.addChildren([office.addChildren([docs])]), '/office/docs')
+    const app = createRoute({ getParentRoute: () => root, id: 'app', component: OfficeLayout })
+    const docs = createRoute({ getParentRoute: () => app, path: '/docs', component: OfficeDocsRoute })
+    renderRouter(root.addChildren([app.addChildren([docs])]), '/docs')
     expect(await screen.findByRole('heading', { name: 'Docs' })).toBeInTheDocument()
     expect(screen.queryByTestId('not-found')).not.toBeInTheDocument()
   })

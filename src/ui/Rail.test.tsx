@@ -12,7 +12,8 @@ import {
 import { Rail } from './Rail'
 import { useUIStore } from '../app/store'
 
-// Build a minimal test router with memory history
+// Build a minimal test router with memory history. Routes are mode-neutral:
+// the chat primary is /chat, the office primary is /inbox.
 function makeTestRouter(initialPath = '/chat') {
   const rootRoute = createRootRoute({
     component: () => (
@@ -29,27 +30,20 @@ function makeTestRouter(initialPath = '/chat') {
     component: () => <div data-testid="route-chat">chat</div>,
   })
 
-  const officeRoute = createRoute({
+  const inboxRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/office/inbox',
-    component: () => <div data-testid="route-office">office/inbox</div>,
+    path: '/inbox',
+    component: () => <div data-testid="route-inbox">inbox</div>,
   })
 
-  const routeTree = rootRoute.addChildren([chatRoute, officeRoute])
-
+  const routeTree = rootRoute.addChildren([chatRoute, inboxRoute])
   const history = createMemoryHistory({ initialEntries: [initialPath] })
-
-  const router = createRouter({ routeTree, history })
-
-  return router
+  return createRouter({ routeTree, history })
 }
 
 beforeEach(() => {
-  // Reset zustand store between tests
-  useUIStore.setState({
-    mode: 'chat',
-    lastPath: { chat: '', office: '' },
-  })
+  // Mode is persisted client state; reset to chat before each test.
+  useUIStore.setState({ mode: 'chat' })
 })
 
 describe('Rail mode toggle', () => {
@@ -58,48 +52,37 @@ describe('Rail mode toggle', () => {
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // Both segment buttons are always visible
     expect(screen.getByRole('button', { name: /^chat$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^office$/i })).toBeInTheDocument()
   })
 
-  test('clicking Office segment when office was never visited navigates to /office/inbox', async () => {
+  test('clicking Office from the chat primary flips mode and lands on /inbox', async () => {
     const user = userEvent.setup()
     const router = makeTestRouter('/chat')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // In chat mode, click the Office segment to switch to office
-    const officeBtn = screen.getByRole('button', { name: /^office$/i })
     await act(async () => {
-      await user.click(officeBtn)
+      await user.click(screen.getByRole('button', { name: /^office$/i }))
     })
 
-    // Should navigate to /office/inbox (default path since lastPath['office'] is '')
-    expect(router.state.location.pathname).toBe('/office/inbox')
-    // Both segment buttons still present; Office is now active
-    expect(screen.getByRole('button', { name: /^office$/i })).toBeInTheDocument()
+    // Leaving the chat primary → lands on the office home.
+    expect(router.state.location.pathname).toBe('/inbox')
+    expect(useUIStore.getState().mode).toBe('office')
   })
 
-  test('clicking Chat segment back returns to remembered chat path', async () => {
+  test('clicking Chat from the office primary flips mode and lands on /chat', async () => {
     const user = userEvent.setup()
-    // Pre-set lastPath for chat so toggle back lands there
-    useUIStore.setState({
-      mode: 'office',
-      lastPath: { chat: '/chat', office: '' },
-    })
-    const router = makeTestRouter('/office/inbox')
+    useUIStore.setState({ mode: 'office' })
+    const router = makeTestRouter('/inbox')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // In office mode, click the Chat segment to switch back
-    const chatBtn = screen.getByRole('button', { name: /^chat$/i })
     await act(async () => {
-      await user.click(chatBtn)
+      await user.click(screen.getByRole('button', { name: /^chat$/i }))
     })
 
-    // Should navigate to the remembered /chat path
     expect(router.state.location.pathname).toBe('/chat')
-    expect(screen.getByRole('button', { name: /^chat$/i })).toBeInTheDocument()
+    expect(useUIStore.getState().mode).toBe('chat')
   })
 })

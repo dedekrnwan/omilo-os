@@ -28,9 +28,9 @@ function makeArchivedTestRouter(path: string) {
       </QueryClientProvider>
     ),
   })
-  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <ModeLayout mode="chat" /> })
-  const archivedRoute = createRoute({ getParentRoute: () => chatRoute, path: 'archived', component: ArchivedRoute })
-  const tree = rootRoute.addChildren([chatRoute.addChildren([archivedRoute])])
+  const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: () => <ModeLayout /> })
+  const archivedRoute = createRoute({ getParentRoute: () => appRoute, path: '/archived', component: ArchivedRoute })
+  const tree = rootRoute.addChildren([appRoute.addChildren([archivedRoute])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
@@ -46,9 +46,9 @@ function makeFolderTestRouter(path: string) {
       </QueryClientProvider>
     ),
   })
-  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <ModeLayout mode="chat" /> })
-  const folderRoute = createRoute({ getParentRoute: () => chatRoute, path: 'folder/$folderId', component: FolderRoute })
-  const tree = rootRoute.addChildren([chatRoute.addChildren([folderRoute])])
+  const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: () => <ModeLayout /> })
+  const folderRoute = createRoute({ getParentRoute: () => appRoute, path: '/folder/$folderId', component: FolderRoute })
+  const tree = rootRoute.addChildren([appRoute.addChildren([folderRoute])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
@@ -57,7 +57,7 @@ function makeFolderTestRouter(path: string) {
 
 describe('ArchivedRoute', () => {
   test('renders the Archived topbar and chat list', async () => {
-    const router = makeArchivedTestRouter('/chat/archived')
+    const router = makeArchivedTestRouter('/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -70,7 +70,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route opens the Archived drawer over the new-chat hero (pen PHRy6)', async () => {
-    const router = makeArchivedTestRouter('/chat/archived')
+    const router = makeArchivedTestRouter('/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -84,7 +84,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route has a search input', async () => {
-    const router = makeArchivedTestRouter('/chat/archived')
+    const router = makeArchivedTestRouter('/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -94,7 +94,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route shows the footer disclaimer', async () => {
-    const router = makeArchivedTestRouter('/chat/archived')
+    const router = makeArchivedTestRouter('/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -108,7 +108,7 @@ describe('ArchivedRoute', () => {
 
 describe('FolderRoute', () => {
   test('renders folder header and chat list for Q4 Launch folder', async () => {
-    const router = makeFolderTestRouter('/chat/folder/f-q4')
+    const router = makeFolderTestRouter('/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -119,7 +119,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows distinct content — NOT the new-chat hero', async () => {
-    const router = makeFolderTestRouter('/chat/folder/f-q4')
+    const router = makeFolderTestRouter('/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -131,7 +131,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows chats belonging to the folder', async () => {
-    const router = makeFolderTestRouter('/chat/folder/f-q4')
+    const router = makeFolderTestRouter('/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -143,7 +143,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route renders folder instructions panel', async () => {
-    const router = makeFolderTestRouter('/chat/folder/f-q4')
+    const router = makeFolderTestRouter('/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
