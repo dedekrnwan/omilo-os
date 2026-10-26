@@ -21,10 +21,13 @@ export interface UIState {
   areaId: string | null
   /** Workspace-wide autonomy level for every helper. */
   autonomy: Autonomy
+  /** User opted into desktop / browser push. The OS permission is the real gate. */
+  pushEnabled: boolean
   setMode(mode: Mode): void
   setCompany(id: string): void
   setArea(id: string | null): void
   setAutonomy(level: Autonomy): void
+  setPushEnabled(on: boolean): void
 }
 
 /**
@@ -39,6 +42,7 @@ export const useUIStore = create<UIState>()(
       companyId: 'sahabat-warga',
       areaId: null,
       autonomy: 'ask',
+      pushEnabled: false,
 
       setMode(mode: Mode) {
         if (get().mode !== mode) set({ mode })
@@ -52,10 +56,13 @@ export const useUIStore = create<UIState>()(
       setAutonomy(level: Autonomy) {
         if (get().autonomy !== level) set({ autonomy: level })
       },
+      setPushEnabled(on: boolean) {
+        if (get().pushEnabled !== on) set({ pushEnabled: on })
+      },
     }),
     {
       name: 'omilo-ui',
-      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId, autonomy: s.autonomy }),
+      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId, autonomy: s.autonomy, pushEnabled: s.pushEnabled }),
     },
   ),
 )

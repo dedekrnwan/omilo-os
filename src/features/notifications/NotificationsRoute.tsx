@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Bell, CheckCheck, Settings } from 'lucide-react'
+import { Bell, CheckCheck, Settings, X } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Inset, Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
@@ -8,6 +8,44 @@ import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
 import { NotificationsSidebar } from './NotificationsSidebar'
 import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 import { notify } from '../../ui/ds/Toaster'
+import { usePush } from '../../app/push'
+import { useUIStore } from '../../app/store'
+
+/**
+ * Prompt to turn on real desktop/browser push — shown until the user grants
+ * permission (or dismisses it this session). Clicking Enable pops the browser
+ * prompt and, on grant, flips the persisted preference + fires a welcome push.
+ */
+function EnablePushBanner() {
+  const { supported, permission, request, send } = usePush()
+  const setPushEnabled = useUIStore((s) => s.setPushEnabled)
+  const [dismissed, setDismissed] = useState(false)
+
+  if (!supported || permission === 'granted' || permission === 'denied' || dismissed) return null
+
+  async function enable() {
+    const result = await request()
+    if (result === 'granted') {
+      setPushEnabled(true)
+      send('Push is on', { body: "You'll get desktop alerts for decisions and failures.", tag: 'omilo-push-welcome' })
+      notify('Desktop push enabled')
+    } else if (result === 'denied') {
+      notify('Push blocked — allow notifications in your browser settings')
+    }
+  }
+
+  return (
+    <div className="mb-[16px] flex items-center gap-[12px] rounded-lg bg-info-tint px-[14px] py-[12px] outline-1 -outline-offset-1 outline-info-line">
+      <Bell size={16} aria-hidden className="shrink-0 text-info" />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[13px] font-medium text-ink">Get notified even when Omilo is in the background</span>
+        <span className="text-[12px] text-muted">Turn on desktop &amp; browser push for decisions, failures and mentions.</span>
+      </div>
+      <Button height={28} icon={Bell} onClick={enable}>Enable</Button>
+      <IconButton icon={X} aria-label="Dismiss" onClick={() => setDismissed(true)} />
+    </div>
+  )
+}
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -209,6 +247,9 @@ export function NotificationsRoute() {
               {totalDecisions} decisions waiting on you · {totalUnread} unread
             </p>
           </header>
+
+          {/* Enable real push */}
+          <EnablePushBanner />
 
           {/* Pinned decisions */}
           {decisions.length > 0 && (
