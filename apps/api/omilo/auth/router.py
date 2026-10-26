@@ -77,6 +77,7 @@ class MeResponse(BaseModel):
     user: UserOut
     member: MemberOut
     company: CompanyOut
+    companies: list[CompanyOut]
 
 
 # ---------------------------------------------------------------------------
@@ -100,47 +101,56 @@ def _user_out(user: User) -> UserOut:
 def sign_up(body: SignUpRequest) -> SignUpResponse:
     """Create a new User, Company (owner workspace), and Member in one transaction."""
     with SessionLocal() as session:
-        with session.begin():
-            # Check for duplicate email before trying to insert (nicer error).
-            existing = session.query(User).filter_by(email=body.email).first()
-            if existing:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="A user with that email already exists.",
+        try:
+            with session.begin():
+                # Check for duplicate email before trying to insert (nicer error).
+                existing = session.query(User).filter_by(email=body.email).first()
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="A user with that email already exists.",
+                    )
+
+                # Create user
+                user = User(
+                    id=prefixed_id("usr"),
+                    email=body.email,
+                    name=body.name,
+                    password_hash=hash_password(body.password),
                 )
+                session.add(user)
 
-            # Create user
-            user = User(
-                id=prefixed_id("usr"),
-                email=body.email,
-                name=body.name,
-                password_hash=hash_password(body.password),
+                # Create company (owner's workspace)
+                company = Company(
+                    id=prefixed_id("cmp"),
+                    name=f"{body.name}'s workspace",
+                    color="#6366f1",  # default indigo
+                    timezone="UTC",
+                )
+                session.add(company)
+
+                # Flush to get DB-generated defaults (created_at etc.) before we
+                # need IDs for the Member FK.
+                session.flush()
+
+                # Create owner member (no RLS set_config needed — Member.company_id
+                # is stamped explicitly; RLS would block if set_config were set to
+                # a different company, but we're inserting directly here).
+                member = Member(
+                    id=prefixed_id("mem"),
+                    company_id=company.id,
+                    user_id=user.id,
+                    role="owner",
+                )
+                session.add(member)
+
+        except IntegrityError:
+            # Concurrent duplicate slipped past the pre-flight check; return 409
+            # instead of propagating a 500 Internal Server Error.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A user with that email already exists.",
             )
-            session.add(user)
-
-            # Create company (owner's workspace)
-            company = Company(
-                id=prefixed_id("cmp"),
-                name=f"{body.name}'s workspace",
-                color="#6366f1",  # default indigo
-                timezone="UTC",
-            )
-            session.add(company)
-
-            # Flush to get DB-generated defaults (created_at etc.) before we
-            # need IDs for the Member FK.
-            session.flush()
-
-            # Create owner member (no RLS set_config needed — Member.company_id
-            # is stamped explicitly; RLS would block if set_config were set to
-            # a different company, but we're inserting directly here).
-            member = Member(
-                id=prefixed_id("mem"),
-                company_id=company.id,
-                user_id=user.id,
-                role="owner",
-            )
-            session.add(member)
 
         # Transaction committed; objects are still accessible (expire_on_commit=False).
         token, expires_at = make_access_token(user.id, company.id, "owner")
@@ -201,7 +211,7 @@ def sign_in(body: SignInRequest) -> SignInResponse:
 
 @me_router.get("/me", response_model=MeResponse)
 def me(current_user: User = Depends(get_current_user)) -> MeResponse:
-    """Return the authenticated user's profile, active member, and company."""
+    """Return the authenticated user's profile, active member, company, and all companies."""
     claims = current_user._jwt_claims  # type: ignore[attr-defined]
     company_id: str = claims["cmp"]
     role: str = claims["role"]
@@ -209,14 +219,23 @@ def me(current_user: User = Depends(get_current_user)) -> MeResponse:
     with SessionLocal() as session:
         company = session.get(Company, company_id)
 
-    if company is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Active company not found.",
-        )
+        if company is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Active company not found.",
+            )
+
+        # Load ALL companies this user belongs to (mirrors sign-in behaviour).
+        members = session.query(Member).filter_by(user_id=current_user.id).all()
+        all_companies: list[CompanyOut] = []
+        for m in members:
+            cmp = session.get(Company, m.company_id)
+            if cmp:
+                all_companies.append(CompanyOut(id=cmp.id, name=cmp.name))
 
     return MeResponse(
         user=_user_out(current_user),
         member=MemberOut(role=role),
         company=CompanyOut(id=company.id, name=company.name),
+        companies=all_companies,
     )

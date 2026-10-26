@@ -90,6 +90,14 @@ async def test_me_returns_user_member_company(async_client):
     assert "id" in body["company"]
     assert "name" in body["company"]
 
+    # companies[] shape — spec §3 requires companies[] in /me response
+    assert isinstance(body["companies"], list), "companies[] must be present"
+    assert len(body["companies"]) >= 1, "companies[] must contain at least one entry"
+    assert "id" in body["companies"][0]
+    assert "name" in body["companies"][0]
+    # The active company must be in companies[]
+    assert any(c["id"] == body["company"]["id"] for c in body["companies"])
+
 
 @pytest.mark.asyncio
 async def test_me_without_token_returns_401(async_client):
