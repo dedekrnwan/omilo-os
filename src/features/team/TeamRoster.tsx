@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowUpRight, Cpu, Ellipsis, Pause, Plus, UserMinus } from 'lucide-react'
+import { ArrowUpRight, Cpu, Ellipsis, Pause, Play, Plus, UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
+import { notify } from '../../ui/ds/Toaster'
 import type { HelperArea } from '../../core/domain/types'
 import { HELPERS } from './teamData'
 import type { HelperRecord } from './teamData'
@@ -12,6 +13,7 @@ import { Btn, Chip, IconBtn, Segmented } from './ui'
 import { HireDialog } from './HireDialog'
 import { SetupDialog } from './SetupDialog'
 import { RolesModelsDialog } from './RolesModelsDialog'
+import { LetGoDialog } from './LetGoDialog'
 
 // ── Lead · Chief (pen FEsXM) ──────────────────────────────────────────────────
 
@@ -57,10 +59,16 @@ function Stat({ value, label, warn }: { value: string; label: string; warn?: boo
 
 function CardMoreMenu({
   helper,
+  paused,
   onClose,
+  onPause,
+  onLetGo,
 }: {
   helper: HelperRecord
+  paused: boolean
   onClose: () => void
+  onPause: () => void
+  onLetGo: () => void
 }) {
   const navigate = useNavigate()
   const ref = useRef<HTMLDivElement>(null)
@@ -94,11 +102,11 @@ function CardMoreMenu({
       >
         <MenuItemBody icon={ArrowUpRight} label={`Open ${helper.name}`} />
       </button>
-      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
-        <MenuItemBody icon={Pause} label={`Pause ${helper.name}`} />
+      <button type="button" role="menuitem" className={menuItemClass} onClick={onPause}>
+        <MenuItemBody icon={paused ? Play : Pause} label={`${paused ? 'Resume' : 'Pause'} ${helper.name}`} />
       </button>
       <MenuSeparatorLine />
-      <button type="button" role="menuitem" className={menuItemClass} onClick={onClose}>
+      <button type="button" role="menuitem" className={menuItemClass} onClick={onLetGo}>
         <MenuItemBody icon={UserMinus} label={`Let ${helper.name} go`} danger />
       </button>
     </div>
@@ -110,6 +118,16 @@ function CardMoreMenu({
 function HelperCard({ helper }: { helper: HelperRecord }) {
   const area = (helper.rosterArea ?? helper.area) as HelperArea
   const [menuOpen, setMenuOpen] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const [letGoOpen, setLetGoOpen] = useState(false)
+
+  function togglePause() {
+    setMenuOpen(false)
+    setPaused((p) => {
+      notify(p ? `${helper.name} resumed` : `${helper.name} paused`)
+      return !p
+    })
+  }
   return (
     <div className="relative flex h-[218px] min-w-0 flex-1">
       <Link
@@ -122,7 +140,11 @@ function HelperCard({ helper }: { helper: HelperRecord }) {
           <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
             <span className="font-display text-[16px] font-semibold text-ink">{helper.name}</span>
             <span className="text-[12px] text-muted">{helper.roleArea}</span>
-            <StatusChip status={helper.rosterStatus} className="self-start" />
+            {paused ? (
+              <Chip tone="idle" icon={Pause} className="self-start">Paused</Chip>
+            ) : (
+              <StatusChip status={helper.rosterStatus} className="self-start" />
+            )}
           </div>
           <span className="size-[28px] shrink-0" aria-hidden />
         </div>
@@ -142,7 +164,16 @@ function HelperCard({ helper }: { helper: HelperRecord }) {
         className="absolute top-[16px] right-[16px]"
         onClick={(e) => { e.preventDefault(); setMenuOpen((v) => !v) }}
       />
-      {menuOpen && <CardMoreMenu helper={helper} onClose={() => setMenuOpen(false)} />}
+      {menuOpen && (
+        <CardMoreMenu
+          helper={helper}
+          paused={paused}
+          onClose={() => setMenuOpen(false)}
+          onPause={togglePause}
+          onLetGo={() => { setMenuOpen(false); setLetGoOpen(true) }}
+        />
+      )}
+      {letGoOpen && <LetGoDialog helper={helper} onClose={() => setLetGoOpen(false)} />}
     </div>
   )
 }
