@@ -30,6 +30,13 @@ export interface Channel {
   openItems: number
 }
 
+/**
+ * An "Area" is the user-facing name for a Channel — the same underlying data,
+ * relabeled across the UI. Both modes filter by the selected Area.
+ */
+export type Area = Channel
+export type AreaAccent = ChannelAccent
+
 export interface Goal {
   id: Id
   channelId: Id

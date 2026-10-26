@@ -11,7 +11,6 @@ import { Shell } from './Shell'
 import { ModeLayout } from '../features/shell/ModeLayout'
 import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
 import { ChatGoalsRoute, OfficeGoalsRoute } from '../features/goals/GoalsRoute'
-import { DocsRoute } from '../features/chat/DocsRoute'
 import { ArchivedRoute } from '../features/chat/ArchivedRoute'
 import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
@@ -22,7 +21,7 @@ import {
   OfficeFlowDraftRoute,
   OfficeFlowRunsRoute,
 } from '../features/office/flows'
-import { OfficeDocsRoute } from '../features/office/docs/OfficeDocsRoute'
+import { OfficeDocsRoute, ChatDocsRoute } from '../features/office/docs/OfficeDocsRoute'
 import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { HelperDetail } from '../features/team/HelperDetail'
@@ -140,7 +139,7 @@ const chatFlowsRoute = createRoute({
 const chatDocsRoute = createRoute({
   getParentRoute: () => chatRoute,
   path: 'docs',
-  component: DocsRoute,
+  component: ChatDocsRoute,
 })
 
 const chatArchivedRoute = createRoute({

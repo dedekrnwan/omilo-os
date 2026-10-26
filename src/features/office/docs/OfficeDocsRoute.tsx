@@ -48,6 +48,8 @@ import {
 } from './data'
 import type { DocFile, KnowledgeMemory } from './data'
 import { ForceGraph } from './ForceGraph'
+import { useArea } from '../../../app/queries'
+import { useUIStore } from '../../../app/store'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1743,9 +1745,10 @@ function KnowledgeView() {
 
 // ── Topbar meta per view ──────────────────────────────────────────────────────
 
-function topbarMeta(view: DocsMainView, knowledgeOn: boolean): string {
+function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string | null): string {
+  const scope = areaName ?? 'All areas'
   switch (view) {
-    case 'notes':     return 'Engineering / Q4 Launch'
+    case 'notes':     return `${scope} / Q4 Launch`
     case 'graph':     return 'Graph · 64 docs'
     case 'knowledge': return knowledgeOn ? 'Knowledge · on · 51 memories' : 'Knowledge · off'
     case 'ask-chief': return 'Ask Chief · searches docs only'
@@ -1753,14 +1756,16 @@ function topbarMeta(view: DocsMainView, knowledgeOn: boolean): string {
   }
 }
 
-// ── OfficeDocsRoute ────────────────────────────────────────────────────────────
+// ── Docs board (shared by both modes) ──────────────────────────────────────────
 
 /**
- * Main content for /office/docs.
- * The OfficeSidebar and Inset wrapper are provided by OfficeLayout.
- * All view switching is local state: Notes | Graph | Knowledge | Ask Chief | Handbook.
+ * Shared Docs board: Notes | Graph | Knowledge | Ask Chief | Handbook.
+ * `areaId === null` → all areas; a specific area scopes the Notes/meta copy.
+ * View switching is local state; the sidebar + Inset come from ModeLayout.
  */
-export function OfficeDocsRoute() {
+function DocsBoard({ areaId }: { areaId: string | null }) {
+  const { data: area } = useArea(areaId ?? '')
+  const areaName = areaId ? area?.name ?? null : null
   const [view, setView] = useState<DocsMainView>('notes')
   const [activeDocId, setActiveDocId] = useState(ACTIVE_DOC.id)
   // Knowledge "on" state is lifted so topbar meta is correct
@@ -1771,7 +1776,7 @@ export function OfficeDocsRoute() {
       <Topbar
         icon={FileText}
         title="Docs"
-        meta={topbarMeta(view, knowledgeOn)}
+        meta={topbarMeta(view, knowledgeOn, areaName)}
         actions={
           view === 'knowledge' && knowledgeOn ? (
             <div className="flex items-center gap-[10px]">
@@ -1808,4 +1813,18 @@ export function OfficeDocsRoute() {
       {view === 'handbook' && <HandbookView />}
     </>
   )
+}
+
+// ── Route wrappers (shared board, area from the store) ────────────────────────
+
+/** Office · Docs. */
+export function OfficeDocsRoute() {
+  const areaId = useUIStore((s) => s.areaId)
+  return <DocsBoard areaId={areaId} />
+}
+
+/** Chat · Docs — same full board (Notes · Graph · Knowledge · Ask Chief · Handbook). */
+export function ChatDocsRoute() {
+  const areaId = useUIStore((s) => s.areaId)
+  return <DocsBoard areaId={areaId} />
 }
