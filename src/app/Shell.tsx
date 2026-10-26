@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet } from '@tanstack/react-router'
+import { Outlet, useRouterState } from '@tanstack/react-router'
 import { Rail } from '../ui/Rail'
 import { CommandMenu } from '../features/command-menu'
 import { ChiefDm } from '../features/chief-dm'
@@ -17,6 +17,8 @@ import { ChiefDm } from '../features/chief-dm'
  */
 export function Shell() {
   const [cmdOpen, setCmdOpen] = useState(false)
+  // The flow editor is full-bleed with its own bottom actions — no Chief bubble there
+  const inEditor = useRouterState({ select: (st) => /^\/flows\/[^/]+\/.+/.test(st.location.pathname) })
 
   // Global ⌘/Ctrl-K opens the command menu.
   useEffect(() => {
@@ -35,7 +37,7 @@ export function Shell() {
       <Rail />
       <Outlet />
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
-      <ChiefDm />
+      <ChiefDm hideFab={inEditor} />
     </div>
   )
 }
