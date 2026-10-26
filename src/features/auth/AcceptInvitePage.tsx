@@ -59,7 +59,7 @@ export function AcceptInvitePage() {
           </dd>
         </div>
       </dl>
-      <GoogleButton to="/office/inbox">Accept with Google</GoogleButton>
+      <GoogleButton to="/inbox">Accept with Google</GoogleButton>
       <AuthButton variant="secondary" icon={Mail} to="/auth/check-email">
         Accept with an email code
       </AuthButton>

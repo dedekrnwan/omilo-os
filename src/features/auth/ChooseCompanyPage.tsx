@@ -17,7 +17,7 @@ export function ChooseCompanyPage() {
         {COMPANIES.map((c) => (
           <Link
             key={c.name}
-            to="/office/inbox"
+            to="/inbox"
             className="flex w-full items-center gap-[12px] rounded-lg p-[12px] transition-colors hover:bg-soft"
             style={{ boxShadow: c.current ? 'inset 0 0 0 1.5px #171717' : 'inset 0 0 0 1px var(--color-line-strong)' }}
           >

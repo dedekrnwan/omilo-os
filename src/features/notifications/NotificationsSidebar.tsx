@@ -1,6 +1,7 @@
 // TODO(pen): refine against omilo-v2.pen
 import { Bell } from 'lucide-react'
 import { GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
+import { BackToApp } from '../shell/BackToApp'
 import { helperColor } from '../../ui/tokens'
 import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
 import type { NotifFilter } from './data'
@@ -48,6 +49,8 @@ interface Props {
 export function NotificationsSidebar({ filter, onFilter }: Props) {
   return (
     <SidebarFrame label="Notifications">
+      <BackToApp />
+
       {/* Header */}
       <div className="flex w-full items-center gap-[8px] px-[8px] pt-[2px] pb-[4px]">
         <Bell size={15} aria-hidden className="text-muted" />

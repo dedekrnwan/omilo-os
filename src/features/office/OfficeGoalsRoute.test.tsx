@@ -11,8 +11,9 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
+import { useUIStore } from '../../app/store'
 import { ModeLayout } from '../shell/ModeLayout'
-const OfficeLayout = () => <ModeLayout mode="office" />
+const OfficeLayout = () => <ModeLayout />
 import { OfficeGoalsRoute } from '../goals/GoalsRoute'
 import { InboxRoute } from './InboxRoute'
 
@@ -25,6 +26,7 @@ import { InboxRoute } from './InboxRoute'
  *   /office/goals    → OfficeGoalsRoute (content only)
  */
 function makeTestRouter(initialPath: string) {
+  useUIStore.setState({ mode: 'office' })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -41,7 +43,7 @@ function makeTestRouter(initialPath: string) {
 
   const officeRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/office',
+    id: 'office',
     component: OfficeLayout,
   })
 
@@ -71,7 +73,7 @@ function makeTestRouter(initialPath: string) {
 
 describe('OfficeGoalsRoute — /office/goals', () => {
   test('renders its own content (company-wide goals heading), not inbox', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -87,7 +89,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
   })
 
   test('renders OfficeSidebar through the real layout + outlet nesting', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -97,7 +99,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
   })
 
   test('Goals sidebar nav link is active on /office/goals', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -108,7 +110,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
   })
 
   test('shows area group headings: Engineering, Marketing, Business', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -121,7 +123,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
   })
 
   test('shows goal titles from all areas', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -133,7 +135,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
   })
 
   test('+ New goal button is visible on the page', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -147,7 +149,7 @@ describe('OfficeGoalsRoute — /office/goals', () => {
 
 describe('NewGoalDialog — open / close', () => {
   test('dialog is not visible initially', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -160,7 +162,7 @@ describe('NewGoalDialog — open / close', () => {
   })
 
   test('clicking + New goal opens the dialog', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -177,7 +179,7 @@ describe('NewGoalDialog — open / close', () => {
   })
 
   test('clicking Cancel closes the dialog', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -197,7 +199,7 @@ describe('NewGoalDialog — open / close', () => {
   })
 
   test('clicking the X button closes the dialog', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -217,7 +219,7 @@ describe('NewGoalDialog — open / close', () => {
   })
 
   test('dialog contains the goal input field', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -231,7 +233,7 @@ describe('NewGoalDialog — open / close', () => {
   })
 
   test('dialog contains Channel and Due fields', async () => {
-    const { router } = makeTestRouter('/office/goals')
+    const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 

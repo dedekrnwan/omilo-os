@@ -518,13 +518,13 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const navigate = useNavigate()
 
-  // Flow editing lives in the office canvas; chat links there too.
+  // The flow editor is a mode-neutral, full-screen route (no sidebar).
   function goToCanvas(flowId: string) {
-    navigate({ to: '/office/flows/$flowId/canvas', params: { flowId } })
+    navigate({ to: '/flows/$flowId/canvas', params: { flowId } })
   }
 
   function goToDraft(sourceId?: string) {
-    navigate({ to: '/office/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
+    navigate({ to: '/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
   }
 
   return (

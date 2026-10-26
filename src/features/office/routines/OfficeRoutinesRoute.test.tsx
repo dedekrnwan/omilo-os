@@ -18,11 +18,13 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
 import { createMockRepos } from '../../../adapters/mock/mockRepos'
+import { useUIStore } from '../../../app/store'
 import { ModeLayout } from '../../shell/ModeLayout'
-const OfficeLayout = () => <ModeLayout mode="office" />
+const OfficeLayout = () => <ModeLayout />
 import { RoutinesRoute } from '../../routines'
 
 function makeTestRouter(initialPath: string) {
+  useUIStore.setState({ mode: 'office' })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -45,7 +47,7 @@ function makeTestRouter(initialPath: string) {
 
   const officeRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/office',
+    id: 'office',
     component: OfficeLayout,
   })
 
@@ -64,9 +66,9 @@ function makeTestRouter(initialPath: string) {
   return router
 }
 
-describe('/office/routines smoke test', () => {
+describe('/routines smoke test', () => {
   test('Routines sidebar NavLink has aria-current="true" and first routine name renders', async () => {
-    makeTestRouter('/office/routines')
+    makeTestRouter('/routines')
 
     // The Routines NavLink in OfficeSidebar receives active=true from OfficeLayout
     // (onRoutines is set) and renders aria-current="true".

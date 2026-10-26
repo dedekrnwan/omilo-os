@@ -48,6 +48,16 @@ describe('filterItems', () => {
     expect(filterItems('mention', 'zzzznope')).toEqual([])
   })
 
+  test('@all is the first mention suggestion and inserts a chip', () => {
+    const all = filterItems('mention', '')
+    expect(all[0]).toMatchObject({ value: 'all', chip: true, kind: 'mention' })
+  })
+
+  test('typing "all" surfaces the @all suggestion', () => {
+    const items = filterItems('mention', 'all')
+    expect(items.some((i) => i.value === 'all')).toBe(true)
+  })
+
   test('command query filters the slash commands', () => {
     const items = filterItems('command', 'loop')
     expect(items.some((i) => i.value === '/loop')).toBe(true)

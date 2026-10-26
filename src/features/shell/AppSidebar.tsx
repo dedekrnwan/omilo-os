@@ -254,36 +254,22 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   const isOpen = (id: string) =>
     toggled[id] ?? (activeSession?.folderId === id || folderId === id || DEFAULT_OPEN_FOLDERS.has(id))
 
-  // ── Navigation (mode-aware; no channel in the URL) ──
+  // ── Navigation (mode-neutral; mode lives in the store, not the URL) ──
   function openSession(id: string) {
-    if (isChat) void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
-    else void navigate({ to: '/office/chat/$sessionId', params: { sessionId: id } })
+    void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
   }
   function openFolder(id: string) {
-    if (isChat) void navigate({ to: '/chat/folder/$folderId', params: { folderId: id } })
-    else void navigate({ to: '/office/folder/$folderId', params: { folderId: id } })
+    void navigate({ to: '/folder/$folderId', params: { folderId: id } })
   }
   function navTo(nav: AppNav) {
-    if (isChat) {
-      switch (nav) {
-        case 'Primary': return void navigate({ to: '/chat' })
-        case 'Goals': return void navigate({ to: '/chat/goals' })
-        case 'Flows': return void navigate({ to: '/chat/flows' })
-        case 'Routines': return void navigate({ to: '/chat/routines' })
-        case 'Docs': return void navigate({ to: '/chat/docs' })
-        case 'Analytics': return void navigate({ to: '/chat/analytics' })
-        case 'Archived': return void navigate({ to: '/chat/archived' })
-      }
-    } else {
-      switch (nav) {
-        case 'Primary': return void navigate({ to: '/office/inbox' })
-        case 'Goals': return void navigate({ to: '/office/goals' })
-        case 'Flows': return void navigate({ to: '/office/flows' })
-        case 'Routines': return void navigate({ to: '/office/routines' })
-        case 'Docs': return void navigate({ to: '/office/docs' })
-        case 'Analytics': return void navigate({ to: '/office/analytics' })
-        case 'Archived': return void navigate({ to: '/chat/archived' })
-      }
+    switch (nav) {
+      case 'Primary': return void navigate({ to: isChat ? '/chat' : '/inbox' })
+      case 'Goals': return void navigate({ to: '/goals' })
+      case 'Flows': return void navigate({ to: '/flows' })
+      case 'Routines': return void navigate({ to: '/routines' })
+      case 'Docs': return void navigate({ to: '/docs' })
+      case 'Analytics': return void navigate({ to: '/analytics' })
+      case 'Archived': return void navigate({ to: '/archived' })
     }
   }
 

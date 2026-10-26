@@ -45,17 +45,14 @@ function makeTestRouter(initialPath: string, repos: Repos = createMockRepos()) {
     ),
   })
 
-  const chatRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/chat',
-    component: () => <ModeLayout mode="chat" />,
-  })
-  const chatIndexRoute = createRoute({ getParentRoute: () => chatRoute, path: '/', component: ChatIndexRoute })
-  const chatSessionRoute = createRoute({ getParentRoute: () => chatRoute, path: '$sessionId', component: ChatSessionRoute })
-  const chatArchivedRoute = createRoute({ getParentRoute: () => chatRoute, path: 'archived', component: ArchivedRoute })
+  // Pathless app layout mirrors production: neutral absolute-path children.
+  const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: () => <ModeLayout /> })
+  const chatIndexRoute = createRoute({ getParentRoute: () => appRoute, path: '/chat', component: ChatIndexRoute })
+  const chatSessionRoute = createRoute({ getParentRoute: () => appRoute, path: '/chat/$sessionId', component: ChatSessionRoute })
+  const archivedRoute = createRoute({ getParentRoute: () => appRoute, path: '/archived', component: ArchivedRoute })
 
   const routeTree = rootRoute.addChildren([
-    chatRoute.addChildren([chatIndexRoute, chatSessionRoute, chatArchivedRoute]),
+    appRoute.addChildren([chatIndexRoute, chatSessionRoute, archivedRoute]),
   ])
 
   const history = createMemoryHistory({ initialEntries: [initialPath] })
@@ -250,7 +247,7 @@ describe('ChatRoute — archive navigates away from session', () => {
     await user.click(archiveItem)
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/chat/archived')
+      expect(router.state.location.pathname).toBe('/archived')
     })
   })
 

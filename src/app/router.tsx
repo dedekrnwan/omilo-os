@@ -8,20 +8,20 @@ import {
 } from '@tanstack/react-router'
 
 import { Shell } from './Shell'
+import { useUIStore, MODE_HOME } from './store'
 import { ModeLayout } from '../features/shell/ModeLayout'
 import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
-import { ChatGoalsRoute, OfficeGoalsRoute } from '../features/goals/GoalsRoute'
+import { OfficeGoalsRoute as GoalsRoute } from '../features/goals/GoalsRoute'
 import { ArchivedRoute } from '../features/chat/ArchivedRoute'
 import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
 import {
-  OfficeFlowsRoute,
-  ChatFlowsRoute,
-  OfficeFlowCanvasRoute,
-  OfficeFlowDraftRoute,
-  OfficeFlowRunsRoute,
+  OfficeFlowsRoute as FlowsRoute,
+  OfficeFlowCanvasRoute as FlowCanvasRoute,
+  OfficeFlowDraftRoute as FlowDraftRoute,
+  OfficeFlowRunsRoute as FlowRunsRoute,
 } from '../features/office/flows'
-import { OfficeDocsRoute, ChatDocsRoute } from '../features/office/docs/OfficeDocsRoute'
+import { OfficeDocsRoute as DocsRoute } from '../features/office/docs/OfficeDocsRoute'
 import { TeamLayout } from '../features/team/TeamLayout'
 import { TeamRoster } from '../features/team/TeamRoster'
 import { HelperDetail } from '../features/team/HelperDetail'
@@ -47,20 +47,13 @@ import {
   AcceptInvitePage,
 } from '../features/auth'
 import { OnboardingRoute } from '../features/onboarding'
-import { ChatAnalyticsRoute, OfficeAnalyticsRoute } from '../features/analytics'
-import {
-  RoutinesRoute,
-  RoutineDetailRoute,
-  ChatRoutinesRoute,
-  ChatRoutineDetailRoute,
-} from '../features/routines'
+import { OfficeAnalyticsRoute as AnalyticsRoute } from '../features/analytics'
+import { RoutinesRoute, RoutineDetailRoute } from '../features/routines'
 
 /**
- * Root route renders a bare <Outlet /> (no Shell). Two kinds of children hang
- * off it:
+ * Root route renders a bare <Outlet /> (no Shell). Children:
  *   - the SHELL LAYOUT route (component: Shell) carries the Rail + global mounts
- *     and holds every in-app route (chat, office, team, control-panel,
- *     notifications).
+ *     and holds every in-app route.
  *   - STANDALONE routes (auth, onboarding) hang directly off root so they render
  *     full-screen with no Rail / Shell.
  */
@@ -87,194 +80,147 @@ const shellRoute = createRoute({
   component: Shell,
 })
 
-/** Root index: "/" redirects to the chat new-chat view. */
+/**
+ * Root index: "/" redirects to the persisted mode's home. Mode is client state,
+ * not a URL segment, so the redirect reads it from the store (hydrated from
+ * localStorage before the router runs).
+ */
 const rootIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   beforeLoad: () => {
-    throw redirect({ to: '/chat' })
+    throw redirect({ to: MODE_HOME[useUIStore.getState().mode] })
   },
 })
 
 /**
- * Chat routes — /chat is the ModeLayout(chat) shell (unified sidebar + Inset).
- * No channel segment: the selected Area lives in the UI store and filters pages.
- *
- * /chat              (index) → ChatIndexRoute  (new-chat hero)
- * /chat/$sessionId           → ChatSessionRoute (session thread)
- * /chat/goals|flows|docs|analytics|archived|routines
- * /chat/folder/$folderId
+ * App layout — the shared sidebar shell. A pathless layout route (no path
+ * segment) that renders ModeLayout (AppSidebar + <Inset><Outlet/></Inset>).
+ * ModeLayout reads `mode` from the store, so EVERY route below is mode-neutral:
+ * one registration each, no /chat vs /office duplication. The only
+ * mode-specific URLs are the two primaries — /chat (Chats) and /inbox (Inbox).
  */
-const chatRoute = createRoute({
+const appLayoutRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: '/chat',
-  component: () => <ModeLayout mode="chat" />,
+  id: 'app',
+  component: () => <ModeLayout />,
 })
 
+// ── Primaries (the only mode-flavoured surfaces) ──────────────────────────────
+
+/** Chat primary — the new-chat hero. */
 const chatIndexRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: '/',
+  getParentRoute: () => appLayoutRoute,
+  path: '/chat',
   component: ChatIndexRoute,
 })
 
-/** Session route: /chat/$sessionId → session thread (static siblings win, so reserved words are safe). */
+/** A chat session thread. Mode-neutral: the surrounding chrome follows the store. */
 const chatSessionRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: '$sessionId',
+  getParentRoute: () => appLayoutRoute,
+  path: '/chat/$sessionId',
   component: ChatSessionRoute,
 })
 
-const chatGoalsRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'goals',
-  component: ChatGoalsRoute,
-})
-
-const chatFlowsRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'flows',
-  component: ChatFlowsRoute,
-})
-
-const chatDocsRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'docs',
-  component: ChatDocsRoute,
-})
-
-const chatArchivedRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'archived',
-  component: ArchivedRoute,
-})
-
-const chatAnalyticsRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'analytics',
-  component: ChatAnalyticsRoute,
-})
-
-const chatFolderRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'folder/$folderId',
-  component: FolderRoute,
-})
-
-const chatRoutinesRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'routines',
-  component: ChatRoutinesRoute,
-})
-
-const chatRoutineDetailRoute = createRoute({
-  getParentRoute: () => chatRoute,
-  path: 'routines/$routineId',
-  component: ChatRoutineDetailRoute,
-})
-
-/**
- * Office routes — OfficeLayout renders the sidebar once; child routes render
- * main content only (no sidebar duplication).
- *
- * /office                            → layout passthrough
- * /office/inbox          (index)     → InboxRoute (inbox list)
- * /office/inbox/$itemId              → InboxRoute (inbox item → ChatSession)
- * /office/goals                      → OfficeGoalsRoute (company-wide goals)
- * /office/flows                      → OfficeFlowsRoute (+ canvas / draft / runs)
- * /office/docs                       → OfficeDocsRoute
- */
-const officeRoute = createRoute({
-  getParentRoute: () => shellRoute,
-  path: '/office',
-  component: () => <ModeLayout mode="office" />,
-})
-
-const officeInboxRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'inbox',
+/** Office primary — the inbox list. */
+const inboxRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/inbox',
   component: InboxRoute,
 })
 
-/** Office chat thread — opens a session in the office shell (stays in office mode). */
-const officeChatSessionRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'chat/$sessionId',
-  component: ChatSessionRoute,
-})
-
-/** Office folder view — reuses the chat folder page within the office shell. */
-const officeFolderRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'folder/$folderId',
-  component: FolderRoute,
-})
-
-const officeInboxItemRoute = createRoute({
-  getParentRoute: () => officeInboxRoute,
+/** Inbox item — same component reads $itemId. */
+const inboxItemRoute = createRoute({
+  getParentRoute: () => inboxRoute,
   path: '$itemId',
   component: InboxRoute,
 })
 
-const officeGoalsRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'goals',
-  component: OfficeGoalsRoute,
+// ── Shared, mode-neutral surfaces ─────────────────────────────────────────────
+
+const archivedRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/archived',
+  component: ArchivedRoute,
 })
 
-const officeFlowsRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'flows',
-  component: OfficeFlowsRoute,
+const folderRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/folder/$folderId',
+  component: FolderRoute,
 })
 
-const officeFlowCanvasRoute = createRoute({
-  getParentRoute: () => officeFlowsRoute,
-  path: '$flowId/canvas',
-  component: OfficeFlowCanvasRoute,
+const goalsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/goals',
+  component: GoalsRoute,
 })
 
-const officeFlowDraftRoute = createRoute({
-  getParentRoute: () => officeFlowsRoute,
-  path: '$flowId/draft',
-  component: OfficeFlowDraftRoute,
+const flowsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/flows',
+  component: FlowsRoute,
 })
 
-const officeFlowRunsRoute = createRoute({
-  getParentRoute: () => officeFlowsRoute,
-  path: '$flowId/runs',
-  component: OfficeFlowRunsRoute,
-})
-
-const officeRoutinesRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'routines',
+const routinesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/routines',
   component: RoutinesRoute,
 })
 
-const officeRoutineDetailRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'routines/$routineId',
+const routineDetailRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/routines/$routineId',
   component: RoutineDetailRoute,
 })
 
-const officeAnalyticsRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'analytics',
-  component: OfficeAnalyticsRoute,
+const docsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/docs',
+  component: DocsRoute,
 })
 
-const officeDocsRoute = createRoute({
-  getParentRoute: () => officeRoute,
-  path: 'docs',
-  component: OfficeDocsRoute,
+const analyticsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/analytics',
+  component: AnalyticsRoute,
+})
+
+/**
+ * Editor layout — a SEPARATE pathless layout that renders only <Outlet /> (no
+ * sidebar). The flow editor is a full-screen, mode-neutral surface: the step
+ * palette is its sidebar. Lives beside appLayout, so /flows (board, in the
+ * sidebar shell) and /flows/$flowId/canvas (full-screen editor) are distinct
+ * full paths in two different layout branches — no collision, no sidebar on the
+ * editor.
+ */
+const editorLayoutRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  id: 'editor',
+  component: () => <Outlet />,
+})
+
+const flowCanvasRoute = createRoute({
+  getParentRoute: () => editorLayoutRoute,
+  path: '/flows/$flowId/canvas',
+  component: FlowCanvasRoute,
+})
+
+const flowDraftRoute = createRoute({
+  getParentRoute: () => editorLayoutRoute,
+  path: '/flows/$flowId/draft',
+  component: FlowDraftRoute,
+})
+
+const flowRunsRoute = createRoute({
+  getParentRoute: () => editorLayoutRoute,
+  path: '/flows/$flowId/runs',
+  component: FlowRunsRoute,
 })
 
 /**
  * Team routes — TeamLayout renders <Outlet /> (no sidebar); children render
  * their own Inset.
- *
- * /team                  (index) → TeamRoster
- * /team/$helperId                → HelperDetail
  */
 const teamRoute = createRoute({
   getParentRoute: () => shellRoute,
@@ -438,32 +384,23 @@ const onboardingRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   rootIndexRoute,
   shellRoute.addChildren([
-    chatRoute.addChildren([
+    appLayoutRoute.addChildren([
       chatIndexRoute,
       chatSessionRoute,
-      chatGoalsRoute,
-      chatFlowsRoute,
-      chatDocsRoute,
-      chatArchivedRoute,
-      chatFolderRoute,
-      chatAnalyticsRoute,
-      chatRoutinesRoute,
-      chatRoutineDetailRoute,
+      inboxRoute.addChildren([inboxItemRoute]),
+      archivedRoute,
+      folderRoute,
+      goalsRoute,
+      flowsRoute,
+      routinesRoute,
+      routineDetailRoute,
+      docsRoute,
+      analyticsRoute,
     ]),
-    officeRoute.addChildren([
-      officeInboxRoute.addChildren([officeInboxItemRoute]),
-      officeChatSessionRoute,
-      officeFolderRoute,
-      officeGoalsRoute,
-      officeFlowsRoute.addChildren([
-        officeFlowCanvasRoute,
-        officeFlowDraftRoute,
-        officeFlowRunsRoute,
-      ]),
-      officeDocsRoute,
-      officeRoutinesRoute,
-      officeRoutineDetailRoute,
-      officeAnalyticsRoute,
+    editorLayoutRoute.addChildren([
+      flowCanvasRoute,
+      flowDraftRoute,
+      flowRunsRoute,
     ]),
     teamRoute.addChildren([teamIndexRoute, teamHelperRoute]),
     controlPanelRoute.addChildren([controlPanelSectionRoute]),

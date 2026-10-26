@@ -1,6 +1,1 @@
-export {
-  RoutinesRoute,
-  RoutineDetailRoute,
-  ChatRoutinesRoute,
-  ChatRoutineDetailRoute,
-} from './RoutinesRoute'
+export { RoutinesRoute, RoutineDetailRoute } from './RoutinesRoute'

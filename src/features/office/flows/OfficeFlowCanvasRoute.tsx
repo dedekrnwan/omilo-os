@@ -645,7 +645,7 @@ function OfficeFlowCanvasPage({ flowId }: { flowId?: string }) {
         <button
           type="button"
           aria-label="Back to Flows"
-          onClick={() => navigate({ to: '/office/flows' })}
+          onClick={() => navigate({ to: '/flows' })}
           className="flex items-center gap-[4px] text-[12.5px] text-muted hover:text-ink-2 transition-colors"
         >
           <ArrowLeft size={13} aria-hidden />

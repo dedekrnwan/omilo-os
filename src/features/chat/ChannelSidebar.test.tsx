@@ -34,7 +34,7 @@ function makeTestRouter(initialPath: string) {
   const chatRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/chat',
-    component: () => <ModeLayout mode="chat" />,
+    component: () => <ModeLayout />,
   })
   const chatIndexRoute = createRoute({ getParentRoute: () => chatRoute, path: '/', component: ChatIndexRoute })
 

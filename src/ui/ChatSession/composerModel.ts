@@ -8,6 +8,7 @@ import {
   Sheet,
   Target,
   UserPlus,
+  Users,
   WandSparkles,
 } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
@@ -113,6 +114,16 @@ const CONTEXT_APPS: RawContext[] = [
 export function buildItems(kind: TriggerKind): PickerItem[] {
   if (kind === 'mention') {
     return [
+      {
+        id: 'mention-all',
+        kind: 'mention',
+        value: 'all',
+        title: 'Everyone',
+        sub: 'Notify everyone in this channel',
+        group: 'HELPERS',
+        chip: true,
+        icon: Users,
+      },
       ...MENTION_HELPERS.map((h): PickerItem => ({
         id: `mention-${h.mention}`,
         kind: 'mention',

@@ -12,9 +12,9 @@ import { RoutineDetailRoute, RoutinesRoute } from './RoutinesRoute'
 
 function renderAt(path: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const office = createRoute({ getParentRoute: () => root, path: '/office', component: () => <Outlet /> })
-  const list = createRoute({ getParentRoute: () => office, path: 'routines', component: RoutinesRoute })
-  const detail = createRoute({ getParentRoute: () => office, path: 'routines/$routineId', component: RoutineDetailRoute })
+  const office = createRoute({ getParentRoute: () => root, id: 'office', component: () => <Outlet /> })
+  const list = createRoute({ getParentRoute: () => office, path: '/routines', component: RoutinesRoute })
+  const detail = createRoute({ getParentRoute: () => office, path: '/routines/$routineId', component: RoutineDetailRoute })
   const router = createRouter({
     routeTree: root.addChildren([office.addChildren([list, detail])]),
     history: createMemoryHistory({ initialEntries: [path] }),
@@ -25,7 +25,7 @@ function renderAt(path: string) {
 
 describe('Office · Routines', () => {
   test('week view (I5rrK) shows the Chief banner, day headers and agent lanes', async () => {
-    renderAt('/office/routines')
+    renderAt('/routines')
     expect(await screen.findByText('Chief keeps 15 routines running across 6 agents')).toBeInTheDocument()
     expect(screen.getByText('SAT 24 · TODAY')).toBeInTheDocument()
     expect(screen.getByText('Morning brief · weekdays')).toBeInTheDocument()
@@ -35,7 +35,7 @@ describe('Office · Routines', () => {
   })
 
   test('switching to List (VUmu8) shows the suggestion and routine table', async () => {
-    renderAt('/office/routines')
+    renderAt('/routines')
     fireEvent.click(await screen.findByRole('tab', { name: 'List' }))
     expect(screen.getByText('Monday morning is crowded')).toBeInTheDocument()
     expect(screen.getByText('Goal check-ins')).toBeInTheDocument()
@@ -44,7 +44,7 @@ describe('Office · Routines', () => {
   })
 
   test('Apply both moves routines and shows the toast (FcmwG)', async () => {
-    renderAt('/office/routines?view=list')
+    renderAt('/routines?view=list')
     fireEvent.click(await screen.findByRole('button', { name: 'Apply both' }))
     expect(screen.getByText('2 routines moved')).toBeInTheDocument()
     expect(screen.getByText('Monday is spread out — no clashes this week')).toBeInTheDocument()
@@ -52,7 +52,7 @@ describe('Office · Routines', () => {
   })
 
   test('empty state (diQBZ) counts the selected templates', async () => {
-    renderAt('/office/routines?state=empty')
+    renderAt('/routines?state=empty')
     expect(await screen.findByText('No routines yet')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Let Chief set up 4 routines/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Social calendar/ }))
@@ -60,7 +60,7 @@ describe('Office · Routines', () => {
   })
 
   test('row menu → Delete routine opens the confirm (aufEI → o05E12)', async () => {
-    renderAt('/office/routines?view=list')
+    renderAt('/routines?view=list')
     fireEvent.click(await screen.findByRole('button', { name: 'More actions for Morning brief' }))
     expect(screen.getByRole('menu')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: /Delete routine/ }))
@@ -68,20 +68,20 @@ describe('Office · Routines', () => {
   })
 
   test('New routine drawer (F4RGvz) and clash variant (oY6x7)', async () => {
-    renderAt('/office/routines')
+    renderAt('/routines')
     fireEvent.click(await screen.findByRole('button', { name: 'New routine' }))
     expect(screen.getByText('Chief suggests')).toBeInTheDocument()
     expect(screen.getByText('No clashes — Finance is free 15:30–16:00')).toBeInTheDocument()
   })
 
   test('clash state lists the open slots', async () => {
-    renderAt('/office/routines?state=clash')
+    renderAt('/routines?state=clash')
     expect(await screen.findByText('Chief found 3 open slots:')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Fridays · 15:30 — recommended/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('detail drawer (xuAoe) shows status, schedule and recent runs', async () => {
-    renderAt('/office/routines/morning-brief')
+    renderAt('/routines/morning-brief')
     const drawer = await screen.findByRole('dialog', { name: 'Morning brief' })
     expect(drawer).toHaveTextContent('Chief · weekdays at 07:30 · managed by Chief')
     expect(drawer).toHaveTextContent('Recent runs')
@@ -89,7 +89,7 @@ describe('Office · Routines', () => {
   })
 
   test('Run now opens the running state (a2xdN) with a Stop run action', async () => {
-    const router = renderAt('/office/routines/morning-brief')
+    const router = renderAt('/routines/morning-brief')
     fireEvent.click(await screen.findByRole('button', { name: 'Run now' }))
     await waitFor(() => expect(router.state.location.search).toEqual({ state: 'running' }))
     expect(await screen.findByText('Running now · step 2 of 3')).toBeInTheDocument()
@@ -97,24 +97,24 @@ describe('Office · Routines', () => {
   })
 
   test('paused (oTi8l), run output (SHLKI), weekly reassign (H4Cdpf), monthly (rljUL)', async () => {
-    renderAt('/office/routines/morning-brief?state=paused')
+    renderAt('/routines/morning-brief?state=paused')
     expect(await screen.findByText('Paused until Mon, Nov 3')).toBeInTheDocument()
   })
 
   test('run output drawer', async () => {
-    renderAt('/office/routines/morning-brief?state=output')
+    renderAt('/routines/morning-brief?state=output')
     expect(await screen.findByText('Good morning, Mas Dede ☀️')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open routine' })).toBeInTheDocument()
   })
 
   test('weekly reassign shows the agent options', async () => {
-    renderAt('/office/routines/goal-check-ins?state=reassign')
+    renderAt('/routines/goal-check-ins?state=reassign')
     expect(await screen.findByRole('listbox', { name: 'Who does it' })).toHaveTextContent('Chief’s pick')
     expect(screen.getByRole('button', { name: 'Thursday' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('monthly routine selects last working day', async () => {
-    renderAt('/office/routines/monthly-cost-review')
+    renderAt('/routines/monthly-cost-review')
     expect(await screen.findByRole('button', { name: /Last working day/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Next: Fri Oct 30 · Fri Nov 27 · Thu Dec 31')).toBeInTheDocument()
   })

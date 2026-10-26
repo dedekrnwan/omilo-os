@@ -13,7 +13,7 @@ export function PasswordUpdatedPage() {
         title="Password updated"
         sub="You’re signed in. We signed you out on 2 other devices, just in case."
       />
-      <AuthButton to="/chat/ch-general">Continue to Sahabat Warga</AuthButton>
+      <AuthButton to="/chat">Continue to Sahabat Warga</AuthButton>
       <AuthNote icon={<ShieldAlert size={13} aria-hidden className="shrink-0 text-muted" />} lead>
         Didn’t change this yourself? Secure your account and tell an admin.
       </AuthNote>

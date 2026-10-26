@@ -47,7 +47,7 @@ export function AllSetPage() {
           <AuthButton variant="secondary" icon={UserPlus} to="/control-panel/members">
             Invite teammates
           </AuthButton>
-          <AuthButton icon={ArrowRight} to="/chat/ch-general">
+          <AuthButton icon={ArrowRight} to="/chat">
             Meet Chief
           </AuthButton>
         </div>

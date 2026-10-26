@@ -20,7 +20,8 @@ import {
   Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useUIStore } from '../app/store'
+import { useUIStore, MODE_HOME } from '../app/store'
+import type { Mode } from '../app/store'
 import { Mascot } from './ds/Mascot'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './ds/Menu'
 
@@ -547,7 +548,7 @@ function ProfileMenu() {
 export function Rail() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { mode, companyId, setCompany, homePath, toggleTarget } = useUIStore()
+  const { mode, companyId, setCompany, setMode } = useUIStore()
   const isChat = mode === 'chat'
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
 
@@ -559,15 +560,22 @@ export function Rail() {
         ? 'settings'
         : undefined
 
+  // Mode is persisted, route-free. Toggling flips the flag; we only navigate
+  // when leaving a surface that belongs exclusively to the mode you're leaving
+  // (chat sessions → office, or inbox → chat). Neutral platform pages stay put.
   function switchMode() {
-    const target = toggleTarget()
-    void navigate({ to: target.path })
+    const next: Mode = isChat ? 'office' : 'chat'
+    setMode(next)
+    const p = location.pathname
+    const leavingChat = next === 'office' && (p === '/chat' || p.startsWith('/chat/'))
+    const leavingOffice = next === 'chat' && p.startsWith('/inbox')
+    if (leavingChat || leavingOffice) void navigate({ to: MODE_HOME[next] })
   }
 
-  // Clicking a company switches workspace and lands on the current mode's home page.
+  // Clicking a company switches workspace and lands on the current mode's home.
   function selectCompany(id: string) {
     setCompany(id)
-    void navigate({ to: homePath() })
+    void navigate({ to: MODE_HOME[mode] })
   }
 
   return (

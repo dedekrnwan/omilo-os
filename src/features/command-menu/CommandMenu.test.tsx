@@ -45,12 +45,12 @@ function makeTestRouter(
   })
   const goalsRoute = createRoute({
     getParentRoute: () => root,
-    path: '/office/goals',
+    path: '/goals',
     component: () => <div data-testid="page-goals">goals</div>,
   })
   const inboxRoute = createRoute({
     getParentRoute: () => root,
-    path: '/office/inbox',
+    path: '/inbox',
     component: () => <div data-testid="page-inbox">inbox</div>,
   })
   const teamRoute = createRoute({
@@ -60,7 +60,7 @@ function makeTestRouter(
   })
   const flowsRoute = createRoute({
     getParentRoute: () => root,
-    path: '/office/flows',
+    path: '/flows',
     component: () => <div data-testid="page-flows">flows</div>,
   })
 
@@ -91,7 +91,7 @@ describe('CommandMenu — result row navigation', () => {
     // Menu must be closed
     expect(onOpenChange).toHaveBeenCalledWith(false)
     // Route must have changed
-    expect(router.state.location.pathname).toBe('/office/goals')
+    expect(router.state.location.pathname).toBe('/goals')
   })
 
   test('pressing Enter on the highlighted row closes the menu and navigates', async () => {
@@ -134,6 +134,6 @@ describe('CommandMenu — result row navigation', () => {
     })
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(router.state.location.pathname).toBe('/office/inbox')
+    expect(router.state.location.pathname).toBe('/inbox')
   })
 })

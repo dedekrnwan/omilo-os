@@ -24,7 +24,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import type { Folder as FolderT, Session } from '../../core/domain/types'
 import { useAreas, useFolders, useSessions } from '../../app/queries'
-import { useChatStore, useUIStore } from '../../app/store'
+import { useChatStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
@@ -216,7 +216,6 @@ export function FolderRoute() {
   const params = useParams({ strict: false })
   const folderId = params.folderId ?? ''
   const navigate = useNavigate()
-  const mode = useUIStore((s) => s.mode)
   const { state } = useSearch({ strict: false }) as { state?: string }
   // Folders/sessions resolve across all areas so the view works from either mode.
   const { data: areas = [] } = useAreas()
@@ -253,8 +252,7 @@ export function FolderRoute() {
 
   function openChat(id: string) {
     if (sessions.some((s) => s.id === id)) {
-      if (mode === 'office') void navigate({ to: '/office/chat/$sessionId', params: { sessionId: id } })
-      else void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
+      void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
     }
   }
 

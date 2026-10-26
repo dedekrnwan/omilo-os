@@ -50,7 +50,7 @@ export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onCl
         <>
           <IconTile icon={BookOpen} />
           <DrawerTitle mono title="PLAYBOOK.md" sub={`${helper.name} · step-by-step answers for common cases`} />
-          <IconBtn icon={Maximize2} label="Open full screen" onClick={() => void navigate({ to: '/office/docs' })} />
+          <IconBtn icon={Maximize2} label="Open full screen" onClick={() => void navigate({ to: '/docs' })} />
           <DrawerClose onClose={onClose} />
         </>
       }
@@ -61,7 +61,7 @@ export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onCl
             icon={ArrowUpRight}
             onClick={() => {
               onClose()
-              void navigate({ to: '/office/docs' })
+              void navigate({ to: '/docs' })
             }}
           >
             Open in Docs
