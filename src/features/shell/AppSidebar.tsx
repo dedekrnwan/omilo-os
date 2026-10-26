@@ -3,11 +3,21 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   Archive,
   CalendarSync,
+  ChevronsDownUp,
+  ChevronsUpDown as ExpandIcon,
+  FolderInput,
+  FolderOpen,
+  Link,
+  Palette,
+  Pencil,
+  Pin,
+  PinOff,
+  SquarePen,
+  Trash2,
   ChartLine,
   Check,
   ChevronDown,
   ChevronsUpDown,
-  Ellipsis,
   FileText,
   Inbox,
   Layers,
@@ -25,6 +35,9 @@ import { useAreas, useFolders, useSessions, useGoals } from '../../app/queries'
 import { AreaBadgeButton, AreaTile, FolderIconButton } from './LookControls'
 import { Button } from '../../ui/ds/Button'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
+import { ContextMenuArea, MoreMenu, copyText } from '../../ui/ds/ItemMenu'
+import type { MenuEntries } from '../../ui/ds/ItemMenu'
+import { notify } from '../../ui/ds/Toaster'
 import { CreateChannelDialog } from '../chat/CreateChannelDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
 import { DEFAULT_OPEN_FOLDERS } from '../chat/data'
@@ -177,33 +190,45 @@ function AreaPopover({
 }
 
 /** Folder row in its active/open state (its page is open). */
-function ActiveFolderRow({ folder, onToggle }: { folder: { id: string; name: string }; onToggle: () => void }) {
+function ActiveFolderRow({
+  folder,
+  onToggle,
+  menu,
+  pickerOpen,
+  onPickerOpenChange,
+}: {
+  folder: { id: string; name: string }
+  onToggle: () => void
+  menu: MenuEntries
+  pickerOpen: boolean
+  onPickerOpenChange: (open: boolean) => void
+}) {
   const name = folder.name
   return (
-    <div aria-current="page" className="flex h-[28px] w-full items-center gap-[6px] rounded-sm bg-hover pr-[8px] pl-[6px]">
-      <button
-        type="button"
-        aria-expanded
-        aria-label={`Collapse ${name}`}
-        onClick={onToggle}
-        className="flex items-center"
-      >
-        <ChevronDown size={12} aria-hidden className="text-faint" />
-      </button>
-      <FolderIconButton folder={folder} open active />
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-hidden
-        onClick={onToggle}
-        className="flex min-w-0 flex-1 items-center text-left"
-      >
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{name}</span>
-      </button>
-      <button type="button" aria-label={`${name} options`} className="text-muted hover:text-ink">
-        <Ellipsis size={14} aria-hidden />
-      </button>
-    </div>
+    <ContextMenuArea items={menu} label={`${name} actions`}>
+      <div aria-current="page" className="flex h-[28px] w-full items-center gap-[6px] rounded-sm bg-hover pr-[6px] pl-[6px]">
+        <button
+          type="button"
+          aria-expanded
+          aria-label={`Collapse ${name}`}
+          onClick={onToggle}
+          className="flex items-center"
+        >
+          <ChevronDown size={12} aria-hidden className="text-faint" />
+        </button>
+        <FolderIconButton folder={folder} open active pickerOpen={pickerOpen} onPickerOpenChange={onPickerOpenChange} />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden
+          onClick={onToggle}
+          className="flex min-w-0 flex-1 items-center text-left"
+        >
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{name}</span>
+        </button>
+        <MoreMenu items={menu} label={`${name} options`} size={20} />
+      </div>
+    </ContextMenuArea>
   )
 }
 
@@ -227,10 +252,13 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   const { state } = useSearch({ strict: false }) as { state?: string }
   const { areaId, setArea } = useUIStore()
   const { data: areas = [] } = useAreas()
-  const { data: folders = [] } = useFolders(areaId)
-  const { data: sessions = [] } = useSessions(areaId)
+  const { data: baseFolders = [] } = useFolders(areaId)
+  const { data: baseSessions = [] } = useSessions(areaId)
   const { data: goals = [] } = useGoals(areaId)
-  const { createFolder } = useChatStore()
+  const { createFolder, overrides, folderOverrides, newFolders, patchSession, patchFolder, archiveSession } = useChatStore()
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
+  const [areaPickerOpen, setAreaPickerOpen] = useState(false)
   const [popoverOpen, setPopoverOpen] = useState(state === 'switcher')
   const [createAreaOpen, setCreateAreaOpen] = useState(state === 'create-channel')
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
@@ -239,14 +267,148 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
 
   const isChat = mode === 'chat'
   const area = areaId ? areas.find((c) => c.id === areaId) : undefined
-  const activeSession = sessions.find((s) => s.id === sessionId)
+  // Fixtures + what people changed from menus (rename, move, pin, archive, delete)
+  const folders = useMemo(() => {
+    const created = newFolders
+      .filter((f) => !areaId || f.channelId === areaId)
+      .map((f) => ({ id: f.id, channelId: f.channelId, name: f.name, count: 0 }))
+    return [...baseFolders, ...created]
+      .filter((f) => !folderOverrides[f.id]?.deleted)
+      .map((f) => ({ ...f, name: folderOverrides[f.id]?.name ?? f.name }))
+  }, [baseFolders, newFolders, folderOverrides, areaId])
+  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders])
+  const sessions = useMemo(
+    () =>
+      baseSessions
+        .filter((x) => !overrides[x.id]?.archived && !overrides[x.id]?.deleted)
+        .map((x) => {
+          const o = overrides[x.id]
+          const folder = o && 'folderId' in o ? (o.folderId ?? undefined) : x.folderId
+          return { ...x, title: o?.title ?? x.title, folderId: folder && folderIds.has(folder) ? folder : undefined, pinned: Boolean(o?.pinned) }
+        }),
+    [baseSessions, overrides, folderIds],
+  )
 
   const byFolder = useMemo(() => {
     const map: Record<string, Session[]> = {}
-    for (const s of sessions) if (s.folderId) (map[s.folderId] ??= []).push(s)
+    for (const s of sessions) if (s.folderId && !s.pinned) (map[s.folderId] ??= []).push(s)
     return map
   }, [sessions])
-  const recent = sessions.filter((s) => !s.folderId)
+  const pinned = sessions.filter((s) => s.pinned)
+  const activeSession = sessions.find((s) => s.id === sessionId)
+  const recent = sessions.filter((s) => !s.folderId && !s.pinned)
+  const areaName = (id: string) => areas.find((a) => a.id === id)?.name ?? 'General'
+
+  function chatMenu(s: Session & { pinned?: boolean }): MenuEntries {
+    const moveTargets = folders.filter((f) => f.id !== s.folderId)
+    return [
+      { label: 'Open', icon: MessageSquare, onSelect: () => openSession(s.id) },
+      { type: 'separator' },
+      { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(s.id) },
+      s.pinned
+        ? { label: 'Unpin', icon: PinOff, onSelect: () => patchSession(s.id, { pinned: false }) }
+        : { label: 'Pin to top', icon: Pin, onSelect: () => patchSession(s.id, { pinned: true }) },
+      {
+        type: 'sub',
+        label: 'Move to folder',
+        icon: FolderInput,
+        items: [
+          ...moveTargets.map((f) => ({
+            label: f.name,
+            icon: FolderOpen,
+            onSelect: () => {
+              patchSession(s.id, { folderId: f.id })
+              notify(`Moved to ${f.name}`, () => patchSession(s.id, { folderId: s.folderId ?? null }))
+            },
+          })),
+          s.folderId ? { type: 'separator' as const } : null,
+          s.folderId ? { label: 'Remove from folder', onSelect: () => patchSession(s.id, { folderId: null }) } : null,
+          moveTargets.length === 0 && !s.folderId ? { label: 'No folders yet', disabled: true, onSelect: () => {} } : null,
+        ],
+      },
+      { label: 'Copy link', icon: Link, onSelect: () => { copyText(`${location.origin}/chat/${s.id}`); notify('Link copied') } },
+      { type: 'separator' },
+      {
+        label: 'Archive',
+        icon: Archive,
+        onSelect: () => {
+          archiveSession(s.id, s.title, areaName(s.channelId ?? ''))
+          notify('Chat archived', () => useChatStore.getState().restoreSession(s.id))
+        },
+      },
+      {
+        label: 'Delete',
+        icon: Trash2,
+        danger: true,
+        onSelect: () => {
+          patchSession(s.id, { deleted: true })
+          if (s.id === sessionId) void navigate({ to: '/chat' })
+          notify('Chat deleted', () => patchSession(s.id, { deleted: false }))
+        },
+      },
+    ]
+  }
+
+  function folderMenu(f: { id: string; name: string }, open: boolean): MenuEntries {
+    return [
+      { label: 'Open folder', icon: FolderOpen, onSelect: () => openFolder(f.id) },
+      { label: 'New chat here', icon: SquarePen, onSelect: () => void navigate({ to: '/chat' }) },
+      { type: 'separator' },
+      { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(f.id) },
+      { label: 'Change icon…', icon: Palette, onSelect: () => setTimeout(() => setIconPickerFor(f.id), 0) },
+      open
+        ? { label: 'Collapse', icon: ChevronsDownUp, onSelect: () => setToggled((t) => ({ ...t, [f.id]: false })) }
+        : { label: 'Expand', icon: ExpandIcon, onSelect: () => setToggled((t) => ({ ...t, [f.id]: true })) },
+      { label: 'Copy link', icon: Link, onSelect: () => { copyText(`${location.origin}/folder/${f.id}`); notify('Link copied') } },
+      { type: 'separator' },
+      {
+        label: 'Delete folder',
+        icon: Trash2,
+        danger: true,
+        onSelect: () => {
+          patchFolder(f.id, { deleted: true })
+          if (f.id === folderId) void navigate({ to: '/chat' })
+          notify(`Folder deleted — its chats moved to Recent`, () => patchFolder(f.id, { deleted: false }))
+        },
+      },
+    ]
+  }
+
+  const areaMenu: MenuEntries = area
+    ? [
+        { label: 'Change icon…', icon: Palette, onSelect: () => setTimeout(() => setAreaPickerOpen(true), 0) },
+        { label: 'New chat in this area', icon: SquarePen, onSelect: () => void navigate({ to: '/chat' }) },
+        { label: 'Area settings', icon: Settings2, onSelect: () => void navigate({ to: '/control-panel/$section', params: { section: 'channels' } }) },
+        { type: 'separator' },
+        { label: 'Show all areas', icon: Layers, onSelect: () => setArea(null) },
+      ]
+    : [{ label: 'Manage areas', icon: Settings2, onSelect: () => void navigate({ to: '/control-panel/$section', params: { section: 'channels' } }) }]
+
+  function renameChat(id: string, next: string | null) {
+    setRenaming(null)
+    if (next) patchSession(id, { title: next })
+  }
+  function renameFolder(id: string, next: string | null) {
+    setRenaming(null)
+    if (next) patchFolder(id, { name: next })
+  }
+
+  function row(s: Session & { pinned?: boolean }) {
+    return (
+      <ChatRow
+        key={s.id}
+        title={s.title}
+        time={s.updated}
+        unread={s.unread}
+        pinned={s.pinned}
+        active={s.id === sessionId}
+        onClick={() => openSession(s.id)}
+        menu={chatMenu(s)}
+        renaming={renaming === s.id}
+        onRename={(v) => renameChat(s.id, v)}
+      />
+    )
+  }
 
   const isOpen = (id: string) =>
     toggled[id] ?? (activeSession?.folderId === id || folderId === id || DEFAULT_OPEN_FOLDERS.has(id))
@@ -275,8 +437,9 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   return (
     <SidebarFrame label={isChat ? 'Chat' : 'Office'}>
       {/* Area switcher — the icon badge is its own control (opens the icon picker) */}
-      <div className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] transition-colors hover:bg-hover">
-        {area ? <AreaBadgeButton area={area} size={24} /> : <AllAreasIcon size={24} />}
+      <ContextMenuArea items={areaMenu} label="Area actions">
+      <div className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] transition-colors hover:bg-hover data-[state=open]:bg-hover">
+        {area ? <AreaBadgeButton area={area} size={24} open={areaPickerOpen} onOpenChange={setAreaPickerOpen} /> : <AllAreasIcon size={24} />}
         <button
           type="button"
           aria-haspopup="dialog"
@@ -294,6 +457,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
           <ChevronsUpDown size={14} aria-hidden className="text-faint" />
         </button>
       </div>
+      </ContextMenuArea>
 
       {popoverOpen && (
         <AreaPopover
@@ -344,6 +508,13 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
 
       {/* Folders + Recent scroll together when the window is short */}
       <div className="-mx-[8px] flex min-h-0 flex-1 flex-col gap-[12px] overflow-y-auto px-[8px]">
+        {pinned.length > 0 && (
+          <NavGroup>
+            <GroupLabel label="PINNED" />
+            {pinned.map((s) => row(s))}
+          </NavGroup>
+        )}
+
         <NavGroup>
           <GroupLabel label="FOLDERS" action={{ label: 'New folder', onClick: () => setCreateFolderOpen(true) }} />
           {folders.map((f) => {
@@ -351,17 +522,33 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
             const chats = byFolder[f.id] ?? []
             const showAll = expanded[f.id]
             const shown = showAll ? chats : chats.slice(0, FOLDER_PREVIEW)
-            const more = f.count - shown.length
+            const more = Math.max(f.count, chats.length) - shown.length
             return (
               <div key={f.id} className="flex flex-col gap-px">
                 {f.id === folderId ? (
-                  <ActiveFolderRow folder={f} onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))} />
+                  <ActiveFolderRow
+                    folder={f}
+                    menu={folderMenu(f, open)}
+                    pickerOpen={iconPickerFor === f.id}
+                    onPickerOpenChange={(o) => setIconPickerFor(o ? f.id : null)}
+                    onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))}
+                  />
                 ) : (
                   <FolderRow
                     name={f.name}
                     count={f.count}
                     open={open}
-                    iconSlot={<FolderIconButton folder={f} open={open} />}
+                    iconSlot={
+                      <FolderIconButton
+                        folder={f}
+                        open={open}
+                        pickerOpen={iconPickerFor === f.id}
+                        onPickerOpenChange={(o) => setIconPickerFor(o ? f.id : null)}
+                      />
+                    }
+                    menu={folderMenu(f, open)}
+                    renaming={renaming === f.id}
+                    onRename={(v) => renameFolder(f.id, v)}
                     onToggle={() => {
                       setToggled((t) => ({ ...t, [f.id]: !open }))
                       if (!open) openFolder(f.id)
@@ -371,16 +558,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
                 {open && (
                   <div className="pb-[2px] pl-[20px]">
                     <div className="flex flex-col gap-px shadow-[inset_1px_0_0_var(--color-line-strong)] pl-[6px]">
-                      {shown.map((s) => (
-                        <ChatRow
-                          key={s.id}
-                          title={s.title}
-                          time={s.updated}
-                          unread={s.unread}
-                          active={s.id === sessionId}
-                          onClick={() => openSession(s.id)}
-                        />
-                      ))}
+                      {shown.map((s) => row(s))}
                       {!showAll && more > 0 && (
                         <button
                           type="button"
@@ -400,16 +578,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
 
         <NavGroup>
           <GroupLabel label="RECENT" />
-          {recent.map((s) => (
-            <ChatRow
-              key={s.id}
-              title={s.title}
-              time={s.updated}
-              unread={s.unread}
-              active={s.id === sessionId}
-              onClick={() => openSession(s.id)}
-            />
-          ))}
+          {recent.map((s) => row(s))}
         </NavGroup>
       </div>
 

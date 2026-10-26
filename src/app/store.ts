@@ -73,6 +73,13 @@ export interface SessionOverride {
   folderId?: string | null
   /** Goal title linked to this session */
   goal?: string | null
+  /** Deleted from the sidebar (mock: hidden everywhere) */
+  deleted?: boolean
+}
+
+export interface FolderOverride {
+  name?: string
+  deleted?: boolean
 }
 
 export interface ArchivedEntry {
@@ -92,7 +99,10 @@ export interface ChatStoreState {
   removedStaticIds: Set<string>
   /** Folders created through the UI (local only) */
   newFolders: Array<{ id: string; channelId: string; name: string }>
+  /** Renamed / deleted folders */
+  folderOverrides: Record<string, FolderOverride>
 
+  patchFolder(id: string, patch: Partial<FolderOverride>): void
   /** Apply a partial override to a session */
   patchSession(id: string, patch: Partial<SessionOverride>): void
   /** Archive a session: adds to archived list, marks overrides.archived */
@@ -114,6 +124,11 @@ export const useChatStore = create<ChatStoreState>((set, _get) => ({
   archived: [],
   removedStaticIds: new Set(),
   newFolders: [],
+  folderOverrides: {},
+
+  patchFolder(id, patch) {
+    set((state) => ({ folderOverrides: { ...state.folderOverrides, [id]: { ...state.folderOverrides[id], ...patch } } }))
+  },
 
   patchSession(id, patch) {
     set(state => ({

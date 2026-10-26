@@ -4,7 +4,13 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { drawerOverlayClass, drawerContentClass } from '../../../ui/ds/Drawer'
-import { GitFork, Plus, Sparkles, X } from 'lucide-react'
+import { Copy, GitFork, History, Link, Pause, Play, Plus, Power, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react'
+import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
+import type { MenuEntries } from '../../../ui/ds/ItemMenu'
+import { notify } from '../../../ui/ds/Toaster'
+import { useFlowStore } from './editor/store'
+import { useFlowBoard } from './boardStore'
+import type { FlowCard } from './boardStore'
 import { useNavigate } from '@tanstack/react-router'
 import { useArea } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
@@ -24,23 +30,63 @@ import { RunStatusChip, Sparkline, Toggle } from './shared'
 
 // ── FlowCard ──────────────────────────────────────────────────────────────────
 
-function FlowCardItem({ card, onClick }: { card: (typeof OFFICE_FLOWS)[number]; onClick?: () => void }) {
+function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void }) {
+  const navigate = useNavigate()
+  const enabled = useFlowStore((st) => st.flows[card.id]?.enabled) ?? card.enabled
+  const { setEnabled, startTest } = useFlowStore()
+  const { remove, restore, duplicate } = useFlowBoard()
+  const go = (to: '/flows/$flowId/canvas' | '/flows/$flowId/runs' | '/flows/$flowId/settings') =>
+    void navigate({ to, params: { flowId: card.id } })
+
+  const menu: MenuEntries = [
+    { label: 'Open canvas', icon: Workflow, onSelect: () => go('/flows/$flowId/canvas') },
+    { label: 'View runs', icon: History, onSelect: () => go('/flows/$flowId/runs') },
+    { label: 'Settings', icon: Settings2, onSelect: () => go('/flows/$flowId/settings') },
+    { type: 'separator' },
+    {
+      label: 'Test run',
+      icon: Play,
+      onSelect: () => {
+        startTest(card.id)
+        go('/flows/$flowId/canvas')
+      },
+    },
+    enabled
+      ? { label: 'Pause flow', icon: Pause, onSelect: () => { setEnabled(card.id, false); notify(`${card.title} paused`, () => setEnabled(card.id, true)) } }
+      : { label: 'Turn on', icon: Power, onSelect: () => { setEnabled(card.id, true); notify(`${card.title} is on`) } },
+    { label: 'Duplicate', icon: Copy, onSelect: () => { const c = duplicate(card); notify(`Made “${c.title}”`) } },
+    { label: 'Copy link', icon: Link, onSelect: () => { copyText(`${location.origin}/flows/${card.id}/canvas`); notify('Link copied') } },
+    { type: 'separator' },
+    { label: 'Delete flow', icon: Trash2, danger: true, onSelect: () => { remove(card.id); notify('Flow deleted', () => restore(card.id)) } },
+  ]
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px] text-left transition-colors hover:bg-soft w-full"
-    >
-      <div className="flex items-center justify-between">
-        <FlowChain from={card.from} to={card.to} count={card.count} />
-        <Toggle on={card.enabled} />
+    <ContextMenuArea items={menu} label={`${card.title} actions`}>
+      <div className="group/card relative flex w-full flex-col gap-[10px] rounded-lg bg-surface p-[14px] text-left outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft data-[state=open]:bg-soft">
+        <button type="button" aria-label={card.title} onClick={onClick} className="absolute inset-0 rounded-lg" />
+        <div className="pointer-events-none relative flex items-center justify-between">
+          <FlowChain from={card.from} to={card.to} count={card.count} />
+          <span className="pointer-events-auto flex items-center gap-[6px]">
+            <span className="hidden group-hover/card:flex group-focus-within/card:flex has-[[data-state=open]]:flex">
+              <MoreMenu items={menu} label={`${card.title} actions`} size={22} />
+            </span>
+            <button
+              type="button"
+              aria-label={enabled ? `Pause ${card.title}` : `Turn on ${card.title}`}
+              onClick={() => setEnabled(card.id, !enabled)}
+              className="flex rounded-pill"
+            >
+              <Toggle on={enabled} />
+            </button>
+          </span>
+        </div>
+        <span className="pointer-events-none relative text-[13px] font-medium text-ink">{card.title}</span>
+        <div className="pointer-events-none relative flex items-end justify-between gap-[8px]">
+          <span className="text-[11.5px] text-muted">{enabled ? card.status : `Paused · ${card.status}`}</span>
+          <Sparkline bars={card.bars} />
+        </div>
       </div>
-      <span className="text-[13px] font-medium text-ink">{card.title}</span>
-      <div className="flex items-end justify-between gap-[8px]">
-        <span className="text-[11.5px] text-muted">{card.status}</span>
-        <Sparkline bars={card.bars} />
-      </div>
-    </button>
+    </ContextMenuArea>
   )
 }
 
@@ -120,10 +166,12 @@ function YoursTab({
   onTemplateUse?: (templateId: string) => void
   onSuggestedCreate?: (suggestedId: string) => void
 }) {
+  const { deleted, copies } = useFlowBoard()
+  const cards = [...OFFICE_FLOWS, ...copies].filter((c) => !deleted.includes(c.id))
   return (
     <div className="flex flex-col gap-[20px]">
       <div className="grid grid-cols-3 gap-[12px]">
-        {OFFICE_FLOWS.map((card) => (
+        {cards.map((card) => (
           <FlowCardItem key={card.id} card={card} onClick={() => onCardClick?.(card.id)} />
         ))}
         {SUGGESTED_FLOWS.map((item) => (

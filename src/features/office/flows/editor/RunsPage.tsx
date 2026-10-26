@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { Check, CircleCheck, CircleDashed, CircleMinus, CircleX, Hourglass, Loader2, RotateCcw } from 'lucide-react'
+import { Check, CircleCheck, CircleSlash, Hash, Link, PanelRight, X, CircleDashed, CircleMinus, CircleX, Hourglass, Loader2, RotateCcw } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { RunStatus, RunStep } from './data'
 import { EditorFrame } from './EditorFrame'
+import { ContextMenuArea, MoreMenu, copyText } from '../../../../ui/ds/ItemMenu'
+import type { MenuEntries } from '../../../../ui/ds/ItemMenu'
+import { notify } from '../../../../ui/ds/Toaster'
 import { useFlow, useFlowStore } from './store'
 import type { RunState } from './store'
 
@@ -41,16 +44,19 @@ function RunRow({
   selected,
   onSelect,
   onRetry,
+  menu,
 }: {
   run: RunState
   selected: boolean
   onSelect: () => void
   onRetry: () => void
+  menu: MenuEntries
 }) {
   const st = statusLabel(run)
   const running = run.detail.chip === 'Running'
   return (
-    <li className="relative">
+    <ContextMenuArea items={menu} label={`Run #${run.number} actions`}>
+    <li className="group/run relative data-[state=open]:[&>button]:bg-soft">
       <button
         type="button"
         aria-current={selected || undefined}
@@ -67,7 +73,7 @@ function RunRow({
             <span className="text-[13px] font-semibold text-ink">Run #{run.number}</span>
             <span className={`text-[12px] font-medium ${st.ink}`}>{st.label}</span>
             <span className="flex-1" />
-            <span className="text-[11.5px] text-faint">{run.when}</span>
+            <span className="text-[11.5px] text-faint group-hover/run:invisible group-has-[[data-state=open]]/run:invisible">{run.when}</span>
           </span>
           <span className="mt-[4px] truncate text-[12.5px] text-ink-2">{run.what}</span>
           <span className="mt-[1px] text-[11.5px] text-muted">{run.meta}</span>
@@ -83,7 +89,11 @@ function RunRow({
           Retry from failed step
         </button>
       )}
+      <span className="absolute top-[9px] right-[11px] hidden group-hover/run:flex group-focus-within/run:flex has-[[data-state=open]]:flex">
+        <MoreMenu items={menu} label={`Run #${run.number} actions`} size={22} />
+      </span>
     </li>
+    </ContextMenuArea>
   )
 }
 
@@ -223,6 +233,17 @@ export function FlowRunsPage() {
               selected={r.id === run?.id}
               onSelect={() => setSelectedId(r.id)}
               onRetry={() => setSelectedId(s.retryRun(flowId, r.id))}
+              menu={[
+                { label: 'Open', icon: PanelRight, onSelect: () => setSelectedId(r.id) },
+                r.status === 'waiting' && r.detail.chip !== 'Running' && { type: 'separator' },
+                r.status === 'waiting' && r.detail.chip !== 'Running' && { label: 'Approve', icon: Check, onSelect: () => { setSelectedId(r.id); s.approve(flowId, r.id, true) } },
+                r.status === 'waiting' && r.detail.chip !== 'Running' && { label: 'Decline', icon: X, onSelect: () => { setSelectedId(r.id); s.approve(flowId, r.id, false) } },
+                (r.status === 'waiting' || r.detail.chip === 'Running') && { label: 'Cancel run', icon: CircleSlash, onSelect: () => s.cancelRun(flowId, r.id) },
+                r.status === 'failed' && { label: 'Retry from failed step', icon: RotateCcw, onSelect: () => setSelectedId(s.retryRun(flowId, r.id)) },
+                { type: 'separator' },
+                { label: 'Copy run link', icon: Link, onSelect: () => { copyText(`${location.origin}/flows/${flowId}/runs?run=${r.id}`); notify('Link copied') } },
+                { label: 'Copy run ID', icon: Hash, onSelect: () => { copyText(`run_${r.number}`); notify('Run ID copied') } },
+              ]}
             />
           ))}
           {runs.length === 0 && <li className="px-[16px] py-[24px] text-[12.5px] text-muted">No {filter} runs this week.</li>}

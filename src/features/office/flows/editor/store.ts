@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { OFFICE_FLOWS } from '../data'
+import { useFlowBoard } from '../boardStore'
 import {
   AI_DETAIL,
   DEFAULT_SETTINGS,
@@ -43,24 +45,29 @@ export interface FlowEditorState {
   savedSettings: FlowSettings
   /** Draft (from Suggested) not turned on yet */
   draft: 'draft' | 'on' | 'discarded'
+  /** Step whose name is being edited in the inspector */
+  renamingId: string | null
 }
 
-function makeFlow(): FlowEditorState {
+function makeFlow(flowId: string): FlowEditorState {
+  const card = [...OFFICE_FLOWS, ...useFlowBoard.getState().copies].find((f) => f.id === flowId)
+  const settings = card ? { ...DEFAULT_SETTINGS, name: card.title } : DEFAULT_SETTINGS
   return {
     graph: { nodes: TRIAGE_NODES, edges: TRIAGE_EDGES },
     past: [],
     future: [],
     selected: 'read-logs',
     ai: AI_DETAIL,
-    enabled: true,
+    enabled: card?.enabled ?? true,
     dirty: true,
     publishedAt: null,
     test: 'idle',
     testStep: 0,
     runs: RUNS.map((r) => ({ ...r, detail: structuredClone(runDetail(r)) })),
-    settings: DEFAULT_SETTINGS,
-    savedSettings: DEFAULT_SETTINGS,
+    settings,
+    savedSettings: settings,
     draft: 'draft',
+    renamingId: null,
   }
 }
 
@@ -70,7 +77,7 @@ const FALLBACK = {
   get(id: string) {
     let f = this.cache.get(id)
     if (!f) {
-      f = makeFlow()
+      f = makeFlow(id)
       this.cache.set(id, f)
     }
     return f
@@ -127,6 +134,7 @@ interface Actions {
   discardSettings(flowId: string): void
   restoreVersion(flowId: string): void
   setDraft(flowId: string, draft: FlowEditorState['draft']): void
+  setRenaming(flowId: string, id: string | null): void
 }
 
 type Store = { flows: Record<string, FlowEditorState> } & Actions
@@ -346,6 +354,7 @@ export const useFlowStore = create<Store>()((set, get) => {
     saveSettings: (flowId) => patch(flowId, (f) => ({ savedSettings: f.settings })),
     discardSettings: (flowId) => patch(flowId, (f) => ({ settings: f.savedSettings })),
     restoreVersion: (flowId) => patch(flowId, () => ({ dirty: true })),
+    setRenaming: (flowId, id) => patch(flowId, () => ({ renamingId: id, selected: id ?? get().get(flowId).selected })),
     setDraft: (flowId, draft) => patch(flowId, () => ({ draft, enabled: draft === 'on' })),
   }
 })

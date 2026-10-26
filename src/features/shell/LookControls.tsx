@@ -39,11 +39,23 @@ export const AreaTile = forwardRef<HTMLSpanElement, { area: Channel; size: numbe
  * The area icon badge, clickable: opens the icon + colour picker.
  * Use where the badge is not inside another button.
  */
-export function AreaBadgeButton({ area, size }: { area: Channel; size: number }) {
+export function AreaBadgeButton({
+  area,
+  size,
+  open,
+  onOpenChange,
+}: {
+  area: Channel
+  size: number
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
   const look = useAreaLook(area)
   const { setLook, resetLook } = useAppearance()
   return (
     <LookPicker
+      open={open}
+      onOpenChange={onOpenChange}
       kind="area"
       title={`${area.name} icon`}
       value={{ icon: look.icon, color: look.color }}
@@ -67,15 +79,22 @@ export function FolderIconButton({
   folder,
   open,
   active = false,
+  pickerOpen,
+  onPickerOpenChange,
 }: {
   folder: Pick<Folder, 'id' | 'name'>
   open: boolean
   active?: boolean
+  /** Controlled picker (e.g. opened from the folder's menu) */
+  pickerOpen?: boolean
+  onPickerOpenChange?: (open: boolean) => void
 }) {
   const look = useFolderLook(folder)
   const { setLook, resetLook } = useAppearance()
   return (
     <LookPicker
+      open={pickerOpen}
+      onOpenChange={onPickerOpenChange}
       kind="folder"
       title={`${folder.name} icon`}
       value={{ icon: look.icon ?? 'folder', color: look.color ?? '#78716C' }}

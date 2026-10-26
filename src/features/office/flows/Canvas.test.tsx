@@ -16,6 +16,7 @@ import { ReposProvider } from '../../../app/ReposProvider'
 import { createMockRepos } from '../../../adapters/mock/mockRepos'
 import { OfficeFlowCanvasRoute, OfficeFlowDraftRoute, OfficeFlowRunsRoute, OfficeFlowSettingsRoute } from './index'
 import { resetFlows } from './editor'
+import { useToasts } from '../../../ui/ds/Toaster'
 
 function renderAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -45,7 +46,10 @@ function renderAt(path: string) {
 
 const nodes = () => document.querySelectorAll('[data-node]')
 
-beforeEach(() => resetFlows())
+beforeEach(() => {
+  resetFlows()
+  useToasts.setState({ toasts: [] })
+})
 
 describe('Flow canvas', () => {
   test('selecting a step shows it in the inspector', async () => {
@@ -187,5 +191,35 @@ describe('Flow settings', () => {
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
     await user.click(await screen.findByRole('button', { name: 'Delete flow' }))
     expect(router.state.location.pathname).toBe('/flows')
+  })
+})
+
+describe('Context menus', () => {
+  test('right-click a step deletes it, Undo in the toast brings it back', async () => {
+    const user = userEvent.setup()
+    const { fireEvent } = await import('@testing-library/react')
+    const { Toaster } = await import('../../../ui/ds/Toaster')
+    render(<Toaster />)
+    renderAt('/flows/of-deploy-triage/canvas')
+    const step = await screen.findByRole('button', { name: 'Draft a fix PR' })
+    fireEvent.contextMenu(step)
+    await user.click(await screen.findByRole('menuitem', { name: /delete step/i }))
+    expect(screen.queryByRole('button', { name: 'Draft a fix PR' })).not.toBeInTheDocument()
+    await user.click(screen.getAllByRole('button', { name: 'Undo' }).at(-1)!)
+    expect(screen.getByRole('button', { name: 'Draft a fix PR' })).toBeInTheDocument()
+  })
+
+  test('right-click empty canvas adds a step there', async () => {
+    const user = userEvent.setup()
+    const { fireEvent } = await import('@testing-library/react')
+    renderAt('/flows/of-deploy-triage/canvas')
+    await screen.findByTestId('detail-panel-label')
+    const before = nodes().length
+    fireEvent.contextMenu(screen.getByRole('application', { name: 'Flow canvas' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'AI' }))
+    const item = await screen.findByRole('menuitem', { name: 'Classify' })
+    item.focus()
+    await user.keyboard('{Enter}')
+    expect(nodes().length).toBe(before + 1)
   })
 })
