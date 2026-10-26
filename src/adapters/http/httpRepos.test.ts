@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHttpRepos } from './httpRepos'
 import { runReposContract } from '../../core/ports/repos.contract'
 import type { Channel, InboxItem, Session } from '../../core/domain/types'
@@ -173,6 +173,7 @@ runReposContract('http (mocked fetch)', () => {
   })
 
   vi.stubGlobal('fetch', fetchMock)
+  afterEach(() => vi.unstubAllGlobals())
 
   return createHttpRepos(BASE, () => TOKEN)
 })
