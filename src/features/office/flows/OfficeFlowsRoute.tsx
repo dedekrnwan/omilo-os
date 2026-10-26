@@ -3,9 +3,8 @@
 
 import { useState } from 'react'
 import { SegmentedTabs } from '../../../ui/ds/Segmented'
-import * as Dialog from '@radix-ui/react-dialog'
-import { drawerOverlayClass, drawerContentClass } from '../../../ui/ds/Drawer'
-import { Copy, GitFork, History, Link, Pause, Play, Plus, Power, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react'
+import { Drawer } from '../../../ui/ds/Drawer'
+import { Copy, GitFork, History, Link, Pause, Play, Plus, Power, Settings2, Sparkles, Trash2, Workflow } from 'lucide-react'
 import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
@@ -387,168 +386,140 @@ interface NewFlowDialogProps {
 
 type NewFlowMode = 'describe' | 'blank' | 'template'
 
+const NEW_FLOW_MODES: Array<{ id: NewFlowMode; label: string }> = [
+  { id: 'describe', label: 'Describe it' },
+  { id: 'blank', label: 'Start blank' },
+  { id: 'template', label: 'From a template' },
+]
+
 function NewFlowDialog({ open, onOpenChange, onDraft }: NewFlowDialogProps) {
   const [mode, setMode] = useState<NewFlowMode>('describe')
   const [description, setDescription] = useState(
     "Every Friday 16:00, pull this week's Stripe payouts, match them to referral signups, and send me a summary on WhatsApp. Ask me before paying anyone over Rp 5jt."
   )
 
+  if (!open) return null
+  const close = () => onOpenChange(false)
+  const draft = () => { close(); onDraft?.() }
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-describedby="new-flow-desc"
-          style={{ width: 480 }}
-          className={drawerContentClass}
-        >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-[8px] px-[22px] pt-[22px] pb-[16px]">
-            <div>
-              <Dialog.Title className="m-0 text-[15px] font-semibold text-ink">New flow</Dialog.Title>
-              <p id="new-flow-desc" className="m-0 mt-[2px] text-[12.5px] text-muted">
-                Describe it and Chief stuffs the steps, or start blank.
-              </p>
+    <Drawer
+      title="New flow"
+      subtitle="Describe it and Chief drafts the steps — you review before it runs."
+      onClose={close}
+      footer={
+        <>
+          <span className="min-w-0 flex-1 text-[12px] text-muted">You review the draft before it runs</span>
+          <Button variant="secondary" height={30} onClick={close}>Cancel</Button>
+          <Button variant="primary" height={30} icon={Sparkles} onClick={draft}>
+            Draft with Chief
+          </Button>
+        </>
+      }
+    >
+      {/* Mode selector */}
+      <SegmentedTabs
+        label="How to start"
+        options={NEW_FLOW_MODES}
+        value={mode}
+        onChange={setMode}
+      />
+
+      {/* Describe body */}
+      {mode === 'describe' && (
+        <>
+          <label className="flex w-full shrink-0 flex-col gap-[6px]">
+            <span className="text-[13px] font-medium text-ink-2">What should it do?</span>
+            <textarea
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what you want the flow to do…"
+              className="w-full resize-none rounded-base bg-surface px-[10px] py-[9px] text-[13.5px] leading-[1.55] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink placeholder:text-faint"
+            />
+          </label>
+
+          {/* Chief will draft */}
+          <section
+            aria-label="Chief will draft"
+            className="flex w-full shrink-0 flex-col gap-[10px] rounded-lg bg-[#EEF2FF] p-[14px] outline-1 -outline-offset-1 outline-[#C7D2FE]"
+          >
+            <div className="flex items-center gap-[8px]">
+              <Mascot size={20} radius={6} area="brand" />
+              <span className="text-[13px] font-semibold text-ink">Chief will draft</span>
             </div>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                aria-label="Close"
-                className="flex size-[26px] shrink-0 items-center justify-center rounded-sm text-faint transition-colors hover:bg-hover hover:text-muted"
-              >
-                <X size={15} aria-hidden />
-              </button>
-            </Dialog.Close>
-          </div>
-
-          {/* Mode selector */}
-          <div className="flex gap-[8px] px-[22px] pb-[16px]">
-            {(
-              [
-                { key: 'describe' as const, label: 'Describe it', sub: 'Chief stuffs the steps' },
-                { key: 'blank' as const,    label: 'Start blank',  sub: 'Empty canvas' },
-                { key: 'template' as const, label: 'From a template', sub: '12 ready flows' },
-              ] satisfies Array<{ key: NewFlowMode; label: string; sub: string }>
-            ).map(({ key, label, sub }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setMode(key)}
-                className="flex flex-1 flex-col items-center gap-[3px] rounded-lg p-[10px] text-center transition-colors outline-1 -outline-offset-1"
-                style={{
-                  outlineColor: mode === key ? 'var(--color-primary)' : 'var(--color-line-strong)',
-                  background: mode === key ? 'var(--color-soft)' : 'transparent',
-                }}
-              >
-                <span className="text-[12.5px] font-medium text-ink">{label}</span>
-                <span className="text-[11.5px] text-muted">{sub}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Describe body */}
-          {mode === 'describe' && (
-            <div className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[22px] pb-[4px]">
-              <textarea
-                rows={4}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what you want the flow to do…"
-                className="w-full resize-none rounded-base bg-soft px-[10px] py-[9px] text-[13px] leading-[1.5] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary placeholder:text-faint"
-              />
-
-              {/* Chief will draft */}
-              <div className="flex items-start gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong p-[12px]">
-                <Mascot size={28} radius={7} area="brand" />
-                <div className="flex flex-col gap-[4px] min-w-0">
-                  <span className="text-[12.5px] font-medium text-ink">Chief will draft</span>
-                  <div className="flex flex-wrap gap-[4px]">
-                    {(['Fri 16:00', 'Stripe', 'AI match', 'Approve', 'WhatsApp'] as const).map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex h-[20px] items-center rounded-pill px-[7px] text-[11px] font-medium"
-                        style={{ background: 'var(--color-soft)', color: 'var(--color-ink-2)' }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  <span className="text-[11.5px] text-muted">
-                    3 steps · 1 AI · ~$0.03 a run · you review the draft before it runs
-                  </span>
-                </div>
-              </div>
-
-              {/* Area + Runs as */}
-              <div className="grid grid-cols-2 gap-[10px]">
-                <div className="flex flex-col gap-[5px]">
-                  <label className="text-[12px] font-medium text-ink-2">Area</label>
-                  <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
-                    <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
-                    <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
-                      <option>Marketing</option>
-                      <option>Engineering</option>
-                      <option>Business</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-[5px]">
-                  <label className="text-[12px] font-medium text-ink-2">Runs as</label>
-                  <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
-                    <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
-                    <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
-                      <option>Growth</option>
-                      <option>Ops</option>
-                      <option>Dev</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {mode === 'blank' && (
-            <div className="flex flex-1 items-center justify-center px-[22px] pb-[16px]">
-              <p className="text-[13px] text-muted text-center">Opens an empty canvas where you add steps.</p>
-            </div>
-          )}
-
-          {mode === 'template' && (
-            <div className="flex min-h-0 flex-1 flex-col gap-[10px] overflow-y-auto px-[22px] pb-[4px]">
-              {TEMPLATES.slice(0, 6).map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-[10px] rounded-base outline-1 -outline-offset-1 outline-line-strong px-[12px] py-[10px] bg-surface hover:bg-soft transition-colors"
+            <div className="flex flex-wrap gap-[4px]">
+              {(['Fri 16:00', 'Stripe', 'AI match', 'Approve', 'WhatsApp'] as const).map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex h-[20px] items-center rounded-pill bg-surface px-[7px] text-[11px] font-medium text-ink-2"
                 >
-                  <FlowChain from={t.from} to={t.to} count={t.count} />
-                  <div className="flex flex-col gap-[1px] min-w-0 flex-1">
-                    <span className="text-[12.5px] font-medium text-ink">{t.title}</span>
-                    <span className="text-[11.5px] text-muted truncate">{t.desc}</span>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label={`Use ${t.title}`}
-                    onClick={() => { onOpenChange(false); onDraft?.() }}
-                    className="text-[12px] text-muted transition-colors hover:text-ink-2 shrink-0"
-                  >
-                    Use
-                  </button>
-                </div>
+                  {tag}
+                </span>
               ))}
             </div>
-          )}
+            <span className="text-[11.5px] text-muted">3 steps · 1 AI · ~$0.03 a run</span>
+          </section>
 
-          {/* Footer */}
-          <div className="flex items-center gap-[8px] border-t border-line px-[22px] py-[14px]">
-            <span className="flex-1" />
-            <Button variant="secondary" height={30} onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button variant="primary" height={30} onClick={() => { onOpenChange(false); onDraft?.() }}>
-              Draft with Chief
-            </Button>
+          {/* Area + Runs as */}
+          <div className="grid w-full shrink-0 grid-cols-2 gap-[10px]">
+            <div className="flex flex-col gap-[5px]">
+              <label className="text-[12px] font-medium text-ink-2">Area</label>
+              <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
+                <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
+                <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
+                  <option>Marketing</option>
+                  <option>Engineering</option>
+                  <option>Business</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-[5px]">
+              <label className="text-[12px] font-medium text-ink-2">Runs as</label>
+              <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
+                <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
+                <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
+                  <option>Growth</option>
+                  <option>Ops</option>
+                  <option>Dev</option>
+                </select>
+              </div>
+            </div>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      )}
+
+      {mode === 'blank' && (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-[13px] text-muted text-center">Opens an empty canvas where you add steps.</p>
+        </div>
+      )}
+
+      {mode === 'template' && (
+        <div className="flex w-full shrink-0 flex-col gap-[10px]">
+          {TEMPLATES.slice(0, 6).map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center gap-[10px] rounded-base outline-1 -outline-offset-1 outline-line-strong px-[12px] py-[10px] bg-surface hover:bg-soft transition-colors"
+            >
+              <FlowChain from={t.from} to={t.to} count={t.count} />
+              <div className="flex flex-col gap-[1px] min-w-0 flex-1">
+                <span className="text-[12.5px] font-medium text-ink">{t.title}</span>
+                <span className="text-[11.5px] text-muted truncate">{t.desc}</span>
+              </div>
+              <button
+                type="button"
+                aria-label={`Use ${t.title}`}
+                onClick={draft}
+                className="text-[12px] text-muted transition-colors hover:text-ink-2 shrink-0"
+              >
+                Use
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
   )
 }
 

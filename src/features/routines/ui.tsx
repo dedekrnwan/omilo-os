@@ -3,9 +3,7 @@
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Check, ChevronDown, X } from 'lucide-react'
-import { IconButton } from '../../ui/ds/Button'
-import { useEscapeKey } from '../../ui/ds/useEscapeKey'
+import { Check, ChevronDown } from 'lucide-react'
 
 /** pen `Switch/On` (y1lHE) / `Switch/Off` (o4QgH): 32×18 · r9 · p2 · knob 14. */
 export function Switch({
@@ -243,49 +241,10 @@ export function Scrim({ onClick }: { onClick?: () => void }) {
 }
 
 /**
- * pen routine `Drawer`: fixed 480 wide, 8px from the right/top/bottom, r20, big shadow.
- * Header (serif 22 title + 13 sub + close), scrolling Body, soft Footer.
+ * pen routine `Drawer` — now the single shared primitive in `ui/ds/Drawer`.
+ * Re-exported here so existing routine imports keep working.
  */
-export function Drawer({
-  title,
-  subtitle,
-  onClose,
-  children,
-  footer,
-  bodyClass = 'gap-[18px] px-[24px] py-[20px]',
-}: {
-  title: string
-  subtitle: string
-  onClose: () => void
-  children: ReactNode
-  footer: ReactNode
-  bodyClass?: string
-}) {
-  useEscapeKey(onClose)
-  return (
-    <>
-      <Scrim onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[480px] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-6"
-      >
-        <header className="flex w-full shrink-0 gap-[12px] shadow-[inset_0_-1px_0_var(--color-line)] pt-[20px] pr-[16px] pb-[16px] pl-[24px]">
-          <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-            <h2 className="m-0 font-serif text-[22px] leading-[27px] font-medium tracking-[-0.22px] text-ink">{title}</h2>
-            <p className="m-0 text-[13px] text-muted">{subtitle}</p>
-          </div>
-          <IconButton icon={X} aria-label="Close" onClick={onClose} />
-        </header>
-        <div className={`flex min-h-0 w-full flex-1 flex-col overflow-y-auto ${bodyClass}`}>{children}</div>
-        <footer className="flex w-full shrink-0 items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] bg-soft px-[24px] py-[14px]">
-          {footer}
-        </footer>
-      </aside>
-    </>
-  )
-}
+export { Drawer } from '../../ui/ds/Drawer'
 
 /** "You" avatar used in the BY column: 16 · #57534E · white "D" 8/700. */
 export function YouAvatar() {
