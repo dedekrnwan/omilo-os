@@ -277,7 +277,7 @@ export function Segmented<T extends string>({
   onBg?: string
 }) {
   return (
-    <div className={`flex shrink-0 gap-[2px] self-start rounded-base p-[2px] outline-1 -outline-offset-1 outline-line ${bg}`}>
+    <div className={`flex w-fit max-w-full shrink-0 gap-[2px] self-start rounded-base p-[2px] outline-1 -outline-offset-1 outline-line ${bg}`}>
       {items.map((it) => (
         <button
           key={it}
