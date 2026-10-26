@@ -17,7 +17,9 @@ import type { ReactNode } from 'react'
 import { ChevronDown, History, Lock, Maximize2, Pin, Search, SquarePen, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { ChiefComposer } from './ChiefComposer'
+import type { Model } from '../../core/domain/types'
+import { Composer } from '../../ui/ChatSession/Composer'
+import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { useFabHidden } from './fabStore'
 import {
   CHIEF_DAY_LABEL,
@@ -327,6 +329,7 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
   const fabHidden = useFabHidden((s) => s.count > 0)
   const [messages, setMessages] = useState<ChiefMessage[]>(CHIEF_MESSAGES)
   const [draft, setDraft] = useState('')
+  const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const [activeThread, setActiveThread] = useState('t1')
   const [seen, setSeen] = useState(false)
 
@@ -454,12 +457,18 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
         </>
       )}
       <div className="w-full shrink-0 px-[12px] pb-[12px]">
-        <ChiefComposer
+        <Composer
+          key={`chief-dm-${draft}`}
+          sessionId="chief-dm"
+          selectedModel={model}
+          onModelChange={setModel}
           placeholder={threads ? 'Start a new private chat…' : 'Think out loud with Chief…'}
           compact={!full}
-          value={draft}
-          onChange={setDraft}
-          onSend={send}
+          initialText={draft}
+          onSend={(text) => {
+            send(text)
+            setDraft('')
+          }}
         />
       </div>
     </section>

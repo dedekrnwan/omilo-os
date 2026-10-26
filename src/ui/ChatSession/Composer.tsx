@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ArrowUp, AtSign, FoldVertical, Hash, Mic, MicOff, Paperclip, Plus, Slash } from 'lucide-react'
+import { ArrowUp, AtSign, FoldVertical, Hash, Paperclip, Plus, Slash } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
-import { IconButton, SquareButton } from '../ds/Button'
+import { SquareButton } from '../ds/Button'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../ds/Menu'
 import { ModelMenu, ThinkingMenu } from './ModelMenu'
 import type { ThinkingLevel } from './ModelMenu'
@@ -37,9 +37,11 @@ export interface ComposerProps {
   initialPopover?: ComposerPopoverKind
   /** Composer dropdown open on mount (model / thinking / context). */
   initialMenu?: ComposerMenu
-  /** Called with the text when the person sends (Enter or the send button). */
+  /** Fired with the trimmed text when the user sends (Enter or the send button). */
   onSend?: (text: string) => void
   autoFocus?: boolean
+  /** Hide the context ring (narrow surfaces like the Chief drawer). */
+  compact?: boolean
 }
 
 /**
@@ -64,9 +66,9 @@ export function Composer({
   initialMenu,
   onSend,
   autoFocus = false,
+  compact = false,
 }: ComposerProps) {
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
-  const [isRecording, setIsRecording] = useState(false)
   const [plusOpen, setPlusOpen] = useState(false)
   const [picker, setPicker] = useState<TriggerMatch | null>(
     initialPopover === 'none' ? null : { kind: initialPopover, query: '', index: 0 },
@@ -104,9 +106,10 @@ export function Composer({
 
   function send() {
     const text = inputRef.current?.getText() ?? ''
-    if (text.trim()) {
+    const trimmed = text.trim()
+    if (trimmed) {
+      onSend?.(trimmed)
       inputRef.current?.clear()
-      onSend?.(text.trim())
     }
     setHasText(false)
     setPicker(null)
@@ -248,37 +251,32 @@ export function Composer({
             </DropdownMenu.Root>
 
             <div className="h-px flex-1" />
-            <ContextMenu
-              contextUsed={contextUsed}
-              onAutoCompactToggle={onAutoCompactToggle}
-              autoCompact={autoCompact}
-              onCompactNow={onCompactNow}
-              defaultOpen={initialMenu === 'context'}
-            >
-              <button
-                type="button"
-                aria-label={`Context ${contextUsed}% used`}
-                className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px] transition-colors hover:bg-hover data-[state=open]:bg-hover"
+            {!compact && (
+              <ContextMenu
+                contextUsed={contextUsed}
+                onAutoCompactToggle={onAutoCompactToggle}
+                autoCompact={autoCompact}
+                onCompactNow={onCompactNow}
+                defaultOpen={initialMenu === 'context'}
               >
-                <Ring size={16} value={contextUsed} color={ringColor} />
-                <span className={`font-mono text-[11px] ${full ? 'font-semibold text-bad' : 'text-muted'}`}>
-                  {contextUsed}%
-                </span>
-              </button>
-            </ContextMenu>
+                <button
+                  type="button"
+                  aria-label={`Context ${contextUsed}% used`}
+                  className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px] transition-colors hover:bg-hover data-[state=open]:bg-hover"
+                >
+                  <Ring size={16} value={contextUsed} color={ringColor} />
+                  <span className={`font-mono text-[11px] ${full ? 'font-semibold text-bad' : 'text-muted'}`}>
+                    {contextUsed}%
+                  </span>
+                </button>
+              </ContextMenu>
+            )}
             <ModelMenu selected={selectedModel} onSelect={onModelChange} defaultOpen={initialMenu === 'model'} />
             <ThinkingMenu
               model={selectedModel}
               level={thinking}
               onSelect={setThinking}
               defaultOpen={initialMenu === 'thinking'}
-            />
-            <IconButton
-              icon={isRecording ? MicOff : Mic}
-              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
-              aria-pressed={isRecording}
-              className={isRecording ? 'text-bad bg-hover' : ''}
-              onClick={() => setIsRecording((v) => !v)}
             />
             <SquareButton
               variant="primary"
