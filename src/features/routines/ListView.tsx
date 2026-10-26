@@ -1,8 +1,19 @@
 import { useState } from 'react'
-import { ArrowRight, Check, Ellipsis, Repeat } from 'lucide-react'
+import { ArrowRight, Check, CornerDownLeft, Ellipsis, Repeat } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
-import { AGENTS, LIST_MORE, SUGGESTION, colorOf, type RoutineGroup, type RoutineRow, type RunResult } from './data'
+import {
+  AGENTS,
+  LIST_MORE,
+  RUN_STATUS,
+  SUGGESTION,
+  colorOf,
+  runDetail,
+  type RoutineGroup,
+  type RoutineRow,
+  type RunDetail,
+  type RunResult,
+} from './data'
 import { Switch, YouAvatar } from './ui'
 
 /** pen `Chief Suggestion` (CqvAX): #EEF2FF · r14 · p16 · gap12. */
@@ -47,18 +58,74 @@ export function SuggestionCard({ onApply, onDismiss }: { onApply: () => void; on
 }
 
 const RUN_COLOR: Record<RunResult, string> = { ok: '#22C55E', skip: '#A8A29E', fail: '#EF4444', none: '#E7E5E4' }
+const RUN_DOT: Partial<Record<RunResult, string>> = { ok: '#22C55E', fail: '#EF4444', skip: '#A8A29E' }
 
-function Runs({ runs }: { runs: RunResult[] }) {
-  const ok = runs.filter((r) => r === 'ok').length
+/** Dark tooltip pinned above a hovered run bar (fixed, so it escapes the table's clipping). */
+function RunTooltip({ detail: d, anchor }: { detail: RunDetail; anchor: DOMRect }) {
+  const W = 240
+  const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - W / 2, window.innerWidth - W - 8))
+  const below = anchor.top < 180
+  const style = below
+    ? { top: anchor.bottom + 8, left }
+    : { top: anchor.top - 8, left, transform: 'translateY(-100%)' }
   return (
-    <div className="flex w-[80px] shrink-0 items-end gap-[2px]" aria-label={`${ok} of last ${runs.length} runs succeeded`} role="img">
-      {runs.map((r, i) => (
-        <span
-          key={i}
-          className="w-[6px] rounded-[1.5px]"
-          style={{ height: r === 'none' ? 5 : 14, background: RUN_COLOR[r] }}
-        />
-      ))}
+    <div
+      role="tooltip"
+      style={{ ...style, width: W }}
+      className="pointer-events-none fixed z-[60] flex flex-col gap-[6px] rounded-[10px] bg-[#1C1917] p-[12px] text-[12.5px] text-[#D6D3D1] shadow-[0_12px_32px_#0C0A0940]"
+    >
+      <div className="flex items-center gap-[7px]">
+        <span className="size-[7px] shrink-0 rounded-full" style={{ background: RUN_DOT[d.result] }} />
+        <span className="text-[13px] font-semibold text-white">{d.status}</span>
+        <span className="ml-auto text-[11.5px] text-[#A8A29E]">{d.whenShort}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Ran for</span>
+        <span className="font-medium text-white">{d.duration}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Agent</span>
+        <span className="font-medium text-white">{AGENTS[d.agentId].name}</span>
+      </div>
+      <p className={`m-0 border-t border-white/15 pt-[8px] leading-[1.4] ${d.result === 'fail' ? 'text-[#FCA5A5]' : 'text-[#E7E5E4]'}`}>
+        {d.error ?? d.outcome}
+      </p>
+      <div className="flex items-center gap-[5px] border-t border-white/15 pt-[8px] text-[11px] text-[#A8A29E]">
+        <CornerDownLeft size={12} aria-hidden />
+        Click to open full run &amp; logs
+      </div>
+    </div>
+  )
+}
+
+function Runs({ row, onOpenRun }: { row: RoutineRow; onOpenRun?: (row: RoutineRow, index: number) => void }) {
+  const [hover, setHover] = useState<{ i: number; anchor: DOMRect } | null>(null)
+  const ok = row.runs.filter((r) => r === 'ok').length
+  return (
+    <div
+      className="relative flex w-[80px] shrink-0 items-end gap-[2px]"
+      role="group"
+      aria-label={`Last ${row.runs.length} runs — ${ok} succeeded`}
+    >
+      {row.runs.map((r, i) =>
+        r === 'none' ? (
+          <span key={i} className="w-[6px] rounded-[1.5px]" style={{ height: 5, background: RUN_COLOR.none }} />
+        ) : (
+          <button
+            key={i}
+            type="button"
+            aria-label={`${row.name} — run ${i + 1} of ${row.runs.length}: ${RUN_STATUS[r]}`}
+            onMouseEnter={(e) => setHover({ i, anchor: e.currentTarget.getBoundingClientRect() })}
+            onMouseLeave={() => setHover((h) => (h?.i === i ? null : h))}
+            onFocus={(e) => setHover({ i, anchor: e.currentTarget.getBoundingClientRect() })}
+            onBlur={() => setHover((h) => (h?.i === i ? null : h))}
+            onClick={() => onOpenRun?.(row, i)}
+            className="w-[6px] origin-bottom rounded-[1.5px] outline-offset-2 transition-transform hover:scale-y-[1.14] focus-visible:outline-2 focus-visible:outline-ink"
+            style={{ height: 14, background: RUN_COLOR[r] }}
+          />
+        ),
+      )}
+      {hover && <RunTooltip detail={runDetail(row, hover.i)} anchor={hover.anchor} />}
     </div>
   )
 }
@@ -70,6 +137,7 @@ function Row({
   nameOverride,
   compact,
   onOpen,
+  onOpenRun,
   onMenu,
   menuOpen,
 }: {
@@ -77,6 +145,7 @@ function Row({
   nameOverride?: string
   compact?: boolean
   onOpen: (id: string) => void
+  onOpenRun?: (row: RoutineRow, index: number) => void
   onMenu?: (id: string, el: HTMLElement) => void
   menuOpen?: boolean
 }) {
@@ -99,7 +168,7 @@ function Row({
       <span className={`${COLS.next} shrink-0 text-[12.5px] ${row.paused ? 'text-warn' : 'text-ink-2'}`}>
         {row.next}
       </span>
-      <Runs runs={row.runs} />
+      <Runs row={row} onOpenRun={onOpenRun} />
       <div className={`flex ${COLS.by} shrink-0 items-center gap-[5px]`}>
         {row.by === 'chief' ? <Mascot size={16} radius={4} area="brand" /> : <YouAvatar />}
         <span className="text-[12px] text-muted">{row.by === 'chief' ? 'Chief' : 'You'}</span>
@@ -125,6 +194,7 @@ export function ListView({
   firstNameOverride,
   menuFor,
   onOpen,
+  onOpenRun,
   onMenu,
 }: {
   groups: RoutineGroup[]
@@ -132,6 +202,7 @@ export function ListView({
   firstNameOverride?: string
   menuFor?: string | null
   onOpen: (id: string) => void
+  onOpenRun?: (row: RoutineRow, index: number) => void
   onMenu?: (id: string, el: HTMLElement) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -176,6 +247,7 @@ export function ListView({
                 nameOverride={gi === 0 && ri === 0 ? firstNameOverride : undefined}
                 compact={compact}
                 onOpen={onOpen}
+                onOpenRun={onOpenRun}
                 onMenu={onMenu}
                 menuOpen={menuFor === r.id}
               />

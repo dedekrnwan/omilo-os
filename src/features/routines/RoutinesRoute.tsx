@@ -10,12 +10,14 @@ import {
   LIST_GROUPS,
   WEEK_LABEL,
   routineById,
+  runDetail,
   weekLanes,
   type RoutineDrawerState,
+  type RoutineRow,
   type RoutinesState,
   type RoutinesView,
 } from './data'
-import { NewRoutineDrawer, RoutineDrawer, RunOutputDrawer } from './Drawers'
+import { NewRoutineDrawer, RoutineDrawer, RunDetailDrawer, RunOutputDrawer } from './Drawers'
 import { EmptyState } from './EmptyState'
 import { ListView, SuggestionCard } from './ListView'
 import { AppliedToast, DeleteConfirm, FailurePopover, RowMenu, type Anchor } from './Overlays'
@@ -205,6 +207,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   )
   const [weekOffset, setWeekOffset] = useState(0)
   const [agentFilter, setAgentFilter] = useState<string | null>(null)
+  const [runOpen, setRunOpen] = useState<{ row: RoutineRow; index: number } | null>(null)
   const drawer: RoutineDrawerState = drawerState ?? 'detail'
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -275,10 +278,11 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
               )}
               <ListView
                 groups={LIST_GROUPS}
-                compact={!!routine || !!creating}
+                compact={!!routine || !!creating || !!runOpen}
                 firstNameOverride={routine && routineId !== 'morning-brief' ? routine.name : drawer === 'output' ? 'Morning brief · Fri 23' : undefined}
                 menuFor={menu?.id}
                 onOpen={(id) => open(id)}
+                onOpenRun={(row, index) => setRunOpen({ row, index })}
                 onMenu={(id, el) => setMenu(menu?.id === id ? null : { id, anchor: anchorOf(el) })}
               />
             </>
@@ -321,6 +325,24 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
       )}
 
       {creating && <NewRoutineDrawer clash={creating === 'clash'} onClose={() => setCreating(null)} onCreate={() => setCreating(null)} />}
+
+      {runOpen && (
+        <RunDetailDrawer
+          detail={runDetail(runOpen.row, runOpen.index)}
+          routineName={runOpen.row.name}
+          onClose={() => setRunOpen(null)}
+          onOpenRoutine={() => {
+            const id = runOpen.row.id
+            setRunOpen(null)
+            open(id)
+          }}
+          onRerun={() => {
+            const id = runOpen.row.id
+            setRunOpen(null)
+            open(id, 'running')
+          }}
+        />
+      )}
 
       {routine &&
         (drawer === 'output' ? (
