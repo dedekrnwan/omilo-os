@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { Breadcrumb, SectionPane, Toggle } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { Segmented } from '../../team/ui'
 import type { DialogKind } from '../legacyTypes'
 
 const SKILLS = [
@@ -63,13 +65,16 @@ const AREA_MAP: Record<string, 'ops' | 'dev' | 'marketing' | 'finance' | 'suppor
   ops: 'ops', dev: 'dev', marketing: 'marketing', finance: 'finance', support: 'support', sales: 'sales',
 }
 
-const FILTERS = ['All · 6', 'Standard · 2', 'On demand · 4']
+const SKILL_FILTERS = ['All', 'Standard', 'On demand'] as const
+type SkillFilter = (typeof SKILL_FILTERS)[number]
 
 interface Props {
   onDialog: (d: DialogKind) => void
 }
 
 export function SectionSkills({ onDialog }: Props) {
+  const [filter, setFilter] = useState<SkillFilter>('All')
+  const shown = filter === 'All' ? SKILLS : SKILLS.filter((s) => s.type === filter)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -86,25 +91,13 @@ export function SectionSkills({ onDialog }: Props) {
         <p className="mb-[20px] text-[13px] text-muted">Know-how your agents follow — a checklist, a house style, a process.</p>
 
         {/* Filters */}
-        <div className="mb-[20px] flex gap-[6px]">
-          {FILTERS.map((f, i) => (
-            <button
-              key={f}
-              type="button"
-              className={`rounded-pill px-[10px] py-[4px] text-[12px] transition-colors ${
-                i === 0
-                  ? 'bg-ink text-white'
-                  : 'border border-line-strong bg-surface text-ink hover:bg-soft'
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="mb-[20px]">
+          <Segmented items={SKILL_FILTERS} value={filter} onChange={setFilter} />
         </div>
 
         {/* Grid */}
         <div className="grid grid-cols-2 gap-[12px]">
-          {SKILLS.map((s) => (
+          {shown.map((s) => (
             <div key={s.name} className="flex flex-col gap-[8px] rounded-lg border border-line-strong bg-surface p-[14px]">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-[6px]">
