@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Monitor, Smartphone, Terminal } from 'lucide-react'
 import {
   Breadcrumb,
   RowDivider,
@@ -17,18 +18,18 @@ import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 
 const DEVICES_INIT = [
-  { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', canSignOut: false, isCli: false },
-  { name: 'iPhone 16 · WhatsApp linked', desc: 'Last active 2h ago', canSignOut: true, isCli: false },
-  { name: 'CLI token "omilo-cli"', isCli: true, desc: 'Created Oct 2 · used yesterday', canSignOut: true },
+  { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
+  { name: 'iPhone 16 · WhatsApp linked', desc: 'Last active 2h ago', icon: Smartphone, canSignOut: true, isCli: false },
+  { name: 'CLI token "omilo-cli"', desc: 'Created Oct 2 · used yesterday', icon: Terminal, canSignOut: true, isCli: true },
 ]
 
 export function SectionAccount() {
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
-  function handleSignOut(name: string) {
+  function handleSignOut(name: string, isCli: boolean) {
     setDevices((prev) => prev.filter((d) => d.name !== name))
-    notify(`Signed out of ${name}`)
+    notify(isCli ? `Revoked ${name}` : `Signed out of ${name}`)
   }
 
   function handleChangePhoto() {
@@ -102,21 +103,23 @@ export function SectionAccount() {
 
         {/* Devices & tokens */}
         <SubHeading label="Devices & tokens" />
-        <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
+        <div className="overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface">
           {devices.map((d, i) => (
             <div
               key={d.name}
               className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < devices.length - 1 ? 'border-b border-line' : ''}`}
             >
-              <span className="flex size-[28px] shrink-0 items-center justify-center rounded-base border border-line-strong bg-soft text-[14px]">
-                {d.isCli ? '>' : '💻'}
+              <span className="flex size-[28px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong bg-soft text-muted">
+                <d.icon size={15} aria-hidden />
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
                 <span className="text-[13px] font-medium text-ink">{d.name}</span>
                 <span className="text-[12px] text-muted">{d.desc}</span>
               </div>
               {d.canSignOut && (
-                <Button variant="secondary" height={28} onClick={() => handleSignOut(d.name)}>Sign out</Button>
+                <Button variant="secondary" height={28} onClick={() => handleSignOut(d.name, d.isCli)}>
+                  {d.isCli ? 'Revoke' : 'Sign out'}
+                </Button>
               )}
             </div>
           ))}
