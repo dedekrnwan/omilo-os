@@ -95,17 +95,21 @@ export function TextInput({
   value,
   placeholder,
   className = '',
+  width,
 }: {
   value?: string
   placeholder?: string
   className?: string
+  /** Fixed width in px; overrides the default min-width when set. */
+  width?: number
 }) {
   return (
     <input
       readOnly
       value={value}
       placeholder={placeholder}
-      className={`h-[34px] min-w-[240px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none ${className}`}
+      style={width !== undefined ? { width, minWidth: width } : undefined}
+      className={`h-[34px] ${width === undefined ? 'min-w-[240px]' : ''} rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none ${className}`}
     />
   )
 }
@@ -152,11 +156,12 @@ export function StatusBadge({ label, color }: { label: string; color: 'ok' | 'wa
 
 // ── Select (visual-only) ──────────────────────────────────────────────────────
 
-export function SelectField({ value }: { value: string }) {
+export function SelectField({ value, width }: { value: string; width?: number }) {
   return (
     <button
       type="button"
-      className="flex h-[34px] min-w-[200px] items-center gap-[8px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink"
+      style={width !== undefined ? { width, minWidth: width } : undefined}
+      className={`flex h-[34px] ${width === undefined ? 'min-w-[200px]' : ''} items-center gap-[8px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink`}
     >
       <span className="flex-1 text-left">{value}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" className="text-muted" aria-hidden>

@@ -120,7 +120,7 @@ export function SectionAiEngine() {
         <SubHeading label="Budget & limits" />
         <SettingCardRows>
           <SettingRow label="Monthly budget" desc="AI must pause when it's reached. Connectors and aoks keep running.">
-            <TextInput value="$ 400" className="min-w-[100px]" />
+            <TextInput value="$ 400" width={120} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Warn me at 80%" desc="WhatsApp + inbox when this month passes $320.">
@@ -147,7 +147,7 @@ export function SectionAiEngine() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Compact when the chat is" desc="Percent of the model's window. Opus 5.5 = 200k, GPT 4.1 = 410k.">
-            <SelectField value="85% full" />
+            <SelectField value="85% full" width={140} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Always keep word-for-word" desc="Never summarises, even after compacting.">

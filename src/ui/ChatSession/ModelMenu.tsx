@@ -1,6 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ArrowUpRight, Brain, Check, ChevronDown, Eye, Search } from 'lucide-react'
+import { ArrowUpRight, Brain, Check, ChevronDown, Eye, Search, Settings } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { Model } from '../../core/domain/types'
 import { MenuHeading, MenuSeparatorLine, menuSurface } from '../ds/Menu'
 
@@ -62,6 +63,7 @@ interface ModelMenuProps {
 const openTrigger = 'data-[state=open]:outline-[1.5px] data-[state=open]:-outline-offset-[1.5px] data-[state=open]:outline-ink'
 
 export function ModelMenu({ selected, onSelect, defaultOpen }: ModelMenuProps) {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const groups = (['anthropic', 'openai'] as const).map((provider) => ({
@@ -142,9 +144,15 @@ export function ModelMenu({ selected, onSelect, defaultOpen }: ModelMenuProps) {
               <Eye size={12} aria-hidden /> Reads images
             </span>
             <span className="h-px flex-1" />
-            <a href="#" className="text-[11.5px] whitespace-nowrap text-link hover:underline">
-              Manage in AI accounts
-            </a>
+            <button
+              type="button"
+              aria-label="Manage AI accounts"
+              title="Manage AI accounts"
+              onClick={() => void navigate({ to: '/control-panel/$section', params: { section: 'ai-accounts' } })}
+              className="flex size-[24px] items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover hover:text-ink"
+            >
+              <Settings size={14} aria-hidden />
+            </button>
           </div>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
