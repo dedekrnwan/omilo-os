@@ -1,19 +1,26 @@
 """Database engine, session factory, declarative base, and RLS helpers.
 
-Design:
-- SQLAlchemy 2.0 `DeclarativeBase` style.
-- Sync `Session` (psycopg3 sync driver).
-- `set_company(session, company_id)` calls `set_config('app.company_id', cmp, true)`
-  (transaction-local, equivalent to SET LOCAL) so Postgres RLS policies can
-  read it via `current_setting('app.company_id', true)`.
-- `get_db(ctx)` is the FastAPI dependency that opens a transaction, calls
-  `set_company`, and yields the session.  Task 5 will wire `ctx` from JWT
-  auth; for now the signature accepts an optional RequestContext.
+Design
+------
+- SQLAlchemy 2.0 ``DeclarativeBase`` style.
+- Sync ``Session`` (psycopg3 sync driver).
+- Two session planes:
+
+  ``get_db(ctx)`` — **tenant-scoped**.  Requires a ``RequestContext`` from
+  ``get_context``.  Opens a transaction, issues
+  ``SET LOCAL ROLE omilo_app`` (non-superuser → FORCE RLS enforced), then
+  ``set_config('app.company_id', ctx.company_id, true)`` (transaction-local
+  GUC).  All domain-data routes use this dependency.
+
+  ``get_bootstrap_db`` (in omilo/tenancy/deps.py) — **privileged**.  Opens a
+  plain session as the superuser ``omilo`` (RLS-bypassing).  Auth routes and
+  cross-company lookups use it; they MUST filter by user_id explicitly.
+
+- ``set_company(session, company_id)`` — internal helper used by ``get_db``.
 """
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -86,24 +93,39 @@ def set_company(session: Session, company_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI dependency
+# Tenant-scoped FastAPI dependency (the primary domain-data session)
 # ---------------------------------------------------------------------------
 
-def get_db(ctx: Optional["RequestContext"] = None) -> Generator[Session, None, None]:  # noqa: F821
-    """Sync generator dependency: open a transaction, set RLS, yield session.
+def get_db(ctx: "RequestContext") -> Generator[Session, None, None]:  # noqa: F821
+    """Tenant-scoped session dependency.
+
+    Opens a transaction, issues:
+    1. ``SET LOCAL ROLE omilo_app`` — drops to non-superuser so Postgres
+       FORCE ROW LEVEL SECURITY applies.
+    2. ``set_config('app.company_id', ctx.company_id, true)`` — sets the
+       transaction-local GUC that the tenant_isolation policies read.
+
+    Because ``omilo_app`` is a non-superuser and all tenant tables have
+    FORCE RLS, queries see only the active company's rows.  Any attempt to
+    read another tenant's data is silently filtered to zero rows by Postgres —
+    not by application logic.
+
+    This function is not meant to be used directly as a FastAPI Depends target.
+    Route authors should use ``get_tenant_db`` from ``omilo.tenancy.deps`` which
+    composes ``get_context`` → ``get_db``.
 
     Usage (FastAPI route)::
 
-        @router.get("/items")
-        def list_items(db: Session = Depends(get_db)):
-            ...
+        from omilo.tenancy.deps import get_tenant_db
 
-    Task 5 will wrap this (or replace the default) to pass a resolved
-    RequestContext from the JWT auth dependency.  The body is deliberately
-    minimal so that refactoring is surgical.
+        @router.get("/channels")
+        def list_channels(db: Session = Depends(get_tenant_db)):
+            return db.query(Channel).all()  # RLS scopes to active company
     """
     with SessionLocal() as session:
         with session.begin():
-            if ctx is not None:
-                set_company(session, ctx.company_id)
+            # Step 1: become non-superuser so FORCE RLS applies
+            session.execute(text("SET LOCAL ROLE omilo_app"))
+            # Step 2: set the GUC that tenant_isolation policies check
+            set_company(session, ctx.company_id)
             yield session
