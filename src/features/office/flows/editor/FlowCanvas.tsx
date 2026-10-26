@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { CircleCheck, Hand, Maximize, Minus, MousePointer2, Plus, Redo2, Undo2 } from 'lucide-react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+import type { ComponentPropsWithoutRef, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { CircleCheck, Hand, Maximize, Minus, MousePointer2, Plus, Redo2, Scan, Undo2 } from 'lucide-react'
+import { ContextMenuArea } from '../../../../ui/ds/ItemMenu'
+import type { MenuEntries } from '../../../../ui/ds/ItemMenu'
 import * as Popover from '@radix-ui/react-popover'
 import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuSurface } from '../../../../ui/ds/Menu'
@@ -12,6 +14,8 @@ import { nodeHeight, nodeWidth } from './store'
 import type { Graph } from './store'
 
 export type Tool = 'select' | 'pan'
+
+const GROUP_NAME: Record<string, string> = { TRIGGERS: 'Triggers', AI: 'AI', 'LOGIC & PEOPLE': 'Logic & people', APPS: 'Apps' }
 
 const DOTS =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect x='11' y='11' width='2' height='2' fill='%23EBEAE8'/%3E%3C/svg%3E\")"
@@ -78,21 +82,24 @@ function EdgePlus({ edge, at, onInsert }: { edge: FlowEdge; at: Pt; onInsert: (e
 }
 
 /** One step card on the canvas. */
-function NodeCard({
-  node,
-  selected,
-  draft,
-  showLast,
-  onSelect,
-  onDragStart,
-}: {
+type NodeCardProps = {
   node: FlowNode
   selected: boolean
   draft: boolean
   showLast: boolean
   onSelect: () => void
-  onDragStart: (e: ReactPointerEvent) => void
-}) {
+  onGrab: (e: ReactPointerEvent) => void
+} & Omit<ComponentPropsWithoutRef<'button'>, 'onSelect'>
+
+/** Forwards ref + props so it can be a context-menu trigger. */
+const NodeCard = forwardRef<HTMLButtonElement, NodeCardProps>(function NodeCard(
+  { node, selected, draft, showLast, onSelect, onGrab, onPointerDown, className: _c, style: _s, ...rest },
+  ref,
+) {
+  const pointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    onPointerDown?.(e)
+    onGrab(e)
+  }
   const { icon, tone } = nodeGlyph(node)
     const ring = selected
     ? 'outline-2 -outline-offset-2 outline-[#6366F1]'
@@ -105,11 +112,13 @@ function NodeCard({
     return (
       <button
         type="button"
+        {...rest}
+        ref={ref}
         data-node={node.id}
         aria-pressed={selected}
         aria-label={node.title}
         onClick={onSelect}
-        onPointerDown={onDragStart}
+        onPointerDown={pointerDown}
         className={`${base} flex items-center gap-[8px] rounded-full px-[13px]`}
         style={{ left: node.x, top: node.y, width: 220, height: 44 }}
       >
@@ -122,11 +131,13 @@ function NodeCard({
   return (
     <button
       type="button"
+      {...rest}
+      ref={ref}
       data-node={node.id}
       aria-pressed={selected}
       aria-label={node.title}
       onClick={onSelect}
-      onPointerDown={onDragStart}
+      onPointerDown={pointerDown}
       className={`${base} flex flex-col rounded-md px-[12px] pt-[11px]`}
       style={{ left: node.x, top: node.y, width: 260, height: 96 }}
     >
@@ -148,7 +159,7 @@ function NodeCard({
       {node.desc && <span className="mt-[5px] w-full truncate text-[12px] text-muted">{node.desc}</span>}
     </button>
   )
-}
+})
 
 function StepGlyph({ icon: Icon }: { icon: typeof Plus }) {
   return <Icon size={14} aria-hidden className="shrink-0 text-ink-2" />
@@ -168,6 +179,8 @@ export interface CanvasProps {
   canUndo: boolean
   canRedo: boolean
   onDelete: (id: string) => void
+  /** Right-click / ⋯ actions for a step */
+  nodeMenu?: (node: FlowNode) => MenuEntries
   /** Overlays in canvas space (draft notes) */
   layer?: ReactNode
   /** Overlays fixed to the viewport (last-run pill, panels) */
@@ -193,6 +206,7 @@ export function FlowCanvas({
   canUndo,
   canRedo,
   onDelete,
+  nodeMenu,
   layer,
   overlay,
 }: CanvasProps) {
@@ -300,9 +314,37 @@ export function FlowCanvas({
   }
 
   const routes = graph.edges.map((e) => ({ e, r: edgeRoute(e, graph.nodes) })).filter((x) => x.r)
+  const menuAt = useRef<Pt>({ x: 0, y: 0 })
+
+  // Right-click on empty canvas: add a step right there, or change the view
+  const canvasMenu: MenuEntries = [
+    { type: 'label', label: 'ADD A STEP HERE' },
+    ...PALETTE.map((g) => ({
+      type: 'sub' as const,
+      label: GROUP_NAME[g.group] ?? g.group,
+      icon: PALETTE_ICON[g.items[0].icon],
+      items: g.items.map((item) => ({
+        label: item.label,
+        icon: PALETTE_ICON[item.icon],
+        onSelect: () => onDrop(item, { x: Math.round(menuAt.current.x - 130), y: Math.round(menuAt.current.y - 24) }),
+      })),
+    })),
+    { type: 'separator' },
+    { label: 'Zoom in', icon: Plus, onSelect: () => zoomBy(1.2) },
+    { label: 'Zoom out', icon: Minus, onSelect: () => zoomBy(1 / 1.2) },
+    { label: 'Fit to screen', icon: Maximize, onSelect: fit },
+    { label: 'Reset to 100%', icon: Scan, disabled: zoom === 1 && pan.x === 0 && pan.y === 0, onSelect: () => { setZoom(1); setPan({ x: 0, y: 0 }) } },
+    { type: 'separator' },
+    { label: 'Undo', icon: Undo2, hint: '⌘Z', disabled: !canUndo, onSelect: onUndo },
+    { label: 'Redo', icon: Redo2, hint: '⇧⌘Z', disabled: !canRedo, onSelect: onRedo },
+  ]
 
   return (
+    <ContextMenuArea items={canvasMenu} label="Canvas actions">
     <div
+      onContextMenu={(e) => {
+        menuAt.current = toCanvas(e.clientX, e.clientY)
+      }}
       ref={ref}
       role="application"
       aria-label="Flow canvas"
@@ -353,17 +395,26 @@ export function FlowCanvas({
           e.plus && r!.straight ? <EdgePlus key={`p-${e.from}-${e.to}`} edge={e} at={{ x: r!.mid.x, y: r!.mid.y - 2 }} onInsert={onInsert} /> : null,
         )}
         {layer}
-        {graph.nodes.map((n) => (
-          <NodeCard
-            key={n.id}
-            node={n}
-            selected={n.id === selected}
-            draft={draft}
-            showLast={showLast}
-            onSelect={() => onSelect(n.id)}
-            onDragStart={startNode(n)}
-          />
-        ))}
+        {graph.nodes.map((n) => {
+          const card = (
+            <NodeCard
+              key={n.id}
+              node={n}
+              selected={n.id === selected}
+              draft={draft}
+              showLast={showLast}
+              onSelect={() => onSelect(n.id)}
+              onGrab={startNode(n)}
+            />
+          )
+          return nodeMenu ? (
+            <ContextMenuArea key={n.id} items={nodeMenu(n)} label={`${n.title} actions`} onOpenChange={(o) => o && onSelect(n.id)}>
+              {card}
+            </ContextMenuArea>
+          ) : (
+            card
+          )
+        })}
       </div>
 
       {overlay}
@@ -397,6 +448,7 @@ export function FlowCanvas({
         </ToolButton>
       </div>
     </div>
+    </ContextMenuArea>
   )
 }
 

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import * as Dropdown from '@radix-ui/react-dropdown-menu'
-import { Check, ChevronsUpDown, Coins, Copy, Ellipsis, FlaskConical, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { Check, ChevronsUpDown, Coins, FlaskConical, Loader2, Plus, X } from 'lucide-react'
 import type { HelperArea } from '../../../../core/domain/types'
 import { Mascot } from '../../../../ui/ds/Mascot'
-import { MenuItemBody, menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
+import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
+import { MoreMenu } from '../../../../ui/ds/ItemMenu'
+import { stepMenu } from './stepMenu'
 import { RUN_DETAIL } from './data'
 import type { AiStepDetail, FlowNode } from './data'
 import { APP_ICON, StepTile, nodeGlyph } from './icons'
@@ -406,10 +408,11 @@ function ConnectorBody({ node }: { node: FlowNode }) {
 /** Right column (320px): the selected step's settings, plus "Test this step". */
 export function Inspector({ flowId }: { flowId: string }) {
   const f = useFlow(flowId)
-  const { removeStep, duplicateStep, updateNode } = useFlowStore()
+  const { updateNode } = useFlowStore()
   const node = f.graph.nodes.find((n) => n.id === f.selected)
   const [test, setTest] = useState<{ id: string; state: 'running' | 'done' } | null>(null)
-  const [renaming, setRenaming] = useState(false)
+  const renaming = f.renamingId === node?.id && Boolean(node)
+  const setRenaming = (on: boolean) => useFlowStore.getState().setRenaming(flowId, on && node ? node.id : null)
 
   if (!node) {
     return (
@@ -459,26 +462,12 @@ export function Inspector({ flowId }: { flowId: string }) {
               </h2>
             )}
           </div>
-          <Dropdown.Root>
-            <Dropdown.Trigger asChild>
-              <button type="button" aria-label="Step actions" className="-mr-[6px] flex size-[26px] items-center justify-center self-start rounded-sm text-muted hover:bg-hover hover:text-ink">
-                <Ellipsis size={16} aria-hidden />
-              </button>
-            </Dropdown.Trigger>
-            <Dropdown.Portal>
-              <Dropdown.Content align="end" sideOffset={4} className={`z-50 w-[180px] ${menuSurface}`}>
-                <Dropdown.Item className={menuItemClass} onSelect={() => setRenaming(true)}>
-                  <MenuItemBody label="Rename" />
-                </Dropdown.Item>
-                <Dropdown.Item className={menuItemClass} onSelect={() => duplicateStep(flowId, node.id)}>
-                  <MenuItemBody icon={Copy} label="Duplicate" />
-                </Dropdown.Item>
-                <Dropdown.Item className={menuItemClass} onSelect={() => removeStep(flowId, node.id)}>
-                  <MenuItemBody icon={Trash2} label="Delete step" hint="⌫" danger />
-                </Dropdown.Item>
-              </Dropdown.Content>
-            </Dropdown.Portal>
-          </Dropdown.Root>
+          <MoreMenu
+            label="Step actions"
+            items={stepMenu(flowId, node, { inInspector: true, onTest: runStepTest })}
+            size={26}
+            className="-mr-[6px] self-start rounded-sm"
+          />
         </div>
 
         {node.kind === 'ai' && <AiBody flowId={flowId} node={node} />}

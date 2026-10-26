@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Pin, Plus } from 'lucide-react'
+import { ContextMenuArea, MoreMenu } from './ItemMenu'
+import type { MenuEntries } from './ItemMenu'
 import type { LucideIcon } from 'lucide-react'
 
 /** pen `Chat Sidebar` / `Office Sidebar` frame: 232 wide · padding 10/8 · gap 12 · fill app. */
@@ -96,9 +98,41 @@ export function GroupLabel({
   )
 }
 
+/** Inline rename field used by sidebar rows. */
+function RenameField({ value, onCommit, className = '' }: { value: string; onCommit: (next: string | null) => void; className?: string }) {
+  return (
+    <input
+      autoFocus
+      aria-label="New name"
+      defaultValue={value}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => onCommit(e.currentTarget.value.trim() || null)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          e.currentTarget.value = ''
+          onCommit(null)
+        }
+      }}
+      className={`pointer-events-auto relative z-10 h-[22px] min-w-0 flex-1 rounded-xs bg-surface px-[5px] text-[12.5px] text-ink outline-1 outline-ink ${className}`}
+    />
+  )
+}
+
+/** Hover ⋯ shown at the right of a row (same entries as right-click). */
+function RowMore({ items, label }: { items: MenuEntries; label: string }) {
+  return (
+    <span className="pointer-events-auto relative z-10 hidden group-hover/row:flex group-focus-within/row:flex has-[[data-state=open]]:flex">
+      <MoreMenu items={items} label={label} size={20} />
+    </span>
+  )
+}
+
 /**
  * pen `Folder Row` (s0CjkQ): h-28 · radius 6 · gap 6 · padding 0 8 0 6 ·
  * chevron 12 faint · folder 15 muted · label 13 ink-2 · count 11.5 muted.
+ * With `menu`: right-click and a hover ⋯ open the folder's actions.
  */
 export function FolderRow({
   name,
@@ -106,6 +140,9 @@ export function FolderRow({
   open,
   onToggle,
   iconSlot,
+  menu,
+  renaming,
+  onRename,
 }: {
   name: string
   count: number
@@ -116,11 +153,14 @@ export function FolderRow({
    * Rendered outside the toggle button so it can be its own control.
    */
   iconSlot?: ReactNode
+  menu?: MenuEntries
+  renaming?: boolean
+  onRename?: (next: string | null) => void
 }) {
   const Chevron = open ? ChevronDown : ChevronRight
   const Icon = open ? FolderOpen : Folder
-  return (
-    <div className="group/folder relative flex h-[28px] w-full items-center rounded-sm transition-colors hover:bg-hover">
+  const row = (
+    <div className="group/row relative flex h-[28px] w-full items-center rounded-sm transition-colors hover:bg-hover data-[state=open]:bg-hover">
       {/* The whole row toggles; the icon slot sits above it as its own control. */}
       <button
         type="button"
@@ -134,16 +174,31 @@ export function FolderRow({
         <span className="pointer-events-auto flex">
           {iconSlot ?? <Icon size={15} aria-hidden className="text-muted" />}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{name}</span>
-        <span className="text-[11.5px] text-muted">{count}</span>
+        {renaming ? (
+          <RenameField value={name} onCommit={(v) => onRename?.(v)} />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{name}</span>
+        )}
+        {!renaming && (
+          <span className={`text-[11.5px] text-muted ${menu ? 'group-hover/row:hidden group-focus-within/row:hidden' : ''}`}>{count}</span>
+        )}
+        {menu && !renaming && <RowMore items={menu} label={`${name} actions`} />}
       </span>
     </div>
+  )
+  return menu ? (
+    <ContextMenuArea items={menu} label={`${name} actions`}>
+      {row}
+    </ContextMenuArea>
+  ) : (
+    row
   )
 }
 
 /**
  * pen `Chat Row` (mG8wG): radius 6 · gap 8 · padding 5/8 · unread dot 6 brand ·
  * title 12.5 ink-2 · time 11.5 faint. Active = hover fill, title ink 500.
+ * With `menu`: right-click and a hover ⋯ open the chat's actions.
  */
 export function ChatRow({
   title,
@@ -151,31 +206,58 @@ export function ChatRow({
   unread,
   active,
   onClick,
+  menu,
+  renaming,
+  onRename,
+  pinned,
 }: {
   title: string
   time: string
   unread?: boolean
   active?: boolean
   onClick?: () => void
+  menu?: MenuEntries
+  renaming?: boolean
+  onRename?: (next: string | null) => void
+  pinned?: boolean
 }) {
-  return (
-    <button
-      type="button"
-      aria-current={active ? 'true' : undefined}
-      onClick={onClick}
-      className={`flex w-full items-center gap-[8px] rounded-sm px-[8px] py-[5px] text-left transition-colors ${
+  const row = (
+    <div
+      className={`group/row relative flex w-full items-center rounded-sm transition-colors data-[state=open]:bg-hover ${
         active ? 'bg-hover' : 'hover:bg-hover'
       }`}
     >
-      {unread && (
-        <span aria-label="unread" className="size-[6px] shrink-0 rounded-full bg-helper-brand" />
-      )}
-      <span
-        className={`min-w-0 flex-1 truncate text-[12.5px] ${active ? 'font-medium text-ink' : 'text-ink-2'}`}
-      >
-        {title}
+      <button
+        type="button"
+        aria-current={active ? 'true' : undefined}
+        aria-label={title}
+        onClick={onClick}
+        className="absolute inset-0 rounded-sm"
+      />
+      <span className="pointer-events-none relative flex w-full items-center gap-[8px] px-[8px] py-[5px]">
+        {unread && <span aria-label="unread" className="size-[6px] shrink-0 rounded-full bg-helper-brand" />}
+        {pinned && <Pin size={11} aria-label="pinned" className="shrink-0 -rotate-45 text-faint" />}
+        {renaming ? (
+          <RenameField value={title} onCommit={(v) => onRename?.(v)} className="-my-[3px]" />
+        ) : (
+          <span className={`min-w-0 flex-1 truncate text-[12.5px] ${active ? 'font-medium text-ink' : 'text-ink-2'}`}>{title}</span>
+        )}
+        {!renaming && (
+          <span className={`text-[11.5px] whitespace-nowrap text-faint ${menu ? 'group-hover/row:hidden group-focus-within/row:hidden' : ''}`}>{time}</span>
+        )}
+        {menu && !renaming && (
+          <span className="-my-[2px] -mr-[3px]">
+            <RowMore items={menu} label={`${title} actions`} />
+          </span>
+        )}
       </span>
-      <span className="text-[11.5px] whitespace-nowrap text-faint">{time}</span>
-    </button>
+    </div>
+  )
+  return menu ? (
+    <ContextMenuArea items={menu} label={`${title} actions`}>
+      {row}
+    </ContextMenuArea>
+  ) : (
+    row
   )
 }

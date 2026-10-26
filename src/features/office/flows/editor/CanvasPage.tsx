@@ -9,6 +9,7 @@ import { Inspector } from './Inspector'
 import { Palette } from './Palette'
 import { useFlow, useFlowStore } from './store'
 import { TestRunPanel } from './TestRunPanel'
+import { stepMenu } from './stepMenu'
 
 /** `?state=test` opens the test-run sheet (used for visual checks and deep links). */
 function useTestFromUrl(flowId: string) {
@@ -97,6 +98,7 @@ function Editor({ flowId, draft }: { flowId: string; draft: boolean }) {
         canUndo={f.past.length > 0}
         canRedo={f.future.length > 0}
         onDelete={(id) => s.removeStep(flowId, id)}
+        nodeMenu={(n) => stepMenu(flowId, n)}
         layer={
           <>
             {notes}

@@ -3,6 +3,7 @@ import { Outlet, useRouterState } from '@tanstack/react-router'
 import { Rail } from '../ui/Rail'
 import { CommandMenu } from '../features/command-menu'
 import { ChiefDm } from '../features/chief-dm'
+import { Toaster } from '../ui/ds/Toaster'
 
 /**
  * App shell (pen screens are 1440×900): Rail (56) · sidebar (232) · inset main.
@@ -38,6 +39,7 @@ export function Shell() {
       <Outlet />
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
       <ChiefDm hideFab={inEditor} />
+      <Toaster />
     </div>
   )
 }

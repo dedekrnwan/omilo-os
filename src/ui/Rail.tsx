@@ -5,7 +5,11 @@ import { drawerOverlayClass, drawerContentClass } from './ds/Drawer'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import {
+  ArrowRightLeft,
   ArrowUpRight,
+  ImageUp,
+  RotateCcw,
+  UserPlus,
   Bell,
   Building2,
   Check,
@@ -35,6 +39,8 @@ import { useAppearance } from '../app/appearance'
 import { CompanyLogo } from './ds/CompanyLogo'
 import { useCompanyLook } from './ds/looks'
 import { LookPicker } from './ds/LookPicker'
+import { ContextMenuArea } from './ds/ItemMenu'
+import type { MenuEntries } from './ds/ItemMenu'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
@@ -56,7 +62,19 @@ function CompanyTile({
   const look = useCompanyLook(company)
   const { setLook, resetLook } = useAppearance()
   const [pickerOpen, setPickerOpen] = useState(false)
+  const navigate = useNavigate()
+  const menu: MenuEntries = [
+    { label: active ? 'Current company' : `Switch to ${company.name}`, icon: ArrowRightLeft, disabled: active, onSelect: () => onClick?.() },
+    { type: 'separator' },
+    { label: 'Change logo…', icon: ImageUp, onSelect: () => setTimeout(() => setPickerOpen(true), 0) },
+    { label: 'Reset logo', icon: RotateCcw, onSelect: () => resetLook('companies', company.id) },
+    { type: 'separator' },
+    { label: 'Company settings', icon: Settings, onSelect: () => void navigate({ to: '/control-panel/$section', params: { section: 'general' } }) },
+    { label: 'Invite people', icon: UserPlus, onSelect: () => void navigate({ to: '/control-panel/$section', params: { section: 'members' } }) },
+  ]
   return (
+    <ContextMenuArea items={menu} label={`${company.name} actions`}>
+    <div className="flex">
     <LookPicker
       kind="company"
       title={`${company.name} logo`}
@@ -70,15 +88,11 @@ function CompanyTile({
         type="button"
         aria-label={active ? `${company.name} (active)` : company.name}
         aria-current={active ? 'true' : undefined}
-        title={`${company.name} — right-click to change the logo`}
+        title={`${company.name} — right-click for more`}
         onClick={(e) => {
           // Radix opens the picker on click; on the rail a click switches company instead.
           e.preventDefault()
           onClick?.()
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault()
-          setPickerOpen(true)
         }}
         className="group relative size-[40px] shrink-0 rounded-lg transition-transform outline-none focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
         style={active ? { outline: `2px solid ${look.color}`, outlineOffset: -1 } : undefined}
@@ -100,6 +114,8 @@ function CompanyTile({
         )}
       </button>
     </LookPicker>
+    </div>
+    </ContextMenuArea>
   )
 }
 
