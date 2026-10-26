@@ -332,41 +332,38 @@ interface BottomActionsProps {
 function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsProps) {
   const [open, setOpen] = useState(false)
   const [autonomyOpen, setAutonomyOpen] = useState(false)
-  const autonomyOpenRef = useRef(false)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const autonomy = useUIStore((s) => s.autonomy)
-  // ⋯ opens the tray on hover (click/focus too, for keyboard and touch);
-  // leaving the tray closes it after a short grace period — unless the autonomy
-  // popover is open, so selecting a level doesn't yank the tray out from under it.
-  const cancelClose = () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    closeTimer.current = null
-  }
-  const openTray = () => {
-    cancelClose()
-    setOpen(true)
-  }
-  const scheduleClose = () => {
-    cancelClose()
-    closeTimer.current = setTimeout(() => {
-      if (!autonomyOpenRef.current) setOpen(false)
-    }, 250)
-  }
-  useEffect(() => cancelClose, [])
-  const handleAutonomyOpen = (o: boolean) => {
-    autonomyOpenRef.current = o
-    setAutonomyOpen(o)
-    if (!o) scheduleClose()
-  }
-  const hoverProps = {
-    onMouseEnter: cancelClose,
-    onMouseLeave: scheduleClose,
-    onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose()
-    },
-  }
+
+  // ⋯ opens the tray on click; it closes on an outside click (ignoring the
+  // portaled autonomy popover) or Escape.
+  useEffect(() => {
+    if (!open) return
+    function onDocMouseDown(e: MouseEvent) {
+      const t = e.target as HTMLElement | null
+      if (!t) return
+      if (groupRef.current?.contains(t)) return
+      if (t.closest('[data-radix-popper-content-wrapper]')) return
+      setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const handleAutonomyOpen = (o: boolean) => setAutonomyOpen(o)
   const autonomyOut = autonomy !== 'ask'
+  const go = (to: string) => () => {
+    void navigate({ to })
+    setOpen(false)
+  }
   const items = {
     team: {
       label: 'Team',
@@ -374,7 +371,7 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
       kbd: 'G T',
       glyph: <TeamGlyph />,
       current: currentPage === 'team',
-      onClick: () => void navigate({ to: '/team' }),
+      onClick: go('/team'),
     },
     notifications: {
       label: 'Notifications',
@@ -383,7 +380,7 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
       icon: Bell,
       dot: unread > 0,
       current: currentPage === 'notifications',
-      onClick: () => void navigate({ to: '/notifications' }),
+      onClick: go('/notifications'),
     },
     settings: {
       label: 'Settings',
@@ -391,16 +388,16 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
       kbd: 'G ,',
       icon: Settings,
       current: currentPage === 'settings',
-      onClick: () => void navigate({ to: '/control-panel' }),
+      onClick: go('/control-panel'),
     },
   }
 
   if (open) {
     return (
       <div
+        ref={groupRef}
         role="group"
         aria-label="Rail actions"
-        {...hoverProps}
         className="flex flex-col items-center gap-[2px] rounded-lg bg-[#E7E5E4] p-[3px]"
       >
         <TrayButton context="tray" {...items.team} />
@@ -422,7 +419,7 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
 
   const bellOut = unread > 0 || items.notifications.current
   return (
-    <div role="group" aria-label="Rail actions" {...hoverProps} className="flex flex-col items-center gap-[10px] rounded-lg">
+    <div ref={groupRef} role="group" aria-label="Rail actions" className="flex flex-col items-center gap-[10px] rounded-lg">
       {items.team.current && <TrayButton {...items.team} />}
       {bellOut && <TrayButton {...items.notifications} />}
       {items.settings.current && <TrayButton {...items.settings} />}
@@ -435,9 +432,7 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
         icon={Ellipsis}
         dot={!bellOut && unread > 0}
         expanded={false}
-        onClick={openTray}
-        onMouseEnter={openTray}
-        onFocus={openTray}
+        onClick={() => setOpen(true)}
       />
     </div>
   )
