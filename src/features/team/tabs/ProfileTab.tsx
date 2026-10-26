@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Crown, ImagePlus, Pause, Play, UserMinus } from 'lucide-react'
 import { HELPER_LOOK, Mascot } from '../../../ui/ds/Mascot'
 import type { MascotProp, MascotShape } from '../../../ui/ds/Mascot'
+import { useMascotLook } from '../../../app/mascotLook'
 import { helperColor } from '../../../ui/tokens'
 import type { HelperRecord } from '../teamData'
 import { Btn, InputField, SettingRow } from '../ui'
@@ -70,17 +71,36 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
   const n = helper.name
   const look = HELPER_LOOK[helper.area]
   const base = helperColor[helper.area]
-  const [colour, setColour] = useState<string>(COLOURS.find((c) => c.toLowerCase() === String(base).toLowerCase()) ?? COLOURS[0])
-  const [shape, setShape] = useState<MascotShape>(look.shape)
-  const [prop, setProp] = useState<MascotProp>(look.prop)
+  const defaultColour = COLOURS.find((c) => c.toLowerCase() === String(base).toLowerCase()) ?? COLOURS[0]
+  // Persisted look — every <Mascot area={helper.area}/> across the app reads this.
+  const saved = useMascotLook((s) => s.looks[helper.area])
+  const setLook = useMascotLook((s) => s.setLook)
+  const resetLook = useMascotLook((s) => s.resetLook)
+  const [colour, setColourState] = useState<string>(saved?.color ?? defaultColour)
+  const [shape, setShapeState] = useState<MascotShape>(saved?.shape ?? look.shape)
+  const [prop, setPropState] = useState<MascotProp>(saved?.prop ?? look.prop)
   const [paused, setPaused] = useState(false)
   const [reportsTo, setReportsTo] = useState<string>(helper.id === 'chief' ? 'You (Dede)' : 'Chief of Staff')
   const [reportsToOpen, setReportsToOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const setColour = (c: string) => {
+    setColourState(c)
+    setLook(helper.area, { color: c })
+  }
+  const setShape = (s: MascotShape) => {
+    setShapeState(s)
+    setLook(helper.area, { shape: s })
+  }
+  const setProp = (p: MascotProp) => {
+    setPropState(p)
+    setLook(helper.area, { prop: p })
+  }
   const reset = () => {
-    setShape(look.shape)
-    setProp(look.prop)
+    setShapeState(look.shape)
+    setPropState(look.prop)
+    setColourState(defaultColour)
+    resetLook(helper.area)
   }
   // Order the options so the helper's own shape / prop comes first, as in pen.
   const shapes = [look.shape, ...SHAPES.filter((s) => s !== look.shape)]

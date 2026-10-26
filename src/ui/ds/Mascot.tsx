@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
 import type { HelperArea } from '../../core/domain/types'
+import { useMascotLook } from '../../app/mascotLook'
 import { helperColor } from '../tokens'
 import { playMascot } from './mascotSound'
 
@@ -272,8 +273,12 @@ export function Mascot({
   title,
   style,
 }: MascotProps) {
-  const color = colorOverride ?? helperColor[area]
-  const look = helper ? HELPER_LOOK[area] : { shape: 'blob' as MascotShape, prop: 'none' as MascotProp }
+  // The helper's saved Profile look (colour / shape / prop), if any.
+  const saved = useMascotLook((s) => s.looks[area])
+  const color = colorOverride ?? saved?.color ?? helperColor[area]
+  const look = helper
+    ? { shape: saved?.shape ?? HELPER_LOOK[area].shape, prop: saved?.prop ?? HELPER_LOOK[area].prop }
+    : { shape: 'blob' as MascotShape, prop: 'none' as MascotProp }
   const shape = shapeProp ?? look.shape
   const prop = propProp ?? look.prop
   const r = radius ?? (size * 18) / 64
