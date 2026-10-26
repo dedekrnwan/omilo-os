@@ -1,6 +1,7 @@
 // TODO(pen): refine against omilo-v2.pen
 import { Search } from 'lucide-react'
 import { SidebarFrame, NavGroup, NavLink, GroupLabel } from '../../ui/ds/Sidebar'
+import { BackToApp } from '../shell/BackToApp'
 import { NAV_GROUPS } from './data'
 import type { ControlPanelSection } from './types'
 
@@ -18,6 +19,8 @@ interface Props {
 export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat Warga' }: Props) {
   return (
     <SidebarFrame label="Control panel sections">
+      <BackToApp />
+
       {/* Workspace header */}
       <div className="flex w-full flex-col gap-px px-[8px] pt-[2px] pb-[4px]">
         <p className="m-0 text-[14px] font-semibold text-ink">Control panel</p>
