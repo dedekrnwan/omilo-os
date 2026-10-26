@@ -132,7 +132,10 @@ export function Composer({
   }
 
   function pickTrigger(sigil: '@' | '#' | '/') {
-    inputRef.current?.insertTrigger(sigil)
+    // Defer until the + dropdown has closed and released focus/selection — then
+    // focusing the input and inserting the sigil opens its picker exactly like
+    // typing the sigil directly would.
+    setTimeout(() => inputRef.current?.insertTrigger(sigil), 0)
   }
 
   const full = contextAlmostFull

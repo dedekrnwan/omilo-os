@@ -18,6 +18,16 @@ describe('Composer + menu', () => {
     expect(screen.getByText('Commands')).toBeInTheDocument()
     expect(screen.getByText('Attach file')).toBeInTheDocument()
   })
+
+  test('choosing "Mention someone" opens the mention picker, same as typing @', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.click(screen.getByText('Mention someone'))
+    // The picker must open directly — not just insert a stray "@".
+    expect(await screen.findByRole('listbox')).toBeInTheDocument()
+    expect(screen.getByText('Chief of Staff')).toBeInTheDocument()
+  })
 })
 
 describe('Composer mention picker', () => {
