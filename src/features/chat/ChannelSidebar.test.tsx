@@ -11,17 +11,15 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
-import { ChatChannelLayout } from './ChatChannelLayout'
+import { ModeLayout } from '../shell/ModeLayout'
 import { ChatIndexRoute } from './ChatRoute'
 
 /**
- * Build a test router with /chat/$channelId and a stub /control-panel/$section
- * so the "Manage channels" navigation can resolve.
+ * Build a test router with /chat (ModeLayout) and a stub /control-panel/$section
+ * so the "Manage areas" navigation can resolve.
  */
 function makeTestRouter(initialPath: string) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
   const rootRoute = createRootRoute({
     component: () => (
@@ -36,28 +34,15 @@ function makeTestRouter(initialPath: string) {
   const chatRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/chat',
-    component: () => <Outlet />,
+    component: () => <ModeLayout mode="chat" />,
   })
+  const chatIndexRoute = createRoute({ getParentRoute: () => chatRoute, path: '/', component: ChatIndexRoute })
 
-  const chatChannelRoute = createRoute({
-    getParentRoute: () => chatRoute,
-    path: '$channelId',
-    component: ChatChannelLayout,
-  })
-
-  const chatChannelIndexRoute = createRoute({
-    getParentRoute: () => chatChannelRoute,
-    path: '/',
-    component: ChatIndexRoute,
-  })
-
-  // Stub control-panel/$section route so navigate() resolves
   const controlPanelRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/control-panel',
     component: () => <Outlet />,
   })
-
   const controlPanelSectionRoute = createRoute({
     getParentRoute: () => controlPanelRoute,
     path: '$section',
@@ -65,9 +50,7 @@ function makeTestRouter(initialPath: string) {
   })
 
   const routeTree = rootRoute.addChildren([
-    chatRoute.addChildren([
-      chatChannelRoute.addChildren([chatChannelIndexRoute]),
-    ]),
+    chatRoute.addChildren([chatIndexRoute]),
     controlPanelRoute.addChildren([controlPanelSectionRoute]),
   ])
 
@@ -77,31 +60,27 @@ function makeTestRouter(initialPath: string) {
   return { router }
 }
 
-describe('ChannelSidebar — Manage channels deep-link', () => {
-  test('clicking "Manage channels" navigates to /control-panel/channels and closes the popover', async () => {
-    const { router } = makeTestRouter('/chat/ch-general')
+describe('AppSidebar — Manage areas deep-link', () => {
+  test('clicking "Manage areas" navigates to /control-panel/channels and closes the popover', async () => {
+    const { router } = makeTestRouter('/chat')
     await router.load()
     render(<RouterProvider router={router} />)
 
-    // Open the channel switcher popover
-    const switcherBtn = await screen.findByRole('button', { name: /switch channel/i })
+    // Open the area switcher popover
+    const switcherBtn = await screen.findByRole('button', { name: /switch area/i })
     fireEvent.click(switcherBtn)
 
-    // Popover should be open: the dialog should be present
     await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: /channel switcher/i })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: /area switcher/i })).toBeInTheDocument()
     })
 
-    // Click "Manage channels"
-    const manageBtn = screen.getByRole('button', { name: /manage channels/i })
+    const manageBtn = screen.getByRole('button', { name: /manage areas/i })
     fireEvent.click(manageBtn)
 
-    // Router URL must now be /control-panel/channels
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/control-panel/channels')
     })
 
-    // Popover must be closed (dialog gone from DOM)
-    expect(screen.queryByRole('dialog', { name: /channel switcher/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /area switcher/i })).not.toBeInTheDocument()
   })
 })

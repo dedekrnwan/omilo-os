@@ -11,8 +11,9 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
-import { OfficeLayout } from './OfficeLayout'
-import { OfficeGoalsRoute } from './OfficeGoalsRoute'
+import { ModeLayout } from '../shell/ModeLayout'
+const OfficeLayout = () => <ModeLayout mode="office" />
+import { OfficeGoalsRoute } from '../goals/GoalsRoute'
 import { InboxRoute } from './InboxRoute'
 
 // ── helpers ──────────────────────────────────────────────────────────────────

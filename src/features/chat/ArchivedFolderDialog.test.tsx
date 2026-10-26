@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
-import { ChatChannelLayout } from './ChatChannelLayout'
+import { ModeLayout } from '../shell/ModeLayout'
 import { ArchivedRoute } from './ArchivedRoute'
 import { FolderRoute } from './FolderRoute'
 import { CreateChannelDialog } from './CreateChannelDialog'
@@ -28,10 +28,9 @@ function makeArchivedTestRouter(path: string) {
       </QueryClientProvider>
     ),
   })
-  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
-  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
-  const archivedRoute = createRoute({ getParentRoute: () => channelRoute, path: 'archived', component: ArchivedRoute })
-  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([archivedRoute])])])
+  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <ModeLayout mode="chat" /> })
+  const archivedRoute = createRoute({ getParentRoute: () => chatRoute, path: 'archived', component: ArchivedRoute })
+  const tree = rootRoute.addChildren([chatRoute.addChildren([archivedRoute])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
@@ -47,10 +46,9 @@ function makeFolderTestRouter(path: string) {
       </QueryClientProvider>
     ),
   })
-  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <Outlet /> })
-  const channelRoute = createRoute({ getParentRoute: () => chatRoute, path: '$channelId', component: ChatChannelLayout })
-  const folderRoute = createRoute({ getParentRoute: () => channelRoute, path: 'folder/$folderId', component: FolderRoute })
-  const tree = rootRoute.addChildren([chatRoute.addChildren([channelRoute.addChildren([folderRoute])])])
+  const chatRoute = createRoute({ getParentRoute: () => rootRoute, path: '/chat', component: () => <ModeLayout mode="chat" /> })
+  const folderRoute = createRoute({ getParentRoute: () => chatRoute, path: 'folder/$folderId', component: FolderRoute })
+  const tree = rootRoute.addChildren([chatRoute.addChildren([folderRoute])])
   const history = createMemoryHistory({ initialEntries: [path] })
   return createRouter({ routeTree: tree, history })
 }
@@ -59,7 +57,7 @@ function makeFolderTestRouter(path: string) {
 
 describe('ArchivedRoute', () => {
   test('renders the Archived topbar and chat list', async () => {
-    const router = makeArchivedTestRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -72,7 +70,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route opens the Archived drawer over the new-chat hero (pen PHRy6)', async () => {
-    const router = makeArchivedTestRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -81,12 +79,12 @@ describe('ArchivedRoute', () => {
     })
 
     // The drawer is a dialog titled with the channel; the hero stays underneath
-    expect(screen.getByRole('dialog', { name: 'Archived · General' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: /Archived ·/ })).toBeInTheDocument()
     expect(screen.getByText(/what are we figuring out/i)).toBeInTheDocument()
   })
 
   test('archived route has a search input', async () => {
-    const router = makeArchivedTestRouter('/chat/ch-engineering/archived')
+    const router = makeArchivedTestRouter('/chat/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -96,7 +94,7 @@ describe('ArchivedRoute', () => {
   })
 
   test('archived route shows the footer disclaimer', async () => {
-    const router = makeArchivedTestRouter('/chat/ch-general/archived')
+    const router = makeArchivedTestRouter('/chat/archived')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -110,7 +108,7 @@ describe('ArchivedRoute', () => {
 
 describe('FolderRoute', () => {
   test('renders folder header and chat list for Q4 Launch folder', async () => {
-    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -121,7 +119,7 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows distinct content — NOT the new-chat hero', async () => {
-    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
@@ -133,19 +131,19 @@ describe('FolderRoute', () => {
   })
 
   test('folder route shows chats belonging to the folder', async () => {
-    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      // Sessions from f-q4 fixture
-      expect(screen.getByText('Passkey rollout plan')).toBeInTheDocument()
-      expect(screen.getByText('Launch day comms')).toBeInTheDocument()
+      // Sessions from f-q4 fixture (also listed in the sidebar folder, so use getAllByText)
+      expect(screen.getAllByText('Passkey rollout plan').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('Launch day comms').length).toBeGreaterThanOrEqual(1)
     })
   })
 
   test('folder route renders folder instructions panel', async () => {
-    const router = makeFolderTestRouter('/chat/ch-engineering/folder/f-q4')
+    const router = makeFolderTestRouter('/chat/folder/f-q4')
     await router.load()
     render(<RouterProvider router={router} />)
 

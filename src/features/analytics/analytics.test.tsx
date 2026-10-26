@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from 'vitest'
+import { describe, test, expect, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import {
   createMemoryHistory,
@@ -10,6 +10,7 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
+import { useUIStore } from '../../app/store'
 import { ChatAnalyticsRoute } from './ChatAnalyticsRoute'
 import { OfficeAnalyticsRoute } from './OfficeAnalyticsRoute'
 
@@ -41,9 +42,13 @@ async function mount(path: string) {
 afterEach(() => {
   cleanup()
   window.history.replaceState(null, '', '/')
+  useUIStore.setState({ areaId: null })
 })
 
 describe('ChatAnalyticsRoute', () => {
+  // Chat analytics is area-driven: a selected area shows that area's overview.
+  beforeEach(() => useUIStore.setState({ areaId: 'ch-engineering' }))
+
   test('renders the channel overview', async () => {
     await mount('/chat/ch-engineering/analytics')
     expect(await screen.findByText('Analytics · Engineering')).toBeInTheDocument()

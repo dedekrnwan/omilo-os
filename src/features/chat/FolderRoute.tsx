@@ -23,8 +23,8 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Folder as FolderT, Session } from '../../core/domain/types'
-import { useChannel, useChannelFolders, useChannelSessions } from '../../app/queries'
-import { useChatStore } from '../../app/store'
+import { useAreas, useFolders, useSessions } from '../../app/queries'
+import { useChatStore, useUIStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
@@ -214,13 +214,14 @@ function FolderChatRow({
  */
 export function FolderRoute() {
   const params = useParams({ strict: false })
-  const channelId = params.channelId ?? ''
   const folderId = params.folderId ?? ''
   const navigate = useNavigate()
+  const mode = useUIStore((s) => s.mode)
   const { state } = useSearch({ strict: false }) as { state?: string }
-  const { data: channel } = useChannel(channelId)
-  const { data: folders = [], isLoading } = useChannelFolders(channelId)
-  const { data: sessions = [] } = useChannelSessions(channelId)
+  // Folders/sessions resolve across all areas so the view works from either mode.
+  const { data: areas = [] } = useAreas()
+  const { data: folders = [], isLoading } = useFolders(null)
+  const { data: sessions = [] } = useSessions(null)
   const { patchSession, archiveSession } = useChatStore()
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renameFor, setRenameFor] = useState<string | null>(null)
@@ -236,6 +237,7 @@ export function FolderRoute() {
   if (isLoading) return null
   const folder = folders.find((f) => f.id === folderId)
   if (!folder) throw notFound()
+  const channel = areas.find((a) => a.id === folder.channelId)
 
   const page = folderPage(folder, sessions)
   const accent = accents[channel?.accent ?? 'general']
@@ -251,7 +253,8 @@ export function FolderRoute() {
 
   function openChat(id: string) {
     if (sessions.some((s) => s.id === id)) {
-      void navigate({ to: '/chat/$channelId/$sessionId', params: { channelId, sessionId: id } })
+      if (mode === 'office') void navigate({ to: '/office/chat/$sessionId', params: { sessionId: id } })
+      else void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
     }
   }
 
@@ -301,7 +304,7 @@ export function FolderRoute() {
             <Button variant="secondary" icon={UserPlus}>
               Share
             </Button>
-            <Button icon={Plus} onClick={() => void navigate({ to: '/chat/$channelId', params: { channelId } })}>
+            <Button icon={Plus} onClick={() => void navigate({ to: '/chat' })}>
               New chat in folder
             </Button>
           </div>

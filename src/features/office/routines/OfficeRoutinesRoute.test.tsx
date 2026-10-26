@@ -18,7 +18,8 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
 import { createMockRepos } from '../../../adapters/mock/mockRepos'
-import { OfficeLayout } from '../OfficeLayout'
+import { ModeLayout } from '../../shell/ModeLayout'
+const OfficeLayout = () => <ModeLayout mode="office" />
 import { RoutinesRoute } from '../../routines'
 
 function makeTestRouter(initialPath: string) {

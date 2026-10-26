@@ -12,17 +12,20 @@ export function createMockRepos(): Repos {
     folders: {
       listByChannel: (channelId: Id) =>
         Promise.resolve(folders.filter(f => f.channelId === channelId)),
+      listAll: () => Promise.resolve([...folders]),
     },
 
     goals: {
       listByChannel: (channelId: Id) =>
         Promise.resolve(goals.filter(g => g.channelId === channelId)),
+      listAll: () => Promise.resolve([...goals]),
     },
 
     sessions: {
       get: (id: Id) => Promise.resolve(sessions.find(s => s.id === id) ?? null),
       listByChannel: (channelId: Id) =>
         Promise.resolve(sessions.filter(s => s.channelId === channelId)),
+      listAll: () => Promise.resolve([...sessions]),
     },
 
     messages: {

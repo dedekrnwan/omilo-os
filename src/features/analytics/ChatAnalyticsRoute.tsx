@@ -1,13 +1,43 @@
-import { useParams } from '@tanstack/react-router'
-import { useChannel } from '../../app/queries'
+import { useArea } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 import { AnalyticsPage } from './AnalyticsPage'
-import { channelJobs, channelStats, helpersSub, tokensByHelper } from './data'
+import {
+  COMPANY_NAME,
+  channelJobs,
+  channelStats,
+  helpersSub,
+  officeHelpersSub,
+  officeJobs,
+  officeStats,
+  spendByChannel,
+  tokensByHelper,
+} from './data'
 
-/** Chat · Analytics (channel) — pen fqQP5; tabs MLPUB · BcTka · Q7dBso · Ui79T; states b10Wfq · EIxIX. */
+/**
+ * Chat · Analytics — area-filtered. With no area selected it shows the
+ * company-wide view; with one area selected it scopes to that area.
+ */
 export function ChatAnalyticsRoute() {
-  const { channelId } = useParams({ strict: false }) as { channelId?: string }
-  const { data: channel } = useChannel(channelId ?? 'ch-engineering')
-  const name = channel?.name ?? 'Engineering'
+  const areaId = useUIStore((s) => s.areaId)
+  const { data: channel } = useArea(areaId ?? '')
+
+  if (!areaId) {
+    return (
+      <AnalyticsPage
+        scope={{
+          meta: 'All areas',
+          title: `Analytics · ${COMPANY_NAME}`,
+          sub: 'Every helper across all areas this week.',
+          stats: officeStats,
+          left: spendByChannel,
+          right: officeJobs,
+          helpersSub: officeHelpersSub,
+        }}
+      />
+    )
+  }
+
+  const name = channel?.name ?? 'this area'
   return (
     <AnalyticsPage
       scope={{

@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { notFound, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Archive, ArchiveRestore, MessageCircle, Search, Trash2, X } from 'lucide-react'
-import { useChannel } from '../../app/queries'
-import { useChatStore } from '../../app/store'
+import { useArea } from '../../app/queries'
+import { useChatStore, useUIStore } from '../../app/store'
 import { IconButton } from '../../ui/ds/Button'
 import { NewChatHero } from './ChatRoute'
 
@@ -204,25 +204,22 @@ export function ArchivedDrawer({
  * open over it. Closing the drawer returns to the hero.
  */
 export function ArchivedRoute() {
-  const params = useParams({ strict: false })
-  const channelId = params.channelId ?? 'ch-general'
+  const areaId = useUIStore((s) => s.areaId)
   const navigate = useNavigate()
   // `?state=hover` shows the hovered-row state from the design reference
   const { state } = useSearch({ strict: false }) as { state?: string }
-  const { data: channel, isLoading } = useChannel(channelId)
-
-  if (isLoading) return null
-  if (!channel) throw notFound()
+  const { data: channel } = useArea(areaId ?? '')
+  const name = areaId ? channel?.name ?? 'All areas' : 'All areas'
 
   return (
     <>
-      <NewChatHero channel={channel} />
+      <NewChatHero channel={areaId ? channel ?? null : null} />
       <ArchivedDrawer
-        channelName={channel.name}
+        channelName={name}
         open
         highlightId={state === 'hover' ? 'a-2' : undefined}
         onOpenChange={(o) => {
-          if (!o) void navigate({ to: '/chat/$channelId', params: { channelId } })
+          if (!o) void navigate({ to: '/chat' })
         }}
       />
     </>

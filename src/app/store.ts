@@ -5,11 +5,14 @@ export type Mode = 'chat' | 'office'
 export interface UIState {
   mode: Mode
   companyId: string
+  /** Selected Area filter (a channel id), or null for "All areas". Shared across both modes. */
+  areaId: string | null
   lastPath: Record<Mode, string>
   defaultPath: Record<Mode, string>
   rememberPath(mode: Mode, path: string): void
   setMode(mode: Mode): void
   setCompany(id: string): void
+  setArea(id: string | null): void
   toggleTarget(): { mode: Mode; path: string }
   /** Home page of the mode currently in view. */
   homePath(): string
@@ -18,6 +21,7 @@ export interface UIState {
 export const useUIStore = create<UIState>((set, get) => ({
   mode: 'chat',
   companyId: 'sahabat-warga',
+  areaId: null,
   lastPath: { chat: '', office: '' },
   defaultPath: { chat: '/chat', office: '/office/inbox' },
 
@@ -31,6 +35,10 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setCompany(id: string) {
     if (get().companyId !== id) set({ companyId: id })
+  },
+
+  setArea(id: string | null) {
+    if (get().areaId !== id) set({ areaId: id })
   },
 
   toggleTarget() {

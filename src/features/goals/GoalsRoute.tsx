@@ -15,6 +15,8 @@ import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { helperColor } from '../../ui/tokens'
 import type { HelperArea } from '../../core/domain/types'
+import { useArea } from '../../app/queries'
+import { useUIStore } from '../../app/store'
 
 // ── Static data (matching qDPJo.png) ─────────────────────────────────────────
 
@@ -618,13 +620,20 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
 
 // ── OfficeGoalsPage ───────────────────────────────────────────────────────────
 
-function OfficeGoalsPage() {
+/**
+ * Shared Goals board for both modes. `areaId === null` → all areas, grouped
+ * by area (company view); a specific area → just that area's goals.
+ */
+function GoalsBoard({ areaId }: { areaId: string | null }) {
+  const { data: area } = useArea(areaId ?? '')
+  const areaName = areaId ? area?.name ?? '' : null
   const [expandedId, setExpandedId] = useState<string | null>(AREA_GROUPS[0].goals[0].id)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // Status counts across all goals (list is grouped by area, not area-filtered)
-  const allGoals = AREA_GROUPS.flatMap((g) => g.goals)
+  // Scope to the selected area (matched by name), or all areas when null.
+  const scopedGroups = areaName ? AREA_GROUPS.filter((g) => g.area === areaName) : AREA_GROUPS
+  const allGoals = scopedGroups.flatMap((g) => g.goals)
   const statusCounts: Record<StatusFilter, number> = {
     All: allGoals.length,
     'Needs you': allGoals.filter((g) => g.badge === 'Needs you').length,
@@ -633,27 +642,31 @@ function OfficeGoalsPage() {
     'On track': allGoals.filter((g) => g.status === 'On track').length,
   }
 
-  const filteredGroups = AREA_GROUPS.map((g) => ({
-    ...g,
-    goals:
-      statusFilter === 'All'
-        ? g.goals
-        : statusFilter === 'Needs you'
-          ? g.goals.filter((goal) => goal.badge === 'Needs you')
-          : g.goals.filter((goal) => goal.status === statusFilter),
-  })).filter((g) => g.goals.length > 0)
+  const filteredGroups = scopedGroups
+    .map((g) => ({
+      ...g,
+      goals:
+        statusFilter === 'All'
+          ? g.goals
+          : statusFilter === 'Needs you'
+            ? g.goals.filter((goal) => goal.badge === 'Needs you')
+            : g.goals.filter((goal) => goal.status === statusFilter),
+    }))
+    .filter((g) => g.goals.length > 0)
 
   return (
     <>
       <Topbar
         icon={Target}
         title="Goals"
-        meta="All areas · Q4 2026"
+        meta={areaName ? `in ${areaName}` : 'All areas · Q4 2026'}
         actions={
           <div className="flex items-center gap-[6px]">
-            <Button variant="secondary" height={28} icon={Layers}>
-              Group: Area
-            </Button>
+            {!areaName && (
+              <Button variant="secondary" height={28} icon={Layers}>
+                Group: Area
+              </Button>
+            )}
             <Button icon={Plus} height={28} onClick={() => setDialogOpen(true)}>
               New goal
             </Button>
@@ -665,21 +678,25 @@ function OfficeGoalsPage() {
         {/* Heading */}
         <header className="flex flex-col gap-[4px]">
           <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
-            What the company is pushing on
+            {areaName ? `What ${areaName} is pushing on` : 'What the company is pushing on'}
           </h1>
           <p className="m-0 text-[13px] text-muted">
-            {ALL_GOALS_COUNT} goals this quarter across every area. Open a goal to jump into its session, tasks and decisions.
+            {areaName
+              ? `${allGoals.length} goals this quarter. Open a goal to jump into its session, tasks and decisions.`
+              : `${ALL_GOALS_COUNT} goals this quarter across every area. Open a goal to jump into its session, tasks and decisions.`}
           </p>
         </header>
 
-        {/* Filter bar — status only (list is grouped by area) */}
+        {/* Filter bar — status only */}
         <div className="mt-[14px] mb-[6px]">
           <StatusFilterTabs active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
         </div>
 
         {/* Goal groups */}
         {filteredGroups.length === 0 ? (
-          <p className="mt-[24px] text-[13px] text-muted">No goals match the selected filter.</p>
+          <p className="mt-[24px] text-[13px] text-muted">
+            {allGoals.length === 0 ? 'No goals in this area yet.' : 'No goals match the selected filter.'}
+          </p>
         ) : (
           filteredGroups.map((group) => (
             <AreaGroupSection
@@ -697,12 +714,16 @@ function OfficeGoalsPage() {
   )
 }
 
-// ── OfficeGoalsRoute ──────────────────────────────────────────────────────────
+// ── Route wrappers (shared board, area from the store) ────────────────────────
 
-/**
- * Main content for /office/goals.
- * The OfficeSidebar and Inset wrapper are provided by OfficeLayout.
- */
+/** Office · Goals — company-wide when no area is selected. */
 export function OfficeGoalsRoute() {
-  return <OfficeGoalsPage />
+  const areaId = useUIStore((s) => s.areaId)
+  return <GoalsBoard areaId={areaId} />
+}
+
+/** Chat · Goals — same board, area-filtered. */
+export function ChatGoalsRoute() {
+  const areaId = useUIStore((s) => s.areaId)
+  return <GoalsBoard areaId={areaId} />
 }

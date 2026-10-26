@@ -321,7 +321,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   function handleArchive() {
     archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
     setActionToast('Chat archived')
-    void navigate({ to: '/chat/$channelId/archived', params: { channelId } })
+    void navigate({ to: '/chat/archived' })
   }
 
   function handleDelete() {
@@ -333,7 +333,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
     archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
     setDeleteConfirmOpen(false)
     setActionToast('Chat deleted')
-    void navigate({ to: '/chat/$channelId', params: { channelId } })
+    void navigate({ to: '/chat' })
   }
 
   return (
