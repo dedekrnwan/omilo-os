@@ -25,6 +25,7 @@ export type DialogKind =
   | 'self-hosted'
   | 'delete-workspace'
   | 'connect-key'
+  | 'add-harness'
   | 'add-mcp'
   | 'build-oas'
   | 'oas-tools'

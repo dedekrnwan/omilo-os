@@ -22,6 +22,7 @@ import { DialogAddSeats } from './dialogs/DialogAddSeats'
 import { DialogPayMayar } from './dialogs/DialogPayMayar'
 import { DialogPlanMax } from './dialogs/DialogPlanMax'
 import { DialogConnectKey } from './dialogs/DialogConnectKey'
+import { DialogAddHarness } from './dialogs/DialogAddHarness'
 import { DialogConnectDrive } from './dialogs/DialogConnectDrive'
 import { DialogAddMcp } from './dialogs/DialogAddMcp'
 import { DialogWriteSkill } from './dialogs/DialogWriteSkill'
@@ -79,6 +80,7 @@ function DialogOverlay({ dialog, onClose, onDialog }: { dialog: DialogKind; onCl
     case 'pay-mayar':        return <DialogPayMayar onClose={onClose} />
     case 'plan-max':         return <DialogPlanMax onClose={onClose} />
     case 'connect-key':      return <DialogConnectKey onClose={onClose} />
+    case 'add-harness':      return <DialogAddHarness onClose={onClose} />
     case 'add-mcp':          return <DialogAddMcp onClose={onClose} />
     case 'build-oas':        return <DialogAddMcp onClose={onClose} mode="oas" />
     case 'write-skill':      return <DialogWriteSkill onClose={onClose} />
