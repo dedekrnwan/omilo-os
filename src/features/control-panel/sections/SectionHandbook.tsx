@@ -1,8 +1,7 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  ArrowLeft,
   Building2,
-  ChevronDown,
   ChevronRight,
   Contact,
   Eye,
@@ -21,34 +20,250 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../../ui/ds/Mascot'
 import type { HelperArea } from '../../../core/domain/types'
+import { Drawer } from '../../routines/ui'
 import { Chip, IconTile, Initials, PageHeader, PageShell, PenButton } from '../ControlPanelShared'
 import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
 
+interface Section {
+  h: string
+  body: string
+  /** Optional green "added" note rendered below the section. */
+  note?: string
+}
+
+interface UsedRow {
+  area?: HelperArea
+  icon?: LucideIcon
+  label: string
+  count: string
+}
+
 interface HandbookFile {
   name: string
   icon: LucideIcon
+  title: string
   desc: string
   meta: string
+  /** Footer line in the drawer, e.g. "Edited by you · 1 day ago · v12". */
+  edited: string
   locked?: boolean
   badge?: { tone: 'warn' | 'info'; label: string }
+  intro: string
+  sections: Section[]
+  suggestion?: { area: HelperArea; who: string; text: string }
+  used?: UsedRow[]
+  history?: { label: string; right: string }[]
 }
 
 const FILES: HandbookFile[] = [
-  { name: 'COMPANY.md', icon: Building2, desc: 'Who we are, who we serve and the 64 RTs we cover', meta: 'Everyone · 5d ago' },
-  { name: 'SERVICES.md', icon: ListChecks, desc: 'Dues, letters and bookings — what each costs and takes', meta: 'Everyone · 2w ago' },
-  { name: 'POLICIES.md', icon: ShieldCheck, desc: 'Refunds, resident data, and what needs an owner’s OK', meta: 'Everyone · 1d ago', badge: { tone: 'warn', label: '1 suggested edit' } },
-  { name: 'VOICE.md', icon: MessageSquareQuote, desc: 'How we talk to residents and RT heads', meta: 'Everyone · 3w ago' },
-  { name: 'FAQ.md', icon: MessagesSquare, desc: 'What residents ask every week, answered once', meta: 'Everyone · today', badge: { tone: 'info', label: '3 new from Support' } },
-  { name: 'PEOPLE.md', icon: Contact, desc: 'Who owns what, and who to call after hours', meta: 'Members & helpers only', locked: true },
+  {
+    name: 'COMPANY.md',
+    icon: Building2,
+    title: 'Company',
+    desc: 'Who we are, who we serve and the 64 RTs we cover',
+    meta: 'Everyone · 5d ago',
+    edited: 'Edited by you · 5 days ago · v4',
+    intro: 'Who Sahabat Warga is, who we serve, and the 64 RTs we cover.',
+    sections: [
+      {
+        h: 'Who we are',
+        body: 'Sahabat Warga runs neighbourhood admin for 64 RTs in South Jakarta — monthly dues, cover letters, facility bookings and clean-up days. One small team, one phone number, one place everything is written down.',
+      },
+      {
+        h: 'Who we serve',
+        body: '•  Residents first — the people who live in each RT.\n•  RT heads second — they approve, we do the admin.\nWe speak Bahasa Indonesia, warm and plain.',
+      },
+      {
+        h: 'The 64 RTs',
+        body: 'We cover RT 01 to RT 64 across four kelurahan. Each RT has one head and one deputy, listed in PEOPLE.md.',
+      },
+    ],
+    used: [
+      { area: 'brand', label: 'Chief', count: '12×' },
+      { area: 'support', label: 'Support', count: '9×' },
+      { area: 'finance', label: 'Finance', count: '4×' },
+    ],
+    history: [
+      { label: 'v4 · you', right: '5d' },
+      { label: 'v3 · accepted from Chief', right: '2w' },
+      { label: 'v2 · you', right: '1mo' },
+    ],
+  },
+  {
+    name: 'SERVICES.md',
+    icon: ListChecks,
+    title: 'Services',
+    desc: 'Dues, letters and bookings — what each costs and takes',
+    meta: 'Everyone · 2w ago',
+    edited: 'Edited by Chief · 2 weeks ago · v7',
+    intro: 'Dues, letters and bookings — what each costs and how long it takes.',
+    sections: [
+      {
+        h: 'Monthly dues',
+        body: '•  Rp 50.000 per household, due by the 10th.\n•  Paid by transfer or to the RT head in cash.\n•  A receipt is sent the same day.',
+      },
+      {
+        h: 'Cover letters',
+        body: '•  Domicile and introduction letters, issued within 2 working days.\n•  Free for residents in good standing.',
+      },
+      {
+        h: 'Facility bookings',
+        body: '•  Hall and sports court, Rp 150.000 deposit.\n•  Deposit is refunded if cancelled 48 hours before.',
+      },
+    ],
+    used: [
+      { area: 'finance', label: 'Finance', count: '22×' },
+      { area: 'support', label: 'Support', count: '18×' },
+    ],
+    history: [
+      { label: 'v7 · accepted from Finance', right: '2w' },
+      { label: 'v6 · you', right: '5w' },
+    ],
+  },
+  {
+    name: 'POLICIES.md',
+    icon: ShieldCheck,
+    title: 'Policies',
+    desc: 'Refunds, resident data, and what needs an owner’s OK',
+    meta: 'Everyone · 1d ago',
+    edited: 'Edited by you · 1 day ago · v12',
+    badge: { tone: 'warn', label: '1 suggested edit' },
+    intro:
+      'The rules every helper and every person at Sahabat Warga follows. When something isn’t covered here, ask the owner — don’t guess.',
+    sections: [
+      {
+        h: 'Refunds',
+        body: '•  Dues paid twice are refunded within 3 working days, to the same method.\n•  Booking deposits are refunded if cancelled 48 hours before.\n•  Anything else needs an owner’s OK first.',
+      },
+      {
+        h: 'Resident data',
+        body: '•  A resident’s name, phone and address never leave their own RT.\n•  Never paste resident data into a public channel or a shared doc.',
+      },
+      {
+        h: 'Late dues',
+        body: '•  A Rp 10.000 late fee applies after the 10th of the month.',
+        note: '+  The late fee is waived for residents aged 65 and over.',
+      },
+    ],
+    suggestion: {
+      area: 'support',
+      who: 'Support suggests an edit',
+      text: 'Residents asked about the late fee for elders 4 times this month (RT 04, RT 09). Adding the rule lets me answer without asking you.',
+    },
+    used: [
+      { area: 'support', label: 'Support', count: '41×' },
+      { area: 'finance', label: 'Finance', count: '6×' },
+      { area: 'brand', label: 'Chief', count: '3×' },
+      { icon: Users, label: 'Opened by 3 people', count: '8×' },
+    ],
+    history: [
+      { label: 'v12 · you', right: '1d' },
+      { label: 'v11 · accepted from Finance', right: '1w' },
+      { label: 'v10 · you', right: '3w' },
+    ],
+  },
+  {
+    name: 'VOICE.md',
+    icon: MessageSquareQuote,
+    title: 'Voice',
+    desc: 'How we talk to residents and RT heads',
+    meta: 'Everyone · 3w ago',
+    edited: 'Edited by you · 3 weeks ago · v3',
+    intro: 'How we talk to residents and RT heads — the same voice, every helper.',
+    sections: [
+      {
+        h: 'Tone',
+        body: 'Warm, plain and short. Like a helpful neighbour, not an office. Bahasa Indonesia first.',
+      },
+      { h: 'Do', body: '•  Greet people by name.\n•  Say what happens next, and when.\n•  Thank them for waiting.' },
+      { h: 'Don’t', body: '•  No jargon, no legalese.\n•  Never promise money or a date we haven’t approved.' },
+    ],
+    used: [
+      { area: 'support', label: 'Support', count: '38×' },
+      { area: 'brand', label: 'Chief', count: '5×' },
+    ],
+    history: [
+      { label: 'v3 · you', right: '3w' },
+      { label: 'v2 · accepted from Support', right: '2mo' },
+    ],
+  },
+  {
+    name: 'FAQ.md',
+    icon: MessagesSquare,
+    title: 'FAQ',
+    desc: 'What residents ask every week, answered once',
+    meta: 'Everyone · today',
+    edited: 'Edited today · v9',
+    badge: { tone: 'info', label: '3 new from Support' },
+    intro: 'What residents ask every week, answered once so every helper replies the same way.',
+    sections: [
+      { h: 'When are dues due?', body: 'By the 10th of each month. A Rp 10.000 late fee applies after that.' },
+      {
+        h: 'How do I book the hall?',
+        body: 'Ask any helper with the date and time. A Rp 150.000 deposit holds it, refundable up to 48 hours before.',
+      },
+      {
+        h: 'How long does a cover letter take?',
+        body: 'Two working days. We send it in the chat and keep a copy in Docs.',
+      },
+    ],
+    suggestion: {
+      area: 'support',
+      who: 'Support added 3 new answers',
+      text: 'From this week’s tickets: parking, visitor hours and the clean-up schedule. Accept to let every helper use them.',
+    },
+    used: [
+      { area: 'support', label: 'Support', count: '54×' },
+      { icon: Users, label: 'Opened by 6 people', count: '23×' },
+    ],
+    history: [
+      { label: 'v9 · Support', right: 'today' },
+      { label: 'v8 · you', right: '1w' },
+    ],
+  },
+  {
+    name: 'PEOPLE.md',
+    icon: Contact,
+    title: 'People',
+    desc: 'Who owns what, and who to call after hours',
+    meta: 'Members & helpers only',
+    edited: 'Edited by you · 1 week ago · v6',
+    locked: true,
+    intro: 'Who owns what, and who to call after hours. Members and helpers only.',
+    sections: [
+      {
+        h: 'Owners',
+        body: '•  Dues and refunds — Finance.\n•  Letters and bookings — Support.\n•  Everything else — the Chief of Staff.',
+      },
+      {
+        h: 'After hours',
+        body: '•  Urgent only: the RT head on duty, listed per RT.\n•  Non-urgent waits until the next working day.',
+      },
+    ],
+    used: [
+      { area: 'support', label: 'Support', count: '11×' },
+      { area: 'brand', label: 'Chief', count: '7×' },
+    ],
+    history: [
+      { label: 'v6 · you', right: '1w' },
+      { label: 'v5 · you', right: '1mo' },
+    ],
+  },
 ]
 
 /** pen Read-by stack: Chief · Builder · Grower · Sales · Finance · Support (Mini/*, 24, r7). */
 const READERS: HelperArea[] = ['brand', 'dev', 'marketing', 'sales', 'finance', 'support']
 
-/** pen TZ6Ia · Company handbook — and bb67G · POLICIES.md (variant `policies`). */
+/** pen TZ6Ia · Company handbook. Clicking a file opens it in a right-side drawer. */
 export function SectionHandbook({ variant, onVariant }: SectionProps) {
-  if (variant === 'policies') return <PoliciesFile onBack={() => onVariant?.(null)} />
+  const [open, setOpen] = useState<HandbookFile | null>(() =>
+    variant === 'policies' ? FILES.find((f) => f.name === 'POLICIES.md') ?? null : null,
+  )
+  const close = () => {
+    setOpen(null)
+    if (variant) onVariant?.(null)
+  }
   return (
     <PageShell crumb="Company handbook" gap={20}>
       <PageHeader
@@ -118,7 +333,7 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
             <button
               key={f.name}
               type="button"
-              onClick={() => f.name === 'POLICIES.md' && onVariant?.('policies')}
+              onClick={() => setOpen(f)}
               className="flex w-full items-center gap-[12px] rounded-lg px-[16px] py-[14px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
             >
               <IconTile icon={f.icon} />
@@ -142,6 +357,8 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
           ))}
         </div>
       </section>
+
+      {open && <HandbookFileDrawer file={open} onClose={close} />}
     </PageShell>
   )
 }
@@ -163,80 +380,82 @@ function SideTitle({ children }: { children: string }) {
 const H = 'm-0 font-display text-[17px] font-semibold tracking-[-0.2px] text-ink'
 const P = 'm-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ink-2'
 
-/** pen bb67G · Company handbook · POLICIES.md */
-function PoliciesFile({ onBack }: { onBack: () => void }) {
+/** pen bb67G · a handbook file opened in the right-side drawer. */
+function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: () => void }) {
+  const scope = file.locked ? 'Members & helpers only' : 'Everyone can read'
+  const ScopeIcon = file.locked ? Lock : Globe
   return (
-    <PageShell crumb={'Company handbook  /  POLICIES.md'} gap={16} width={960}>
-      <div className="flex w-full items-center gap-[10px]">
-        <button type="button" onClick={onBack} className="flex items-center gap-[6px]">
-          <ArrowLeft size={14} aria-hidden className="text-muted" />
-          <span className="text-[13px] text-muted">Company handbook</span>
-        </button>
-        <div className="h-px flex-1" />
-        <button
-          type="button"
-          className="flex h-[30px] items-center gap-[6px] rounded-btn px-[10px] outline-1 -outline-offset-1 outline-line-strong"
-        >
-          <Globe size={13} aria-hidden className="text-ink-2" />
-          <span className="text-[12.5px] text-ink-2">Everyone can read</span>
-          <ChevronDown size={13} aria-hidden className="text-muted" />
-        </button>
-        <PenButton variant="primary" h={30} fs={13} icon={Pencil}>Edit</PenButton>
+    <Drawer
+      title={file.title}
+      subtitle={`${file.name} · ${scope}`}
+      onClose={onClose}
+      bodyClass="gap-[16px] px-[24px] py-[20px]"
+      footer={
+        <>
+          <History size={12} aria-hidden className="text-muted" />
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{file.edited}</span>
+          <PenButton h={30} fs={13} icon={Pencil}>Edit</PenButton>
+        </>
+      }
+    >
+      <div className="flex w-full items-center gap-[8px]">
+        <span className="inline-flex h-[26px] items-center gap-[6px] rounded-btn px-[10px] outline-1 -outline-offset-1 outline-line-strong">
+          <ScopeIcon size={12} aria-hidden className="text-ink-2" />
+          <span className="text-[12px] text-ink-2">{scope}</span>
+        </span>
       </div>
 
-      <div className="flex w-full items-start gap-[24px]">
-        <article className="flex min-w-0 flex-1 flex-col gap-[10px] rounded-lg px-[26px] py-[22px] outline-1 -outline-offset-1 outline-line-strong">
-          <span className="font-mono text-[11.5px] text-faint">POLICIES.md</span>
-          <h1 className="m-0 font-display text-[24px] font-semibold tracking-[-0.4px] text-ink">Policies</h1>
-          <p className="m-0 text-[13.5px] leading-[1.6] text-muted">
-            The rules every helper and every person at Sahabat Warga follows. When something isn’t covered here, ask the owner — don’t guess.
-          </p>
-          <h2 className={H}>Refunds</h2>
-          <p className={P}>
-            {'•  Dues paid twice are refunded within 3 working days, to the same method.\n•  Booking deposits are refunded if cancelled 48 hours before.\n•  Anything else needs an owner’s OK first.'}
-          </p>
-          <h2 className={H}>Resident data</h2>
-          <p className={P}>
-            {'•  A resident’s name, phone and address never leave their own RT.\n•  Never paste resident data into a public channel or a shared doc.'}
-          </p>
-          <h2 className={H}>Late dues</h2>
-          <p className={P}>{'•  A Rp 10.000 late fee applies after the 10th of the month.'}</p>
-          <div className="w-full rounded-sm bg-ok-tint px-[12px] py-[8px] shadow-[inset_3px_0_0_var(--color-ok-line)]">
-            <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ok">
-              {'+  The late fee is waived for residents aged 65 and over.'}
-            </p>
-          </div>
-        </article>
+      <p className="m-0 text-[13.5px] leading-[1.6] text-muted">{file.intro}</p>
 
-        <aside className="flex w-[280px] shrink-0 flex-col gap-[14px]">
-          <div className="flex w-full flex-col gap-[10px] rounded-lg bg-warn-tint p-[14px] outline-1 -outline-offset-1 outline-warn-line">
-            <div className="flex w-full items-center gap-[8px]">
-              <Mascot helper area="support" size={24} radius={7} />
-              <span className="text-[12.5px] font-semibold text-ink">Support suggests an edit</span>
+      {file.sections.map((s) => (
+        <div key={s.h} className="flex w-full flex-col gap-[6px]">
+          <h2 className={H}>{s.h}</h2>
+          <p className={P}>{s.body}</p>
+          {s.note && (
+            <div className="w-full rounded-sm bg-ok-tint px-[12px] py-[8px] shadow-[inset_3px_0_0_var(--color-ok-line)]">
+              <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ok">{s.note}</p>
             </div>
-            <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
-              Residents asked about the late fee for elders 4 times this month (RT 04, RT 09). Adding the rule lets me answer without asking you.
-            </p>
-            <div className="flex gap-[6px]">
-              <PenButton variant="primary" h={28} fs={12.5} px={12}>Accept</PenButton>
-              <PenButton h={28} fs={12.5} px={12}>Dismiss</PenButton>
-            </div>
+          )}
+        </div>
+      ))}
+
+      {file.suggestion && (
+        <div className="flex w-full flex-col gap-[10px] rounded-lg bg-warn-tint p-[14px] outline-1 -outline-offset-1 outline-warn-line">
+          <div className="flex w-full items-center gap-[8px]">
+            <Mascot helper area={file.suggestion.area} size={24} radius={7} />
+            <span className="text-[12.5px] font-semibold text-ink">{file.suggestion.who}</span>
           </div>
-          <div className="flex w-full flex-col gap-[8px] px-[2px] py-[4px]">
-            <SideTitle>USED THIS WEEK</SideTitle>
-            <SideRow lead={<Mascot helper area="support" size={24} radius={7} />} label="Support" right="41×" />
-            <SideRow lead={<Mascot helper area="finance" size={24} radius={7} />} label="Finance" right="6×" />
-            <SideRow lead={<Mascot helper area="brand" size={24} radius={7} />} label="Chief" right="3×" />
-            <SideRow lead={<Users size={14} aria-hidden className="text-muted" />} label="Opened by 3 people" right="8×" />
+          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{file.suggestion.text}</p>
+          <div className="flex gap-[6px]">
+            <PenButton variant="primary" h={28} fs={12.5} px={12}>Accept</PenButton>
+            <PenButton h={28} fs={12.5} px={12}>Dismiss</PenButton>
           </div>
-          <div className="flex w-full flex-col gap-[8px] px-[2px] py-[4px]">
-            <SideTitle>HISTORY</SideTitle>
-            <SideRow lead={null} label="v12 · you" right="1d" />
-            <SideRow lead={null} label="v11 · accepted from Finance" right="1w" />
-            <SideRow lead={null} label="v10 · you" right="3w" />
-          </div>
-        </aside>
-      </div>
-    </PageShell>
+        </div>
+      )}
+
+      {file.used && (
+        <div className="flex w-full flex-col gap-[8px] pt-[2px]">
+          <SideTitle>USED THIS WEEK</SideTitle>
+          {file.used.map((u) => {
+            const Icon = u.icon
+            const lead = u.area ? (
+              <Mascot helper area={u.area} size={24} radius={7} />
+            ) : Icon ? (
+              <Icon size={14} aria-hidden className="text-muted" />
+            ) : null
+            return <SideRow key={u.label} lead={lead} label={u.label} right={u.count} />
+          })}
+        </div>
+      )}
+
+      {file.history && (
+        <div className="flex w-full flex-col gap-[8px]">
+          <SideTitle>HISTORY</SideTitle>
+          {file.history.map((h) => (
+            <SideRow key={h.label} lead={null} label={h.label} right={h.right} />
+          ))}
+        </div>
+      )}
+    </Drawer>
   )
 }
