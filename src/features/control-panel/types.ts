@@ -28,6 +28,7 @@ export type DialogKind =
   | 'pay-mayar'
   | 'plan-max'
   | 'connect-key'
+  | 'add-harness'
   | 'add-mcp'
   | 'build-oas'
   | 'oas-tools'
@@ -42,6 +43,6 @@ export type PageVariant = 'self-hosted' | 'cloud' | 'credits-low' | 'policies' |
 
 export const DIALOG_KINDS: Exclude<DialogKind, null>[] = [
   'delete-workspace', 'invite', 'seats-full', 'add-seats', 'pay-mayar', 'plan-max',
-  'connect-key', 'add-mcp', 'build-oas', 'oas-tools', 'connect-drive', 'write-skill',
+  'connect-key', 'add-harness', 'add-mcp', 'build-oas', 'oas-tools', 'connect-drive', 'write-skill',
   'buy-credits', 'change-plan',
 ]
