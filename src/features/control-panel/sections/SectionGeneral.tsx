@@ -2,10 +2,20 @@ import { BookOpen, Globe, Languages } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useDirtyState } from '../ControlPanelShared'
 import type { SectionProps } from '../ControlPanel'
+import { useUIStore } from '../../../app/store'
+import { COMPANIES } from '../../../app/companies'
+import { useAppearance } from '../../../app/appearance'
+import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
+import { useCompanyLook } from '../../../ui/ds/looks'
+import { LookPicker } from '../../../ui/ds/LookPicker'
 
 /** pen xVE7r · Control panel · General */
 export function SectionGeneral({ onDialog }: SectionProps) {
   const navigate = useNavigate()
+  const companyId = useUIStore((st) => st.companyId)
+  const company = COMPANIES.find((c) => c.id === companyId) ?? COMPANIES[0]
+  const look = useCompanyLook(company)
+  const { setLook, resetLook } = useAppearance()
   const { dirty, save, discard } = useDirtyState()
   return (
     <PageShell crumb="General" saveBar dirty={dirty} onSave={save} onDiscard={discard}>
@@ -14,10 +24,17 @@ export function SectionGeneral({ onDialog }: SectionProps) {
       <Group title="Company">
         <Box>
           <Row title="Logo" desc="Shown in the rail and on anything agents send.">
-            <span className="flex size-[36px] shrink-0 items-center justify-center rounded-md bg-[#EB6834] text-[15px] font-bold text-white">
-              S
-            </span>
-            <PenButton>Upload</PenButton>
+            <CompanyLogo company={company} size={36} radius={10} fontSize={15} className="font-bold" />
+            <LookPicker
+              kind="company"
+              side="bottom"
+              title={`${company.name} logo`}
+              value={{ color: look.color, initial: look.initial, image: look.image }}
+              onChange={(patch) => setLook('companies', company.id, patch)}
+              onReset={() => resetLook('companies', company.id)}
+            >
+              <PenButton>{look.image ? 'Change' : 'Upload'}</PenButton>
+            </LookPicker>
           </Row>
           <Row title="Company name" desc="Told to every agent and used in messages.">
             <Field width={240} value="Sahabat Warga" />

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Folder as FolderT, Session } from '../../core/domain/types'
+import { FolderTileButton } from '../shell/LookControls'
 import { useAreas, useFolders, useSessions } from '../../app/queries'
 import { useChatStore } from '../../app/store'
 import { Button } from '../../ui/ds/Button'
@@ -313,13 +314,7 @@ export function FolderRoute() {
         <div className="flex w-[860px] max-w-full flex-col gap-[21px] pt-[26px] pb-[29px]">
           {/* Head */}
           <div className="flex w-full items-center gap-[12px]">
-            <span
-              aria-hidden
-              className="flex size-[48px] shrink-0 items-center justify-center rounded-lg"
-              style={{ background: accent.chipBg, color: accent.chipInk }}
-            >
-              <FolderOpen size={22} />
-            </span>
+            <FolderTileButton folder={folder} defaultBg={accent.chipBg} defaultInk={accent.chipInk} />
             <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
               <h2 className="m-0 font-display text-[22px] font-semibold tracking-[-0.5px] text-ink">
                 {folder.name}

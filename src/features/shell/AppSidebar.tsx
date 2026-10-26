@@ -9,7 +9,6 @@ import {
   ChevronsUpDown,
   Ellipsis,
   FileText,
-  FolderOpen,
   Inbox,
   Layers,
   MessageSquare,
@@ -23,7 +22,7 @@ import type { Channel, Session } from '../../core/domain/types'
 import type { Mode } from '../../app/store'
 import { useUIStore, useChatStore } from '../../app/store'
 import { useAreas, useFolders, useSessions, useGoals } from '../../app/queries'
-import { accents } from '../../ui/ds/accents'
+import { AreaBadgeButton, AreaTile, FolderIconButton } from './LookControls'
 import { Button } from '../../ui/ds/Button'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
 import { CreateChannelDialog } from '../chat/CreateChannelDialog'
@@ -44,18 +43,7 @@ function areaPopoverMeta(c: Channel) {
 
 /** Coloured square with the area glyph (24px in the switcher, 26px in the popover). */
 export function AreaIcon({ channel, size }: { channel: Channel; size: 24 | 26 }) {
-  const a = accents[channel.accent]
-  const Icon = a.icon
-  return (
-    <span
-      aria-hidden
-      data-testid="area-icon"
-      className="flex shrink-0 items-center justify-center text-white"
-      style={{ width: size, height: size, borderRadius: size === 24 ? 6 : 7, background: a.color }}
-    >
-      <Icon size={size === 24 ? 13 : 14} />
-    </span>
-  )
+  return <AreaTile area={channel} size={size} aria-hidden />
 }
 
 /** Neutral glyph for the "All areas" row. */
@@ -189,7 +177,8 @@ function AreaPopover({
 }
 
 /** Folder row in its active/open state (its page is open). */
-function ActiveFolderRow({ name, onToggle }: { name: string; onToggle: () => void }) {
+function ActiveFolderRow({ folder, onToggle }: { folder: { id: string; name: string }; onToggle: () => void }) {
+  const name = folder.name
   return (
     <div aria-current="page" className="flex h-[28px] w-full items-center gap-[6px] rounded-sm bg-hover pr-[8px] pl-[6px]">
       <button
@@ -197,10 +186,18 @@ function ActiveFolderRow({ name, onToggle }: { name: string; onToggle: () => voi
         aria-expanded
         aria-label={`Collapse ${name}`}
         onClick={onToggle}
-        className="flex min-w-0 flex-1 items-center gap-[6px] text-left"
+        className="flex items-center"
       >
         <ChevronDown size={12} aria-hidden className="text-faint" />
-        <FolderOpen size={15} aria-hidden className="text-ink" />
+      </button>
+      <FolderIconButton folder={folder} open active />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center text-left"
+      >
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{name}</span>
       </button>
       <button type="button" aria-label={`${name} options`} className="text-muted hover:text-ink">
@@ -277,24 +274,26 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
 
   return (
     <SidebarFrame label={isChat ? 'Chat' : 'Office'}>
-      {/* Area switcher */}
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={popoverOpen}
-        aria-label={area ? `Switch area — ${area.name}` : 'Switch area — All areas'}
-        onClick={() => setPopoverOpen((v) => !v)}
-        className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left transition-colors hover:bg-hover"
-      >
-        {area ? <AreaIcon channel={area} size={24} /> : <AllAreasIcon size={24} />}
-        <span className="flex min-w-0 flex-1 flex-col gap-px">
-          <span className="truncate text-[13.5px] font-semibold text-ink">{area?.name ?? 'All areas'}</span>
-          <span className="truncate text-[11.5px] text-muted">
-            {area ? areaSwitcherMeta(area) : 'Everything across the company'}
+      {/* Area switcher — the icon badge is its own control (opens the icon picker) */}
+      <div className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] transition-colors hover:bg-hover">
+        {area ? <AreaBadgeButton area={area} size={24} /> : <AllAreasIcon size={24} />}
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={popoverOpen}
+          aria-label={area ? `Switch area — ${area.name}` : 'Switch area — All areas'}
+          onClick={() => setPopoverOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-[8px] text-left outline-none"
+        >
+          <span className="flex min-w-0 flex-1 flex-col gap-px">
+            <span className="truncate text-[13.5px] font-semibold text-ink">{area?.name ?? 'All areas'}</span>
+            <span className="truncate text-[11.5px] text-muted">
+              {area ? areaSwitcherMeta(area) : 'Everything across the company'}
+            </span>
           </span>
-        </span>
-        <ChevronsUpDown size={14} aria-hidden className="text-faint" />
-      </button>
+          <ChevronsUpDown size={14} aria-hidden className="text-faint" />
+        </button>
+      </div>
 
       {popoverOpen && (
         <AreaPopover
@@ -356,12 +355,13 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
             return (
               <div key={f.id} className="flex flex-col gap-px">
                 {f.id === folderId ? (
-                  <ActiveFolderRow name={f.name} onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))} />
+                  <ActiveFolderRow folder={f} onToggle={() => setToggled((t) => ({ ...t, [f.id]: !open }))} />
                 ) : (
                   <FolderRow
                     name={f.name}
                     count={f.count}
                     open={open}
+                    iconSlot={<FolderIconButton folder={f} open={open} />}
                     onToggle={() => {
                       setToggled((t) => ({ ...t, [f.id]: !open }))
                       if (!open) openFolder(f.id)

@@ -42,7 +42,7 @@ function StatusChip({ kind }: { kind: 'needs' | 'done' }) {
 }
 
 function AreaFor({ channel }: { channel?: Channel }) {
-  return channel ? <AreaChip accent={channel.accent} label={channel.name} /> : null
+  return channel ? <AreaChip accent={channel.accent} label={channel.name} area={channel} /> : null
 }
 
 // ── Approved banner (pen U6qpL8 `Approved`) ──────────────────────────────────

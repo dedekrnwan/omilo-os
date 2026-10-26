@@ -105,26 +105,39 @@ export function FolderRow({
   count,
   open,
   onToggle,
+  iconSlot,
 }: {
   name: string
   count: number
   open: boolean
   onToggle: () => void
+  /**
+   * Replaces the folder glyph — e.g. a button that opens the icon picker.
+   * Rendered outside the toggle button so it can be its own control.
+   */
+  iconSlot?: ReactNode
 }) {
   const Chevron = open ? ChevronDown : ChevronRight
   const Icon = open ? FolderOpen : Folder
   return (
-    <button
-      type="button"
-      aria-expanded={open}
-      onClick={onToggle}
-      className="flex h-[28px] w-full items-center gap-[6px] rounded-sm pr-[8px] pl-[6px] text-left transition-colors hover:bg-hover"
-    >
-      <Chevron size={12} aria-hidden className="text-faint" />
-      <Icon size={15} aria-hidden className="text-muted" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{name}</span>
-      <span className="text-[11.5px] text-muted">{count}</span>
-    </button>
+    <div className="group/folder relative flex h-[28px] w-full items-center rounded-sm transition-colors hover:bg-hover">
+      {/* The whole row toggles; the icon slot sits above it as its own control. */}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={name}
+        onClick={onToggle}
+        className="absolute inset-0 rounded-sm"
+      />
+      <span className="pointer-events-none relative flex w-full items-center gap-[6px] pr-[8px] pl-[6px]">
+        <Chevron size={12} aria-hidden className="text-faint" />
+        <span className="pointer-events-auto flex">
+          {iconSlot ?? <Icon size={15} aria-hidden className="text-muted" />}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{name}</span>
+        <span className="text-[11.5px] text-muted">{count}</span>
+      </span>
+    </div>
   )
 }
 

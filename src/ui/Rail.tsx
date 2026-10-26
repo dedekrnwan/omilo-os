@@ -24,55 +24,77 @@ import { useUIStore, MODE_HOME } from '../app/store'
 import type { Mode } from '../app/store'
 import { Mascot } from './ds/Mascot'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './ds/Menu'
+import { COMPANIES } from '../app/companies'
+import type { CompanyRecord } from '../app/companies'
+import { useAppearance } from '../app/appearance'
+import { CompanyLogo } from './ds/CompanyLogo'
+import { useCompanyLook } from './ds/looks'
+import { LookPicker } from './ds/LookPicker'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
-const COMPANIES = [
-  { id: 'sahabat-warga', name: 'Sahabat Warga', initial: 'S', color: '#EB6834' },
-  { id: 'kopi-kenangan', name: 'Kopi Kenangan', initial: 'K', color: '#6366F1', badge: true },
-] as const
-
-/** 40×40 company tile with a 30×30 initial avatar inset 5px; active = 2px company-colour ring. */
+/**
+ * 40×40 company tile with a 30×30 logo inset 5px; active = 2px company-colour ring.
+ * Right-click (or the "Change logo" item) opens the logo picker.
+ */
 function CompanyTile({
-  name,
-  initial,
-  color,
+  company,
   active,
   badge,
   onClick,
 }: {
-  name: string
-  initial: string
-  color: string
+  company: CompanyRecord
   active?: boolean
   badge?: boolean
   onClick?: () => void
 }) {
+  const look = useCompanyLook(company)
+  const { setLook, resetLook } = useAppearance()
+  const [pickerOpen, setPickerOpen] = useState(false)
   return (
-    <button
-      type="button"
-      aria-label={active ? `${name} (active)` : name}
-      aria-current={active ? 'true' : undefined}
-      title={name}
-      onClick={onClick}
-      className="group relative size-[40px] shrink-0 rounded-lg transition-transform outline-none focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
-      style={active ? { outline: `2px solid ${color}`, outlineOffset: -1 } : undefined}
+    <LookPicker
+      kind="company"
+      title={`${company.name} logo`}
+      value={{ color: look.color, initial: look.initial, image: look.image }}
+      onChange={(patch) => setLook('companies', company.id, patch)}
+      onReset={() => resetLook('companies', company.id)}
+      open={pickerOpen}
+      onOpenChange={setPickerOpen}
     >
-      <span
-        className={`absolute top-[5px] left-[5px] flex size-[30px] items-center justify-center rounded-[9px] text-[13px] font-semibold text-white transition group-hover:brightness-110 ${
-          active ? '' : 'opacity-85 group-hover:opacity-100'
-        }`}
-        style={{ background: color }}
+      <button
+        type="button"
+        aria-label={active ? `${company.name} (active)` : company.name}
+        aria-current={active ? 'true' : undefined}
+        title={`${company.name} — right-click to change the logo`}
+        onClick={(e) => {
+          // Radix opens the picker on click; on the rail a click switches company instead.
+          e.preventDefault()
+          onClick?.()
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setPickerOpen(true)
+        }}
+        className="group relative size-[40px] shrink-0 rounded-lg transition-transform outline-none focus-visible:ring-2 focus-visible:ring-ink active:scale-90"
+        style={active ? { outline: `2px solid ${look.color}`, outlineOffset: -1 } : undefined}
       >
-        {initial}
-      </span>
-      {badge && (
-        <span
-          aria-label="unread activity"
-          className="absolute top-[2px] left-[27px] size-[11px] rounded-full border-2 border-app bg-[#C2410C]"
+        <CompanyLogo
+          company={company}
+          size={30}
+          radius={9}
+          fontSize={13}
+          className={`absolute top-[5px] left-[5px] transition group-hover:brightness-110 ${
+            active ? '' : 'opacity-85 group-hover:opacity-100'
+          }`}
         />
-      )}
-    </button>
+        {badge && (
+          <span
+            aria-label="unread activity"
+            className="absolute top-[2px] left-[27px] size-[11px] rounded-full border-2 border-app bg-[#C2410C]"
+          />
+        )}
+      </button>
+    </LookPicker>
   )
 }
 
@@ -588,7 +610,13 @@ export function Rail() {
 
       <div className="flex flex-col items-center gap-[8px] pt-[6px]">
         {COMPANIES.map((c) => (
-          <CompanyTile key={c.id} {...c} active={c.id === companyId} onClick={() => selectCompany(c.id)} />
+          <CompanyTile
+            key={c.id}
+            company={c}
+            badge={'badge' in c ? c.badge : undefined}
+            active={c.id === companyId}
+            onClick={() => selectCompany(c.id)}
+          />
         ))}
         <button
           type="button"
