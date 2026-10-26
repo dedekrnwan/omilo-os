@@ -1,4 +1,4 @@
-"""CLI entry points — stubs; real implementations land in later tasks."""
+"""CLI entry points."""
 
 
 def migrate() -> None:
@@ -6,4 +6,6 @@ def migrate() -> None:
 
 
 def seed() -> None:
-    print("omilo-seed: not yet implemented")
+    """Entry point for the ``omilo-seed`` console script."""
+    from omilo.seed.run import main
+    main()
