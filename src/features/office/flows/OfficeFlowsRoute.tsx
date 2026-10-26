@@ -2,6 +2,7 @@
 // Matches design ref: Cv9lg.png (company-wide flows list + new-flow panel)
 
 import { useState } from 'react'
+import { SegmentedTabs } from '../../../ui/ds/Segmented'
 import * as Dialog from '@radix-ui/react-dialog'
 import { drawerOverlayClass, drawerContentClass } from '../../../ui/ds/Drawer'
 import { Copy, GitFork, History, Link, Pause, Play, Plus, Power, Settings2, Sparkles, Trash2, Workflow, X } from 'lucide-react'
@@ -596,28 +597,13 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         </h2>
 
         {/* Tabs */}
-        <div className="mt-[14px] mb-[20px] flex items-center gap-[2px] border-b border-line">
-          {TABS.map(({ key, label, count }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key)}
-              aria-current={activeTab === key ? 'true' : undefined}
-              className="relative flex h-[36px] items-center gap-[5px] rounded-t-sm px-[10px] text-[12.5px] font-medium transition-colors"
-              style={{
-                color: activeTab === key ? 'var(--color-ink)' : 'var(--color-muted)',
-                borderBottom: activeTab === key ? '2px solid var(--color-ink)' : '2px solid transparent',
-              }}
-            >
-              {label}
-              {count !== undefined && (
-                <span className="text-[11.5px]" style={{ color: activeTab === key ? 'var(--color-muted)' : 'var(--color-faint)' }}>
-                  {count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <SegmentedTabs
+          label="Flows views"
+          className="mt-[14px] mb-[20px]"
+          options={TABS.map(({ key, label, count }) => ({ id: key, label, count }))}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
 
         {activeTab === 'Yours'     && (
           <YoursTab

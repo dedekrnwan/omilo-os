@@ -13,12 +13,12 @@ describe('SectionSkills filters', () => {
     expect(screen.getByText('Release notes')).toBeInTheDocument()
 
     // Filter to On demand → the Standard skill drops out
-    await user.click(screen.getByRole('button', { name: 'On demand' }))
+    await user.click(screen.getByRole('tab', { name: 'On demand' }))
     expect(screen.queryByText('House voice')).not.toBeInTheDocument()
     expect(screen.getByText('Release notes')).toBeInTheDocument()
 
     // Back to All → it returns
-    await user.click(screen.getByRole('button', { name: 'All' }))
+    await user.click(screen.getByRole('tab', { name: 'All' }))
     expect(screen.getByText('House voice')).toBeInTheDocument()
   })
 })

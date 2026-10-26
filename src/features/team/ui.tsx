@@ -5,6 +5,7 @@
  * DS Button is the compact 30px/12.5 variant, these are the 32px/14 ones.
  */
 import { useEffect } from 'react'
+import { SegmentedTabs } from '../../ui/ds/Segmented'
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, X } from 'lucide-react'
@@ -276,22 +277,7 @@ export function Segmented<T extends string>({
   bg?: string
   onBg?: string
 }) {
-  return (
-    <div className={`flex w-fit max-w-full shrink-0 gap-[2px] self-start rounded-base p-[2px] outline-1 -outline-offset-1 outline-line ${bg}`}>
-      {items.map((it) => (
-        <button
-          key={it}
-          type="button"
-          onClick={() => onChange?.(it)}
-          className={`flex h-[28px] items-center rounded-sm px-[10px] text-[12px] font-medium whitespace-nowrap ${
-            it === value ? `${onBg} text-ink shadow-[0_1px_2px_#00000014]` : 'text-muted hover:text-ink-2'
-          }`}
-        >
-          {it}
-        </button>
-      ))}
-    </div>
-  )
+  return <SegmentedTabs options={items.map((it) => ({ id: it, label: it }))} value={value} onChange={onChange} bg={bg} onBg={onBg} />
 }
 
 // ── Radio (pen Radio/On hufFB · Radio/Off XCuSG) ───────────────────────────────

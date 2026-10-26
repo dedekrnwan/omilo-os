@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { SegmentedTabs } from '../../ui/ds/Segmented'
 import { Activity, Check, ChevronDown, LayoutDashboard, Repeat, ShieldCheck, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
@@ -179,28 +180,7 @@ const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
 ]
 
 export function Tabs({ value, onChange }: { value: TabId; onChange: (t: TabId) => void }) {
-  return (
-    <div role="tablist" className="flex w-full gap-[16px] shadow-[inset_0_-1px_0_var(--color-line-strong)]">
-      {TABS.map(({ id, label, icon: Icon }) => {
-        const on = id === value
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => onChange(id)}
-            className={`flex items-center gap-[6px] pt-[6px] pb-[9px] text-[13px] ${
-              on ? 'font-medium text-ink shadow-[inset_0_-2px_0_#171717]' : 'text-muted hover:text-ink-2'
-            }`}
-          >
-            <Icon size={14} aria-hidden className={on ? 'text-ink' : 'text-muted'} />
-            {label}
-          </button>
-        )
-      })}
-    </div>
-  )
+  return <SegmentedTabs label="Analytics views" options={TABS} value={value} onChange={onChange} />
 }
 
 const RANGES = ['7 days', '30 days', '90 days'] as const
