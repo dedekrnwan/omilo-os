@@ -211,7 +211,7 @@ describe('NewGoalDialog — open / close', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /Close dialog/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Close$/i }))
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

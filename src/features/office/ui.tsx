@@ -2,12 +2,11 @@
 // DS layer does not have yet: 32px buttons (Button/Primary·Secondary·Quiet·Danger),
 // Icon Tile, Input field, dialog shell (Head · Body · Footer) and Toast.
 
-import * as Dialog from '@radix-ui/react-dialog'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
-import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
+import { Drawer } from '../../ui/ds/Drawer'
 
 type Btn32Variant = 'primary' | 'secondary' | 'quiet' | 'danger'
 
@@ -91,14 +90,14 @@ export function Field({
 }
 
 /**
- * pen dialog frame: surface · radius dialog · line-strong · shadow 0 24 48 #1C19173D.
- * Head (tile · title/sub · close, padding 14/12/14/20, bottom line) · Body · Footer (12/20, top line).
+ * Reusable Office drawer wrapper. Delegates to the shared `Drawer` (serif-title
+ * header + scrollable body + soft footer bar) so Office panels match the house
+ * drawer pattern. Prop signature is kept backward-compatible for existing callers.
  */
 export function OfficeDialog({
   open,
   onOpenChange,
   width,
-  icon,
   title,
   sub,
   children,
@@ -107,45 +106,27 @@ export function OfficeDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   width: number
-  icon: LucideIcon
+  /** Deprecated: ignored — shared Drawer header is serif-title-only (no icon tile). */
+  icon?: LucideIcon
   title: string
   sub?: ReactNode
   children: ReactNode
   footer: ReactNode
-  /** Deprecated: drawers are full-height; accepted so existing call sites compile. */
+  /** Deprecated: ignored — drawers are full-height; accepted so existing call sites compile. */
   top?: number
 }) {
+  if (!open) return null
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => {
-            // Focus the dialog itself (no focus ring on the close button).
-            e.preventDefault()
-            ;(e.currentTarget as HTMLElement).focus()
-          }}
-          className={drawerContentClass}
-          style={{ width }}
-        >
-          <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">
-            <IconTile icon={icon} />
-            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-              <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">{title}</Dialog.Title>
-              {sub && <p className="m-0 text-[12.5px] text-muted">{sub}</p>}
-            </div>
-            <Dialog.Close asChild>
-              <IconButton icon={X} aria-label="Close" />
-            </Dialog.Close>
-          </div>
-          <div className="flex min-h-0 w-full flex-col gap-[16px] overflow-y-auto p-[20px]">{children}</div>
-          <div className="flex w-full items-center gap-[8px] px-[20px] py-[12px] shadow-[inset_0_1px_0_var(--color-line)]">
-            {footer}
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Drawer
+      title={title}
+      subtitle={sub}
+      onClose={() => onOpenChange(false)}
+      width={width}
+      bodyClass="gap-[16px] p-[20px]"
+      footer={footer}
+    >
+      {children}
+    </Drawer>
   )
 }
 

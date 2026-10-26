@@ -1,10 +1,8 @@
-import * as Dialog from '@radix-ui/react-dialog'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ChevronDown, Link, Lock, Search, UserPlus, X } from 'lucide-react'
+import { ChevronDown, Link, Lock, Search } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { IconButton } from '../ds/Button'
-import { drawerOverlayClass, drawerContentClass } from '../ds/Drawer'
+import { Drawer } from '../ds/Drawer'
 import { notify } from '../ds/Toaster'
 import { copyText } from '../ds/ItemMenu'
 import { menuSurface, menuItemClass } from '../ds/Menu'
@@ -70,101 +68,78 @@ function Person({ avatar, bg, name, sub, right }: { avatar: string; bg: string; 
 }
 
 export function ShareDialog({ title, open, onOpenChange }: ShareDialogProps) {
+  if (!open) return null
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          style={{ width: 500 }}
-          className={drawerContentClass}
-        >
-          {/* Head */}
-          <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">
-            <span className="flex size-[32px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">
-              <UserPlus size={16} aria-hidden className="text-ink-2" />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-              <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">Share &ldquo;{title}&rdquo;</Dialog.Title>
-              <p className="m-0 text-[12.5px] text-muted">
-                People you add see the whole chat and can talk to the helpers in it.
-              </p>
-            </div>
-            <Dialog.Close asChild>
-              <IconButton icon={X} aria-label="Close" />
-            </Dialog.Close>
-          </div>
+    <Drawer
+      title={`Share "${title}"`}
+      subtitle="People you add see the whole chat and can talk to the helpers in it."
+      onClose={() => onOpenChange(false)}
+      width={500}
+      bodyClass="gap-[16px] p-[20px]"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={() => { copyText(window.location.href); notify('Link copied') }}
+            className="inline-flex h-[32px] items-center gap-[6px] rounded-btn px-[14px] text-[13px] text-muted transition-colors hover:bg-hover"
+          >
+            <Link size={16} aria-hidden />
+            Copy link
+          </button>
+          <span className="h-px flex-1" />
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="inline-flex h-[32px] items-center justify-center rounded-btn bg-primary px-[14px] text-[13px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary transition-colors hover:bg-primary-hover"
+          >
+            Done
+          </button>
+        </>
+      }
+    >
+      <label className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong">
+        <Search size={16} aria-hidden className="text-muted" />
+        <input
+          placeholder="Add people, emails or a channel…"
+          aria-label="Add people, emails or a channel"
+          className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
+        />
+      </label>
 
-          {/* Body */}
-          <div className="flex w-full flex-col gap-[16px] p-[20px]">
-            <label className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong">
-              <Search size={16} aria-hidden className="text-muted" />
-              <input
-                placeholder="Add people, emails or a channel…"
-                aria-label="Add people, emails or a channel"
-                className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
-              />
-            </label>
+      <span className="text-[10.5px] font-semibold tracking-[1px] text-faint">WHO HAS ACCESS</span>
 
-            <span className="text-[10.5px] font-semibold tracking-[1px] text-faint">WHO HAS ACCESS</span>
+      <div className="flex w-full flex-col gap-[10px]">
+        <Person
+          avatar="DK"
+          bg="#D6D3D1"
+          name="Dede Kurniawan (you)"
+          sub="dede@sahabatwarga.id"
+          right={<span className="text-[12.5px] text-muted">Owner</span>}
+        />
+        <Person
+          avatar="RA"
+          bg="#FDE68A"
+          name="Rina Ayu"
+          sub="rina@sahabatwarga.id"
+          right={<PermissionSelect value="Can talk" label="Rina Ayu access" />}
+        />
+        <Person
+          avatar="#"
+          bg="var(--color-soft)"
+          name="#engineering"
+          sub="12 people in the channel"
+          right={<PermissionSelect value="Can view" label="#engineering access" />}
+        />
+      </div>
 
-            <div className="flex w-full flex-col gap-[10px]">
-              <Person
-                avatar="DK"
-                bg="#D6D3D1"
-                name="Dede Kurniawan (you)"
-                sub="dede@sahabatwarga.id"
-                right={<span className="text-[12.5px] text-muted">Owner</span>}
-              />
-              <Person
-                avatar="RA"
-                bg="#FDE68A"
-                name="Rina Ayu"
-                sub="rina@sahabatwarga.id"
-                right={<PermissionSelect value="Can talk" label="Rina Ayu access" />}
-              />
-              <Person
-                avatar="#"
-                bg="var(--color-soft)"
-                name="#engineering"
-                sub="12 people in the channel"
-                right={<PermissionSelect value="Can view" label="#engineering access" />}
-              />
-            </div>
-
-            <div className="flex w-full items-center gap-[10px] rounded-md bg-soft px-[12px] py-[10px]">
-              <Lock size={15} aria-hidden className="shrink-0 text-muted" />
-              <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                <span className="text-[13px] font-medium text-ink">Only people added</span>
-                <span className="truncate text-[12px] text-muted">Anyone in Sahabat Warga with the link can&apos;t open it</span>
-              </div>
-              <PermissionSelect value="Restricted" label="General access" />
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex w-full items-center gap-[8px] px-[20px] py-[12px] shadow-[inset_0_1px_0_var(--color-line)]">
-            <button
-              type="button"
-              onClick={() => { copyText(window.location.href); notify('Link copied') }}
-              className="inline-flex h-[32px] items-center gap-[6px] rounded-btn px-[14px] text-[13px] text-muted transition-colors hover:bg-hover"
-            >
-              <Link size={16} aria-hidden />
-              Copy link
-            </button>
-            <span className="h-px flex-1" />
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="inline-flex h-[32px] items-center justify-center rounded-btn bg-primary px-[14px] text-[13px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary transition-colors hover:bg-primary-hover"
-              >
-                Done
-              </button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <div className="flex w-full items-center gap-[10px] rounded-md bg-soft px-[12px] py-[10px]">
+        <Lock size={15} aria-hidden className="shrink-0 text-muted" />
+        <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+          <span className="text-[13px] font-medium text-ink">Only people added</span>
+          <span className="truncate text-[12px] text-muted">Anyone in Sahabat Warga with the link can&apos;t open it</span>
+        </div>
+        <PermissionSelect value="Restricted" label="General access" />
+      </div>
+    </Drawer>
   )
 }

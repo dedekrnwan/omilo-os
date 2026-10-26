@@ -14,8 +14,7 @@
  */
 
 import { useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import { drawerOverlayClass, drawerContentClass } from '../ds/Drawer'
+import { Drawer } from '../ds/Drawer'
 import * as Popover from '@radix-ui/react-popover'
 import {
   CalendarDays,
@@ -86,36 +85,37 @@ export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2
   )
   const [helpers, setHelpers] = useState(INITIAL_HELPERS)
 
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-label="Edit goal"
-          style={{ width: 480 }}
-          className={`${drawerContentClass} outline-none`}
-        >
-          {/* Header */}
-          <div className="flex items-start justify-between gap-[10px] px-[24px] pt-[20px] pb-[4px]">
-            <div className="flex flex-col gap-[2px]">
-              <Dialog.Title className="m-0 text-[15px] font-semibold text-ink">Edit goal</Dialog.Title>
-              <Dialog.Description className="m-0 text-[12.5px] text-muted">
-                Chief re-plans tasks when you change the date or outcome.
-              </Dialog.Description>
-            </div>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                aria-label="Close"
-                className="inline-flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-hover"
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </Dialog.Close>
-          </div>
+  if (!open) return null
 
-          <div className="flex flex-col gap-[14px] px-[24px] py-[16px]">
-            {/* Goal title field */}
+  return (
+    <Drawer
+      title="Edit goal"
+      subtitle="Chief re-plans tasks when you change the date or outcome."
+      onClose={() => onOpenChange(false)}
+      width={480}
+      bodyClass="gap-[14px] px-[24px] py-[16px]"
+      footer={
+        <>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="inline-flex items-center justify-center rounded-btn px-[14px] py-[7px] text-[12.5px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="inline-flex items-center gap-[5px] rounded-btn bg-primary px-[14px] py-[7px] text-[12.5px] font-medium text-primary-ink transition-colors hover:bg-primary-hover"
+          >
+            <Check size={13} aria-hidden />
+            Save goal
+          </button>
+        </>
+      }
+    >
+      {/* Goal title field */}
             <div className="flex flex-col gap-[5px]">
               <label className="text-[12px] font-medium text-ink-2" htmlFor="eg-title">Goal</label>
               <input
@@ -220,31 +220,7 @@ export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2
                 Delete goal
               </button>
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-[8px] border-t border-line px-[24px] py-[16px]">
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded-btn px-[14px] py-[7px] text-[12.5px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
-              >
-                Cancel
-              </button>
-            </Dialog.Close>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-[5px] rounded-btn bg-primary px-[14px] py-[7px] text-[12.5px] font-medium text-primary-ink transition-colors hover:bg-primary-hover"
-              >
-                <Check size={13} aria-hidden />
-                Save goal
-              </button>
-            </Dialog.Close>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Drawer>
   )
 }
 

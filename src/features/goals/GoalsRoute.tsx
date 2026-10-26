@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
+import { Drawer } from '../../ui/ds/Drawer'
 import {
   CalendarDays,
   Layers,
@@ -9,7 +8,6 @@ import {
   Plus,
   Target,
   UserPlus,
-  X,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../ui/ds/Button'
@@ -492,40 +490,37 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
   const [helperAnchor, setHelperAnchor] = useState<DOMRect | null>(null)
   const addHelperRef = useRef<HTMLButtonElement>(null)
 
+  if (!open) return null
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-
-        <Dialog.Content
-          aria-describedby="new-goal-desc"
-          style={{ width: 440 }}
-          className={drawerContentClass}
-        >
-          {/* Header */}
-          <div className="flex items-start gap-[8px] px-[22px] pt-[22px] pb-[14px]">
-            <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-              <Dialog.Title className="m-0 text-[15px] font-semibold text-ink">
-                New goal
-              </Dialog.Title>
-              <p id="new-goal-desc" className="m-0 text-[12.5px] leading-[1.4] text-muted">
-                Say what you want to move. Chief turns it into key results and assigns helpers.
-              </p>
-            </div>
-            <Dialog.Close asChild>
-              <button
-                type="button"
-                aria-label="Close dialog"
-                className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-sm text-faint transition-colors hover:bg-hover hover:text-muted"
-              >
-                <X size={15} aria-hidden />
-              </button>
-            </Dialog.Close>
-          </div>
-
-          {/* Scrollable body */}
-          <div className="flex min-h-0 flex-1 flex-col gap-[16px] overflow-y-auto px-[22px] pb-[4px]">
-            {/* Goal text */}
+    <Drawer
+      title="New goal"
+      subtitle="Say what you want to move. Chief turns it into key results and assigns helpers."
+      onClose={() => onOpenChange(false)}
+      width={440}
+      bodyClass="gap-[16px] px-[22px] py-[18px]"
+      footer={
+        <>
+          <button
+            type="button"
+            aria-label="Describe it in chat"
+            onClick={() => { onOpenChange(false); navigate({ to: '/chat' }) }}
+            className="flex items-center gap-[5px] text-[12px] text-muted transition-colors hover:text-ink-2"
+          >
+            <MessageSquare size={13} aria-hidden />
+            or describe it in chat
+          </button>
+          <span className="flex-1" />
+          <Button variant="secondary" height={30} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" height={30} icon={Target} onClick={() => onOpenChange(false)}>
+            Create goal
+          </Button>
+        </>
+      }
+    >
+      {/* Goal text */}
             <div className="flex flex-col gap-[6px]">
               <label className="text-[12px] font-medium text-ink-2" htmlFor="goal-input">
                 Goal
@@ -664,30 +659,7 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
                 label="Let Chief draft key results"
               />
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center gap-[8px] border-t border-line px-[22px] py-[14px]">
-            <button
-              type="button"
-              aria-label="Describe it in chat"
-              onClick={() => { onOpenChange(false); navigate({ to: '/chat' }) }}
-              className="flex items-center gap-[5px] text-[12px] text-muted transition-colors hover:text-ink-2"
-            >
-              <MessageSquare size={13} aria-hidden />
-              or describe it in chat
-            </button>
-            <span className="flex-1" />
-            <Button variant="secondary" height={30} onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" height={30} icon={Target} onClick={() => onOpenChange(false)}>
-              Create goal
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Drawer>
   )
 }
 
