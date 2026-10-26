@@ -137,7 +137,18 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     const el = elRef.current
     if (!el) return
     el.focus()
-    const sel = window.getSelection()
+    let sel = window.getSelection()
+    // Invoked from the + menu the live caret isn't in the editor, so force it to
+    // the end — otherwise the sigil would be inserted outside and no picker opens.
+    const caretInEl = !!sel && sel.rangeCount > 0 && !!sel.anchorNode && el.contains(sel.anchorNode)
+    if (!caretInEl) {
+      const r = document.createRange()
+      r.selectNodeContents(el)
+      r.collapse(false)
+      sel?.removeAllRanges()
+      sel?.addRange(r)
+      sel = window.getSelection()
+    }
     // Ensure a leading space so the trigger starts a fresh token.
     const current = el.textContent ?? ''
     const needsSpace = current.length > 0 && !/\s$/.test(current)
