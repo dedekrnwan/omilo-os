@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { ChartLine, Download } from 'lucide-react'
-import { Button } from '../../ui/ds/Button'
+import { ChartLine } from 'lucide-react'
 import { Topbar } from '../../ui/ds/Frame'
 import { BudgetDrawer, BudgetToast } from './BudgetDrawer'
 import { builderReached, helpers } from './data'
@@ -49,16 +48,7 @@ export function AnalyticsPage({ scope }: { scope: AnalyticsScope }) {
 
   return (
     <>
-      <Topbar
-        icon={ChartLine}
-        title="Analytics"
-        meta={scope.meta}
-        actions={
-          <Button height={28} icon={Download}>
-            Export
-          </Button>
-        }
-      />
+      <Topbar icon={ChartLine} title="Analytics" meta={scope.meta} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex w-full flex-col gap-[16px] px-[24px] py-[20px]">
           <PageHeader title={scope.title} sub={scope.sub} />
