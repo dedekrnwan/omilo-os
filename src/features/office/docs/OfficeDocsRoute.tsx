@@ -23,11 +23,12 @@ import {
   CheckCircle2,
   Circle,
   ArrowUpRight,
-  Mic,
-  Send,
   Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { Model } from '../../../core/domain/types'
+import { Composer } from '../../../ui/ChatSession/Composer'
+import { DEFAULT_MODEL } from '../../../ui/ChatSession/ModelMenu'
 import { Button, IconButton } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
@@ -615,11 +616,7 @@ function KnowledgeOff({ onTurnOn }: { onTurnOn: () => void }) {
 
 function AskChiefView() {
   const [askState, setAskState] = useState<'idle' | 'answer'>('idle')
-  const [query, setQuery] = useState('')
-
-  function submit() {
-    if (query.trim()) setAskState('answer')
-  }
+  const [model, setModel] = useState<Model>(DEFAULT_MODEL)
 
   if (askState === 'answer') {
     return (
@@ -664,7 +661,7 @@ function AskChiefView() {
               {/* Suggestion chips */}
               <div className="flex flex-wrap gap-[4px] mt-[8px]">
                 {ASK_CHIEF_ANSWER.suggestions.map((s) => (
-                  <button key={s} type="button" onClick={() => { setQuery(s); setAskState('answer') }} className="h-[28px] rounded-pill bg-soft px-[12px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+                  <button key={s} type="button" onClick={() => setAskState('answer')} className="h-[28px] rounded-pill bg-soft px-[12px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
                     {s}
                   </button>
                 ))}
@@ -680,12 +677,16 @@ function AskChiefView() {
         </div>
 
         {/* Composer */}
-        <AskChiefComposer
-          value=""
-          onChange={() => {}}
-          onSubmit={() => setAskState('idle')}
-          placeholder="Ask a follow-up…"
-        />
+        <div className="shrink-0 px-[20px] pt-[6px] pb-[12px]">
+          <Composer
+            sessionId="ask-chief-answer"
+            selectedModel={model}
+            onModelChange={setModel}
+            placeholder="Ask a follow-up…"
+            compact
+            onSend={() => setAskState('idle')}
+          />
+        </div>
       </div>
     )
   }
@@ -707,7 +708,7 @@ function AskChiefView() {
               <button
                 key={s}
                 type="button"
-                onClick={() => { setQuery(s); setAskState('answer') }}
+                onClick={() => setAskState('answer')}
                 className="flex w-full items-center rounded-base bg-soft px-[12px] py-[10px] text-left text-[13px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors"
               >
                 {s}
@@ -747,98 +748,16 @@ function AskChiefView() {
       </div>
 
       {/* Composer */}
-      <AskChiefComposer
-        value={query}
-        onChange={setQuery}
-        onSubmit={submit}
-        placeholder="rollback pl"
-      />
-    </div>
-  )
-}
-
-function AskChiefComposer({
-  value,
-  onChange,
-  onSubmit,
-  placeholder,
-}: {
-  value: string
-  onChange: (v: string) => void
-  onSubmit: () => void
-  placeholder: string
-}) {
-  const [recording, setRecording] = useState(false)
-  return (
-    <div className="shrink-0 border-t border-line bg-surface">
-      <div className="px-[20px] py-[12px]">
-        <div className="rounded-lg bg-soft outline-1 -outline-offset-1 outline-line-strong overflow-hidden">
-          <div className="flex items-center gap-[6px] px-[10px] pt-[8px] pb-[2px]">
-            <span className="text-[11.5px] text-faint">To</span>
-            <div className="flex h-[22px] items-center gap-[4px] rounded-sm bg-soft px-[6px] outline-1 -outline-offset-1 outline-line-strong">
-              <Mascot size={14} radius={3} area="brand" />
-              <span className="text-[11.5px] text-ink-2">Chief</span>
-            </div>
-          </div>
-          <input
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') onSubmit() }}
-            placeholder={placeholder}
-            className="w-full bg-transparent px-[10px] py-[8px] text-[13px] text-ink outline-none placeholder:text-faint"
-          />
-          <div className="flex items-center gap-[6px] px-[10px] py-[6px] border-t border-line">
-            <div className="flex items-center gap-[8px] flex-1">
-              <div className="flex items-center gap-[4px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-                ↕ 4.2k
-              </div>
-              <div className="flex items-center gap-[3px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-                <Mascot size={12} radius={2} area="brand" />
-                Opus 5.5
-              </div>
-              <div className="flex items-center gap-[3px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-                ⚡ Medium
-              </div>
-              <button
-                type="button"
-                onClick={() => { setRecording((r) => !r); if (!recording) { notify('Recording…') } else { notify('Recording stopped') } }}
-                className={`flex size-[26px] items-center justify-center rounded-sm transition-colors ${recording ? 'bg-bad text-primary-ink' : 'text-faint hover:bg-hover'}`}
-              >
-                <Mic size={13} aria-hidden />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={onSubmit}
-              className="flex size-[28px] items-center justify-center rounded-sm bg-primary text-primary-ink hover:bg-primary-hover transition-colors"
-            >
-              <Send size={13} aria-hidden />
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom search options */}
-        <div className="mt-[8px] flex items-center gap-[16px]">
-          <span className="text-[11.5px] text-faint">Search in</span>
-          {[
-            { label: 'All areas', active: true },
-            { label: 'Docs only', active: true },
-            { label: 'Knowledge off', active: false },
-          ].map((o) => (
-            <div key={o.label} className="flex items-center gap-[4px]">
-              <div
-                className="size-[14px] shrink-0 rounded-full border border-line-strong flex items-center justify-center"
-                style={{ background: o.active ? 'var(--color-primary)' : 'var(--color-surface)' }}
-              >
-                {o.active && <div className="size-[6px] rounded-full bg-primary-ink" />}
-              </div>
-              <span className="text-[11.5px] text-muted">{o.label}</span>
-            </div>
-          ))}
-          <button type="button" onClick={() => notify('Keyword search — type a word to find exact matches')} className="ml-auto text-[11.5px] text-link hover:underline">
-            Keyword search instead
-          </button>
-        </div>
+      <div className="shrink-0 px-[20px] pt-[6px] pb-[12px]">
+        <Composer
+          sessionId="ask-chief"
+          selectedModel={model}
+          onModelChange={setModel}
+          placeholder="Ask Chief anything in your docs…"
+          compact
+          onSend={() => setAskState('answer')}
+          autoFocus
+        />
       </div>
     </div>
   )
