@@ -5,6 +5,8 @@ import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { GitFork, Plus, Sparkles, X } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { useArea } from '../../../app/queries'
+import { useUIStore } from '../../../app/store'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
@@ -508,11 +510,15 @@ const TABS: Array<{ key: FlowTab; label: string; count?: number }> = [
   { key: 'Runs',      label: 'Runs' },
 ]
 
-function OfficeFlowsPage() {
+/** Shared Flows board. `areaId === null` → company-wide; else scoped to one area. */
+function FlowsBoard({ areaId }: { areaId: string | null }) {
+  const { data: area } = useArea(areaId ?? '')
+  const areaName = areaId ? area?.name ?? '' : null
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
   const [dialogOpen, setDialogOpen] = useState(false)
   const navigate = useNavigate()
 
+  // Flow editing lives in the office canvas; chat links there too.
   function goToCanvas(flowId: string) {
     navigate({ to: '/office/flows/$flowId/canvas', params: { flowId } })
   }
@@ -526,7 +532,7 @@ function OfficeFlowsPage() {
       <Topbar
         icon={GitFork}
         title="Flows"
-        meta="All areas · Company-wide"
+        meta={areaName ? `in ${areaName}` : 'All areas · Company-wide'}
         actions={
           <Button icon={Plus} onClick={() => setDialogOpen(true)}>
             New flow
@@ -536,7 +542,7 @@ function OfficeFlowsPage() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
         <h2 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">
-          Flows in Engineering
+          {areaName ? `Flows in ${areaName}` : 'Flows across the company'}
         </h2>
 
         {/* Tabs */}
@@ -581,12 +587,16 @@ function OfficeFlowsPage() {
   )
 }
 
-// ── OfficeFlowsRoute ──────────────────────────────────────────────────────────
+// ── Route wrappers (shared board, area from the store) ────────────────────────
 
-/**
- * Main content for /office/flows.
- * OfficeSidebar + Inset are provided by OfficeLayout.
- */
+/** Office · Flows — company-wide when no area is selected. */
 export function OfficeFlowsRoute() {
-  return <OfficeFlowsPage />
+  const areaId = useUIStore((s) => s.areaId)
+  return <FlowsBoard areaId={areaId} />
+}
+
+/** Chat · Flows — same board, area-filtered. */
+export function ChatFlowsRoute() {
+  const areaId = useUIStore((s) => s.areaId)
+  return <FlowsBoard areaId={areaId} />
 }

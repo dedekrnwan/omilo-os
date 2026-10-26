@@ -10,15 +10,14 @@ import {
 import { Shell } from './Shell'
 import { ModeLayout } from '../features/shell/ModeLayout'
 import { ChatIndexRoute, ChatSessionRoute } from '../features/chat/ChatRoute'
-import { GoalsRoute } from '../features/chat/GoalsRoute'
-import { FlowsRoute } from '../features/chat/FlowsRoute'
+import { ChatGoalsRoute, OfficeGoalsRoute } from '../features/goals/GoalsRoute'
 import { DocsRoute } from '../features/chat/DocsRoute'
 import { ArchivedRoute } from '../features/chat/ArchivedRoute'
 import { FolderRoute } from '../features/chat/FolderRoute'
 import { InboxRoute } from '../features/office/InboxRoute'
-import { OfficeGoalsRoute } from '../features/office/OfficeGoalsRoute'
 import {
   OfficeFlowsRoute,
+  ChatFlowsRoute,
   OfficeFlowCanvasRoute,
   OfficeFlowDraftRoute,
   OfficeFlowRunsRoute,
@@ -129,13 +128,13 @@ const chatSessionRoute = createRoute({
 const chatGoalsRoute = createRoute({
   getParentRoute: () => chatRoute,
   path: 'goals',
-  component: GoalsRoute,
+  component: ChatGoalsRoute,
 })
 
 const chatFlowsRoute = createRoute({
   getParentRoute: () => chatRoute,
   path: 'flows',
-  component: FlowsRoute,
+  component: ChatFlowsRoute,
 })
 
 const chatDocsRoute = createRoute({

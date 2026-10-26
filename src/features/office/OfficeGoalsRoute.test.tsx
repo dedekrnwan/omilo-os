@@ -13,7 +13,7 @@ import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import { ModeLayout } from '../shell/ModeLayout'
 const OfficeLayout = () => <ModeLayout mode="office" />
-import { OfficeGoalsRoute } from './OfficeGoalsRoute'
+import { OfficeGoalsRoute } from '../goals/GoalsRoute'
 import { InboxRoute } from './InboxRoute'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
