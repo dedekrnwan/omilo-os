@@ -120,9 +120,11 @@ export function SectionAiAccounts({ onDialog }: Props) {
                   </div>
                 </div>
                 {/* Status */}
-                <StatusBadge label={a.status} color={STATUS_COLOR[a.status]} />
+                <div className="justify-self-start">
+                  <StatusBadge label={a.status} color={STATUS_COLOR[a.status]} />
+                </div>
                 {/* Usage window */}
-                <div className="flex items-center gap-[8px] pr-[16px]">
+                <div className="flex items-center gap-[8px] pr-[16px] pl-[4px]">
                   <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-line-strong">
                     <div className="h-full rounded-full bg-ink" style={{ width: `${a.pct}%` }} />
                   </div>
