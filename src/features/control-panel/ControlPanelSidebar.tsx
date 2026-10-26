@@ -1,4 +1,5 @@
 // TODO(pen): refine against omilo-v2.pen
+import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { SidebarFrame, NavGroup, NavLink, GroupLabel } from '../../ui/ds/Sidebar'
 import { BackToApp } from '../shell/BackToApp'
@@ -17,6 +18,13 @@ interface Props {
  *   Rail → ControlPanelSidebar → Inset(section content).
  */
 export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat Warga' }: Props) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const groups = q
+    ? NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q)) })).filter(
+        (g) => g.items.length > 0,
+      )
+    : NAV_GROUPS
   return (
     <SidebarFrame label="Control panel sections">
       <BackToApp />
@@ -34,13 +42,15 @@ export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat W
           type="search"
           aria-label="Find a setting"
           placeholder="Find a setting"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
           className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-faint"
         />
       </label>
 
       {/* Nav groups */}
       <div className="flex min-h-0 w-full flex-1 flex-col gap-[8px] overflow-y-auto">
-        {NAV_GROUPS.map((g) => (
+        {groups.map((g) => (
           <NavGroup key={g.group}>
             <GroupLabel label={g.group} />
             {g.items.map((item) => (
@@ -55,6 +65,9 @@ export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat W
             ))}
           </NavGroup>
         ))}
+        {q && groups.length === 0 && (
+          <p className="px-[10px] py-[8px] text-[12px] text-muted">No settings match “{query}”.</p>
+        )}
       </div>
     </SidebarFrame>
   )
