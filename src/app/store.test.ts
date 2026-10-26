@@ -3,7 +3,19 @@ import { useUIStore, MODE_HOME } from './store'
 
 describe('UIStore', () => {
   beforeEach(() => {
-    useUIStore.setState({ mode: 'chat', areaId: null, companyId: 'sahabat-warga' })
+    useUIStore.setState({ mode: 'chat', areaId: null, companyId: 'sahabat-warga', autonomy: 'ask' })
+  })
+
+  test('autonomy defaults to "ask"', () => {
+    expect(useUIStore.getState().autonomy).toBe('ask')
+  })
+
+  test('setAutonomy updates and persists the level', () => {
+    useUIStore.getState().setAutonomy('yolo')
+    expect(useUIStore.getState().autonomy).toBe('yolo')
+    expect(JSON.parse(localStorage.getItem('omilo-ui') ?? '{}').state.autonomy).toBe('yolo')
+    useUIStore.getState().setAutonomy('strict')
+    expect(useUIStore.getState().autonomy).toBe('strict')
   })
 
   test('areaId defaults to null (All areas)', () => {

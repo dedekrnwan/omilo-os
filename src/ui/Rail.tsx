@@ -1,15 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import * as Popover from '@radix-ui/react-popover'
 import {
+  ArrowUpRight,
   Bell,
   Building2,
+  Check,
   ChevronDown,
   CircleHelp,
   CreditCard,
   Ellipsis,
   Keyboard,
+  Lock,
   LogOut,
   MessageCircle,
   MessageSquareHeart,
@@ -21,7 +25,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useUIStore, MODE_HOME } from '../app/store'
-import type { Mode } from '../app/store'
+import type { Autonomy, Mode } from '../app/store'
 import { Mascot } from './ds/Mascot'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './ds/Menu'
 import { COMPANIES } from '../app/companies'
@@ -148,21 +152,7 @@ type TrayContext = 'rail' | 'tray'
  * On the rail: hover = #E7E5E4A6, current page = hover fill + ink icon.
  * Inside the open tray: hover = soft white chip, current page = white + shadow.
  */
-function TrayButton({
-  label,
-  tooltip,
-  kbd,
-  icon: Icon,
-  glyph,
-  dot,
-  current,
-  context = 'rail',
-  onClick,
-  onMouseEnter,
-  onFocus,
-  iconClassName,
-  expanded,
-}: {
+interface TrayButtonProps {
   label: string
   tooltip: string
   kbd?: string
@@ -176,7 +166,12 @@ function TrayButton({
   onFocus?: () => void
   iconClassName?: string
   expanded?: boolean
-}) {
+}
+
+const TrayButton = forwardRef<HTMLButtonElement, TrayButtonProps>(function TrayButton(
+  { label, tooltip, kbd, icon: Icon, glyph, dot, current, context = 'rail', onClick, onMouseEnter, onFocus, iconClassName, expanded, ...rest },
+  ref,
+) {
   const look =
     context === 'tray'
       ? current
@@ -187,6 +182,7 @@ function TrayButton({
         : 'hover:bg-[#E7E5E4A6]'
   return (
     <button
+      ref={ref}
       type="button"
       aria-label={label}
       aria-current={current ? 'page' : undefined}
@@ -197,6 +193,7 @@ function TrayButton({
       className={`group relative flex size-[30px] shrink-0 items-center justify-center ${
         glyph ? 'rounded-[9px]' : 'rounded-md'
       } outline-none transition focus-visible:ring-2 focus-visible:ring-ink active:scale-90 ${look}`}
+      {...rest}
     >
       {glyph ??
         (Icon && (
@@ -206,6 +203,115 @@ function TrayButton({
       <RailTooltip label={tooltip} kbd={kbd} />
     </button>
   )
+})
+
+// ── Autonomy popover (pen `Autonomy Popover`) ─────────────────────────────────
+
+interface AutonomyOption {
+  level: Autonomy
+  icon: LucideIcon
+  iconClass: string
+  title: string
+  kbd: string
+  desc: string
+}
+
+const AUTONOMY_OPTIONS: AutonomyOption[] = [
+  { level: 'strict', icon: Lock, iconClass: 'text-info', title: 'Strict', kbd: '⌥1', desc: 'Read and draft only. Every change waits.' },
+  { level: 'ask', icon: ShieldCheck, iconClass: 'text-ink', title: 'Ask', kbd: '⌥2', desc: 'Work on their own. Posting, sending and spending wait.' },
+  { level: 'yolo', icon: Zap, iconClass: 'text-warn', title: 'YOLO', kbd: '⌥3', desc: 'Act without asking. Caps and guardrails still hold.' },
+]
+
+/** The rail Autonomy button + its popover. Controlled so the hover-tray can stay open while it is. */
+function AutonomyPopover({
+  context,
+  open,
+  onOpenChange,
+}: {
+  context: TrayContext
+  open: boolean
+  onOpenChange: (o: boolean) => void
+}) {
+  const navigate = useNavigate()
+  const autonomy = useUIStore((s) => s.autonomy)
+  const setAutonomy = useUIStore((s) => s.setAutonomy)
+  const active = AUTONOMY_OPTIONS.find((o) => o.level === autonomy) ?? AUTONOMY_OPTIONS[1]
+  return (
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
+      <Popover.Trigger asChild>
+        <TrayButton
+          context={context}
+          label="Autonomy"
+          tooltip={`Autonomy · ${active.title}`}
+          kbd="⌥ A"
+          icon={active.icon}
+          iconClassName={autonomy === 'ask' ? undefined : active.iconClass}
+          current={open}
+        />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="right"
+          align="end"
+          sideOffset={10}
+          alignOffset={4}
+          aria-label="Autonomy"
+          className="z-50 w-[320px] overflow-hidden rounded-[14px] bg-surface shadow-[0_12px_32px_#0C0A0926] outline-1 -outline-offset-1 outline-line-strong"
+        >
+          <div className="flex flex-col gap-[2px] border-b border-line px-[14px] pt-[12px] pb-[10px]">
+            <span className="text-[13px] font-semibold text-ink">Autonomy</span>
+            <span className="text-[12px] text-muted">For every helper in Sahabat Warga</span>
+          </div>
+          <div className="flex flex-col gap-[2px] p-[6px]">
+            {AUTONOMY_OPTIONS.map((o) => {
+              const selected = o.level === autonomy
+              return (
+                <button
+                  key={o.level}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setAutonomy(o.level)
+                    onOpenChange(false)
+                  }}
+                  className={`flex w-full items-start gap-[10px] rounded-[9px] px-[10px] py-[9px] text-left transition-colors ${
+                    selected ? 'bg-hover' : 'hover:bg-hover'
+                  }`}
+                >
+                  <span className="flex size-[28px] shrink-0 items-center justify-center rounded-sm bg-soft outline-1 -outline-offset-1 outline-line">
+                    <o.icon size={14} aria-hidden className={o.iconClass} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                    <span className="flex items-center gap-[6px]">
+                      <span className="text-[13px] font-semibold text-ink">{o.title}</span>
+                      {selected && <Check size={13} aria-hidden className="text-ink" />}
+                      <span className="h-px flex-1" />
+                      <span className="font-mono text-[10.5px] text-faint">{o.kbd}</span>
+                    </span>
+                    <span className="text-[12px] leading-[17px] text-muted">{o.desc}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-[8px] border-t border-line bg-soft px-[14px] py-[9px]">
+            <span className="flex-1 text-[12px] text-muted">Caps, guardrails and approvers</span>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenChange(false)
+                void navigate({ to: '/control-panel/$section', params: { section: 'safety' } })
+              }}
+              className="inline-flex items-center gap-[4px] text-[12px] font-medium text-info"
+            >
+              Safety &amp; limits
+              <ArrowUpRight size={12} aria-hidden />
+            </button>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
 }
 
 export type RailPage = 'team' | 'notifications' | 'settings' | 'autonomy'
@@ -214,8 +320,6 @@ interface BottomActionsProps {
   /** Unread notifications (bell shows while > 0). */
   unread?: number
   helpers?: number
-  /** Autonomy mode; anything but "ask" keeps the shield visible. */
-  autonomy?: 'ask' | 'yolo'
   /** Page currently open, if it is one of the tray's pages. */
   currentPage?: RailPage
 }
@@ -225,12 +329,16 @@ interface BottomActionsProps {
  * Collapsed, only items with something to show stay out (unread bell,
  * current page, non-default autonomy). ⋯ opens the tray; ⌄ closes it.
  */
-function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage }: BottomActionsProps) {
+function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsProps) {
   const [open, setOpen] = useState(false)
+  const [autonomyOpen, setAutonomyOpen] = useState(false)
+  const autonomyOpenRef = useRef(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const navigate = useNavigate()
+  const autonomy = useUIStore((s) => s.autonomy)
   // ⋯ opens the tray on hover (click/focus too, for keyboard and touch);
-  // leaving the tray closes it after a short grace period.
+  // leaving the tray closes it after a short grace period — unless the autonomy
+  // popover is open, so selecting a level doesn't yank the tray out from under it.
   const cancelClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
     closeTimer.current = null
@@ -241,9 +349,16 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
   }
   const scheduleClose = () => {
     cancelClose()
-    closeTimer.current = setTimeout(() => setOpen(false), 250)
+    closeTimer.current = setTimeout(() => {
+      if (!autonomyOpenRef.current) setOpen(false)
+    }, 250)
   }
   useEffect(() => cancelClose, [])
+  const handleAutonomyOpen = (o: boolean) => {
+    autonomyOpenRef.current = o
+    setAutonomyOpen(o)
+    if (!o) scheduleClose()
+  }
   const hoverProps = {
     onMouseEnter: cancelClose,
     onMouseLeave: scheduleClose,
@@ -251,15 +366,7 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose()
     },
   }
-  const yolo = autonomy === 'yolo'
-  const autonomyProps = {
-    label: 'Autonomy',
-    tooltip: `Autonomy · ${yolo ? 'YOLO' : 'Ask'}`,
-    kbd: '⌥ A',
-    icon: yolo ? Zap : ShieldCheck,
-    iconClassName: yolo ? 'text-warn' : undefined,
-    current: currentPage === 'autonomy',
-  }
+  const autonomyOut = autonomy !== 'ask'
   const items = {
     team: {
       label: 'Team',
@@ -286,7 +393,6 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
       current: currentPage === 'settings',
       onClick: () => void navigate({ to: '/control-panel' }),
     },
-    autonomy: autonomyProps,
   }
 
   if (open) {
@@ -300,7 +406,7 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
         <TrayButton context="tray" {...items.team} />
         <TrayButton context="tray" {...items.notifications} />
         <TrayButton context="tray" {...items.settings} />
-        <TrayButton context="tray" {...items.autonomy} />
+        <AutonomyPopover context="tray" open={autonomyOpen} onOpenChange={handleAutonomyOpen} />
         <button
           type="button"
           aria-label="Close tray"
@@ -320,7 +426,9 @@ function BottomActions({ unread = 3, helpers = 6, autonomy = 'ask', currentPage 
       {items.team.current && <TrayButton {...items.team} />}
       {bellOut && <TrayButton {...items.notifications} />}
       {items.settings.current && <TrayButton {...items.settings} />}
-      {(yolo || items.autonomy.current) && <TrayButton {...items.autonomy} />}
+      {(autonomyOut || autonomyOpen) && (
+        <AutonomyPopover context="rail" open={autonomyOpen} onOpenChange={handleAutonomyOpen} />
+      )}
       <TrayButton
         label="More"
         tooltip="More actions"

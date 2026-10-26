@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware'
 
 export type Mode = 'chat' | 'office'
 
+/** How much helpers may do on their own, workspace-wide. */
+export type Autonomy = 'strict' | 'ask' | 'yolo'
+
 /**
  * Home route of each mode. Mode is NOT encoded in the URL — it's persisted
  * client state. This map is only consulted when a mode change wants to land
@@ -16,9 +19,12 @@ export interface UIState {
   companyId: string
   /** Selected Area filter (a channel id), or null for "All areas". Shared across both modes. */
   areaId: string | null
+  /** Workspace-wide autonomy level for every helper. */
+  autonomy: Autonomy
   setMode(mode: Mode): void
   setCompany(id: string): void
   setArea(id: string | null): void
+  setAutonomy(level: Autonomy): void
 }
 
 /**
@@ -32,6 +38,7 @@ export const useUIStore = create<UIState>()(
       mode: 'chat',
       companyId: 'sahabat-warga',
       areaId: null,
+      autonomy: 'ask',
 
       setMode(mode: Mode) {
         if (get().mode !== mode) set({ mode })
@@ -42,10 +49,13 @@ export const useUIStore = create<UIState>()(
       setArea(id: string | null) {
         if (get().areaId !== id) set({ areaId: id })
       },
+      setAutonomy(level: Autonomy) {
+        if (get().autonomy !== level) set({ autonomy: level })
+      },
     }),
     {
       name: 'omilo-ui',
-      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId }),
+      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId, autonomy: s.autonomy }),
     },
   ),
 )
