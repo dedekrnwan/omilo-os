@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ArrowUp, AtSign, FoldVertical, Hash, Mic, MicOff, Paperclip, Plus, Slash } from 'lucide-react'
@@ -37,6 +37,9 @@ export interface ComposerProps {
   initialPopover?: ComposerPopoverKind
   /** Composer dropdown open on mount (model / thinking / context). */
   initialMenu?: ComposerMenu
+  /** Called with the text when the person sends (Enter or the send button). */
+  onSend?: (text: string) => void
+  autoFocus?: boolean
 }
 
 /**
@@ -59,6 +62,8 @@ export function Composer({
   initialText = '',
   initialPopover = 'none',
   initialMenu,
+  onSend,
+  autoFocus = false,
 }: ComposerProps) {
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
   const [isRecording, setIsRecording] = useState(false)
@@ -70,6 +75,9 @@ export function Composer({
   const [hasText, setHasText] = useState(initialText.trim().length > 0)
 
   const inputRef = useRef<ComposerInputHandle>(null)
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus()
+  }, [autoFocus])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const items = useMemo(() => (picker ? filterItems(picker.kind, picker.query) : []), [picker])
@@ -96,7 +104,10 @@ export function Composer({
 
   function send() {
     const text = inputRef.current?.getText() ?? ''
-    if (text.trim()) inputRef.current?.clear()
+    if (text.trim()) {
+      inputRef.current?.clear()
+      onSend?.(text.trim())
+    }
     setHasText(false)
     setPicker(null)
   }

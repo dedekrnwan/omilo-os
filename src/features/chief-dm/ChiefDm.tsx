@@ -18,6 +18,7 @@ import { ChevronDown, History, Lock, Maximize2, Pin, Search, SquarePen, X } from
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { ChiefComposer } from './ChiefComposer'
+import { useFabHidden } from './fabStore'
 import {
   CHIEF_DAY_LABEL,
   CHIEF_MESSAGES,
@@ -323,6 +324,7 @@ function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) 
 
 export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; hideFab?: boolean } = {}) {
   const [state, setState] = useState<ChiefDmState>(() => initial ?? initialState())
+  const fabHidden = useFabHidden((s) => s.count > 0)
   const [messages, setMessages] = useState<ChiefMessage[]>(CHIEF_MESSAGES)
   const [draft, setDraft] = useState('')
   const [activeThread, setActiveThread] = useState('t1')
@@ -383,7 +385,7 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
             onLater={() => setState('closed')}
           />
         )}
-        {!hideFab && <Fab unread={unread} onOpen={() => setState('open')} />}
+        {!hideFab && !fabHidden && <Fab unread={unread} onOpen={() => setState('open')} />}
       </>
     )
   }
