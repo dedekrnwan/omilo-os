@@ -50,20 +50,22 @@ export interface FlowEditorState {
 }
 
 function makeFlow(flowId: string): FlowEditorState {
+  // A blank flow (from "Start blank") opens an empty canvas — no demo graph/runs.
+  const blank = flowId.startsWith('blank')
   const card = [...OFFICE_FLOWS, ...useFlowBoard.getState().copies].find((f) => f.id === flowId)
-  const settings = card ? { ...DEFAULT_SETTINGS, name: card.title } : DEFAULT_SETTINGS
+  const settings = card ? { ...DEFAULT_SETTINGS, name: card.title } : { ...DEFAULT_SETTINGS, name: blank ? 'Untitled flow' : DEFAULT_SETTINGS.name }
   return {
-    graph: { nodes: TRIAGE_NODES, edges: TRIAGE_EDGES },
+    graph: blank ? { nodes: [], edges: [] } : { nodes: TRIAGE_NODES, edges: TRIAGE_EDGES },
     past: [],
     future: [],
-    selected: 'read-logs',
-    ai: AI_DETAIL,
-    enabled: card?.enabled ?? true,
+    selected: blank ? null : 'read-logs',
+    ai: blank ? {} : AI_DETAIL,
+    enabled: blank ? false : card?.enabled ?? true,
     dirty: true,
     publishedAt: null,
     test: 'idle',
     testStep: 0,
-    runs: RUNS.map((r) => ({ ...r, detail: structuredClone(runDetail(r)) })),
+    runs: blank ? [] : RUNS.map((r) => ({ ...r, detail: structuredClone(runDetail(r)) })),
     settings,
     savedSettings: settings,
     draft: 'draft',

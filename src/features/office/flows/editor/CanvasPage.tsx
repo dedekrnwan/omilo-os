@@ -28,7 +28,7 @@ function Editor({ flowId, draft }: { flowId: string; draft: boolean }) {
   const s = useFlowStore()
   useTestFromUrl(flowId)
 
-  const runsPill = !draft && (
+  const runsPill = !draft && f.runs.length > 0 && (
     <button
       type="button"
       onPointerDown={(e) => e.stopPropagation()}

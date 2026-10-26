@@ -167,7 +167,6 @@ export const TEST_RUN = {
 // ── Draft annotations (SgKgq) ─────────────────────────────────────────────────
 
 export const DRAFT_NOTES = [
-  { id: 'why-if', x: 8, y: 331, w: 170, text: 'Added because 2 of 4 fixes touched prod' },
   { id: 'by-hand', x: 547, y: 186, w: 180, text: 'You did this step by hand 4× — usually in 6–10 min' },
 ]
 

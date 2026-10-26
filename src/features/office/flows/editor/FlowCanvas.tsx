@@ -87,7 +87,7 @@ type NodeCardProps = {
   selected: boolean
   draft: boolean
   showLast: boolean
-  onSelect: () => void
+  onSelect: (additive: boolean) => void
   onGrab: (e: ReactPointerEvent) => void
 } & Omit<ComponentPropsWithoutRef<'button'>, 'onSelect'>
 
@@ -117,7 +117,7 @@ const NodeCard = forwardRef<HTMLButtonElement, NodeCardProps>(function NodeCard(
         data-node={node.id}
         aria-pressed={selected}
         aria-label={node.title}
-        onClick={onSelect}
+        onClick={(e) => onSelect(e.shiftKey)}
         onPointerDown={pointerDown}
         className={`${base} flex items-center gap-[8px] rounded-full px-[13px]`}
         style={{ left: node.x, top: node.y, width: 220, height: 44 }}
@@ -136,7 +136,7 @@ const NodeCard = forwardRef<HTMLButtonElement, NodeCardProps>(function NodeCard(
       data-node={node.id}
       aria-pressed={selected}
       aria-label={node.title}
-      onClick={onSelect}
+      onClick={(e) => onSelect(e.shiftKey)}
       onPointerDown={pointerDown}
       className={`${base} flex flex-col rounded-md px-[12px] pt-[11px]`}
       style={{ left: node.x, top: node.y, width: 260, height: 96 }}
@@ -219,7 +219,10 @@ export function FlowCanvas({
   const [space, setSpace] = useState(false)
   const [grabbing, setGrabbing] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ kind: 'pan' | 'node'; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null)
+  const drag = useRef<{ kind: 'pan' | 'node'; id?: string; sx: number; sy: number; ox: number; oy: number; moved: boolean; origins?: { id: string; ox: number; oy: number }[] } | null>(null)
+  // Multi-selection: shift-click toggles, ⌘A selects all. `selected` stays the primary (drives the inspector).
+  const [multi, setMulti] = useState<Set<string>>(new Set())
+  const suppressClick = useRef(false)
   // Drag-to-connect: from an out-port, wire to the cursor; drop on a node's in-port.
   const [connect, setConnect] = useState<{ from: string; cursor: Pt; over: string | null } | null>(null)
   const panning = tool === 'pan' || space
@@ -234,14 +237,48 @@ export function FlowCanvas({
   }
   const canTarget = (n: FlowNode | undefined, from: string) => !!n && n.id !== from && n.kind !== 'trigger'
 
+  // IDs currently selected (primary + any shift-added).
+  const selectedIds = () => new Set<string>([...multi, ...(selected ? [selected] : [])])
+
+  function selectNode(id: string, additive: boolean) {
+    // A click that ended a drag shouldn't change the selection.
+    if (suppressClick.current) { suppressClick.current = false; return }
+    if (additive) {
+      setMulti((prev) => {
+        const next = new Set(prev)
+        if (selected && selected !== id) next.add(selected)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    } else {
+      setMulti(new Set())
+    }
+    onSelect(id)
+  }
+
+  function clearSelection() {
+    setMulti(new Set())
+    onSelect(null)
+  }
+
   // Keyboard: Delete removes the selected step, ⌘Z/⇧⌘Z undo/redo, space pans
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement
       if (t.closest('input,textarea,[contenteditable=true]')) return
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault()
-        onDelete(selected)
+        const ids = graph.nodes.map((n) => n.id)
+        setMulti(new Set(ids))
+        if (ids.length) onSelect(ids[0])
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && (selected || multi.size)) {
+        e.preventDefault()
+        const ids = selectedIds()
+        if (ids.size) {
+          setMulti(new Set())
+          ids.forEach((id) => onDelete(id))
+        }
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         if (e.shiftKey) onRedo()
@@ -250,7 +287,7 @@ export function FlowCanvas({
         setSpace(true)
       } else if (e.key === 'Escape') {
         setConnect(null)
-        onSelect(null)
+        clearSelection()
       }
     }
     function onUp(e: KeyboardEvent) {
@@ -262,7 +299,8 @@ export function FlowCanvas({
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onUp)
     }
-  }, [selected, onDelete, onUndo, onRedo, onSelect])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, multi, graph.nodes, onDelete, onUndo, onRedo, onSelect])
 
   function toCanvas(clientX: number, clientY: number): Pt {
     const r = ref.current?.getBoundingClientRect()
@@ -272,7 +310,7 @@ export function FlowCanvas({
   function startPan(e: ReactPointerEvent) {
     if (e.button !== 0 && e.button !== 1) return
     if (!panning && e.button === 0) {
-      onSelect(null)
+      clearSelection()
       return
     }
     drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y, moved: false }
@@ -284,7 +322,14 @@ export function FlowCanvas({
     return (e: ReactPointerEvent) => {
       if (panning || e.button !== 0) return
       e.stopPropagation()
-      drag.current = { kind: 'node', id: node.id, sx: e.clientX, sy: e.clientY, ox: node.x, oy: node.y, moved: false }
+      suppressClick.current = false
+      // Drag the whole selection if this node is part of a multi-selection; else just this node.
+      const group = multi.has(node.id) && selectedIds().size > 1 ? [...selectedIds()] : [node.id]
+      const origins = group
+        .map((id) => graph.nodes.find((n) => n.id === id))
+        .filter((n): n is FlowNode => !!n)
+        .map((n) => ({ id: n.id, ox: n.x, oy: n.y }))
+      drag.current = { kind: 'node', id: node.id, sx: e.clientX, sy: e.clientY, ox: node.x, oy: node.y, moved: false, origins }
     }
   }
 
@@ -312,7 +357,9 @@ export function FlowCanvas({
     if (!d.moved && Math.hypot(dx, dy) < 4) return
     d.moved = true
     if (d.kind === 'pan') setPan({ x: d.ox + dx, y: d.oy + dy })
-    else if (d.id) onMove(d.id, Math.round(d.ox + dx / zoom), Math.round(d.oy + dy / zoom), false)
+    else if (d.origins) {
+      for (const o of d.origins) onMove(o.id, Math.round(o.ox + dx / zoom), Math.round(o.oy + dy / zoom), false)
+    }
   }
 
   function onPointerUp(e: ReactPointerEvent) {
@@ -325,11 +372,17 @@ export function FlowCanvas({
     const d = drag.current
     drag.current = null
     setGrabbing(false)
-    if (d?.kind === 'node' && d.id && d.moved) {
-      // Snap to the 4px grid and record one undo step
-      const x = Math.round((d.ox + (e.clientX - d.sx) / zoom) / 4) * 4 + 1
-      const y = Math.round((d.oy + (e.clientY - d.sy) / zoom) / 4) * 4
-      onMove(d.id, x, y, true)
+    if (d?.kind === 'node' && d.origins && d.moved) {
+      // A move happened — swallow the click that would otherwise reset the selection.
+      suppressClick.current = true
+      const dx = (e.clientX - d.sx) / zoom
+      const dy = (e.clientY - d.sy) / zoom
+      // Snap each dragged node to the 4px grid; one undo step via the last commit.
+      d.origins.forEach((o, i) => {
+        const x = Math.round((o.ox + dx) / 4) * 4 + 1
+        const y = Math.round((o.oy + dy) / 4) * 4
+        onMove(o.id, x, y, i === d.origins!.length - 1)
+      })
     }
   }
 
@@ -447,10 +500,10 @@ export function FlowCanvas({
             <NodeCard
               key={n.id}
               node={n}
-              selected={n.id === selected}
+              selected={n.id === selected || multi.has(n.id)}
               draft={draft}
               showLast={showLast}
-              onSelect={() => onSelect(n.id)}
+              onSelect={(additive) => selectNode(n.id, additive)}
               onGrab={startNode(n)}
             />
           )

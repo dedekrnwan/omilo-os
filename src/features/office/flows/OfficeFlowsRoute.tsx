@@ -382,6 +382,8 @@ interface NewFlowDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onDraft?: () => void
+  /** Start an empty flow (no Chief draft). */
+  onBlank?: () => void
 }
 
 type NewFlowMode = 'describe' | 'blank' | 'template'
@@ -392,7 +394,7 @@ const NEW_FLOW_MODES: Array<{ id: NewFlowMode; label: string }> = [
   { id: 'template', label: 'From a template' },
 ]
 
-function NewFlowDialog({ open, onOpenChange, onDraft }: NewFlowDialogProps) {
+function NewFlowDialog({ open, onOpenChange, onDraft, onBlank }: NewFlowDialogProps) {
   const [mode, setMode] = useState<NewFlowMode>('describe')
   const [description, setDescription] = useState(
     "Every Friday 16:00, pull this week's Stripe payouts, match them to referral signups, and send me a summary on WhatsApp. Ask me before paying anyone over Rp 5jt."
@@ -401,6 +403,7 @@ function NewFlowDialog({ open, onOpenChange, onDraft }: NewFlowDialogProps) {
   if (!open) return null
   const close = () => onOpenChange(false)
   const draft = () => { close(); onDraft?.() }
+  const blank = () => { close(); onBlank?.() }
 
   return (
     <Drawer
@@ -409,11 +412,19 @@ function NewFlowDialog({ open, onOpenChange, onDraft }: NewFlowDialogProps) {
       onClose={close}
       footer={
         <>
-          <span className="min-w-0 flex-1 text-[12px] text-muted">You review the draft before it runs</span>
+          <span className="min-w-0 flex-1 text-[12px] text-muted">
+            {mode === 'blank' ? 'An empty canvas — add steps yourself' : 'You review the draft before it runs'}
+          </span>
           <Button variant="secondary" height={30} onClick={close}>Cancel</Button>
-          <Button variant="primary" height={30} icon={Sparkles} onClick={draft}>
-            Draft with Chief
-          </Button>
+          {mode === 'blank' ? (
+            <Button variant="primary" height={30} icon={Plus} onClick={blank}>
+              Start blank
+            </Button>
+          ) : (
+            <Button variant="primary" height={30} icon={Sparkles} onClick={draft}>
+              Draft with Chief
+            </Button>
+          )}
         </>
       }
     >
@@ -549,6 +560,10 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
     navigate({ to: '/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
   }
 
+  function goToBlank() {
+    navigate({ to: '/flows/$flowId/canvas', params: { flowId: 'blank-new' } })
+  }
+
   return (
     <>
       <Topbar
@@ -602,7 +617,7 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         {activeTab === 'Runs'      && <RunsTab />}
       </div>
 
-      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} onDraft={() => goToDraft()} />
+      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} onDraft={() => goToDraft()} onBlank={goToBlank} />
     </>
   )
 }
