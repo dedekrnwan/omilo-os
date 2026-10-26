@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '../../ui/ds/Button'
-import { Drawer } from '../../ui/ds/Drawer'
+import { Dialog } from '../../ui/ds/Dialog'
 
 /** Minimal create-folder dialog (local only). */
 export function CreateFolderDialog({
@@ -21,13 +21,13 @@ export function CreateFolderDialog({
       onOpenChange(false)
     }
   }
-  if (!open) return null
   return (
-    <Drawer
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
       title="New folder"
-      onClose={() => onOpenChange(false)}
-      width={360}
-      bodyClass="gap-[16px] px-[24px] py-[20px]"
+      subtitle="Group related chats together."
+      width={400}
       footer={
         <>
           <span className="flex-1" />
@@ -51,8 +51,8 @@ export function CreateFolderDialog({
         }}
         placeholder="Folder name"
         aria-label="Folder name"
-        className="h-[36px] w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong"
+        className="h-[36px] w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
       />
-    </Drawer>
+    </Dialog>
   )
 }

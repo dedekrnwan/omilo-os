@@ -158,12 +158,12 @@ describe('FolderRoute', () => {
 describe('CreateChannelDialog', () => {
   test('renders dialog when open=true', () => {
     render(<CreateChannelDialog open onOpenChange={() => {}} />)
-    expect(screen.getByRole('dialog', { name: /create channel/i })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: /create area/i })).toBeInTheDocument()
   })
 
   test('does not render dialog when open=false', () => {
     render(<CreateChannelDialog open={false} onOpenChange={() => {}} />)
-    expect(screen.queryByRole('dialog', { name: /create channel/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: /create area/i })).not.toBeInTheDocument()
   })
 
   test('close button triggers onOpenChange(false)', () => {
@@ -171,7 +171,7 @@ describe('CreateChannelDialog', () => {
       if (!v) expect(true).toBe(true)
     }
     render(<CreateChannelDialog open onOpenChange={onChange} />)
-    fireEvent.click(screen.getByRole('button', { name: /close dialog/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }))
   })
 
   test('Cancel button closes the dialog', () => {
@@ -183,7 +183,7 @@ describe('CreateChannelDialog', () => {
 
   test('shows name input, agent list, and context options', () => {
     render(<CreateChannelDialog open onOpenChange={() => {}} />)
-    expect(screen.getByLabelText(/channel name/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/area name/i)).toBeInTheDocument()
     expect(screen.getByText('Chief')).toBeInTheDocument()
     // There are multiple elements containing "Isolated" (label + description) — at least one present
     expect(screen.getAllByText(/isolated/i).length).toBeGreaterThanOrEqual(1)

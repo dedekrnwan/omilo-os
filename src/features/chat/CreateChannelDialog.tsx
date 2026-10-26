@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import { Headphones, Lock, Users, X } from 'lucide-react'
+import { Headphones, Lock, Users } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
-import { Button, IconButton } from '../../ui/ds/Button'
+import { Button } from '../../ui/ds/Button'
+import { Dialog } from '../../ui/ds/Dialog'
 import { Mascot } from '../../ui/ds/Mascot'
 
 // ── pen `Chat · Create channel` (W0f1Ji) → Dialog bPWTh: right-side sheet ────
@@ -110,37 +110,34 @@ export interface CreateChannelDialogProps {
 /** Visual-only form — does not create a real channel yet. */
 export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogProps) {
   const [name, setName] = useState('Customer Success')
+  const [purpose, setPurpose] = useState('')
   const [color, setColor] = useState('support')
   const [agents, setAgents] = useState<Record<string, boolean>>({ support: true, ops: false })
   const [context, setContext] = useState<ContextOption>('isolated')
   const swatch = SWATCHES.find((s) => s.id === color) ?? SWATCHES[0]
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-[#0C0A0926]" />
-        <Dialog.Content
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[480px] flex-col overflow-hidden rounded-lg bg-surface shadow-[-8px_0_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong focus:outline-none"
-        >
-          {/* Header */}
-          <div className="flex w-full shrink-0 gap-[12px] shadow-[inset_0_-1px_0_var(--color-line)] pt-[20px] pr-[16px] pb-[16px] pl-[24px]">
-            <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
-              <Dialog.Title className="m-0 font-serif text-[22px] font-medium tracking-[-0.22px] text-ink">
-                Create channel
-              </Dialog.Title>
-              <p className="m-0 text-[13px] leading-[1.5] text-muted">
-                A channel is a focused space for one area. Its chats, goals, flows and docs stay together.
-              </p>
-            </div>
-            <Dialog.Close asChild>
-              <IconButton icon={X} aria-label="Close dialog" />
-            </Dialog.Close>
-          </div>
-
-          {/* Body */}
-          <div className="flex min-h-0 flex-1 flex-col gap-[16px] overflow-y-auto px-[24px] py-[20px]">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Create area"
+      subtitle="An area is a focused space for one part of the company. Its chats, goals, flows and docs stay together."
+      width={480}
+      footer={
+        <>
+          <span className="flex min-w-0 flex-1 items-center gap-[6px]">
+            <Users size={14} aria-hidden className="text-muted" />
+            <span className="text-[12.5px] text-muted">Visible to 4 people</span>
+          </span>
+          <Button variant="secondary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>
+            Create area
+          </Button>
+        </>
+      }
+    >
             <div className="flex flex-col gap-[8px]">
               <SectionLabel label="Name & icon" />
               <div className="flex gap-[8px]">
@@ -155,8 +152,8 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Channel name"
-                  aria-label="Channel name"
+                  placeholder="Area name"
+                  aria-label="Area name"
                   className="h-[40px] min-w-0 flex-1 rounded-base bg-surface px-[9px] text-[13px] text-ink outline-[1.5px] -outline-offset-1 outline-primary placeholder:text-faint"
                 />
               </div>
@@ -182,7 +179,19 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
             </div>
 
             <div className="flex flex-col gap-[8px]">
-              <SectionLabel label="Agents in this channel" hint="Chief is always here" />
+              <SectionLabel label="Purpose" hint="Optional — helps Chief focus" />
+              <textarea
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+                rows={2}
+                placeholder="What is this area for? e.g. Customer onboarding, retention and support."
+                aria-label="Area purpose"
+                className="w-full resize-none rounded-base bg-surface px-[9px] py-[8px] text-[13px] leading-[1.5] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary placeholder:text-faint"
+              />
+            </div>
+
+            <div className="flex flex-col gap-[8px]">
+              <SectionLabel label="Agents in this area" hint="Chief is always here" />
               <div className="flex flex-col overflow-hidden rounded-md outline-1 -outline-offset-1 outline-line-strong">
                 {AGENTS.map((agent, i) => (
                   <div
@@ -211,7 +220,7 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
             </div>
 
             <div className="flex flex-col gap-[8px]">
-              <SectionLabel label="Context" hint="What agents in this channel can read" />
+              <SectionLabel label="Context" hint="What agents in this area can read" />
               <ContextRadio
                 value="isolated"
                 selected={context}
@@ -227,23 +236,6 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
                 description="Also reads company-wide basics from General."
               />
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex w-full shrink-0 items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] bg-soft px-[24px] py-[14px]">
-            <span className="flex min-w-0 flex-1 items-center gap-[6px]">
-              <Users size={14} aria-hidden className="text-muted" />
-              <span className="text-[12.5px] text-muted">Visible to 4 people</span>
-            </span>
-            <Button variant="secondary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>
-              Create channel
-            </Button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </Dialog>
   )
 }

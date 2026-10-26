@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { notify } from './ds/Toaster'
-import * as Dialog from '@radix-ui/react-dialog'
-import { drawerOverlayClass, drawerContentClass } from './ds/Drawer'
+import { Dialog } from './ds/Dialog'
+import { Button } from './ds/Button'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import {
@@ -502,84 +503,152 @@ const SHORTCUT_ROWS: { label: string; kbd: string }[] = [
 
 function KeyboardShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-label="Keyboard shortcuts"
-          style={{ width: 400 }}
-          className={drawerContentClass}
-        >
-          <Dialog.Title className="flex items-center justify-between px-[18px] pt-[16px] pb-[12px] text-[15px] font-semibold text-ink">
-            Keyboard shortcuts
-            <Dialog.Close
-              aria-label="Close"
-              className="flex size-[26px] items-center justify-center rounded-sm text-muted hover:bg-hover"
-            >
-              ×
-            </Dialog.Close>
-          </Dialog.Title>
-          <div className="flex flex-col divide-y divide-line px-[18px] pb-[16px]">
-            {SHORTCUT_ROWS.map((row) => (
-              <div key={row.label} className="flex items-center justify-between py-[9px]">
-                <span className="text-[13px] text-ink-2">{row.label}</span>
-                <span className="font-mono text-[12px] text-muted">{row.kbd}</span>
-              </div>
-            ))}
+    <Dialog
+      open={open}
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title="Keyboard shortcuts"
+      subtitle="Move around Omilo without the mouse."
+      width={420}
+    >
+      <div className="flex flex-col divide-y divide-line">
+        {SHORTCUT_ROWS.map((row) => (
+          <div key={row.label} className="flex items-center justify-between py-[9px]">
+            <span className="text-[13px] text-ink-2">{row.label}</span>
+            <span className="font-mono text-[12px] text-muted">{row.kbd}</span>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        ))}
+      </div>
+    </Dialog>
   )
 }
 
 // ── Add company dialog ────────────────────────────────────────────────────────
 
-function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [name, setName] = useState('')
+const COMPANY_INDUSTRIES = ['Retail', 'Food & beverage', 'SaaS / Software', 'Services', 'Education', 'Nonprofit', 'Other'] as const
+const COMPANY_ROLES = ['Founder / Owner', 'Operations', 'Marketing', 'Finance', 'Engineering', 'Support', 'Other'] as const
+const COMPANY_SIZES = ['Just me', '2–10', '11–50', '51–200', '200+'] as const
+
+const fieldInputClass =
+  'h-[36px] w-full rounded-base bg-soft px-[10px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary placeholder:text-faint'
+
+function DialogField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className={drawerOverlayClass} />
-        <Dialog.Content
-          aria-label="Add company"
-          style={{ width: 380 }}
-          className={drawerContentClass}
-        >
-          <Dialog.Title className="px-[18px] pt-[16px] pb-[4px] text-[15px] font-semibold text-ink">
-            Add company
-          </Dialog.Title>
-          <p className="px-[18px] pb-[14px] text-[13px] text-muted">
-            Switch between workspaces on the same account.
-          </p>
-          <div className="px-[18px] pb-[16px]">
-            <label className="flex h-[36px] w-full items-center rounded-base bg-soft px-[10px] outline-1 -outline-offset-1 outline-line-strong">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Company name or invite code"
-                aria-label="Company name"
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
-              />
-            </label>
+    <label className="flex w-full flex-col gap-[6px]">
+      <span className="text-[12px] font-medium text-ink-2">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [mode, setMode] = useState<'create' | 'join'>('create')
+  const [name, setName] = useState('')
+  const [industry, setIndustry] = useState<string>(COMPANY_INDUSTRIES[0])
+  const [role, setRole] = useState<string>(COMPANY_ROLES[0])
+  const [size, setSize] = useState<string>(COMPANY_SIZES[1])
+  const [region, setRegion] = useState('Asia/Jakarta (GMT+7)')
+  const [code, setCode] = useState('')
+
+  function submit() {
+    if (mode === 'create') {
+      notify(name.trim() ? `Company “${name.trim()}” created` : 'Enter a company name')
+      if (!name.trim()) return
+    } else {
+      notify(code.trim() ? 'Joining company…' : 'Paste an invite code')
+      if (!code.trim()) return
+    }
+    onClose()
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => { if (!o) onClose() }}
+      title="Add company"
+      subtitle="Spin up a new workspace, or join one with an invite code."
+      width={460}
+      footer={
+        <>
+          <span className="flex-1" />
+          <Button variant="secondary" style={{ height: 32 }} onClick={onClose}>Cancel</Button>
+          <Button variant="primary" style={{ height: 32 }} onClick={submit}>
+            {mode === 'create' ? 'Create company' : 'Join'}
+          </Button>
+        </>
+      }
+    >
+      {/* Create vs join */}
+      <div className="flex gap-[4px] rounded-base bg-soft p-[3px] outline-1 -outline-offset-1 outline-line-strong">
+        {([['create', 'Create new'], ['join', 'Join with code']] as const).map(([m, label]) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`flex-1 rounded-sm py-[6px] text-[12.5px] font-medium transition-colors ${
+              mode === m ? 'bg-surface text-ink shadow-[0_1px_2px_#0000001a]' : 'text-muted hover:text-ink-2'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'create' ? (
+        <>
+          <DialogField label="Company name">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Sahabat Warga"
+              aria-label="Company name"
+              className={fieldInputClass}
+            />
+          </DialogField>
+          <div className="grid grid-cols-2 gap-[10px]">
+            <DialogField label="Industry">
+              <select value={industry} onChange={(e) => setIndustry(e.target.value)} className={fieldInputClass} aria-label="Industry">
+                {COMPANY_INDUSTRIES.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </DialogField>
+            <DialogField label="Team size">
+              <select value={size} onChange={(e) => setSize(e.target.value)} className={fieldInputClass} aria-label="Team size">
+                {COMPANY_SIZES.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </DialogField>
           </div>
-          <div className="flex justify-end gap-[8px] border-t border-line px-[18px] py-[12px]">
-            <Dialog.Close
-              className="inline-flex h-[30px] items-center rounded-btn px-[12px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
-            >
-              Cancel
-            </Dialog.Close>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-[30px] items-center rounded-btn bg-primary px-[12px] text-[13px] font-medium text-primary-ink hover:bg-primary-hover"
-            >
-              Add
-            </button>
+          <div className="grid grid-cols-2 gap-[10px]">
+            <DialogField label="Your role">
+              <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldInputClass} aria-label="Your role">
+                {COMPANY_ROLES.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </DialogField>
+            <DialogField label="Region">
+              <select value={region} onChange={(e) => setRegion(e.target.value)} className={fieldInputClass} aria-label="Region">
+                <option>Asia/Jakarta (GMT+7)</option>
+                <option>Asia/Singapore (GMT+8)</option>
+                <option>Asia/Kuala_Lumpur (GMT+8)</option>
+                <option>Australia/Sydney (GMT+11)</option>
+                <option>Europe/London (GMT+0)</option>
+                <option>America/New_York (GMT-5)</option>
+              </select>
+            </DialogField>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </>
+      ) : (
+        <DialogField label="Invite code">
+          <input
+            autoFocus
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Paste your invite code"
+            aria-label="Invite code"
+            className={fieldInputClass}
+          />
+          <span className="text-[11.5px] text-faint">Ask a company owner for a code from Settings → Members &amp; roles.</span>
+        </DialogField>
+      )}
+    </Dialog>
   )
 }
 
