@@ -51,17 +51,29 @@ export function SectionAiEngine() {
   const [fallback, setFallback] = useState(INITIAL.fallback)
   const [autoCompact, setAutoCompact] = useState(INITIAL.autoCompact)
   const [showContextMeter, setShowContextMeter] = useState(true)
+  const [alwaysKeep, setAlwaysKeep] = useState<Set<string>>(() => new Set(['Decisions', 'Pinned messages', 'Files']))
   const [dirty, setDirty] = useState(false)
 
   const mark = () => setDirty(true)
 
   function handleSave() { setDirty(false) }
+  function toggleAlwaysKeep(label: string) {
+    setAlwaysKeep((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+    mark()
+  }
+
   function handleDiscard() {
     setWarnAt80(INITIAL.warnAt80)
     setAskOverDollar(INITIAL.askOverDollar)
     setFallback(INITIAL.fallback)
     setAutoCompact(INITIAL.autoCompact)
     setShowContextMeter(true)
+    setAlwaysKeep(new Set(['Decisions', 'Pinned messages', 'Files']))
     setDirty(false)
   }
 
@@ -152,11 +164,24 @@ export function SectionAiEngine() {
           <RowDivider />
           <SettingRow label="Always keep word-for-word" desc="Never summarises, even after compacting.">
             <div className="flex gap-[8px]">
-              {['Decisions', 'Pinned messages', 'Files'].map((label) => (
-                <button key={label} type="button" className="rounded-pill border border-line-strong bg-soft px-[8px] py-[3px] text-[12px] text-ink hover:bg-hover">
-                  {label}
-                </button>
-              ))}
+              {['Decisions', 'Pinned messages', 'Files'].map((label) => {
+                const on = alwaysKeep.has(label)
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleAlwaysKeep(label)}
+                    className={`rounded-pill border px-[8px] py-[3px] text-[12px] transition-colors ${
+                      on
+                        ? 'border-ink bg-ink text-primary-ink'
+                        : 'border-line-strong bg-soft text-ink hover:bg-hover'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
           </SettingRow>
           <RowDivider />

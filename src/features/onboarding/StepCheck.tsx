@@ -1,6 +1,8 @@
 /** Onboarding 4 · Check (pen M1ZiO). */
+import { useState } from 'react'
 import { ArrowLeft, ArrowRight, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
+import { notify } from '../../ui/ds/Toaster'
 import { CHECK_NOTES, COMPANY_NAME, KNOWLEDGE_NOTES } from './data'
 import type { CheckNote } from './data'
 import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
@@ -13,7 +15,7 @@ function NoteCard({ note }: { note: CheckNote }) {
         <IconTile icon={meta.icon} />
         <h3 className="text-[14px] font-semibold text-ink">{meta.label}</h3>
         <span className="h-px flex-1" />
-        <button type="button" aria-label={`Edit ${meta.label}`} className="text-muted hover:text-ink">
+        <button type="button" aria-label={`Edit ${meta.label}`} className="text-muted hover:text-ink" onClick={() => notify(`Editing ${meta.label}`)}>
           <Pencil size={14} aria-hidden />
         </button>
       </div>
@@ -36,6 +38,7 @@ function NoteCard({ note }: { note: CheckNote }) {
 }
 
 export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const [, setAdded] = useState(0)
   const rows = [CHECK_NOTES.slice(0, 4), CHECK_NOTES.slice(4)]
   return (
     <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
@@ -60,6 +63,7 @@ export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () =
             {i === 1 && (
               <button
                 type="button"
+                onClick={() => { setAdded((n) => n + 1); notify('Add a topic — coming soon') }}
                 className="relative flex h-[128px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-md p-[14px] text-muted hover:bg-soft"
               >
                 <Plus size={18} aria-hidden />

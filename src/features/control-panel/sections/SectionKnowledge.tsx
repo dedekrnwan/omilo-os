@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import {
@@ -14,6 +15,7 @@ import {
   Toggle,
 } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { notify } from '../../../ui/ds/Toaster'
 
 const AGENTS: Array<{ area: 'ops' | 'dev' | 'marketing' | 'finance' | 'support' | 'sales'; active: boolean }> = [
   { area: 'ops', active: true },
@@ -24,7 +26,28 @@ const AGENTS: Array<{ area: 'ops' | 'dev' | 'marketing' | 'finance' | 'support' 
   { area: 'sales', active: false },
 ]
 
+const INITIAL = { knowledgeOn: true, reviewBeforeUse: true }
+
 export function SectionKnowledge() {
+  const [knowledgeOn, setKnowledgeOn] = useState(INITIAL.knowledgeOn)
+  const [reviewBeforeUse, setReviewBeforeUse] = useState(INITIAL.reviewBeforeUse)
+  const [dirty, setDirty] = useState(false)
+
+  const mark = () => setDirty(true)
+
+  function handleTurnOff() {
+    setKnowledgeOn(false)
+    mark()
+    notify('Knowledge turned off — memories will be deleted in 30 days')
+  }
+
+  function handleSave() { setDirty(false) }
+  function handleDiscard() {
+    setKnowledgeOn(INITIAL.knowledgeOn)
+    setReviewBeforeUse(INITIAL.reviewBeforeUse)
+    setDirty(false)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -46,12 +69,12 @@ export function SectionKnowledge() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
               <div className="flex items-center gap-[8px]">
-                <span className="text-[13px] font-semibold text-ink">Knowledge is on</span>
-                <span className="rounded-pill bg-ok-tint px-[8px] py-[1px] text-[11px] font-medium text-ok">On</span>
+                <span className="text-[13px] font-semibold text-ink">{knowledgeOn ? 'Knowledge is on' : 'Knowledge is off'}</span>
+                <span className={`rounded-pill px-[8px] py-[1px] text-[11px] font-medium ${knowledgeOn ? 'bg-ok-tint text-ok' : 'bg-soft text-muted'}`}>{knowledgeOn ? 'On' : 'Off'}</span>
               </div>
               <span className="text-[12px] text-muted">pgvector 0.7 on db-main · 51 memories · 1,284 vectors · 38 MB</span>
             </div>
-            <Toggle on />
+            <Toggle on={knowledgeOn} onClick={() => { setKnowledgeOn((v) => !v); mark() }} />
           </div>
         </SettingCard>
 
@@ -61,7 +84,7 @@ export function SectionKnowledge() {
         <SubHeading label="How agents learn" />
         <SettingCardRows>
           <SettingRow label="Review before agents use a lesson" desc="New lessons wait in the review list until someone confirms them.">
-            <Toggle on />
+            <Toggle on={reviewBeforeUse} onClick={() => { setReviewBeforeUse((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Who can teach and confirm" desc="Others can suggest; these people decide.">
@@ -108,14 +131,14 @@ export function SectionKnowledge() {
               <span className="text-[13px] font-medium text-ink">Turn off Knowledge</span>
               <span className="text-[12px] text-muted">Agents stop using memory now. Memories are deleted after 30 days.</span>
             </div>
-            <button type="button" className="rounded-btn border border-bad-line bg-bad-tint px-[10px] py-[5px] text-[12.5px] font-medium text-bad hover:bg-bad hover:text-white transition-colors">
+            <button type="button" onClick={handleTurnOff} className="rounded-btn border border-bad-line bg-bad-tint px-[10px] py-[5px] text-[12.5px] font-medium text-bad hover:bg-bad hover:text-white transition-colors">
               Turn off
             </button>
           </div>
         </SettingCard>
       </SectionPane>
 
-      <SaveBar />
+      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

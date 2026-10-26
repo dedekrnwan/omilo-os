@@ -379,10 +379,11 @@ function ApprovalBody() {
 
 function ConnectorBody({ node }: { node: FlowNode }) {
   const [channel, setChannel] = useState(node.app === 'slack' ? '#oncall' : '#engineering')
+  const [action, setAction] = useState<'send' | 'thread'>('send')
   return (
     <>
       <Section label="Action">
-        <Select label="Action" value="send" onChange={() => {}} options={[{ id: 'send', name: 'Send a message' }, { id: 'thread', name: 'Reply in thread' }]} />
+        <Select label="Action" value={action} onChange={setAction} options={[{ id: 'send', name: 'Send a message' }, { id: 'thread', name: 'Reply in thread' }]} />
       </Section>
       <Section label="Channel">
         <TextInput label="Channel" value={channel} onChange={setChannel} />

@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import {
   Breadcrumb,
   RowDivider,
@@ -13,14 +14,33 @@ import {
   Toggle,
 } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
+import { notify } from '../../../ui/ds/Toaster'
 
-const DEVICES = [
-  { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', canSignOut: false },
-  { name: 'iPhone 16 · WhatsApp linked', desc: 'Last active 2h ago', canSignOut: true },
+const DEVICES_INIT = [
+  { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', canSignOut: false, isCli: false },
+  { name: 'iPhone 16 · WhatsApp linked', desc: 'Last active 2h ago', canSignOut: true, isCli: false },
   { name: 'CLI token "omilo-cli"', isCli: true, desc: 'Created Oct 2 · used yesterday', canSignOut: true },
 ]
 
 export function SectionAccount() {
+  const [devices, setDevices] = useState(DEVICES_INIT)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
+  function handleSignOut(name: string) {
+    setDevices((prev) => prev.filter((d) => d.name !== name))
+    notify(`Signed out of ${name}`)
+  }
+
+  function handleChangePhoto() {
+    photoInputRef.current?.click()
+  }
+
+  function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files?.[0]) {
+      notify('Photo updated')
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -41,7 +61,8 @@ export function SectionAccount() {
               <span className="text-[15px] font-semibold text-ink">Dede Kurniawan</span>
               <span className="text-[12px] text-muted">dede@saga.co.id · Owner of Sahabat Warga, Kopi Kenangan</span>
             </div>
-            <Button variant="secondary" height={28}>Change photo</Button>
+            <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
+            <Button variant="secondary" height={28} onClick={handleChangePhoto}>Change photo</Button>
           </div>
         </SettingCard>
 
@@ -82,10 +103,10 @@ export function SectionAccount() {
         {/* Devices & tokens */}
         <SubHeading label="Devices & tokens" />
         <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
-          {DEVICES.map((d, i) => (
+          {devices.map((d, i) => (
             <div
               key={d.name}
-              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < DEVICES.length - 1 ? 'border-b border-line' : ''}`}
+              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < devices.length - 1 ? 'border-b border-line' : ''}`}
             >
               <span className="flex size-[28px] shrink-0 items-center justify-center rounded-base border border-line-strong bg-soft text-[14px]">
                 {d.isCli ? '>' : '💻'}
@@ -95,7 +116,7 @@ export function SectionAccount() {
                 <span className="text-[12px] text-muted">{d.desc}</span>
               </div>
               {d.canSignOut && (
-                <Button variant="secondary" height={28}>Sign out</Button>
+                <Button variant="secondary" height={28} onClick={() => handleSignOut(d.name)}>Sign out</Button>
               )}
             </div>
           ))}

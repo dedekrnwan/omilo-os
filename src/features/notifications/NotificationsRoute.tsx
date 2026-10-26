@@ -7,6 +7,7 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
 import { NotificationsSidebar } from './NotificationsSidebar'
 import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
+import { notify } from '../../ui/ds/Toaster'
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ function GroupLabel({ label }: { label: string }) {
 }
 
 /** Full decision card with coloured left border, body, and action buttons. */
-function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: (id: string) => void }) {
+function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: (id: string, label: string) => void }) {
   return (
     <article
       aria-label={decision.title}
@@ -65,7 +66,7 @@ function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: 
             key={a.label}
             height={28}
             variant={a.primary ? 'primary' : 'secondary'}
-            onClick={() => onResolve(decision.id)}
+            onClick={() => onResolve(decision.id, a.label)}
           >
             {a.label}
           </Button>
@@ -151,8 +152,9 @@ export function NotificationsRoute() {
   const totalDecisions = decisions.length
   const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
 
-  function resolveDecision(id: string) {
+  function resolveDecision(id: string, label: string) {
     setAllDecisions((prev) => prev.filter((d) => d.id !== id))
+    notify(`${label} — decision resolved`)
   }
 
   function markAllRead() {

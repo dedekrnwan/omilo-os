@@ -137,7 +137,7 @@ export function JobTab({
           <div className="flex w-full items-center gap-[10px] rounded-lg bg-soft p-[14px]">
             <Mascot size={22} radius={6} area="brand" title="Chief" />
             <p className="m-0 min-w-0 flex-1 text-[12.5px] text-ink-2">{helper.emptyRoutines}</p>
-            <Btn icon={Sparkles} h={28} fs={12}>
+            <Btn icon={Sparkles} h={28} fs={12} onClick={() => void navigate({ to: '/chat' })}>
               Ask Chief
             </Btn>
           </div>

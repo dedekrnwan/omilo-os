@@ -13,7 +13,7 @@ export function ResetLinkSentPage() {
         title="Check your email"
         sub="If dede@saga.co.id has an account, a reset link is on its way. It works for 30 minutes."
       />
-      <AuthButton variant="secondary" icon={ExternalLink}>
+      <AuthButton variant="secondary" icon={ExternalLink} onClick={() => window.open('https://mail.google.com', '_blank')}>
         Open Gmail
       </AuthButton>
       <div className="flex w-full justify-center gap-[6px] text-[13px]">

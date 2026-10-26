@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowUpRight, BookOpen, Check, Maximize2, Pencil, Sparkles, X } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { notify } from '../../../ui/ds/Toaster'
 import { Mascot } from '../../../ui/ds/Mascot'
 import type { HelperRecord } from '../teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconBtn, IconTile, Segmented } from '../ui'
@@ -126,10 +127,10 @@ export function PlaybookDrawer({ helper, onClose }: { helper: HelperRecord; onCl
               <Sparkles size={13} aria-hidden className="text-ok" />
               <span className="text-[12px] font-medium text-ok">{helper.name} added this from chat #412</span>
               <span className="h-px flex-1" />
-              <Btn variant="quiet" h={24} px={8} fs={12} labelClass="text-ok! font-medium" onClick={() => setLearned(false)}>
+              <Btn variant="quiet" h={24} px={8} fs={12} labelClass="text-ok! font-medium" onClick={() => { setLearned(false); notify('Kept') }}>
                 Keep
               </Btn>
-              <Btn variant="quiet" h={24} px={8} fs={12} labelClass="font-medium" onClick={() => setLearned(false)}>
+              <Btn variant="quiet" h={24} px={8} fs={12} labelClass="font-medium" onClick={() => { setLearned(false); notify('Reverted') }}>
                 Undo
               </Btn>
             </div>

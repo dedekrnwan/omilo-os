@@ -1,16 +1,19 @@
+import { useState } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Ellipsis, Link, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
+import { notify } from '../../../ui/ds/Toaster'
+import { copyText } from '../../../ui/ds/ItemMenu'
 
-const CONNECTED = [
-  { name: 'GitHub', desc: 'saga-bot · org saga', agents: '4 flows · Dev, Ops', permissions: 'Read + open PRs', status: 'ok' as const },
-  { name: 'Slack', desc: 'Saga workspace · all agents', agents: null, permissions: 'Posts to #oncall, #eng', status: 'ok' as const },
-  { name: 'Gmail', desc: 'hello@sahabatwarga.id · 3 flows · Growth', agents: null, permissions: 'Sending waits for you', status: 'warn' as const, statusLabel: 'Reconnect in 3 days' },
-  { name: 'Stripe', desc: 'Sahabat Warga (live) · 1 flow · Finance', agents: null, permissions: 'Read only', status: 'ok' as const },
-  { name: 'WhatsApp', desc: '+62 811 2345 678 · 3 flows · Chief, Support', agents: null, permissions: 'Every send waits for you', status: 'ok' as const },
+const CONNECTED_INIT = [
+  { name: 'GitHub', desc: 'saga-bot · org saga', agents: '4 flows · Dev, Ops', permissions: 'Read + open PRs', status: 'ok' as const, webhook: 'https://hooks.omilo.app/github/abc123' },
+  { name: 'Slack', desc: 'Saga workspace · all agents', agents: null, permissions: 'Posts to #oncall, #eng', status: 'ok' as const, webhook: 'https://hooks.omilo.app/slack/def456' },
+  { name: 'Gmail', desc: 'hello@sahabatwarga.id · 3 flows · Growth', agents: null, permissions: 'Sending waits for you', status: 'warn' as const, statusLabel: 'Reconnect in 3 days', webhook: 'https://hooks.omilo.app/gmail/ghi789' },
+  { name: 'Stripe', desc: 'Sahabat Warga (live) · 1 flow · Finance', agents: null, permissions: 'Read only', status: 'ok' as const, webhook: 'https://hooks.omilo.app/stripe/jkl012' },
+  { name: 'WhatsApp', desc: '+62 811 2345 678 · 3 flows · Chief, Support', agents: null, permissions: 'Every send waits for you', status: 'ok' as const, webhook: 'https://hooks.omilo.app/whatsapp/mno345' },
 ]
 
 const ADD_APPS = [
@@ -40,25 +43,32 @@ interface Props {
   onDialog: (d: DialogKind) => void
 }
 
+type Connector = (typeof CONNECTED_INIT)[number]
+
 /** ⋯ options menu for a connected app row. */
-function ConnectorMoreMenu({ name }: { name: string }) {
+function ConnectorMoreMenu({ connector, onReconnect, onCopyWebhook, onDisconnect }: {
+  connector: Connector
+  onReconnect: () => void
+  onCopyWebhook: () => void
+  onDisconnect: () => void
+}) {
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
-        <button type="button" aria-label={`${name} options`} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
+        <button type="button" aria-label={`${connector.name} options`} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
           <Ellipsis size={14} aria-hidden />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onReconnect}>
             <MenuItemBody icon={RefreshCw} label="Reconnect" />
           </DropdownMenu.Item>
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onCopyWebhook}>
             <MenuItemBody icon={Link} label="Copy webhook URL" />
           </DropdownMenu.Item>
           <MenuSeparatorLine />
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onDisconnect}>
             <MenuItemBody icon={Trash2} label="Disconnect" danger />
           </DropdownMenu.Item>
         </DropdownMenu.Content>
@@ -68,6 +78,22 @@ function ConnectorMoreMenu({ name }: { name: string }) {
 }
 
 export function SectionConnectors({ onDialog }: Props) {
+  const [connected, setConnected] = useState<Connector[]>(CONNECTED_INIT)
+
+  function handleReconnect(name: string) {
+    notify(`Reconnecting ${name}…`)
+  }
+
+  function handleCopyWebhook(webhook: string) {
+    copyText(webhook)
+    notify('Copied')
+  }
+
+  function handleDisconnect(name: string) {
+    setConnected((prev) => prev.filter((c) => c.name !== name))
+    notify(`${name} disconnected`)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -84,12 +110,12 @@ export function SectionConnectors({ onDialog }: Props) {
         <p className="mb-[24px] text-[13px] text-muted">Apps your agents can use. Anything that posts, sends or spends still waits for you.</p>
 
         {/* Connected */}
-        <p className="mb-[10px] text-[12px] font-medium uppercase tracking-[0.8px] text-faint">Connected · {CONNECTED.length}</p>
+        <p className="mb-[10px] text-[12px] font-medium uppercase tracking-[0.8px] text-faint">Connected · {connected.length}</p>
         <div className="mb-[24px] overflow-hidden rounded-lg border border-line-strong bg-surface">
-          {CONNECTED.map((c, i) => (
+          {connected.map((c, i) => (
             <div
               key={c.name}
-              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < CONNECTED.length - 1 ? 'border-b border-line' : ''}`}
+              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < connected.length - 1 ? 'border-b border-line' : ''}`}
             >
               <span className="flex size-[32px] shrink-0 items-center justify-center rounded-base border border-line-strong bg-soft text-[16px]">
                 {CONNECTOR_ICONS[c.name]}
@@ -103,7 +129,12 @@ export function SectionConnectors({ onDialog }: Props) {
                 label={c.statusLabel ?? (c.status === 'ok' ? 'Healthy' : 'Warning')}
                 color={c.status}
               />
-              <ConnectorMoreMenu name={c.name} />
+              <ConnectorMoreMenu
+                connector={c}
+                onReconnect={() => handleReconnect(c.name)}
+                onCopyWebhook={() => handleCopyWebhook(c.webhook)}
+                onDisconnect={() => handleDisconnect(c.name)}
+              />
             </div>
           ))}
         </div>

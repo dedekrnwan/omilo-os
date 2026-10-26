@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { SegmentedTabs } from '../../ui/ds/Segmented'
 import { Activity, Check, ChevronDown, LayoutDashboard, Repeat, ShieldCheck, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DAY_LABELS, DAYS, UPDATED_AT } from './data'
+import { DAY_LABELS, DAYS, UPDATED_AT, helpers } from './data'
 import type { BarChart, ChipTone, HelperStat, HelperStatus, Stat } from './data'
 
 // ── Small primitives (pen Chip/*, Status Dot/*, Switch/*, Checkbox/*, Radio/*) ──
@@ -184,8 +184,15 @@ export function Tabs({ value, onChange }: { value: TabId; onChange: (t: TabId) =
 }
 
 const RANGES = ['7 days', '30 days', '90 days'] as const
+const ALL_HELPERS_LABEL = 'All helpers'
 
 export function Toolbar({ range, onRange }: { range: string; onRange: (r: string) => void }) {
+  const [helperFilter, setHelperFilter] = useState<string>(ALL_HELPERS_LABEL)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const helperOptions = [ALL_HELPERS_LABEL, ...helpers.map((h) => h.name)]
+
   return (
     <div className="flex w-full items-center gap-[8px]">
       {RANGES.map((r) => {
@@ -204,13 +211,36 @@ export function Toolbar({ range, onRange }: { range: string; onRange: (r: string
           </button>
         )
       })}
-      <button
-        type="button"
-        className="flex h-[28px] items-center gap-[6px] rounded-pill bg-surface px-[10px] text-[12px] font-medium text-ink-2 outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
-      >
-        All helpers
-        <ChevronDown size={12} aria-hidden className="text-muted" />
-      </button>
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+          className="flex h-[28px] items-center gap-[6px] rounded-pill bg-surface px-[10px] text-[12px] font-medium text-ink-2 outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
+        >
+          {helperFilter}
+          <ChevronDown size={12} aria-hidden className="text-muted" />
+        </button>
+        {menuOpen && (
+          <div className="absolute left-0 top-[32px] z-50 flex w-[180px] flex-col overflow-hidden rounded-lg bg-surface py-[4px] shadow-[0_8px_28px_#0000001f] outline-1 -outline-offset-1 outline-line-strong">
+            {helperOptions.map((name) => (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                aria-selected={helperFilter === name}
+                onClick={() => { setHelperFilter(name); setMenuOpen(false) }}
+                className={`flex w-full items-center px-[12px] py-[7px] text-left text-[13px] hover:bg-soft ${
+                  helperFilter === name ? 'font-medium text-ink' : 'text-ink-2'
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="h-px min-w-0 flex-1" />
       <span className="flex items-center gap-[6px]">
         <span className="size-[7px] rounded-full bg-ok" />

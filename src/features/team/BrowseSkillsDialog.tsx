@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BadgeDollarSign, BookOpenCheck, CalendarCheck, Check, Info, Languages, Pencil, Plus, QrCode, Search } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import type { HelperRecord } from './teamData'
 import { Btn, Chip, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, InputField } from './ui'
 
@@ -13,6 +14,7 @@ const SUGGESTED: { name: string; desc: string; meta: string; icon: LucideIcon; a
 
 /** Browse skills — pen uvNJ3 (Drawer nsZwE). */
 export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+  const navigate = useNavigate()
   const n = helper.name
   const [added, setAdded] = useState(new Set(SUGGESTED.filter((s) => s.added).map((s) => s.name)))
   return (
@@ -31,7 +33,7 @@ export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; 
       }
       footer={
         <>
-          <Btn variant="quiet" icon={Pencil}>
+          <Btn variant="quiet" icon={Pencil} onClick={() => { onClose(); void navigate({ to: '/control-panel/$section', params: { section: 'skills' } }) }}>
             Write a new skill
           </Btn>
           <span className="h-px flex-1" />

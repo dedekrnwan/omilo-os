@@ -1,5 +1,6 @@
 /** Onboarding 3 · Get to know you (pen sG2L3). */
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   ArrowUp,
   BookmarkCheck,
@@ -104,6 +105,7 @@ function LearnedPanel() {
 
 export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const [draft, setDraft] = useState('')
+  const navigate = useNavigate()
   return (
     <div className="flex min-h-0 w-full flex-1 gap-[16px] px-[24px] pt-[8px] pb-[24px]">
       <section aria-label="Interview" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface">
@@ -124,7 +126,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
           <QuietButton icon={SkipForward} onClick={onNext}>
             Skip this topic
           </QuietButton>
-          <QuietButton icon={Pause}>Finish later</QuietButton>
+          <QuietButton icon={Pause} onClick={() => void navigate({ to: '/inbox' })}>Finish later</QuietButton>
         </div>
 
         <div className="flex min-h-0 w-full flex-1 flex-col justify-end gap-[16px] px-[48px] py-[20px]">

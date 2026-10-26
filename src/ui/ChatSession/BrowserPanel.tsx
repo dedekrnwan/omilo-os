@@ -11,6 +11,7 @@ import {
   Hand,
   Lock,
   Maximize2,
+  Minimize2,
   MousePointer2,
   MousePointerClick,
   Plus,
@@ -19,6 +20,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
+import { notify } from '../ds/Toaster'
 
 /** lucide `github` (brand icons are not shipped by lucide-react). */
 function Github({ size = 24, className }: { size?: number; className?: string }) {
@@ -63,14 +65,27 @@ export interface BrowserPanelProps {
   initialTakenOver?: boolean
 }
 
+const INITIAL_TABS = [
+  { id: 'passkeys', label: 'Auth console · Passkeys', icon: 'shield' as const },
+  { id: 'pr482',   label: 'PR #482',                 icon: 'github' as const },
+]
+
 export function BrowserPanel({ onClose, initialTakenOver = false }: BrowserPanelProps) {
   const [takenOver, setTakenOver] = useState(initialTakenOver)
+  const [tabs, setTabs] = useState(INITIAL_TABS)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  function addTab() {
+    const id = `tab-${Date.now()}`
+    setTabs((prev) => [...prev, { id, label: 'New tab', icon: 'shield' as const }])
+  }
 
   return (
     <aside
       aria-label="Agent browser"
       data-testid="browser-panel"
-      className="ml-[6px] flex min-h-0 w-[600px] shrink-0 flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong"
+      className={`ml-[6px] flex min-h-0 shrink-0 flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong ${expanded ? 'w-[900px]' : 'w-[600px]'}`}
     >
       {takenOver && (
         <div role="alert" className="flex w-full items-center justify-center gap-[8px] bg-warn px-[12px] py-[6px]">
@@ -81,24 +96,66 @@ export function BrowserPanel({ onClose, initialTakenOver = false }: BrowserPanel
 
       {/* Tabs */}
       <div className="flex w-full items-center gap-[6px] bg-soft px-[10px] py-[8px]">
-        <div className="flex items-center gap-[8px] rounded-sm bg-surface px-[10px] py-[6px] outline-1 -outline-offset-1 outline-line">
-          <ShieldCheck size={13} aria-hidden className="text-ok" />
-          <span className="text-[12px] text-ink">Auth console · Passkeys</span>
-          <X size={12} aria-hidden className="text-muted" />
-        </div>
-        <div className="flex items-center gap-[8px] rounded-sm px-[10px] py-[6px]">
-          <Github size={13} className="text-muted" />
-          <span className="text-[12px] text-muted">PR #482</span>
-        </div>
-        <button type="button" aria-label="New tab" className={iconBtn}>
+        {tabs.map((tab) => (
+          tab.icon === 'shield' ? (
+            <div key={tab.id} className="flex items-center gap-[8px] rounded-sm bg-surface px-[10px] py-[6px] outline-1 -outline-offset-1 outline-line">
+              <ShieldCheck size={13} aria-hidden className="text-ok" />
+              <span className="text-[12px] text-ink">{tab.label}</span>
+              <button
+                type="button"
+                aria-label={`Close ${tab.label}`}
+                onClick={() => setTabs((prev) => prev.filter((t) => t.id !== tab.id))}
+              >
+                <X size={12} aria-hidden className="text-muted hover:text-ink" />
+              </button>
+            </div>
+          ) : (
+            <div key={tab.id} className="flex items-center gap-[8px] rounded-sm px-[10px] py-[6px]">
+              <Github size={13} className="text-muted" />
+              <span className="text-[12px] text-muted">{tab.label}</span>
+            </div>
+          )
+        ))}
+        <button type="button" aria-label="New tab" onClick={addTab} className={iconBtn}>
           <Plus size={15} aria-hidden />
         </button>
         <span className="h-px flex-1" />
-        <button type="button" aria-label="Browser options" className={iconBtn}>
-          <EllipsisVertical size={15} aria-hidden />
-        </button>
-        <button type="button" aria-label="Expand browser" className={iconBtn}>
-          <Maximize2 size={15} aria-hidden />
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Browser options"
+            aria-expanded={optionsOpen}
+            onClick={() => setOptionsOpen((v) => !v)}
+            className={iconBtn}
+          >
+            <EllipsisVertical size={15} aria-hidden />
+          </button>
+          {optionsOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-[4px] flex w-[180px] flex-col gap-px rounded-lg bg-surface p-[6px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong"
+            >
+              {(['Reload tab', 'Find on page', 'Save page as…'] as const).map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { notify(label); setOptionsOpen(false) }}
+                  className="flex w-full items-center gap-[8px] rounded-btn px-[8px] py-[7px] text-left text-[12.5px] text-ink hover:bg-hover"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label={expanded ? 'Collapse browser' : 'Expand browser'}
+          onClick={() => setExpanded((v) => !v)}
+          className={iconBtn}
+        >
+          {expanded ? <Minimize2 size={15} aria-hidden /> : <Maximize2 size={15} aria-hidden />}
         </button>
         <button type="button" aria-label="Close browser panel" onClick={onClose} className={iconBtn}>
           <X size={15} aria-hidden />

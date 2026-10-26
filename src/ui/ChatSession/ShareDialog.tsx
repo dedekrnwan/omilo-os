@@ -1,8 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ChevronDown, Link, Lock, Search, UserPlus, X } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { IconButton } from '../ds/Button'
 import { drawerOverlayClass, drawerContentClass } from '../ds/Drawer'
+import { notify } from '../ds/Toaster'
+import { copyText } from '../ds/ItemMenu'
+import { menuSurface, menuItemClass } from '../ds/Menu'
 
 // ── Share dialog (pen `Chat · Session · Share` P334a, dialog frhtA) ───────────
 
@@ -12,17 +17,37 @@ interface ShareDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
+const PERMISSION_OPTIONS = ['Owner', 'Can talk', 'Can view', 'Restricted', 'No access']
+
 /** pen `Select` (gVDns) field only: 130 × 36 · radius 8 · line-strong · value 13 ink · chevron 16 muted. */
-function PermissionSelect({ value, label }: { value: string; label: string }) {
+function PermissionSelect({ value: initialValue, label }: { value: string; label: string }) {
+  const [value, setValue] = useState(initialValue)
   return (
-    <button
-      type="button"
-      aria-label={label}
-      className="flex h-[36px] w-[130px] shrink-0 items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
-    >
-      <span className="flex-1 text-[13px] text-ink">{value}</span>
-      <ChevronDown size={16} aria-hidden className="text-muted" />
-    </button>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          className="flex h-[36px] w-[130px] shrink-0 items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft data-[state=open]:outline-[1.5px] data-[state=open]:-outline-offset-[1.5px] data-[state=open]:outline-ink"
+        >
+          <span className="flex-1 text-[13px] text-ink">{value}</span>
+          <ChevronDown size={16} aria-hidden className="text-muted" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} className={`z-[60] w-[140px] ${menuSurface}`}>
+          {PERMISSION_OPTIONS.filter((o) => o !== 'Owner').map((opt) => (
+            <DropdownMenu.Item
+              key={opt}
+              onSelect={() => setValue(opt)}
+              className={menuItemClass}
+            >
+              <span className="flex-1 text-[13px] text-ink">{opt}</span>
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
 
@@ -122,6 +147,7 @@ export function ShareDialog({ title, open, onOpenChange }: ShareDialogProps) {
           <div className="flex w-full items-center gap-[8px] px-[20px] py-[12px] shadow-[inset_0_1px_0_var(--color-line)]">
             <button
               type="button"
+              onClick={() => { copyText(window.location.href); notify('Link copied') }}
               className="inline-flex h-[32px] items-center gap-[6px] rounded-btn px-[14px] text-[13px] text-muted transition-colors hover:bg-hover"
             >
               <Link size={16} aria-hidden />

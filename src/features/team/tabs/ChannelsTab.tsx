@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, ChevronDown, ChevronUp, Mail, MessageCircle, MessagesSquare, Plus, Send } from 'lucide-react'
+import { notify } from '../../../ui/ds/Toaster'
 import type { LucideIcon } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
 import { SlackIcon } from '../brandIcons'
@@ -78,6 +79,7 @@ export function ChannelsTab({
 }) {
   const n = helper.name
   const [open, setOpen] = useState(true)
+  const [connected, setConnected] = useState(true)
   const [who, setWho] = useState<'Anyone' | 'Known residents'>('Anyone')
   const [when, setWhen] = useState<'Always' | 'Work hours'>('Always')
   const [handoff, setHandoff] = useState(true)
@@ -108,8 +110,8 @@ export function ChannelsTab({
               <span className="text-[14px] font-semibold text-ink">WhatsApp Business</span>
               <span className="text-[12.5px] text-muted">+62 812 •••• 4410 · Sahabat Warga · 214 chats this month</span>
             </div>
-            <Chip tone="ok" icon={Check}>
-              Connected
+            <Chip tone={connected ? 'ok' : 'neutral'} icon={connected ? Check : undefined}>
+              {connected ? 'Connected' : 'Disconnected'}
             </Chip>
             <IconBtn
               icon={open ? ChevronUp : ChevronDown}
@@ -139,7 +141,12 @@ export function ChannelsTab({
                 <Switch on={handoff} onChange={setHandoff} label="Hand off to a person" />
               </SettingLine>
               <SettingLine title="Disconnect" desc={`Stops replies on WhatsApp. Past chats stay in #support.`} last>
-                <Btn variant="danger" h={30}>
+                <Btn
+                  variant="danger"
+                  h={30}
+                  disabled={!connected}
+                  onClick={() => { setConnected(false); notify('Disconnected') }}
+                >
                   Disconnect
                 </Btn>
               </SettingLine>

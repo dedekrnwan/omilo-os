@@ -212,7 +212,7 @@ function YoursTab({
 
 // ── SuggestedTab ──────────────────────────────────────────────────────────────
 
-function SuggestedTab({ onCreateFlow }: { onCreateFlow?: (suggestedId: string) => void }) {
+function SuggestedTab({ onCreateFlow, onPreview }: { onCreateFlow?: (suggestedId: string) => void; onPreview?: (suggestedId: string) => void }) {
   return (
     <div className="flex flex-col gap-[12px]">
       <p className="text-[13px] text-muted">
@@ -232,7 +232,7 @@ function SuggestedTab({ onCreateFlow }: { onCreateFlow?: (suggestedId: string) =
               </div>
             </div>
             <div className="flex gap-[6px] shrink-0">
-              <Button variant="secondary" height={28}>Preview</Button>
+              <Button variant="secondary" height={28} onClick={() => onPreview?.(s.id)}>Preview</Button>
               <Button variant="primary" height={28} icon={Plus} onClick={() => onCreateFlow?.(s.id)}>Create flow</Button>
             </div>
           </div>
@@ -613,7 +613,20 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
             onSuggestedCreate={(id) => goToDraft(id)}
           />
         )}
-        {activeTab === 'Suggested' && <SuggestedTab onCreateFlow={(id) => goToDraft(id)} />}
+        {activeTab === 'Suggested' && (
+          <SuggestedTab
+            onCreateFlow={(id) => goToDraft(id)}
+            onPreview={(id) => {
+              // Suggested flows don't have a canvas yet; navigate to draft preview or notify.
+              const existing = [...OFFICE_FLOWS].find((f) => f.id === id)
+              if (existing) {
+                void navigate({ to: '/flows/$flowId/canvas', params: { flowId: existing.id } })
+              } else {
+                notify('Preview')
+              }
+            }}
+          />
+        )}
         {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToDraft(id)} />}
         {activeTab === 'Runs'      && <RunsTab />}
       </div>

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from '@tanstack/react-router'
+import { notify } from './ds/Toaster'
 import * as Dialog from '@radix-ui/react-dialog'
 import { drawerOverlayClass, drawerContentClass } from './ds/Drawer'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -654,10 +655,10 @@ function ProfileMenu() {
             </DropdownMenu.Item>
             <MenuSeparatorLine />
             {/* Group 2: help / feedback / shortcuts */}
-            <DropdownMenu.Item className={menuItemClass} onSelect={() => { /* no-op: open docs in a real app */ }}>
+            <DropdownMenu.Item className={menuItemClass} onSelect={() => notify('Help & docs — coming soon')}>
               <MenuItemBody icon={CircleHelp} label="Help & docs" />
             </DropdownMenu.Item>
-            <DropdownMenu.Item className={menuItemClass} onSelect={() => { /* no-op: open feedback form */ }}>
+            <DropdownMenu.Item className={menuItemClass} onSelect={() => notify('Thanks for the feedback!')}>
               <MenuItemBody icon={MessageSquareHeart} label="Send feedback" />
             </DropdownMenu.Item>
             <DropdownMenu.Item

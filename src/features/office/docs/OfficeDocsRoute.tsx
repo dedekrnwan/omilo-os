@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   FileText,
   Network,
@@ -28,6 +28,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Button, IconButton } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { notify } from '../../../ui/ds/Toaster'
 import { helperColor } from '../../../ui/tokens'
 import {
   DOC_AREAS,
@@ -134,9 +135,13 @@ function docIcon(icon: DocFile['icon']) {
 function NotesSidebar({
   activeId,
   onSelect,
+  onViewChange,
+  onNewDoc,
 }: {
   activeId: string
   onSelect: (id: string) => void
+  onViewChange: (v: DocsMainView) => void
+  onNewDoc: () => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | 'By you' | 'By agents'>('All')
@@ -168,7 +173,7 @@ function NotesSidebar({
             <X size={11} aria-hidden />
           </button>
         )}
-        <button type="button" aria-label="New doc" className="ml-auto text-faint hover:text-muted">
+        <button type="button" aria-label="New doc" onClick={onNewDoc} className="ml-auto text-faint hover:text-muted">
           <Plus size={13} aria-hidden />
         </button>
       </label>
@@ -228,7 +233,7 @@ function NotesSidebar({
       <div className="mt-auto flex items-center gap-[6px] px-[8px] py-[6px]">
         <Brain size={12} className="text-faint" aria-hidden />
         <span className="text-[11.5px] text-muted">Agent memory is separate</span>
-        <button type="button" className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
+        <button type="button" onClick={() => onViewChange('knowledge')} className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
           Open the Knowledge view
         </button>
       </div>
@@ -287,14 +292,14 @@ function NoteDocViewer() {
       if (part.startsWith('[[') && part.endsWith(']]')) {
         const label = part.slice(2, -2)
         return (
-          <a
+          <button
             key={i}
-            href="#"
-            className="text-link underline underline-offset-2"
-            onClick={(e) => e.preventDefault()}
+            type="button"
+            className="text-link underline underline-offset-2 hover:opacity-80"
+            onClick={() => notify(`Opened: ${label}`)}
           >
             {label}
-          </a>
+          </button>
         )
       }
       return <span key={i}>{part}</span>
@@ -393,6 +398,7 @@ function NoteDocViewer() {
             <button
               key={d.id}
               type="button"
+              onClick={() => notify(`Opened: ${d.title}`)}
               className="flex flex-col gap-[1px] rounded-sm px-[6px] py-[4px] text-left transition-colors hover:bg-hover"
             >
               <div className="flex items-center gap-[4px]">
@@ -416,6 +422,7 @@ function NoteDocViewer() {
             <button
               key={g.id}
               type="button"
+              onClick={() => notify(`Opened goal: ${g.title}`)}
               className="flex flex-col gap-[1px] rounded-sm px-[6px] py-[4px] text-left transition-colors hover:bg-hover"
             >
               <span className="text-[12px] text-ink-2">{g.title}</span>
@@ -435,6 +442,7 @@ function NoteDocViewer() {
             <button
               key={h}
               type="button"
+              onClick={() => notify(`Scrolled to: ${h}`)}
               className="rounded-sm px-[6px] py-[2px] text-left text-[12px] text-muted transition-colors hover:text-ink"
             >
               {h}
@@ -466,8 +474,30 @@ function NoteDocViewer() {
 
 // ── Graph view ────────────────────────────────────────────────────────────────
 
-function GraphView() {
+function GraphView({ onViewChange }: { onViewChange: (v: DocsMainView) => void }) {
   const [selected, setSelected] = useState<string | null>('n-passkey')
+  const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set())
+  const [activeMadeBy, setActiveMadeBy] = useState<Set<string>>(new Set())
+  const [showChecks, setShowChecks] = useState<Record<string, boolean>>({
+    'Orphan docs': false,
+    'Links to goals': true,
+  })
+
+  function toggleArea(label: string) {
+    setActiveAreas((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label); else next.add(label)
+      return next
+    })
+  }
+
+  function toggleMadeBy(label: string) {
+    setActiveMadeBy((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label); else next.add(label)
+      return next
+    })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -492,13 +522,21 @@ function GraphView() {
             { label: 'Marketing',   color: 'var(--color-helper-marketing)', count: 14 },
             { label: 'Business',    color: 'var(--color-helper-sales)',      count: 11 },
             { label: 'General',     color: '#A8A29E',                        count: 11 },
-          ].map((a) => (
-            <div key={a.label} className="flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] hover:bg-hover transition-colors">
-              <span className="size-[8px] shrink-0 rounded-full" style={{ background: a.color }} />
-              <span className="flex-1 text-[13px] text-ink-2">{a.label}</span>
-              <span className="text-[11.5px] text-muted">{a.count}</span>
-            </div>
-          ))}
+          ].map((a) => {
+            const isActive = activeAreas.has(a.label)
+            return (
+              <button
+                key={a.label}
+                type="button"
+                onClick={() => toggleArea(a.label)}
+                className={`flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] transition-colors ${isActive ? 'bg-hover' : 'hover:bg-hover'}`}
+              >
+                <span className="size-[8px] shrink-0 rounded-full" style={{ background: a.color }} />
+                <span className={`flex-1 text-[13px] ${isActive ? 'font-medium text-ink' : 'text-ink-2'}`}>{a.label}</span>
+                <span className="text-[11.5px] text-muted">{a.count}</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Made by */}
@@ -509,12 +547,20 @@ function GraphView() {
           {[
             { label: 'You & team', count: 29 },
             { label: 'Agents',     count: 35 },
-          ].map((m) => (
-            <div key={m.label} className="flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] hover:bg-hover transition-colors">
-              <span className="flex-1 text-[13px] text-ink-2">{m.label}</span>
-              <span className="text-[11.5px] text-muted">{m.count}</span>
-            </div>
-          ))}
+          ].map((m) => {
+            const isActive = activeMadeBy.has(m.label)
+            return (
+              <button
+                key={m.label}
+                type="button"
+                onClick={() => toggleMadeBy(m.label)}
+                className={`flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] transition-colors ${isActive ? 'bg-hover' : 'hover:bg-hover'}`}
+              >
+                <span className={`flex-1 text-[13px] ${isActive ? 'font-medium text-ink' : 'text-ink-2'}`}>{m.label}</span>
+                <span className="text-[11.5px] text-muted">{m.count}</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Show */}
@@ -523,27 +569,39 @@ function GraphView() {
             <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">SHOW</span>
           </div>
           {[
-            { label: 'Orphan docs',   count: 6, checked: false },
-            { label: 'Links to goals', count: 0, checked: true },
-          ].map((s) => (
-            <div key={s.label} className="flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] hover:bg-hover transition-colors">
-              <span
-                className="size-[14px] shrink-0 rounded-xs outline-1 -outline-offset-1 outline-line-strong flex items-center justify-center"
-                style={{ background: s.checked ? 'var(--color-primary)' : 'var(--color-surface)' }}
+            { label: 'Orphan docs',   count: 6 },
+            { label: 'Links to goals', count: 0 },
+          ].map((s) => {
+            const checked = showChecks[s.label] ?? false
+            return (
+              <button
+                key={s.label}
+                type="button"
+                onClick={() => setShowChecks((prev) => ({ ...prev, [s.label]: !prev[s.label] }))}
+                className="flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] hover:bg-hover transition-colors"
               >
-                {s.checked && <Check size={9} className="text-primary-ink" aria-hidden />}
-              </span>
-              <span className="flex-1 text-[13px] text-ink-2">{s.label}</span>
-              {s.count > 0 && <span className="text-[11.5px] text-muted">{s.count}</span>}
-            </div>
-          ))}
+                <span
+                  className="size-[14px] shrink-0 rounded-xs outline-1 -outline-offset-1 outline-line-strong flex items-center justify-center"
+                  style={{ background: checked ? 'var(--color-primary)' : 'var(--color-surface)' }}
+                >
+                  {checked && <Check size={9} className="text-primary-ink" aria-hidden />}
+                </span>
+                <span className="flex-1 text-[13px] text-ink-2">{s.label}</span>
+                {s.count > 0 && <span className="text-[11.5px] text-muted">{s.count}</span>}
+              </button>
+            )
+          })}
         </div>
 
         {/* Knowledge notice */}
-        <div className="mx-[4px] mt-auto flex items-start gap-[6px] rounded-base bg-soft px-[10px] py-[8px] outline-1 -outline-offset-1 outline-line-strong">
+        <button
+          type="button"
+          onClick={() => onViewChange('knowledge')}
+          className="mx-[4px] mt-auto flex items-start gap-[6px] rounded-base bg-soft px-[10px] py-[8px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors"
+        >
           <Brain size={12} className="text-faint mt-[1px] shrink-0" aria-hidden />
           <span className="text-[11.5px] text-muted">Agent memory is kept out of this graph. Open the Knowledge view to see it.</span>
-        </div>
+        </button>
       </div>
 
       {/* Graph canvas — real d3-force simulation: drag nodes, pan, zoom, click to open. */}
@@ -571,12 +629,14 @@ function GraphView() {
                 <div className="flex gap-[4px]">
                   <button
                     type="button"
+                    onClick={() => { notify(`Opened: ${node.label}`) }}
                     className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
                   >
                     <ArrowUpRight size={11} aria-hidden /> Open note
                   </button>
                   <button
                     type="button"
+                    onClick={() => { onViewChange('ask-chief') }}
                     className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
                   >
                     <MessageSquare size={11} aria-hidden /> Ask Chief
@@ -677,7 +737,7 @@ function KnowledgeOff({ onTurnOn }: { onTurnOn: () => void }) {
           >
             <Zap size={14} aria-hidden /> Turn on Knowledge
           </button>
-          <button type="button" className="flex h-[32px] items-center gap-[6px] rounded-btn bg-soft px-[12px] text-[13px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+          <button type="button" onClick={() => notify('Knowledge uses pgvector to store and search agent memories by meaning.')} className="flex h-[32px] items-center gap-[6px] rounded-btn bg-soft px-[12px] text-[13px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
             How it works
           </button>
         </div>
@@ -988,6 +1048,8 @@ function KnowledgeGraph({
 
 function KnowledgeComposer({ onAsk }: { onAsk: (q: string) => void }) {
   const [value, setValue] = useState('')
+  const [recording, setRecording] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const suggestions = ['What did agents learn this week?', 'Teach: refunds over Rp 2jt go to Dede', 'Forget anything about old pricing']
 
   return (
@@ -1013,7 +1075,12 @@ function KnowledgeComposer({ onAsk }: { onAsk: (q: string) => void }) {
             className="w-full bg-transparent px-[10px] py-[6px] text-[12.5px] text-ink outline-none placeholder:text-faint"
           />
           <div className="flex items-center gap-[6px] px-[10px] py-[6px] border-t border-line">
-            <button type="button" className="flex size-[24px] items-center justify-center rounded-sm text-faint hover:text-muted transition-colors">
+            <input ref={fileInputRef} type="file" className="hidden" aria-hidden onChange={(e) => { if (e.target.files?.length) notify(`${e.target.files.length} file(s) selected`) }} />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex size-[24px] items-center justify-center rounded-sm text-faint hover:text-muted transition-colors"
+            >
               <Plus size={14} aria-hidden />
             </button>
             <div className="flex items-center gap-[4px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
@@ -1029,7 +1096,11 @@ function KnowledgeComposer({ onAsk }: { onAsk: (q: string) => void }) {
               <ChevronDown size={10} className="text-faint" aria-hidden />
             </div>
             <div className="ml-auto flex items-center gap-[4px]">
-              <button type="button" className="flex size-[28px] items-center justify-center rounded-sm text-faint hover:bg-hover transition-colors">
+              <button
+                type="button"
+                onClick={() => { setRecording((r) => !r); if (!recording) { notify('Recording…') } else { notify('Recording stopped') } }}
+                className={`flex size-[28px] items-center justify-center rounded-sm transition-colors ${recording ? 'bg-bad text-primary-ink' : 'text-faint hover:bg-hover'}`}
+              >
                 <Mic size={14} aria-hidden />
               </button>
               <button
@@ -1063,6 +1134,10 @@ function KnowledgeComposer({ onAsk }: { onAsk: (q: string) => void }) {
 // ── Knowledge on: answer ──────────────────────────────────────────────────────
 
 function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
+  const [highlighting, setHighlighting] = useState(true)
+  const [editingLesson, setEditingLesson] = useState(false)
+  const [lessonText, setLessonText] = useState("Don't propose deploys after 21:00 — unless it's a P0 hotfix.")
+  const [lessonSaved, setLessonSaved] = useState(false)
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Answer pane overlaying graph (right side) */}
@@ -1170,12 +1245,36 @@ function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
               <p className="text-[11.5px] text-muted m-0 italic">
                 "Don't propose deploys after 21:00 — unless it's a P0 hotfix." Replaces the old version; Chief uses it from the next run.
               </p>
-              <div className="flex gap-[4px] mt-[4px]">
-                <button type="button" className="flex h-[24px] items-center gap-[3px] rounded-sm bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">Edit</button>
-                <button type="button" className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-                  <Check size={10} aria-hidden /> Save lesson
-                </button>
-              </div>
+              {editingLesson ? (
+                <div className="flex flex-col gap-[4px] mt-[4px]">
+                  <textarea
+                    autoFocus
+                    value={lessonText}
+                    onChange={(e) => setLessonText(e.target.value)}
+                    rows={2}
+                    className="w-full resize-none rounded-base bg-soft px-[8px] py-[6px] text-[11.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
+                  />
+                  <div className="flex gap-[4px]">
+                    <button type="button" onClick={() => setEditingLesson(false)} className="flex h-[24px] items-center rounded-sm px-[8px] text-[11.5px] text-muted hover:text-ink transition-colors">Cancel</button>
+                    <button type="button" onClick={() => { setEditingLesson(false); setLessonSaved(true); notify('Lesson saved') }} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
+                      <Check size={10} aria-hidden /> Save lesson
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-[4px] mt-[4px]">
+                  <button type="button" onClick={() => setEditingLesson(true)} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">Edit</button>
+                  {!lessonSaved ? (
+                    <button type="button" onClick={() => { setLessonSaved(true); notify('Lesson saved') }} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
+                      <Check size={10} aria-hidden /> Save lesson
+                    </button>
+                  ) : (
+                    <span className="flex h-[24px] items-center gap-[3px] px-[8px] text-[11.5px] text-ok">
+                      <CheckCircle2 size={10} aria-hidden /> Saved
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Suggestions */}
@@ -1189,11 +1288,13 @@ function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
           </div>
 
           {/* Highlight strip */}
-          <div className="flex shrink-0 items-center gap-[6px] border-t border-line px-[12px] py-[6px]">
-            <span className="size-[6px] rounded-full bg-primary" aria-hidden />
-            <span className="text-[11.5px] text-muted">Highlighting 6 memories about deploys</span>
-            <button type="button" className="ml-auto text-[11.5px] text-link hover:underline">Clear</button>
-          </div>
+          {highlighting && (
+            <div className="flex shrink-0 items-center gap-[6px] border-t border-line px-[12px] py-[6px]">
+              <span className="size-[6px] rounded-full bg-primary" aria-hidden />
+              <span className="text-[11.5px] text-muted">Highlighting 6 memories about deploys</span>
+              <button type="button" onClick={() => setHighlighting(false)} className="ml-auto text-[11.5px] text-link hover:underline">Clear</button>
+            </div>
+          )}
         </aside>
       </div>
 
@@ -1206,6 +1307,12 @@ function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
 // ── Knowledge: add-sources modal ──────────────────────────────────────────────
 
 function AddSourcesModal({ onClose }: { onClose: () => void }) {
+  const browseInputRef = useRef<HTMLInputElement>(null)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteUrl, setPasteUrl] = useState('')
+  const [visibility, setVisibility] = useState<'Company-wide' | 'Engineering' | 'Marketing' | 'Business'>('Company-wide')
+  const [visibilityOpen, setVisibilityOpen] = useState(false)
+
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-surface/60">
       <div className="w-[460px] rounded-xl bg-surface shadow-2xl outline-1 -outline-offset-1 outline-line-strong overflow-hidden">
@@ -1217,32 +1324,70 @@ function AddSourcesModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="px-[16px] py-[16px] flex flex-col gap-[12px]">
           {/* Drop zone */}
-          <div className="rounded-lg border-2 border-dashed border-line-strong bg-soft px-[24px] py-[20px] flex flex-col items-center gap-[6px]">
+          <input ref={browseInputRef} type="file" multiple className="hidden" aria-hidden onChange={(e) => { if (e.target.files?.length) notify(`${e.target.files.length} file(s) added`) }} />
+          <div
+            className="rounded-lg border-2 border-dashed border-line-strong bg-soft px-[24px] py-[20px] flex flex-col items-center gap-[6px]"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); notify(`${e.dataTransfer.files.length} file(s) dropped`) }}
+          >
             <Upload size={24} className="text-muted" aria-hidden />
             <p className="text-[13px] text-muted m-0">
               Drop files here, or{' '}
-              <button type="button" className="text-link hover:underline">browse</button>
+              <button type="button" onClick={() => browseInputRef.current?.click()} className="text-link hover:underline">browse</button>
             </p>
             <p className="text-[11.5px] text-faint m-0">PDF, Word, Excel, slides · photos and scans · up to 50 MB each</p>
           </div>
 
+          {/* Paste link input */}
+          {pasteOpen && (
+            <div className="flex gap-[6px]">
+              <input
+                autoFocus
+                type="url"
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                placeholder="https://…"
+                className="min-w-0 flex-1 rounded-base bg-soft px-[8px] py-[5px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
+              />
+              <button type="button" onClick={() => { if (pasteUrl.trim()) { notify(`Link added: ${pasteUrl}`); setPasteUrl(''); setPasteOpen(false) } }} className="flex h-[28px] items-center rounded-btn bg-primary px-[10px] text-[12px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
+                Add
+              </button>
+              <button type="button" onClick={() => setPasteOpen(false)} className="flex h-[28px] items-center rounded-btn px-[8px] text-[12px] text-muted hover:text-ink transition-colors">
+                Cancel
+              </button>
+            </div>
+          )}
+
           {/* Source options */}
           <div className="flex gap-[8px]">
-            <button type="button" className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+            <button type="button" onClick={() => notify('Google Drive — connect your account to import')} className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
               ☁ From Google Drive
             </button>
-            <button type="button" className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+            <button type="button" onClick={() => setPasteOpen((o) => !o)} className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
               🔗 Paste a link
             </button>
           </div>
 
           {/* Visible to */}
-          <div className="flex items-center gap-[8px]">
+          <div className="relative flex items-center gap-[8px]">
             <span className="text-[12px] text-muted">Visible to</span>
-            <button type="button" className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-              🏢 Company-wide
+            <button type="button" onClick={() => setVisibilityOpen((o) => !o)} className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+              🏢 {visibility}
               <ChevronDown size={10} className="text-faint" aria-hidden />
             </button>
+            {visibilityOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setVisibilityOpen(false)} aria-hidden />
+                <div className="absolute left-[80px] top-[28px] z-50 w-[160px] rounded-lg bg-surface py-[4px] shadow-lg outline-1 -outline-offset-1 outline-line-strong">
+                  {(['Company-wide', 'Engineering', 'Marketing', 'Business'] as const).map((v) => (
+                    <button key={v} type="button" onClick={() => { setVisibility(v); setVisibilityOpen(false) }} className="flex w-full items-center gap-[6px] px-[10px] py-[6px] text-[12.5px] text-ink-2 hover:bg-hover">
+                      {visibility === v && <Check size={12} className="text-primary shrink-0" aria-hidden />}
+                      <span className={visibility === v ? 'font-medium text-ink' : ''}>{v}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <span className="text-[11.5px] text-faint ml-auto">Per channel ↗ data</span>
           </div>
 
@@ -1346,7 +1491,7 @@ function AskChiefView() {
               {/* Suggestion chips */}
               <div className="flex flex-wrap gap-[4px] mt-[8px]">
                 {ASK_CHIEF_ANSWER.suggestions.map((s) => (
-                  <button key={s} type="button" className="h-[28px] rounded-pill bg-soft px-[12px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+                  <button key={s} type="button" onClick={() => { setQuery(s); setAskState('answer') }} className="h-[28px] rounded-pill bg-soft px-[12px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
                     {s}
                   </button>
                 ))}
@@ -1450,6 +1595,7 @@ function AskChiefComposer({
   onSubmit: () => void
   placeholder: string
 }) {
+  const [recording, setRecording] = useState(false)
   return (
     <div className="shrink-0 border-t border-line bg-surface">
       <div className="px-[20px] py-[12px]">
@@ -1480,7 +1626,11 @@ function AskChiefComposer({
               <div className="flex items-center gap-[3px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
                 ⚡ Medium
               </div>
-              <button type="button" className="flex size-[26px] items-center justify-center rounded-sm text-faint hover:bg-hover transition-colors">
+              <button
+                type="button"
+                onClick={() => { setRecording((r) => !r); if (!recording) { notify('Recording…') } else { notify('Recording stopped') } }}
+                className={`flex size-[26px] items-center justify-center rounded-sm transition-colors ${recording ? 'bg-bad text-primary-ink' : 'text-faint hover:bg-hover'}`}
+              >
                 <Mic size={13} aria-hidden />
               </button>
             </div>
@@ -1512,7 +1662,7 @@ function AskChiefComposer({
               <span className="text-[11.5px] text-muted">{o.label}</span>
             </div>
           ))}
-          <button type="button" className="ml-auto text-[11.5px] text-link hover:underline">
+          <button type="button" onClick={() => notify('Keyword search — type a word to find exact matches')} className="ml-auto text-[11.5px] text-link hover:underline">
             Keyword search instead
           </button>
         </div>
@@ -1523,7 +1673,7 @@ function AskChiefComposer({
 
 // ── Handbook view ─────────────────────────────────────────────────────────────
 
-function HandbookView() {
+function HandbookView({ onViewChange }: { onViewChange: (v: DocsMainView) => void }) {
   const [activeFile, setActiveFile] = useState<string | null>('hf-3')
   const [query, setQuery] = useState('')
 
@@ -1602,7 +1752,7 @@ function HandbookView() {
         <div className="mt-auto flex items-center gap-[6px] px-[4px] py-[6px]">
           <Brain size={12} className="text-faint" aria-hidden />
           <span className="text-[11.5px] text-muted">Agent memory is separate</span>
-          <button type="button" className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
+          <button type="button" onClick={() => onViewChange('knowledge')} className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
             Open Knowledge
           </button>
         </div>
@@ -1616,7 +1766,7 @@ function HandbookView() {
             <div className="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-line px-[16px]">
               <span className="text-[12px] text-muted">Read-only · updated yesterday by Dede</span>
               <div className="ml-auto flex items-center gap-[4px]">
-                <button type="button" className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[10px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
+                <button type="button" onClick={() => notify('Suggestion sent — Chief will review and propose an edit.')} className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[10px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
                   Suggest a change
                 </button>
                 <span className="ml-[8px] text-[12px] text-muted">Saved · v3</span>
@@ -1692,7 +1842,7 @@ function HandbookView() {
                       <span className="text-[11.5px] font-medium text-ink">Not sure of a rule?</span>
                     </div>
                     <p className="text-[11.5px] text-muted m-0">It answers from this handbook and shows the line it used.</p>
-                    <button type="button" className="mt-[6px] text-[11.5px] text-link hover:underline">
+                    <button type="button" onClick={() => onViewChange('ask-chief')} className="mt-[6px] text-[11.5px] text-link hover:underline">
                       Can we refund a booking paid online?
                     </button>
                   </div>
@@ -1771,6 +1921,10 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
   // Knowledge "on" state is lifted so topbar meta is correct
   const [knowledgeOn] = useState(false)
 
+  function handleNewDoc() {
+    notify('Draft created')
+  }
+
   return (
     <>
       <Topbar
@@ -1799,18 +1953,18 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
 
       {view === 'notes' && (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <NotesSidebar activeId={activeDocId} onSelect={setActiveDocId} />
+          <NotesSidebar activeId={activeDocId} onSelect={setActiveDocId} onViewChange={setView} onNewDoc={handleNewDoc} />
           <NoteDocViewer />
         </div>
       )}
 
-      {view === 'graph' && <GraphView />}
+      {view === 'graph' && <GraphView onViewChange={setView} />}
 
       {view === 'knowledge' && <KnowledgeView />}
 
       {view === 'ask-chief' && <AskChiefView />}
 
-      {view === 'handbook' && <HandbookView />}
+      {view === 'handbook' && <HandbookView onViewChange={setView} />}
     </>
   )
 }

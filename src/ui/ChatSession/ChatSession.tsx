@@ -85,6 +85,7 @@ const CREATED_TASKS = [
 
 /** pen `Tasks created` (n9NI9G): card under Chief's offer, replacing the suggested actions. */
 function TasksCreated({ goal, onUndo }: { goal: string; onUndo: () => void }) {
+  const navigate = useNavigate()
   return (
     <div className="flex w-[680px] max-w-[calc(100%-48px)] flex-col gap-[8px] pl-[34px]">
       <div
@@ -108,6 +109,7 @@ function TasksCreated({ goal, onUndo }: { goal: string; onUndo: () => void }) {
         ))}
         <button
           type="button"
+          onClick={() => void navigate({ to: '/goals' })}
           className="inline-flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[14px] text-[13px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
         >
           <ArrowUpRight size={16} aria-hidden />

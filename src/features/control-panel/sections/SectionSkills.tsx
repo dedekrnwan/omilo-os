@@ -6,6 +6,7 @@ import { Mascot } from '../../../ui/ds/Mascot'
 import { Segmented } from '../../team/ui'
 import { DialogWriteSkill } from '../dialogs/DialogWriteSkill'
 import type { DialogKind } from '../legacyTypes'
+import { notify } from '../../../ui/ds/Toaster'
 
 type Skill = (typeof SKILLS)[number]
 
@@ -149,7 +150,12 @@ export function SectionSkills({ onDialog }: Props) {
         <div className="mt-[20px] flex items-center gap-[8px] flex-wrap">
           <span className="text-[12px] text-muted">Starters for Sahabat Warga</span>
           {['+ Refund policy', '+ Onboarding an RT admin', '+ Bahasa ++ English glossary'].map((s) => (
-            <button key={s} type="button" className="rounded-pill border border-line-strong bg-surface px-[8px] py-[3px] text-[12px] text-link hover:bg-soft">
+            <button
+              key={s}
+              type="button"
+              onClick={() => notify(`Starter added: ${s.replace(/^\+\s*/, '')}`)}
+              className="rounded-pill border border-line-strong bg-surface px-[8px] py-[3px] text-[12px] text-link hover:bg-soft"
+            >
               {s}
             </button>
           ))}

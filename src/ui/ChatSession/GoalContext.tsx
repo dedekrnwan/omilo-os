@@ -31,6 +31,7 @@ import {
 import { Mascot } from '../ds/Mascot'
 import type { HelperArea } from '../../core/domain/types'
 import { menuSurface } from '../ds/Menu'
+import { notify } from '../ds/Toaster'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,11 +73,18 @@ interface EditGoalDialogProps {
   area?: string
 }
 
+const INITIAL_HELPERS: Array<{ area: HelperArea; name: string }> = [
+  { area: 'brand', name: 'Chief' },
+  { area: 'dev', name: 'Dev' },
+  { area: 'marketing', name: 'Growth' },
+]
+
 export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2026', area = 'Engineering' }: EditGoalDialogProps) {
   const [title, setTitle] = useState(goalTitle)
   const [doneMeans, setDoneMeans] = useState(
     '80% of weekly active users sign in with a passkey. Legacy Android keeps password + OTP.',
   )
+  const [helpers, setHelpers] = useState(INITIAL_HELPERS)
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -162,26 +170,29 @@ export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2
             <div className="flex flex-col gap-[5px]">
               <span className="text-[12px] font-medium text-ink-2">Helpers on this goal</span>
               <div className="flex flex-wrap items-center gap-[6px]">
-                {(['brand', 'dev', 'marketing'] as HelperArea[]).map((a, i) => (
-                  <div key={a} className="flex items-center gap-[4px] rounded-pill bg-soft px-[8px] py-[3px] outline-1 -outline-offset-1 outline-line-strong">
-                    <Mascot size={16} radius={4.5} area={a} />
-                    <span className="text-[12px] text-ink">{['Chief', 'Dev', 'Growth'][i]}</span>
+                {helpers.map((h) => (
+                  <div key={h.name} className="flex items-center gap-[4px] rounded-pill bg-soft px-[8px] py-[3px] outline-1 -outline-offset-1 outline-line-strong">
+                    <Mascot size={16} radius={4.5} area={h.area} />
+                    <span className="text-[12px] text-ink">{h.name}</span>
                     <button
                       type="button"
-                      aria-label={`Remove ${['Chief', 'Dev', 'Growth'][i]}`}
+                      aria-label={`Remove ${h.name}`}
+                      onClick={() => setHelpers((prev) => prev.filter((x) => x.name !== h.name))}
                       className="inline-flex items-center justify-center rounded-full text-muted transition-colors hover:text-ink"
                     >
                       <X size={11} aria-hidden />
                     </button>
                   </div>
                 ))}
-                <button
-                  type="button"
-                  aria-label="Add helper"
-                  className="inline-flex size-[24px] items-center justify-center rounded-full text-muted outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
-                >
-                  <Plus size={13} aria-hidden />
-                </button>
+                <AddAgentPopover onAdd={(name, area) => setHelpers((prev) => prev.some(h => h.name === name) ? prev : [...prev, { name, area }])}>
+                  <button
+                    type="button"
+                    aria-label="Add helper"
+                    className="inline-flex size-[24px] items-center justify-center rounded-full text-muted outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
+                  >
+                    <Plus size={13} aria-hidden />
+                  </button>
+                </AddAgentPopover>
               </div>
             </div>
 
@@ -241,17 +252,26 @@ export function EditGoalDialog({ open, onOpenChange, goalTitle, due = 'Nov 24, 2
 
 interface AddAgentPopoverProps {
   children: React.ReactNode
+  /** Called when an agent is selected. Close is handled internally. */
+  onAdd?: (name: string, area: HelperArea) => void
 }
 
-export function AddAgentPopover({ children }: AddAgentPopoverProps) {
+export function AddAgentPopover({ children, onAdd }: AddAgentPopoverProps) {
   const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
 
   const filtered = AGENT_OPTIONS.filter((a) =>
     a.name.toLowerCase().includes(query.toLowerCase()),
   )
 
+  function handleSelect(agent: AgentOption) {
+    onAdd?.(agent.name, agent.area)
+    setOpen(false)
+    setQuery('')
+  }
+
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>{children}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -278,6 +298,7 @@ export function AddAgentPopover({ children }: AddAgentPopoverProps) {
               <li key={agent.name} role="option" aria-selected={false}>
                 <button
                   type="button"
+                  onClick={() => handleSelect(agent)}
                   className="flex w-full items-start gap-[8px] rounded-sm px-[10px] py-[7px] text-left transition-colors hover:bg-hover"
                 >
                   <Mascot size={24} radius={6.72} area={agent.area} title={agent.name} />
@@ -301,6 +322,7 @@ export function AddAgentPopover({ children }: AddAgentPopoverProps) {
           <div className="border-t border-line px-[4px] pt-[4px]">
             <button
               type="button"
+              onClick={() => setOpen(false)}
               className="flex w-full items-center gap-[8px] rounded-sm px-[10px] py-[6px] text-left transition-colors hover:bg-hover"
             >
               <UserPlus size={14} aria-hidden className="text-muted" />
@@ -323,6 +345,7 @@ export function GoalContextBanner({
   area = 'Engineering',
 }: GoalContextProps) {
   const [editOpen, setEditOpen] = useState(false)
+  const [paused, setPaused] = useState(false)
 
   return (
     <>
@@ -395,11 +418,12 @@ export function GoalContextBanner({
           </button>
           <button
             type="button"
-            aria-label="Pause goal"
+            aria-label={paused ? 'Resume goal' : 'Pause goal'}
+            onClick={() => { setPaused((v) => !v); notify(paused ? 'Goal resumed' : 'Goal paused') }}
             className="inline-flex items-center gap-[5px] rounded-btn px-[8px] py-[4px] text-[12px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-hover"
           >
             <Pause size={12} aria-hidden />
-            Pause
+            {paused ? 'Resume' : 'Pause'}
           </button>
         </div>
       </div>

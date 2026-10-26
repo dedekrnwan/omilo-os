@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plug, Repeat, TriangleAlert, UserPlus } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import {
   activity,
@@ -145,6 +146,7 @@ export function HelpersTab({
   reachedId?: string
   onSetBudget: (h: HelperStat) => void
 }) {
+  const navigate = useNavigate()
   const rows = [list.slice(0, 3), list.slice(3, 5)]
   return (
     <div className="flex w-full flex-col gap-[12px]">
@@ -156,6 +158,7 @@ export function HelpersTab({
           {i === 1 && (
             <button
               type="button"
+              onClick={() => void navigate({ to: '/team' })}
               className="flex h-[174px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-lg p-[16px] outline-[1.5px] -outline-offset-[1.5px] outline-wire-strong hover:bg-soft"
             >
               <UserPlus size={20} aria-hidden className="text-muted" />

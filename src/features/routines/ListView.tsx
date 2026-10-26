@@ -134,6 +134,7 @@ export function ListView({
   onOpen: (id: string) => void
   onMenu?: (id: string, el: HTMLElement) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const head = 'shrink-0 text-[10.5px] font-medium tracking-[0.8px] text-faint'
   return (
     <div
@@ -183,10 +184,27 @@ export function ListView({
         )
       })}
       <div className="flex w-full items-center gap-[8px] px-[14px] py-[10px]">
-        <span className="min-w-0 flex-1 text-[12.5px] text-muted">{LIST_MORE.text}</span>
-        <button type="button" className="text-[12.5px] font-medium text-link hover:underline">
-          {LIST_MORE.link}
-        </button>
+        <span className="min-w-0 flex-1 text-[12.5px] text-muted">
+          {expanded ? '' : LIST_MORE.text}
+        </span>
+        {!expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="text-[12.5px] font-medium text-link hover:underline"
+          >
+            {LIST_MORE.link}
+          </button>
+        )}
+        {expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-[12.5px] font-medium text-link hover:underline"
+          >
+            Show less
+          </button>
+        )}
       </div>
     </div>
   )

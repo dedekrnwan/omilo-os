@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { drawerOverlayClass, drawerContentClass } from '../../ui/ds/Drawer'
 import {
@@ -11,13 +11,62 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
+import { notify } from '../../ui/ds/Toaster'
 import { helperColor } from '../../ui/tokens'
 import type { HelperArea } from '../../core/domain/types'
 import { useArea } from '../../app/queries'
 import { useUIStore } from '../../app/store'
+
+// ── Helper-picker popover ─────────────────────────────────────────────────────
+
+const ALL_HELPERS: Array<{ label: string; area: HelperArea }> = [
+  { label: 'Chief', area: 'brand' },
+  { label: 'Builder', area: 'dev' },
+  { label: 'Growth', area: 'marketing' },
+  { label: 'Sales', area: 'sales' },
+  { label: 'Finance', area: 'finance' },
+]
+
+function HelperPickerPopover({
+  anchor,
+  current,
+  onSelect,
+  onClose,
+}: {
+  anchor: DOMRect | null
+  current: string[]
+  onSelect: (label: string) => void
+  onClose: () => void
+}) {
+  if (!anchor) return null
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
+      <div
+        className="fixed z-50 w-[180px] rounded-lg bg-surface py-[4px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong"
+        style={{ top: anchor.bottom + 6, left: anchor.left }}
+      >
+        <p className="px-[10px] py-[4px] text-[10.5px] font-medium tracking-[0.6px] text-faint uppercase">Add helper</p>
+        {ALL_HELPERS.map(({ label, area }) => (
+          <button
+            key={label}
+            type="button"
+            disabled={current.includes(label)}
+            onClick={() => { onSelect(label); onClose() }}
+            className="flex w-full items-center gap-[8px] px-[10px] py-[6px] text-[13px] text-ink-2 hover:bg-hover disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <Mascot size={16} radius={4} area={area} />
+            {label}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
 
 // ── Static data (matching qDPJo.png) ─────────────────────────────────────────
 
@@ -254,6 +303,7 @@ function GoalRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const navigate = useNavigate()
   return (
     <div className="flex flex-col">
       {/* Main row */}
@@ -285,7 +335,7 @@ function GoalRow({
         </span>
 
         {/* Session action */}
-        <Button variant="secondary" height={28} icon={MessageCircle}>
+        <Button variant="secondary" height={28} icon={MessageCircle} onClick={() => navigate({ to: '/chat' })}>
           Session
         </Button>
       </div>
@@ -431,12 +481,16 @@ function HelperAvatar({ label, area }: { label: string; area: HelperArea }) {
  * "New goal" dialog — visual-only, matches DlkiJ.png.
  */
 export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
+  const navigate = useNavigate()
   const [goalText, setGoalText] = useState('Passwordless login for 80% of users by Q4')
   const [channel, setChannel] = useState('Engineering')
   const [due, setDue] = useState('31 Dec 2026')
   const [measured, setMeasured] = useState('% of logins using passkey')
   const [target, setTarget] = useState('80%')
   const [chiefDraft, setChiefDraft] = useState(true)
+  const [helpers, setHelpers] = useState<string[]>(['Chief', 'Builder'])
+  const [helperAnchor, setHelperAnchor] = useState<DOMRect | null>(null)
+  const addHelperRef = useRef<HTMLButtonElement>(null)
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -565,17 +619,33 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
             <div className="flex flex-col gap-[6px]">
               <span className="text-[12px] font-medium text-ink-2">Helpers on it</span>
               <div className="flex flex-wrap items-center gap-[6px]">
-                <HelperAvatar label="Chief" area="brand" />
-                <HelperAvatar label="Builder" area="dev" />
+                {helpers.map((h) => {
+                  const found = ALL_HELPERS.find((x) => x.label === h)
+                  return <HelperAvatar key={h} label={h} area={found?.area ?? 'brand'} />
+                })}
                 <button
+                  ref={addHelperRef}
                   type="button"
                   aria-label="Add helper"
+                  onClick={() => {
+                    const rect = addHelperRef.current?.getBoundingClientRect() ?? null
+                    setHelperAnchor(rect)
+                  }}
                   className="inline-flex items-center gap-[4px] rounded-pill bg-soft px-[8px] py-[4px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-hover hover:text-ink-2"
                 >
                   <UserPlus size={12} aria-hidden />
                   Add helper
                 </button>
               </div>
+              <HelperPickerPopover
+                anchor={helperAnchor}
+                current={helpers}
+                onSelect={(label) => {
+                  setHelpers((prev) => [...prev, label])
+                  notify(`${label} added as helper`)
+                }}
+                onClose={() => setHelperAnchor(null)}
+              />
             </div>
 
             {/* Chief draft key results */}
@@ -601,6 +671,7 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
             <button
               type="button"
               aria-label="Describe it in chat"
+              onClick={() => { onOpenChange(false); navigate({ to: '/chat' }) }}
               className="flex items-center gap-[5px] text-[12px] text-muted transition-colors hover:text-ink-2"
             >
               <MessageSquare size={13} aria-hidden />

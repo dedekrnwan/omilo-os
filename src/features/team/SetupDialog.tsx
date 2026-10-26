@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ArrowLeft, Check, Cpu, Crown, Palette, Plus, UserPlus, Wallet } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
+import { LookPicker } from '../../ui/ds/LookPicker'
+import type { Look } from '../../app/appearance'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconTile, InputField, SelectField, TextareaField } from './ui'
 
 const CHANNELS = ['Omilo chat', 'WhatsApp', 'Telegram', 'Email'] as const
@@ -8,6 +10,7 @@ const CHANNELS = ['Omilo chat', 'WhatsApp', 'Telegram', 'Email'] as const
 /** Hire helper · Set up — pen hkw1l (Drawer x1VQBT). */
 export function SetupDialog({ onClose, onBack }: { onClose: () => void; onBack: () => void }) {
   const [on, setOn] = useState<Set<string>>(new Set(['Omilo chat', 'WhatsApp']))
+  const [look, setLook] = useState<Look>({ color: '#6366f1', initial: 'S' })
   const toggle = (c: string) =>
     setOn((s) => {
       const n = new Set(s)
@@ -45,9 +48,17 @@ export function SetupDialog({ onClose, onBack }: { onClose: () => void; onBack: 
           <span className="text-[16px] font-semibold text-ink">Sales</span>
           <span className="text-[12.5px] text-muted">Follows up leads from WhatsApp and forms</span>
         </div>
-        <Btn variant="quiet" icon={Palette}>
-          Change look
-        </Btn>
+        <LookPicker
+          kind="area"
+          title="Sales icon"
+          value={{ color: look.color ?? '#6366f1', initial: look.initial, image: look.image }}
+          onChange={(patch) => setLook((prev) => ({ ...prev, ...patch }))}
+          onReset={() => setLook({ color: '#6366f1', initial: 'S' })}
+        >
+          <Btn variant="quiet" icon={Palette}>
+            Change look
+          </Btn>
+        </LookPicker>
       </div>
       <InputField label="Name" value="Sales" className="w-full" />
       <TextareaField

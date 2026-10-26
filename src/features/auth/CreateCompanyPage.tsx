@@ -1,9 +1,11 @@
 /** Create company — /auth/onboarding/company (pen OsWDG). */
+import { useRef } from 'react'
 import { Globe, Users } from 'lucide-react'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
 
 export function CreateCompanyPage() {
+  const logoInputRef = useRef<HTMLInputElement>(null)
   return (
     <OnboardingLayout step={2}>
       <div className="flex w-[440px] flex-col gap-[20px]">
@@ -14,16 +16,25 @@ export function CreateCompanyPage() {
           </p>
         </div>
         <div className="flex w-full flex-col gap-[14px] rounded-[16px] bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong">
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            aria-hidden
+            tabIndex={-1}
+            className="sr-only"
+          />
           <div className="flex w-full items-center gap-[12px]">
             <span className="flex size-[44px] shrink-0 items-center justify-center rounded-lg bg-[#EB6834] text-[18px] font-bold text-white">
               S
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
               <span className="text-[13px] font-medium text-ink">Company logo</span>
-              <span className="text-[12px] text-muted">Optional — we’ll use your initial</span>
+              <span className="text-[12px] text-muted">Optional — we'll use your initial</span>
             </div>
             <button
               type="button"
+              onClick={() => logoInputRef.current?.click()}
               className="flex h-[30px] items-center rounded-btn bg-surface px-[14px] text-[12px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
             >
               Upload

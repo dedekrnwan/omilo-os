@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, Pencil, Search, Sparkles, UserPlus } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import { HIRE_CATEGORIES, HIRE_OPTIONS } from './teamData'
 import type { HireCategory, HireOption } from './teamData'
@@ -30,6 +31,7 @@ function OptionCard({ o, selected, onPick }: { o: HireOption; selected: boolean;
 
 /** Hire helper · Pick — pen jEooC (Drawer ThYEv). */
 export function HireDialog({ onClose, onNext }: { onClose: () => void; onNext: () => void }) {
+  const navigate = useNavigate()
   const [category, setCategory] = useState<HireCategory>('All')
   const [picked, setPicked] = useState('sales')
   const options = HIRE_OPTIONS.filter((o) => category === 'All' || o.category === category)
@@ -80,7 +82,7 @@ export function HireDialog({ onClose, onNext }: { onClose: () => void; onNext: (
             Tell Chief the job in a sentence — it drafts the helper for you.
           </span>
         </div>
-        <Btn icon={Pencil}>Describe</Btn>
+        <Btn icon={Pencil} onClick={() => { onClose(); void navigate({ to: '/chat' }) }}>Describe</Btn>
       </div>
     </Drawer>
   )

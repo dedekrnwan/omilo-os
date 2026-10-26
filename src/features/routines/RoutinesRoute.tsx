@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { CalendarSync, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react'
+import { CalendarSync, Check, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
+import { notify } from '../../ui/ds/Toaster'
 import {
+  AGENTS,
   BANNERS,
   LIST_GROUPS,
   WEEK_LABEL,
@@ -22,36 +24,122 @@ import { ChiefBanner, WeekView } from './WeekView'
 
 const VIEWS = ['Week', 'List'] as const
 
+/** Derive a week-range label relative to the base label. */
+function weekLabel(offset: number): string {
+  if (offset === 0) return WEEK_LABEL
+  // Parse "Oct 19 – 25" style: advance by offset weeks.
+  const base = new Date('2024-10-19') // anchor date for WEEK_LABEL
+  const start = new Date(base)
+  start.setDate(base.getDate() + offset * 7)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  const fmt = (d: Date) =>
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return `${fmt(start)} – ${end.getDate()}`
+}
+
+const AGENT_IDS = Object.keys(AGENTS) as string[]
+
 function RoutinesTopbar({
   view,
   onView,
   empty,
   onNew,
+  weekOffset,
+  onPrevWeek,
+  onToday,
+  onNextWeek,
+  agentFilter,
+  onAgentFilter,
 }: {
   view: RoutinesView
   onView: (v: RoutinesView) => void
   empty: boolean
   onNew: () => void
+  weekOffset: number
+  onPrevWeek: () => void
+  onToday: () => void
+  onNextWeek: () => void
+  agentFilter: string | null
+  onAgentFilter: (id: string | null) => void
 }) {
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
+  const agentBtnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close agent menu on outside click
+  useEffect(() => {
+    if (!agentMenuOpen) return
+    function handler(e: MouseEvent) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        agentBtnRef.current &&
+        !agentBtnRef.current.contains(e.target as Node)
+      ) {
+        setAgentMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [agentMenuOpen])
+
+  const filterLabel = agentFilter ? (AGENTS[agentFilter]?.name ?? 'All agents') : 'All agents'
+
   return (
     <Topbar
       icon={CalendarSync}
       title="Routines"
-      meta={WEEK_LABEL}
+      meta={weekLabel(weekOffset)}
       actions={
         <div className="flex items-center gap-[8px]">
           {!empty && (
             <div className="flex items-center gap-[2px]">
-              <IconButton icon={ChevronLeft} aria-label="Previous week" />
-              <SecondaryButton height={28} fontSize={12}>
+              <IconButton icon={ChevronLeft} aria-label="Previous week" onClick={onPrevWeek} />
+              <SecondaryButton height={28} fontSize={12} onClick={onToday}>
                 Today
               </SecondaryButton>
-              <IconButton icon={ChevronRight} aria-label="Next week" />
+              <IconButton icon={ChevronRight} aria-label="Next week" onClick={onNextWeek} />
             </div>
           )}
-          <button type="button" aria-label="Filter by agent" className="w-[150px] text-left">
-            <Field icon={Users} value="All agents" chevron />
-          </button>
+          <div className="relative">
+            <button
+              ref={agentBtnRef}
+              type="button"
+              aria-label="Filter by agent"
+              aria-haspopup="listbox"
+              aria-expanded={agentMenuOpen}
+              className="w-[150px] text-left"
+              onClick={() => setAgentMenuOpen((o) => !o)}
+            >
+              <Field icon={Users} value={filterLabel} chevron />
+            </button>
+            {agentMenuOpen && (
+              <div
+                ref={menuRef}
+                role="listbox"
+                aria-label="Filter by agent"
+                className="absolute left-0 top-full z-50 mt-[4px] w-[180px] rounded-lg bg-surface p-[4px] shadow-[0_8px_20px_#0C0A0914] outline-1 -outline-offset-1 outline-line-strong"
+              >
+                {[{ id: null, name: 'All agents' }, ...AGENT_IDS.map((id) => ({ id, name: AGENTS[id].name }))].map((opt) => {
+                  const sel = agentFilter === opt.id
+                  return (
+                    <button
+                      key={opt.id ?? '__all__'}
+                      type="button"
+                      role="option"
+                      aria-selected={sel}
+                      onClick={() => { onAgentFilter(opt.id); setAgentMenuOpen(false) }}
+                      className={`flex w-full items-center gap-[8px] rounded-btn px-[10px] py-[7px] text-left text-[12.5px] hover:bg-hover ${sel ? 'font-medium text-ink' : 'text-ink-2'}`}
+                    >
+                      {sel && <Check size={12} aria-hidden className="shrink-0" />}
+                      <span className={sel ? '' : 'ml-[20px]'}>{opt.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           <Segmented
             items={VIEWS}
             value={view === 'week' ? 'Week' : 'List'}
@@ -115,6 +203,8 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   const [creating, setCreating] = useState<null | 'new' | 'clash'>(
     initialState === 'new' ? 'new' : initialState === 'clash' ? 'clash' : null,
   )
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [agentFilter, setAgentFilter] = useState<string | null>(null)
   const drawer: RoutineDrawerState = drawerState ?? 'detail'
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -141,7 +231,18 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
 
   return (
     <div ref={rootRef} className="relative flex min-h-0 w-full flex-1 flex-col">
-      <RoutinesTopbar view={view} onView={setView} empty={empty} onNew={() => setCreating('new')} />
+      <RoutinesTopbar
+        view={view}
+        onView={setView}
+        empty={empty}
+        onNew={() => setCreating('new')}
+        weekOffset={weekOffset}
+        onPrevWeek={() => setWeekOffset((o) => o - 1)}
+        onToday={() => setWeekOffset(0)}
+        onNextWeek={() => setWeekOffset((o) => o + 1)}
+        agentFilter={agentFilter}
+        onAgentFilter={setAgentFilter}
+      />
       {empty ? (
         <EmptyState onScratch={() => setCreating('new')} onSetUp={() => setEmpty(false)} />
       ) : (
@@ -198,7 +299,10 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
           onClose={() => setMenu(null)}
           onEdit={() => open(menu.id)}
           onRun={() => open(menu.id, 'running')}
-          onSkip={() => undefined}
+          onSkip={() => {
+            setMenu(null)
+            notify('Skipped next run')
+          }}
           onDelete={() => setDeleting(menu.id)}
         />
       )}

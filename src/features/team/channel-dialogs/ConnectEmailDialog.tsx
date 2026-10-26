@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronUp, CircleHelp, Copy, Link2, Mail } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
+import { notify } from '../../../ui/ds/Toaster'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, InputField } from '../ui'
 import { ChannelLogo } from '../tabs/ChannelsTab'
 
@@ -49,10 +50,10 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
       <div className="flex w-full flex-col gap-[8px]">
         <Eyebrow>HOW TO CONNECT</Eyebrow>
         <div className="flex w-full gap-[8px]">
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { /* OAuth stub */ }}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { notify('Connecting…'); onClose() }}>
             Sign in with Google Workspace
           </Btn>
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { /* OAuth stub */ }}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { notify('Connecting…'); onClose() }}>
             Sign in with Microsoft 365
           </Btn>
         </div>

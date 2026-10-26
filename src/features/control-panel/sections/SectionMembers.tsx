@@ -5,6 +5,7 @@ import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBot
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
+import { notify } from '../../../ui/ds/Toaster'
 
 const ROLES = [
   { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
@@ -50,7 +51,7 @@ function RoleDropdown({ role, onChange }: { role: string; onChange: (r: RoleOpti
 }
 
 /** ⋯ options menu for a member row. */
-function MemberMoreMenu({ name }: { name: string }) {
+function MemberMoreMenu({ name, onEdit, onRemove }: { name: string; onEdit: () => void; onRemove: () => void }) {
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
@@ -60,11 +61,11 @@ function MemberMoreMenu({ name }: { name: string }) {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onEdit}>
             <MenuItemBody icon={Pencil} label="Edit" />
           </DropdownMenu.Item>
           <MenuSeparatorLine />
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => {}}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onRemove}>
             <MenuItemBody icon={Trash2} label="Remove" danger />
           </DropdownMenu.Item>
         </DropdownMenu.Content>
@@ -83,9 +84,20 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
   const [roles, setRoles] = useState<Record<string, string>>(() =>
     Object.fromEntries(PEOPLE.map((p) => [p.email, p.role])),
   )
+  const [members, setMembers] = useState<PersonRow[]>([...PEOPLE] as PersonRow[])
+  const [pendingRole, setPendingRole] = useState<RoleOption>('Member')
 
   function changeRole(email: string, r: RoleOption) {
     setRoles((prev) => ({ ...prev, [email]: r }))
+  }
+
+  function handleEdit(name: string) {
+    notify(`Editing ${name}…`)
+  }
+
+  function handleRemove(email: string, name: string) {
+    setMembers((prev) => prev.filter((m) => m.email !== email))
+    notify(`${name} removed`)
   }
 
   return (
@@ -145,7 +157,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           <span className={`w-[150px] ${COL}`}>ROLE</span>
           <span className="w-[28px]" />
         </div>
-        {([...PEOPLE] as PersonRow[]).map((p) => (
+        {members.map((p) => (
           <div key={p.email} className={`flex w-full items-center gap-[14px] px-[14px] py-[10px] ${lineBottom}`}>
             <div className="flex min-w-0 flex-1 items-center gap-[10px]">
               <Initials text={p.initials} color={p.color} />
@@ -162,7 +174,11 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
                 <RoleDropdown role={roles[p.email] ?? p.role} onChange={(r) => changeRole(p.email, r)} />
               )}
             </div>
-            <MemberMoreMenu name={p.name} />
+            <MemberMoreMenu
+              name={p.name}
+              onEdit={() => handleEdit(p.name)}
+              onRemove={() => handleRemove(p.email, p.name)}
+            />
           </div>
         ))}
         <div className="flex w-full items-center gap-[14px] px-[14px] py-[10px]">
@@ -177,9 +193,13 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           </div>
           <span className="w-[190px] text-[12px] text-ink-2">Business</span>
           <div className="w-[150px]">
-            <RoleDropdown role="Member" onChange={() => {}} />
+            <RoleDropdown role={pendingRole} onChange={setPendingRole} />
           </div>
-          <MemberMoreMenu name="andi@saga.co.id" />
+          <MemberMoreMenu
+            name="andi@saga.co.id"
+            onEdit={() => notify('Editing invite for andi@saga.co.id…')}
+            onRemove={() => notify('Invite cancelled')}
+          />
         </div>
       </div>
 

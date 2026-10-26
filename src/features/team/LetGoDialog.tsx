@@ -3,12 +3,21 @@ import { createPortal } from 'react-dom'
 import { UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { helperColor } from '../../ui/tokens'
+import { notify } from '../../ui/ds/Toaster'
 import type { HelperRecord } from './teamData'
 import { Btn } from './ui'
 
 /** Let go — pen HX7PZ (Confirm Dialog x70TQk, worried mascot). */
-export function LetGoDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
+export function LetGoDialog({ helper, onClose, onLetGo }: { helper: HelperRecord; onClose: () => void; onLetGo?: () => void }) {
   const n = helper.name
+  const handleLetGo = () => {
+    if (onLetGo) {
+      onLetGo()
+    } else {
+      notify(`${n} let go`)
+    }
+    onClose()
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -53,7 +62,7 @@ export function LetGoDialog({ helper, onClose }: { helper: HelperRecord; onClose
             fs={14}
             labelClass="font-semibold"
             className="min-w-0 flex-1"
-            onClick={onClose}
+            onClick={handleLetGo}
           >
             Let go
           </Btn>

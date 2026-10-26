@@ -25,6 +25,7 @@ import { Drawer } from '../../routines/ui'
 import { Chip, IconTile, Initials, PageHeader, PageShell, PenButton } from '../ControlPanelShared'
 import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
+import { notify } from '../../../ui/ds/Toaster'
 
 interface Section {
   h: string
@@ -273,8 +274,8 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
         sub="What Sahabat Warga is, how it works and the rules. Every helper reads it before acting, and every person can read it in Docs."
         actions={
           <>
-            <PenButton fs={13} icon={Eye}>Preview as staff</PenButton>
-            <PenButton variant="primary" icon={FilePlus}>New file</PenButton>
+            <PenButton fs={13} icon={Eye} onClick={() => notify('Previewing as staff member')}>Preview as staff</PenButton>
+            <PenButton variant="primary" icon={FilePlus} onClick={() => notify('New file — editor coming soon')}>New file</PenButton>
           </>
         }
       />
@@ -285,7 +286,7 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
             <span className="text-[14px] font-semibold text-ink">Company brief</span>
             <span className="text-[12.5px] text-muted">The paragraph every helper reads first, and the first page new staff see.</span>
           </div>
-          <PenButton variant="quiet" h={30} fs={13} icon={Pencil}>Edit</PenButton>
+          <PenButton variant="quiet" h={30} fs={13} icon={Pencil} onClick={() => notify('Opening brief editor…')}>Edit</PenButton>
         </div>
         <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
           <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">
@@ -391,10 +392,20 @@ function fileToMarkdown(f: HandbookFile): string {
 
 /** pen bb67G · a handbook file opened in the right-side drawer. */
 function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: () => void }) {
+  const [suggestion, setSuggestion] = useState(file.suggestion ?? null)
   const scope = file.locked ? 'Members & helpers only' : 'Everyone can read'
   const ScopeIcon = file.locked ? Lock : Globe
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(() => fileToMarkdown(file))
+
+  function acceptSuggestion() {
+    setSuggestion(null)
+    notify('Suggestion accepted — handbook updated')
+  }
+  function dismissSuggestion() {
+    setSuggestion(null)
+    notify('Suggestion dismissed')
+  }
 
   return (
     <Drawer
@@ -462,16 +473,16 @@ function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: ()
         </div>
       ))}
 
-      {file.suggestion && (
+      {suggestion && (
         <div className="flex w-full flex-col gap-[10px] rounded-lg bg-warn-tint p-[14px] outline-1 -outline-offset-1 outline-warn-line">
           <div className="flex w-full items-center gap-[8px]">
-            <Mascot helper area={file.suggestion.area} size={24} radius={7} />
-            <span className="text-[12.5px] font-semibold text-ink">{file.suggestion.who}</span>
+            <Mascot helper area={suggestion.area} size={24} radius={7} />
+            <span className="text-[12.5px] font-semibold text-ink">{suggestion.who}</span>
           </div>
-          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{file.suggestion.text}</p>
+          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{suggestion.text}</p>
           <div className="flex gap-[6px]">
-            <PenButton variant="primary" h={28} fs={12.5} px={12}>Accept</PenButton>
-            <PenButton h={28} fs={12.5} px={12}>Dismiss</PenButton>
+            <PenButton variant="primary" h={28} fs={12.5} px={12} onClick={acceptSuggestion}>Accept</PenButton>
+            <PenButton h={28} fs={12.5} px={12} onClick={dismissSuggestion}>Dismiss</PenButton>
           </div>
         </div>
       )}

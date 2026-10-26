@@ -30,6 +30,7 @@ import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { accents } from '../../ui/ds/accents'
+import { CreateFolderDialog } from '../shell/CreateFolderDialog'
 import { FOLDER_PAGES } from './data'
 import type { FolderChat, FolderPage } from './data'
 
@@ -97,6 +98,8 @@ function ChatMenu({
   subOpen,
   onRename,
   onMoveToFolder,
+  onNewFolder,
+  onLinkToGoal,
   onPin,
   onArchive,
   onDelete,
@@ -110,6 +113,8 @@ function ChatMenu({
   subOpen?: boolean
   onRename?: () => void
   onMoveToFolder?: (folderId: string) => void
+  onNewFolder?: () => void
+  onLinkToGoal?: () => void
   onPin?: () => void
   onArchive?: () => void
   onDelete?: () => void
@@ -146,13 +151,13 @@ function ChatMenu({
                   </DropdownMenu.Item>
                 ))}
                 <Divider />
-                <DropdownMenu.Item className={itemClass}>
+                <DropdownMenu.Item className={itemClass} onSelect={onNewFolder}>
                   <ItemBody icon={FolderPlus} label="New folder…" />
                 </DropdownMenu.Item>
               </DropdownMenu.SubContent>
             </DropdownMenu.Portal>
           </DropdownMenu.Sub>
-          <DropdownMenu.Item className={itemClass}>
+          <DropdownMenu.Item className={itemClass} onSelect={onLinkToGoal}>
             <ItemBody icon={Target} label="Link to goal" sub />
           </DropdownMenu.Item>
           <DropdownMenu.Item className={itemClass} onSelect={onPin}>
@@ -231,6 +236,8 @@ export function FolderRoute() {
   const [localInstructions, setLocalInstructions] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'recent' | 'oldest' | 'az'>('recent')
   const [localFiles, setLocalFiles] = useState<string[]>([])
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [goalPickerFor, setGoalPickerFor] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const designMenu = state === 'menu'
 
@@ -270,8 +277,58 @@ export function FolderRoute() {
     setRenameFor(null)
   }
 
+  // Mock goal list derived from sessions linked to any channel
+  const mockGoals = [
+    { id: 'g1', title: 'Passwordless login by Q4' },
+    { id: 'g2', title: 'Grow RT admin sign-ups 20%' },
+    { id: 'g3', title: 'Ship mobile app v2' },
+  ]
+
   return (
     <>
+      {/* New folder dialog */}
+      <CreateFolderDialog
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        onConfirm={(name) => {
+          // Mock: just close — no real folder store in this view
+          void name
+        }}
+      />
+
+      {/* Goal picker dialog */}
+      {goalPickerFor && (
+        <div
+          role="dialog"
+          aria-label="Link to goal"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]"
+        >
+          <div className="flex w-[360px] flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
+            <h3 className="m-0 text-[16px] font-semibold text-ink">Link to goal</h3>
+            <div className="flex flex-col gap-[4px]">
+              {mockGoals.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => {
+                    patchSession(goalPickerFor, { goal: g.title })
+                    setGoalPickerFor(null)
+                  }}
+                  className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
+                >
+                  <Target size={13} aria-hidden className="text-ok" />
+                  {g.title}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="secondary" style={{ height: 32 }} onClick={() => setGoalPickerFor(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Chat rename dialog */}
       {renameFor && (
         <div role="dialog" aria-label="Rename chat" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-[#0C0A0926]">
@@ -429,6 +486,8 @@ export function FolderRoute() {
                     onOpenChange={(o) => setMenuFor(o ? chat.id : null)}
                     onRename={() => startRename(chat)}
                     onMoveToFolder={(fId) => patchSession(chat.id, { folderId: fId })}
+                    onNewFolder={() => setNewFolderOpen(true)}
+                    onLinkToGoal={() => { setGoalPickerFor(chat.id); setMenuFor(null) }}
                     onPin={() => patchSession(chat.id, { pinned: true })}
                     onArchive={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}
                     onDelete={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}

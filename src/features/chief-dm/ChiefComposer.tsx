@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowUp, Mic, Plus } from 'lucide-react'
+import { ArrowUp, Mic, MicOff, Plus } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
 import { IconButton, SquareButton } from '../../ui/ds/Button'
 import { ContextRing } from '../../ui/ds/ContextRing'
@@ -30,7 +30,9 @@ export function ChiefComposer({
   const setText = onChange ?? setOwn
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
+  const [recording, setRecording] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -55,6 +57,14 @@ export function ChiefComposer({
 
   return (
     <div className="flex w-full flex-col gap-[8px] rounded-lg bg-surface p-[10px] shadow-[0_8px_12px_#0000001F] outline-1 -outline-offset-1 outline-line-strong">
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-hidden
+        tabIndex={-1}
+        className="sr-only"
+        onChange={() => {/* handled by parent via ref */}}
+      />
       <div className="flex min-h-[32px] w-full p-[4px]">
         <textarea
           ref={ref}
@@ -68,7 +78,7 @@ export function ChiefComposer({
         />
       </div>
       <div className="flex w-full items-center gap-[8px]">
-        <SquareButton icon={Plus} aria-label="Attach" />
+        <SquareButton icon={Plus} aria-label="Attach" onClick={() => fileInputRef.current?.click()} />
         <div className="h-px flex-1" />
         {!compact && (
           <span className="inline-flex items-center gap-[5px] rounded-base px-[6px] py-[4px]">
@@ -78,7 +88,13 @@ export function ChiefComposer({
         )}
         <ModelMenu selected={model} onSelect={setModel} />
         <ThinkingMenu model={model} level={thinking} onSelect={setThinking} />
-        <IconButton icon={Mic} aria-label="Voice input" />
+        <IconButton
+          icon={recording ? MicOff : Mic}
+          aria-label={recording ? 'Stop recording' : 'Voice input'}
+          aria-pressed={recording}
+          onClick={() => setRecording((r) => !r)}
+          className={recording ? 'text-red-500 hover:text-red-600' : ''}
+        />
         <SquareButton
           variant="primary"
           icon={ArrowUp}

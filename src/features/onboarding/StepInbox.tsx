@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { notify } from "../../ui/ds/Toaster";
 import {
   CalendarSync,
   ChartLine,
@@ -102,10 +103,14 @@ function JobCard({
   job,
   approved,
   onApprove,
+  onDismiss,
+  onEdit,
 }: {
   job: InboxJob;
   approved: boolean;
   onApprove: () => void;
+  onDismiss: () => void;
+  onEdit: () => void;
 }) {
   return (
     <article className="relative flex w-full items-center gap-[12px] rounded-lg bg-surface px-[16px] py-[15px]">
@@ -128,12 +133,14 @@ function JobCard({
         <div className="flex items-center gap-[10px]">
           <button
             type="button"
+            onClick={onDismiss}
             className="h-[32px] px-[14px] text-[14px] text-muted hover:text-ink"
           >
             Not now
           </button>
           <button
             type="button"
+            onClick={onEdit}
             className="h-[32px] rounded-btn bg-surface px-[14px] text-[14px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
           >
             Edit
@@ -196,7 +203,9 @@ function GettingStarted() {
 
 export function StepInbox() {
   const [approved, setApproved] = useState<Record<string, boolean>>({});
-  const left = INBOX_JOBS.filter((j) => !approved[j.id]).length;
+  const [dismissed, setDismissed] = useState<Record<string, boolean>>({});
+  const visibleJobs = INBOX_JOBS.filter((j) => !dismissed[j.id]);
+  const left = visibleJobs.filter((j) => !approved[j.id]).length;
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -293,7 +302,7 @@ export function StepInbox() {
                     type="button"
                     onClick={() => {
                       setApproved(
-                        Object.fromEntries(INBOX_JOBS.map((j) => [j.id, true])),
+                        Object.fromEntries(visibleJobs.map((j) => [j.id, true])),
                       );
                       navigate({ to: '/inbox' });
                     }}
@@ -306,7 +315,7 @@ export function StepInbox() {
               </div>
 
               <div className="flex w-full flex-col gap-[16px]">
-                {INBOX_JOBS.map((j) => (
+                {visibleJobs.map((j) => (
                   <JobCard
                     key={j.id}
                     job={j}
@@ -314,6 +323,10 @@ export function StepInbox() {
                     onApprove={() =>
                       setApproved((a) => ({ ...a, [j.id]: true }))
                     }
+                    onDismiss={() =>
+                      setDismissed((d) => ({ ...d, [j.id]: true }))
+                    }
+                    onEdit={() => notify(`Editing "${j.title}"`)}
                   />
                 ))}
               </div>

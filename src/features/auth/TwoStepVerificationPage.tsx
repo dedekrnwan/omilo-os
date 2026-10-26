@@ -16,7 +16,7 @@ export function TwoStepVerificationPage() {
       <CodeRow digits="30917" caret={5} />
       <AuthCheckbox label="Trust this device for 30 days" />
       <AuthButton to="/auth/choose-company">Continue</AuthButton>
-      <AuthLinks q="Lost your phone?" a="Use a backup code" />
+      <AuthLinks q="Lost your phone?" a="Use a backup code" to="/auth/check-email" />
     </AuthLayout>
   )
 }

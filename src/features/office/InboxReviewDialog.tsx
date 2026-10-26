@@ -3,12 +3,97 @@
  * Back · Skip · Reject · Approve & next walk through the proposals one at a time.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowLeft, Calendar, Check, GitBranch, Link, ListChecks, Timer, UserRound, X } from 'lucide-react'
 import type { InboxItem } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
+import { notify } from '../../ui/ds/Toaster'
 import { PROPOSAL_DETAILS } from './data'
 import { Btn32, OfficeDialog } from './ui'
+
+// ── Mock helpers ───────────────────────────────────────────────────────────────
+
+const MOCK_MEMBERS = ['Dede', 'Ari', 'Budi', 'Sari', 'Chief']
+
+/** Tiny inline date-picker popover anchored to the "Change due date" button. */
+function DueDatePopover({
+  anchor,
+  current,
+  onConfirm,
+  onClose,
+}: {
+  anchor: DOMRect | null
+  current: string
+  onConfirm: (d: string) => void
+  onClose: () => void
+}) {
+  const [value, setValue] = useState(current)
+  if (!anchor) return null
+  return (
+    <>
+      {/* backdrop */}
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
+      <div
+        className="fixed z-50 w-[220px] rounded-lg bg-surface p-[12px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong"
+        style={{ top: anchor.bottom + 6, left: anchor.left }}
+      >
+        <p className="m-0 mb-[8px] text-[12px] font-medium text-ink">Change due date</p>
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-full rounded-base bg-soft px-[8px] py-[6px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong"
+        />
+        <div className="mt-[8px] flex justify-end gap-[6px]">
+          <button type="button" onClick={onClose} className="h-[26px] rounded-btn px-[10px] text-[12px] text-muted hover:text-ink">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => { onConfirm(value); onClose() }}
+            className="h-[26px] rounded-btn bg-primary px-[10px] text-[12px] font-medium text-primary-ink hover:bg-primary-hover"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** Tiny inline assignee-picker popover. */
+function AssigneePopover({
+  anchor,
+  onSelect,
+  onClose,
+}: {
+  anchor: DOMRect | null
+  onSelect: (name: string) => void
+  onClose: () => void
+}) {
+  if (!anchor) return null
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
+      <div
+        className="fixed z-50 w-[180px] rounded-lg bg-surface py-[4px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong"
+        style={{ top: anchor.bottom + 6, left: anchor.left }}
+      >
+        <p className="px-[10px] py-[4px] text-[10.5px] font-medium tracking-[0.6px] text-faint uppercase">Assign to</p>
+        {MOCK_MEMBERS.map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => { onSelect(name); onClose() }}
+            className="flex w-full items-center gap-[8px] px-[10px] py-[6px] text-[13px] text-ink-2 hover:bg-hover"
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
 
 export interface ReviewResult {
   proposalIndex: number
@@ -38,6 +123,13 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
   const [results, setResults] = useState<ReviewResult[]>(() =>
     Array.from({ length: initialStep }, (_, i) => ({ proposalIndex: i, decision: 'approved' as const })),
   )
+  // date-picker popover
+  const [dateAnchor, setDateAnchor] = useState<DOMRect | null>(null)
+  const [dueDate, setDueDate] = useState('')
+  const calendarWrapRef = useRef<HTMLSpanElement>(null)
+  // assignee popover
+  const [assigneeAnchor, setAssigneeAnchor] = useState<DOMRect | null>(null)
+  const assigneeWrapRef = useRef<HTMLSpanElement>(null)
 
   if (proposals.length === 0) return null
   const current = proposals[step]
@@ -114,14 +206,48 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
           </>
         )}
         <div className="flex w-full gap-[8px]">
-          <Btn32 variant="quiet" icon={Calendar}>
-            Change due date
-          </Btn32>
-          <Btn32 variant="quiet" icon={UserRound}>
-            Assign to someone else
-          </Btn32>
+          <span ref={calendarWrapRef}>
+            <Btn32
+              variant="quiet"
+              icon={Calendar}
+              onClick={() => {
+                const rect = calendarWrapRef.current?.getBoundingClientRect() ?? null
+                setDateAnchor(rect)
+              }}
+            >
+              Change due date
+            </Btn32>
+          </span>
+          <span ref={assigneeWrapRef}>
+            <Btn32
+              variant="quiet"
+              icon={UserRound}
+              onClick={() => {
+                const rect = assigneeWrapRef.current?.getBoundingClientRect() ?? null
+                setAssigneeAnchor(rect)
+              }}
+            >
+              Assign to someone else
+            </Btn32>
+          </span>
         </div>
       </div>
+
+      {/* Popovers */}
+      <DueDatePopover
+        anchor={dateAnchor}
+        current={dueDate || current.due}
+        onConfirm={(d) => {
+          setDueDate(d)
+          notify('Due date updated')
+        }}
+        onClose={() => setDateAnchor(null)}
+      />
+      <AssigneePopover
+        anchor={assigneeAnchor}
+        onSelect={(name) => notify(`Assigned to ${name}`)}
+        onClose={() => setAssigneeAnchor(null)}
+      />
     </OfficeDialog>
   )
 }

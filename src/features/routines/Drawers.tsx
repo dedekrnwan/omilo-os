@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Calendar,
@@ -31,6 +31,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
+import { notify } from '../../ui/ds/Toaster'
 import { Mascot } from '../../ui/ds/Mascot'
 import {
   AGENTS,
@@ -470,7 +471,11 @@ export function RunOutputDrawer({ onClose, onOpenRoutine }: { onClose: () => voi
 export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean; onClose: () => void; onCreate: () => void }) {
   const [move, setMove] = useState(true)
   const [slot, setSlot] = useState(0)
+  const [editingTime, setEditingTime] = useState(false)
+  const [customTime, setCustomTime] = useState(NEW_ROUTINE.when)
+  const timeInputRef = useRef<HTMLInputElement>(null)
   const who = AGENTS[NEW_ROUTINE.who]
+  const displayedWhen = clash ? NEW_ROUTINE.slots[slot].title.replace(' — recommended', '') : customTime
   const rows: { k: string; v: React.ReactNode; edit?: boolean }[] = [
     {
       k: 'Who',
@@ -481,7 +486,7 @@ export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean;
         </>
       ),
     },
-    { k: 'When', v: clash ? NEW_ROUTINE.slots[slot].title.replace(' — recommended', '') : NEW_ROUTINE.when, edit: true },
+    { k: 'When', v: displayedWhen, edit: true },
     ...(clash ? [] : [{ k: 'Why then', v: NEW_ROUTINE.why }]),
     { k: 'Sends to', v: NEW_ROUTINE.sendsTo },
     { k: 'Cost', v: NEW_ROUTINE.cost },
@@ -521,10 +526,37 @@ export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean;
             <div key={row.k} className={`flex w-full items-center gap-[10px] py-[8px] ${i < rows.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}>
               <dt className="w-[90px] shrink-0 text-[12.5px] text-muted">{row.k}</dt>
               <dd className="m-0 flex min-w-0 flex-1 items-center gap-[6px] text-[12.5px] font-medium text-ink">{row.v}</dd>
-              {row.edit && (
-                <button type="button" className="text-[12px] font-medium text-link hover:underline">
+              {row.edit && !editingTime && (
+                <button
+                  type="button"
+                  className="text-[12px] font-medium text-link hover:underline"
+                  onClick={() => {
+                    if (clash) {
+                      // Clash view: cycle to next slot
+                      setSlot((s) => (s + 1) % NEW_ROUTINE.slots.length)
+                      notify('Time slot updated')
+                    } else {
+                      setEditingTime(true)
+                      setTimeout(() => timeInputRef.current?.focus(), 0)
+                    }
+                  }}
+                >
                   Change
                 </button>
+              )}
+              {row.edit && editingTime && (
+                <input
+                  ref={timeInputRef}
+                  aria-label="Set time"
+                  value={customTime}
+                  onChange={(e) => setCustomTime(e.target.value)}
+                  onBlur={() => { setEditingTime(false); notify('Time updated') }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    if (e.key === 'Escape') { setCustomTime(NEW_ROUTINE.when); setEditingTime(false) }
+                  }}
+                  className="w-[110px] rounded-base bg-surface px-[6px] py-[2px] text-[12px] text-ink outline-1 outline-ink"
+                />
               )}
             </div>
           ))}

@@ -129,7 +129,10 @@ export function ModelMenu({ selected, onSelect, defaultOpen }: ModelMenuProps) {
           )}
 
           <MenuHeading label="GOOGLE" meta="Not connected" />
-          <DropdownMenu.Item className={rowClass}>
+          <DropdownMenu.Item
+            className={rowClass}
+            onSelect={() => void navigate({ to: '/control-panel/$section', params: { section: 'ai-accounts' } })}
+          >
             <ProviderTile provider="google" size={18} />
             <span className="flex-1 text-[12.5px] text-muted">Connect Google to use Gemini</span>
             <ArrowUpRight size={13} aria-hidden className="text-muted" />
