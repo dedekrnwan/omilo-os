@@ -2,12 +2,15 @@ import uvicorn
 from fastapi import FastAPI
 
 from omilo.api.health import router as health_router
+from omilo.auth.router import me_router, router as auth_router
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Omilo API", version="0.1.0")
 
     app.include_router(health_router, prefix="/v1")
+    app.include_router(auth_router, prefix="/v1")
+    app.include_router(me_router, prefix="/v1")
 
     return app
 
