@@ -28,7 +28,7 @@ dev:
 
 # ── test: run the full pytest suite ──────────────────────────────────────────
 test:
-	$(PYTHON) -m pytest apps/api/tests/ -v
+	$(PYTHON) -m pytest tests/ -v
 
 # ── migrate: upgrade to head only ────────────────────────────────────────────
 migrate:
