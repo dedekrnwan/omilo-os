@@ -118,4 +118,36 @@ describe('Office · Routines', () => {
     expect(await screen.findByRole('button', { name: /Last working day/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('Next: Fri Oct 30 · Fri Nov 27 · Thu Dec 31')).toBeInTheDocument()
   })
+
+  test('Last-8 bar: hovering shows a rich tooltip for that run', async () => {
+    renderAt('/routines?view=list')
+    // On-call digest run 5 of 8 is the failed one.
+    const bar = await screen.findByRole('button', { name: 'On-call digest — run 5 of 8: Failed' })
+    fireEvent.mouseEnter(bar)
+    const tip = await screen.findByRole('tooltip')
+    expect(tip).toHaveTextContent('Failed')
+    expect(tip).toHaveTextContent('PagerDuty')
+    expect(tip).toHaveTextContent('Click to open full run')
+  })
+
+  test('Last-8 bar: clicking opens the focused run drawer with logs', async () => {
+    renderAt('/routines?view=list')
+    fireEvent.click(await screen.findByRole('button', { name: 'On-call digest — run 5 of 8: Failed' }))
+    const drawer = await screen.findByRole('dialog')
+    expect(drawer).toHaveTextContent('On-call digest · Ops')
+    expect(drawer).toHaveTextContent('Why it failed')
+    expect(drawer).toHaveTextContent('Logs')
+    expect(screen.getByRole('button', { name: 'Re-run now' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open routine' })).toBeInTheDocument()
+  })
+
+  test('Last-8 bar: a successful run shows its output instead of an error', async () => {
+    renderAt('/routines?view=list')
+    // Morning brief is all-green; open its most recent run (8 of 8).
+    fireEvent.click(await screen.findByRole('button', { name: 'Morning brief — run 8 of 8: Success' }))
+    const drawer = await screen.findByRole('dialog')
+    expect(drawer).toHaveTextContent('Morning brief · Chief')
+    expect(drawer).toHaveTextContent('Output')
+    expect(drawer).not.toHaveTextContent('Why it failed')
+  })
 })

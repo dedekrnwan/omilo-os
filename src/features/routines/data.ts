@@ -242,6 +242,202 @@ export const LIST_GROUPS: RoutineGroup[] = [
 
 export const LIST_MORE = { text: 'Dev 2 · Finance 2 · Support 1', link: 'Show all 15' }
 
+// ── Last-8 run detail (hover tooltip + focused run drawer) ────────────────────
+
+export const RUN_STATUS: Record<RunResult, string> = { ok: 'Success', fail: 'Failed', skip: 'Skipped', none: 'No run' }
+
+export interface RunStep {
+  t: string
+  text: string
+  error?: boolean
+}
+export interface RunLog {
+  text: string
+  level?: 'warn' | 'error'
+}
+
+export interface RunDetail {
+  result: RunResult
+  status: string
+  /** Short label for the tooltip, e.g. "Fri 23 · 07:30". */
+  whenShort: string
+  /** Long label for the drawer title, e.g. "Fri 23 Oct, 07:30". */
+  whenLong: string
+  agentId: string
+  duration: string
+  triggeredBy: string
+  cost: string
+  attempts: string
+  /** One-line summary — success result, or the reason a run was skipped. */
+  outcome: string
+  /** Failure reason (fail only). */
+  error?: string
+  /** What the run produced (success only). */
+  output?: string[]
+  steps: RunStep[]
+  logs: RunLog[]
+}
+
+const RUN_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const RUN_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** Sat 24 Oct 2026 — the latest day of WEEK_LABEL. Runs count back from here. */
+const runAnchor = () => new Date(2026, 9, 24)
+
+const runTime = (when: string) => when.match(/\d{1,2}:\d{2}/)?.[0] ?? '08:00'
+
+/** 8 believable run dates for a cadence, oldest first (index 0 = leftmost bar). */
+function runDates(when: string): Date[] {
+  const w = when.toLowerCase()
+  const weekdaysOnly = w.includes('weekdays')
+  const step = w.includes('every') || w.includes('weekdays') || w.includes('daily') ? 1 : w.includes('&') ? 3 : 7
+  const out: Date[] = []
+  const d = runAnchor()
+  while (out.length < 8) {
+    if (!weekdaysOnly || (d.getDay() !== 0 && d.getDay() !== 6)) out.push(new Date(d))
+    d.setDate(d.getDate() - step)
+  }
+  return out.reverse()
+}
+
+/** HH:MM + offset seconds → "HH:MM:SS". */
+function clock(hhmm: string, secs: number): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const total = h * 3600 + m * 60 + secs
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(Math.floor(total / 3600) % 24)}:${p(Math.floor((total % 3600) / 60))}:${p(total % 60)}`
+}
+
+const RUN_OUTCOME: Record<string, string> = {
+  'morning-brief': '5 bullets · 1 risk flagged',
+  'goal-check-ins': '4 goals reviewed · 2 nudges',
+  'weekly-retro': '3 wins · 2 follow-ups',
+  'on-call-digest': '14 incidents · 0 paging',
+  'backup-check': 'All 6 backups verified',
+  'instagram-report': '12 posts · reach +8%',
+  'ad-spend-review': 'Spend on track · 1 flag',
+}
+
+const RUN_OUTPUT_LINES: Record<string, string[]> = {
+  'morning-brief': [
+    'Summarised 4 goals and 3 Inbox items.',
+    'Flagged the Postgres 16 upgrade as at risk.',
+    'Delivered to WhatsApp and #General.',
+  ],
+  'on-call-digest': [
+    'Pulled 14 open incidents from the last 24h.',
+    'Grouped by service — none needed paging.',
+    'Posted the digest to #ops.',
+  ],
+  'backup-check': ['Checked all 6 nightly backups.', 'Restored each to a scratch volume and verified.', 'No action needed.'],
+  'instagram-report': ['Rolled up 12 posts from the past week.', 'Reach up 8%, saves up 14%.', 'Top post: the referral teaser reel.'],
+}
+
+const SKIP_REASON: Record<string, string> = {
+  'weekly-retro': 'a public holiday',
+  'ad-spend-review': 'the routine was paused',
+}
+
+/** Builds the full detail for the i-th bar (left→right) of a routine row. */
+export function runDetail(row: RoutineRow, i: number): RunDetail {
+  const result = row.runs[i] ?? 'none'
+  const date = runDates(row.when)[i]
+  const time = runTime(row.when)
+  const day = `${RUN_WD[date.getDay()]} ${date.getDate()}`
+  const whenShort = `${day} · ${time}`
+  const whenLong = `${day} ${RUN_MO[date.getMonth()]}, ${time}`
+  const base = {
+    result,
+    status: RUN_STATUS[result],
+    whenShort,
+    whenLong,
+    agentId: row.agentId,
+    triggeredBy: 'Schedule' as const,
+  }
+
+  if (result === 'fail') {
+    if (row.id === 'on-call-digest')
+      return {
+        ...base,
+        duration: '12s',
+        cost: '$0.004',
+        attempts: '3 / 3',
+        outcome: 'Failed — PagerDuty unreachable',
+        error: 'Couldn’t reach PagerDuty — the API timed out after 3 retries. No digest was sent.',
+        steps: [
+          { t: clock(time, 0), text: 'Run started · schedule trigger' },
+          { t: clock(time, 1), text: 'Fetched 14 open incidents from source' },
+          { t: clock(time, 12), text: 'PagerDuty API timeout — gave up after retry 3', error: true },
+        ],
+        logs: [
+          { text: `${clock(time, 1)} INFO  fetch incidents ok (14)` },
+          { text: `${clock(time, 4)} WARN  pagerduty retry 1/3`, level: 'warn' },
+          { text: `${clock(time, 8)} WARN  pagerduty retry 2/3`, level: 'warn' },
+          { text: `${clock(time, 12)} ERROR ETIMEDOUT api.pagerduty.com`, level: 'error' },
+          { text: `${clock(time, 12)} ERROR run aborted`, level: 'error' },
+        ],
+      }
+    return {
+      ...base,
+      duration: '8s',
+      cost: '$0.002',
+      attempts: '2 / 2',
+      outcome: 'Failed — aborted after retries',
+      error: 'The run hit an error and was aborted after 2 retries. Nothing was sent.',
+      steps: [
+        { t: clock(time, 0), text: 'Run started · schedule trigger' },
+        { t: clock(time, 2), text: 'Working…' },
+        { t: clock(time, 8), text: 'Unrecoverable error — run aborted', error: true },
+      ],
+      logs: [
+        { text: `${clock(time, 3)} WARN  retry 1/2`, level: 'warn' },
+        { text: `${clock(time, 8)} ERROR run aborted`, level: 'error' },
+      ],
+    }
+  }
+
+  if (result === 'skip') {
+    const reason = SKIP_REASON[row.id] ?? 'there was nothing to do'
+    return {
+      ...base,
+      duration: '—',
+      cost: '$0.00',
+      attempts: '—',
+      outcome: `Skipped — ${reason}`,
+      steps: [
+        { t: clock(time, 0), text: 'Run started · schedule trigger' },
+        { t: clock(time, 1), text: `Skipped — ${reason}` },
+      ],
+      logs: [{ text: `${clock(time, 1)} INFO  skipped: ${reason}` }],
+    }
+  }
+
+  if (result === 'none')
+    return { ...base, duration: '—', cost: '$0.00', attempts: '—', outcome: 'No run yet', steps: [], logs: [] }
+
+  // Success.
+  const outcome = RUN_OUTCOME[row.id] ?? 'Completed on schedule'
+  return {
+    ...base,
+    duration: '1m 50s',
+    cost: '$0.009',
+    attempts: '1 / 1',
+    outcome,
+    output: RUN_OUTPUT_LINES[row.id] ?? ['Completed on schedule.', outcome],
+    steps: [
+      { t: clock(time, 0), text: 'Run started · schedule trigger' },
+      { t: clock(time, 2), text: `${AGENTS[row.agentId].name} read the sources` },
+      { t: clock(time, 110), text: `Produced output — ${outcome}` },
+      { t: clock(time, 112), text: 'Delivered to WhatsApp & chat' },
+    ],
+    logs: [
+      { text: `${clock(time, 1)} INFO  read sources ok` },
+      { text: `${clock(time, 4)} INFO  generating output` },
+      { text: `${clock(time, 110)} INFO  output ready` },
+      { text: `${clock(time, 112)} INFO  delivered ok` },
+    ],
+  }
+}
+
 export const SUGGESTION = {
   title: 'Monday morning is crowded',
   desc: '4 routines start between 08:00 and 10:00. Spreading them keeps Ops free for incidents.',

@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Pause,
   Play,
+  RotateCcw,
   Send,
   Sparkles,
   Square,
@@ -43,6 +44,7 @@ import {
   type Frequency,
   type RoutineDetail,
   type RoutineDrawerState,
+  type RunDetail,
 } from './data'
 import {
   Chip,
@@ -461,6 +463,125 @@ export function RunOutputDrawer({ onClose, onOpenRoutine }: { onClose: () => voi
           Discuss
         </SecondaryButton>
       </div>
+    </Drawer>
+  )
+}
+
+// ── Run detail drawer (Last-8 bar click) ─────────────────────────────────────
+
+const RUN_CHIP = {
+  ok: { tone: 'ok' as const, icon: Check },
+  fail: { tone: 'bad' as const, icon: TriangleAlert },
+  skip: { tone: 'neutral' as const, icon: CircleMinus },
+  none: { tone: 'neutral' as const, icon: Circle },
+}
+
+function RunStat({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex flex-col gap-[3px] rounded-md bg-soft p-[10px]">
+      <span className="text-[11.5px] text-muted">{k}</span>
+      <span className="text-[13px] font-semibold text-ink">{v}</span>
+    </div>
+  )
+}
+
+/** Focused view of one run: status, stats, outcome/error, step timeline and raw logs. */
+export function RunDetailDrawer({
+  detail: d,
+  routineName,
+  onClose,
+  onOpenRoutine,
+  onRerun,
+}: {
+  detail: RunDetail
+  routineName: string
+  onClose: () => void
+  onOpenRoutine: () => void
+  onRerun: () => void
+}) {
+  const chip = RUN_CHIP[d.result]
+  const agent = AGENTS[d.agentId]
+  return (
+    <Drawer
+      title={`Run — ${d.whenLong}`}
+      subtitle={`${routineName} · ${agent.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="h-px flex-1" />
+          <SecondaryButton onClick={onOpenRoutine}>Open routine</SecondaryButton>
+          {d.result !== 'skip' && d.result !== 'none' && (
+            <PrimaryButton icon={RotateCcw} onClick={onRerun}>
+              Re-run now
+            </PrimaryButton>
+          )}
+        </>
+      }
+    >
+      <div className="flex w-full shrink-0 items-center gap-[8px]">
+        <Chip tone={chip.tone} icon={chip.icon} label={d.status} />
+        <span className="text-[12.5px] text-muted">{d.whenShort}</span>
+      </div>
+
+      <div className="grid w-full shrink-0 grid-cols-2 gap-[10px]">
+        <RunStat k="Duration" v={d.duration} />
+        <RunStat k="Triggered by" v={d.triggeredBy} />
+        <RunStat k="Cost" v={d.cost} />
+        <RunStat k="Attempts" v={d.attempts} />
+      </div>
+
+      {d.error ? (
+        <section className="flex w-full shrink-0 flex-col gap-[8px]">
+          <SectionLabel>Why it failed</SectionLabel>
+          <p className="m-0 rounded-md bg-bad-tint p-[12px] text-[12.5px] leading-[1.5] text-bad outline-1 -outline-offset-1 outline-bad-line">
+            {d.error}
+          </p>
+        </section>
+      ) : d.output ? (
+        <section className="flex w-full shrink-0 flex-col gap-[8px]">
+          <SectionLabel>Output</SectionLabel>
+          <article className="flex w-full flex-col gap-[8px] rounded-lg bg-soft p-[14px] outline-1 -outline-offset-1 outline-line">
+            {d.output.map((b) => (
+              <div key={b} className="flex w-full gap-[8px]">
+                <span className="text-[13px] text-muted">•</span>
+                <span className="min-w-0 flex-1 text-[13px] leading-[1.5] text-ink-2">{b}</span>
+              </div>
+            ))}
+          </article>
+        </section>
+      ) : (
+        <p className="m-0 w-full rounded-md bg-soft p-[12px] text-[12.5px] leading-[1.5] text-muted">{d.outcome}</p>
+      )}
+
+      {d.steps.length > 0 && (
+        <section className="flex w-full shrink-0 flex-col gap-[8px]">
+          <SectionLabel>Timeline</SectionLabel>
+          <ul className="m-0 flex list-none flex-col p-0">
+            {d.steps.map((s, i) => (
+              <li
+                key={i}
+                className={`flex gap-[10px] py-[7px] text-[12.5px] ${i < d.steps.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
+              >
+                <span className="w-[62px] shrink-0 font-mono text-[11.5px] text-faint">{s.t}</span>
+                <span className={s.error ? 'font-medium text-bad' : 'text-ink-2'}>{s.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {d.logs.length > 0 && (
+        <section className="flex w-full shrink-0 flex-col gap-[8px]">
+          <SectionLabel>Logs</SectionLabel>
+          <pre className="m-0 max-h-[160px] w-full overflow-auto rounded-md bg-[#1C1917] p-[12px] font-mono text-[11.5px] leading-[1.6] text-[#D6D3D1]">
+            {d.logs.map((l, i) => (
+              <div key={i} className={l.level === 'error' ? 'text-[#FCA5A5]' : l.level === 'warn' ? 'text-[#FCD34D]' : ''}>
+                {l.text}
+              </div>
+            ))}
+          </pre>
+        </section>
+      )}
     </Drawer>
   )
 }

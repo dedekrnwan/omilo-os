@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Building2,
+  Check,
   ChevronRight,
   Contact,
   Eye,
@@ -380,10 +381,21 @@ function SideTitle({ children }: { children: string }) {
 const H = 'm-0 font-display text-[17px] font-semibold tracking-[-0.2px] text-ink'
 const P = 'm-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ink-2'
 
+/** Serialise a handbook file's structured content to editable markdown. */
+function fileToMarkdown(f: HandbookFile): string {
+  return [
+    f.intro,
+    ...f.sections.map((s) => `## ${s.h}\n\n${s.body}${s.note ? `\n\n> ${s.note}` : ''}`),
+  ].join('\n\n')
+}
+
 /** pen bb67G · a handbook file opened in the right-side drawer. */
 function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: () => void }) {
   const scope = file.locked ? 'Members & helpers only' : 'Everyone can read'
   const ScopeIcon = file.locked ? Lock : Globe
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(() => fileToMarkdown(file))
+
   return (
     <Drawer
       title={file.title}
@@ -391,13 +403,44 @@ function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: ()
       onClose={onClose}
       bodyClass="gap-[16px] px-[24px] py-[20px]"
       footer={
-        <>
-          <History size={12} aria-hidden className="text-muted" />
-          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{file.edited}</span>
-          <PenButton h={30} fs={13} icon={Pencil}>Edit</PenButton>
-        </>
+        editing ? (
+          <>
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">Editing {file.name}</span>
+            <PenButton
+              h={30}
+              fs={13}
+              onClick={() => {
+                setDraft(fileToMarkdown(file))
+                setEditing(false)
+              }}
+            >
+              Cancel
+            </PenButton>
+            <PenButton variant="primary" h={30} fs={13} icon={Check} onClick={() => setEditing(false)}>
+              Save changes
+            </PenButton>
+          </>
+        ) : (
+          <>
+            <History size={12} aria-hidden className="text-muted" />
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{file.edited}</span>
+            <PenButton h={30} fs={13} icon={Pencil} onClick={() => setEditing(true)}>
+              Edit
+            </PenButton>
+          </>
+        )
       }
     >
+      {editing ? (
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          aria-label={`Edit ${file.name}`}
+          className="w-full min-h-[55vh] flex-1 resize-none rounded-md bg-surface p-[14px] font-mono text-[13px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
+        />
+      ) : (
+        <>
       <div className="flex w-full items-center gap-[8px]">
         <span className="inline-flex h-[26px] items-center gap-[6px] rounded-btn px-[10px] outline-1 -outline-offset-1 outline-line-strong">
           <ScopeIcon size={12} aria-hidden className="text-ink-2" />
@@ -455,6 +498,8 @@ function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: ()
             <SideRow key={h.label} lead={null} label={h.label} right={h.right} />
           ))}
         </div>
+      )}
+        </>
       )}
     </Drawer>
   )
