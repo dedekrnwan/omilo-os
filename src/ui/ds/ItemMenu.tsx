@@ -27,7 +27,7 @@ export type MenuEntry =
   | { type: 'sub'; label: string; icon?: LucideIcon; disabled?: boolean; items: MenuEntries }
 
 /** Falsy entries are skipped, so lists can use `cond && {...}`. */
-export type MenuEntries = ReadonlyArray<MenuEntry | false | null | undefined>
+export type MenuEntries = ReadonlyArray<MenuEntry | false | null | undefined | '' | 0>
 
 type Kit = typeof DropdownMenu | typeof ContextMenu
 

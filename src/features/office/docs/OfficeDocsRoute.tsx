@@ -1,9 +1,14 @@
-import { useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   FileText,
-  Network,
+  Spline,
+  Sparkles,
+  PanelRight,
+  Pin,
+  PinOff,
+  Trash2,
+  Copy,
   Brain,
-  MessageSquare,
   BookOpen,
   Search,
   Plus,
@@ -14,7 +19,6 @@ import {
   MoreHorizontal,
   Folder,
   Check,
-  Upload,
   X,
   CheckCircle2,
   Circle,
@@ -22,33 +26,28 @@ import {
   Mic,
   Send,
   Zap,
-  ChevronDown,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button, IconButton } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
-import { notify } from '../../../ui/ds/Toaster'
-import { helperColor } from '../../../ui/tokens'
 import {
   DOC_AREAS,
   ACTIVE_DOC,
   LINKED_DOCS,
   LINKED_GOALS,
-  GRAPH_NODES,
-  GRAPH_EDGES,
-  GRAPH_AREA_COLORS,
-  KNOWLEDGE_MEMORIES,
-  KNOWLEDGE_NODES,
-  DROPPED_FILES,
   ASK_CHIEF_SUGGESTIONS,
   ASK_CHIEF_MATCHING_DOCS,
   ASK_CHIEF_ANSWER,
   HANDBOOK_FILES,
   POLICIES_MD_CONTENT,
 } from './data'
-import type { DocFile, KnowledgeMemory } from './data'
-import { ForceGraph } from './ForceGraph'
+import type { DocFile } from './data'
+import { GraphView } from './GraphView'
+import { KnowledgeView } from './KnowledgeView'
+import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
+import type { MenuEntries } from '../../../ui/ds/ItemMenu'
+import { notify } from '../../../ui/ds/Toaster'
 import { useArea } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
 
@@ -56,68 +55,61 @@ import { useUIStore } from '../../../app/store'
 
 export type DocsMainView = 'notes' | 'graph' | 'knowledge' | 'ask-chief' | 'handbook'
 
-type KnowledgeSubState = 'off' | 'graph' | 'answer' | 'dropping' | 'reading' | 'add-sources' | 'added'
 
-// ── View toggle ───────────────────────────────────────────────────────────────
+// ── View toggle (icon-only button group, pen Docs topbar) ─────────────────────
 
-const VIEW_TABS: Array<{ id: DocsMainView; label: string; icon: LucideIcon }> = [
-  { id: 'notes',     label: 'Notes',     icon: FileText },
-  { id: 'graph',     label: 'Graph',     icon: Network },
+const VIEW_TABS: Array<{ id: Exclude<DocsMainView, 'handbook'>; label: string; icon: LucideIcon }> = [
+  { id: 'notes', label: 'Notes', icon: FileText },
+  { id: 'graph', label: 'Graph', icon: Spline },
   { id: 'knowledge', label: 'Knowledge', icon: Brain },
-  { id: 'ask-chief', label: 'Ask Chief', icon: MessageSquare },
-  { id: 'handbook',  label: 'Handbook',  icon: BookOpen },
+  { id: 'ask-chief', label: 'Ask Chief', icon: Sparkles },
 ]
 
-function ViewToggle({
-  active,
-  onChange,
-}: {
-  active: DocsMainView
-  onChange: (v: DocsMainView) => void
-}) {
+function ViewToggle({ active, onChange, knowledgeOn }: { active: DocsMainView; onChange: (v: DocsMainView) => void; knowledgeOn: boolean }) {
+  const current = active === 'handbook' ? 'notes' : active
   return (
-    <div className="flex items-center gap-px rounded-base bg-soft p-[3px] outline-1 -outline-offset-1 outline-line-strong">
-      {VIEW_TABS.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          aria-pressed={active === id}
-          onClick={() => onChange(id)}
-          className="flex h-[26px] items-center gap-[5px] rounded-sm px-[8px] text-[12px] font-medium transition-colors"
-          style={{
-            background: active === id ? 'var(--color-surface)' : 'transparent',
-            color: active === id ? 'var(--color-ink)' : 'var(--color-muted)',
-            boxShadow: active === id ? '0 1px 3px rgba(0,0,0,0.07)' : undefined,
-          }}
-        >
-          <Icon size={13} aria-hidden />
-          {label}
-        </button>
-      ))}
+    <div role="tablist" aria-label="Docs views" className="flex items-center gap-[2px] rounded-base bg-soft p-[2px] outline-1 -outline-offset-1 outline-line">
+      {VIEW_TABS.map(({ id, label, icon: Icon }) => {
+        const on = current === id
+        const off = id === 'knowledge' && !knowledgeOn && !on
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            aria-label={label}
+            onClick={() => onChange(id)}
+            className={`group relative flex size-[28px] items-center justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ink ${
+              on ? 'bg-surface text-ink shadow-[0_1px_2px_#00000014]' : off ? 'text-faint hover:text-muted' : 'text-muted hover:text-ink-2'
+            }`}
+          >
+            <Icon size={15} aria-hidden />
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute top-[calc(100%+6px)] left-1/2 z-50 hidden h-[24px] -translate-x-1/2 items-center rounded-btn bg-primary px-[8px] text-[12px] whitespace-nowrap text-white shadow-[0_4px_10px_#0C0A0929] group-hover:flex"
+            >
+              {id === 'knowledge' && !knowledgeOn ? 'Knowledge · off' : label}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-// ── Shared topbar actions ─────────────────────────────────────────────────────
-
-function TopbarActions({
-  activeView,
-  onViewChange,
-}: {
-  view: DocsMainView
-  activeView: DocsMainView
-  onViewChange: (v: DocsMainView) => void
-}) {
+function PanelToggle({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
-    <div className="flex items-center gap-[10px]">
-      <ViewToggle active={activeView} onChange={onViewChange} />
-      <div className="flex items-center gap-[2px]">
-        <IconButton icon={Upload} size={15} aria-label="Import" />
-        <IconButton icon={Zap} size={15} aria-label="Automations" />
-        <IconButton icon={Share2} size={15} aria-label="Share" />
-        <IconButton icon={MoreHorizontal} size={15} aria-label="More" />
-      </div>
-    </div>
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={open}
+      title={label}
+      onClick={onToggle}
+      className={`flex size-[30px] items-center justify-center rounded-sm hover:bg-hover ${open ? 'text-ink' : 'text-muted'}`}
+    >
+      <PanelRight size={16} aria-hidden />
+    </button>
   )
 }
 
@@ -135,21 +127,65 @@ function docIcon(icon: DocFile['icon']) {
 function NotesSidebar({
   activeId,
   onSelect,
-  onViewChange,
+  onShowInGraph,
+  onAskChief,
+  onOpenKnowledge,
   onNewDoc,
 }: {
   activeId: string
   onSelect: (id: string) => void
-  onViewChange: (v: DocsMainView) => void
+  onShowInGraph: (id: string) => void
+  onAskChief: (id: string) => void
+  onOpenKnowledge: () => void
   onNewDoc: () => void
 }) {
   const [query, setQuery] = useState('')
+  const [pinned, setPinned] = useState<Record<string, boolean>>({})
+  const [deleted, setDeleted] = useState<string[]>([])
+  const [names, setNames] = useState<Record<string, string>>({})
+  const [renaming, setRenaming] = useState<string | null>(null)
+
+  function menuFor(doc: DocFile): MenuEntries {
+    const isPinned = pinned[doc.id] ?? doc.pinned ?? false
+    return [
+      { label: 'Open', icon: FileText, onSelect: () => onSelect(doc.id) },
+      { label: 'Show in graph', icon: Spline, onSelect: () => onShowInGraph(doc.id) },
+      { label: 'Ask Chief about it', icon: Sparkles, onSelect: () => onAskChief(doc.id) },
+      { type: 'separator' },
+      { label: 'Rename', icon: Edit3, onSelect: () => setRenaming(doc.id) },
+      isPinned
+        ? { label: 'Unpin', icon: PinOff, onSelect: () => setPinned((p) => ({ ...p, [doc.id]: false })) }
+        : { label: 'Pin to top', icon: Pin, onSelect: () => setPinned((p) => ({ ...p, [doc.id]: true })) },
+      { label: 'Duplicate', icon: Copy, onSelect: () => notify(`Made a copy of “${names[doc.id] ?? doc.title}”`) },
+      { label: 'Copy link', icon: Link2, onSelect: () => { copyText(`${location.origin}/docs/${doc.id}`); notify('Link copied') } },
+      { type: 'separator' },
+      {
+        label: 'Delete',
+        icon: Trash2,
+        danger: true,
+        onSelect: () => {
+          setDeleted((d) => [...d, doc.id])
+          notify(`Deleted “${names[doc.id] ?? doc.title}”`, () => setDeleted((d) => d.filter((x) => x !== doc.id)))
+        },
+      },
+    ]
+  }
+  const rowProps = (doc: DocFile) => ({
+    doc: { ...doc, title: names[doc.id] ?? doc.title, pinned: pinned[doc.id] ?? doc.pinned },
+    menu: menuFor(doc),
+    renaming: renaming === doc.id,
+    onRename: (v: string | null) => {
+      setRenaming(null)
+      if (v) setNames((n) => ({ ...n, [doc.id]: v }))
+    },
+  })
+  const visible = (d: DocFile) => !deleted.includes(d.id)
   const [filter, setFilter] = useState<'All' | 'By you' | 'By agents'>('All')
   const filters = ['All', 'By you', 'By agents'] as const
 
-  const allDocs = DOC_AREAS.flatMap((a) => a.docs)
+  const allDocs = DOC_AREAS.flatMap((a) => a.docs).filter(visible)
   const filtered = query
-    ? allDocs.filter((d) => d.title.toLowerCase().includes(query.toLowerCase()))
+    ? allDocs.filter((d) => (names[d.id] ?? d.title).toLowerCase().includes(query.toLowerCase()))
     : null
 
   return (
@@ -202,7 +238,7 @@ function NotesSidebar({
           {filtered.map((doc) => (
             <NoteDocRow
               key={doc.id}
-              doc={doc}
+              {...rowProps(doc)}
               active={doc.id === activeId}
               onSelect={() => onSelect(doc.id)}
             />
@@ -217,10 +253,10 @@ function NotesSidebar({
               </span>
               <span className="ml-[4px] text-[10.5px] text-faint">{area.docs.length}</span>
             </div>
-            {area.docs.map((doc) => (
+            {area.docs.filter(visible).map((doc) => (
               <NoteDocRow
                 key={doc.id}
-                doc={doc}
+                {...rowProps(doc)}
                 active={doc.id === activeId}
                 onSelect={() => onSelect(doc.id)}
               />
@@ -233,7 +269,7 @@ function NotesSidebar({
       <div className="mt-auto flex items-center gap-[6px] px-[8px] py-[6px]">
         <Brain size={12} className="text-faint" aria-hidden />
         <span className="text-[11.5px] text-muted">Agent memory is separate</span>
-        <button type="button" onClick={() => onViewChange('knowledge')} className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
+        <button type="button" onClick={onOpenKnowledge} className="ml-auto text-[11.5px] text-link hover:underline whitespace-nowrap">
           Open the Knowledge view
         </button>
       </div>
@@ -245,38 +281,57 @@ function NoteDocRow({
   doc,
   active,
   onSelect,
+  menu,
+  renaming,
+  onRename,
 }: {
   doc: DocFile
   active: boolean
   onSelect: () => void
+  menu: MenuEntries
+  renaming: boolean
+  onRename: (v: string | null) => void
 }) {
   return (
-    <button
-      type="button"
-      aria-current={active ? 'true' : undefined}
-      onClick={onSelect}
-      className={`flex w-full items-center gap-[6px] rounded-sm px-[8px] py-[5px] text-left transition-colors ${
-        active ? 'bg-hover' : 'hover:bg-hover'
-      }`}
-    >
-      {doc.unread && (
-        <span aria-label="unread" className="size-[6px] shrink-0 rounded-full bg-helper-brand" />
-      )}
-      {docIcon(doc.icon)}
-      <span
-        className={`min-w-0 flex-1 truncate text-[12.5px] ${
-          active ? 'font-medium text-ink' : 'text-ink-2'
+    <ContextMenuArea items={menu} label={`${doc.title} actions`}>
+      <div
+        className={`group/doc relative flex w-full items-center gap-[6px] rounded-sm px-[8px] py-[5px] transition-colors data-[state=open]:bg-hover ${
+          active ? 'bg-hover' : 'hover:bg-hover'
         }`}
       >
-        {doc.title}
-      </span>
-      {doc.status && (
-        <span className="shrink-0 rounded-pill bg-soft px-[5px] py-[1px] text-[10.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-          {doc.status}
+        <button type="button" aria-current={active ? 'true' : undefined} aria-label={doc.title} onClick={onSelect} className="absolute inset-0 rounded-sm" />
+        <span className="pointer-events-none relative flex w-full items-center gap-[6px]">
+          {doc.unread && <span aria-label="unread" className="size-[6px] shrink-0 rounded-full bg-helper-brand" />}
+          {docIcon(doc.icon)}
+          {renaming ? (
+            <input
+              autoFocus
+              aria-label="New name"
+              defaultValue={doc.title}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => onRename(e.currentTarget.value.trim() || null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') onRename(null)
+              }}
+              className="pointer-events-auto h-[20px] min-w-0 flex-1 rounded-xs bg-surface px-[4px] text-[12.5px] text-ink outline-1 outline-ink"
+            />
+          ) : (
+            <span className={`min-w-0 flex-1 truncate text-[12.5px] ${active ? 'font-medium text-ink' : 'text-ink-2'}`}>{doc.title}</span>
+          )}
+          {doc.pinned && <Pin size={11} aria-label="pinned" className="shrink-0 -rotate-45 text-faint" />}
+          {doc.status && (
+            <span className="shrink-0 rounded-pill bg-soft px-[5px] py-[1px] text-[10.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
+              {doc.status}
+            </span>
+          )}
+          <span className="shrink-0 text-[11px] whitespace-nowrap text-faint group-hover/doc:hidden group-has-[[data-state=open]]/doc:hidden">{doc.edited}</span>
+          <span className="pointer-events-auto hidden group-hover/doc:flex has-[[data-state=open]]:flex">
+            <MoreMenu items={menu} label={`${doc.title} actions`} size={18} />
+          </span>
         </span>
-      )}
-      <span className="shrink-0 text-[11px] text-faint whitespace-nowrap">{doc.edited}</span>
-    </button>
+      </div>
+    </ContextMenuArea>
   )
 }
 
@@ -474,199 +529,6 @@ function NoteDocViewer() {
 
 // ── Graph view ────────────────────────────────────────────────────────────────
 
-function GraphView({ onViewChange }: { onViewChange: (v: DocsMainView) => void }) {
-  const [selected, setSelected] = useState<string | null>('n-passkey')
-  const [activeAreas, setActiveAreas] = useState<Set<string>>(new Set())
-  const [activeMadeBy, setActiveMadeBy] = useState<Set<string>>(new Set())
-  const [showChecks, setShowChecks] = useState<Record<string, boolean>>({
-    'Orphan docs': false,
-    'Links to goals': true,
-  })
-
-  function toggleArea(label: string) {
-    setActiveAreas((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label); else next.add(label)
-      return next
-    })
-  }
-
-  function toggleMadeBy(label: string) {
-    setActiveMadeBy((prev) => {
-      const next = new Set(prev)
-      if (next.has(label)) next.delete(label); else next.add(label)
-      return next
-    })
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      {/* Left sidebar */}
-      <div className="flex w-[240px] shrink-0 flex-col gap-[8px] overflow-y-auto border-r border-line px-[8px] py-[10px]">
-        {/* Search */}
-        <label className="flex items-center gap-[6px] rounded-base bg-soft px-[8px] py-[5px] outline-1 -outline-offset-1 outline-line-strong">
-          <Search size={12} aria-hidden className="text-faint" />
-          <input
-            placeholder="Find in graph…"
-            className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-faint"
-          />
-        </label>
-
-        {/* Areas */}
-        <div className="flex flex-col gap-px">
-          <div className="px-[10px] pb-[4px] pt-[2px]">
-            <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">AREAS</span>
-          </div>
-          {[
-            { label: 'Engineering', color: 'var(--color-helper-dev)',       count: 18 },
-            { label: 'Marketing',   color: 'var(--color-helper-marketing)', count: 14 },
-            { label: 'Business',    color: 'var(--color-helper-sales)',      count: 11 },
-            { label: 'General',     color: '#A8A29E',                        count: 11 },
-          ].map((a) => {
-            const isActive = activeAreas.has(a.label)
-            return (
-              <button
-                key={a.label}
-                type="button"
-                onClick={() => toggleArea(a.label)}
-                className={`flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] transition-colors ${isActive ? 'bg-hover' : 'hover:bg-hover'}`}
-              >
-                <span className="size-[8px] shrink-0 rounded-full" style={{ background: a.color }} />
-                <span className={`flex-1 text-[13px] ${isActive ? 'font-medium text-ink' : 'text-ink-2'}`}>{a.label}</span>
-                <span className="text-[11.5px] text-muted">{a.count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Made by */}
-        <div className="flex flex-col gap-px">
-          <div className="px-[10px] pb-[4px] pt-[2px]">
-            <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">MADE BY</span>
-          </div>
-          {[
-            { label: 'You & team', count: 29 },
-            { label: 'Agents',     count: 35 },
-          ].map((m) => {
-            const isActive = activeMadeBy.has(m.label)
-            return (
-              <button
-                key={m.label}
-                type="button"
-                onClick={() => toggleMadeBy(m.label)}
-                className={`flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] transition-colors ${isActive ? 'bg-hover' : 'hover:bg-hover'}`}
-              >
-                <span className={`flex-1 text-[13px] ${isActive ? 'font-medium text-ink' : 'text-ink-2'}`}>{m.label}</span>
-                <span className="text-[11.5px] text-muted">{m.count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Show */}
-        <div className="flex flex-col gap-px">
-          <div className="px-[10px] pb-[4px] pt-[2px]">
-            <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">SHOW</span>
-          </div>
-          {[
-            { label: 'Orphan docs',   count: 6 },
-            { label: 'Links to goals', count: 0 },
-          ].map((s) => {
-            const checked = showChecks[s.label] ?? false
-            return (
-              <button
-                key={s.label}
-                type="button"
-                onClick={() => setShowChecks((prev) => ({ ...prev, [s.label]: !prev[s.label] }))}
-                className="flex h-[28px] items-center gap-[8px] rounded-sm px-[8px] hover:bg-hover transition-colors"
-              >
-                <span
-                  className="size-[14px] shrink-0 rounded-xs outline-1 -outline-offset-1 outline-line-strong flex items-center justify-center"
-                  style={{ background: checked ? 'var(--color-primary)' : 'var(--color-surface)' }}
-                >
-                  {checked && <Check size={9} className="text-primary-ink" aria-hidden />}
-                </span>
-                <span className="flex-1 text-[13px] text-ink-2">{s.label}</span>
-                {s.count > 0 && <span className="text-[11.5px] text-muted">{s.count}</span>}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Knowledge notice */}
-        <button
-          type="button"
-          onClick={() => onViewChange('knowledge')}
-          className="mx-[4px] mt-auto flex items-start gap-[6px] rounded-base bg-soft px-[10px] py-[8px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-hover transition-colors"
-        >
-          <Brain size={12} className="text-faint mt-[1px] shrink-0" aria-hidden />
-          <span className="text-[11.5px] text-muted">Agent memory is kept out of this graph. Open the Knowledge view to see it.</span>
-        </button>
-      </div>
-
-      {/* Graph canvas — real d3-force simulation: drag nodes, pan, zoom, click to open. */}
-      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <ForceGraph
-          nodes={GRAPH_NODES}
-          edges={GRAPH_EDGES}
-          colorOf={(n) => GRAPH_AREA_COLORS[n.area]}
-          selected={selected}
-          onSelect={setSelected}
-          renderCard={(node, pos) => (
-            <div
-              className="absolute z-10 w-[220px] rounded-lg bg-surface shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong duration-150 ease-soft animate-in fade-in-0 zoom-in-95"
-              style={{ left: pos.left + 16, top: pos.top - 10, maxWidth: 'calc(100% - 24px)' }}
-            >
-              <div className="px-[12px] py-[10px]">
-                <div className="mb-[2px] flex items-center gap-[6px]">
-                  <span className="size-[8px] shrink-0 rounded-full" style={{ background: GRAPH_AREA_COLORS[node.area] }} />
-                  <span className="text-[11px] text-faint">Engineering / Q4 Launch · 6 links · edited 2h ago</span>
-                </div>
-                <p className="mb-[4px] text-[13px] font-medium text-ink">{node.label}</p>
-                <p className="mb-[8px] text-[12px] text-muted">
-                  Ship passkeys to every user before the Nov 28 code freeze, in two waves…
-                </p>
-                <div className="flex gap-[4px]">
-                  <button
-                    type="button"
-                    onClick={() => { notify(`Opened: ${node.label}`) }}
-                    className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
-                  >
-                    <ArrowUpRight size={11} aria-hidden /> Open note
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { onViewChange('ask-chief') }}
-                    className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong transition hover:text-ink active:scale-95"
-                  >
-                    <MessageSquare size={11} aria-hidden /> Ask Chief
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        />
-
-        {/* Legend */}
-        <div className="pointer-events-none absolute bottom-[16px] left-[16px] flex items-center gap-[12px]">
-          {[
-            { label: 'Engineering', color: 'var(--color-helper-dev)' },
-            { label: 'Marketing',   color: 'var(--color-helper-marketing)' },
-            { label: 'Business',    color: 'var(--color-helper-sales)' },
-            { label: 'General',     color: '#A8A29E' },
-            { label: 'Goal',        color: '#6366F1' },
-          ].map((l) => (
-            <div key={l.label} className="flex items-center gap-[4px]">
-              <span className="size-[6px] shrink-0 rounded-full" style={{ background: l.color }} />
-              <span className="text-[11px] text-muted">{l.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Knowledge off ─────────────────────────────────────────────────────────────
 
 function KnowledgeOff({ onTurnOn }: { onTurnOn: () => void }) {
@@ -744,695 +606,6 @@ function KnowledgeOff({ onTurnOn }: { onTurnOn: () => void }) {
         <p className="text-[11.5px] text-faint m-0">
           Only admins can turn this on. Turn it off anytime — memories are kept for 30 days, then deleted.
         </p>
-      </div>
-    </div>
-  )
-}
-
-// ── Knowledge on: graph + chat ────────────────────────────────────────────────
-
-function KnowledgeReviewBubble({ mem, onConfirm, onForget }: { mem: KnowledgeMemory; onConfirm: () => void; onForget: () => void }) {
-  return (
-    <div className="absolute left-[140px] top-[76px] w-[220px] rounded-lg bg-surface shadow-lg outline-1 -outline-offset-1 outline-line-strong z-10">
-      <div className="px-[12px] py-[10px]">
-        <div className="flex items-center gap-[6px] mb-[4px]">
-          <Mascot size={16} radius={4} area={mem.agentArea} />
-          <span className="text-[11.5px] font-medium text-ink">{mem.agent}</span>
-          <span className="text-[10.5px] text-faint">· lesson</span>
-          <span className="ml-auto rounded-pill px-[5px] py-[0.5px] text-[10px] font-medium bg-warn-tint text-warn">
-            Needs review
-          </span>
-        </div>
-        <p className="text-[12.5px] text-ink font-medium m-0 mb-[2px]">{mem.text}</p>
-        <p className="text-[11.5px] text-faint m-0 mb-[8px]">Learned from your Inbox decision · Nov 4</p>
-        <div className="flex gap-[4px]">
-          <button type="button" onClick={onConfirm} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-            <Check size={10} aria-hidden /> Confirm
-          </button>
-          <button type="button" className="flex h-[24px] items-center gap-[3px] rounded-sm bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-            Edit
-          </button>
-          <button type="button" onClick={onForget} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-            Forget
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function KnowledgeGraph({
-  onAsk,
-  subState,
-  onSubState,
-}: {
-  onAsk: (question: string) => void
-  subState: KnowledgeSubState
-  onSubState: (s: KnowledgeSubState) => void
-}) {
-  const [reviewDismissed, setReviewDismissed] = useState(false)
-  const [filterTag, setFilterTag] = useState<'All' | 'Lessons' | 'Preferences' | 'Facts'>('All')
-  const filterTags = ['All', 'Lessons', 'Preferences', 'Facts'] as const
-
-  const dropping = subState === 'dropping'
-  const reading  = subState === 'reading'
-  const added    = subState === 'added'
-
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Sub-topbar strip */}
-      <div className="flex h-[40px] shrink-0 items-center gap-[8px] border-b border-line px-[16px]">
-        <div className="flex gap-[2px]">
-          {filterTags.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setFilterTag(t)}
-              className="flex h-[24px] items-center gap-[4px] rounded-sm px-[8px] text-[12px] font-medium transition-colors"
-              style={{
-                background: filterTag === t ? 'var(--color-hover)' : 'transparent',
-                color: filterTag === t ? 'var(--color-ink)' : 'var(--color-muted)',
-              }}
-            >
-              {t !== 'All' && (
-                <span
-                  className="size-[6px] rounded-full shrink-0"
-                  style={{
-                    background:
-                      t === 'Lessons' ? 'var(--color-info)' :
-                      t === 'Preferences' ? 'var(--color-warn)' :
-                      'var(--color-ok)',
-                  }}
-                />
-              )}
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-[6px]">
-          <button
-            type="button"
-            onClick={() => onSubState('add-sources')}
-            className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[10px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors"
-          >
-            <Plus size={12} aria-hidden /> Add sources
-          </button>
-          <span className="rounded-pill bg-warn-tint px-[6px] py-[1px] text-[11px] font-medium text-warn">
-            2 need review →
-          </span>
-        </div>
-      </div>
-
-      {/* Main graph area */}
-      <div
-        className="relative min-h-0 flex-1 overflow-hidden"
-        onDragOver={(e) => { e.preventDefault(); onSubState('dropping') }}
-        onDragLeave={() => { if (subState === 'dropping') onSubState('graph') }}
-        onDrop={(e) => { e.preventDefault(); onSubState('reading') }}
-      >
-        {/* Drop overlay */}
-        {dropping && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-surface/90 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-[12px]">
-              <Mascot size={56} radius={14} area="brand" />
-              <h3 className="text-[17px] font-semibold text-ink m-0">Drop to teach the whole company</h3>
-              <p className="text-[13px] text-muted m-0">Chief reads documents and photos and adds what it finds to company knowledge.</p>
-              <div className="flex items-center gap-[4px]">
-                <span className="size-[6px] rounded-full bg-muted" aria-hidden />
-                <span className="text-[12px] text-muted">Company-wide</span>
-              </div>
-              <p className="text-[11.5px] text-faint m-0">PDF, Word, Excel, slides · photos and scans · up to 50 MB each</p>
-            </div>
-          </div>
-        )}
-
-        {/* Review bubble */}
-        {!reviewDismissed && !dropping && !reading && !added && (
-          <KnowledgeReviewBubble
-            mem={KNOWLEDGE_MEMORIES[0]}
-            onConfirm={() => setReviewDismissed(true)}
-            onForget={() => setReviewDismissed(true)}
-          />
-        )}
-
-        {/* Sources panel (reading) */}
-        {reading && (
-          <div className="absolute right-0 top-0 bottom-0 w-[240px] z-10 border-l border-line bg-surface overflow-y-auto">
-            <div className="flex items-center gap-[6px] px-[12px] py-[10px] border-b border-line">
-              <span className="text-[12.5px] font-medium text-ink flex-1">Reading 3 files</span>
-              <button type="button" onClick={() => onSubState('graph')} className="text-faint hover:text-muted">
-                <X size={14} aria-hidden />
-              </button>
-            </div>
-            <div className="flex flex-col divide-y divide-line">
-              {DROPPED_FILES.map((f) => (
-                <div key={f.id} className="px-[12px] py-[10px]">
-                  <div className="flex items-start gap-[8px]">
-                    <div
-                      className="mt-[1px] size-[16px] shrink-0 rounded flex items-center justify-center text-[8px] font-bold uppercase"
-                      style={{
-                        background: f.type === 'xlsx' ? '#16A34A1A' : f.type === 'pdf' ? '#DC26261A' : '#0EA5E91A',
-                        color: f.type === 'xlsx' ? '#16A34A' : f.type === 'pdf' ? '#DC2626' : '#0EA5E9',
-                      }}
-                    >
-                      {f.type}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-medium text-ink m-0 truncate">{f.name}</p>
-                      <p className="text-[11px] text-muted m-0">
-                        {f.status === 'reading'
-                          ? `Reading p. ${f.page ?? '…'}`
-                          : f.status === 'added'
-                          ? `${f.factsAdded} added · ${f.factsSkipped ?? 0} skipped`
-                          : 'Skipped'}
-                      </p>
-                    </div>
-                    {f.status === 'reading' ? (
-                      <span className="text-[11px] text-info whitespace-nowrap">Reading</span>
-                    ) : f.status === 'added' ? (
-                      <CheckCircle2 size={14} className="text-ok shrink-0" aria-hidden />
-                    ) : (
-                      <span className="text-[11px] text-faint">Skip</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Added state: sources panel + toast */}
-        {added && (
-          <>
-            <div className="absolute top-[8px] left-0 right-0 flex justify-center z-20">
-              <div className="flex items-center gap-[10px] rounded-lg bg-surface shadow-lg outline-1 -outline-offset-1 outline-line-strong px-[14px] py-[8px]">
-                <span className="text-[12.5px] font-medium text-ink">12 facts added from Harga sewa balai.xlsx · 1 skipped</span>
-                <button type="button" className="text-[11.5px] text-link hover:underline">Undo</button>
-                <button type="button" className="text-[11.5px] text-link hover:underline">Show in graph</button>
-              </div>
-            </div>
-            {/* Sources sidebar */}
-            <div className="absolute left-0 top-0 bottom-0 w-[180px] border-r border-line bg-soft overflow-y-auto z-10">
-              <div className="px-[10px] py-[10px] flex flex-col gap-[4px]">
-                <p className="text-[10.5px] font-medium tracking-[0.8px] text-faint mb-[4px]">SOURCES</p>
-                {DROPPED_FILES.map((f) => (
-                  <div key={f.id} className="flex items-center gap-[6px] py-[2px]">
-                    <div
-                      className="size-[12px] shrink-0 rounded text-[7px] font-bold uppercase flex items-center justify-center"
-                      style={{
-                        background: f.type === 'xlsx' ? '#16A34A1A' : f.type === 'pdf' ? '#DC26261A' : '#0EA5E91A',
-                        color: f.type === 'xlsx' ? '#16A34A' : f.type === 'pdf' ? '#DC2626' : '#0EA5E9',
-                      }}
-                    >
-                      {f.type}
-                    </div>
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{f.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Knowledge graph SVG */}
-        <svg
-          width="100%"
-          height="100%"
-          viewBox="0 0 720 380"
-          preserveAspectRatio="xMidYMid meet"
-          aria-label="Knowledge memory graph"
-          style={{ opacity: dropping ? 0.2 : 1 }}
-        >
-          {/* Connections from agents to Company facts */}
-          {KNOWLEDGE_NODES.filter((n) => n.id !== 'kn-facts').map((n) => {
-            const center = KNOWLEDGE_NODES.find((x) => x.id === 'kn-facts')!
-            return (
-              <line
-                key={n.id}
-                x1={n.x} y1={n.y} x2={center.x} y2={center.y}
-                stroke="var(--color-line-strong)"
-                strokeWidth={1.5}
-              />
-            )
-          })}
-
-          {/* Memory dots floating near agents */}
-          {KNOWLEDGE_NODES.filter((n) => n.id !== 'kn-facts').flatMap((agent) =>
-            (agent.memories ?? []).map((mem, mi) => {
-              const angle = (mi / (agent.memories!.length)) * Math.PI + Math.PI * 0.5
-              const dist = 60 + mi * 10
-              const mx = agent.x + Math.cos(angle) * dist
-              const my = agent.y + Math.sin(angle) * dist
-              return (
-                <g key={`${agent.id}-m${mi}`}>
-                  <line
-                    x1={agent.x} y1={agent.y} x2={mx} y2={my}
-                    stroke="var(--color-line-strong)"
-                    strokeWidth={1}
-                    strokeDasharray="3 3"
-                  />
-                  <circle cx={mx} cy={my} r={4} fill={helperColor[agent.area]} opacity={0.7} />
-                  <text x={mx + 6} y={my + 4} fontSize={9} fill="var(--color-muted)" style={{ userSelect: 'none' }}>
-                    {mem.length > 20 ? mem.slice(0, 18) + '…' : mem}
-                  </text>
-                </g>
-              )
-            })
-          )}
-
-          {/* Agent nodes */}
-          {KNOWLEDGE_NODES.map((n) => {
-            const r = n.size === 'lg' ? 16 : 11
-            const m = n.size === 'lg' ? 18 : 13
-            return (
-              <g key={n.id}>
-                <circle
-                  cx={n.x}
-                  cy={n.y}
-                  r={r}
-                  fill={`${helperColor[n.area]}1A`}
-                  stroke={helperColor[n.area]}
-                  strokeWidth={1.5}
-                />
-                <foreignObject
-                  x={n.x - m / 2}
-                  y={n.y - m / 2}
-                  width={m}
-                  height={m}
-                  style={{ overflow: 'visible' }}
-                >
-                  <Mascot size={m} radius={5} area={n.area} />
-                </foreignObject>
-                <text
-                  x={n.x}
-                  y={n.y + r + 12}
-                  textAnchor="middle"
-                  fontSize={11}
-                  fontWeight={500}
-                  fill="var(--color-ink-2)"
-                  style={{ userSelect: 'none' }}
-                >
-                  {n.label}
-                </text>
-              </g>
-            )
-          })}
-        </svg>
-      </div>
-
-      {/* Chat composer */}
-      <KnowledgeComposer onAsk={onAsk} />
-    </div>
-  )
-}
-
-function KnowledgeComposer({ onAsk }: { onAsk: (q: string) => void }) {
-  const [value, setValue] = useState('')
-  const [recording, setRecording] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const suggestions = ['What did agents learn this week?', 'Teach: refunds over Rp 2jt go to Dede', 'Forget anything about old pricing']
-
-  return (
-    <div className="shrink-0 border-t border-line bg-surface">
-      <div className="px-[16px] py-[12px]">
-        <div className="mb-[8px] flex items-center gap-[6px]">
-          <Mascot size={22} radius={5} area="brand" />
-          <span className="text-[13px] font-medium text-ink">Ask what your agents know, or teach them something</span>
-        </div>
-        <div className="rounded-lg bg-soft outline-1 -outline-offset-1 outline-line-strong overflow-hidden">
-          <div className="flex items-center gap-[6px] px-[10px] pt-[8px] pb-[2px]">
-            <span className="text-[11.5px] text-faint">To</span>
-            <div className="flex h-[22px] items-center gap-[4px] rounded-sm bg-soft px-[6px] outline-1 -outline-offset-1 outline-line-strong">
-              <Mascot size={14} radius={3} area="brand" />
-              <span className="text-[11.5px] text-ink-2">Chief</span>
-            </div>
-          </div>
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && value.trim()) { onAsk(value); setValue('') } }}
-            placeholder={'"What has Chief learned about deploys?" or "Remember that…"'}
-            className="w-full bg-transparent px-[10px] py-[6px] text-[12.5px] text-ink outline-none placeholder:text-faint"
-          />
-          <div className="flex items-center gap-[6px] px-[10px] py-[6px] border-t border-line">
-            <input ref={fileInputRef} type="file" className="hidden" aria-hidden onChange={(e) => { if (e.target.files?.length) notify(`${e.target.files.length} file(s) selected`) }} />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex size-[24px] items-center justify-center rounded-sm text-faint hover:text-muted transition-colors"
-            >
-              <Plus size={14} aria-hidden />
-            </button>
-            <div className="flex items-center gap-[4px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-              ↕ 4.2k
-            </div>
-            <div className="flex items-center gap-[3px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-              <Mascot size={12} radius={2} area="brand" />
-              Opus 5.5
-              <ChevronDown size={10} className="text-faint" aria-hidden />
-            </div>
-            <div className="flex items-center gap-[3px] rounded-btn bg-soft px-[7px] py-[3px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-              ⚡ Medium
-              <ChevronDown size={10} className="text-faint" aria-hidden />
-            </div>
-            <div className="ml-auto flex items-center gap-[4px]">
-              <button
-                type="button"
-                onClick={() => { setRecording((r) => !r); if (!recording) { notify('Recording…') } else { notify('Recording stopped') } }}
-                className={`flex size-[28px] items-center justify-center rounded-sm transition-colors ${recording ? 'bg-bad text-primary-ink' : 'text-faint hover:bg-hover'}`}
-              >
-                <Mic size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={() => { if (value.trim()) { onAsk(value); setValue('') } }}
-                className="flex size-[28px] items-center justify-center rounded-sm bg-primary text-primary-ink hover:bg-primary-hover transition-colors"
-              >
-                <Send size={13} aria-hidden />
-              </button>
-            </div>
-          </div>
-        </div>
-        {/* Quick suggest chips */}
-        <div className="mt-[8px] flex flex-wrap gap-[4px]">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onAsk(s)}
-              className="h-[26px] rounded-pill bg-soft px-[10px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors whitespace-nowrap"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Knowledge on: answer ──────────────────────────────────────────────────────
-
-function KnowledgeAnswer({ onBack }: { question: string; onBack: () => void }) {
-  const [highlighting, setHighlighting] = useState(true)
-  const [editingLesson, setEditingLesson] = useState(false)
-  const [lessonText, setLessonText] = useState("Don't propose deploys after 21:00 — unless it's a P0 hotfix.")
-  const [lessonSaved, setLessonSaved] = useState(false)
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Answer pane overlaying graph (right side) */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Graph (dimmed) */}
-        <div className="relative min-h-0 flex-1 overflow-hidden" style={{ opacity: 0.4 }}>
-          <svg width="100%" height="100%" viewBox="0 0 720 340" preserveAspectRatio="xMidYMid meet">
-            {KNOWLEDGE_NODES.filter((n) => n.id !== 'kn-facts').map((n) => {
-              const center = KNOWLEDGE_NODES.find((x) => x.id === 'kn-facts')!
-              return (
-                <line key={n.id} x1={n.x} y1={n.y} x2={center.x} y2={center.y}
-                  stroke="var(--color-line-strong)" strokeWidth={1.5} />
-              )
-            })}
-            {KNOWLEDGE_NODES.map((n) => {
-              const r = n.size === 'lg' ? 16 : 11
-              const m = n.size === 'lg' ? 18 : 13
-              return (
-                <g key={n.id}>
-                  <circle cx={n.x} cy={n.y} r={r}
-                    fill={`${helperColor[n.area]}1A`} stroke={helperColor[n.area]} strokeWidth={1.5} />
-                  <foreignObject x={n.x - m / 2} y={n.y - m / 2} width={m} height={m} style={{ overflow: 'visible' }}>
-                    <Mascot size={m} radius={5} area={n.area} />
-                  </foreignObject>
-                </g>
-              )
-            })}
-          </svg>
-          {/* Highlighted memory dots */}
-          <div className="absolute inset-0 pointer-events-none">
-            {[1,2,3,4,5,6].map((i) => (
-              <div
-                key={i}
-                className="absolute size-[8px] rounded-full bg-primary"
-                style={{ left: 120 + i * 70, top: 80 + (i % 3) * 60 }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Answer panel */}
-        <aside className="flex w-[320px] shrink-0 flex-col border-l border-line overflow-hidden">
-          <div className="flex h-[40px] shrink-0 items-center gap-[6px] border-b border-line px-[12px]">
-            <span className="text-[12.5px] font-medium text-ink flex-1">Ask & teach</span>
-            <button type="button" className="flex size-[26px] items-center justify-center rounded-sm text-faint hover:bg-hover transition-colors">
-              <ArrowUpRight size={13} aria-hidden />
-            </button>
-            <button type="button" onClick={onBack} className="flex size-[26px] items-center justify-center rounded-sm text-faint hover:bg-hover transition-colors">
-              <X size={13} aria-hidden />
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-[12px] py-[12px] flex flex-col gap-[12px]">
-            {/* Question */}
-            <p className="text-[12.5px] text-muted text-right m-0">{ASK_CHIEF_ANSWER.question}</p>
-
-            {/* Chief reply */}
-            <div className="flex gap-[8px]">
-              <Mascot size={24} radius={6} area="brand" />
-              <div className="flex flex-col gap-[2px] min-w-0 flex-1">
-                <div className="flex items-center gap-[4px]">
-                  <span className="text-[12px] font-medium text-ink">Chief</span>
-                  <span className="text-[11px] text-faint">Chief of Staff</span>
-                  <span className="text-[11px] text-faint">· read 4 docs · 3s</span>
-                </div>
-                <p className="text-[12.5px] text-ink-2 m-0 leading-[1.6]">{ASK_CHIEF_ANSWER.answer}</p>
-                {/* Sources */}
-                <div className="flex items-center gap-[4px] mt-[4px]">
-                  <span className="text-[11px] text-faint">Sources</span>
-                  {ASK_CHIEF_ANSWER.sources.map((s) => (
-                    <span key={s} className="flex h-[18px] items-center rounded-pill bg-soft px-[5px] text-[10.5px] text-muted outline-1 -outline-offset-1 outline-line-strong">
-                      {s.slice(0, 2).toUpperCase()} {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Cited list */}
-            <div className="flex flex-col gap-[4px]">
-              {ASK_CHIEF_ANSWER.cited.map((c) => (
-                <div key={c.num} className="flex items-start gap-[8px] rounded-sm px-[8px] py-[6px] hover:bg-hover transition-colors">
-                  <span className="text-[11px] font-medium text-faint w-[12px] shrink-0">{c.num}</span>
-                  <div className="flex flex-col gap-[1px] min-w-0 flex-1">
-                    <span className="text-[12px] font-medium text-ink-2">{c.title}</span>
-                    <span className="text-[11px] text-faint">{c.area}</span>
-                  </div>
-                  <ArrowUpRight size={12} className="text-faint shrink-0 mt-[1px]" aria-hidden />
-                </div>
-              ))}
-            </div>
-
-            {/* Update lesson offer */}
-            <div className="rounded-base bg-soft px-[10px] py-[8px] outline-1 -outline-offset-1 outline-line-strong flex flex-col gap-[4px]">
-              <div className="flex items-center gap-[6px]">
-                <Mascot size={16} radius={4} area="brand" />
-                <span className="text-[11.5px] text-muted">Chief · read 51 memories · now</span>
-              </div>
-              <p className="text-[12px] text-ink-2 m-0">That refines lesson 1. Here's the update — save it?</p>
-              <div className="flex items-center gap-[6px] mt-[4px]">
-                <div className="flex items-center gap-[4px]">
-                  <span className="size-[8px] rounded-full bg-primary" aria-hidden />
-                  <span className="text-[11.5px] font-medium text-ink">Update Chief's lesson?</span>
-                </div>
-              </div>
-              <p className="text-[11.5px] text-muted m-0 italic">
-                "Don't propose deploys after 21:00 — unless it's a P0 hotfix." Replaces the old version; Chief uses it from the next run.
-              </p>
-              {editingLesson ? (
-                <div className="flex flex-col gap-[4px] mt-[4px]">
-                  <textarea
-                    autoFocus
-                    value={lessonText}
-                    onChange={(e) => setLessonText(e.target.value)}
-                    rows={2}
-                    className="w-full resize-none rounded-base bg-soft px-[8px] py-[6px] text-[11.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
-                  />
-                  <div className="flex gap-[4px]">
-                    <button type="button" onClick={() => setEditingLesson(false)} className="flex h-[24px] items-center rounded-sm px-[8px] text-[11.5px] text-muted hover:text-ink transition-colors">Cancel</button>
-                    <button type="button" onClick={() => { setEditingLesson(false); setLessonSaved(true); notify('Lesson saved') }} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-                      <Check size={10} aria-hidden /> Save lesson
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex gap-[4px] mt-[4px]">
-                  <button type="button" onClick={() => setEditingLesson(true)} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-soft px-[8px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">Edit</button>
-                  {!lessonSaved ? (
-                    <button type="button" onClick={() => { setLessonSaved(true); notify('Lesson saved') }} className="flex h-[24px] items-center gap-[3px] rounded-sm bg-primary px-[8px] text-[11.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-                      <Check size={10} aria-hidden /> Save lesson
-                    </button>
-                  ) : (
-                    <span className="flex h-[24px] items-center gap-[3px] px-[8px] text-[11.5px] text-ok">
-                      <CheckCircle2 size={10} aria-hidden /> Saved
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Suggestions */}
-            <div className="flex flex-wrap gap-[4px]">
-              {ASK_CHIEF_ANSWER.suggestions.map((s) => (
-                <button key={s} type="button" className="h-[26px] rounded-pill bg-soft px-[10px] text-[11.5px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Highlight strip */}
-          {highlighting && (
-            <div className="flex shrink-0 items-center gap-[6px] border-t border-line px-[12px] py-[6px]">
-              <span className="size-[6px] rounded-full bg-primary" aria-hidden />
-              <span className="text-[11.5px] text-muted">Highlighting 6 memories about deploys</span>
-              <button type="button" onClick={() => setHighlighting(false)} className="ml-auto text-[11.5px] text-link hover:underline">Clear</button>
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {/* Composer */}
-      <KnowledgeComposer onAsk={() => {}} />
-    </div>
-  )
-}
-
-// ── Knowledge: add-sources modal ──────────────────────────────────────────────
-
-function AddSourcesModal({ onClose }: { onClose: () => void }) {
-  const browseInputRef = useRef<HTMLInputElement>(null)
-  const [pasteOpen, setPasteOpen] = useState(false)
-  const [pasteUrl, setPasteUrl] = useState('')
-  const [visibility, setVisibility] = useState<'Company-wide' | 'Engineering' | 'Marketing' | 'Business'>('Company-wide')
-  const [visibilityOpen, setVisibilityOpen] = useState(false)
-
-  return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-surface/60">
-      <div className="w-[460px] rounded-xl bg-surface shadow-2xl outline-1 -outline-offset-1 outline-line-strong overflow-hidden">
-        <div className="flex items-center gap-[8px] px-[16px] py-[12px] border-b border-line">
-          <span className="text-[13.5px] font-semibold text-ink flex-1">Add to company knowledge</span>
-          <button type="button" onClick={onClose} className="flex size-[26px] items-center justify-center rounded-sm text-faint hover:bg-hover transition-colors">
-            <X size={14} aria-hidden />
-          </button>
-        </div>
-        <div className="px-[16px] py-[16px] flex flex-col gap-[12px]">
-          {/* Drop zone */}
-          <input ref={browseInputRef} type="file" multiple className="hidden" aria-hidden onChange={(e) => { if (e.target.files?.length) notify(`${e.target.files.length} file(s) added`) }} />
-          <div
-            className="rounded-lg border-2 border-dashed border-line-strong bg-soft px-[24px] py-[20px] flex flex-col items-center gap-[6px]"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); notify(`${e.dataTransfer.files.length} file(s) dropped`) }}
-          >
-            <Upload size={24} className="text-muted" aria-hidden />
-            <p className="text-[13px] text-muted m-0">
-              Drop files here, or{' '}
-              <button type="button" onClick={() => browseInputRef.current?.click()} className="text-link hover:underline">browse</button>
-            </p>
-            <p className="text-[11.5px] text-faint m-0">PDF, Word, Excel, slides · photos and scans · up to 50 MB each</p>
-          </div>
-
-          {/* Paste link input */}
-          {pasteOpen && (
-            <div className="flex gap-[6px]">
-              <input
-                autoFocus
-                type="url"
-                value={pasteUrl}
-                onChange={(e) => setPasteUrl(e.target.value)}
-                placeholder="https://…"
-                className="min-w-0 flex-1 rounded-base bg-soft px-[8px] py-[5px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-primary"
-              />
-              <button type="button" onClick={() => { if (pasteUrl.trim()) { notify(`Link added: ${pasteUrl}`); setPasteUrl(''); setPasteOpen(false) } }} className="flex h-[28px] items-center rounded-btn bg-primary px-[10px] text-[12px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-                Add
-              </button>
-              <button type="button" onClick={() => setPasteOpen(false)} className="flex h-[28px] items-center rounded-btn px-[8px] text-[12px] text-muted hover:text-ink transition-colors">
-                Cancel
-              </button>
-            </div>
-          )}
-
-          {/* Source options */}
-          <div className="flex gap-[8px]">
-            <button type="button" onClick={() => notify('Google Drive — connect your account to import')} className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-              ☁ From Google Drive
-            </button>
-            <button type="button" onClick={() => setPasteOpen((o) => !o)} className="flex h-[28px] flex-1 items-center justify-center gap-[5px] rounded-btn bg-soft text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-              🔗 Paste a link
-            </button>
-          </div>
-
-          {/* Visible to */}
-          <div className="relative flex items-center gap-[8px]">
-            <span className="text-[12px] text-muted">Visible to</span>
-            <button type="button" onClick={() => setVisibilityOpen((o) => !o)} className="flex h-[26px] items-center gap-[4px] rounded-btn bg-soft px-[8px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line-strong hover:text-ink transition-colors">
-              🏢 {visibility}
-              <ChevronDown size={10} className="text-faint" aria-hidden />
-            </button>
-            {visibilityOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setVisibilityOpen(false)} aria-hidden />
-                <div className="absolute left-[80px] top-[28px] z-50 w-[160px] rounded-lg bg-surface py-[4px] shadow-lg outline-1 -outline-offset-1 outline-line-strong">
-                  {(['Company-wide', 'Engineering', 'Marketing', 'Business'] as const).map((v) => (
-                    <button key={v} type="button" onClick={() => { setVisibility(v); setVisibilityOpen(false) }} className="flex w-full items-center gap-[6px] px-[10px] py-[6px] text-[12.5px] text-ink-2 hover:bg-hover">
-                      {visibility === v && <Check size={12} className="text-primary shrink-0" aria-hidden />}
-                      <span className={visibility === v ? 'font-medium text-ink' : ''}>{v}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            <span className="text-[11.5px] text-faint ml-auto">Per channel ↗ data</span>
-          </div>
-
-          {/* File list */}
-          <div className="flex flex-col gap-[4px]">
-            {DROPPED_FILES.map((f) => (
-              <div key={f.id} className="flex items-center gap-[8px] rounded-sm px-[8px] py-[6px] hover:bg-hover transition-colors">
-                <div
-                  className="size-[20px] shrink-0 rounded flex items-center justify-center text-[9px] font-bold uppercase"
-                  style={{
-                    background: f.type === 'xlsx' ? '#16A34A1A' : f.type === 'pdf' ? '#DC26261A' : '#0EA5E91A',
-                    color: f.type === 'xlsx' ? '#16A34A' : f.type === 'pdf' ? '#DC2626' : '#0EA5E9',
-                  }}
-                >
-                  {f.type}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] font-medium text-ink m-0 truncate">{f.name}</p>
-                  <p className="text-[11px] text-muted m-0">
-                    {f.status === 'reading'
-                      ? `Reading p. ${f.page ?? '…'} of 14`
-                      : f.status === 'added'
-                      ? `${f.factsAdded} added · ${f.factsSkipped ?? 0} skipped`
-                      : 'Dropped — looks like a personal ID; resident data stays out of Knowledge'}
-                  </p>
-                </div>
-                {f.status === 'reading' ? (
-                  <span className="text-[11.5px] text-info whitespace-nowrap">Reading</span>
-                ) : f.status === 'added' ? (
-                  <span className="text-[11.5px] text-ok whitespace-nowrap">Added</span>
-                ) : (
-                  <span className="text-[11.5px] text-bad whitespace-nowrap">Skipped</span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[11.5px] text-faint m-0">Runs on Quick steps · about Rp 420 for these files</p>
-
-          <div className="flex justify-end">
-            <button type="button" onClick={onClose} className="flex h-[30px] items-center rounded-btn bg-primary px-[14px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover transition-colors">
-              Done
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   )
@@ -1858,41 +1031,6 @@ function HandbookView({ onViewChange }: { onViewChange: (v: DocsMainView) => voi
 
 // ── Knowledge view (root state machine) ──────────────────────────────────────
 
-function KnowledgeView() {
-  const [knowledgeOn, setKnowledgeOn] = useState(false)
-  const [subState, setSubState] = useState<KnowledgeSubState>('graph')
-  const [askQuestion, setAskQuestion] = useState('')
-
-  if (!knowledgeOn) {
-    return <KnowledgeOff onTurnOn={() => { setKnowledgeOn(true); setSubState('graph') }} />
-  }
-
-  if (subState === 'answer' && askQuestion) {
-    return <KnowledgeAnswer question={askQuestion} onBack={() => setSubState('graph')} />
-  }
-
-  if (subState === 'add-sources') {
-    return (
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <KnowledgeGraph
-          onAsk={(q) => { setAskQuestion(q); setSubState('answer') }}
-          subState={subState}
-          onSubState={setSubState}
-        />
-        <AddSourcesModal onClose={() => setSubState('graph')} />
-      </div>
-    )
-  }
-
-  return (
-    <KnowledgeGraph
-      onAsk={(q) => { setAskQuestion(q); setSubState('answer') }}
-      subState={subState}
-      onSubState={setSubState}
-    />
-  )
-}
-
 // ── Topbar meta per view ──────────────────────────────────────────────────────
 
 function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string | null): string {
@@ -1909,17 +1047,20 @@ function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string |
 // ── Docs board (shared by both modes) ──────────────────────────────────────────
 
 /**
- * Shared Docs board: Notes | Graph | Knowledge | Ask Chief | Handbook.
- * `areaId === null` → all areas; a specific area scopes the Notes/meta copy.
- * View switching is local state; the sidebar + Inset come from ModeLayout.
+ * Shared Docs board: Notes · Graph · Knowledge · Ask Chief (icon-only toggle);
+ * Handbook opens from the Notes list. The panel toggle shows/hides the view's
+ * side panel (graph filters, Ask & teach).
  */
 function DocsBoard({ areaId }: { areaId: string | null }) {
   const { data: area } = useArea(areaId ?? '')
   const areaName = areaId ? area?.name ?? null : null
   const [view, setView] = useState<DocsMainView>('notes')
   const [activeDocId, setActiveDocId] = useState(ACTIVE_DOC.id)
-  // Knowledge "on" state is lifted so topbar meta is correct
-  const [knowledgeOn] = useState(false)
+  const [knowledgeOn, setKnowledgeOn] = useState(false)
+  const [panel, setPanel] = useState<Record<string, boolean>>({ graph: true, knowledge: false, notes: true })
+  const [teach, setTeach] = useState(0)
+  const panelOpen = panel[view] ?? false
+  const setPanelOpen = useCallback((open: boolean) => setPanel((p) => ({ ...p, [view]: open })), [view])
 
   function handleNewDoc() {
     notify('Draft created')
@@ -1932,35 +1073,62 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
         title="Docs"
         meta={topbarMeta(view, knowledgeOn, areaName)}
         actions={
-          view === 'knowledge' && knowledgeOn ? (
-            <div className="flex items-center gap-[10px]">
-              <Button variant="secondary" height={28} icon={Plus}>
+          <div className="flex items-center gap-[10px]">
+            {view === 'knowledge' && knowledgeOn && (
+              <Button
+                variant="secondary"
+                height={30}
+                icon={Plus}
+                onClick={() => {
+                  setPanel((p) => ({ ...p, knowledge: true }))
+                  setTeach((t) => t + 1)
+                }}
+              >
                 Teach something
               </Button>
-              <ViewToggle active={view} onChange={setView} />
-              <div className="flex items-center gap-[2px]">
-                <IconButton icon={Upload} size={15} aria-label="Import" />
-                <IconButton icon={Zap} size={15} aria-label="Automations" />
-                <IconButton icon={Share2} size={15} aria-label="Share" />
-                <IconButton icon={MoreHorizontal} size={15} aria-label="More" />
-              </div>
-            </div>
-          ) : (
-            <TopbarActions view={view} activeView={view} onViewChange={setView} />
-          )
+            )}
+            <ViewToggle active={view} onChange={setView} knowledgeOn={knowledgeOn} />
+            <PanelToggle
+              open={panelOpen}
+              onToggle={() => setPanelOpen(!panelOpen)}
+              label={view === 'knowledge' ? 'Ask & teach panel' : view === 'graph' ? 'Graph filters' : 'Side panel'}
+            />
+          </div>
         }
       />
 
       {view === 'notes' && (
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <NotesSidebar activeId={activeDocId} onSelect={setActiveDocId} onViewChange={setView} onNewDoc={handleNewDoc} />
+          <NotesSidebar
+            activeId={activeDocId}
+            onSelect={(id) => (id === 'd-handbook' ? setView('handbook') : setActiveDocId(id))}
+            onShowInGraph={() => setView('graph')}
+            onAskChief={() => setView('ask-chief')}
+            onOpenKnowledge={() => setView('knowledge')}
+            onNewDoc={handleNewDoc}
+          />
           <NoteDocViewer />
         </div>
       )}
 
-      {view === 'graph' && <GraphView onViewChange={setView} />}
+      {view === 'graph' && (
+        <GraphView
+          showFilters={panelOpen}
+          onOpenNote={(docId) => {
+            if (docId === 'd-handbook') return setView('handbook')
+            setActiveDocId(docId)
+            setView('notes')
+          }}
+          onAskChief={() => setView('ask-chief')}
+        />
+      )}
 
-      {view === 'knowledge' && <KnowledgeView />}
+      {view === 'knowledge' &&
+        (knowledgeOn ? (
+          <KnowledgeView panelOpen={panelOpen} onPanelOpen={setPanelOpen} teachSignal={teach} />
+        ) : (
+          <KnowledgeOff onTurnOn={() => setKnowledgeOn(true)} />
+        ))}
 
       {view === 'ask-chief' && <AskChiefView />}
 
