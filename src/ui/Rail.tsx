@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from '@tanstack/react-router'
 import { notify } from './ds/Toaster'
 import { Dialog } from './ds/Dialog'
 import { Button } from './ds/Button'
+import { ConfirmDialog } from './ds/ConfirmDialog'
+import { FeedbackDialog } from './ds/FeedbackDialog'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import * as Popover from '@radix-ui/react-popover'
 import {
@@ -657,6 +659,8 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
 function ProfileMenu() {
   const navigate = useNavigate()
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [logoutOpen, setLogoutOpen] = useState(false)
 
   return (
     <>
@@ -727,7 +731,7 @@ function ProfileMenu() {
             <DropdownMenu.Item className={menuItemClass} onSelect={() => notify('Help & docs — coming soon')}>
               <MenuItemBody icon={CircleHelp} label="Help & docs" />
             </DropdownMenu.Item>
-            <DropdownMenu.Item className={menuItemClass} onSelect={() => notify('Thanks for the feedback!')}>
+            <DropdownMenu.Item className={menuItemClass} onSelect={() => setFeedbackOpen(true)}>
               <MenuItemBody icon={MessageSquareHeart} label="Send feedback" />
             </DropdownMenu.Item>
             <DropdownMenu.Item
@@ -739,7 +743,7 @@ function ProfileMenu() {
             <MenuSeparatorLine />
             <DropdownMenu.Item
               className={menuItemClass}
-              onSelect={() => void navigate({ to: '/auth/sign-in' })}
+              onSelect={() => setLogoutOpen(true)}
             >
               <MenuItemBody icon={LogOut} label="Log out" danger />
             </DropdownMenu.Item>
@@ -748,6 +752,15 @@ function ProfileMenu() {
       </DropdownMenu.Root>
 
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
+      <ConfirmDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        title="Log out?"
+        message="You’ll need to sign in again to get back to your workspace. Chief will be here when you return."
+        confirmLabel="Log out"
+        onConfirm={() => void navigate({ to: '/auth/sign-in' })}
+      />
     </>
   )
 }

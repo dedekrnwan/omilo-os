@@ -1,5 +1,6 @@
-import { Download, Trash2, TriangleAlert } from 'lucide-react'
+import { Download, Trash2 } from 'lucide-react'
 import { Field, PenButton, Scrim } from '../ControlPanelShared'
+import { Mascot } from '../../../ui/ds/Mascot'
 
 /** pen JS6gc · General · Delete workspace */
 export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
@@ -11,9 +12,7 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
         aria-label="Delete Sahabat Warga?"
         className="flex h-full w-[460px] flex-col gap-[14px] overflow-y-auto bg-surface p-[24px] shadow-[-24px_0_48px_#1C191747] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
       >
-        <span className="flex size-[40px] items-center justify-center rounded-md bg-bad-tint">
-          <TriangleAlert size={20} aria-hidden className="text-bad" />
-        </span>
+        <Mascot helper size={44} radius={12} area="brand" mood="sad" still />
         <h2 className="m-0 font-serif text-[22px] font-medium text-ink">Delete Sahabat Warga?</h2>
         <p className="m-0 text-[13.5px] leading-[1.55] text-ink-2">
           All 6 helpers stop, every channel disconnects and 1.204 chats, goals, flows and docs are deleted after 14 days. Billing ends today.
