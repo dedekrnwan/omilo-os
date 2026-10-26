@@ -13,10 +13,7 @@ Fixture counts (from fixtures.ts):
   messages = 16
   inbox    =  9
 """
-import subprocess
-import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select, text
@@ -26,6 +23,7 @@ from omilo.models.tenancy import Company, Member, User
 from omilo.models.workspace import Channel, Folder, Goal
 from omilo.models.chat import ChatSession, Message
 from omilo.models.inbox import InboxItem
+from tests.utils import run_alembic
 
 # ---------------------------------------------------------------------------
 # Expected fixture counts (must match fixtures.ts exactly)
@@ -39,16 +37,6 @@ EXPECTED_MESSAGES = 16
 EXPECTED_INBOX    = 9
 
 DEMO_CMP_ID = "cmp_demo"
-_API_DIR = Path(__file__).parent.parent
-
-
-def _run_alembic(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
-        cwd=_API_DIR,
-        capture_output=True,
-        text=True,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +46,7 @@ def _run_alembic(*args: str) -> subprocess.CompletedProcess:
 @pytest.fixture(scope="module", autouse=True)
 def ensure_schema_for_seed():
     """Ensure migrations are at head before running seed tests."""
-    result = _run_alembic("upgrade", "head")
+    result = run_alembic("upgrade", "head")
     assert result.returncode == 0, (
         f"alembic upgrade head failed:\n{result.stdout}\n{result.stderr}"
     )

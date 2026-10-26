@@ -9,30 +9,21 @@ Tests every endpoint in §2 of 02-api-contracts.md:
 """
 from __future__ import annotations
 
-import subprocess
-import sys
 import uuid
-from pathlib import Path
 
 import pytest
 
-_API_DIR = Path(__file__).parent.parent
+from tests.utils import run_alembic
 
 
 @pytest.fixture(scope="module", autouse=True)
 def ensure_schema_for_repos_tests():
     """Re-run alembic upgrade head before this module.
 
-    test_models_migration.py downgrades to base in its teardown; since pytest
-    collects alphabetically, it runs before this module.  Re-upgrading here
-    makes this module self-contained.
+    test_models_migration.py's migrated_db teardown now re-upgrades after
+    downgrading (ordering fix), but we keep this guard for full self-containment.
     """
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        cwd=_API_DIR,
-        capture_output=True,
-        text=True,
-    )
+    result = run_alembic("upgrade", "head")
     assert result.returncode == 0, (
         f"alembic upgrade head failed:\n{result.stdout}\n{result.stderr}"
     )

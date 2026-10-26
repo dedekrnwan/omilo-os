@@ -10,18 +10,13 @@ Runs `alembic upgrade head` against the live DB, then verifies:
 
 Cleanup: `alembic downgrade base` at the end, so the test is idempotent.
 """
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 from sqlalchemy import text
 
 from omilo.db import SessionLocal
+from tests.utils import run_alembic
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
-API_DIR = Path(__file__).parent.parent
 
 ALL_P0_TABLES = [
     "company",
@@ -48,28 +43,29 @@ TENANT_TABLES = [
 GLOBAL_TABLES = ["company", "user"]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _run_alembic(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", *args],
-        cwd=API_DIR,
-        capture_output=True,
-        text=True,
-    )
-
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")
 def migrated_db():
-    """Upgrade to head, yield, then downgrade back to base."""
-    result = _run_alembic("upgrade", "head")
+    """Upgrade to head, yield, then downgrade back to base, then re-upgrade.
+
+    The re-upgrade in teardown is the test-ordering root-cause fix: without it,
+    running this module before any other module leaves the DB with no tables,
+    breaking every subsequent module.  Re-upgrading here guarantees the schema
+    is always left at head, regardless of module order.
+    """
+    result = run_alembic("upgrade", "head")
     assert result.returncode == 0, (
         f"alembic upgrade head failed:\n{result.stdout}\n{result.stderr}"
     )
     yield result.stdout + result.stderr
-    _run_alembic("downgrade", "base")
+    # Downgrade (proves migrations are reversible — the actual test assertion).
+    run_alembic("downgrade", "base")
+    # Re-upgrade so later modules find a clean schema (ordering fix).
+    restore = run_alembic("upgrade", "head")
+    assert restore.returncode == 0, (
+        f"alembic upgrade head (restore) failed:\n{restore.stdout}\n{restore.stderr}"
+    )
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
