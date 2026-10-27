@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from omilo.api.ai_accounts import router as ai_accounts_router
+from omilo.api.webhooks import router as webhooks_router
 from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
 from omilo.api.approvals import router as approvals_router
@@ -71,6 +72,8 @@ def create_app() -> FastAPI:
     app.include_router(ws_router, prefix="/v1")
     # SSE event bus (Task 8)
     app.include_router(sse_router, prefix="/v1")
+    # Doit payment gateway webhooks (Task 3 P5a)
+    app.include_router(webhooks_router, prefix="/v1")
 
     return app
 
