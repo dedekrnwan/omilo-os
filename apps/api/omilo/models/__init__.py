@@ -13,6 +13,10 @@ from omilo.models.approvals import Proposal, ProposalRevision, SafetyLimit  # no
 from omilo.models.routines import Routine, RoutineRun  # noqa: F401
 from omilo.models.flows import Flow, FlowRun  # noqa: F401
 from omilo.models.toolcall import ToolCall  # noqa: F401
+from omilo.models.knowledge import KbSource, KbChunk  # noqa: F401
+from omilo.models.memory import MemoryDoc  # noqa: F401
+from omilo.models.skills import Skill  # noqa: F401
+from omilo.models.improvement import Improvement  # noqa: F401
 
 __all__ = [
     "Company",
@@ -36,4 +40,9 @@ __all__ = [
     "Flow",
     "FlowRun",
     "ToolCall",
+    "KbSource",
+    "KbChunk",
+    "MemoryDoc",
+    "Skill",
+    "Improvement",
 ]
