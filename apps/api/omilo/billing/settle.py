@@ -1,7 +1,7 @@
 """omilo.billing.settle — Shared idempotent payment-paid settle logic.
 
 Public API:
-    apply_payment_paid(db, payment) -> bool
+    apply_payment_paid(db, payment, company) -> bool
         The single idempotent paid-transition, callable from BOTH the webhook
         handler (webhooks.py T3) and the reconcile safety-net (reconcile.py T6).
 
