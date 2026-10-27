@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from omilo.api.approvals import router as approvals_router
+from omilo.api.retro import router as retro_router
 from omilo.api.channels import router as channels_router
 from omilo.mcp.server import router as mcp_router
 from omilo.api.chat_write import router as chat_write_router
@@ -50,6 +51,8 @@ def create_app() -> FastAPI:
     app.include_router(inbox_router, prefix="/v1")
     # Approvals write path (Task 7 P1)
     app.include_router(approvals_router, prefix="/v1")
+    # Retro / scorecard + Improvement (Task 7 P3)
+    app.include_router(retro_router, prefix="/v1")
     # MCP server (Task 7 P2: Role-2 per-agent native platform tools)
     app.include_router(mcp_router, prefix="/v1")
     # Realtime (Task 6)
