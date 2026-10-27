@@ -49,3 +49,6 @@ class Helper(IdMixin, TimestampMixin, Base):
     channel_ids: Mapped[list] = mapped_column(
         JSONB, nullable=False, server_default="[]"
     )
+    # mcp_token_hash: sha256 hex digest of the per-helper MCP token secret.
+    # Null = no token minted yet.  Raw token is NEVER stored.
+    mcp_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 
 from omilo.api.approvals import router as approvals_router
 from omilo.api.channels import router as channels_router
+from omilo.mcp.server import router as mcp_router
 from omilo.api.chat_write import router as chat_write_router
 from omilo.api.folders import router as folders_router
 from omilo.api.goals import router as goals_router
@@ -35,6 +36,8 @@ def create_app() -> FastAPI:
     app.include_router(inbox_router, prefix="/v1")
     # Approvals write path (Task 7 P1)
     app.include_router(approvals_router, prefix="/v1")
+    # MCP server (Task 7 P2: Role-2 per-agent native platform tools)
+    app.include_router(mcp_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
     # SSE event bus (Task 8)
