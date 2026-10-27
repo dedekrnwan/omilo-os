@@ -131,15 +131,15 @@ def index_source(
         # Body is blank or all-whitespace — nothing to chunk
         return source
 
-    for heading, text in chunks:
-        vec: list[float] = embedder.embed([text])[0]
+    for heading, chunk_text in chunks:
+        vec: list[float] = embedder.embed([chunk_text])[0]
 
         kbc = KbChunk(
             id=prefixed_id("kbc"),
             company_id=company_id,
             source_id=source.id,
             heading=heading,
-            text=text,
+            text=chunk_text,
             dim=256,
             embedding=vec,
             embedding_model="hash",
@@ -153,7 +153,7 @@ def index_source(
         db.execute(
             update(KbChunk)
             .where(KbChunk.id == kbc.id)
-            .values(tsv=func.to_tsvector("english", text))
+            .values(tsv=func.to_tsvector("english", chunk_text))
         )
 
     db.flush()

@@ -275,7 +275,7 @@ def tool_skill_publish(db: Session, helper: Helper, arguments: dict) -> dict:
     Returns {status: "proposed", proposal_id: ...}.
     """
     skill_id = arguments.get("skill_id", "")
-    skill = db.query(Skill).filter_by(id=skill_id).first()
+    skill = db.query(Skill).filter_by(id=skill_id, helper_id=helper.id).first()
     if skill is None:
         return {"status": "error", "detail": "Skill not found"}
 
@@ -398,7 +398,7 @@ def tool_skills_list(db: Session, helper: Helper, arguments: dict) -> list[dict]
 def tool_skill_read(db: Session, helper: Helper, arguments: dict) -> dict:
     """Return the full body of a Skill. Returns error dict if not found."""
     skill_id = arguments.get("skill_id", "")
-    skill = db.query(Skill).filter_by(id=skill_id).first()
+    skill = db.query(Skill).filter_by(id=skill_id, helper_id=helper.id).first()
     if skill is None:
         return {"status": "error", "detail": "Skill not found"}
     return {

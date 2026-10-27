@@ -584,6 +584,70 @@ class TestMcpSkillTools:
         assert result.get("status") == "error" or "not found" in str(result).lower()
 
     @pytest.mark.asyncio
+    async def test_skill_publish_cross_helper_blocked(self, async_client):
+        """Helper B in the same company must NOT be able to publish Helper A's skill."""
+        # Set up: one company, two helpers
+        auth_token_a, company_id = await _sign_up_in(async_client)
+        helper_a_id = _make_helper_db(company_id, is_chief=True)
+        mcp_token_a = await _mint_token(async_client, helper_a_id, auth_token_a)
+
+        auth_token_b = await _get_token_for_company(async_client, company_id)
+        helper_b_id = _make_helper_db(company_id, is_chief=False)
+        resp_b_token = await async_client.post(
+            f"/v1/helpers/{helper_b_id}/mcp-token",
+            headers={
+                "Authorization": f"Bearer {auth_token_b}",
+                "X-Company-Id": company_id,
+            },
+        )
+        assert resp_b_token.status_code == 200, resp_b_token.text
+        mcp_token_b = resp_b_token.json()["token"]
+
+        # Helper A creates a skill
+        r1 = await async_client.post(
+            "/v1/mcp",
+            json=_rpc_payload("skill_save", {"name": "A's Publish Skill", "body_md": "a's body"}),
+            headers={"Authorization": f"Bearer {mcp_token_a}"},
+        )
+        assert r1.status_code == 200, r1.text
+        skill_a_id = r1.json()["result"]["skill_id"]
+
+        # Count existing skill_publish proposals before B's attempt
+        with _tenant_session(company_id) as db:
+            proposals_before = (
+                db.query(Proposal)
+                .filter_by(type="skill_publish")
+                .filter(Proposal.body_md.contains(skill_a_id))
+                .count()
+            )
+
+        # Helper B attempts to publish Helper A's skill via MCP skill_publish
+        r2 = await async_client.post(
+            "/v1/mcp",
+            json=_rpc_payload("skill_publish", {"skill_id": skill_a_id}),
+            headers={"Authorization": f"Bearer {mcp_token_b}"},
+        )
+        assert r2.status_code == 200, r2.text
+        result = r2.json()["result"]
+        # Must return an error (not a proposal)
+        assert result.get("status") == "error", (
+            f"Expected error status, got: {result}"
+        )
+
+        # No new skill_publish Proposal was created for A's skill
+        with _tenant_session(company_id) as db:
+            proposals_after = (
+                db.query(Proposal)
+                .filter_by(type="skill_publish")
+                .filter(Proposal.body_md.contains(skill_a_id))
+                .count()
+            )
+        assert proposals_after == proposals_before, (
+            f"A new skill_publish proposal was incorrectly created: "
+            f"{proposals_before} → {proposals_after}"
+        )
+
+    @pytest.mark.asyncio
     async def test_skill_save_cross_helper_cannot_overwrite(self, async_client):
         """Helper B in the same company must NOT be able to overwrite Helper A's skill."""
         # Set up: one company, two helpers
