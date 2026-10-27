@@ -4,9 +4,13 @@ Endpoints:
   GET /v1/analytics/overview  ?range=week   → {stats[], series[]}
   GET /v1/analytics/helpers   ?range=week   → [{helperId, jobs, success, tokens, spend}]
 
-All values computed from real Job/Report rows (company-scoped via RLS), never hardcoded.
+All values computed from real Job/CreditLedger rows (company-scoped via RLS), never hardcoded.
 
 range values: "day" (1d), "week" (7d, default), "month" (30d).
+
+spend field (Task 7 P4 extension):
+  overview: sum(CreditLedger.credits_charged) where reason="job" in period
+  helpers: per-helper sum(CreditLedger.credits_charged) where reason="job" in period
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from sqlalchemy import Integer, case, func
 from sqlalchemy.orm import Session
 
 from omilo.models.agents import Helper
+from omilo.models.billing import CreditLedger
 from omilo.models.execution import Job
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
@@ -69,8 +74,18 @@ def analytics_overview(
     total = len(all_jobs)
     done_count = sum(1 for j in all_jobs if j.status == "done")
     tokens = sum(j.tokens_in + j.tokens_out for j in all_jobs)
-    spend = sum(j.cost_credits for j in all_jobs)
     success_rate = round(100 * done_count / total) if total > 0 else 0
+
+    # Spend: exact sum from CreditLedger (reason="job") in the period
+    ledger_spend_row = (
+        db.query(func.sum(CreditLedger.credits_charged))
+        .filter(
+            CreditLedger.reason == "job",
+            CreditLedger.at >= start,
+        )
+        .scalar()
+    )
+    spend = int(ledger_spend_row or 0)
 
     stats = [
         {"label": "Jobs done", "value": done_count},
@@ -128,7 +143,6 @@ def analytics_helpers(
                 case((Job.status == "done", 1), else_=0)
             ).label("done"),
             func.sum(Job.tokens_in + Job.tokens_out).label("tokens"),
-            func.sum(Job.cost_credits).label("spend"),
         )
         .filter(Job.created_at >= start)
         .group_by(Job.helper_id)
@@ -143,12 +157,30 @@ def analytics_helpers(
             "total": total,
             "done": done,
             "tokens": int(row.tokens or 0),
-            "spend": int(row.spend or 0),
         }
+
+    # Per-helper spend from CreditLedger (reason="job") in the period
+    ledger_rows = (
+        db.query(
+            CreditLedger.helper_id,
+            func.sum(CreditLedger.credits_charged).label("spend"),
+        )
+        .filter(
+            CreditLedger.reason == "job",
+            CreditLedger.at >= start,
+            CreditLedger.helper_id.isnot(None),
+        )
+        .group_by(CreditLedger.helper_id)
+        .all()
+    )
+    ledger_spend: dict[str, int] = {
+        row.helper_id: int(row.spend or 0)
+        for row in ledger_rows
+    }
 
     result = []
     for h in helpers:
-        a = agg.get(h.id, {"total": 0, "done": 0, "tokens": 0, "spend": 0})
+        a = agg.get(h.id, {"total": 0, "done": 0, "tokens": 0})
         total = a["total"]
         done = a["done"]
         success = round(100 * done / total) if total > 0 else 0
@@ -159,7 +191,7 @@ def analytics_helpers(
                 "jobs": total,
                 "success": success,
                 "tokens": a["tokens"],
-                "spend": a["spend"],
+                "spend": ledger_spend.get(h.id, 0),
             }
         )
 

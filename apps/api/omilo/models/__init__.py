@@ -21,6 +21,7 @@ from omilo.models.billing import Plan, CreditLedger, Subscription, Invoice  # no
 from omilo.models.accounts import HarnessAccount, ProviderKey  # noqa: F401
 from omilo.models.pieces import Piece  # noqa: F401
 from omilo.models.connectors import Connector  # noqa: F401
+from omilo.models.helper_access import HelperAccess  # noqa: F401
 
 __all__ = [
     "Company",
@@ -57,4 +58,5 @@ __all__ = [
     "ProviderKey",
     "Piece",
     "Connector",
+    "HelperAccess",
 ]

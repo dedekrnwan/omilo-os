@@ -11,6 +11,7 @@ Every tool call is logged to ToolCall (done by the dispatcher in server.py).
 
 Spec: docs/technical/05-mcp-surfaces.md §2.
 Propose-don't-act: docs/technical/05-mcp-surfaces.md §3.
+Connector tools: docs/technical/11-marketplace-connectors-mcp.md §5.
 """
 from __future__ import annotations
 
@@ -504,6 +505,187 @@ def tool_propose(db: Session, helper: Helper, arguments: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Compiled connector tool catalog + dispatch
+# ---------------------------------------------------------------------------
+
+
+def get_connector_tools_for_helper(db: Session, helper: Helper) -> list[dict[str, Any]]:
+    """Return compiled MCP tool specs for all connectors the helper is granted.
+
+    Filters:
+    1. Connector must be enabled + status="connected" for the company (RLS-scoped).
+    2. Helper must have a HelperAccess row with kind="connector" and ref_id=connector.id.
+       (If no HelperAccess rows exist at all for this helper, it gets NO connector tools.)
+
+    Returns a flat list of tool spec dicts (from compile_tools).
+    Piece is a global table — readable via the current tenant session.
+    """
+    from omilo.models.connectors import Connector
+    from omilo.models.helper_access import HelperAccess
+    from omilo.models.pieces import Piece
+    from omilo.connectors.compile import compile_tools
+
+    # Connectors that are installed + ready for this company (RLS auto-scopes to company)
+    connectors = (
+        db.query(Connector)
+        .filter(
+            Connector.enabled.is_(True),
+            Connector.status == "connected",
+        )
+        .all()
+    )
+    if not connectors:
+        return []
+
+    # Connector IDs this helper is granted
+    grants = (
+        db.query(HelperAccess)
+        .filter(
+            HelperAccess.helper_id == helper.id,
+            HelperAccess.kind == "connector",
+        )
+        .all()
+    )
+    granted_ids = {g.ref_id for g in grants}
+    if not granted_ids:
+        return []
+
+    tools: list[dict[str, Any]] = []
+    for connector in connectors:
+        if connector.id not in granted_ids:
+            continue
+        if not connector.piece_id:
+            continue
+        piece = db.get(Piece, connector.piece_id)
+        if piece is None:
+            continue
+        tools.extend(compile_tools(connector, piece))
+
+    return tools
+
+
+def tool_connector_call(
+    tool_name: str,
+    tool_spec: dict[str, Any],
+    db: Session,
+    helper: Helper,
+    arguments: dict,
+) -> tuple[Any, str]:
+    """Dispatch a compiled connector tool call through the gate.
+
+    Execution is STUBBED for P4 — no real HTTP is ever made.
+
+    Side-effecting (write) tools: route through the gate exactly like
+    tool_propose → may create a Proposal (propose-don't-act).
+
+    Read/auto tools: return a stub result; gate still applies (allowed).
+
+    Returns (result, decision) exactly like dispatch().
+    """
+    side_effecting: bool = tool_spec.get("side_effecting", True)
+    approval: str = tool_spec.get("approval", "ask")
+    connector_id: str = tool_spec.get("connector_id", "")
+    piece_id: str = tool_spec.get("piece_id", "")
+    action_name: str = tool_spec.get("action_name", tool_name)
+
+    if not side_effecting:
+        # Read/auto tool — allowed through gate; return stub (no HTTP)
+        result = {
+            "status": "ok",
+            "stub": True,
+            "tool": tool_name,
+            "note": "P4 stub — no real HTTP executed",
+        }
+        return result, "allowed"
+
+    # Side-effecting (write) tool — route through gate
+    from omilo.models.tenancy import Company
+
+    company = db.query(Company).filter_by(id=helper.company_id).first()
+    workspace_autonomy = (company.autonomy_default if company else "ask") or "ask"
+    eff = effective_autonomy(workspace_autonomy, None, helper.autonomy_cap)
+
+    safety = db.query(SafetyLimit).filter_by(company_id=helper.company_id).all()
+
+    # Use "connector_write" as the proposal type for connector side-effects
+    proposal_type = f"connector.{piece_id}.{action_name}"
+    risk = "medium"  # connector writes are medium risk by default
+
+    verdict = decide(eff, risk, proposal_type, safety, {})
+
+    if verdict == "allowed":
+        # Act-and-log: no real HTTP; return stub
+        result = {
+            "status": "allowed",
+            "stub": True,
+            "tool": tool_name,
+            "note": "P4 stub — no real HTTP executed",
+        }
+        return result, "allowed"
+
+    if verdict == "refused":
+        return {"status": "refused"}, "refused"
+
+    # needs_owner: create Proposal + ProposalRevision + InboxItem (propose-don't-act)
+    title = f"Connector action: {tool_name}"
+    body_md = (
+        f"**Connector:** {connector_id}  \n"
+        f"**Action:** {action_name}  \n"
+        f"**Arguments:** {arguments}  \n\n"
+        "P4 stub — approving will NOT perform a real HTTP call in this version."
+    )
+
+    proposal = Proposal(
+        id=prefixed_id("prp"),
+        company_id=helper.company_id,
+        job_id="mcp_direct",
+        helper_id=helper.id,
+        type=proposal_type,
+        risk=risk,
+        title=title,
+        body_md=body_md,
+        status="pending",
+        current_revision=1,
+    )
+    db.add(proposal)
+    db.flush()
+
+    revision = ProposalRevision(
+        id=prefixed_id("prv"),
+        company_id=helper.company_id,
+        proposal_id=proposal.id,
+        n=1,
+        body_md=body_md,
+        author="agent",
+        summary="MCP connector tool (P4 stub)",
+    )
+    db.add(revision)
+
+    inbox_item = InboxItem(
+        id=prefixed_id("inb"),
+        company_id=helper.company_id,
+        title=title,
+        summary=body_md,
+        session_id="mcp_direct",
+        channel_id="mcp_direct",
+        kind="decision",
+        status="pending",
+        asker=helper.name,
+        asker_area=helper.area,
+        needs_you=True,
+        proposals={"proposal_id": proposal.id, "type": proposal_type, "risk": risk},
+        actions=[
+            {"label": "Approve", "primary": True},
+            {"label": "Reject"},
+        ],
+    )
+    db.add(inbox_item)
+    db.flush()
+
+    return {"status": "proposed", "proposal_id": proposal.id}, "proposal"
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
 
@@ -533,24 +715,33 @@ def dispatch(
 
     Returns (result, decision) where decision ∈ {allowed, proposal, refused, error}.
 
-    Raises KeyError if the tool name is not in the catalog.
+    Raises KeyError if the tool name is not in the catalog (native tools).
+    For compiled connector tools (namespaced with "."), dispatches through the gate.
     """
+    # Check native tool handlers first
     handler = TOOL_HANDLERS.get(tool_name)
-    if handler is None:
-        raise KeyError(f"Unknown tool: {tool_name!r}")
+    if handler is not None:
+        result = handler(db, helper, arguments)
 
-    result = handler(db, helper, arguments)
-
-    # Derive decision from the result for logging
-    if isinstance(result, dict) and "status" in result:
-        status = result["status"]
-        if status == "proposed":
-            decision = "proposal"
-        elif status == "refused":
-            decision = "refused"
+        # Derive decision from the result for logging
+        if isinstance(result, dict) and "status" in result:
+            status = result["status"]
+            if status == "proposed":
+                decision = "proposal"
+            elif status == "refused":
+                decision = "refused"
+            else:
+                decision = "allowed"
         else:
             decision = "allowed"
-    else:
-        decision = "allowed"
 
-    return result, decision
+        return result, decision
+
+    # Check compiled connector tools (namespaced: "piece_id.action_name")
+    if "." in tool_name:
+        connector_tools = get_connector_tools_for_helper(db, helper)
+        tool_spec = next((t for t in connector_tools if t["name"] == tool_name), None)
+        if tool_spec is not None:
+            return tool_connector_call(tool_name, tool_spec, db, helper, arguments)
+
+    raise KeyError(f"Unknown tool: {tool_name!r}")
