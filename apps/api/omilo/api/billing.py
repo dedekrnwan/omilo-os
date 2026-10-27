@@ -3,7 +3,8 @@
 Endpoints:
   GET  /v1/usage                         → {balance, included, used_this_period, by_helper[], by_day[]}
   GET  /v1/billing/ledger                → CreditLedger[] (newest first, limit 100)
-  GET  /v1/billing/subscription          → {subscription, plan} | {subscription: null, plan: null}
+  GET  /v1/billing/subscription          → {plan, status, period_end, seats, provider, payment_method?}
+  GET  /v1/billing/invoices              → Invoice[] (newest first)
   POST /v1/billing/change-plan {plan_id} → {subscription, balance}
   POST /v1/billing/topup {pack}          → {balance, invoice}
 
@@ -249,7 +250,11 @@ def get_subscription(
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict[str, Any]:
-    """Return the company's current subscription + plan summary, or nulls if none."""
+    """Return the company's current subscription in spec §7 shape.
+
+    Shape: {plan, status, period_end, seats, provider, payment_method?}
+    Returns nulls when no active subscription exists.
+    """
     company = _load_company(db, ctx.company_id)
 
     sub = (
@@ -263,14 +268,55 @@ def get_subscription(
     )
 
     if sub is None:
-        return {"subscription": None, "plan": None}
+        return {
+            "plan": None,
+            "status": None,
+            "period_end": None,
+            "seats": None,
+            "provider": None,
+            "payment_method": None,
+        }
 
     plan = db.get(Plan, sub.plan_id) if sub.plan_id else None
 
     return {
-        "subscription": _subscription_dict(sub),
         "plan": _plan_dict(plan) if plan else None,
+        "status": sub.status,
+        "period_end": (
+            sub.current_period_end.isoformat() if sub.current_period_end else None
+        ),
+        "seats": sub.seats,
+        "provider": sub.provider,
+        # ManualProvider has no stored payment method; wired providers may populate this.
+        "payment_method": None,
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/billing/invoices
+# ---------------------------------------------------------------------------
+
+
+@router.get("/billing/invoices", status_code=200)
+def get_invoices(
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> list[dict[str, Any]]:
+    """Return all invoices for the active company, newest first.
+
+    Always available (spec §7) — includes offline-marked invoices from topups
+    and future provider-collected invoices.
+    """
+    company = _load_company(db, ctx.company_id)
+
+    rows = (
+        db.query(Invoice)
+        .filter(Invoice.company_id == company.id)
+        .order_by(Invoice.created_at.desc())
+        .all()
+    )
+
+    return [_invoice_dict(inv) for inv in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +365,7 @@ def change_plan(
         .all()
     )
     for s in existing_subs:
-        s.status = "cancelled"
+        s.status = "canceled"
     db.flush()
 
     # Create new active subscription

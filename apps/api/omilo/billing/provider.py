@@ -2,6 +2,7 @@
 
 Public API:
     ProviderNotConfigured   exception raised by stub providers
+    BillingEvent            normalized event emitted by parse_webhook
     PaymentProvider         Protocol (structural interface)
     ManualProvider          default offline provider — all methods are no-ops
     StripeProvider          structural stub — raises ProviderNotConfigured
@@ -19,7 +20,8 @@ Design:
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from omilo.models.billing import Plan, Subscription
@@ -33,6 +35,28 @@ if TYPE_CHECKING:
 
 class ProviderNotConfigured(Exception):
     """Raised by stub providers (Stripe, Xendit) when not wired in."""
+
+
+# ---------------------------------------------------------------------------
+# BillingEvent — normalized event from parse_webhook (spec §6.2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class BillingEvent:
+    """Normalized billing event emitted by PaymentProvider.parse_webhook.
+
+    Maps any provider's webhook callbacks to omilo-internal transitions:
+      payment_succeeded | payment_failed | subscription_updated |
+      subscription_canceled | refund
+
+    company_id is optional — some events (e.g. checkout.session) carry it,
+    others may require a lookup by external_ref.
+    """
+
+    type: str
+    company_id: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +101,12 @@ class PaymentProvider(Protocol):
 
     def parse_webhook(
         self, headers: dict, body: bytes
-    ) -> dict | None:
-        """Parse and verify an inbound webhook payload."""
+    ) -> list[BillingEvent]:
+        """Parse and verify an inbound webhook payload.
+
+        Returns a list of normalized BillingEvents.
+        Returns an empty list when no provider is configured (offline mode).
+        """
         ...
 
 
@@ -119,8 +147,9 @@ class ManualProvider:
 
     def parse_webhook(
         self, headers: dict, body: bytes
-    ) -> dict | None:
-        return None
+    ) -> list[BillingEvent]:
+        # Offline: no webhooks to parse.
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +185,7 @@ class StripeProvider:
 
     def parse_webhook(
         self, headers: dict, body: bytes
-    ) -> dict | None:
+    ) -> list[BillingEvent]:
         raise ProviderNotConfigured("stripe not configured")
 
 
@@ -193,7 +222,7 @@ class XenditProvider:
 
     def parse_webhook(
         self, headers: dict, body: bytes
-    ) -> dict | None:
+    ) -> list[BillingEvent]:
         raise ProviderNotConfigured("xendit not configured")
 
 

@@ -9,8 +9,11 @@ Tests:
    (subscription_grant ledger row).
 3. POST /v1/billing/topup {pack:"medium"} → balance += 5000, a topup ledger row
    + an offline Invoice exist. Works with ManualProvider, no Stripe.
-4. GET /v1/billing/subscription reflects the active subscription after change-plan.
+4. GET /v1/billing/subscription reflects the active subscription after change-plan
+   (spec §7 shape: plan, status, period_end, seats, provider, payment_method).
 5. Company-scoped: company B cannot see company A's usage/ledger (RLS).
+10. GET /v1/billing/invoices → topup-created invoice shows up.
+11. change-plan deactivates prior subscription (status becomes "canceled").
 
 RED → implement → GREEN.
 """
@@ -20,6 +23,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import text
 
 from tests.utils import run_alembic
 
@@ -129,7 +133,7 @@ def _seed_plan(tier: str = "growth") -> str:
     with SessionLocal() as session:
         with session.begin():
             row = session.execute(
-                __import__("sqlalchemy").text("SELECT id FROM plan WHERE tier = :t LIMIT 1"),
+                text("SELECT id FROM plan WHERE tier = :t LIMIT 1"),
                 {"t": tier},
             ).fetchone()
     if row:
@@ -281,7 +285,7 @@ async def test_change_plan(async_client, company_a):
     with SessionLocal() as session:
         with session.begin():
             grant_row = session.execute(
-                __import__("sqlalchemy").text(
+                text(
                     "SELECT id FROM credit_ledger WHERE company_id=:cid AND reason='subscription_grant' LIMIT 1"
                 ),
                 {"cid": company_id},
@@ -327,7 +331,7 @@ async def test_topup_medium(async_client, company_a):
     with SessionLocal() as session:
         with session.begin():
             topup_row = session.execute(
-                __import__("sqlalchemy").text(
+                text(
                     "SELECT id FROM credit_ledger WHERE company_id=:cid AND reason='topup' LIMIT 1"
                 ),
                 {"cid": company_id},
@@ -338,7 +342,7 @@ async def test_topup_medium(async_client, company_a):
     with SessionLocal() as session:
         with session.begin():
             inv_row = session.execute(
-                __import__("sqlalchemy").text(
+                text(
                     "SELECT id, status FROM invoice WHERE company_id=:cid LIMIT 1"
                 ),
                 {"cid": company_id},
@@ -354,7 +358,10 @@ async def test_topup_medium(async_client, company_a):
 
 @pytest.mark.asyncio
 async def test_subscription_reflects_change_plan(async_client, company_a):
-    """GET /v1/billing/subscription returns active subscription after change-plan."""
+    """GET /v1/billing/subscription returns spec §7 shape after change-plan.
+
+    Expected shape: {plan, status, period_end, seats, provider, payment_method?}
+    """
     token, company_id = company_a
     plan_id = _seed_plan("growth")
 
@@ -366,16 +373,27 @@ async def test_subscription_reflects_change_plan(async_client, company_a):
     )
     assert cp_resp.status_code == 200, cp_resp.text
 
-    # Now GET subscription
+    # Now GET subscription — must match spec §7 shape
     resp = await async_client.get("/v1/billing/subscription", headers=_auth(token))
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
-    assert data["subscription"] is not None
-    assert data["subscription"]["plan_id"] == plan_id
-    assert data["subscription"]["status"] == "active"
+    # Spec §7 top-level keys
+    assert "plan" in data, f"Missing 'plan' key in response: {data}"
+    assert "status" in data, f"Missing 'status' key in response: {data}"
+    assert "period_end" in data, f"Missing 'period_end' key in response: {data}"
+    assert "seats" in data, f"Missing 'seats' key in response: {data}"
+    assert "provider" in data, f"Missing 'provider' key in response: {data}"
+    assert "payment_method" in data, f"Missing 'payment_method' key in response: {data}"
+
+    # Values
     assert data["plan"] is not None
     assert data["plan"]["id"] == plan_id
+    assert data["status"] == "active"
+    assert data["seats"] is not None
+    assert data["provider"] == "manual"
+    # ManualProvider → no stored payment method
+    assert data["payment_method"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -517,3 +535,87 @@ async def test_ledger_newest_first(async_client, company_a):
     assert len(rows) >= 2
     # First row should have the most recent created_at
     assert rows[0]["created_at"] >= rows[1]["created_at"]
+
+
+# ---------------------------------------------------------------------------
+# Test 10: GET /v1/billing/invoices — spec §7 always-available
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invoices_returns_topup_invoice(async_client, company_a):
+    """GET /v1/billing/invoices → topup-created offline invoice shows up."""
+    token, company_id = company_a
+
+    # Create a topup first (generates an Invoice row)
+    topup_resp = await async_client.post(
+        "/v1/billing/topup",
+        json={"pack": "small"},
+        headers=_auth(token),
+    )
+    assert topup_resp.status_code == 200, topup_resp.text
+    topup_data = topup_resp.json()
+    created_invoice_id = topup_data["invoice"]["id"]
+
+    # GET /v1/billing/invoices must return it
+    resp = await async_client.get("/v1/billing/invoices", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    invoices = resp.json()
+
+    assert isinstance(invoices, list), f"Expected list, got {type(invoices)}"
+    assert len(invoices) >= 1, "Expected at least one invoice after topup"
+
+    inv_ids = [inv["id"] for inv in invoices]
+    assert created_invoice_id in inv_ids, (
+        f"Topup invoice {created_invoice_id!r} not found in invoices: {inv_ids}"
+    )
+
+    # Verify the invoice has the expected offline status and provider
+    matching = next(inv for inv in invoices if inv["id"] == created_invoice_id)
+    assert matching["status"] in ("offline", "paid")
+    assert matching["provider"] == "manual"
+    assert matching["company_id"] == company_id
+
+
+# ---------------------------------------------------------------------------
+# Test 11: change-plan deactivates prior subscription (status → "canceled")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_change_plan_cancels_prior_subscription(async_client, company_a):
+    """change-plan: prior active subscription status becomes 'canceled' (spec §6.1)."""
+    token, company_id = company_a
+    plan_id = _seed_plan("growth")
+
+    # Activate a plan (creates first subscription)
+    resp1 = await async_client.post(
+        "/v1/billing/change-plan",
+        json={"plan_id": plan_id},
+        headers=_auth(token),
+    )
+    assert resp1.status_code == 200, resp1.text
+    first_sub_id = resp1.json()["subscription"]["id"]
+
+    # Change plan again (should deactivate first subscription)
+    resp2 = await async_client.post(
+        "/v1/billing/change-plan",
+        json={"plan_id": plan_id},
+        headers=_auth(token),
+    )
+    assert resp2.status_code == 200, resp2.text
+    second_sub_id = resp2.json()["subscription"]["id"]
+
+    assert second_sub_id != first_sub_id, "Expected a new subscription to be created"
+
+    # Verify first subscription is now "canceled" (one l — spec §6.1)
+    from omilo.db import SessionLocal
+    from omilo.models.billing import Subscription as SubModel
+
+    with SessionLocal() as session:
+        with session.begin():
+            prior_sub = session.get(SubModel, first_sub_id)
+            assert prior_sub is not None
+            assert prior_sub.status == "canceled", (
+                f"Expected prior subscription status 'canceled', got {prior_sub.status!r}"
+            )
