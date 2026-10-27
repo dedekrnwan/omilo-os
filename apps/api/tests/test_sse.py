@@ -238,34 +238,33 @@ def test_sse_invalid_token_returns_401():
 
 
 def test_sse_valid_token_via_query_param_starts_stream():
-    """GET /v1/stream?token=<jwt> with a valid token → 200 (stream begins).
+    """GET /v1/stream?token=<jwt> with a valid token → 200 + text/event-stream.
 
-    We use stream=True and read only the first chunk (a heartbeat comment)
-    to confirm the endpoint accepts the connection.  We do NOT consume
-    indefinitely to avoid blocking the test.
+    Status 200 and content-type are the authoritative proof that auth passed
+    and the stream started.  We do NOT consume the body (iter_lines) because
+    the first heartbeat fires after ~20 s, which would block CI for that long.
+    Delivery guarantees are covered by the broker unit tests above.
     """
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:
         # Sign up to get a real token
         token, company_id = _sign_up_and_token(client)
 
-        # Use a short timeout — we just want the 200 response headers
         with client.stream("GET", f"/v1/stream?token={token}") as resp:
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
             assert "text/event-stream" in resp.headers.get("content-type", ""), (
                 f"Expected text/event-stream, got {resp.headers.get('content-type')}"
             )
-            # Read one chunk (heartbeat or event) to confirm the stream is alive
-            chunk = next(resp.iter_lines(), None)
-            # A heartbeat comment starts with ':' or is empty; an event starts with 'event:'/'data:'
-            # Any non-None chunk means the stream is flowing.
-            # (Some implementations yield the comment immediately; others may take a moment.)
-            # We accept None too since the test may timeout before first chunk — the
-            # 200 header is the authoritative proof.
+            # Exit the context immediately — do NOT call iter_lines() or read
+            # body bytes; doing so blocks until the first heartbeat (~20 s).
 
 
 def test_sse_valid_token_via_bearer_header_starts_stream():
-    """GET /v1/stream with Authorization: Bearer <jwt> → 200 stream."""
+    """GET /v1/stream with Authorization: Bearer <jwt> → 200 + text/event-stream.
+
+    Same rationale as the query-param test: assert headers only; body is not
+    consumed to avoid the 20 s heartbeat block.
+    """
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:
         token, company_id = _sign_up_and_token(client)
