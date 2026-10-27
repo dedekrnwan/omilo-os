@@ -136,6 +136,13 @@ def run_job(
     job.attempts = (job.attempts or 0) + 1
     db.flush()
 
+    # Publish job.started to SSE broker (best-effort; never breaks the job)
+    _broker_publish(job.company_id, {
+        "type": "job.started",
+        "id": job.id,
+        "data": {"job_id": job.id, "helper_id": job.helper_id, "origin": job.origin},
+    })
+
     # Load Helper and Company (both visible because Company is global and
     # Helper is tenant-scoped — the db session is already company-scoped).
     helper = db.get(Helper, job.helper_id)
@@ -144,6 +151,11 @@ def run_job(
         job.error = f"Helper {job.helper_id!r} not found"
         job.ended_at = datetime.now(timezone.utc)
         db.flush()
+        _broker_publish(job.company_id, {
+            "type": "job.failed",
+            "id": job.id,
+            "data": {"job_id": job.id, "error": job.error},
+        })
         return job
 
     # Company is a global table — query without RLS filter.
@@ -153,6 +165,11 @@ def run_job(
         job.error = f"Company {job.company_id!r} not found"
         job.ended_at = datetime.now(timezone.utc)
         db.flush()
+        _broker_publish(job.company_id, {
+            "type": "job.failed",
+            "id": job.id,
+            "data": {"job_id": job.id, "error": job.error},
+        })
         return job
 
     # ── b. Effective autonomy ─────────────────────────────────────────────────
@@ -247,6 +264,11 @@ def run_job(
             job.status = "done"
             job.ended_at = datetime.now(timezone.utc)
             db.flush()
+            _broker_publish(job.company_id, {
+                "type": "job.done",
+                "id": job.id,
+                "data": {"job_id": job.id},
+            })
 
         elif verdict == "needs_owner":
             # ── create Proposal + ProposalRevision + InboxItem(decision) ──────
@@ -305,6 +327,11 @@ def run_job(
             job.status = "waiting"
             job.proposal_id = proposal.id
             db.flush()
+            _broker_publish(job.company_id, {
+                "type": "job.done",
+                "id": job.id,
+                "data": {"job_id": job.id, "status": "waiting", "proposal_id": proposal.id},
+            })
             return job
 
         elif verdict == "refused":
@@ -337,6 +364,11 @@ def run_job(
             job.error = "refused by SafetyLimit"
             job.ended_at = datetime.now(timezone.utc)
             db.flush()
+            _broker_publish(job.company_id, {
+                "type": "job.failed",
+                "id": job.id,
+                "data": {"job_id": job.id, "error": job.error},
+            })
             return job
 
     # ── f. No pending_action — write Report, mark done ────────────────────────
@@ -356,6 +388,11 @@ def run_job(
     job.status = "done"
     job.ended_at = datetime.now(timezone.utc)
     db.flush()
+    _broker_publish(job.company_id, {
+        "type": "job.done",
+        "id": job.id,
+        "data": {"job_id": job.id},
+    })
 
     return job
 
@@ -418,4 +455,22 @@ def _create_inbox_item(
     )
     db.add(item)
     db.flush()
+
+    # Publish inbox.created for decision items so SSE subscribers can update badges
+    if kind == "decision":
+        _broker_publish(company_id, {
+            "type": "inbox.created",
+            "id": item.id,
+            "data": {"inbox_id": item.id, "kind": kind, "needs_you": needs_you},
+        })
+
     return item
+
+
+def _broker_publish(company_id: str, event: dict) -> None:
+    """Publish *event* to the SSE broker singleton.  Always best-effort."""
+    try:
+        from omilo.realtime.events import broker  # lazy import — avoids circular dep
+        broker.publish(company_id, event)
+    except Exception:
+        pass  # publish failures must never break a job

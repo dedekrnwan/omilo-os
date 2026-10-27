@@ -7,6 +7,9 @@ WS (T6) callers.  Every event dict ``{"kind": ..., "data": {...}}`` is:
    session_id, kind, data).
 2. Forwarded to the optional ``publish`` hook (Task 8's SSE/WS broker fills
    this seam; the default is a no-op).
+3. Also published to the SSE broker singleton as a ``job.progress`` event so
+   SSE subscribers receive per-RunEvent updates without needing a WS connection.
+   This publish is wrapped in try/except — a failure here must never break a job.
 """
 from __future__ import annotations
 
@@ -30,9 +33,9 @@ def make_emitter(
 
         emit({"kind": "thinking", "data": {"text": "..."}})
 
-    It writes a ``RunEvent`` row and, if *publish* is provided, calls::
-
-        publish(company_id, event_dict)
+    It writes a ``RunEvent`` row, calls the optional *publish* hook, and also
+    publishes to the module-level SSE ``broker`` singleton as a ``job.progress``
+    event.
 
     Args:
         db:         The company-scoped SQLAlchemy session.  Must already have
@@ -63,5 +66,16 @@ def make_emitter(
 
         if publish is not None:
             publish(job.company_id, event)
+
+        # Publish to SSE broker as job.progress (best-effort; never breaks the job)
+        try:
+            from omilo.realtime.events import broker  # lazy import avoids circular dep
+            broker.publish(job.company_id, {
+                "type": "job.progress",
+                "id": run_event.id,
+                "data": {"job_id": job.id, "kind": kind, "data": data},
+            })
+        except Exception:
+            pass  # publish failures are always swallowed
 
     return emit

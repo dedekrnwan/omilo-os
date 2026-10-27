@@ -32,6 +32,15 @@ from omilo.models.inbox import InboxItem
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
 
+
+def _broker_publish(company_id: str, event: dict) -> None:
+    """Publish *event* to the SSE broker.  Always best-effort."""
+    try:
+        from omilo.realtime.events import broker  # lazy import
+        broker.publish(company_id, event)
+    except Exception:
+        pass  # publish failures must never break an approval
+
 router = APIRouter(tags=["approvals"])
 
 _404 = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
@@ -122,17 +131,8 @@ def _resolve_original_job(db: Session, proposal: Proposal) -> None:
 
 def _resolve_decision_inbox_item(db: Session, proposal: Proposal) -> None:
     """Find the linked decision InboxItem and mark it done."""
-    # The InboxItem created by the runner stores proposals JSONB with proposal_id
-    # We find it by company scope + kind=decision, matching proposal_id in the
-    # proposals JSONB column.  Simpler: the item was created for the same job.
-    orig_job = (
-        db.query(Job)
-        .filter_by(id=proposal.job_id)
-        .first()
-    )
-    if orig_job is None:
-        return
-    # Find the decision inbox item linked to this job (company-scoped via RLS)
+    # Find the decision inbox item linked to this proposal (company-scoped via RLS).
+    # The InboxItem created by the runner stores proposals JSONB with proposal_id.
     item = (
         db.query(InboxItem)
         .filter_by(company_id=proposal.company_id, kind="decision")
@@ -259,6 +259,17 @@ def approve_proposal(
     # Resolve linked decision InboxItem → done
     _resolve_decision_inbox_item(db, proposal)
 
+    # Publish inbox.resolved to SSE subscribers (best-effort)
+    _broker_publish(proposal.company_id, {
+        "type": "inbox.resolved",
+        "id": exec_job.id,
+        "data": {
+            "proposal_id": proposal.id,
+            "decision": "approved",
+            "execution_job_id": exec_job.id,
+        },
+    })
+
     return {
         "proposal": _proposal_to_dict(proposal),
         "execution_job_id": exec_job.id,
@@ -300,6 +311,16 @@ def reject_proposal(
 
     # Resolve linked decision InboxItem → done
     _resolve_decision_inbox_item(db, proposal)
+
+    # Publish inbox.resolved to SSE subscribers (best-effort)
+    _broker_publish(proposal.company_id, {
+        "type": "inbox.resolved",
+        "id": proposal.id,
+        "data": {
+            "proposal_id": proposal.id,
+            "decision": "rejected",
+        },
+    })
 
     return {"proposal": _proposal_to_dict(proposal)}
 

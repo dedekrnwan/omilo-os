@@ -10,6 +10,7 @@ from omilo.api.health import router as health_router
 from omilo.api.inbox import router as inbox_router
 from omilo.api.sessions import router as sessions_router
 from omilo.auth.router import me_router, router as auth_router
+from omilo.realtime.sse import router as sse_router
 from omilo.realtime.ws import router as ws_router
 
 
@@ -30,6 +31,8 @@ def create_app() -> FastAPI:
     app.include_router(approvals_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
+    # SSE event bus (Task 8)
+    app.include_router(sse_router, prefix="/v1")
 
     return app
 
