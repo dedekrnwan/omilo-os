@@ -29,11 +29,14 @@ Design decisions:
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger
@@ -263,5 +266,10 @@ def _create_credit_alert(
         )
         db.add(item)
         db.flush()
-    except Exception:
-        pass  # alert creation must never break the gate
+    except Exception as exc:
+        logger.warning(
+            "credit alert InboxItem creation failed for company_id=%s helper_id=%s: %s",
+            company.id,
+            helper.id,
+            exc,
+        )  # alert creation must never break the gate

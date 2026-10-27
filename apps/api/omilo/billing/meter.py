@@ -17,11 +17,14 @@ Design decisions:
 """
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger

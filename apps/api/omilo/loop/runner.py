@@ -15,10 +15,13 @@ Design decisions (P1):
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from omilo.billing.balance import check_can_start_job
 from omilo.engine import EngineResult, TaskContext, get_engine
@@ -88,8 +91,13 @@ def start_job(
             _gate_allowed, _gate_reason = check_can_start_job(
                 db, _gcompany, _ghelper
             )
-    except Exception:
-        pass  # gate errors must never block a job that should run
+    except Exception as exc:
+        logger.warning(
+            "gate check failed for company_id=%s helper_id=%s — defaulting to allowed: %s",
+            company_id,
+            helper_id,
+            exc,
+        )  # gate errors must never block a job that should run
 
     job = Job(
         id=prefixed_id("job"),
@@ -555,5 +563,10 @@ def _meter_job_best_effort(db: Session, job: Job) -> None:
         # Use a savepoint so a meter failure does not roll back the job txn.
         with db.begin_nested():
             meter_job(db, job)
-    except Exception:
-        pass  # metering errors are never fatal
+    except Exception as exc:
+        logger.warning(
+            "metering failed for company_id=%s job_id=%s — ledger write skipped: %s",
+            job.company_id,
+            job.id,
+            exc,
+        )  # metering errors are never fatal
