@@ -5,14 +5,17 @@ Endpoints:
   GET  /v1/billing/ledger                → CreditLedger[] (newest first, limit 100)
   GET  /v1/billing/subscription          → {plan, status, period_end, seats, provider, payment_method?}
   GET  /v1/billing/invoices              → Invoice[] (newest first)
-  POST /v1/billing/change-plan {plan_id} → {subscription, balance}
-  POST /v1/billing/topup {pack}          → {balance, invoice}
+  POST /v1/billing/change-plan {plan_id} → {subscription, balance} (Manual) | {payment_id, hosted_url, status, plan_id} (Doit)
+  POST /v1/billing/topup {pack}          → {balance, invoice} (Manual) | {payment_id, hosted_url, status, credits, amount_idr} (Doit)
 
 All endpoints are company-scoped via the tenant session dependency (RLS-enforced).
 ManualProvider is the default — all operations work offline with no Stripe/Xendit.
+DoitProvider creates a pending DoitPayment + returns hosted_url; credits are
+granted by the webhook handler (T3) on payment.paid.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -23,9 +26,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from omilo.billing.balance import balance as get_balance, grant_credits
+from omilo.billing.doit_provider import DoitProvider
 from omilo.billing.provider import get_payment_provider
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger, Invoice, Plan, Subscription
+from omilo.models.commerce import DoitPayment
 from omilo.models.tenancy import Company
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
@@ -35,12 +40,14 @@ router = APIRouter(tags=["billing"])
 # ---------------------------------------------------------------------------
 # Credit pack catalogue
 # See plan spec §7; these values are the offline defaults.
+# amount_idr values: small=15 000 IDR, medium=70 000 IDR, large=250 000 IDR
+# (spec §7 pinned prices; 1 credit ≈ Rp 12.5 for topups)
 # ---------------------------------------------------------------------------
 
-PACKS: dict[str, int] = {
-    "small": 1_000,
-    "medium": 5_000,
-    "large": 20_000,
+PACKS: dict[str, dict[str, int]] = {
+    "small": {"credits": 1_000, "amount_idr": 15_000},
+    "medium": {"credits": 5_000, "amount_idr": 70_000},
+    "large": {"credits": 20_000, "amount_idr": 250_000},
 }
 
 
@@ -195,12 +202,47 @@ def get_usage(
         for day, credits in sorted(day_sums.items())
     ]
 
+    # ── pending_topups: count + total credits of pending topup DoitPayments ──
+    pending_topup_rows = (
+        db.query(DoitPayment)
+        .filter(
+            DoitPayment.company_id == company.id,
+            DoitPayment.status == "pending",
+            DoitPayment.kind == "topup",
+        )
+        .all()
+    )
+    pending_topup_count = len(pending_topup_rows)
+    pending_topup_credits = sum(row.credits for row in pending_topup_rows)
+
+    # ── last_payment: most recent DoitPayment (any kind/status) ──────────────
+    last_pay = (
+        db.query(DoitPayment)
+        .filter(DoitPayment.company_id == company.id)
+        .order_by(DoitPayment.created_at.desc())
+        .first()
+    )
+    last_payment = None
+    if last_pay is not None:
+        last_payment = {
+            "id": last_pay.id,
+            "kind": last_pay.kind,
+            "status": last_pay.status,
+            "amount_idr": last_pay.amount_idr,
+            "created_at": last_pay.created_at.isoformat() if last_pay.created_at else None,
+        }
+
     return {
         "balance": current_balance,
         "included": included,
         "used_this_period": used_this_period,
         "by_helper": by_helper,
         "by_day": by_day,
+        "pending_topups": {
+            "count": pending_topup_count,
+            "total_credits": pending_topup_credits,
+        },
+        "last_payment": last_payment,
     }
 
 
@@ -329,18 +371,26 @@ def change_plan(
     body: ChangePlanBody,
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
+    provider: Any = Depends(get_payment_provider),
 ) -> dict[str, Any]:
     """Change (or set) the company's billing plan.
 
-    Internal effects (offline, no Stripe):
-    1. Look up the Plan row.
-    2. Call provider.change_subscription (ManualProvider → {"status":"offline"}).
-    3. Deactivate existing active subscriptions.
-    4. Create a new Subscription row (status="active").
-    5. Update Company.plan_id.
-    6. Grant plan.included_credits (reason="subscription_grant").
+    ManualProvider (default):
+      Instant activation:
+      1. Look up the Plan row.
+      2. Call provider.change_subscription (ManualProvider → {"status":"offline"}).
+      3. Deactivate existing active subscriptions.
+      4. Create a new Subscription row (status="active").
+      5. Update Company.plan_id.
+      6. Grant plan.included_credits (reason="subscription_grant").
+      Returns {subscription, balance, plan}.
 
-    Returns the new subscription + updated balance.
+    DoitProvider:
+      Creates a pending DoitPayment (kind="subscription") + calls
+      provider.change_subscription → gets hosted_url.
+      Does NOT activate the Subscription or grant credits.
+      Returns {payment_id, hosted_url, status:"pending", plan_id}.
+      Activation + credit grant happen in the webhook handler (T3) on payment.paid.
     """
     plan = db.get(Plan, body.plan_id)
     if plan is None:
@@ -350,7 +400,69 @@ def change_plan(
         )
 
     company = _load_company(db, ctx.company_id)
-    provider = get_payment_provider()
+
+    # -----------------------------------------------------------------------
+    # DoitProvider path — create a pending payment; do NOT activate subscription
+    # -----------------------------------------------------------------------
+    if isinstance(provider, DoitProvider):
+        short_id = uuid.uuid4().hex[:8]
+        reference = f"sub:{company.id}:{plan.id}:{short_id}"
+
+        # Call provider to create a Doit billing plan + subscription → get hosted_url
+        sub_result = provider.change_subscription(company, plan)
+
+        # Use provider_ref from the subscription result to create a payment
+        # We need a payment record; use charge_one_off for the initial payment
+        amount_idr = plan.monthly_price_idr
+        charge_result = provider.charge_one_off(
+            company,
+            amount_idr,
+            reference,
+            metadata={"plan_id": plan.id, "credits": plan.included_credits},
+        )
+
+        # Persist a pending Subscription row (status="pending" — not yet active)
+        new_sub = Subscription(
+            id=prefixed_id("sub"),
+            company_id=company.id,
+            plan_id=plan.id,
+            status="pending",
+            seats=plan.seats,
+            provider="doit",
+            external_ref=None,
+            current_period_end=None,
+            provider_ref=sub_result.get("provider_ref") if sub_result else None,
+        )
+        db.add(new_sub)
+        db.flush()
+
+        # Persist a pending DoitPayment row (kind="subscription")
+        pay = DoitPayment(
+            id=prefixed_id("pay"),
+            company_id=company.id,
+            kind="subscription",
+            credits=plan.included_credits,
+            amount_idr=amount_idr,
+            reference=reference,
+            plan_id=plan.id,
+            provider_payment_id=charge_result["provider_payment_id"],
+            hosted_url=charge_result["hosted_url"],
+            status="pending",
+            raw=charge_result.get("raw"),
+        )
+        db.add(pay)
+        db.flush()
+
+        return {
+            "payment_id": pay.id,
+            "hosted_url": pay.hosted_url,
+            "status": "pending",
+            "plan_id": plan.id,
+        }
+
+    # -----------------------------------------------------------------------
+    # ManualProvider (and any other non-Doit provider) — instant activation (P4)
+    # -----------------------------------------------------------------------
 
     # Provider call (ManualProvider → offline no-op)
     provider.change_subscription(company, plan)
@@ -415,35 +527,79 @@ def topup(
     body: TopupBody,
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
+    provider: Any = Depends(get_payment_provider),
 ) -> dict[str, Any]:
     """Top up credits using a named pack.
 
-    Pack options: small (1 000), medium (5 000), large (20 000).
+    Pack options: small (1 000 cr / 15 000 IDR), medium (5 000 cr / 70 000 IDR),
+                  large (20 000 cr / 250 000 IDR).
 
-    Internal effects (offline):
-    1. Map pack name → credit amount.
-    2. Call provider.charge_one_off (ManualProvider → {"status":"offline"}).
-    3. Grant credits (reason="topup").
-    4. Create an Invoice row (status="offline"/"paid").
+    ManualProvider (default):
+      Instant grant — creates a CreditLedger + offline Invoice; returns {balance, invoice}.
 
-    Returns updated balance + invoice.
+    DoitProvider:
+      Creates a pending DoitPayment + calls provider.charge_one_off → gets hosted_url.
+      Does NOT touch the balance; returns {payment_id, hosted_url, status:"pending", credits, amount_idr}.
+      Credits are granted by the webhook handler (T3) on payment.paid.
     """
     pack_name = body.pack
-    credits = PACKS.get(pack_name)
-    if credits is None:
+    pack = PACKS.get(pack_name)
+    if pack is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown pack {pack_name!r}. Valid: {list(PACKS)}",
         )
 
-    company = _load_company(db, ctx.company_id)
-    provider = get_payment_provider()
+    credits = pack["credits"]
+    amount_idr = pack["amount_idr"]
 
-    # Approximate USD amount (1 credit = $0.01)
-    amount_usd = credits / 100.0
+    company = _load_company(db, ctx.company_id)
+
+    # -----------------------------------------------------------------------
+    # DoitProvider path — create a pending payment; no balance change
+    # -----------------------------------------------------------------------
+    if isinstance(provider, DoitProvider):
+        # Unique reference for idempotency
+        short_id = uuid.uuid4().hex[:8]
+        reference = f"topup:{company.id}:{pack_name}:{short_id}"
+
+        charge_result = provider.charge_one_off(
+            company,
+            amount_idr,
+            reference,
+            metadata={"pack": pack_name, "credits": credits},
+        )
+
+        # Persist a pending DoitPayment row
+        pay = DoitPayment(
+            id=prefixed_id("pay"),
+            company_id=company.id,
+            kind="topup",
+            credits=credits,
+            amount_idr=amount_idr,
+            reference=reference,
+            provider_payment_id=charge_result["provider_payment_id"],
+            hosted_url=charge_result["hosted_url"],
+            status="pending",
+            raw=charge_result.get("raw"),
+        )
+        db.add(pay)
+        db.flush()
+
+        return {
+            "payment_id": pay.id,
+            "hosted_url": pay.hosted_url,
+            "status": "pending",
+            "credits": credits,
+            "amount_idr": amount_idr,
+        }
+
+    # -----------------------------------------------------------------------
+    # ManualProvider (and any other non-Doit provider) — instant grant (P4)
+    # -----------------------------------------------------------------------
 
     # Provider call (ManualProvider → offline no-op)
-    provider.charge_one_off(company, amount_usd, reason=f"topup:{pack_name}")
+    provider.charge_one_off(company, amount_idr, f"topup:{pack_name}")
 
     # Grant credits
     grant_credits(
@@ -454,7 +610,8 @@ def topup(
         meta={"pack": pack_name},
     )
 
-    # Create Invoice
+    # Create Invoice (USD amount: 1 credit = $0.01 for offline/manual provider)
+    amount_usd = credits / 100.0
     inv = Invoice(
         id=prefixed_id("inv"),
         company_id=company.id,

@@ -16,16 +16,19 @@ Design:
 - StripeProvider / XenditProvider are structural stubs so the port has real
   implementors.  They are never invoked in offline / test mode.
 - Set OMILO_PAYMENT_PROVIDER=stripe or =xendit to swap at runtime.
+- Set OMILO_PAYMENT_PROVIDER=doit + DOIT_API_KEY to use the Doit gateway.
 """
 from __future__ import annotations
 
-import os
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from omilo.models.billing import Plan, Subscription
     from omilo.models.tenancy import Company
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +93,13 @@ class PaymentProvider(Protocol):
         ...
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         """Charge a one-off amount (e.g. credit topup)."""
         ...
@@ -138,7 +147,13 @@ class ManualProvider:
         return {"status": "offline"}
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         return {"status": "offline"}
 
@@ -176,7 +191,13 @@ class StripeProvider:
         raise ProviderNotConfigured("stripe not configured")
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         raise ProviderNotConfigured("stripe not configured")
 
@@ -213,7 +234,13 @@ class XenditProvider:
         raise ProviderNotConfigured("xendit not configured")
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         raise ProviderNotConfigured("xendit not configured")
 
@@ -231,17 +258,45 @@ class XenditProvider:
 # ---------------------------------------------------------------------------
 
 
-def get_payment_provider() -> ManualProvider | StripeProvider | XenditProvider:
+def get_payment_provider():
     """Return the configured payment provider.
 
     Defaults to ManualProvider (offline) unless OMILO_PAYMENT_PROVIDER env
     selects another:
+      OMILO_PAYMENT_PROVIDER=doit    → DoitProvider (requires DOIT_API_KEY)
       OMILO_PAYMENT_PROVIDER=stripe  → StripeProvider (raises if unconfigured)
       OMILO_PAYMENT_PROVIDER=xendit  → XenditProvider (raises if unconfigured)
     """
-    provider_env = os.environ.get("OMILO_PAYMENT_PROVIDER", "manual").lower()
+    from omilo.config import get_settings
+
+    settings = get_settings()
+    provider_env = settings.omilo_payment_provider.lower()
+
+    if provider_env == "doit":
+        if not settings.doit_api_key:
+            raise ProviderNotConfigured(
+                "DOIT_API_KEY required for doit provider"
+            )
+        if not settings.doit_signing_secret:
+            raise ProviderNotConfigured(
+                "DOIT_SIGNING_SECRET required for doit provider"
+            )
+        from omilo.billing.doit_client import DoitClient
+        from omilo.billing.doit_provider import DoitProvider
+
+        client = DoitClient(settings.doit_api_key, settings.doit_base_url)
+        return DoitProvider(client, settings.doit_signing_secret)
+
     if provider_env == "stripe":
         return StripeProvider()
     if provider_env == "xendit":
         return XenditProvider()
+
+    # Default: ManualProvider — but warn if a Doit key is present without the flag.
+    if settings.doit_api_key:
+        logger.warning(
+            "DOIT_API_KEY is set but OMILO_PAYMENT_PROVIDER is %r (not 'doit'). "
+            "Doit integration is NOT active. Set OMILO_PAYMENT_PROVIDER=doit to enable it.",
+            provider_env,
+        )
     return ManualProvider()

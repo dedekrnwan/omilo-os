@@ -556,6 +556,10 @@ def _meter_job_best_effort(db: Session, job: Job) -> None:
     A nested savepoint (SAVEPOINT … ROLLBACK TO SAVEPOINT) means a metering
     failure rolls back only the ledger write, leaving the outer transaction
     (job status, report, events) intact.
+
+    After successful metering, triggers a best-effort auto-topup check so that
+    if the balance has dropped below the configured threshold, a pending payment
+    + inbox alert is prepared for the user.
     """
     try:
         from omilo.billing.meter import meter_job
@@ -570,3 +574,36 @@ def _meter_job_best_effort(db: Session, job: Job) -> None:
             job.id,
             exc,
         )  # metering errors are never fatal
+
+    # After metering (balance may have dropped), check auto-topup best-effort.
+    # A failure here MUST NEVER block or fail a job — mirrors the meter pattern.
+    _auto_topup_best_effort(db, job)
+
+
+def _auto_topup_best_effort(db: Session, job: Job) -> None:
+    """Call maybe_auto_topup inside a savepoint after metering.
+
+    If the balance dropped below the configured auto-topup threshold, this
+    prepares a pending DoitPayment + InboxItem(alert) for the user.
+
+    - Uses a savepoint so a failure here cannot roll back the job transaction.
+    - Only called when a company is in scope (job.company_id is set).
+    - Swallows all exceptions — auto-topup failures are never fatal.
+    """
+    if not job.company_id:
+        return
+    try:
+        from omilo.billing.autotopup import maybe_auto_topup
+        from omilo.models.tenancy import Company
+
+        with db.begin_nested():
+            company = db.get(Company, job.company_id)
+            if company is not None:
+                maybe_auto_topup(db, company)
+    except Exception as exc:
+        logger.warning(
+            "auto-topup check failed for company_id=%s job_id=%s — skipped: %s",
+            job.company_id,
+            job.id,
+            exc,
+        )  # auto-topup errors are never fatal
