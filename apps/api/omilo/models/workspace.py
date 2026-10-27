@@ -25,6 +25,11 @@ class Channel(IdMixin, TimestampMixin, Base):
     agent_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     chat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     open_items: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # P5d additive columns — area context
+    icon: Mapped[str | None] = mapped_column(nullable=True)          # lucide icon name
+    purpose: Mapped[str | None] = mapped_column(nullable=True)       # area purpose text
+    # context_scope bounds RAG retrieval; default 'isolated' for existing rows
+    context_scope: Mapped[str] = mapped_column(nullable=False, server_default="isolated")
 
 
 class Folder(IdMixin, TimestampMixin, Base):

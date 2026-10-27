@@ -34,7 +34,8 @@ def _now() -> datetime:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestChannelDTO:
-    REQUIRED_KEYS = {"id", "name", "accent", "agentCount", "chatCount", "openItems"}
+    # contextScope is always present (default "isolated", never None)
+    REQUIRED_KEYS = {"id", "name", "accent", "agentCount", "chatCount", "openItems", "contextScope"}
 
     def test_without_is_default(self):
         """isDefault must be absent when not set."""
