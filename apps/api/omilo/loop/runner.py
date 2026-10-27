@@ -269,6 +269,7 @@ def run_job(
                 "id": job.id,
                 "data": {"job_id": job.id},
             })
+            _meter_job_best_effort(db, job)
 
         elif verdict == "needs_owner":
             # ── create Proposal + ProposalRevision + InboxItem(decision) ──────
@@ -369,6 +370,7 @@ def run_job(
                 "id": job.id,
                 "data": {"job_id": job.id, "error": job.error},
             })
+            _meter_job_best_effort(db, job)
             return job
 
     # ── f. No pending_action — write Report, mark done ────────────────────────
@@ -393,6 +395,9 @@ def run_job(
         "id": job.id,
         "data": {"job_id": job.id},
     })
+
+    # ── g. Meter the job (best-effort — never breaks a completed job) ─────────
+    _meter_job_best_effort(db, job)
 
     return job
 
@@ -502,3 +507,21 @@ def _broker_publish(company_id: str, event: dict) -> None:
         broker.publish(company_id, event)
     except Exception:
         pass  # publish failures must never break a job
+
+
+def _meter_job_best_effort(db: Session, job: Job) -> None:
+    """Call meter_job inside a savepoint; silently swallow any error.
+
+    Metering must NEVER break a job that has already reached a terminal state.
+    A nested savepoint (SAVEPOINT … ROLLBACK TO SAVEPOINT) means a metering
+    failure rolls back only the ledger write, leaving the outer transaction
+    (job status, report, events) intact.
+    """
+    try:
+        from omilo.billing.meter import meter_job
+
+        # Use a savepoint so a meter failure does not roll back the job txn.
+        with db.begin_nested():
+            meter_job(db, job)
+    except Exception:
+        pass  # metering errors are never fatal
