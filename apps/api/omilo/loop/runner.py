@@ -15,11 +15,15 @@ Design decisions (P1):
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
+
+from omilo.billing.balance import check_can_start_job
 from omilo.engine import EngineResult, TaskContext, get_engine
 from omilo.engine.autonomy import (
     approves_on_behalf,
@@ -72,6 +76,29 @@ def start_job(
     Returns:
         The Job after run_job has finished (status: done|waiting|failed).
     """
+    # ── Pre-flight gate: balance / overage / per-helper budget ──────────────
+    # Load Company + Helper best-effort so the gate can evaluate policy.
+    # If either is missing the gate defaults to "allowed" (the run_job path
+    # will fail with its own descriptive error shortly after).
+    _gate_allowed, _gate_reason = True, None
+    try:
+        from omilo.models.agents import Helper as _Helper
+        from omilo.models.tenancy import Company as _Company
+
+        _gcompany = db.get(_Company, company_id)
+        _ghelper = db.get(_Helper, helper_id)
+        if _gcompany is not None and _ghelper is not None:
+            _gate_allowed, _gate_reason = check_can_start_job(
+                db, _gcompany, _ghelper
+            )
+    except Exception as exc:
+        logger.warning(
+            "gate check failed for company_id=%s helper_id=%s — defaulting to allowed: %s",
+            company_id,
+            helper_id,
+            exc,
+        )  # gate errors must never block a job that should run
+
     job = Job(
         id=prefixed_id("job"),
         company_id=company_id,
@@ -90,6 +117,19 @@ def start_job(
     )
     db.add(job)
     db.flush()
+
+    if not _gate_allowed:
+        # Record the blocked job without running the engine.
+        job.status = "blocked"
+        job.error = _gate_reason
+        job.ended_at = datetime.now(timezone.utc)
+        db.flush()
+        _broker_publish(company_id, {
+            "type": "job.blocked",
+            "id": job.id,
+            "data": {"job_id": job.id, "reason": _gate_reason},
+        })
+        return job
 
     return run_job(db, job)
 
@@ -269,6 +309,7 @@ def run_job(
                 "id": job.id,
                 "data": {"job_id": job.id},
             })
+            _meter_job_best_effort(db, job)
 
         elif verdict == "needs_owner":
             # ── create Proposal + ProposalRevision + InboxItem(decision) ──────
@@ -369,6 +410,7 @@ def run_job(
                 "id": job.id,
                 "data": {"job_id": job.id, "error": job.error},
             })
+            _meter_job_best_effort(db, job)
             return job
 
     # ── f. No pending_action — write Report, mark done ────────────────────────
@@ -393,6 +435,9 @@ def run_job(
         "id": job.id,
         "data": {"job_id": job.id},
     })
+
+    # ── g. Meter the job (best-effort — never breaks a completed job) ─────────
+    _meter_job_best_effort(db, job)
 
     return job
 
@@ -502,3 +547,26 @@ def _broker_publish(company_id: str, event: dict) -> None:
         broker.publish(company_id, event)
     except Exception:
         pass  # publish failures must never break a job
+
+
+def _meter_job_best_effort(db: Session, job: Job) -> None:
+    """Call meter_job inside a savepoint; silently swallow any error.
+
+    Metering must NEVER break a job that has already reached a terminal state.
+    A nested savepoint (SAVEPOINT … ROLLBACK TO SAVEPOINT) means a metering
+    failure rolls back only the ledger write, leaving the outer transaction
+    (job status, report, events) intact.
+    """
+    try:
+        from omilo.billing.meter import meter_job
+
+        # Use a savepoint so a meter failure does not roll back the job txn.
+        with db.begin_nested():
+            meter_job(db, job)
+    except Exception as exc:
+        logger.warning(
+            "metering failed for company_id=%s job_id=%s — ledger write skipped: %s",
+            job.company_id,
+            job.id,
+            exc,
+        )  # metering errors are never fatal

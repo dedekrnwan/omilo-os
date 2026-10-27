@@ -33,7 +33,7 @@ from omilo.db import SessionLocal, set_company
 from omilo.models.agents import Helper
 from omilo.models.base import prefixed_id
 from omilo.models.toolcall import ToolCall
-from omilo.mcp.tools import TOOL_CATALOG, dispatch
+from omilo.mcp.tools import TOOL_CATALOG, dispatch, get_connector_tools_for_helper
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context
 
@@ -184,7 +184,20 @@ async def mcp_endpoint(request: Request) -> dict:
 
     # ── 3. Dispatch ───────────────────────────────────────────────────────────
     if method == "tools/list":
-        return _jsonrpc_ok(rpc_id, {"tools": TOOL_CATALOG})
+        # Include compiled connector tools for this helper
+        connector_tools = []
+        try:
+            with SessionLocal() as db:
+                with db.begin():
+                    db.execute(text("SET LOCAL ROLE omilo_app"))
+                    set_company(db, helper.company_id)
+                    helper_here = db.get(Helper, helper.id)
+                    if helper_here is not None:
+                        connector_tools = get_connector_tools_for_helper(db, helper_here)
+        except Exception:
+            pass  # Never crash tools/list if connector lookup fails
+        all_tools = TOOL_CATALOG + connector_tools
+        return _jsonrpc_ok(rpc_id, {"tools": all_tools})
 
     if method == "tools/call":
         tool_name = params.get("name", "")

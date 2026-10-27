@@ -9,6 +9,10 @@ Tests:
 6. POST /v1/helpers with is_chief=true when chief exists → 409.
 
 RED → implement → GREEN.
+
+T7 P4 update: spend is now sourced from CreditLedger (reason='job') not Job.cost_credits.
+The _seed_jobs helper now also seeds matching CreditLedger rows so the
+test_analytics_overview_exact_counts assertion passes with the new spec.
 """
 from __future__ import annotations
 
@@ -90,14 +94,21 @@ def _seed_jobs(
     tokens_out: int = 50,
     cost_credits: int = 10,
 ) -> list[str]:
-    """Seed done + failed Jobs for a helper. Returns list of job ids."""
+    """Seed done + failed Jobs (and matching CreditLedger rows) for a helper.
+
+    T7 P4: spend is now sourced from CreditLedger (reason='job'), not Job.cost_credits.
+    We seed one CreditLedger row per job so analytics_overview.spend == total * cost_credits.
+    Returns list of job ids.
+    """
     from omilo.db import SessionLocal
     from omilo.models.base import prefixed_id
+    from omilo.models.billing import CreditLedger
     from omilo.models.execution import Job
 
     job_ids = []
     with SessionLocal() as session:
         with session.begin():
+            balance = 10000  # arbitrary starting balance
             for i in range(done):
                 job = Job(
                     id=prefixed_id("job"),
@@ -112,6 +123,19 @@ def _seed_jobs(
                 )
                 session.add(job)
                 job_ids.append(job.id)
+                # Matching CreditLedger row (T7 P4: spend from ledger)
+                balance -= cost_credits
+                ledger = CreditLedger(
+                    id=prefixed_id("cl"),
+                    company_id=company_id,
+                    delta=-cost_credits,
+                    balance_after=balance,
+                    reason="job",
+                    helper_id=helper_id,
+                    credits_charged=cost_credits,
+                    at=datetime.now(timezone.utc),
+                )
+                session.add(ledger)
             for i in range(failed):
                 job = Job(
                     id=prefixed_id("job"),
@@ -126,6 +150,19 @@ def _seed_jobs(
                 )
                 session.add(job)
                 job_ids.append(job.id)
+                # Matching CreditLedger row (T7 P4: spend from ledger)
+                balance -= cost_credits
+                ledger = CreditLedger(
+                    id=prefixed_id("cl"),
+                    company_id=company_id,
+                    delta=-cost_credits,
+                    balance_after=balance,
+                    reason="job",
+                    helper_id=helper_id,
+                    credits_charged=cost_credits,
+                    at=datetime.now(timezone.utc),
+                )
+                session.add(ledger)
     return job_ids
 
 
