@@ -419,14 +419,14 @@ export function createCommands(
     /**
      * POST /v1/channels — create a new area/channel.
      *
-     * WARNING: POST /v1/channels does NOT yet exist on the backend (channels.py
-     * only has GET endpoints). This command is forward-compatible and will fail
-     * at runtime until the backend endpoint is implemented (T5 blocker).
+     * The backend (channels.py, added in P5d-T2b) expects `accent` for the
+     * colour/accent field; the frontend input names it `color`, so we map
+     * color → accent at the body boundary.
      */
     async createArea(input: CreateAreaInput): Promise<Channel> {
       const body: Record<string, unknown> = {
         name: input.name,
-        color: input.color,
+        accent: input.color,
         context_scope: input.contextScope,
       }
       if (input.icon !== undefined) body.icon = input.icon

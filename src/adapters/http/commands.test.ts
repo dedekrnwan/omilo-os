@@ -431,7 +431,8 @@ describe('createCommands', () => {
     expect(url).toBe(`${BASE}/v1/channels`)
     expect(init.method).toBe('POST')
     const body = JSON.parse(init.body as string) as Record<string, unknown>
-    expect(body).toMatchObject({ name: 'Dev', color: 'dev', context_scope: 'team' })
+    expect(body).toMatchObject({ name: 'Dev', accent: 'dev', context_scope: 'team' })
+    expect(body.color).toBeUndefined()
     expect(body.contextScope).toBeUndefined()
     expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
   })
