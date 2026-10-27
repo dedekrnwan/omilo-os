@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
@@ -6,6 +6,7 @@ import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle
 import type { Model, SessionParticipant } from '../../core/domain/types'
 import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession } from '../../app/queries'
 import { useChatStore } from '../../app/store'
+import { createCommands } from '../../adapters/http/commands'
 import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
@@ -245,6 +246,28 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [actionToast, setActionToast] = useState<string | null>(null)
   const [autoCompact, setAutoCompact] = useState(true)
+
+  // ── HTTP commands (env-gated) ─────────────────────────────────────────────
+  // In http mode, the composer's onSend calls the API to persist the message.
+  // In mock mode this is a no-op and the Composer's onSend prop is left unset,
+  // preserving the existing mock-mode behaviour exactly.
+  const commands = useMemo(() => {
+    if (import.meta.env.VITE_USE_HTTP !== '1') return null
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+    const getToken = () => localStorage.getItem('omilo_token')
+    return createCommands(baseUrl, getToken)
+  }, [])
+
+  function handleSend(text: string) {
+    if (commands) {
+      // Fire-and-forget: the user's message is already in the backend.
+      // Optimistic UI is handled by the existing mock-mode path; live WS
+      // streaming is wired in a later task (P5+ frontend-gaps).
+      commands.sendMessage(sessionId, text).catch(() => {
+        // Swallow errors silently in P1 — error feedback is a later task.
+      })
+    }
+  }
 
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -574,6 +597,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             placeholder={`Reply — ${joinNames(participants.map((p) => p.name))} ${
               participants.length > 1 ? 'are' : 'is'
             } in this chat`}
+            onSend={commands ? handleSend : undefined}
           />
         </div>
         <p className="m-0 flex items-center gap-[6px] text-[12px] text-faint">
