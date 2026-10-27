@@ -81,6 +81,20 @@ TOOL_CATALOG: list[dict[str, Any]] = [
             "required": ["type", "risk", "title", "body"],
         },
     },
+    {
+        "name": "remember",
+        "description": (
+            "Persist a note to the helper's Notes.md memory doc. "
+            "Use for things the helper wants to remember across runs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The note to remember"},
+            },
+            "required": ["text"],
+        },
+    },
 ]
 
 
@@ -154,6 +168,21 @@ def tool_recall(db: Session, helper: Helper, arguments: dict) -> list:
         return _recall(db, query)
     except Exception:
         return []
+
+
+def tool_remember(db: Session, helper: Helper, arguments: dict) -> dict:
+    """Persist a note to the helper's Notes.md memory doc (company-scoped via RLS).
+
+    The ToolCall is logged by the dispatcher in server.py (standard flow).
+    """
+    from omilo.memory.store import remember as _remember
+
+    text_arg = arguments.get("text", "")
+    if not text_arg:
+        return {"status": "error", "detail": "text argument is required"}
+
+    _remember(db, helper.id, text_arg)
+    return {"status": "ok", "helper_id": helper.id}
 
 
 def tool_propose(db: Session, helper: Helper, arguments: dict) -> dict:
@@ -260,6 +289,7 @@ TOOL_HANDLERS: dict[str, Any] = {
     "flows_list": tool_flows_list,
     "recall": tool_recall,
     "propose": tool_propose,
+    "remember": tool_remember,
 }
 
 

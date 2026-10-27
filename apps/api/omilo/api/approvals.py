@@ -322,6 +322,19 @@ def reject_proposal(
         },
     })
 
+    # Add a lesson for the helper so it learns from the rejection (best-effort)
+    if proposal.helper_id and body.note:
+        try:
+            from omilo.memory.store import add_lesson
+            add_lesson(
+                db,
+                proposal.helper_id,
+                f"Operator rejected: {body.note}",
+                source="approval",
+            )
+        except Exception:
+            pass  # must not break the reject flow
+
     return {"proposal": _proposal_to_dict(proposal)}
 
 
