@@ -27,13 +27,11 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from jwt.exceptions import PyJWTError
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 from omilo.api.chat_write import (
     _message_dto,
@@ -105,8 +103,8 @@ def _run_turn_sync(
     """Run one operator turn synchronously.
 
     Opens a company-scoped DB session, persists the operator message,
-    picks the helper, runs the job with a buffering publish hook, persists
-    the assistant message, and returns a result dict with:
+    picks the helper, runs the job (events are stored as RunEvent rows),
+    persists the assistant message, and returns a result dict with:
       - run_events: list of {kind, data} dicts (in emit order)
       - operator_msg: operator Message ORM (for its DTO)
       - assistant_msg: assistant Message ORM (may be None)
@@ -116,12 +114,6 @@ def _run_turn_sync(
 
     All DB work is committed (one transaction).
     """
-    collected_events: list[dict[str, Any]] = []
-
-    def _collect(cid: str, event: dict) -> None:
-        """Buffered publish: collect run_events during the sync turn."""
-        collected_events.append(event)
-
     with SessionLocal() as db:
         with db.begin():
             # ── Set up company-scoped session (RLS) ────────────────────────
@@ -161,7 +153,7 @@ def _run_turn_sync(
             except Exception as exc:
                 return {
                     "error": f"no helper: {exc}",
-                    "run_events": collected_events,
+                    "run_events": [],
                     "operator_msg": op_msg,
                     "assistant_msg": None,
                     "job_id": None,
@@ -176,14 +168,9 @@ def _run_turn_sync(
                 origin="chat",
                 brief=content,
                 session_id=session_id,
-                # pass publish only to the outer start_job; but start_job
-                # calls run_job internally without publish.  We need to
-                # intercept via run_job directly.  Re-run via run_job:
             )
-            # NOTE: start_job already ran run_job without our publish hook.
-            # The events are already stored as RunEvent rows.
-            # For P1 buffered streaming we read them back from the DB:
-            # (they are flushed within the same transaction, so visible here)
+            # start_job runs the turn and persists RunEvent rows in the DB.
+            # Read them back in order — flushed within this transaction.
             from omilo.models.execution import RunEvent
             run_events_rows = (
                 db.query(RunEvent)
