@@ -20,12 +20,15 @@ Design:
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from omilo.models.billing import Plan, Subscription
     from omilo.models.tenancy import Company
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +93,13 @@ class PaymentProvider(Protocol):
         ...
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         """Charge a one-off amount (e.g. credit topup)."""
         ...
@@ -138,7 +147,13 @@ class ManualProvider:
         return {"status": "offline"}
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         return {"status": "offline"}
 
@@ -176,7 +191,13 @@ class StripeProvider:
         raise ProviderNotConfigured("stripe not configured")
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         raise ProviderNotConfigured("stripe not configured")
 
@@ -213,7 +234,13 @@ class XenditProvider:
         raise ProviderNotConfigured("xendit not configured")
 
     def charge_one_off(
-        self, company: "Company", amount_usd: float, reason: str
+        self,
+        company: "Company",
+        amount: int,
+        reference: str,
+        *,
+        rail: str = "any",
+        metadata: dict | None = None,
     ) -> dict | None:
         raise ProviderNotConfigured("xendit not configured")
 
@@ -245,16 +272,31 @@ def get_payment_provider():
     settings = get_settings()
     provider_env = settings.omilo_payment_provider.lower()
 
-    if provider_env == "doit" and settings.doit_api_key:
+    if provider_env == "doit":
+        if not settings.doit_api_key:
+            raise ProviderNotConfigured(
+                "DOIT_API_KEY required for doit provider"
+            )
+        if not settings.doit_signing_secret:
+            raise ProviderNotConfigured(
+                "DOIT_SIGNING_SECRET required for doit provider"
+            )
         from omilo.billing.doit_client import DoitClient
         from omilo.billing.doit_provider import DoitProvider
 
         client = DoitClient(settings.doit_api_key, settings.doit_base_url)
-        signing_secret = settings.doit_signing_secret or ""
-        return DoitProvider(client, signing_secret)
+        return DoitProvider(client, settings.doit_signing_secret)
 
     if provider_env == "stripe":
         return StripeProvider()
     if provider_env == "xendit":
         return XenditProvider()
+
+    # Default: ManualProvider — but warn if a Doit key is present without the flag.
+    if settings.doit_api_key:
+        logger.warning(
+            "DOIT_API_KEY is set but OMILO_PAYMENT_PROVIDER is %r (not 'doit'). "
+            "Doit integration is NOT active. Set OMILO_PAYMENT_PROVIDER=doit to enable it.",
+            provider_env,
+        )
     return ManualProvider()

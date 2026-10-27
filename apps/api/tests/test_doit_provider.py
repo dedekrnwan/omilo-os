@@ -17,11 +17,20 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _make_sig_header(secret: str, body: str, t: int | None = None) -> str:
-    """Build a valid PayBridge-Signature header value."""
+def _make_sig_header(secret: str, body: bytes | str, t: int | None = None) -> str:
+    """Build a valid PayBridge-Signature header value.
+
+    Computes the HMAC the same canonical way Doit does:
+        HMAC_SHA256(secret, f"{ts}.".encode("utf-8") + body_bytes)
+
+    This is intentionally NOT a string round-trip so the test is NOT tautological
+    with respect to the implementation. A body containing non-ASCII bytes
+    (e.g. emoji) must still produce a header that verify_doit_signature accepts.
+    """
     ts = t if t is not None else int(time.time())
-    payload = f"{ts}.{body}"
-    v1 = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    body_bytes: bytes = body if isinstance(body, bytes) else body.encode("utf-8")
+    signed = f"{ts}.".encode("utf-8") + body_bytes
+    v1 = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
     return f"t={ts},v1={v1}"
 
 
@@ -39,7 +48,7 @@ def test_get_payment_provider_default_is_manual():
 
 
 def test_get_payment_provider_doit_with_key(monkeypatch):
-    """OMILO_PAYMENT_PROVIDER=doit + DOIT_API_KEY → DoitProvider."""
+    """OMILO_PAYMENT_PROVIDER=doit + DOIT_API_KEY + DOIT_SIGNING_SECRET → DoitProvider."""
     from omilo import config as cfg_module
 
     # Clear the lru_cache so monkeypatched settings take effect
@@ -47,6 +56,7 @@ def test_get_payment_provider_doit_with_key(monkeypatch):
 
     monkeypatch.setenv("OMILO_PAYMENT_PROVIDER", "doit")
     monkeypatch.setenv("DOIT_API_KEY", "pb_test_fake123")
+    monkeypatch.setenv("DOIT_SIGNING_SECRET", "whsec_test_fake")
 
     # Re-build settings
     cfg_module.get_settings.cache_clear()
@@ -58,6 +68,62 @@ def test_get_payment_provider_doit_with_key(monkeypatch):
     assert isinstance(provider, DoitProvider)
 
     # Cleanup
+    cfg_module.get_settings.cache_clear()
+
+
+def test_get_payment_provider_doit_missing_signing_secret_raises(monkeypatch):
+    """provider=doit + api_key set + signing_secret unset → ProviderNotConfigured."""
+    from omilo import config as cfg_module
+    from omilo.billing.provider import ProviderNotConfigured, get_payment_provider
+
+    cfg_module.get_settings.cache_clear()
+
+    monkeypatch.setenv("OMILO_PAYMENT_PROVIDER", "doit")
+    monkeypatch.setenv("DOIT_API_KEY", "pb_test_fake123")
+    monkeypatch.delenv("DOIT_SIGNING_SECRET", raising=False)
+
+    cfg_module.get_settings.cache_clear()
+
+    with pytest.raises(ProviderNotConfigured, match="DOIT_SIGNING_SECRET"):
+        get_payment_provider()
+
+    cfg_module.get_settings.cache_clear()
+
+
+def test_get_payment_provider_doit_missing_api_key_raises(monkeypatch):
+    """provider=doit + api_key missing → ProviderNotConfigured."""
+    from omilo import config as cfg_module
+    from omilo.billing.provider import ProviderNotConfigured, get_payment_provider
+
+    cfg_module.get_settings.cache_clear()
+
+    monkeypatch.setenv("OMILO_PAYMENT_PROVIDER", "doit")
+    monkeypatch.delenv("DOIT_API_KEY", raising=False)
+    monkeypatch.setenv("DOIT_SIGNING_SECRET", "whsec_test_fake")
+
+    cfg_module.get_settings.cache_clear()
+
+    with pytest.raises(ProviderNotConfigured, match="DOIT_API_KEY"):
+        get_payment_provider()
+
+    cfg_module.get_settings.cache_clear()
+
+
+def test_get_payment_provider_doit_key_set_but_flag_unset_returns_manual(monkeypatch):
+    """DOIT_API_KEY present but OMILO_PAYMENT_PROVIDER != 'doit' → ManualProvider (not Doit)."""
+    from omilo import config as cfg_module
+    from omilo.billing.provider import ManualProvider, get_payment_provider
+
+    cfg_module.get_settings.cache_clear()
+
+    monkeypatch.setenv("OMILO_PAYMENT_PROVIDER", "manual")
+    monkeypatch.setenv("DOIT_API_KEY", "pb_test_orphan_key")
+
+    cfg_module.get_settings.cache_clear()
+
+    provider = get_payment_provider()
+    assert isinstance(provider, ManualProvider)
+
     cfg_module.get_settings.cache_clear()
 
 
@@ -291,6 +357,40 @@ def test_verify_with_bytes_body():
     header = _make_sig_header(SECRET, BODY, t)
     # Should work with bytes body too
     assert verify_doit_signature(SECRET, header, BODY.encode(), now=t) is True
+
+
+def test_verify_emoji_body_raw_bytes_round_trip():
+    """HMAC is computed over the EXACT raw bytes, not a str round-trip.
+
+    A body with an emoji (multi-byte UTF-8 sequence) must verify correctly
+    when the header is built from the same raw bytes — not from a decoded string.
+    This test would fail if the impl did a decode→re-encode (e.g. with latin-1 or
+    errors="replace") instead of signing over the original byte sequence.
+    """
+    from omilo.billing.doit_provider import verify_doit_signature
+
+    emoji_body = '{"msg": "paid \U0001f389", "amount": 50000}'.encode("utf-8")
+    t = int(time.time())
+    # Build header from raw bytes (canonical Doit approach)
+    header = _make_sig_header(SECRET, emoji_body, t)
+    # verify_doit_signature must accept raw bytes directly
+    assert verify_doit_signature(SECRET, header, emoji_body, now=t) is True
+
+
+def test_verify_hmac_header_built_from_str_matches_bytes():
+    """str body and bytes body with identical UTF-8 content produce the same HMAC."""
+    from omilo.billing.doit_provider import verify_doit_signature
+
+    ascii_body_str = BODY
+    ascii_body_bytes = BODY.encode("utf-8")
+    t = int(time.time())
+
+    header_from_bytes = _make_sig_header(SECRET, ascii_body_bytes, t)
+    header_from_str = _make_sig_header(SECRET, ascii_body_str, t)
+    # Both headers must be identical for pure-ASCII content
+    assert header_from_bytes == header_from_str
+    # And both must verify against bytes
+    assert verify_doit_signature(SECRET, header_from_bytes, ascii_body_bytes, now=t) is True
 
 
 # ---------------------------------------------------------------------------

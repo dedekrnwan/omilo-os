@@ -52,7 +52,7 @@ def verify_doit_signature(
     (spaces around ``=`` and ``,`` are tolerated).
 
     The HMAC is computed as:
-        HMAC_SHA256(signing_secret, f"{t}.{raw_body_as_str}")
+        HMAC_SHA256(signing_secret, f"{t}.".encode("utf-8") + raw_body_bytes)
 
     Args:
         signing_secret: The DOIT_SIGNING_SECRET value.
@@ -91,17 +91,17 @@ def verify_doit_signature(
         if abs(current - ts) > tolerance_s:
             return False
 
-        # Normalise body to str for the HMAC payload
-        if isinstance(raw_body, bytes):
-            body_str = raw_body.decode("utf-8", errors="replace")
-        else:
-            body_str = raw_body
+        # Sign over the EXACT received bytes — no decode/re-encode round-trip.
+        # This matches what Doit signs on their side.
+        body_bytes: bytes = (
+            raw_body if isinstance(raw_body, bytes) else raw_body.encode("utf-8")
+        )
+        signed = f"{ts}.".encode("utf-8") + body_bytes
 
         # Recompute HMAC
-        payload = f"{ts}.{body_str}".encode()
         expected = hmac.new(
-            signing_secret.encode(),
-            payload,
+            signing_secret.encode("utf-8"),
+            signed,
             hashlib.sha256,
         ).hexdigest()
 
@@ -148,12 +148,20 @@ class DoitProvider:
     def charge_one_off(
         self,
         company: "Company",
-        amount_idr: int,
+        amount: int,
         reference: str,
+        *,
         rail: str = "any",
         metadata: dict | None = None,
     ) -> dict | None:
         """Create a one-off Doit payment.
+
+        Args:
+            company:   The company being charged.
+            amount:    Amount in IDR (integer, smallest currency unit).
+            reference: Unique reference / idempotency key (e.g. "INV/42").
+            rail:      Payment rail hint (e.g. "qris", "va", "any").
+            metadata:  Optional extra metadata forwarded to Doit.
 
         Returns:
             {
@@ -165,7 +173,7 @@ class DoitProvider:
             }
         """
         resp = self._client.create_payment(
-            amount_idr=amount_idr,
+            amount_idr=amount,
             reference=reference,
             rail=rail,
             metadata=metadata,
@@ -175,7 +183,7 @@ class DoitProvider:
             "provider_payment_id": resp["id"],
             "hosted_url": resp.get("hosted_url"),
             "status": resp["status"],
-            "amount_idr": amount_idr,
+            "amount_idr": amount,
             "raw": resp,
         }
 

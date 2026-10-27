@@ -439,11 +439,12 @@ def topup(
     company = _load_company(db, ctx.company_id)
     provider = get_payment_provider()
 
-    # Approximate USD amount (1 credit = $0.01)
-    amount_usd = credits / 100.0
+    # Amount in IDR-equivalent integer units (ManualProvider ignores this).
+    # 1 credit ≈ Rp 10 (placeholder; Doit callers pass real IDR amounts).
+    amount_idr = credits * 10
 
     # Provider call (ManualProvider → offline no-op)
-    provider.charge_one_off(company, amount_usd, reason=f"topup:{pack_name}")
+    provider.charge_one_off(company, amount_idr, f"topup:{pack_name}")
 
     # Grant credits
     grant_credits(
@@ -454,7 +455,8 @@ def topup(
         meta={"pack": pack_name},
     )
 
-    # Create Invoice
+    # Create Invoice (USD amount: 1 credit = $0.01 for offline/manual provider)
+    amount_usd = credits / 100.0
     inv = Invoice(
         id=prefixed_id("inv"),
         company_id=company.id,
