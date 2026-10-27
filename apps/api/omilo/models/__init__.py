@@ -10,6 +10,9 @@ from omilo.models.inbox import InboxItem  # noqa: F401
 from omilo.models.agents import Helper  # noqa: F401
 from omilo.models.execution import Job, Report, RunEvent  # noqa: F401
 from omilo.models.approvals import Proposal, ProposalRevision, SafetyLimit  # noqa: F401
+from omilo.models.routines import Routine, RoutineRun  # noqa: F401
+from omilo.models.flows import Flow, FlowRun  # noqa: F401
+from omilo.models.toolcall import ToolCall  # noqa: F401
 
 __all__ = [
     "Company",
@@ -28,4 +31,9 @@ __all__ = [
     "Proposal",
     "ProposalRevision",
     "SafetyLimit",
+    "Routine",
+    "RoutineRun",
+    "Flow",
+    "FlowRun",
+    "ToolCall",
 ]

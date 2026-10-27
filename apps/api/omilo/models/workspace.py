@@ -51,3 +51,8 @@ class Goal(IdMixin, TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(nullable=False)
     progress: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # P2 additive columns
+    target: Mapped[str] = mapped_column(nullable=False, server_default="")
+    status: Mapped[str] = mapped_column(nullable=False, server_default="active")
+    autonomy_override: Mapped[str | None] = mapped_column(nullable=True)
+    owner_helper_id: Mapped[str | None] = mapped_column(nullable=True)
