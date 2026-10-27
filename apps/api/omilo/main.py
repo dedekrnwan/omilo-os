@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from omilo.api.ai_accounts import router as ai_accounts_router
+from omilo.api.marketplace import router as marketplace_router
 from omilo.api.approvals import router as approvals_router
 from omilo.api.billing import router as billing_router
 from omilo.api.retro import router as retro_router
@@ -55,6 +56,8 @@ def create_app() -> FastAPI:
     app.include_router(billing_router, prefix="/v1")
     # AI accounts pool (Task 5 P4)
     app.include_router(ai_accounts_router, prefix="/v1")
+    # Marketplace catalog + install (Task 6 P4)
+    app.include_router(marketplace_router, prefix="/v1")
     # Approvals write path (Task 7 P1)
     app.include_router(approvals_router, prefix="/v1")
     # Retro / scorecard + Improvement (Task 7 P3)
