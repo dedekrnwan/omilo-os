@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     # Overridable via PIECES_SOURCE env var.
     pieces_source: str = _DEFAULT_PIECES_SOURCE
 
+    # ---------------------------------------------------------------------------
+    # Payment provider
+    # ---------------------------------------------------------------------------
+    # Which payment provider to use: "manual" (default, offline), "doit",
+    # "stripe", "xendit".
+    omilo_payment_provider: str = "manual"
+
+    # Doit (pay.doit.id) credentials
+    doit_api_key: str | None = None
+    doit_signing_secret: str | None = None
+    doit_base_url: str = "https://pay.doit.id/v1"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

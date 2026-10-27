@@ -16,10 +16,10 @@ Design:
 - StripeProvider / XenditProvider are structural stubs so the port has real
   implementors.  They are never invoked in offline / test mode.
 - Set OMILO_PAYMENT_PROVIDER=stripe or =xendit to swap at runtime.
+- Set OMILO_PAYMENT_PROVIDER=doit + DOIT_API_KEY to use the Doit gateway.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -231,15 +231,28 @@ class XenditProvider:
 # ---------------------------------------------------------------------------
 
 
-def get_payment_provider() -> ManualProvider | StripeProvider | XenditProvider:
+def get_payment_provider():
     """Return the configured payment provider.
 
     Defaults to ManualProvider (offline) unless OMILO_PAYMENT_PROVIDER env
     selects another:
+      OMILO_PAYMENT_PROVIDER=doit    → DoitProvider (requires DOIT_API_KEY)
       OMILO_PAYMENT_PROVIDER=stripe  → StripeProvider (raises if unconfigured)
       OMILO_PAYMENT_PROVIDER=xendit  → XenditProvider (raises if unconfigured)
     """
-    provider_env = os.environ.get("OMILO_PAYMENT_PROVIDER", "manual").lower()
+    from omilo.config import get_settings
+
+    settings = get_settings()
+    provider_env = settings.omilo_payment_provider.lower()
+
+    if provider_env == "doit" and settings.doit_api_key:
+        from omilo.billing.doit_client import DoitClient
+        from omilo.billing.doit_provider import DoitProvider
+
+        client = DoitClient(settings.doit_api_key, settings.doit_base_url)
+        signing_secret = settings.doit_signing_secret or ""
+        return DoitProvider(client, signing_secret)
+
     if provider_env == "stripe":
         return StripeProvider()
     if provider_env == "xendit":
