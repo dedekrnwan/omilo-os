@@ -52,3 +52,9 @@ class Helper(IdMixin, TimestampMixin, Base):
     # mcp_token_hash: sha256 hex digest of the per-helper MCP token secret.
     # Null = no token minted yet.  Raw token is NEVER stored.
     mcp_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # budget_credits_month: optional per-helper monthly credit cap.
+    # Null = unlimited.  When the helper's month-to-date credits_charged
+    # reaches this value, the runner pauses the helper automatically.
+    budget_credits_month: Mapped[int | None] = mapped_column(
+        nullable=True
+    )

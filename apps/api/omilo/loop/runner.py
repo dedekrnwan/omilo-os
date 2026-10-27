@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from omilo.billing.balance import check_can_start_job
 from omilo.engine import EngineResult, TaskContext, get_engine
 from omilo.engine.autonomy import (
     approves_on_behalf,
@@ -72,6 +73,24 @@ def start_job(
     Returns:
         The Job after run_job has finished (status: done|waiting|failed).
     """
+    # ── Pre-flight gate: balance / overage / per-helper budget ──────────────
+    # Load Company + Helper best-effort so the gate can evaluate policy.
+    # If either is missing the gate defaults to "allowed" (the run_job path
+    # will fail with its own descriptive error shortly after).
+    _gate_allowed, _gate_reason = True, None
+    try:
+        from omilo.models.agents import Helper as _Helper
+        from omilo.models.tenancy import Company as _Company
+
+        _gcompany = db.get(_Company, company_id)
+        _ghelper = db.get(_Helper, helper_id)
+        if _gcompany is not None and _ghelper is not None:
+            _gate_allowed, _gate_reason = check_can_start_job(
+                db, _gcompany, _ghelper
+            )
+    except Exception:
+        pass  # gate errors must never block a job that should run
+
     job = Job(
         id=prefixed_id("job"),
         company_id=company_id,
@@ -90,6 +109,19 @@ def start_job(
     )
     db.add(job)
     db.flush()
+
+    if not _gate_allowed:
+        # Record the blocked job without running the engine.
+        job.status = "blocked"
+        job.error = _gate_reason
+        job.ended_at = datetime.now(timezone.utc)
+        db.flush()
+        _broker_publish(company_id, {
+            "type": "job.blocked",
+            "id": job.id,
+            "data": {"job_id": job.id, "reason": _gate_reason},
+        })
+        return job
 
     return run_job(db, job)
 
