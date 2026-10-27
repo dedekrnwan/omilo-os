@@ -185,3 +185,58 @@ Because each ledger row carries both `provider_cost_usd` and `credits_charged`:
 Nothing in P0–P3 depends on billing; the engine runs on pool/BYO or ungated credits in dev. The
 **payment integration (P6) is explicitly optional** and can be deferred indefinitely — omilo is
 fully operable and monetizable on manual/offline billing until you're ready to pick a processor.
+
+## Doit provider (async webhook-grant model)
+
+**Doit** (pay.doit.id) is the concrete `PaymentProvider` implementation wired in P5a.  It uses
+a redirect/invoice model: the API creates a hosted payment page, the user pays there, and Doit
+delivers a `payment.paid` webhook when the payment clears.
+
+### Credit grant on payment.paid
+
+Credits are granted asynchronously via the webhook, not at checkout:
+
+1. `POST /v1/billing/topup` (or `change-plan`) creates a `DoitPayment` row (`status="pending"`)
+   and returns `hosted_url` for the user to complete payment.  Balance is **not changed yet**.
+2. Doit sends `POST /v1/webhooks/doit` with a signed `payment.paid` event.
+3. The webhook handler calls `apply_payment_paid(db, payment, company)` — the shared idempotent
+   settle in `billing/settle.py`.
+
+**Idempotency guarantee:**
+- `DoitPayment.granted` is the single source of truth — set to `True` atomically when credits
+  are first granted.
+- The row is loaded `FOR UPDATE` before `apply_payment_paid` is called, so concurrent
+  re-deliveries of the same webhook serialise on the lock: the second delivery blocks until the
+  first transaction commits, then reads `granted=True` and returns `False` (no-op).
+- `apply_payment_paid` returns `True` on the first grant, `False` on every subsequent call.
+
+### Reconciliation — missed-webhook safety net
+
+`reconcile_pending(db, company, provider)` in `billing/reconcile.py` is a pull-based complement
+to the push webhook:
+
+- For each `DoitPayment` with `status="pending"` for the company, it calls
+  `provider.get_payment(provider_payment_id)` to poll the current status.
+- If the provider reports `"paid"` → loads the row `FOR UPDATE` and calls `apply_payment_paid`
+  (same shared settle).  If the webhook already granted, this is an automatic no-op.
+- If the provider reports `"expired"` or `"failed"` → sets `DoitPayment.status` accordingly.
+- Returns the count of payments newly settled (first grant only).
+
+**Cross-path idempotency** (both orders proven in `tests/test_reconcile.py`):
+- Reconcile settles first → subsequent webhook calls `apply_payment_paid` → `granted=True` →
+  no-op; balance unchanged.
+- Webhook settles first → reconcile polls and calls `apply_payment_paid` → same no-op.
+
+Scheduler wiring (periodic task calling `reconcile_pending` per company) is a P5a follow-up.
+
+### Auto-topup honesty
+
+Omilo has no card-on-file.  Auto-topup means "prepare a hosted payment and notify the user" —
+never a silent background charge.  The `ManualProvider` offline-grant branch is a dev convenience
+only and is never active in production.
+
+### Shared settle path
+
+Both the webhook handler (`api/webhooks.py`) and the reconcile function (`billing/reconcile.py`)
+call `billing/settle.py::apply_payment_paid` — one idempotent code path.  There is no separate
+"webhook grant" vs "reconcile grant" logic; the guarantee holds by construction.

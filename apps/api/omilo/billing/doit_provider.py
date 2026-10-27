@@ -208,6 +208,20 @@ class DoitProvider:
         return self._create_doit_subscription(company, plan)
 
     # ------------------------------------------------------------------
+    # get_payment — provider-level payment status poll
+    # ------------------------------------------------------------------
+
+    def get_payment(self, payment_id: str) -> dict:
+        """Fetch the current status of a payment from the Doit gateway.
+
+        Used by reconcile_pending to poll missed-webhook payments.
+
+        Returns:
+            A dict with at least {"id": str, "status": str}.
+        """
+        return self._client.get_payment(payment_id)
+
+    # ------------------------------------------------------------------
     # 5. cancel_subscription
     # ------------------------------------------------------------------
 

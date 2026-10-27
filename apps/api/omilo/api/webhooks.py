@@ -32,14 +32,12 @@ import logging
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
 
-from omilo.billing.balance import debit_credits, grant_credits
+from omilo.billing.balance import debit_credits
 from omilo.billing.doit_provider import WebhookVerificationError
 from omilo.billing.provider import get_payment_provider
+from omilo.billing.settle import apply_payment_paid
 from omilo.db import SessionLocal, set_company
-from omilo.models.base import prefixed_id
-from omilo.models.billing import Plan, Subscription
 from omilo.models.commerce import DoitPayment
 from omilo.models.tenancy import Company
 
@@ -186,114 +184,18 @@ def _handle_payment_paid(provider_payment_id: str, payment_data: dict) -> None:
                 )
                 return
 
-            # ── Idempotency guard ───────────────────────────────────────────
-            if payment.granted:
+            # ── Shared idempotent settle (also called by reconcile) ────────
+            # apply_payment_paid checks payment.granted, sets status="paid",
+            # grants credits by kind, sets granted=True, and flushes.
+            # FOR UPDATE lock (above) serialises concurrent re-deliveries so
+            # the second caller blocks until the first commits, then no-ops.
+            settled = apply_payment_paid(db, payment, company)
+            if not settled:
                 logger.info(
                     "payment.paid: DoitPayment %r already granted; skipping (idempotent)",
                     payment_id,
                 )
-                return
-
-            # ── Mark paid ──────────────────────────────────────────────────
-            payment.status = "paid"
-
-            # ── Grant by kind ──────────────────────────────────────────────
-            if payment.kind == "topup":
-                _grant_topup(db, company, payment)
-            elif payment.kind == "subscription":
-                _grant_subscription(db, company, payment)
-            else:
-                logger.warning(
-                    "payment.paid: unknown kind=%r for payment %r",
-                    payment.kind,
-                    payment_id,
-                )
-
-            # ── Set idempotency flag ────────────────────────────────────────
-            payment.granted = True
-            db.flush()
             # Transaction commits on context-manager exit
-
-
-def _grant_topup(db: Session, company: Company, payment: DoitPayment) -> None:
-    """Grant topup credits to a company."""
-    grant_credits(
-        db,
-        company,
-        payment.credits,
-        reason="topup",
-        meta={"doit_payment_id": payment.id},
-    )
-    logger.info(
-        "Topup granted: company=%r credits=%r payment=%r",
-        company.id,
-        payment.credits,
-        payment.id,
-    )
-
-
-def _grant_subscription(db: Session, company: Company, payment: DoitPayment) -> None:
-    """Activate the Subscription and grant included credits."""
-    plan = db.get(Plan, payment.plan_id)
-    if plan is None:
-        logger.error(
-            "subscription grant: Plan %r not found for payment %r",
-            payment.plan_id,
-            payment.id,
-        )
-        return
-
-    # Activate the most recent pending subscription for this company + plan
-    sub = (
-        db.query(Subscription)
-        .filter(
-            Subscription.company_id == company.id,
-            Subscription.plan_id == plan.id,
-            Subscription.status.in_(["pending", "inactive"]),
-        )
-        .order_by(Subscription.created_at.desc())
-        .first()
-    )
-
-    if sub is None:
-        # Create a fresh active subscription if none was pre-seeded
-        sub = Subscription(
-            id=prefixed_id("sub"),
-            company_id=company.id,
-            plan_id=plan.id,
-            status="active",
-            provider="doit",
-            provider_ref=payment.provider_payment_id,
-            seats=plan.seats,
-        )
-        db.add(sub)
-    else:
-        sub.status = "active"
-        sub.provider = "doit"
-        sub.provider_ref = payment.provider_payment_id
-
-    db.flush()
-
-    # Update company's active plan reference
-    company.plan_id = plan.id
-    db.flush()
-
-    # Grant included credits
-    if plan.included_credits > 0:
-        grant_credits(
-            db,
-            company,
-            plan.included_credits,
-            reason="subscription_grant",
-            meta={"doit_payment_id": payment.id, "plan_id": plan.id},
-        )
-        logger.info(
-            "Subscription grant: company=%r plan=%r credits=%r payment=%r",
-            company.id,
-            plan.id,
-            plan.included_credits,
-            payment.id,
-        )
 
 
 # ---------------------------------------------------------------------------

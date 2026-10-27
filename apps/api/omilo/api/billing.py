@@ -202,12 +202,47 @@ def get_usage(
         for day, credits in sorted(day_sums.items())
     ]
 
+    # ── pending_topups: count + total credits of pending topup DoitPayments ──
+    pending_topup_rows = (
+        db.query(DoitPayment)
+        .filter(
+            DoitPayment.company_id == company.id,
+            DoitPayment.status == "pending",
+            DoitPayment.kind == "topup",
+        )
+        .all()
+    )
+    pending_topup_count = len(pending_topup_rows)
+    pending_topup_credits = sum(row.credits for row in pending_topup_rows)
+
+    # ── last_payment: most recent DoitPayment (any kind/status) ──────────────
+    last_pay = (
+        db.query(DoitPayment)
+        .filter(DoitPayment.company_id == company.id)
+        .order_by(DoitPayment.created_at.desc())
+        .first()
+    )
+    last_payment = None
+    if last_pay is not None:
+        last_payment = {
+            "id": last_pay.id,
+            "kind": last_pay.kind,
+            "status": last_pay.status,
+            "amount_idr": last_pay.amount_idr,
+            "created_at": last_pay.created_at.isoformat() if last_pay.created_at else None,
+        }
+
     return {
         "balance": current_balance,
         "included": included,
         "used_this_period": used_this_period,
         "by_helper": by_helper,
         "by_day": by_day,
+        "pending_topups": {
+            "count": pending_topup_count,
+            "total_credits": pending_topup_credits,
+        },
+        "last_payment": last_payment,
     }
 
 
