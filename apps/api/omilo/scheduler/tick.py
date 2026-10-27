@@ -8,9 +8,11 @@ Design:
 - Finds all Routines: enabled=True, paused=False, next_at <= now.
 - For each: start_job(origin="routine"), create RoutineRun, set last_at=now,
   advance next_at via croniter.
-- Returns count of routines fired.
-- Idempotent-ish: advancing next_at past `now` ensures a routine fires once per
-  due window — a second tick with the same `now` finds next_at > now → skips.
+- Also calls fire_scheduled_flows(db, now) and poll_connector_flows(db, now)
+  from omilo.flows.triggers to fire due schedule/connector_poll flows.
+- Returns total count of routines + flows fired.
+- Idempotent-ish: advancing next_at/poll_cursor past `now` ensures each item
+  fires once per due window — a second tick with the same `now` skips.
 """
 from __future__ import annotations
 
@@ -52,7 +54,16 @@ def scheduler_tick(db: Session, now: datetime) -> int:
         .all()
     )
 
+    # Also fire due schedule flows and poll connector_poll flows.
+    # Import here (lazy) to avoid circular import at module level.
+    from omilo.flows.triggers import fire_scheduled_flows, poll_connector_flows
+
     fired = 0
+
+    # Fire schedule flows before routines (order doesn't matter functionally)
+    fired += fire_scheduled_flows(db, now)
+    fired += poll_connector_flows(db, now)
+
     for routine in due:
         # Advance next_at BEFORE firing so a successful tick moves the window
         # forward and a second tick with the same `now` finds next_at > now → skips.
