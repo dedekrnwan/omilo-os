@@ -7,6 +7,7 @@ from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
 from omilo.api.approvals import router as approvals_router
 from omilo.api.billing import router as billing_router
+from omilo.api.wallet import router as wallet_router
 from omilo.api.retro import router as retro_router
 from omilo.api.channels import router as channels_router
 from omilo.mcp.server import router as mcp_router
@@ -56,6 +57,8 @@ def create_app() -> FastAPI:
     app.include_router(inbox_router, prefix="/v1")
     # Billing + payment provider (Task 4 P4)
     app.include_router(billing_router, prefix="/v1")
+    # Wallet settings + payment history (Task 4 P5a)
+    app.include_router(wallet_router, prefix="/v1")
     # AI accounts pool (Task 5 P4)
     app.include_router(ai_accounts_router, prefix="/v1")
     # Marketplace catalog + install (Task 6 P4)
