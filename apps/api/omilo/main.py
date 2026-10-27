@@ -12,6 +12,7 @@ from omilo.api.wallet import router as wallet_router
 from omilo.api.retro import router as retro_router
 from omilo.api.channels import router as channels_router
 from omilo.mcp.server import router as mcp_router
+from omilo.mcp.external import router as mcp_external_router
 from omilo.api.chat_write import router as chat_write_router
 from omilo.api.folders import router as folders_router
 from omilo.api.goals import router as goals_router
@@ -74,6 +75,8 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router, prefix="/v1")
     # MCP access tokens: mint / list / revoke (P5b Task-2 Role-3)
     app.include_router(mcp_tokens_router, prefix="/v1")
+    # External MCP endpoint (P5b Task-3 Role-3: scoped external client access)
+    app.include_router(mcp_external_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
     # SSE event bus (Task 8)
