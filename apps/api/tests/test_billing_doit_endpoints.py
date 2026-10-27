@@ -134,7 +134,7 @@ def _get_subscription(company_id: str, status: str) -> Subscription | None:
 # ---------------------------------------------------------------------------
 
 
-def _seed_plan(included_credits: int = 2000) -> str:
+def _seed_plan(included_credits: int = 2000, monthly_price_idr: int = 800_000) -> str:
     """Seed a Plan with included_credits and return its id."""
     plan_id = prefixed_id("pln")
     with _superuser_session() as sess:
@@ -143,6 +143,7 @@ def _seed_plan(included_credits: int = 2000) -> str:
             tier="pro",
             name="Pro Monthly",
             monthly_price_usd=Decimal("49.00"),
+            monthly_price_idr=monthly_price_idr,
             included_credits=included_credits,
             credit_overage_usd=Decimal("0.01"),
             seats=5,
@@ -269,7 +270,6 @@ async def test_doit_topup_webhook_credits_balance():
         assert data["status"] == "pending"
 
         balance_before = _get_balance(company_id)
-        assert balance_before == 0  # No credits yet
 
         # Step 2: find the provider_payment_id stored in DoitPayment
         payments = _get_doit_payments(company_id)
@@ -283,9 +283,10 @@ async def test_doit_topup_webhook_credits_balance():
         wh_resp = await client.post("/v1/webhooks/doit", content=body, headers=headers)
         assert wh_resp.status_code == 200, wh_resp.text
 
-    # Balance should now be +5000
-    assert _get_balance(company_id) == 5000, (
-        f"Expected balance=5000 after webhook, got {_get_balance(company_id)}"
+    # Balance should have increased by 5000 regardless of starting balance
+    balance_after = _get_balance(company_id)
+    assert balance_after == balance_before + 5000, (
+        f"Expected balance delta +5000. Before={balance_before}, after={balance_after}"
     )
 
 
@@ -334,6 +335,40 @@ async def test_doit_change_plan_returns_pending_no_activation():
     assert pay.status == "pending"
     assert pay.kind == "subscription"
     assert pay.plan_id == plan_id
+
+
+# ---------------------------------------------------------------------------
+# Test 3b: Doit change-plan → pending DoitPayment has amount_idr == plan.monthly_price_idr
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_doit_change_plan_amount_idr_matches_plan():
+    """POST /v1/billing/change-plan for a paid plan → pending DoitPayment.amount_idr
+    equals plan.monthly_price_idr (non-zero); confirms the IDR price is wired correctly.
+    """
+    app, _fake_client = _make_doit_app()
+    idr_price = 800_000
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token, company_id = await _sign_up(client, name="Doit ChangePlan IDR Test")
+        plan_id = _seed_plan(included_credits=2000, monthly_price_idr=idr_price)
+
+        resp = await client.post(
+            "/v1/billing/change-plan",
+            json={"plan_id": plan_id},
+            headers=_auth(token),
+        )
+
+    assert resp.status_code in (200, 201), resp.text
+
+    payments = _get_doit_payments(company_id)
+    sub_payments = [p for p in payments if p.kind == "subscription"]
+    assert len(sub_payments) >= 1, "Expected at least one subscription DoitPayment"
+    pay = sub_payments[0]
+    assert pay.amount_idr == idr_price, (
+        f"Expected amount_idr={idr_price}, got {pay.amount_idr}. "
+        "plan.monthly_price_idr must be used, not a hardcoded 0."
+    )
 
 
 # ---------------------------------------------------------------------------

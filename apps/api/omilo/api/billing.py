@@ -26,6 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from omilo.billing.balance import balance as get_balance, grant_credits
+from omilo.billing.doit_provider import DoitProvider
 from omilo.billing.provider import get_payment_provider
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger, Invoice, Plan, Subscription
@@ -356,8 +357,6 @@ def change_plan(
       Returns {payment_id, hosted_url, status:"pending", plan_id}.
       Activation + credit grant happen in the webhook handler (T3) on payment.paid.
     """
-    from omilo.billing.doit_provider import DoitProvider
-
     plan = db.get(Plan, body.plan_id)
     if plan is None:
         raise HTTPException(
@@ -379,7 +378,7 @@ def change_plan(
 
         # Use provider_ref from the subscription result to create a payment
         # We need a payment record; use charge_one_off for the initial payment
-        amount_idr = getattr(plan, "price_idr", 0)
+        amount_idr = plan.monthly_price_idr
         charge_result = provider.charge_one_off(
             company,
             amount_idr,
@@ -508,8 +507,6 @@ def topup(
       Does NOT touch the balance; returns {payment_id, hosted_url, status:"pending", credits, amount_idr}.
       Credits are granted by the webhook handler (T3) on payment.paid.
     """
-    from omilo.billing.doit_provider import DoitProvider
-
     pack_name = body.pack
     pack = PACKS.get(pack_name)
     if pack is None:

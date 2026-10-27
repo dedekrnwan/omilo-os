@@ -30,6 +30,9 @@ class Plan(IdMixin, Base):
     monthly_price_usd: Mapped[Decimal] = mapped_column(
         Numeric, nullable=False, server_default="0"
     )
+    monthly_price_idr: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     included_credits: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
