@@ -138,6 +138,30 @@ class TestCreateRoutine:
         assert next_at.minute == 30
 
     @pytest.mark.asyncio
+    async def test_create_routine_with_invalid_timezone_returns_422(
+        self, async_client, company_with_helper
+    ):
+        """POST /v1/routines with an invalid timezone must return 422, not silently use UTC."""
+        token, company_id, helper_id = company_with_helper
+        resp = await async_client.post(
+            "/v1/routines",
+            json={
+                "helper_id": helper_id,
+                "name": "Typo tz routine",
+                "instructions": "Check something.",
+                "freq": "daily",
+                "at": "09:00",
+                "timezone": "Not/AZone",
+            },
+            headers=_auth(token),
+        )
+        assert resp.status_code == 422, (
+            f"Expected 422 for bad timezone; got {resp.status_code}: {resp.text}"
+        )
+        detail = resp.json().get("detail", "")
+        assert "Not/AZone" in str(detail), f"Error detail should mention the bad tz: {detail}"
+
+    @pytest.mark.asyncio
     async def test_create_weekly_routine_uses_days(
         self, async_client, company_with_helper
     ):

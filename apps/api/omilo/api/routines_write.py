@@ -112,25 +112,36 @@ def _build_cron(freq: str, at: str, days: list[int] | None, monthly: str | None)
     return f"{m} {h} * * *"
 
 
-def _compute_next_at(cron_expr: str, tz_name: str) -> datetime:
-    """Return the next fire datetime after now for the given cron in tz_name."""
-    tz_name = tz_name or "UTC"
+def _validate_timezone(tz_name: str) -> None:
+    """Raise HTTPException 422 if tz_name is not a valid IANA timezone."""
+    import zoneinfo
+
     try:
-        import pytz  # type: ignore[import-untyped]
-        tz_obj = pytz.timezone(tz_name)
-        now_utc = datetime.now(timezone.utc)
-        now_in_tz = now_utc.astimezone(tz_obj)
-        now_naive = now_in_tz.replace(tzinfo=None)
-        cit = croniter(cron_expr, now_naive)
-        next_naive = cit.get_next(datetime)
-        next_aware = tz_obj.localize(next_naive)
-        return next_aware.astimezone(timezone.utc)
-    except Exception:
-        # Fallback: compute in UTC
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-        cit = croniter(cron_expr, now_naive)
-        next_naive = cit.get_next(datetime)
-        return next_naive.replace(tzinfo=timezone.utc)
+        zoneinfo.ZoneInfo(tz_name)
+    except (zoneinfo.ZoneInfoNotFoundError, KeyError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown timezone: {tz_name!r}. Use a valid IANA timezone name (e.g. 'Asia/Jakarta').",
+        )
+
+
+def _compute_next_at(cron_expr: str, tz_name: str) -> datetime:
+    """Return the next fire datetime after now for the given cron in tz_name.
+
+    Caller must validate tz_name via _validate_timezone() before calling this.
+    Uses stdlib zoneinfo (Python 3.9+); no pytz dependency required.
+    """
+    import zoneinfo
+
+    tz_name = tz_name or "UTC"
+    tz_obj = zoneinfo.ZoneInfo(tz_name)
+    now_utc = datetime.now(timezone.utc)
+    now_in_tz = now_utc.astimezone(tz_obj)
+    now_naive = now_in_tz.replace(tzinfo=None)
+    cit = croniter(cron_expr, now_naive)
+    next_naive = cit.get_next(datetime)
+    next_aware = next_naive.replace(tzinfo=tz_obj)
+    return next_aware.astimezone(timezone.utc)
 
 
 def _routine_to_dict(r: Routine) -> dict[str, Any]:
@@ -184,6 +195,7 @@ def create_routine(
 ) -> dict[str, Any]:
     """Create a Routine; compute cron + next_at from freq/at/days/monthly/timezone."""
     tz = body.timezone or "UTC"
+    _validate_timezone(tz)
     cron_expr = _build_cron(body.freq, body.at, body.days, body.monthly)
     next_at = _compute_next_at(cron_expr, tz)
 

@@ -54,9 +54,10 @@ def scheduler_tick(db: Session, now: datetime) -> int:
 
     fired = 0
     for routine in due:
-        # Advance next_at BEFORE firing so that a DB error on start_job
-        # still moves the window forward (no double-fire on retry).
-        # If start_job raises, the transaction rolls back — acceptable in P1.
+        # Advance next_at BEFORE firing so a successful tick moves the window
+        # forward and a second tick with the same `now` finds next_at > now → skips.
+        # If start_job raises, the transaction rolls back (including the next_at
+        # advance), so the routine remains due and will be retried on the next tick.
         cron_expr = routine.cron or "0 9 * * *"
         tz = routine.timezone or "UTC"
         try:
