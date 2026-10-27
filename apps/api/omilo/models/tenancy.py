@@ -35,6 +35,13 @@ class Company(IdMixin, TimestampMixin, Base):
         nullable=False, server_default="soft"
     )
 
+    # P5d profile columns — onboarding / company-settings enrichment
+    industry: Mapped[str | None] = mapped_column(nullable=True)
+    team_size: Mapped[str | None] = mapped_column(nullable=True)
+    region: Mapped[str | None] = mapped_column(nullable=True)
+    currency: Mapped[str] = mapped_column(nullable=False, server_default="IDR")
+    pic_role: Mapped[str | None] = mapped_column(nullable=True)
+
 
 class User(IdMixin, TimestampMixin, Base):
     """Human login — global, no company_id, no RLS."""
