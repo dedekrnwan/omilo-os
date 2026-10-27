@@ -202,7 +202,7 @@ def run_job(
         operator_note=job.operator_note,
         autonomy=effective,
         goal_delivery=bool(job.goal_id),
-        memory="",  # RAG assembly deferred to P4
+        memory=_assemble_memory(db, job.brief),
         emit=emitter,
     )
 
@@ -400,6 +400,34 @@ def run_job(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _assemble_memory(db: Session, brief: str, k: int = 3) -> str:
+    """Build TaskContext.memory from recall results for the given brief.
+
+    Returns a short, bounded string of the top-k relevant KB snippets.
+    Safe: on any error (empty KB, recall failure, etc.) returns "".
+    """
+    if not brief or not brief.strip():
+        return ""
+    try:
+        from omilo.kb.retrieve import recall
+
+        results = recall(db, brief, k=k)
+        if not results:
+            return ""
+
+        parts: list[str] = []
+        for r in results:
+            heading = r.get("heading", "")
+            text = r.get("text", "")
+            snippet = f"[{heading}] {text}" if heading else text
+            # Keep each snippet bounded to avoid bloating ctx.memory
+            parts.append(snippet[:500])
+
+        return "\n\n---\n\n".join(parts)
+    except Exception:
+        return ""
+
 
 def _action_body_md(action: dict) -> str:
     """Format a pending_action dict as a markdown body for a Proposal."""

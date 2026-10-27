@@ -11,6 +11,7 @@ from omilo.api.goals_write import router as goals_write_router
 from omilo.api.flows_write import router as flows_write_router
 from omilo.api.helpers import router as helpers_router
 from omilo.api.analytics import router as analytics_router
+from omilo.api.knowledge import router as knowledge_router
 from omilo.api.routines_write import router as routines_write_router
 from omilo.api.health import router as health_router
 from omilo.api.inbox import router as inbox_router
@@ -37,6 +38,8 @@ def create_app() -> FastAPI:
     # Helpers + Analytics (Task 8 P2)
     app.include_router(helpers_router, prefix="/v1")
     app.include_router(analytics_router, prefix="/v1")
+    # KB ingestion + recall (Task 3 P3)
+    app.include_router(knowledge_router, prefix="/v1")
     app.include_router(sessions_router, prefix="/v1")
     app.include_router(inbox_router, prefix="/v1")
     # Approvals write path (Task 7 P1)

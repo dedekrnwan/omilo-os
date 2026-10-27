@@ -56,7 +56,7 @@ TOOL_CATALOG: list[dict[str, Any]] = [
     },
     {
         "name": "recall",
-        "description": "Hybrid KB search (stub — P3 wires RAG). Returns [].",
+        "description": "Hybrid KB search (FTS + pgvector + RRF). Returns ranked chunks.",
         "inputSchema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -146,8 +146,14 @@ def tool_flows_list(db: Session, helper: Helper, arguments: dict) -> list[dict]:
 
 
 def tool_recall(db: Session, helper: Helper, arguments: dict) -> list:
-    """Hybrid KB search — stub (P3 wires RAG). Always returns []."""
-    return []
+    """Hybrid KB search — FTS + pgvector + RRF, company-scoped via RLS."""
+    from omilo.kb.retrieve import recall as _recall
+
+    query = arguments.get("query", "")
+    try:
+        return _recall(db, query)
+    except Exception:
+        return []
 
 
 def tool_propose(db: Session, helper: Helper, arguments: dict) -> dict:
