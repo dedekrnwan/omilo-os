@@ -20,6 +20,10 @@ class Company(IdMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(nullable=False)
     color: Mapped[str] = mapped_column(nullable=False)
     timezone: Mapped[str] = mapped_column(nullable=False, server_default="UTC")
+    # autonomy_default: workspace-level autonomy dial — strict | ask | yolo
+    autonomy_default: Mapped[str] = mapped_column(
+        nullable=False, server_default="ask"
+    )
 
 
 class User(IdMixin, TimestampMixin, Base):
