@@ -317,16 +317,24 @@ class TestRunFlowEngine:
         with _tenant_session(company_id) as db:
             flow = _make_flow(db, company_id, condition_keyword="fake")
             run = run_flow(db, flow, trigger_summary="manual", started_by="operator")
+            # Filter the InboxItem specifically to THIS run via meta so the
+            # assertion cannot pass spuriously from a prior run's inbox item.
+            run_meta = f"flow_run:{run.id}"
             items = (
                 db.query(InboxItem)
-                .filter_by(company_id=company_id, kind="decision")
+                .filter(
+                    InboxItem.company_id == company_id,
+                    InboxItem.kind == "decision",
+                    InboxItem.meta == run_meta,
+                )
                 .all()
             )
 
         assert run.status == "needs_you"
         assert run.waiting_for is not None
         assert run.ended_at is None  # not ended — parked
-        assert any("flow" in (i.meta or "") or i.needs_you for i in items)
+        assert len(items) == 1, f"expected exactly 1 InboxItem for {run_meta}, got {len(items)}"
+        assert items[0].needs_you is True
 
     def test_approval_in_test_mode_does_not_pause(self, tenant_a):
         """test=True: approval node logs a note but does NOT pause; run ends done."""
@@ -449,6 +457,49 @@ class TestRunFlowEngine:
             result = db.query(Flow).filter(Flow.id == flow_id).first()
 
         assert result is None
+
+    def test_run_flow_ai_step_with_no_helper_marks_failed(self):
+        """ai_step in a company with no helper → run.status == 'failed' (NOT 'done').
+
+        Uses a dedicated company with no Helper so it doesn't disturb the
+        module-scoped tenant_a / tenant_b fixtures.
+        """
+        from omilo.flows.engine import run_flow
+
+        # Create a fresh company with NO helper (superuser session)
+        with _superuser_session() as su:
+            cmp = _make_company(su)
+            no_helper_company_id = cmp.id
+
+        # Build a minimal flow: trigger → ai_step (no helper → should fail)
+        with _tenant_session(no_helper_company_id) as db:
+            flow = Flow(
+                id=prefixed_id("flw"),
+                company_id=no_helper_company_id,
+                title="No-Helper Flow",
+                enabled=False,
+                channel_ids=[],
+                areas=[],
+                trigger={"kind": "manual", "spec": {}},
+                nodes=[
+                    {"id": "n_trigger", "kind": "trigger", "label": "Start"},
+                    {"id": "n_ai", "kind": "ai_step", "label": "Do something", "config": {}},
+                ],
+                edges=[{"from": "n_trigger", "to": "n_ai"}],
+                version=1,
+                status="draft",
+                created_by="operator",
+                proposed_from_pattern=False,
+            )
+            db.add(flow)
+            db.flush()
+            run = run_flow(db, flow, trigger_summary="no-helper-test", started_by="operator")
+
+        assert run.status == "failed", (
+            f"expected 'failed' when no helper exists, got '{run.status}'"
+        )
+        assert run.ended_at is not None
+        assert run.waiting_for == "no helper for ai_step"
 
 
 # ---------------------------------------------------------------------------

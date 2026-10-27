@@ -135,9 +135,14 @@ def run_flow(
         current_id = result  # type: ignore[assignment]
 
     # ── 5. End of walk ───────────────────────────────────────────────────────
-    run.status = "done"
-    run.ended_at = datetime.now(timezone.utc)
-    db.flush()
+    # Only mark "done" if the walk didn't already set a terminal status
+    # (e.g. "failed" from _handle_ai_step when no helper exists).
+    # "needs_you" never reaches here — _handle_approval returns _PAUSE which
+    # exits early above — but the guard is correct to include it anyway.
+    if run.status == "running":
+        run.status = "done"
+        run.ended_at = datetime.now(timezone.utc)
+        db.flush()
     return run
 
 
