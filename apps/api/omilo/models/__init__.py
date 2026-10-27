@@ -7,6 +7,9 @@ from omilo.models.tenancy import Company, Member, User  # noqa: F401
 from omilo.models.workspace import Channel, Folder, Goal  # noqa: F401
 from omilo.models.chat import ChatSession, Message  # noqa: F401
 from omilo.models.inbox import InboxItem  # noqa: F401
+from omilo.models.agents import Helper  # noqa: F401
+from omilo.models.execution import Job, Report, RunEvent  # noqa: F401
+from omilo.models.approvals import Proposal, ProposalRevision, SafetyLimit  # noqa: F401
 
 __all__ = [
     "Company",
@@ -18,4 +21,11 @@ __all__ = [
     "ChatSession",
     "Message",
     "InboxItem",
+    "Helper",
+    "Job",
+    "Report",
+    "RunEvent",
+    "Proposal",
+    "ProposalRevision",
+    "SafetyLimit",
 ]
