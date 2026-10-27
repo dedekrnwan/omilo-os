@@ -13,12 +13,7 @@ Field-name mapping (spec "PoolAccount" vs HarnessAccount model):
   spec `name`      ↔ model `label`
   spec `pct`       ↔ model `pct_window`
   spec `last_used` ↔ model `last_used_at`
-  spec `tag`       ↔ model tokens field (used as tag storage, see note below)
-
-Note on `tag`: HarnessAccount has no dedicated `tag` column. The spec lists
-`tag` as a PoolAccount field. We store it in `tokens` (a Text column with
-server_default="") as a lightweight tag/label until a dedicated migration adds
-a proper column. This mirrors omilo-os convention for optional metadata fields.
+  spec `tag`       ↔ model `tag` (dedicated nullable Text column, migration 0010)
 """
 from __future__ import annotations
 
@@ -46,14 +41,14 @@ router = APIRouter(tags=["ai-accounts"])
 class CreateAccountBody(BaseModel):
     harness: str
     name: str                          # stored as label
-    tag: str = ""                      # stored as tokens field (see module note)
+    tag: str | None = None             # stored as tag column
     token_enc: str = ""
     token_hint: str = "...****"
 
 
 class PatchAccountBody(BaseModel):
     name: str | None = None            # updates label
-    tag: str | None = None             # updates tokens
+    tag: str | None = None             # updates tag column
     status: str | None = None
 
 
@@ -75,7 +70,7 @@ def _account_to_dict(acc: HarnessAccount) -> dict[str, Any]:
         "id": acc.id,
         "harness": acc.harness,
         "name": acc.label,           # spec: name ↔ model: label
-        "tag": acc.tokens,           # spec: tag ↔ model: tokens (see module note)
+        "tag": acc.tag,              # spec: tag ↔ model: tag
         "status": acc.status,
         "pct": acc.pct_window,       # spec: pct ↔ model: pct_window
         "tokens": acc.token_hint,    # token hint (never the encrypted value)
@@ -116,7 +111,7 @@ def create_ai_account(
         label=body.name,
         token_enc=body.token_enc,
         token_hint=body.token_hint,
-        tokens=body.tag,             # tag stored in tokens field
+        tag=body.tag,                # tag stored in dedicated tag column
         status="ready",
         pct_window=0,
         runs=0,
@@ -184,7 +179,7 @@ def patch_ai_account(
     body: PatchAccountBody,
     db: Session = Depends(get_tenant_db),
 ) -> dict[str, Any]:
-    """Update name (label), tag (tokens), or status of an account."""
+    """Update name (label), tag, or status of an account."""
     acc = db.get(HarnessAccount, account_id)
     if acc is None:
         raise HTTPException(
@@ -194,7 +189,7 @@ def patch_ai_account(
     if body.name is not None:
         acc.label = body.name
     if body.tag is not None:
-        acc.tokens = body.tag
+        acc.tag = body.tag
     if body.status is not None:
         acc.status = body.status
     db.flush()

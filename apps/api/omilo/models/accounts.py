@@ -28,6 +28,7 @@ class HarnessAccount(IdMixin, TimestampMixin, Base):
     token_enc: Mapped[str] = mapped_column(Text, nullable=False)
     token_hint: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(nullable=False, server_default="true")
+    tag: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(nullable=False, server_default="ready")
     cooldown_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
