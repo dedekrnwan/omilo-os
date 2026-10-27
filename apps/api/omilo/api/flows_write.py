@@ -28,7 +28,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from omilo.loop.runner import start_job
 from omilo.models.approvals import Proposal, ProposalRevision
 from omilo.models.base import prefixed_id
 from omilo.models.flows import Flow, FlowRun
@@ -44,8 +43,6 @@ router = APIRouter(tags=["flows"])
 
 _ALLOWED_TRIGGER_KINDS = frozenset({"schedule", "manual", "internal_event", "connector_poll"})
 _REJECTED_TRIGGER_KINDS = frozenset({"webhook", "connector_webhook"})
-
-_ALLOWED_NODE_KINDS = frozenset({"trigger", "ai_step", "connector", "approval", "condition"})
 
 
 # ---------------------------------------------------------------------------
