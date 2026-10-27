@@ -22,7 +22,7 @@ class InboxItem(IdMixin, TimestampMixin, Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     session_id: Mapped[str] = mapped_column(nullable=False)
     channel_id: Mapped[str] = mapped_column(nullable=False)
-    # kind: 'decision' | 'update' | 'mention'
+    # kind: 'decision' | 'update' | 'mention' | 'question' | 'alert' | 'failure'
     kind: Mapped[str] = mapped_column(nullable=False)
     # status: 'pending' | 'running' | 'done'
     status: Mapped[str] = mapped_column(nullable=False, server_default="pending")
@@ -34,7 +34,7 @@ class InboxItem(IdMixin, TimestampMixin, Base):
     # proposals: [{who, area, text, due}] stored as JSONB
     proposals: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # actions: [{label, primary?, icon?}] stored as JSONB
-    actions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    actions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     reassurance: Mapped[str | None] = mapped_column(Text, nullable=True)
     compact: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # progress: {step, total, elapsed} stored as JSONB
