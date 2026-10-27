@@ -69,9 +69,11 @@ def _job_aggregates(db: Session, since: datetime) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _proposal_approval_rates(db: Session) -> dict[str, dict[str, int]]:
+def _proposal_approval_rates(db: Session, since: datetime) -> dict[str, dict[str, int]]:
     """Return per-helper proposal counts {helper_id: {total, approved}}.
 
+    Only proposals created on or after *since* are included, so the window
+    matches the job-aggregation window used by the caller.
     RLS scopes to the active company.
     """
     rows = (
@@ -80,6 +82,7 @@ def _proposal_approval_rates(db: Session) -> dict[str, dict[str, int]]:
             func.count(Proposal.id).label("total"),
             func.sum(case((Proposal.status == "approved", 1), else_=0)).label("approved"),
         )
+        .filter(Proposal.created_at >= since)
         .group_by(Proposal.helper_id)
         .all()
     )
@@ -115,11 +118,13 @@ def scorecard(db: Session, *, days: int = 30) -> list[dict[str, Any]]:
     """
     since = _window_start(days)
 
-    # Aggregate jobs (RLS-scoped)
+    # Aggregate jobs (RLS-scoped).
+    # NOTE (P4 gap): "runs" counts Job rows only. RoutineRun and Report execution
+    # records are not yet incorporated into the scorecard and will be added in P4.
     job_agg = _job_aggregates(db, since)
 
-    # Aggregate proposals (RLS-scoped)
-    prop_agg = _proposal_approval_rates(db)
+    # Aggregate proposals (RLS-scoped); uses the same *since* window as job metrics.
+    prop_agg = _proposal_approval_rates(db, since)
 
     # Build name map from helpers visible in the company
     helpers = db.query(Helper).all()

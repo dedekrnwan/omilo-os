@@ -74,6 +74,39 @@ def _seed_helper(company_id: str, *, name: str = "RetroHelper") -> str:
             return helper.id
 
 
+def _seed_proposals(
+    company_id: str,
+    helper_id: str,
+    *,
+    statuses: list[str],
+    created_at_override=None,
+) -> None:
+    """Insert Proposal rows directly, optionally with an explicit created_at."""
+    from datetime import timezone
+
+    from omilo.db import SessionLocal
+    from omilo.models.approvals import Proposal
+    from omilo.models.base import prefixed_id
+
+    with SessionLocal() as session:
+        with session.begin():
+            for status in statuses:
+                p = Proposal(
+                    id=prefixed_id("prp"),
+                    company_id=company_id,
+                    job_id=prefixed_id("job"),  # dummy FK — no FK constraint enforced
+                    helper_id=helper_id,
+                    type="action",
+                    risk="low",
+                    title="Test proposal",
+                    body_md="",
+                    status=status,
+                )
+                if created_at_override is not None:
+                    p.created_at = created_at_override
+                session.add(p)
+
+
 def _seed_jobs(
     company_id: str,
     helper_id: str,
@@ -305,3 +338,54 @@ async def test_retro_run_tenant_isolation(async_client, company_a, company_b):
         assert imp.get("helper_id") != company_a["helper_id"], (
             f"Company A's helper found in Company B's improvements: {imp}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: approval_rate is windowed (P3 review finding fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scorecard_approval_rate_is_windowed(async_client):
+    """approval_rate must only count proposals within the days= window.
+
+    Seed:
+      - 2 in-window proposals (1 approved, 1 pending)  → approval_rate = 0.5
+      - 1 old (60 days ago) approved proposal           → must NOT count
+    Expected: approval_rate == 0.5, not 2/3 ≈ 0.667.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    body = await _sign_up(async_client, name="Windowed Approval Tester")
+    token = body["session"]["access"]
+    me = await async_client.get("/v1/me", headers=_auth(token))
+    assert me.status_code == 200
+    company_id = me.json()["company"]["id"]
+
+    helper_id = _seed_helper(company_id, name="Windowed Helper")
+    # Seed jobs so the helper appears in the scorecard (window = last 7 days)
+    _seed_jobs(company_id, helper_id, done=2, failed=0, cost_credits=1)
+
+    now = datetime.now(tz=timezone.utc)
+    old_ts = now - timedelta(days=60)
+
+    # In-window: 1 approved + 1 pending
+    _seed_proposals(company_id, helper_id, statuses=["approved", "pending"])
+    # Out-of-window: 1 approved (must not count)
+    _seed_proposals(company_id, helper_id, statuses=["approved"], created_at_override=old_ts)
+
+    resp = await async_client.get(
+        "/v1/retro/scorecard?days=7",
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    row = next((r for r in data if r.get("helper_id") == helper_id), None)
+    assert row is not None, f"Helper {helper_id} not in scorecard: {data}"
+
+    # Only the 2 in-window proposals count → 1 approved / 2 total = 0.5
+    assert abs(row["approval_rate"] - 0.5) < 1e-6, (
+        f"approval_rate should be 0.5 (windowed), got {row['approval_rate']}. "
+        "Old out-of-window proposal must not be included."
+    )
