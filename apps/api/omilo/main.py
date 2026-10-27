@@ -6,6 +6,7 @@ from omilo.api.webhooks import router as webhooks_router
 from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
 from omilo.api.approvals import router as approvals_router
+from omilo.api.mcp_tokens import router as mcp_tokens_router
 from omilo.api.billing import router as billing_router
 from omilo.api.wallet import router as wallet_router
 from omilo.api.retro import router as retro_router
@@ -71,6 +72,8 @@ def create_app() -> FastAPI:
     app.include_router(retro_router, prefix="/v1")
     # MCP server (Task 7 P2: Role-2 per-agent native platform tools)
     app.include_router(mcp_router, prefix="/v1")
+    # MCP access tokens: mint / list / revoke (P5b Task-2 Role-3)
+    app.include_router(mcp_tokens_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
     # SSE event bus (Task 8)
