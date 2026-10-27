@@ -20,6 +20,7 @@ Spec: docs/technical/05-mcp-surfaces.md §1, §3.
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
 from datetime import datetime, timezone
@@ -33,13 +34,18 @@ from omilo.db import SessionLocal, set_company
 from omilo.models.agents import Helper
 from omilo.models.base import prefixed_id
 from omilo.models.toolcall import ToolCall
-from omilo.mcp.tools import TOOL_CATALOG, dispatch, get_connector_tools_for_helper
+from omilo.mcp.tools import TOOL_CATALOG, get_connector_tools_for_helper
+from omilo.mcp._dispatch import run_tool_for  # shared with Role-3 external.py
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context
 
 router = APIRouter(tags=["mcp"])
+logger = logging.getLogger(__name__)
 
-_401 = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized.")
+# A factory is used instead of a singleton to give each raise site a fresh
+# HTTPException instance — avoids any subtle state sharing between requests.
+def _unauthorized() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized.")
 
 
 # ---------------------------------------------------------------------------
@@ -159,18 +165,18 @@ async def mcp_endpoint(request: Request) -> dict:
       tools/list  → catalog of available tools
       tools/call  → {name, arguments} → dispatch to tool handler
 
-    Every tools/call logs a ToolCall row.
+    Every tools/call logs a ToolCall row (actor="agent").
     Returns JSON-RPC 2.0 response: {jsonrpc, id, result} or {jsonrpc, id, error}.
     """
     # ── 1. Parse bearer ──────────────────────────────────────────────────────
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        raise _401
+        raise _unauthorized()
 
     raw_token = auth_header[len("Bearer "):]
     helper = _verify_token(raw_token)
     if helper is None:
-        raise _401
+        raise _unauthorized()
 
     # ── 2. Parse JSON-RPC body ────────────────────────────────────────────────
     try:
@@ -213,54 +219,25 @@ async def _run_tool(
     arguments: dict,
     rpc_id: Any,
 ) -> dict:
-    """Dispatch to a tool handler inside a company-scoped DB session.
+    """Dispatch to a tool handler via the shared run_tool_for path.
 
+    Uses omilo.mcp._dispatch.run_tool_for (actor="agent") — the same function
+    called by /v1/x/mcp (Role-3) with actor="external:<label>".
     Logs a ToolCall row for every invocation (success or error).
     """
     started_at = time.monotonic()
-    company_id = helper.company_id
-    decision = "error"
-    detail: dict = {}
-    result: Any = None
 
     try:
-        with SessionLocal() as db:
-            with db.begin():
-                # Drop to non-superuser + set company GUC → FORCE RLS applies
-                db.execute(text("SET LOCAL ROLE omilo_app"))
-                set_company(db, company_id)
-
-                # Reload Helper in this session (was expunged from auth session)
-                helper_here = db.get(Helper, helper.id)
-                if helper_here is None:
-                    raise RuntimeError("Helper not found in tenant session")
-
-                result, decision = dispatch(tool_name, arguments, db, helper_here)
-                detail = {"tool": tool_name}
-
-                # Log ToolCall inside the same transaction
-                duration_ms = int((time.monotonic() - started_at) * 1000)
-                tc = ToolCall(
-                    id=prefixed_id("tc"),
-                    company_id=company_id,
-                    helper_id=helper.id,
-                    job_id=None,
-                    tool=tool_name,
-                    decision=decision,
-                    detail=detail,
-                    duration_ms=duration_ms,
-                    at=datetime.now(timezone.utc),
-                )
-                db.add(tc)
+        result, _decision = run_tool_for(helper, tool_name, arguments, actor="agent")
 
     except KeyError as exc:
         duration_ms = int((time.monotonic() - started_at) * 1000)
-        _log_tool_call_error(company_id, helper.id, tool_name, str(exc), duration_ms)
+        _log_tool_call_error(helper.company_id, helper.id, tool_name, str(exc), duration_ms)
         return _jsonrpc_error(rpc_id, -32601, f"Unknown tool: {tool_name!r}")
 
     except Exception as exc:
         duration_ms = int((time.monotonic() - started_at) * 1000)
-        _log_tool_call_error(company_id, helper.id, tool_name, str(exc), duration_ms)
+        _log_tool_call_error(helper.company_id, helper.id, tool_name, str(exc), duration_ms)
         return _jsonrpc_error(rpc_id, -32603, f"Internal error: {exc}")
 
     return _jsonrpc_ok(rpc_id, result)
@@ -291,8 +268,13 @@ def _log_tool_call_error(
                     at=datetime.now(timezone.utc),
                 )
                 db.add(tc)
-    except Exception:
-        pass  # Error logging must never crash the caller
+    except Exception as exc:
+        logger.warning(
+            "mcp_server: failed to log error ToolCall for tool=%r: %s",
+            tool_name,
+            exc,
+        )
+        # Error logging must never crash the caller
 
 
 # ---------------------------------------------------------------------------

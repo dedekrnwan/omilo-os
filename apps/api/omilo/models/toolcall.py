@@ -30,6 +30,7 @@ class ToolCall(IdMixin, Base):
     decision: Mapped[str] = mapped_column(nullable=False)  # allowed|proposal|refused|error
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor: Mapped[str] = mapped_column(nullable=False, server_default="agent")
     at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
