@@ -24,9 +24,9 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
-from omilo.db import SessionLocal
+from omilo.db import SessionLocal, set_company
 from omilo.models.pieces import Piece
 from omilo.models.connectors import Connector
 from omilo.marketplace.index import index_pieces
@@ -312,8 +312,8 @@ async def test_install_connector_idempotent(async_client):
         json={"piece_id": "whatsapp"},
         headers=_auth(token),
     )
-    # Idempotent: can return 200 or 201 — both are fine
-    assert resp2.status_code in (200, 201), resp2.text
+    # Idempotent re-install must return 200 (not 201 — no new resource created)
+    assert resp2.status_code == 200, resp2.text
     id2 = resp2.json()["id"]
 
     assert id1 == id2, "Re-installing the same piece must return the same connector id"
@@ -352,7 +352,12 @@ async def test_install_connector_invalid_piece(async_client):
 
 @pytest.mark.asyncio
 async def test_installed_connector_rls_isolation(async_client):
-    """Company B cannot see Company A's installed connector (RLS); both see global catalog."""
+    """Company B cannot see Company A's installed connector (RLS); both see global catalog.
+
+    RLS is closed at the session level: after company A installs a connector we
+    open a TENANT session scoped to company B (SET LOCAL ROLE omilo_app +
+    set_company(cid_b)) and assert that company A's connector is invisible.
+    """
     _do_index_real()
     token_a, cid_a = await _sign_up(async_client, name="Mktp Company A")
     token_b, cid_b = await _sign_up(async_client, name="Mktp Company B")
@@ -366,13 +371,37 @@ async def test_installed_connector_rls_isolation(async_client):
     assert resp_a.status_code == 201, resp_a.text
     connector_id_a = resp_a.json()["id"]
 
-    # Verify company A's connector is in DB scoped to cid_a
+    # Verify company A's connector is in DB scoped to cid_a (superuser write check)
     with SessionLocal() as db:
         row_a = db.get(Connector, connector_id_a)
     assert row_a is not None
     assert row_a.company_id == cid_a
 
-    # Company B installs too (their own connector)
+    # --- RLS cross-tenant read check ---
+    # Open a TENANT session for company B (non-superuser + set_company(cid_b))
+    # and assert company A's connector is NOT visible — exactly as it would be at
+    # runtime for a real company B request.
+    with SessionLocal() as db:
+        with db.begin():
+            db.execute(text("SET LOCAL ROLE omilo_app"))  # drop to non-superuser → FORCE RLS
+            set_company(db, cid_b)                        # GUC = cid_b
+            # Try to fetch company A's connector directly by id
+            row_via_b = db.get(Connector, connector_id_a)
+            # Also confirm a SELECT WHERE query returns nothing for cid_a's connector
+            rows_in_b_scope = db.execute(
+                select(Connector).where(
+                    Connector.id == connector_id_a,
+                )
+            ).scalars().all()
+
+    assert row_via_b is None, (
+        "Company B's tenant session must NOT see company A's connector via db.get()"
+    )
+    assert rows_in_b_scope == [], (
+        "Company B's tenant session must NOT see company A's connector via SELECT"
+    )
+
+    # Company B installs too (their own connector — should succeed, separate row)
     resp_b = await async_client.post(
         "/v1/connectors/install",
         json={"piece_id": "google-sheets"},
@@ -382,7 +411,7 @@ async def test_installed_connector_rls_isolation(async_client):
     connector_id_b = resp_b.json()["id"]
     assert connector_id_b != connector_id_a, "Different companies must get separate connectors"
 
-    # Verify company B's connector is scoped to cid_b
+    # Verify company B's connector is scoped to cid_b (superuser write check)
     with SessionLocal() as db:
         row_b = db.get(Connector, connector_id_b)
     assert row_b is not None

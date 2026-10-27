@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -141,6 +141,7 @@ def refresh_marketplace(
 @router.post("/connectors/install", status_code=status.HTTP_201_CREATED)
 def install_connector(
     body: InstallBody,
+    response: Response,
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict:
@@ -176,6 +177,7 @@ def install_connector(
         )
     ).scalars().first()
     if existing is not None:
+        response.status_code = status.HTTP_200_OK
         return _connector_to_dict(existing)
 
     # Create the new connector
