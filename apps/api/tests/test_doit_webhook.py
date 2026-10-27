@@ -569,3 +569,190 @@ async def test_unknown_payment_id_returns_200():
         resp = await client.post("/v1/webhooks/doit", content=body, headers=headers)
 
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Test 10: refund.succeeded after grant → debit exactly once
+# ---------------------------------------------------------------------------
+
+
+def _refund_body(payment_id: str) -> bytes:
+    return json.dumps({
+        "type": "refund.succeeded",
+        "payment": {
+            "id": payment_id,
+            "status": "refunded",
+            "reference": "INV/R1",
+            "amount": 50000,
+            "metadata": {},
+        },
+    }).encode()
+
+
+@pytest.mark.asyncio
+async def test_refund_after_grant_debits_exactly_once():
+    """refund.succeeded after a grant debits exactly once via debit_credits."""
+    company_id = _seed_company("Webhook Refund A")
+    ppid = f"pay_ref_{uuid.uuid4().hex[:8]}"
+    pay_id = _seed_topup_payment(company_id, ppid, credits=5000)
+
+    # First: grant via payment.paid
+    body = _payment_paid_body(ppid)
+    headers, body = _signed_request(body)
+    app = _make_doit_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r1 = await client.post("/v1/webhooks/doit", content=body, headers=headers)
+    assert r1.status_code == 200
+    assert _get_balance(company_id) == 5000
+
+    # Now: refund
+    rbody = _refund_body(ppid)
+    rheaders, rbody = _signed_request(rbody)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r2 = await client.post("/v1/webhooks/doit", content=rbody, headers=rheaders)
+    assert r2.status_code == 200
+
+    # Balance should be back to 0
+    assert _get_balance(company_id) == 0
+
+    # Exactly one refund ledger row with delta=-5000
+    refund_rows = _get_ledger_rows(company_id, reason="refund")
+    assert len(refund_rows) == 1
+    assert refund_rows[0].delta == -5000
+
+    # DoitPayment marked refunded
+    pay = _get_payment(pay_id)
+    assert pay.status == "refunded"
+
+
+# ---------------------------------------------------------------------------
+# Test 11: re-delivered refund.succeeded → no double debit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refund_redelivery_no_double_debit():
+    """Re-delivered refund.succeeded debits ONCE only (idempotent double-refund guard)."""
+    company_id = _seed_company("Webhook Refund Idem")
+    ppid = f"pay_refidem_{uuid.uuid4().hex[:8]}"
+    _seed_topup_payment(company_id, ppid, credits=3000)
+
+    # Grant
+    body = _payment_paid_body(ppid)
+    t = int(time.time())
+    headers = {"PayBridge-Signature": _make_sig_header(TEST_SECRET, body, t), "content-type": "application/json"}
+    app = _make_doit_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/webhooks/doit", content=body, headers=headers)
+
+    assert _get_balance(company_id) == 3000
+
+    # Refund — delivered twice
+    rbody = _refund_body(ppid)
+    rt = int(time.time())
+    rheaders = {"PayBridge-Signature": _make_sig_header(TEST_SECRET, rbody, rt), "content-type": "application/json"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        ra = await client.post("/v1/webhooks/doit", content=rbody, headers=rheaders)
+        assert ra.status_code == 200
+        rb = await client.post("/v1/webhooks/doit", content=rbody, headers=rheaders)
+        assert rb.status_code == 200
+
+    # Balance is 0 (not -3000)
+    assert _get_balance(company_id) == 0
+
+    # Exactly one refund row
+    refund_rows = _get_ledger_rows(company_id, reason="refund")
+    assert len(refund_rows) == 1, f"Expected 1 refund row, got {len(refund_rows)}"
+
+
+# ---------------------------------------------------------------------------
+# Test 12: refund for never-granted payment → no debit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refund_of_never_granted_payment_no_debit():
+    """refund.succeeded for a never-granted payment → status=refunded, no credit debit."""
+    company_id = _seed_company("Webhook Refund NoGrant")
+    ppid = f"pay_refng_{uuid.uuid4().hex[:8]}"
+    pay_id = _seed_topup_payment(company_id, ppid, credits=2000)
+
+    # Directly refund without a prior payment.paid
+    rbody = _refund_body(ppid)
+    rheaders, rbody = _signed_request(rbody)
+    app = _make_doit_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post("/v1/webhooks/doit", content=rbody, headers=rheaders)
+    assert resp.status_code == 200
+
+    # No debit — balance stays 0
+    assert _get_balance(company_id) == 0
+    assert _get_ledger_rows(company_id, reason="refund") == []
+
+    # Status updated to refunded
+    pay = _get_payment(pay_id)
+    assert pay.status == "refunded"
+    assert pay.granted is False
+
+
+# ---------------------------------------------------------------------------
+# Test 13: FOR UPDATE lock — sequential racing-writer simulation (no double grant)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_payment_paid_sequential_racing_writer_no_double_grant():
+    """Simulate a racing writer setting granted=True before the handler reads it.
+
+    The FOR UPDATE lock in the handler means that in production two concurrent
+    deliveries serialise: one wins the lock and grants; the other waits, then
+    sees granted=True and no-ops.  This test simulates the losing-writer case:
+    we pre-commit granted=True on the row via a second session (simulating the
+    first delivery having already committed), then dispatch the handler — it
+    must no-op (no additional ledger row, balance unchanged).
+    """
+    from datetime import datetime, timezone
+
+    from omilo.models.base import prefixed_id as _pid
+    from omilo.models.billing import CreditLedger
+
+    company_id = _seed_company("Webhook RacingWriter Test")
+    ppid = f"pay_race_{uuid.uuid4().hex[:8]}"
+    pay_id = _seed_topup_payment(company_id, ppid, credits=4000)
+
+    # Simulate first delivery: commit granted=True + status=paid + ledger manually
+    with _superuser_session() as sess:
+        pay = sess.get(DoitPayment, pay_id)
+        pay.granted = True
+        pay.status = "paid"
+        cmp = sess.get(Company, company_id)
+        cmp.credit_balance = 4000
+        entry = CreditLedger(
+            id=_pid("cl"),
+            company_id=company_id,
+            delta=4000,
+            balance_after=4000,
+            reason="topup",
+            job_id=None,
+            helper_id=None,
+            provider_cost_usd=0,
+            credits_charged=0,
+            meta={"doit_payment_id": pay_id},
+            at=datetime.now(timezone.utc),
+        )
+        sess.add(entry)
+
+    # Now dispatch the "second" delivery — handler should read granted=True via FOR UPDATE and no-op
+    body = _payment_paid_body(ppid)
+    headers, body = _signed_request(body)
+    app = _make_doit_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post("/v1/webhooks/doit", content=body, headers=headers)
+    assert resp.status_code == 200
+
+    # Balance still exactly 4000 (no double-grant)
+    assert _get_balance(company_id) == 4000
+
+    # Still exactly one ledger row
+    rows = _get_ledger_rows(company_id, reason="topup")
+    assert len(rows) == 1, f"Expected 1 topup ledger row (no double grant), got {len(rows)}"

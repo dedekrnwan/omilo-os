@@ -29,19 +29,17 @@ Handled event types:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request, Response
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from omilo.billing.balance import grant_credits
+from omilo.billing.balance import debit_credits, grant_credits
 from omilo.billing.doit_provider import WebhookVerificationError
 from omilo.billing.provider import get_payment_provider
 from omilo.db import SessionLocal, set_company
 from omilo.models.base import prefixed_id
-from omilo.models.billing import CreditLedger, Invoice, Plan, Subscription
+from omilo.models.billing import Plan, Subscription
 from omilo.models.commerce import DoitPayment
 from omilo.models.tenancy import Company
 
@@ -171,8 +169,15 @@ def _handle_payment_paid(provider_payment_id: str, payment_data: dict) -> None:
                 logger.error("payment.paid: Company %r not found in DB", company_id)
                 return
 
-            # Re-load DoitPayment inside RLS scope
-            payment = db.get(DoitPayment, payment_id)
+            # Re-load DoitPayment inside RLS scope.
+            # FOR UPDATE: serialises concurrent re-deliveries of the same event —
+            # the second delivery blocks here until the first transaction commits,
+            # then reads granted=True and no-ops (double-grant window closed).
+            payment = db.execute(
+                select(DoitPayment)
+                .where(DoitPayment.id == payment_id)
+                .with_for_update()
+            ).scalar_one_or_none()
             if payment is None:
                 logger.error(
                     "payment.paid: DoitPayment %r not visible in tenant scope for company %r",
@@ -335,7 +340,13 @@ def _handle_payment_expired(provider_payment_id: str) -> None:
 
 
 def _handle_refund_succeeded(provider_payment_id: str) -> None:
-    """Apply a negative credit grant if the payment was previously granted."""
+    """Apply a credit debit via debit_credits() if the payment was previously granted.
+
+    Guards:
+    - Payment never granted → mark refunded, no debit (nothing to reverse).
+    - Payment already refunded → no-op (idempotent re-delivery guard).
+    - FOR UPDATE lock on the DoitPayment row serialises concurrent re-deliveries.
+    """
     with SessionLocal() as priv:
         payment = (
             priv.query(DoitPayment)
@@ -350,20 +361,6 @@ def _handle_refund_succeeded(provider_payment_id: str) -> None:
             return
         payment_id = payment.id
         company_id = payment.company_id
-        was_granted = payment.granted
-        credits = payment.credits
-
-    if not was_granted:
-        # Nothing to reverse — just update status
-        with SessionLocal() as db:
-            with db.begin():
-                db.execute(text("SET LOCAL ROLE omilo_app"))
-                set_company(db, company_id)
-                payment = db.get(DoitPayment, payment_id)
-                if payment:
-                    payment.status = "refunded"
-                    db.flush()
-        return
 
     with SessionLocal() as db:
         with db.begin():
@@ -371,33 +368,41 @@ def _handle_refund_succeeded(provider_payment_id: str) -> None:
             set_company(db, company_id)
 
             company = db.get(Company, company_id)
-            payment = db.get(DoitPayment, payment_id)
+            # FOR UPDATE: serialises concurrent re-deliveries — second delivery
+            # blocks until the first commits, then reads status="refunded" and no-ops.
+            payment = db.execute(
+                select(DoitPayment)
+                .where(DoitPayment.id == payment_id)
+                .with_for_update()
+            ).scalar_one_or_none()
+
             if company is None or payment is None:
                 return
+
+            # ── Double-refund guard (re-delivered refund.succeeded) ─────────
             if payment.status == "refunded":
-                return  # already handled (idempotent)
-
-            # Apply negative grant (reversal)
-            if credits > 0:
-                # grant_credits requires amount > 0; use negative balance adjustment
-                company.credit_balance = (company.credit_balance or 0) - credits
-                db.flush()
-
-                entry = CreditLedger(
-                    id=prefixed_id("cl"),
-                    company_id=company.id,
-                    delta=-credits,
-                    balance_after=int(company.credit_balance),
-                    reason="refund",
-                    job_id=None,
-                    helper_id=None,
-                    provider_cost_usd=0,
-                    credits_charged=0,
-                    meta={"doit_payment_id": payment.id},
-                    at=datetime.now(timezone.utc),
+                logger.info(
+                    "refund.succeeded: DoitPayment %r already refunded; skipping (idempotent)",
+                    payment_id,
                 )
-                db.add(entry)
-                db.flush()
+                return
+
+            credits = payment.credits
+
+            # ── Guard: only debit if previously granted ─────────────────────
+            if payment.granted and credits > 0:
+                debit_credits(
+                    db,
+                    company,
+                    credits,
+                    reason="refund",
+                    meta={"doit_payment_id": payment.id},
+                )
+            elif not payment.granted:
+                logger.info(
+                    "refund.succeeded: DoitPayment %r was never granted; marking refunded, no debit",
+                    payment_id,
+                )
 
             payment.status = "refunded"
             db.flush()

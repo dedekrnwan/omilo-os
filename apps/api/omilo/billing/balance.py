@@ -10,6 +10,10 @@ Public API:
     grant_credits(db, company, amount, reason="grant", meta=None) -> CreditLedger
         Append a positive-delta ledger row, increment Company.credit_balance.
 
+    debit_credits(db, company, amount, reason="refund", meta=None) -> CreditLedger
+        Append a negative-delta ledger row, decrement Company.credit_balance.
+        Mirror of grant_credits() for reversals (refunds, adjustments).
+
     check_can_start_job(db, company, helper) -> tuple[bool, str | None]
         Gate function called by the runner BEFORE starting a consequential job:
           - paused helper         → (False, "helper_paused")
@@ -44,6 +48,9 @@ from omilo.models.billing import CreditLedger
 if TYPE_CHECKING:
     from omilo.models.agents import Helper
     from omilo.models.tenancy import Company
+
+# Public API summary (keep docstring at top of module in sync):
+#   debit_credits(db, company, amount, reason="refund", meta=None) -> CreditLedger
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +150,61 @@ def grant_credits(
         helper_id=None,
         provider_cost_usd=0,
         credits_charged=0,
+        meta=meta or {},
+        at=datetime.now(timezone.utc),
+    )
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# debit_credits
+# ---------------------------------------------------------------------------
+
+
+def debit_credits(
+    db: Session,
+    company: "Company",
+    amount: int,
+    reason: str = "refund",
+    meta: dict | None = None,
+) -> CreditLedger:
+    """Append a negative-delta CreditLedger row and decrement Company.credit_balance.
+
+    Mirror of grant_credits() but for reversals (refunds, manual adjustments).
+
+    Args:
+        db:      Company-scoped session.  Caller owns the transaction.
+        company: The Company ORM object.
+        amount:  Number of credits to deduct (must be > 0; stored as delta=-amount).
+        reason:  Ledger reason string — "refund", "adjustment", etc.
+        meta:    Optional JSON metadata dict.
+
+    Returns:
+        The new CreditLedger row (already flushed).
+
+    Raises:
+        ValueError: if amount <= 0.
+    """
+    if amount <= 0:
+        raise ValueError(f"debit_credits: amount must be positive, got {amount!r}")
+
+    company.credit_balance = (company.credit_balance or 0) - amount
+    db.flush()
+
+    balance_after = int(company.credit_balance)
+
+    entry = CreditLedger(
+        id=prefixed_id("cl"),
+        company_id=company.id,
+        delta=-amount,
+        balance_after=balance_after,
+        reason=reason,
+        job_id=None,
+        helper_id=None,
+        provider_cost_usd=0,
+        credits_charged=amount,
         meta=meta or {},
         at=datetime.now(timezone.utc),
     )
