@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 
+from omilo.api.approvals import router as approvals_router
 from omilo.api.channels import router as channels_router
 from omilo.api.chat_write import router as chat_write_router
 from omilo.api.folders import router as folders_router
@@ -25,6 +26,8 @@ def create_app() -> FastAPI:
     app.include_router(goals_router, prefix="/v1")
     app.include_router(sessions_router, prefix="/v1")
     app.include_router(inbox_router, prefix="/v1")
+    # Approvals write path (Task 7 P1)
+    app.include_router(approvals_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
 
