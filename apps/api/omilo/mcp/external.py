@@ -16,7 +16,8 @@ Auth protocol (POST /v1/x/mcp):
     6. For tools/list: build full catalog, filter to allowed set.
     7. For tools/call: if tool not in allowed set → JSON-RPC error +
        log a refused ToolCall; else → run_tool_for(helper, name, args,
-       actor=f"external:{label}") — same dispatch + gate path as Role-2.
+       actor=f"external:{label}") — same dispatch + gate path as Role-2
+       (/v1/mcp, actor="agent").
 
 SCOPE_TOOLS: single mapping of scope name → tool names it unlocks.
   whoami is ALWAYS allowed regardless of scopes.
@@ -26,24 +27,34 @@ Spec: docs/technical/05-mcp-surfaces.md §6 (Role-3 external MCP).
 from __future__ import annotations
 
 import hashlib
-import time
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 from omilo.db import SessionLocal, set_company
 from omilo.models.agents import Helper
 from omilo.models.base import prefixed_id
 from omilo.models.mcp_token import McpAccessToken
 from omilo.models.toolcall import ToolCall
-from omilo.mcp.tools import TOOL_CATALOG, dispatch, get_connector_tools_for_helper
+from omilo.mcp.tools import TOOL_CATALOG, get_connector_tools_for_helper
+from omilo.mcp._dispatch import run_tool_for  # shared with Role-2 server.py
 
 router = APIRouter(tags=["mcp-external"])
+logger = logging.getLogger(__name__)
 
-_401 = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized.")
+
+def _unauthorized() -> HTTPException:
+    """Return a fresh 401 HTTPException instance.
+
+    A factory is used (rather than a shared singleton) so each raise site
+    gets its own instance — re-raising the same HTTPException object across
+    requests is safe in FastAPI but a factory makes intent explicit.
+    """
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized.")
+
 
 # ---------------------------------------------------------------------------
 # SCOPE_TOOLS: scope name → set of tool names it unlocks.
@@ -119,54 +130,6 @@ def verify_access_token(raw: str, *, now: datetime) -> McpAccessToken | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Shared run_tool_for (used by both Role-2 server.py and this endpoint)
-# ---------------------------------------------------------------------------
-
-def run_tool_for(
-    helper: Helper,
-    tool_name: str,
-    arguments: dict,
-    *,
-    actor: str,
-) -> tuple[Any, str]:
-    """Open a company-scoped session, dispatch to the tool, log ToolCall.
-
-    Returns (result, decision). Raises on fatal errors (caller handles them).
-    This is the single-sourced path shared by /v1/mcp and /v1/x/mcp.
-    """
-    started_at = time.monotonic()
-    company_id = helper.company_id
-
-    with SessionLocal() as db:
-        with db.begin():
-            db.execute(text("SET LOCAL ROLE omilo_app"))
-            set_company(db, company_id)
-
-            helper_here = db.get(Helper, helper.id)
-            if helper_here is None:
-                raise RuntimeError("Helper not found in tenant session")
-
-            result, decision = dispatch(tool_name, arguments, db, helper_here)
-
-            duration_ms = int((time.monotonic() - started_at) * 1000)
-            tc = ToolCall(
-                id=prefixed_id("tc"),
-                company_id=company_id,
-                helper_id=helper.id,
-                job_id=None,
-                tool=tool_name,
-                decision=decision,
-                detail={"tool": tool_name},
-                duration_ms=duration_ms,
-                actor=actor,
-                at=datetime.now(timezone.utc),
-            )
-            db.add(tc)
-
-    return result, decision
-
-
 def _log_refused_tool_call(
     company_id: str,
     helper_id: str,
@@ -192,8 +155,14 @@ def _log_refused_tool_call(
                     at=datetime.now(timezone.utc),
                 )
                 db.add(tc)
-    except Exception:
-        pass  # Logging must never crash the caller
+    except Exception as exc:
+        logger.warning(
+            "mcp_external: failed to log refused ToolCall for actor=%r tool=%r: %s",
+            actor,
+            tool_name,
+            exc,
+        )
+        # Logging must never crash the caller
 
 
 # ---------------------------------------------------------------------------
@@ -236,12 +205,12 @@ async def external_mcp_endpoint(request: Request) -> dict:
     # ── 1. Extract + verify bearer ────────────────────────────────────────────
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        raise _401
+        raise _unauthorized()
 
     raw_token = auth_header[len("Bearer "):]
     token_row = verify_access_token(raw_token, now=now)
     if token_row is None:
-        raise _401
+        raise _unauthorized()
 
     # ── 2. Load the acted-as Helper via privileged session ────────────────────
     helper: Helper | None = None
@@ -250,12 +219,12 @@ async def external_mcp_endpoint(request: Request) -> dict:
             with priv_db.begin():
                 helper = priv_db.get(Helper, token_row.helper_id)
                 if helper is None:
-                    raise _401
+                    raise _unauthorized()
                 priv_db.expunge(helper)
     except HTTPException:
         raise
     except Exception:
-        raise _401
+        raise _unauthorized()
 
     label: str = token_row.label
     scopes: list[str] = list(token_row.scopes or [])
@@ -312,7 +281,7 @@ async def external_mcp_endpoint(request: Request) -> dict:
                 f"Tool {tool_name!r} is not permitted by this token's scopes.",
             )
 
-        # In-scope: call the shared run_tool_for path
+        # In-scope: call the shared run_tool_for path (also used by /v1/mcp, actor="agent")
         try:
             result, _decision = run_tool_for(
                 helper, tool_name, arguments, actor=actor
