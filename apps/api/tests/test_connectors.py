@@ -457,8 +457,8 @@ async def test_compiled_write_tool_creates_proposal(async_client):
         )
         assert tc is not None
         assert tc.tool == "gmail.send-email"
-        # decision should reflect proposal
-        assert tc.decision in ("proposal", "allowed")
+        # Write connector tool with approval=ask MUST always be gated (never auto-allowed)
+        assert tc.decision == "proposal"
 
 
 # ---------------------------------------------------------------------------
