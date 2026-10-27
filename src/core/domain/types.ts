@@ -9,6 +9,13 @@ export interface Company {
   id: Id
   name: string
   color: string
+  /** P5d profile fields — may be absent on legacy records. */
+  industry?: string | null
+  teamSize?: string | null
+  region?: string | null
+  currency?: string
+  picRole?: string | null
+  timezone?: string | null
 }
 
 export interface Helper {
