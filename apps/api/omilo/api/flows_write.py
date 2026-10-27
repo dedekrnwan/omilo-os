@@ -73,6 +73,10 @@ class PatchFlowBody(BaseModel):
     areas: Optional[list[str]] = None
 
 
+class TestRunBody(BaseModel):
+    sample: dict = {}
+
+
 # ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------
@@ -459,3 +463,56 @@ def get_flow_runs(
         .all()
     )
     return [_run_to_dict(r) for r in runs]
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/flows/{id}/test-run
+# ---------------------------------------------------------------------------
+
+
+@router.post("/flows/{flow_id}/test-run", status_code=status.HTTP_200_OK)
+def test_run_flow(
+    flow_id: str,
+    body: TestRunBody,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Simulate a flow run (test=True — no real side effects).
+
+    Connector nodes are skipped; approval nodes log a note without parking.
+    Returns the persisted FlowRun.
+    """
+    flow = db.query(Flow).filter(Flow.id == flow_id).first()
+    if flow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
+
+    from omilo.flows.engine import run_flow
+
+    run = run_flow(db, flow, trigger_summary="test-run", started_by="operator", test=True)
+    return _run_to_dict(run)
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/flows/{id}/run
+# ---------------------------------------------------------------------------
+
+
+@router.post("/flows/{flow_id}/run", status_code=status.HTTP_200_OK)
+def run_flow_now(
+    flow_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Manually trigger a flow run (test=False).
+
+    Returns the persisted FlowRun. The run walks all nodes; an approval node
+    parks the run (status=needs_you) and returns immediately.
+    """
+    flow = db.query(Flow).filter(Flow.id == flow_id).first()
+    if flow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
+
+    from omilo.flows.engine import run_flow
+
+    run = run_flow(db, flow, trigger_summary="manual", started_by="operator", test=False)
+    return _run_to_dict(run)
