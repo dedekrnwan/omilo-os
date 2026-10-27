@@ -204,7 +204,10 @@ def debit_credits(
         job_id=None,
         helper_id=None,
         provider_cost_usd=0,
-        credits_charged=amount,
+        # credits_charged tracks CONSUMPTION (job spend) for MTD budget/analytics
+        # aggregation; a refund debit is not consumption, so it stays 0 — matching
+        # grant_credits. The balance movement is carried by `delta` alone.
+        credits_charged=0,
         meta=meta or {},
         at=datetime.now(timezone.utc),
     )
