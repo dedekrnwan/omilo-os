@@ -25,6 +25,16 @@ class Company(IdMixin, TimestampMixin, Base):
         nullable=False, server_default="ask"
     )
 
+    # P4 billing additive columns
+    plan_id: Mapped[str | None] = mapped_column(nullable=True)
+    credit_balance: Mapped[int] = mapped_column(
+        nullable=False, server_default="0"
+    )
+    edition: Mapped[str] = mapped_column(nullable=False, server_default="cloud")
+    overage_policy: Mapped[str] = mapped_column(
+        nullable=False, server_default="soft"
+    )
+
 
 class User(IdMixin, TimestampMixin, Base):
     """Human login — global, no company_id, no RLS."""

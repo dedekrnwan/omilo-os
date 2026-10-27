@@ -17,6 +17,10 @@ from omilo.models.knowledge import KbSource, KbChunk  # noqa: F401
 from omilo.models.memory import MemoryDoc  # noqa: F401
 from omilo.models.skills import Skill  # noqa: F401
 from omilo.models.improvement import Improvement  # noqa: F401
+from omilo.models.billing import Plan, CreditLedger, Subscription, Invoice  # noqa: F401
+from omilo.models.accounts import HarnessAccount, ProviderKey  # noqa: F401
+from omilo.models.pieces import Piece  # noqa: F401
+from omilo.models.connectors import Connector  # noqa: F401
 
 __all__ = [
     "Company",
@@ -45,4 +49,12 @@ __all__ = [
     "MemoryDoc",
     "Skill",
     "Improvement",
+    "Plan",
+    "CreditLedger",
+    "Subscription",
+    "Invoice",
+    "HarnessAccount",
+    "ProviderKey",
+    "Piece",
+    "Connector",
 ]
