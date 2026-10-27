@@ -1,4 +1,18 @@
-import type { Channel, Folder, Goal, Id, Message, Session, InboxItem } from '../domain/types'
+import type {
+  AiAccount,
+  Channel,
+  Connector,
+  Folder,
+  Goal,
+  Id,
+  McpToken,
+  Message,
+  Piece,
+  Session,
+  InboxItem,
+  UsageSummary,
+  WalletSettings,
+} from '../domain/types'
 
 export interface ChannelRepo {
   list(): Promise<Channel[]>
@@ -33,6 +47,30 @@ export interface InboxRepo {
   get(id: Id): Promise<InboxItem | null>
 }
 
+export interface UsageRepo {
+  get(): Promise<UsageSummary>
+}
+
+export interface WalletRepo {
+  get(): Promise<WalletSettings>
+}
+
+export interface AiAccountRepo {
+  list(): Promise<AiAccount[]>
+}
+
+export interface MarketplaceRepo {
+  list(params?: { category?: string; q?: string }): Promise<Piece[]>
+}
+
+export interface ConnectorRepo {
+  list(): Promise<Connector[]>
+}
+
+export interface McpTokenRepo {
+  list(): Promise<McpToken[]>
+}
+
 export interface Repos {
   channels: ChannelRepo
   folders: FolderRepo
@@ -40,4 +78,10 @@ export interface Repos {
   sessions: SessionRepo
   messages: MessageRepo
   inbox: InboxRepo
+  usage: UsageRepo
+  wallet: WalletRepo
+  aiAccounts: AiAccountRepo
+  marketplace: MarketplaceRepo
+  connectors: ConnectorRepo
+  mcpTokens: McpTokenRepo
 }

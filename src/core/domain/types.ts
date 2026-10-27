@@ -123,6 +123,116 @@ export interface InboxAction {
   icon?: 'check' | 'reply'
 }
 
+// ── Billing / Usage ───────────────────────────────────────────────────────────
+
+export interface UsageSummary {
+  /** Current credit balance. */
+  balance: number
+  /** Credits included in the plan (0 if no plan). */
+  included: number
+  /** Credits consumed this billing period (job charges). */
+  usedThisPeriod: number
+  /** Per-helper breakdown for this period. */
+  byHelper: { helperId: string; credits: number }[]
+  /** Per-day breakdown for this period. */
+  byDay: { day: string; credits: number }[]
+  /** Pending Doit top-up payments (count + total_credits). */
+  pendingTopups?: { count: number; totalCredits: number } | null
+  /** Most recent DoitPayment (any kind/status). */
+  lastPayment?: {
+    id: string
+    kind: string
+    status: string
+    amountIdr: number
+    createdAt: string | null
+  } | null
+}
+
+export interface WalletSettings {
+  /** Whether auto top-up is enabled. */
+  autoTopupEnabled: boolean
+  /** Balance threshold (credits) that triggers an auto top-up. */
+  autoTopupThresholdCredits: number
+  /** Credit pack to buy on auto top-up ('small' | 'medium' | 'large'). */
+  autoTopupPack?: string | null
+}
+
+// ── AI Account Pool ───────────────────────────────────────────────────────────
+
+export interface AiAccount {
+  id: Id
+  /** Harness name, e.g. 'claude', 'openai'. */
+  harness: string
+  /** Display name (backend label). */
+  name: string
+  /** Optional free-text tag for grouping. */
+  tag?: string | null
+  /** Account health status: 'ready' | 'near_limit' | 'cooling' | 'error'. */
+  status: string
+  /** Context-window usage percentage (0–100). */
+  pctWindow: number
+  /** Token hint (never the full key), e.g. 'sk-ant-...****'. */
+  tokens?: string | null
+  /** ISO timestamp of last use. */
+  lastUsed?: string | null
+}
+
+// ── Marketplace ───────────────────────────────────────────────────────────────
+
+export interface Piece {
+  id: Id
+  /** Human-readable name, e.g. 'Slack'. */
+  label: string
+  /** Catalog category, e.g. 'communication', 'productivity'. */
+  category: string
+  /** One-line description of what the piece does. */
+  description: string
+  /** OAuth or API-key auth type from the piece manifest. */
+  authType?: string | null
+  /** Number of actions the piece exposes. */
+  actionCount: number
+  /** Logo URL. */
+  logo?: string | null
+  /** Catalog status: 'ok' | 'invalid'. */
+  status: string
+}
+
+// ── Connectors ────────────────────────────────────────────────────────────────
+
+export interface Connector {
+  id: Id
+  /** The marketplace piece this connector was installed from. */
+  pieceId: string
+  /** Display name (copied from the piece at install time). */
+  label: string
+  /** Installation source: 'marketplace' | 'native'. */
+  source: string
+  /** Auth/health status: 'needs_auth' | 'connected' | 'error'. */
+  status: string
+  /** Whether the connector is active for helpers. */
+  enabled: boolean
+}
+
+// ── MCP Tokens ────────────────────────────────────────────────────────────────
+
+export interface McpToken {
+  id: Id
+  /** Human label given at mint time. */
+  label: string
+  /** The helper this token grants access to. */
+  helperId: string
+  /** Granted MCP scopes. */
+  scopes: string[]
+  /** ISO expiry timestamp (null = non-expiring). */
+  expiresAt?: string | null
+  /** ISO timestamp of the last authentication via this token. */
+  lastUsedAt?: string | null
+  /** ISO timestamp when the token was revoked (null = active). */
+  revokedAt?: string | null
+  /** True when the token is not revoked and not expired. */
+  active: boolean
+}
+
 export interface InboxItem {
   id: Id
   title: string

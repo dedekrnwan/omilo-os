@@ -1,4 +1,17 @@
-import type { Channel, Folder, Goal, Session, Message, InboxItem } from '../../core/domain/types'
+import type {
+  AiAccount,
+  Channel,
+  Connector,
+  Folder,
+  Goal,
+  McpToken,
+  Message,
+  Piece,
+  Session,
+  InboxItem,
+  UsageSummary,
+  WalletSettings,
+} from '../../core/domain/types'
 
 // Mock data mirrors the content of omilo-v2.pen (Chat · New chat, Chat · Session,
 // Office · Inbox) so the running app reads exactly like the design.
@@ -208,6 +221,151 @@ export const messages: Message[] = [
     id: 'msg-aru-1', sessionId: 'sess-arunika', author: { kind: 'helper', name: 'Sales', role: 'Sales agent', area: 'sales' },
     content: 'Arunika sent redlines on the pilot contract: a 60-day term instead of 90, and a data-export clause. Both look acceptable.',
     createdAt: '2026-10-24T08:40:00Z',
+  },
+]
+
+// ── Usage ─────────────────────────────────────────────────────────────────────
+
+export const usageSummary: UsageSummary = {
+  balance: 4_200,
+  included: 2_000,
+  usedThisPeriod: 1_450,
+  byHelper: [
+    { helperId: 'h-chief',  credits: 820 },
+    { helperId: 'h-dev',    credits: 430 },
+    { helperId: 'h-growth', credits: 200 },
+  ],
+  byDay: [
+    { day: '2026-10-01', credits: 180 },
+    { day: '2026-10-08', credits: 260 },
+    { day: '2026-10-15', credits: 510 },
+    { day: '2026-10-22', credits: 500 },
+  ],
+  pendingTopups: { count: 0, totalCredits: 0 },
+  lastPayment: null,
+}
+
+// ── Wallet ────────────────────────────────────────────────────────────────────
+
+export const walletSettings: WalletSettings = {
+  autoTopupEnabled: false,
+  autoTopupThresholdCredits: 0,
+  autoTopupPack: null,
+}
+
+// ── AI Accounts ───────────────────────────────────────────────────────────────
+
+export const aiAccounts: AiAccount[] = [
+  {
+    id: 'acc-chief',
+    harness: 'claude',
+    name: 'Anthropic main',
+    tag: 'primary',
+    status: 'ready',
+    pctWindow: 12,
+    tokens: 'sk-ant-...****',
+    lastUsed: '2026-10-24T09:00:00Z',
+  },
+  {
+    id: 'acc-dev',
+    harness: 'claude',
+    name: 'Anthropic dev overflow',
+    tag: 'overflow',
+    status: 'ready',
+    pctWindow: 4,
+    tokens: 'sk-ant-...####',
+    lastUsed: '2026-10-22T15:30:00Z',
+  },
+]
+
+// ── Marketplace ───────────────────────────────────────────────────────────────
+
+export const pieces: Piece[] = [
+  {
+    id: 'piece-slack',
+    label: 'Slack',
+    category: 'communication',
+    description: 'Send messages and notifications to Slack channels and DMs.',
+    authType: 'oauth2',
+    actionCount: 14,
+    logo: 'https://cdn.omilo.com/pieces/slack.svg',
+    status: 'ok',
+  },
+  {
+    id: 'piece-gmail',
+    label: 'Gmail',
+    category: 'communication',
+    description: 'Send, search, and label emails from a Gmail account.',
+    authType: 'oauth2',
+    actionCount: 8,
+    logo: 'https://cdn.omilo.com/pieces/gmail.svg',
+    status: 'ok',
+  },
+  {
+    id: 'piece-notion',
+    label: 'Notion',
+    category: 'productivity',
+    description: 'Create and update Notion pages and databases.',
+    authType: 'oauth2',
+    actionCount: 10,
+    logo: 'https://cdn.omilo.com/pieces/notion.svg',
+    status: 'ok',
+  },
+  {
+    id: 'piece-github',
+    label: 'GitHub',
+    category: 'developer',
+    description: 'Open issues, create PRs, and check CI status in GitHub.',
+    authType: 'oauth2',
+    actionCount: 18,
+    logo: 'https://cdn.omilo.com/pieces/github.svg',
+    status: 'ok',
+  },
+]
+
+// ── Connectors ────────────────────────────────────────────────────────────────
+
+export const connectors: Connector[] = [
+  {
+    id: 'con-slack',
+    pieceId: 'piece-slack',
+    label: 'Slack',
+    source: 'marketplace',
+    status: 'connected',
+    enabled: true,
+  },
+  {
+    id: 'con-github',
+    pieceId: 'piece-github',
+    label: 'GitHub',
+    source: 'marketplace',
+    status: 'connected',
+    enabled: true,
+  },
+]
+
+// ── MCP Tokens ────────────────────────────────────────────────────────────────
+
+export const mcpTokens: McpToken[] = [
+  {
+    id: 'mct-chief-cursor',
+    label: 'Chief · Cursor',
+    helperId: 'h-chief',
+    scopes: ['mcp:read', 'mcp:write'],
+    expiresAt: null,
+    lastUsedAt: '2026-10-24T08:45:00Z',
+    revokedAt: null,
+    active: true,
+  },
+  {
+    id: 'mct-dev-vscode',
+    label: 'Dev · VS Code',
+    helperId: 'h-dev',
+    scopes: ['mcp:read'],
+    expiresAt: '2027-01-01T00:00:00Z',
+    lastUsedAt: '2026-10-23T16:00:00Z',
+    revokedAt: null,
+    active: true,
   },
 ]
 
