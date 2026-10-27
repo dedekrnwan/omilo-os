@@ -242,7 +242,7 @@ def tool_skill_save(db: Session, helper: Helper, arguments: dict) -> dict:
     body_md = arguments.get("body_md", "")
 
     if skill_id:
-        skill = db.query(Skill).filter_by(id=skill_id).first()
+        skill = db.query(Skill).filter_by(id=skill_id, helper_id=helper.id).first()
         if skill is None:
             return {"status": "error", "detail": "Skill not found"}
         skill.name = name

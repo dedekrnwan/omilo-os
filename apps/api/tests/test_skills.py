@@ -582,3 +582,57 @@ class TestMcpSkillTools:
         assert resp.status_code == 200  # MCP returns result, not HTTP error
         result = resp.json()["result"]
         assert result.get("status") == "error" or "not found" in str(result).lower()
+
+    @pytest.mark.asyncio
+    async def test_skill_save_cross_helper_cannot_overwrite(self, async_client):
+        """Helper B in the same company must NOT be able to overwrite Helper A's skill."""
+        # Set up: one company, two helpers
+        auth_token_a, company_id = await _sign_up_in(async_client)
+        helper_a_id = _make_helper_db(company_id, is_chief=True)
+        mcp_token_a = await _mint_token(async_client, helper_a_id, auth_token_a)
+
+        # Helper B uses a separate auth token but shares the same company.
+        # Must pass X-Company-Id so get_context resolves to the shared company.
+        auth_token_b = await _get_token_for_company(async_client, company_id)
+        helper_b_id = _make_helper_db(company_id, is_chief=False)
+        resp_b_token = await async_client.post(
+            f"/v1/helpers/{helper_b_id}/mcp-token",
+            headers={
+                "Authorization": f"Bearer {auth_token_b}",
+                "X-Company-Id": company_id,
+            },
+        )
+        assert resp_b_token.status_code == 200, resp_b_token.text
+        mcp_token_b = resp_b_token.json()["token"]
+
+        # Helper A creates a skill
+        r1 = await async_client.post(
+            "/v1/mcp",
+            json=_rpc_payload("skill_save", {"name": "A's Skill", "body_md": "original body"}),
+            headers={"Authorization": f"Bearer {mcp_token_a}"},
+        )
+        assert r1.status_code == 200, r1.text
+        skill_a_id = r1.json()["result"]["skill_id"]
+
+        # Helper B attempts to overwrite Helper A's skill via skill_save with skill_id
+        r2 = await async_client.post(
+            "/v1/mcp",
+            json=_rpc_payload(
+                "skill_save",
+                {"skill_id": skill_a_id, "name": "hacked", "body_md": "x"},
+            ),
+            headers={"Authorization": f"Bearer {mcp_token_b}"},
+        )
+        assert r2.status_code == 200, r2.text
+        result = r2.json()["result"]
+        # Must return an error (not a skill_id)
+        assert result.get("status") == "error", (
+            f"Expected error status, got: {result}"
+        )
+
+        # Verify A's skill is unchanged in the DB
+        with _tenant_session(company_id) as db:
+            skill = db.get(Skill, skill_a_id)
+            assert skill is not None
+            assert skill.name == "A's Skill", f"Name was overwritten to: {skill.name!r}"
+            assert skill.body_md == "original body", f"Body was overwritten to: {skill.body_md!r}"
