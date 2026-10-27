@@ -127,6 +127,26 @@ def _settle_subscription(
         )
         return
 
+    # Deactivate any existing active subscriptions for this company (mirrors the
+    # Manual path in omilo/api/billing.py lines ~479-480 which sets "canceled").
+    existing_active = (
+        db.query(Subscription)
+        .filter(
+            Subscription.company_id == company.id,
+            Subscription.status == "active",
+        )
+        .all()
+    )
+    for s in existing_active:
+        s.status = "canceled"
+        logger.info(
+            "apply_payment_paid: canceled prior active subscription %r for company %r",
+            s.id,
+            company.id,
+        )
+    if existing_active:
+        db.flush()
+
     # Activate the most recent pending/inactive subscription for this company + plan
     sub = (
         db.query(Subscription)

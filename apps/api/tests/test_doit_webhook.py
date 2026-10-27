@@ -212,6 +212,18 @@ def _get_active_subscription(company_id: str) -> Subscription | None:
         )
 
 
+def _get_subscriptions_by_status(company_id: str, status: str) -> list:
+    with _superuser_session() as sess:
+        return (
+            sess.query(Subscription)
+            .filter(
+                Subscription.company_id == company_id,
+                Subscription.status == status,
+            )
+            .all()
+        )
+
+
 # ---------------------------------------------------------------------------
 # App fixture with DoitProvider injected via dependency override
 # ---------------------------------------------------------------------------
@@ -756,3 +768,66 @@ async def test_payment_paid_sequential_racing_writer_no_double_grant():
     # Still exactly one ledger row
     rows = _get_ledger_rows(company_id, reason="topup")
     assert len(rows) == 1, f"Expected 1 topup ledger row (no double grant), got {len(rows)}"
+
+
+# ---------------------------------------------------------------------------
+# Test 14: Prior active subscription is canceled when a new subscription settles
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_subscription_settle_cancels_prior_active_subscription():
+    """Paying for a new plan cancels the prior active subscription (consistency with Manual path).
+
+    Arrange: Company already has an active Subscription on plan_old.
+    Act: A DoitPayment for plan_new is settled via the webhook.
+    Assert:
+      - Exactly ONE active subscription after settle (the new one, plan_new).
+      - The prior subscription for plan_old is status="canceled".
+    """
+    company_id = _seed_company("Settle CancelsPrior Test")
+    plan_old_id = _seed_plan(included_credits=200)
+    plan_new_id = _seed_plan(included_credits=500)
+
+    # Seed the company with an existing active subscription on plan_old
+    with _superuser_session() as sess:
+        old_sub = Subscription(
+            id=prefixed_id("sub"),
+            company_id=company_id,
+            plan_id=plan_old_id,
+            status="active",
+            provider="manual",
+            seats=5,
+        )
+        sess.add(old_sub)
+    old_sub_id = old_sub.id
+
+    # Now seed a subscription payment for plan_new
+    ppid = f"pay_newplan_{uuid.uuid4().hex[:8]}"
+    _seed_subscription_payment(company_id, ppid, plan_new_id)
+
+    body = _payment_paid_body(ppid)
+    headers, body = _signed_request(body)
+
+    app = _make_doit_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post("/v1/webhooks/doit", content=body, headers=headers)
+
+    assert resp.status_code == 200, resp.text
+
+    # Exactly ONE active subscription — the new one
+    active_subs = _get_subscriptions_by_status(company_id, "active")
+    assert len(active_subs) == 1, (
+        f"Expected exactly 1 active subscription after settle, got {len(active_subs)}"
+    )
+    assert active_subs[0].plan_id == plan_new_id, "Active subscription should be on the new plan"
+    assert active_subs[0].provider == "doit"
+
+    # The prior active subscription is now canceled
+    canceled_subs = _get_subscriptions_by_status(company_id, "canceled")
+    assert any(s.id == old_sub_id for s in canceled_subs), (
+        "Prior active subscription should be status='canceled' after new plan settled"
+    )
+
+    # Credits for plan_new were granted
+    assert _get_balance(company_id) == 500

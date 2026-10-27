@@ -139,6 +139,12 @@ def _handle_payment_paid(provider_payment_id: str, payment_data: dict) -> None:
         # Runs as superuser omilo — no SET LOCAL ROLE, RLS bypassed.
         # This is intentional: we need to find the row across tenants by
         # provider_payment_id to discover which company owns it.
+        # .first() is safe here: provider_payment_id is globally unique per Doit
+        # (their payment IDs are never reused across customers).  The grant that
+        # follows always uses payment_priv.company_id — the value stored on the
+        # row itself — so even if a collision ever occurred (it cannot), we would
+        # process under the row's OWN company_id, not the caller's, making a
+        # cross-tenant grant impossible.
         payment_priv = (
             priv.query(DoitPayment)
             .filter(DoitPayment.provider_payment_id == provider_payment_id)
