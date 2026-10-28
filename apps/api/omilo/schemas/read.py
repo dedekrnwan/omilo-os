@@ -37,7 +37,8 @@ _CFG = ConfigDict(
 # ────────────────────────────────────────────────────────────────────────────
 
 class ChannelDTO(BaseModel):
-    """TS: Channel{id,name,accent,isDefault?,agentCount,chatCount,openItems}."""
+    """TS: Channel{id,name,accent,isDefault?,agentCount,chatCount,openItems,
+    icon?,purpose?,contextScope}."""
 
     model_config = _CFG
 
@@ -48,6 +49,10 @@ class ChannelDTO(BaseModel):
     agent_count: int  # required — 0 must survive exclude_none
     chat_count: int   # required
     open_items: int   # required
+    # P5d additions — area context (icon/purpose/contextScope)
+    icon: Optional[str] = None          # → icon?  (lucide icon name)
+    purpose: Optional[str] = None       # → purpose?
+    context_scope: str = "isolated"     # → contextScope  (never None)
 
 
 # ────────────────────────────────────────────────────────────────────────────

@@ -6,11 +6,12 @@ import type { AIMode } from './data'
 import { StepWelcome } from './StepWelcome'
 import { StepYourAI } from './StepYourAI'
 import { StepKnowYou } from './StepKnowYou'
+import { StepProfile } from './StepProfile'
 import { StepCheck } from './StepCheck'
 import { StepTeam } from './StepTeam'
 import { StepInbox } from './StepInbox'
 
-const STEPS: OnboardingStep[] = ['welcome', 'your-ai', 'know-you', 'check', 'team', 'inbox']
+const STEPS: OnboardingStep[] = ['welcome', 'your-ai', 'know-you', 'profile', 'check', 'team', 'inbox']
 
 /**
  * Standalone full-screen onboarding wizard at /onboarding (no Shell).
@@ -35,8 +36,9 @@ export function OnboardingRoute() {
           {step === 'your-ai' && (
             <StepYourAI initialMode={initialMode} onBack={() => setStep('welcome')} onNext={() => setStep('know-you')} />
           )}
-          {step === 'know-you' && <StepKnowYou onNext={() => setStep('check')} />}
-          {step === 'check' && <StepCheck onBack={() => setStep('know-you')} onNext={() => setStep('team')} />}
+          {step === 'know-you' && <StepKnowYou onNext={() => setStep('profile')} />}
+          {step === 'profile' && <StepProfile onNext={() => setStep('check')} />}
+          {step === 'check' && <StepCheck onBack={() => setStep('profile')} onNext={() => setStep('team')} />}
           {step === 'team' && <StepTeam onBack={() => setStep('check')} onNext={() => setStep('inbox')} />}
         </>
       )}

@@ -154,15 +154,25 @@ describe('FolderRoute', () => {
 })
 
 // ── CreateChannelDialog ───────────────────────────────────────────────────────
+// CreateChannelDialog uses useQueryClient, so it needs a QueryClientProvider.
+
+function renderDialog(open: boolean, onOpenChange: (v: boolean) => void = () => {}) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <CreateChannelDialog open={open} onOpenChange={onOpenChange} />
+    </QueryClientProvider>,
+  )
+}
 
 describe('CreateChannelDialog', () => {
   test('renders dialog when open=true', () => {
-    render(<CreateChannelDialog open onOpenChange={() => {}} />)
+    renderDialog(true)
     expect(screen.getByRole('dialog', { name: /create area/i })).toBeInTheDocument()
   })
 
   test('does not render dialog when open=false', () => {
-    render(<CreateChannelDialog open={false} onOpenChange={() => {}} />)
+    renderDialog(false)
     expect(screen.queryByRole('dialog', { name: /create area/i })).not.toBeInTheDocument()
   })
 
@@ -170,19 +180,19 @@ describe('CreateChannelDialog', () => {
     const onChange = (v: boolean) => {
       if (!v) expect(true).toBe(true)
     }
-    render(<CreateChannelDialog open onOpenChange={onChange} />)
+    renderDialog(true, onChange)
     fireEvent.click(screen.getByRole('button', { name: /^close$/i }))
   })
 
   test('Cancel button closes the dialog', () => {
     let closed = false
-    render(<CreateChannelDialog open onOpenChange={(v) => { if (!v) closed = true }} />)
+    renderDialog(true, (v) => { if (!v) closed = true })
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
     expect(closed).toBe(true)
   })
 
   test('shows name input, agent list, and context options', () => {
-    render(<CreateChannelDialog open onOpenChange={() => {}} />)
+    renderDialog(true)
     expect(screen.getByLabelText(/area name/i)).toBeInTheDocument()
     expect(screen.getByText('Chief')).toBeInTheDocument()
     // There are multiple elements containing "Isolated" (label + description) — at least one present

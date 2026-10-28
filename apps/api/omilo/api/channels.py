@@ -1,23 +1,47 @@
-"""GET /v1/channels — Repos-parity read endpoints for channels.
+"""Channel endpoints — read (GET) + write (POST).
 
 Endpoints:
-  GET /channels            → Channel[]
-  GET /channels/{id}       → Channel | 404
-  GET /channels/{id}/folders → Folder[]
-  GET /channels/{id}/goals   → Goal[]
-  GET /channels/{id}/sessions → Session[]
+  GET  /channels            → Channel[]
+  GET  /channels/{id}       → Channel | 404
+  GET  /channels/{id}/folders → Folder[]
+  GET  /channels/{id}/goals   → Goal[]
+  GET  /channels/{id}/sessions → Session[]
+  POST /channels            → Channel (created; 201)
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
+from omilo.models.base import prefixed_id
 from omilo.models.workspace import Channel, Folder, Goal
 from omilo.models.chat import ChatSession
 from omilo.schemas.read import ChannelDTO, FolderDTO, GoalDTO, SessionDTO
-from omilo.tenancy.deps import get_tenant_db
+from omilo.tenancy.context import RequestContext
+from omilo.tenancy.deps import get_context, get_tenant_db
 
 router = APIRouter(tags=["channels"])
+
+
+# ── Request schema ────────────────────────────────────────────────────────────
+
+
+class CreateChannelBody(BaseModel):
+    name: str
+    accent: Optional[str] = "general"
+    icon: Optional[str] = None
+    purpose: Optional[str] = None
+    context_scope: Optional[str] = "isolated"
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("name must not be empty")
+        return v.strip()
 
 _404 = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
@@ -64,3 +88,32 @@ def list_channel_goals(channel_id: str, db: Session = Depends(get_tenant_db)) ->
 def list_channel_sessions(channel_id: str, db: Session = Depends(get_tenant_db)) -> list[dict]:
     rows = db.query(ChatSession).filter(ChatSession.channel_id == channel_id).all()
     return [SessionDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+
+
+@router.post("/channels", response_model=ChannelDTO, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)
+def create_channel(
+    body: CreateChannelBody,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict:
+    """Create a new Channel (Area) scoped to the active company.
+
+    company_id comes from the RLS context (ctx.company_id); the DB enforces
+    isolation — a user from another company cannot read or write this row.
+    """
+    channel = Channel(
+        id=prefixed_id("chn"),
+        company_id=ctx.company_id,
+        name=body.name,
+        accent=body.accent or "general",
+        is_default=False,
+        agent_count=0,
+        chat_count=0,
+        open_items=0,
+        icon=body.icon,
+        purpose=body.purpose,
+        context_scope=body.context_scope or "isolated",
+    )
+    db.add(channel)
+    db.flush()
+    return ChannelDTO.model_validate(channel, from_attributes=True).model_dump(by_alias=True, exclude_none=False)

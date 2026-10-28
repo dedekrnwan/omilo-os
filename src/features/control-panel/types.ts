@@ -9,6 +9,7 @@ export type ControlPanelSection =
   | 'ai-accounts'
   | 'knowledge'
   | 'connectors'
+  | 'mcp-tokens'
   | 'skills'
   | 'usage'
   | 'activity'

@@ -56,6 +56,12 @@ class SessionOut(BaseModel):
 class CompanyOut(BaseModel):
     id: str
     name: str
+    # P5d profile fields — nullable, defaulting to None / "IDR"
+    industry: str | None = None
+    team_size: str | None = None
+    region: str | None = None
+    currency: str = "IDR"
+    pic_role: str | None = None
 
 
 class SignUpResponse(BaseModel):
@@ -90,6 +96,19 @@ def _user_out(user: User) -> UserOut:
         email=user.email,
         name=user.name,
         created_at=user.created_at,
+    )
+
+
+def _company_out(company: Company) -> CompanyOut:
+    """Serialize a Company ORM object to CompanyOut including profile fields."""
+    return CompanyOut(
+        id=company.id,
+        name=company.name,
+        industry=company.industry,
+        team_size=company.team_size,
+        region=company.region,
+        currency=getattr(company, "currency", "IDR") or "IDR",
+        pic_role=company.pic_role,
     )
 
 
@@ -192,7 +211,7 @@ def sign_in(body: SignInRequest) -> SignInResponse:
         for m in members:
             cmp = session.get(Company, m.company_id)
             if cmp:
-                companies.append(CompanyOut(id=cmp.id, name=cmp.name))
+                companies.append(_company_out(cmp))
 
         token, expires_at = make_access_token(
             user.id, active_member.company_id, active_member.role
@@ -231,11 +250,11 @@ def me(current_user: User = Depends(get_current_user)) -> MeResponse:
         for m in members:
             cmp = session.get(Company, m.company_id)
             if cmp:
-                all_companies.append(CompanyOut(id=cmp.id, name=cmp.name))
+                all_companies.append(_company_out(cmp))
 
     return MeResponse(
         user=_user_out(current_user),
         member=MemberOut(role=role),
-        company=CompanyOut(id=company.id, name=company.name),
+        company=_company_out(company),
         companies=all_companies,
     )

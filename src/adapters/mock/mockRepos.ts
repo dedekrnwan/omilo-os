@@ -1,6 +1,19 @@
 import type { Id } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
-import { channels, folders, goals, sessions, messages, inboxItems } from './fixtures'
+import {
+  channels,
+  folders,
+  goals,
+  sessions,
+  messages,
+  inboxItems,
+  usageSummary,
+  walletSettings,
+  aiAccounts,
+  pieces,
+  connectors,
+  mcpTokens,
+} from './fixtures'
 
 export function createMockRepos(): Repos {
   return {
@@ -36,6 +49,43 @@ export function createMockRepos(): Repos {
     inbox: {
       list: () => Promise.resolve([...inboxItems]),
       get: (id: Id) => Promise.resolve(inboxItems.find(i => i.id === id) ?? null),
+    },
+
+    usage: {
+      get: () => Promise.resolve({ ...usageSummary }),
+    },
+
+    wallet: {
+      get: () => Promise.resolve({ ...walletSettings }),
+    },
+
+    aiAccounts: {
+      list: () => Promise.resolve([...aiAccounts]),
+    },
+
+    marketplace: {
+      list: (params?: { category?: string; q?: string }) => {
+        let result = [...pieces]
+        if (params?.category) {
+          const cat = params.category.toLowerCase()
+          result = result.filter(p => p.category.toLowerCase() === cat)
+        }
+        if (params?.q) {
+          const q = params.q.toLowerCase()
+          result = result.filter(
+            p => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
+          )
+        }
+        return Promise.resolve(result)
+      },
+    },
+
+    connectors: {
+      list: () => Promise.resolve([...connectors]),
+    },
+
+    mcpTokens: {
+      list: () => Promise.resolve([...mcpTokens]),
     },
   }
 }

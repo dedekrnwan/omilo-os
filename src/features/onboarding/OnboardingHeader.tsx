@@ -4,11 +4,12 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { COMPANY_NAME } from './data'
 import { QuietButton } from './parts'
 
-export type OnboardingStep = 'welcome' | 'your-ai' | 'know-you' | 'check' | 'team' | 'inbox'
+export type OnboardingStep = 'welcome' | 'your-ai' | 'know-you' | 'profile' | 'check' | 'team' | 'inbox'
 
 const STEPS: { id: OnboardingStep; label: string }[] = [
   { id: 'your-ai', label: 'Your AI' },
   { id: 'know-you', label: 'Get to know you' },
+  { id: 'profile', label: 'Your company' },
   { id: 'check', label: 'Check' },
   { id: 'team', label: 'Your team' },
 ]
