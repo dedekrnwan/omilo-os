@@ -26,31 +26,86 @@ import {
   Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { Model } from '../../../core/domain/types'
+import type { KbItem, Model } from '../../../core/domain/types'
 import { Composer } from '../../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../../ui/ChatSession/ModelMenu'
 import { Button, IconButton } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
 import {
-  DOC_AREAS,
+  // NOTE: ACTIVE_DOC, LINKED_DOCS, LINKED_GOALS retained as local defaults —
+  // the backend KbItem shape has no doc-body, linked-docs, or linked-goals fields.
   ACTIVE_DOC,
   LINKED_DOCS,
   LINKED_GOALS,
+  // NOTE: ASK_CHIEF_* retained — no live API for Ask Chief suggestions/answers.
   ASK_CHIEF_SUGGESTIONS,
   ASK_CHIEF_MATCHING_DOCS,
   ASK_CHIEF_ANSWER,
+  // NOTE: HANDBOOK_FILES / POLICIES_MD_CONTENT retained — no live handbook API.
   HANDBOOK_FILES,
   POLICIES_MD_CONTENT,
 } from './data'
-import type { DocFile } from './data'
 import { GraphView } from './GraphView'
 import { KnowledgeView } from './KnowledgeView'
 import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
-import { useArea } from '../../../app/queries'
+import { useArea, useKnowledge } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
+
+// ── KbItem → DocFile mapping ──────────────────────────────────────────────────
+
+interface DocFile {
+  id: string
+  title: string
+  icon: 'doc' | 'folder' | 'check' | 'markdown'
+  edited: string   // backend doesn't provide this; using '' as default
+  editor: string   // backend doesn't provide this; using '' as default
+  pinned?: boolean
+  unread?: boolean
+  status?: 'v1' | 'draft'
+  badge?: 'Updated' | 'New'
+}
+
+interface DocArea {
+  id: string
+  label: string
+  docs: DocFile[]
+}
+
+/** Map KbItem.kind to a human-readable area label. */
+function kindToAreaLabel(kind: string): string {
+  const MAP: Record<string, string> = {
+    skill: 'Skills',
+    upload: 'Uploads',
+    doc: 'Documents',
+    note: 'Notes',
+  }
+  return MAP[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1)
+}
+
+/** Map KbItem[] → DocArea[] grouped by kind. */
+function kbItemsToDocAreas(items: KbItem[]): DocArea[] {
+  const byKind = new Map<string, KbItem[]>()
+  for (const item of items) {
+    const bucket = byKind.get(item.kind) ?? []
+    bucket.push(item)
+    byKind.set(item.kind, bucket)
+  }
+  return [...byKind.entries()].map(([kind, kindItems]) => ({
+    id: kind,
+    label: kindToAreaLabel(kind),
+    docs: kindItems.map((item, i) => ({
+      id: `${item.sourceId}-${i}`,
+      title: item.heading,
+      // NOTE: icon, edited, editor not in KbItem; using safe defaults
+      icon: 'doc' as const,
+      edited: '',
+      editor: '',
+    })),
+  }))
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -132,6 +187,9 @@ function NotesSidebar({
   onAskChief,
   onOpenKnowledge,
   onNewDoc,
+  docAreas,
+  isLoading,
+  isError,
 }: {
   activeId: string
   onSelect: (id: string) => void
@@ -139,6 +197,10 @@ function NotesSidebar({
   onAskChief: (id: string) => void
   onOpenKnowledge: () => void
   onNewDoc: () => void
+  /** Live doc areas from useKnowledge() mapped to DocArea[]. */
+  docAreas: DocArea[]
+  isLoading: boolean
+  isError: boolean
 }) {
   const [query, setQuery] = useState('')
   const [pinned, setPinned] = useState<Record<string, boolean>>({})
@@ -157,7 +219,7 @@ function NotesSidebar({
       isPinned
         ? { label: 'Unpin', icon: PinOff, onSelect: () => setPinned((p) => ({ ...p, [doc.id]: false })) }
         : { label: 'Pin to top', icon: Pin, onSelect: () => setPinned((p) => ({ ...p, [doc.id]: true })) },
-      { label: 'Duplicate', icon: Copy, onSelect: () => notify(`Made a copy of “${names[doc.id] ?? doc.title}”`) },
+      { label: 'Duplicate', icon: Copy, onSelect: () => notify(`Made a copy of "${names[doc.id] ?? doc.title}"`) },
       { label: 'Copy link', icon: Link2, onSelect: () => { copyText(`${location.origin}/docs/${doc.id}`); notify('Link copied') } },
       { type: 'separator' },
       {
@@ -166,7 +228,7 @@ function NotesSidebar({
         danger: true,
         onSelect: () => {
           setDeleted((d) => [...d, doc.id])
-          notify(`Deleted “${names[doc.id] ?? doc.title}”`, () => setDeleted((d) => d.filter((x) => x !== doc.id)))
+          notify(`Deleted "${names[doc.id] ?? doc.title}"`, () => setDeleted((d) => d.filter((x) => x !== doc.id)))
         },
       },
     ]
@@ -184,7 +246,7 @@ function NotesSidebar({
   const [filter, setFilter] = useState<'All' | 'By you' | 'By agents'>('All')
   const filters = ['All', 'By you', 'By agents'] as const
 
-  const allDocs = DOC_AREAS.flatMap((a) => a.docs).filter(visible)
+  const allDocs = docAreas.flatMap((a) => a.docs).filter(visible)
   const filtered = query
     ? allDocs.filter((d) => (names[d.id] ?? d.title).toLowerCase().includes(query.toLowerCase()))
     : null
@@ -233,8 +295,25 @@ function NotesSidebar({
         ))}
       </div>
 
-      {/* Doc list */}
-      {filtered ? (
+      {/* Doc list — live states */}
+      {isError ? (
+        <div className="flex flex-col items-center gap-[4px] py-[24px] text-center px-[8px]">
+          <span className="text-[12.5px] text-bad">Couldn't load docs</span>
+          <span className="text-[11.5px] text-faint">Check your connection and try again</span>
+        </div>
+      ) : isLoading ? (
+        <div className="flex flex-col gap-[6px] py-[8px]">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-[28px] animate-pulse rounded-sm bg-soft" />
+          ))}
+        </div>
+      ) : docAreas.length === 0 ? (
+        <div className="flex flex-col items-center gap-[4px] py-[24px] text-center px-[8px]">
+          <FileText size={18} className="text-faint" aria-hidden />
+          <span className="text-[12.5px] text-muted">No docs yet</span>
+          <span className="text-[11.5px] text-faint">Add your first doc to get started</span>
+        </div>
+      ) : filtered ? (
         <div className="flex flex-col gap-px">
           {filtered.map((doc) => (
             <NoteDocRow
@@ -246,7 +325,7 @@ function NotesSidebar({
           ))}
         </div>
       ) : (
-        DOC_AREAS.map((area) => (
+        docAreas.map((area) => (
           <div key={area.id} className="flex flex-col gap-px">
             <div className="px-[10px] pb-[4px] pt-[4px]">
               <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint uppercase">
@@ -765,7 +844,7 @@ function AskChiefView() {
 
 // ── Handbook view ─────────────────────────────────────────────────────────────
 
-function HandbookView({ onViewChange }: { onViewChange: (v: DocsMainView) => void }) {
+function HandbookView({ onViewChange, handbookDocAreas }: { onViewChange: (v: DocsMainView) => void; handbookDocAreas: DocArea[] }) {
   const [activeFile, setActiveFile] = useState<string | null>('hf-3')
   const [query, setQuery] = useState('')
 
@@ -826,19 +905,21 @@ function HandbookView({ onViewChange }: { onViewChange: (v: DocsMainView) => voi
           ))}
         </div>
 
-        {/* Areas section */}
-        <div className="flex flex-col gap-px mt-[8px]">
-          <div className="px-[10px] pb-[4px]">
-            <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">AREAS</span>
-          </div>
-          {DOC_AREAS.map((area) => (
-            <div key={area.id} className="flex items-center gap-[8px] rounded-sm px-[8px] py-[3px] hover:bg-hover transition-colors">
-              <Folder size={13} className="text-muted shrink-0" aria-hidden />
-              <span className="flex-1 text-[12.5px] text-ink-2">{area.label}</span>
-              <span className="text-[11px] text-muted">{area.docs.length}</span>
+        {/* Areas section — derived client-side from live doc areas */}
+        {handbookDocAreas.length > 0 && (
+          <div className="flex flex-col gap-px mt-[8px]">
+            <div className="px-[10px] pb-[4px]">
+              <span className="text-[10.5px] font-medium tracking-[0.8px] text-faint">AREAS</span>
             </div>
-          ))}
-        </div>
+            {handbookDocAreas.map((area) => (
+              <div key={area.id} className="flex items-center gap-[8px] rounded-sm px-[8px] py-[3px] hover:bg-hover transition-colors">
+                <Folder size={13} className="text-muted shrink-0" aria-hidden />
+                <span className="flex-1 text-[12.5px] text-ink-2">{area.label}</span>
+                <span className="text-[11px] text-muted">{area.docs.length}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Knowledge footer */}
         <div className="mt-auto flex items-center gap-[6px] px-[4px] py-[6px]">
@@ -952,12 +1033,12 @@ function HandbookView({ onViewChange }: { onViewChange: (v: DocsMainView) => voi
 
 // ── Topbar meta per view ──────────────────────────────────────────────────────
 
-function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string | null): string {
+function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string | null, liveKbCount: number): string {
   const scope = areaName ?? 'All areas'
   switch (view) {
     case 'notes':     return `${scope} / Q4 Launch`
     case 'graph':     return 'Graph · 64 docs'
-    case 'knowledge': return knowledgeOn ? 'Knowledge · on · 51 memories' : 'Knowledge · off'
+    case 'knowledge': return knowledgeOn ? `Knowledge · on · ${liveKbCount} memories` : 'Knowledge · off'
     case 'ask-chief': return 'Ask Chief · searches docs only'
     case 'handbook':  return 'Company / Company handbook'
   }
@@ -973,6 +1054,15 @@ function topbarMeta(view: DocsMainView, knowledgeOn: boolean, areaName: string |
 function DocsBoard({ areaId }: { areaId: string | null }) {
   const { data: area } = useArea(areaId ?? '')
   const areaName = areaId ? area?.name ?? null : null
+
+  // ── Live knowledge data from the repo (not the data.ts fixture) ──────────────
+  // NOTE: useKnowledgeSources() is NOT used — GET /v1/knowledge/sources does not
+  // exist on the backend yet. Sources grouping is derived client-side from KbItem.kind.
+  const { data: kbItems = [], isLoading: kbLoading, isError: kbError } = useKnowledge()
+  const docAreas = kbItemsToDocAreas(kbItems)
+  // Live count for KnowledgeView topbar meta (replaces hardcoded 51)
+  const liveKbCount = kbItems.length
+
   const [view, setView] = useState<DocsMainView>('notes')
   const [activeDocId, setActiveDocId] = useState(ACTIVE_DOC.id)
   const [knowledgeOn, setKnowledgeOn] = useState(false)
@@ -990,7 +1080,7 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
       <Topbar
         icon={FileText}
         title="Docs"
-        meta={topbarMeta(view, knowledgeOn, areaName)}
+        meta={topbarMeta(view, knowledgeOn, areaName, liveKbCount)}
         actions={
           <div className="flex items-center gap-[10px]">
             {view === 'knowledge' && knowledgeOn && (
@@ -1025,6 +1115,9 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
             onAskChief={() => setView('ask-chief')}
             onOpenKnowledge={() => setView('knowledge')}
             onNewDoc={handleNewDoc}
+            docAreas={docAreas}
+            isLoading={kbLoading}
+            isError={kbError}
           />
           <NoteDocViewer />
         </div>
@@ -1051,7 +1144,7 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
 
       {view === 'ask-chief' && <AskChiefView />}
 
-      {view === 'handbook' && <HandbookView onViewChange={setView} />}
+      {view === 'handbook' && <HandbookView onViewChange={setView} handbookDocAreas={docAreas} />}
     </>
   )
 }
