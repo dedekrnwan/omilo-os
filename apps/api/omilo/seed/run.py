@@ -18,6 +18,7 @@ import sys
 from datetime import datetime, timezone
 
 from omilo.auth.passwords import hash_password
+from omilo.billing.catalog import seed_plans
 from omilo.db import SessionLocal
 from omilo.models.chat import ChatSession, Message
 from omilo.models.inbox import InboxItem
@@ -48,6 +49,9 @@ def seed_demo() -> Company:
 
     Returns the Company ORM object.
     """
+    # Seed the global plan catalog first (idempotent).
+    seed_plans(None)
+
     with SessionLocal() as db:
         with db.begin():
             # ── Company ───────────────────────────────────────────────────────
@@ -213,6 +217,7 @@ def main() -> None:
     print(f"  sessions  : {len(SESSIONS)}")
     print(f"  messages  : {len(MESSAGES)}")
     print(f"  inbox     : {len(INBOX_ITEMS)}")
+    print(f"  plans     : 2 (self_hosted, cloud)")
     print("omilo-seed: done.")
     sys.exit(0)
 

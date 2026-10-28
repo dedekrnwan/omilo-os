@@ -33,6 +33,12 @@ class Plan(IdMixin, Base):
     monthly_price_idr: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
+    yearly_price_usd: Mapped[Decimal] = mapped_column(
+        Numeric, nullable=False, server_default="0"
+    )
+    yearly_price_idr: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     included_credits: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
@@ -91,6 +97,7 @@ class Subscription(IdMixin, TimestampMixin, Base):
     )
     seats: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     provider: Mapped[str] = mapped_column(nullable=False, server_default="manual")
+    billing_interval: Mapped[str] = mapped_column(nullable=False, server_default="monthly")
     external_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)  # Doit subscription/plan id
 
