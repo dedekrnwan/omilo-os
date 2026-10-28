@@ -11,7 +11,7 @@
  * snake_case response fields are mapped back to camelCase.
  */
 
-import type { Channel, Company, Connector, McpToken, Message, Session, WalletSettings } from '../../core/domain/types'
+import type { AiAccount, Channel, Company, Connector, McpToken, Message, Session, WalletSettings } from '../../core/domain/types'
 import { apiFetch } from './client'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -148,6 +148,30 @@ function mapChannel(r: RawChannel): Channel {
   }
 }
 
+type RawAiAccount = {
+  id: string
+  harness: string
+  name: string
+  tag?: string | null
+  status: string
+  pct: number
+  tokens?: string | null
+  last_used?: string | null
+}
+
+function mapAiAccount(r: RawAiAccount): AiAccount {
+  return {
+    id: r.id,
+    harness: r.harness,
+    name: r.name,
+    tag: r.tag,
+    status: r.status,
+    pctWindow: r.pct,
+    tokens: r.tokens,
+    lastUsed: r.last_used,
+  }
+}
+
 type RawWallet = {
   auto_topup_enabled: boolean
   auto_topup_threshold_credits: number
@@ -229,6 +253,19 @@ export interface UpdateCompanyProfileInput {
   picRole?: string
 }
 
+export interface CreateAiAccountInput {
+  /** Harness identifier, e.g. 'claude-code', 'codex', 'copilot', 'gemini-cli', 'cursor', 'anthropic', 'openai'. */
+  harness: string
+  /** Human-readable display name, stored as label on the backend. */
+  name: string
+  /** Encrypted API key / token (may be empty for subscription-based accounts). */
+  tokenEnc?: string
+  /** Masked key hint shown in the UI, e.g. 'sk-ant-...****'. */
+  tokenHint?: string
+  /** Optional free-text tag for grouping (e.g. 'primary', 'overflow'). */
+  tag?: string | null
+}
+
 // ── Commands port ─────────────────────────────────────────────────────────────
 
 export interface Commands {
@@ -273,6 +310,14 @@ export interface Commands {
   // ── P5d Company profile command ─────────────────────────────────────────────
   /** PATCH /v1/company — update writable profile fields. */
   updateCompanyProfile(input: UpdateCompanyProfileInput): Promise<Company>
+
+  // ── P13 AI account commands ──────────────────────────────────────────────────
+  /**
+   * POST /v1/ai-accounts — create/connect a new HarnessAccount.
+   * Body: {harness, name, token_enc?, token_hint?, tag?}.
+   * Returns the created PoolAccount (id, harness, name, tag, status, pct, tokens, last_used).
+   */
+  createAiAccount(input: CreateAiAccountInput): Promise<AiAccount>
 
   // ── P8 flow + routine + goal + skill commands ────────────────────────────────
   /** POST /v1/flows/{id}/publish → Proposal */
@@ -519,6 +564,25 @@ export function createCommands(
       if (input.picRole !== undefined) body.pic_role = input.picRole
       const raw = await patch<RawCompany>('/v1/company', body)
       return mapCompany(raw)
+    },
+
+    // ── P13 AI account commands ──────────────────────────────────────────────
+
+    /**
+     * POST /v1/ai-accounts — create a new HarnessAccount.
+     * Maps camelCase input → snake_case body; maps the PoolAccount response
+     * (pct → pctWindow, last_used → lastUsed).
+     */
+    async createAiAccount(input: CreateAiAccountInput): Promise<AiAccount> {
+      const body: Record<string, unknown> = {
+        harness: input.harness,
+        name: input.name,
+      }
+      if (input.tokenEnc !== undefined) body.token_enc = input.tokenEnc
+      if (input.tokenHint !== undefined) body.token_hint = input.tokenHint
+      if (input.tag !== undefined) body.tag = input.tag
+      const raw = await post<RawAiAccount>('/v1/ai-accounts', body)
+      return mapAiAccount(raw)
     },
 
     // ── P8 flow + routine + goal + skill commands ────────────────────────────
