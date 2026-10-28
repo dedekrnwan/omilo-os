@@ -4,6 +4,7 @@ import { Rail } from '../ui/Rail'
 import { CommandMenu } from '../features/command-menu'
 import { ChiefDm } from '../features/chief-dm'
 import { Toaster } from '../ui/ds/Toaster'
+import { AuthGate } from './AuthGate'
 
 /**
  * App shell (pen screens are 1440×900): Rail (56) · sidebar (232) · inset main.
@@ -36,7 +37,9 @@ export function Shell() {
   return (
     <div role="application" className="flex h-svh w-full overflow-hidden bg-app">
       <Rail />
-      <Outlet />
+      <AuthGate>
+        <Outlet />
+      </AuthGate>
       <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} />
       <ChiefDm hideFab={inEditor} />
       <Toaster />
