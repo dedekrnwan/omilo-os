@@ -86,6 +86,10 @@ class MeResponse(BaseModel):
     companies: list[CompanyOut]
 
 
+class SwitchCompanyRequest(BaseModel):
+    company_id: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -219,6 +223,61 @@ def sign_in(body: SignInRequest) -> SignInResponse:
 
         return SignInResponse(
             user=_user_out(user),
+            session=SessionOut(access=token, expires_at=expires_at),
+            companies=companies,
+        )
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/switch-company
+# ---------------------------------------------------------------------------
+
+@router.post("/switch-company", response_model=SignInResponse)
+def switch_company(
+    body: SwitchCompanyRequest,
+    current_user: User = Depends(get_current_user),
+) -> SignInResponse:
+    """Re-issue a token with a different active company.
+
+    The requesting user must be a Member of `company_id`.
+    Returns the same shape as sign-in so clients can store/use it identically.
+    """
+    with SessionLocal() as session:
+        # 1. Verify the company exists.
+        company = session.get(Company, body.company_id)
+        if company is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Company not found.",
+            )
+
+        # 2. Verify the user is a member of that company.
+        member = (
+            session.query(Member)
+            .filter_by(user_id=current_user.id, company_id=body.company_id)
+            .first()
+        )
+        if member is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of that company.",
+            )
+
+        # 3. Build the full companies list (mirrors sign_in).
+        members = session.query(Member).filter_by(user_id=current_user.id).all()
+        companies: list[CompanyOut] = []
+        for m in members:
+            cmp = session.get(Company, m.company_id)
+            if cmp:
+                companies.append(_company_out(cmp))
+
+        # 4. Re-issue the token with the new active company.
+        token, expires_at = make_access_token(
+            current_user.id, body.company_id, member.role
+        )
+
+        return SignInResponse(
+            user=_user_out(current_user),
             session=SessionOut(access=token, expires_at=expires_at),
             companies=companies,
         )
