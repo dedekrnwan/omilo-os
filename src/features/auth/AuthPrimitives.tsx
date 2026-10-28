@@ -50,6 +50,8 @@ interface AuthButtonProps {
   /** When set, the button navigates to this path via TanStack Router. */
   to?: string
   className?: string
+  /** Disable the button (e.g. while an async action is in flight). */
+  disabled?: boolean
 }
 
 /** pen Button/Primary · Button/Secondary at full width (h-44, radius 7, 14/500). */
@@ -62,6 +64,7 @@ export function AuthButton({
   onClick,
   to,
   className = '',
+  disabled = false,
 }: AuthButtonProps) {
   const navigate = useNavigate()
   const handleClick = to ? () => navigate({ to }) : onClick
@@ -73,7 +76,8 @@ export function AuthButton({
     <button
       type={type}
       onClick={handleClick}
-      className={`flex w-full items-center justify-center gap-[6px] rounded-btn px-[14px] text-[14px] font-medium transition-colors ${look} ${className}`}
+      disabled={disabled}
+      className={`flex w-full items-center justify-center gap-[6px] rounded-btn px-[14px] text-[14px] font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${look} ${className}`}
       style={{ height }}
     >
       {Icon && <Icon size={16} aria-hidden className="shrink-0" />}
