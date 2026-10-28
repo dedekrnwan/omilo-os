@@ -5,15 +5,17 @@ import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
 import { createMockRepos } from '../../../adapters/mock/mockRepos'
+import type { Repos } from '../../../core/ports/repos'
+import type { KbItem } from '../../../core/domain/types'
 import { Toaster, useToasts } from '../../../ui/ds/Toaster'
 import { OfficeDocsRoute } from './OfficeDocsRoute'
 
-function renderDocs() {
+function renderDocs(repos?: Repos) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({
     component: () => (
       <QueryClientProvider client={qc}>
-        <ReposProvider repos={createMockRepos()}>
+        <ReposProvider repos={repos ?? createMockRepos()}>
           <Outlet />
           <Toaster />
         </ReposProvider>
@@ -25,7 +27,66 @@ function renderDocs() {
   render(<RouterProvider router={router} />)
 }
 
+/** Build a minimal Repos stub that returns custom KbItems and nothing else. */
+function reposWithKb(items: KbItem[]): Repos {
+  const base = createMockRepos()
+  return {
+    ...base,
+    knowledge: {
+      sources: () => Promise.resolve([]),
+      list: () => Promise.resolve(items),
+    },
+  }
+}
+
 beforeEach(() => useToasts.setState({ toasts: [] }))
+
+// ── Live-data tests (docs/knowledge from useKnowledge, not fixture) ───────────
+
+describe('Docs — live data from useKnowledge()', () => {
+  const liveItems: KbItem[] = [
+    { sourceId: 'src-1', heading: 'Live Security Policy',    text: 'Security rules', kind: 'skill',  score: 0.95 },
+    { sourceId: 'src-2', heading: 'Live Q3 Board Deck',      text: 'Revenue up 12%', kind: 'upload', score: 0.80 },
+    { sourceId: 'src-3', heading: 'Live Onboarding Runbook', text: 'Steps to onboard', kind: 'skill', score: 0.70 },
+  ]
+
+  test('NotesSidebar renders doc rows from live KbItems (not fixture)', async () => {
+    renderDocs(reposWithKb(liveItems))
+    // Items from live KbItems should appear
+    expect(await screen.findByRole('button', { name: 'Live Security Policy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Live Q3 Board Deck' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Live Onboarding Runbook' })).toBeInTheDocument()
+    // DOC_AREAS fixture items (e.g. "Postmortem #482") should NOT appear in sidebar when live data is used
+    expect(screen.queryByRole('button', { name: 'Postmortem #482' })).not.toBeInTheDocument()
+  })
+
+  test('NotesSidebar shows empty state when useKnowledge() returns no items', async () => {
+    renderDocs(reposWithKb([]))
+    expect(await screen.findByText(/no docs yet/i)).toBeInTheDocument()
+  })
+
+  test('NotesSidebar shows error state when useKnowledge() rejects', async () => {
+    const base = createMockRepos()
+    const errRepos: Repos = {
+      ...base,
+      knowledge: {
+        sources: () => Promise.reject(new Error('server error')),
+        list: () => Promise.reject(new Error('server error')),
+      },
+    }
+    renderDocs(errRepos)
+    expect(await screen.findByText(/couldn't load docs/i)).toBeInTheDocument()
+  })
+
+  test('KnowledgeView memory count reflects live KbItems via useKnowledge()', async () => {
+    const user = userEvent.setup()
+    renderDocs(reposWithKb(liveItems))
+    await user.click(await screen.findByRole('tab', { name: 'Knowledge' }))
+    await user.click(await screen.findByRole('button', { name: /Turn on Knowledge/ }))
+    // topbar meta should show count from live data (3 items)
+    expect(await screen.findByText(/3 memories/i)).toBeInTheDocument()
+  })
+})
 
 describe('Docs', () => {
   test('views switch from an icon-only button group', async () => {
@@ -39,17 +100,19 @@ describe('Docs', () => {
   })
 
   test('right-click a doc: pin it, delete it, undo', async () => {
+    // NotesSidebar now reads from useKnowledge(); the mock returns kbItems from fixtures:
+    // "Passkey Rollout" (skill) and "Q3 Board Deck" (upload).
     const user = userEvent.setup()
     renderDocs()
-    const row = await screen.findByRole('button', { name: 'Postmortem #482' })
+    const row = await screen.findByRole('button', { name: 'Passkey Rollout' })
     fireEvent.contextMenu(row)
     await user.click(await screen.findByRole('menuitem', { name: 'Pin to top' }))
-    expect(screen.getAllByLabelText('pinned').length).toBeGreaterThan(1)
-    fireEvent.contextMenu(screen.getByRole('button', { name: 'Postmortem #482' }))
+    expect(screen.getAllByLabelText('pinned').length).toBeGreaterThan(0)
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Passkey Rollout' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
-    expect(screen.queryByRole('button', { name: 'Postmortem #482' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Passkey Rollout' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Undo' }))
-    expect(screen.getByRole('button', { name: 'Postmortem #482' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Passkey Rollout' })).toBeInTheDocument()
   })
 
   test('graph node menu opens the note', async () => {
