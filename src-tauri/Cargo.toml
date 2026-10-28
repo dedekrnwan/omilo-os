@@ -5,6 +5,7 @@ description = "Omilo desktop shell"
 authors = []
 edition = "2021"
 rust-version = "1.77.2"
+license = "Elastic-2.0"
 
 [lib]
 name = "omilo_lib"

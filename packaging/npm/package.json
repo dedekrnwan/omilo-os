@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Omilo CLI — run your local Omilo runtime against the Omilo cloud control plane.",
   "bin": { "omilo": "bin/omilo.js" },
-  "files": ["bin/omilo.js", "deploy"],
+  "files": ["bin/omilo.js", "deploy", "LICENSE"],
   "engines": { "node": ">=18" },
-  "license": "SEE LICENSE IN LICENSE"
+  "license": "Elastic-2.0"
 }

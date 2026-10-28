@@ -2,6 +2,7 @@
   "name": "omilo-v2",
   "private": true,
   "version": "0.0.0",
+  "license": "Elastic-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
