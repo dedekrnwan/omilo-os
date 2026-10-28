@@ -1,0 +1,40 @@
+# deploy/Dockerfile.api — ONE image for both OMILO_MODE=cloud and OMILO_MODE=runtime.
+# Build context: apps/api
+#   docker build -f deploy/Dockerfile.api -t omilo-api apps/api
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install build dependencies needed by psycopg (libpq) and cryptography
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the package and install it (production; no dev extras)
+COPY pyproject.toml ./
+COPY omilo ./omilo
+
+RUN pip install --no-cache-dir .
+
+# Write the entrypoint script inline so the build context stays apps/api
+RUN printf '#!/bin/sh\n\
+set -eu\n\
+echo "[omilo] Running migrations..."\n\
+omilo-migrate\n\
+echo "[omilo] Starting API (mode: ${OMILO_MODE:-cloud})..."\n\
+exec omilo-api\n' > /usr/local/bin/start-api.sh \
+    && chmod +x /usr/local/bin/start-api.sh
+
+# Create a non-root user to run the API
+RUN useradd -r -u 10001 -g root omilo
+
+USER omilo
+
+EXPOSE 8000
+
+CMD ["/usr/local/bin/start-api.sh"]

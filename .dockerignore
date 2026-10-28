@@ -1,0 +1,37 @@
+# Node
+node_modules
+dist
+
+# Python virtualenvs
+.venv
+apps/api/.venv
+**/.venv
+
+# Python bytecode
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Rust build artifacts
+src-tauri/target
+
+# Git history and tooling
+.git
+.github
+.gitignore
+
+# Superpowers / internal docs
+.superpowers
+.sdd
+
+# Secrets / local overrides
+.env
+.env.*
+!deploy/.env.cloud.example
+!deploy/.env.runtime.example
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo

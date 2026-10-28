@@ -1,0 +1,33 @@
+# deploy/web/Dockerfile.web — builds the Omilo web SPA and serves it via nginx.
+# Build context: repo root (docker build -f deploy/web/Dockerfile.web -t omilo-web .)
+#
+# Build stage: compile the Vite/React app
+FROM node:22-slim AS build
+
+WORKDIR /app
+
+# Install dependencies (package-lock.json lives at repo root)
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Copy all frontend source files
+COPY index.html ./
+COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY vite.config.ts vitest.config.ts ./
+COPY src ./src
+COPY public ./public
+
+# Build with HTTP mode so the SPA calls the same-origin nginx proxy
+RUN VITE_USE_HTTP=1 npm run build
+
+# Runtime stage: serve the built assets via nginx
+FROM nginx:alpine
+
+# Remove default config and copy ours
+RUN rm /etc/nginx/conf.d/default.conf
+COPY deploy/web/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy compiled SPA
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
