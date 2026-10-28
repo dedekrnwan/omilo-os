@@ -10,6 +10,7 @@
 
 import { initTelemetry } from './index'
 import type { TelemetryConfig } from './index'
+import { platform } from '../platform'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
@@ -28,8 +29,15 @@ interface RawTelemetryConfig {
 export function bootstrapTelemetry(): void {
   void (async () => {
     try {
+      // The config endpoint is company-scoped (Bearer session required). Attach
+      // the stored token when present; without it the fetch 401s and telemetry
+      // stays off (fail-safe) until a later bootstrap once the user is signed in.
+      const token = platform.tokenStorage.getToken()
       const res = await fetch(`${BASE_URL}/v1/telemetry-config`, {
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       })
       if (!res.ok) return
       const raw = (await res.json()) as RawTelemetryConfig
