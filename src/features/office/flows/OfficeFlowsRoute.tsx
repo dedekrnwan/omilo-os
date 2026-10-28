@@ -9,17 +9,17 @@ import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
 import { useFlowStore } from './editor/store'
-import { useFlowBoard } from './boardStore'
+import { useFlowBoard, flowToCard } from './boardStore'
 import type { FlowCard } from './boardStore'
+import type { Flow } from '../../../core/domain/types'
 import { useNavigate } from '@tanstack/react-router'
-import { useArea } from '../../../app/queries'
+import { useArea, useFlows } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { FlowChain } from '../../../ui/ds/FlowChain'
 import {
-  OFFICE_FLOWS,
   TEMPLATES,
   SUGGESTED_FLOWS,
   OFFICE_FLOW_RUNS,
@@ -156,18 +156,47 @@ function TemplateCard({ t, onUse }: { t: (typeof TEMPLATES)[number]; onUse?: () 
 // ── YoursTab ──────────────────────────────────────────────────────────────────
 
 function YoursTab({
+  liveFlows,
+  loading,
+  error,
   onCardClick,
   onNewClick,
   onTemplateUse,
   onSuggestedCreate,
 }: {
+  liveFlows: Flow[]
+  loading: boolean
+  error: boolean
   onCardClick?: (flowId: string) => void
   onNewClick?: () => void
   onTemplateUse?: (templateId: string) => void
   onSuggestedCreate?: (suggestedId: string) => void
 }) {
   const { deleted, copies } = useFlowBoard()
-  const cards = [...OFFICE_FLOWS, ...copies].filter((c) => !deleted.includes(c.id))
+
+  if (error) {
+    return <div className="px-[24px] py-[20px] text-[13px] text-bad">Failed to load flows. Please refresh to try again.</div>
+  }
+  if (loading) {
+    return <div className="px-[24px] py-[20px] text-[13px] text-muted">Loading flows…</div>
+  }
+
+  const cards = [...liveFlows.map(flowToCard), ...copies].filter((c) => !deleted.includes(c.id))
+
+  if (cards.length === 0) {
+    return (
+      <div className="flex flex-col gap-[20px]">
+        <div className="grid grid-cols-3 gap-[12px]">
+          <div className="col-span-3 py-[24px] text-center text-[13px] text-muted">No flows yet</div>
+          {SUGGESTED_FLOWS.map((item) => (
+            <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item.id)} />
+          ))}
+          <NewFlowCard onClick={onNewClick} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-[20px]">
       <div className="grid grid-cols-3 gap-[12px]">
@@ -536,20 +565,22 @@ function NewFlowDialog({ open, onOpenChange, onDraft, onBlank }: NewFlowDialogPr
 
 // ── OfficeFlowsPage ───────────────────────────────────────────────────────────
 
-const TABS: Array<{ key: FlowTab; label: string; count?: number }> = [
-  { key: 'Yours',     label: 'Yours',                count: OFFICE_FLOWS.length },
-  { key: 'Suggested', label: 'Suggested by agents',  count: SUGGESTED_FLOWS.length },
-  { key: 'Templates', label: 'Templates' },
-  { key: 'Runs',      label: 'Runs' },
-]
-
 /** Shared Flows board. `areaId === null` → company-wide; else scoped to one area. */
 function FlowsBoard({ areaId }: { areaId: string | null }) {
   const { data: area } = useArea(areaId ?? '')
   const areaName = areaId ? area?.name ?? '' : null
+  const { data: liveFlows = [], isLoading: flowsLoading, isError: flowsError } = useFlows()
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
   const [dialogOpen, setDialogOpen] = useState(false)
   const navigate = useNavigate()
+
+  // Tabs — count from live query
+  const tabs: Array<{ key: FlowTab; label: string; count?: number }> = [
+    { key: 'Yours',     label: 'Yours',                count: liveFlows.length },
+    { key: 'Suggested', label: 'Suggested by agents',  count: SUGGESTED_FLOWS.length },
+    { key: 'Templates', label: 'Templates' },
+    { key: 'Runs',      label: 'Runs' },
+  ]
 
   // The flow editor is a mode-neutral, full-screen route (no sidebar).
   function goToCanvas(flowId: string) {
@@ -586,13 +617,16 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         <SegmentedTabs
           label="Flows views"
           className="mt-[14px] mb-[20px]"
-          options={TABS.map(({ key, label, count }) => ({ id: key, label, count }))}
+          options={tabs.map(({ key, label, count }) => ({ id: key, label, count }))}
           value={activeTab}
           onChange={setActiveTab}
         />
 
         {activeTab === 'Yours'     && (
           <YoursTab
+            liveFlows={liveFlows}
+            loading={flowsLoading}
+            error={flowsError}
             onCardClick={goToCanvas}
             onNewClick={() => setDialogOpen(true)}
             onTemplateUse={(id) => goToDraft(id)}
@@ -602,14 +636,10 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         {activeTab === 'Suggested' && (
           <SuggestedTab
             onCreateFlow={(id) => goToDraft(id)}
-            onPreview={(id) => {
-              // Suggested flows don't have a canvas yet; navigate to draft preview or notify.
-              const existing = [...OFFICE_FLOWS].find((f) => f.id === id)
-              if (existing) {
-                void navigate({ to: '/flows/$flowId/canvas', params: { flowId: existing.id } })
-              } else {
-                notify('Preview')
-              }
+            onPreview={(_id) => {
+              // Suggested flows don't have a canvas yet — notify for now.
+              // TODO: navigate to draft preview once backend suggested-flows endpoint exists.
+              notify('Preview')
             }}
           />
         )}

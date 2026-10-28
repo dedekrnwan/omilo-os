@@ -22,7 +22,7 @@ import { createMockRepos } from '../../../adapters/mock/mockRepos'
 import { useUIStore } from '../../../app/store'
 import { ModeLayout } from '../../shell/ModeLayout'
 import { OfficeFlowsRoute, OfficeFlowCanvasRoute } from './index'
-import { OFFICE_FLOWS } from './data'
+import { flows as repoFlows } from '../../../adapters/mock/fixtures'
 
 beforeEach(() => useUIStore.setState({ mode: 'office' }))
 
@@ -66,8 +66,8 @@ describe('Flows navigation', () => {
 
     expect(await screen.findByRole('heading', { name: 'Flows' })).toBeInTheDocument()
 
-    const firstFlowId = OFFICE_FLOWS[0].id
-    const firstFlowTitle = OFFICE_FLOWS[0].title
+    const firstFlowId = repoFlows[0].id
+    const firstFlowTitle = repoFlows[0].title
     const buttons = await screen.findAllByRole('button', { name: new RegExp(firstFlowTitle, 'i') })
     await user.click(buttons[0])
 
@@ -81,7 +81,7 @@ describe('Flows navigation', () => {
   test('Back button on the canvas navigates to /flows', async () => {
     const user = userEvent.setup()
     const root = makeRoot()
-    const firstFlowId = OFFICE_FLOWS[0].id
+    const firstFlowId = repoFlows[0].id
     const router = createRouter({
       routeTree: makeTree(root),
       history: createMemoryHistory({ initialEntries: [`/flows/${firstFlowId}/canvas`] }),
