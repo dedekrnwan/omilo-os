@@ -54,9 +54,10 @@ export interface MeResult {
 /**
  * Public server configuration — fetched without auth on every app boot.
  *
- * Maps: signup_enabled → signupEnabled.
+ * Maps: signup_enabled → signupEnabled, google_enabled → googleEnabled.
  */
 export interface PublicConfig {
   mode: string
   signupEnabled: boolean
+  googleEnabled: boolean
 }

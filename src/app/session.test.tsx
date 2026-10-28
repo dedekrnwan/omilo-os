@@ -39,7 +39,7 @@ const DEMO_ME: MeResult = {
   companies: [{ id: 'cmp-http', name: 'HTTP Corp', currency: 'USD' }],
 }
 
-const DEMO_CONFIG: PublicConfig = { mode: 'cloud', signupEnabled: true }
+const DEMO_CONFIG: PublicConfig = { mode: 'cloud', signupEnabled: true, googleEnabled: false }
 
 // ── module reset helpers ──────────────────────────────────────────────────────
 

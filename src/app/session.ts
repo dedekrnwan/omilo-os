@@ -68,6 +68,8 @@ export interface SessionState {
   companies: Company[]
   /** Server-reported deployment mode ('local' | 'cloud' | …). */
   mode: string | null
+  /** Whether the backend is configured for Google OAuth. False in mock mode and unconfigured local. */
+  googleEnabled: boolean
 
   /**
    * Boot-time hydration. Resolves auth state:
@@ -94,6 +96,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   company: null,
   companies: [],
   mode: null,
+  googleEnabled: false,
 
   async hydrate() {
     const isMock = import.meta.env.VITE_USE_HTTP !== '1'
@@ -114,12 +117,12 @@ export const useSession = create<SessionState>()((set, get) => ({
     const adapter = getAdapter()
     const tokenStorage = getTokenStorage()
 
-    // 1. Fetch public config to get the deployment mode.
+    // 1. Fetch public config to get the deployment mode and feature flags.
     let serverMode = get().mode
     try {
       const cfg = await adapter.publicConfig()
       serverMode = cfg.mode
-      set({ mode: serverMode })
+      set({ mode: serverMode, googleEnabled: cfg.googleEnabled })
     } catch {
       // publicConfig failure is non-fatal — continue to token check.
     }

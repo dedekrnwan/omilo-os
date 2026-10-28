@@ -46,6 +46,7 @@ import {
   TwoStepVerificationPage,
   ChooseCompanyPage,
   AcceptInvitePage,
+  GoogleCallbackPage,
 } from '../features/auth'
 import { OnboardingRoute } from '../features/onboarding'
 import { OfficeAnalyticsRoute as AnalyticsRoute } from '../features/analytics'
@@ -381,6 +382,16 @@ const authInviteRoute = createRoute({
   component: AcceptInvitePage,
 })
 
+/**
+ * Google OAuth callback — /auth/callback
+ * Unguarded: receives #token= from the backend redirect and bootstraps the session.
+ */
+const authGoogleCallbackRoute = createRoute({
+  getParentRoute: () => authRoute,
+  path: 'callback',
+  component: GoogleCallbackPage,
+})
+
 /** Onboarding wizard — full-screen, mounted off the root (outside the Shell). */
 const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -432,6 +443,7 @@ const routeTree = rootRoute.addChildren([
     authTwoStepRoute,
     authChooseCompanyRoute,
     authInviteRoute,
+    authGoogleCallbackRoute,
   ]),
   onboardingRoute,
 ])

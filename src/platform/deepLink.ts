@@ -21,6 +21,12 @@ const HOST_ROUTES: Record<string, string> = {
 }
 
 /**
+ * Host → path prefix map for hosts that use the URL pathname to disambiguate sub-routes.
+ * e.g. omilo://auth/callback → host=auth, pathname=/callback → route=/auth/callback
+ */
+const HOST_USES_PATHNAME: Set<string> = new Set(['auth'])
+
+/**
  * Parse an `omilo://` deep link into a safe internal route + params.
  *
  * @example
@@ -57,7 +63,17 @@ export function parseDeepLink(url: string): ParsedDeepLink | null {
       }
     }
 
-    return { route, params }
+    // For hosts that use their pathname to distinguish sub-routes (e.g. auth/callback),
+    // append the first path segment to the base route.
+    let finalRoute = route
+    if (HOST_USES_PATHNAME.has(host)) {
+      const seg = parsed.pathname.replace(/^\//, '').split('/')[0]
+      if (seg) {
+        finalRoute = `${route}/${seg}`
+      }
+    }
+
+    return { route: finalRoute, params }
   } catch {
     return null
   }
