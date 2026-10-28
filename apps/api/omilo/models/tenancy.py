@@ -49,6 +49,11 @@ class Company(IdMixin, TimestampMixin, Base):
         nullable=False, server_default="false"
     )
 
+    # P13 onboarding gate — set when the company completes onboarding wizard
+    onboarded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
 
 class User(IdMixin, TimestampMixin, Base):
     """Human login — global, no company_id, no RLS."""
