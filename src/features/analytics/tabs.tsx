@@ -14,7 +14,8 @@ import {
   loopsTip,
   reliabilityStats,
 } from './data'
-import type { BarChart, HelperStat, Stat } from './data'
+import type { BarChart, Stat } from './data'
+import type { LocalHelperRow } from './AnalyticsPage'
 import {
   BarChartCard,
   BigButton,
@@ -44,9 +45,9 @@ export function OverviewTab({
   stats: Stat[]
   left: BarChart
   right: BarChart
-  rows: HelperStat[]
+  rows: LocalHelperRow[]
   helpersSub: string
-  onSetBudget?: (h: HelperStat) => void
+  onSetBudget?: (h: LocalHelperRow) => void
 }) {
   return (
     <>
@@ -76,9 +77,9 @@ function HelperCard({
   reached,
   onSetBudget,
 }: {
-  h: HelperStat
+  h: LocalHelperRow
   reached?: boolean
-  onSetBudget: (h: HelperStat) => void
+  onSetBudget: (h: LocalHelperRow) => void
 }) {
   const b = h.budget
   return (
@@ -138,13 +139,13 @@ function HelperCard({
 }
 
 export function HelpersTab({
-  list = helpers,
+  list = [],
   reachedId,
   onSetBudget,
 }: {
-  list?: HelperStat[]
+  list?: LocalHelperRow[]
   reachedId?: string
-  onSetBudget: (h: HelperStat) => void
+  onSetBudget: (h: LocalHelperRow) => void
 }) {
   const navigate = useNavigate()
   const rows = [list.slice(0, 3), list.slice(3, 5)]
