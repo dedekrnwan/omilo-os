@@ -22,7 +22,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -34,9 +33,6 @@ from omilo.control import (
     UsageEvent,
     UsageResult,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,9 @@ Returns 401 on:
 - Missing / malformed Authorization header
 - Invalid or expired JWT
 - User not found in the DB
+
+Returns 503 on:
+- Control plane misconfigured (e.g. OMILO_MODE=runtime before T3 is wired)
 """
 from __future__ import annotations
 
@@ -19,7 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError
 from sqlalchemy.orm import Session
 
-from omilo.control.factory import get_control_plane
+from omilo.control.factory import NotConfiguredError, get_control_plane
 from omilo.db import SessionLocal
 from omilo.models.tenancy import User
 
@@ -29,6 +32,11 @@ _401 = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Invalid or missing authentication credentials.",
     headers={"WWW-Authenticate": "Bearer"},
+)
+
+_503 = HTTPException(
+    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    detail="Authentication service is not configured. Contact your administrator.",
 )
 
 
@@ -43,6 +51,9 @@ def get_current_user(
 
     Behavior in cloud mode: IDENTICAL to before — LocalControlPlane delegates
     to auth.tokens.decode_token.
+
+    Raises 503 if the control plane is misconfigured (NotConfiguredError),
+    rather than allowing an unhandled 500 to propagate.
     """
     if credentials is None:
         raise _401
@@ -50,6 +61,8 @@ def get_current_user(
     try:
         cp = get_control_plane()
         identity = cp.verify_token(credentials.credentials)
+    except NotConfiguredError:
+        raise _503
     except PyJWTError:
         raise _401
 
