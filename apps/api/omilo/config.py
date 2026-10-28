@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "postgresql+psycopg://omilo:omilo@localhost:5432/omilo"
+    knowledge_database_url: str | None = None  # P11a: separate KB store; None → delegates to main DB
     jwt_secret: str = "change-me-in-production"
     jwt_access_ttl_s: int = 3600
     env: str = "development"

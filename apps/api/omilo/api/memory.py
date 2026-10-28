@@ -20,10 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from omilo.kb.db import get_knowledge_db
 from omilo.kb.index import index_source
 from omilo.models.memory import MemoryDoc
 from omilo.tenancy.context import RequestContext
-from omilo.tenancy.deps import get_context, get_tenant_db
+from omilo.tenancy.deps import get_context
 
 router = APIRouter(tags=["memory"])
 
@@ -59,7 +60,7 @@ class PatchMemoryBody(BaseModel):
 @router.get("/memory")
 def list_memory(
     helper_id: str | None = Query(default=None, description="Filter by helper_id"),
-    db: Session = Depends(get_tenant_db),
+    db: Session = Depends(get_knowledge_db),
 ) -> list[dict]:
     """Return all MemoryDocs for the active company, optionally filtered by helper_id.
 
@@ -80,7 +81,7 @@ def list_memory(
 def patch_memory(
     doc_id: str,
     body: PatchMemoryBody,
-    db: Session = Depends(get_tenant_db),
+    db: Session = Depends(get_knowledge_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict:
     """Operator edits a MemoryDoc and re-indexes it in the KB.

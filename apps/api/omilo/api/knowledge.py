@@ -15,10 +15,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from omilo.kb.db import get_knowledge_db
 from omilo.kb.index import index_source
 from omilo.kb.retrieve import recall
 from omilo.models.knowledge import KbChunk
-from omilo.tenancy.deps import get_tenant_db
 
 router = APIRouter(tags=["knowledge"])
 
@@ -34,7 +34,7 @@ class IndexSourceRequest(BaseModel):
 @router.post("/knowledge/sources")
 def post_knowledge_source(
     req: IndexSourceRequest,
-    db: Session = Depends(get_tenant_db),
+    db: Session = Depends(get_knowledge_db),
 ) -> dict:
     """Index a new (or updated) KB source.
 
@@ -57,7 +57,7 @@ def get_knowledge(
     q: str = Query(default="", description="Recall query"),
     kind: str | None = Query(default=None, description="Filter by KbKind"),
     k: int = Query(default=8, ge=1, le=50, description="Max results"),
-    db: Session = Depends(get_tenant_db),
+    db: Session = Depends(get_knowledge_db),
 ) -> list[dict]:
     """Hybrid KB recall: FTS + vector + RRF.
 
