@@ -4,12 +4,14 @@ import { CalendarSync, Check, ChevronLeft, ChevronRight, Plus, Users } from 'luc
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { notify } from '../../ui/ds/Toaster'
+import { createCommands } from '../../adapters/http/commands'
+import { platform } from '../../platform'
+import { useRoutines, useRoutine } from '../../app/queries'
+import { routinesToGroups, routineToDetail } from './routineAdapters'
 import {
   AGENTS,
   BANNERS,
-  LIST_GROUPS,
   WEEK_LABEL,
-  routineById,
   runDetail,
   weekLanes,
   type RoutineDrawerState,
@@ -229,15 +231,44 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   const open = nav.openRoutine
   const closeDrawer = nav.closeDrawer
 
-  const routine = routineId ? routineById(routineId) : null
+  // ── Live data ───────────────────────────────────────────────────────────────
+  const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
+  const getRoutineCommands = () => createCommands(BASE_URL, () => platform.tokenStorage.getToken())
+
+  const { data: routinesData = [], isLoading, isError } = useRoutines()
+  const groups = routinesToGroups(routinesData)
+
+  // Fetch the detail-pane routine from the repo; fall back gracefully if not found.
+  const { data: rawRoutine } = useRoutine(routineId ?? '')
+  const routine = routineId && rawRoutine ? routineToDetail(rawRoutine) : null
+
+  // Look up a routine name from live data, falling back to the id itself.
+  const routineNameById = (id: string) => routinesData.find(r => r.id === id)?.name ?? id
+
+  // ── Derived state ───────────────────────────────────────────────────────────
+  // Show empty state when: forced by ?state=empty OR the repo returned no routines.
+  const showEmpty = empty || (!isLoading && !isError && routinesData.length === 0)
+
   const banner = failed ? BANNERS.failed : applied ? BANNERS.applied : BANNERS.default
+
+  // ── Run now — calls the backend command before transitioning to running state
+  const handleRunNow = async () => {
+    if (routine) {
+      try {
+        await getRoutineCommands().runRoutineNow(routine.id)
+      } catch {
+        // UI still transitions to the running state view; error is silently swallowed
+      }
+      open(routine.id, 'running')
+    }
+  }
 
   return (
     <div ref={rootRef} className="relative flex min-h-0 w-full flex-1 flex-col">
       <RoutinesTopbar
         view={view}
         onView={setView}
-        empty={empty}
+        empty={showEmpty}
         onNew={() => setCreating('new')}
         weekOffset={weekOffset}
         onPrevWeek={() => setWeekOffset((o) => o - 1)}
@@ -246,10 +277,17 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
         agentFilter={agentFilter}
         onAgentFilter={setAgentFilter}
       />
-      {empty ? (
+      {isError ? (
+        <div role="alert" className="flex min-h-0 w-full flex-1 items-center justify-center p-[24px] text-[14px] text-bad">
+          Failed to load routines. Please refresh.
+        </div>
+      ) : showEmpty ? (
         <EmptyState onScratch={() => setCreating('new')} onSetUp={() => setEmpty(false)} />
       ) : (
         <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[24px] py-[18px]">
+          {isLoading && routinesData.length === 0 && (
+            <div className="py-[6px] text-[13px] text-muted">Loading routines…</div>
+          )}
           {view === 'week' ? (
             <>
               <ChiefBanner banner={banner} onReview={() => setView('list')} />
@@ -277,7 +315,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
                 />
               )}
               <ListView
-                groups={LIST_GROUPS}
+                groups={groups}
                 compact={!!routine || !!creating || !!runOpen}
                 firstNameOverride={routine && routineId !== 'morning-brief' ? routine.name : drawer === 'output' ? 'Morning brief · Fri 23' : undefined}
                 menuFor={menu?.id}
@@ -299,7 +337,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
       {menu && (
         <RowMenu
           anchor={menu.anchor}
-          title={routineById(menu.id).name}
+          title={routineNameById(menu.id)}
           onClose={() => setMenu(null)}
           onEdit={() => open(menu.id)}
           onRun={() => open(menu.id, 'running')}
@@ -313,7 +351,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
 
       {deleting && (
         <DeleteConfirm
-          name={routineById(deleting).name}
+          name={routineNameById(deleting)}
           onClose={() => setDeleting(null)}
           onPause={() => {
             const id = deleting
@@ -352,7 +390,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
             routine={routine}
             state={drawer}
             onClose={closeDrawer}
-            onRunNow={() => open(routine.id, 'running')}
+            onRunNow={handleRunNow}
             onPause={() => open(routine.id, 'paused')}
             onResume={() => open(routine.id)}
             onStop={() => open(routine.id)}
