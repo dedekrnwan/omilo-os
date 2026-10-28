@@ -5,7 +5,7 @@ import type { ControlPanelSection, DialogKind, PageVariant } from './types'
 
 const VALID_SECTIONS: ControlPanelSection[] = [
   'general', 'handbook', 'members', 'channels', 'safety',
-  'ai-engine', 'ai-accounts', 'knowledge', 'connectors', 'skills',
+  'ai-engine', 'ai-accounts', 'knowledge', 'connectors', 'mcp-tokens', 'skills',
   'usage', 'activity', 'data', 'account', 'notifications',
 ]
 

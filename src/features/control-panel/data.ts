@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   User,
   Users,
+  Fingerprint,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ControlPanelSection } from './types'
@@ -54,6 +55,7 @@ export const NAV_GROUPS: NavGroup[] = [
     group: 'TOOLS',
     items: [
       { id: 'connectors', label: 'Connectors', icon: Plug },
+      { id: 'mcp-tokens', label: 'MCP tokens', icon: Fingerprint },
       { id: 'skills', label: 'Skills', icon: BookOpenCheck },
     ],
   },

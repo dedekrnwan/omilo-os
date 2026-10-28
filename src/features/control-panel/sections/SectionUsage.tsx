@@ -1,19 +1,24 @@
-import { Download } from 'lucide-react'
-import { Button } from '../../../ui/ds/Button'
+/**
+ * SectionUsage — Usage & billing rewired to live useUsage() data.
+ * Shows balance, usedThisPeriod, byHelper breakdown, byDay bars.
+ * Empty state when usedThisPeriod === 0 and byHelper is empty.
+ * Error state when the query rejects.
+ */
 import { Breadcrumb, SectionPane } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
-
-const INVOICES = [
-  { date: 'Oct 1, 2026', desc: 'Team plan · paid via QRIS', amount: 'Rp 2.000.000', status: 'Paid' },
-  { date: 'Sep 1, 2026', desc: 'Team plan · paid via BCA virtual account', amount: 'Rp 2.000.000', status: 'Paid' },
-  { date: 'Aug 1, 2026', desc: 'Starter plan · paid via GoPay', amount: 'Rp 500.000', status: 'Paid' },
-]
+import { Button } from '../../../ui/ds/Button'
+import { useUsage } from '../../../app/queries'
 
 interface Props {
   onDialog: (d: DialogKind) => void
 }
 
 export function SectionUsage({ onDialog }: Props) {
+  const { data: usage, isError, isLoading } = useUsage()
+
+  const isEmpty = !isLoading && !isError && usage &&
+    usage.usedThisPeriod === 0 && usage.byHelper.length === 0
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -27,65 +32,116 @@ export function SectionUsage({ onDialog }: Props) {
 
       <SectionPane>
         <h1 className="mb-[4px] font-display text-[28px] font-semibold text-ink">Usage & billing</h1>
-        <p className="mb-[24px] text-[13px] text-muted">Your plan, seats and what AI cost this month.</p>
+        <p className="mb-[24px] text-[13px] text-muted">Your credit balance and what AI cost this period.</p>
 
-        {/* Plan + Payments */}
-        <div className="mb-[24px] grid grid-cols-2 gap-[12px]">
-          <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
-            <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Plan</p>
-            <p className="text-[20px] font-semibold text-ink">Team <span className="text-[14px] font-normal text-muted">Rp 2 jt / month</span></p>
-            <p className="mt-[4px] text-[12px] text-muted">5 of 5 seats used · 1 pending · renews Nov 1</p>
+        {/* Error state */}
+        {isError && (
+          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[12px]">
+            <p className="text-[13px] text-muted">Could not load usage data. Please try again.</p>
           </div>
-          <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
-            <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Payments</p>
-            <div className="flex items-center gap-[6px]">
-              <span className="text-[18px]">💳</span>
-              <span className="text-[15px] font-semibold text-ink">Mayar</span>
-            </div>
-            <p className="mt-[4px] text-[12px] text-muted">QRIS, virtual account, e-wallet or card · receipts to billing@saga.co.id</p>
-          </div>
-        </div>
+        )}
 
-        {/* AI usage */}
-        <p className="mb-[4px] text-[13px] font-medium text-ink">AI usage this month</p>
-        <p className="mb-[10px] text-[12px] text-muted">Billed at cost through your AI accounts — not part of the plan.</p>
-        <div className="mb-[8px] flex items-end gap-[6px]">
-          <span className="text-[32px] font-semibold text-ink">$182</span>
-          <span className="mb-[4px] text-[13px] text-muted">of $400 budget · 1,284 runs</span>
-        </div>
-        <div className="mb-[4px] h-[6px] overflow-hidden rounded-full bg-line-strong">
-          <div className="flex h-full">
-            <div className="h-full bg-[#6366F1]" style={{ width: '35%' }} />
-            <div className="h-full bg-[#0EA5E9]" style={{ width: '28%' }} />
-            <div className="h-full bg-[#14B8A6]" style={{ width: '15%' }} />
+        {/* Loading skeleton */}
+        {isLoading && (
+          <div className="animate-pulse space-y-[12px]">
+            <div className="h-[80px] rounded-lg bg-soft" />
+            <div className="h-[120px] rounded-lg bg-soft" />
           </div>
-        </div>
-        <div className="mb-[24px] flex gap-[12px] text-[11.5px] text-muted">
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#6366F1]" />Chat $64</span>
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#0EA5E9]" />Flows $91</span>
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#14B8A6]" />Knowledge $27</span>
-        </div>
+        )}
 
-        {/* Invoices */}
-        <p className="mb-[10px] text-[13px] font-semibold text-ink">Invoices</p>
-        <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
-          {INVOICES.map((inv, i) => (
-            <div
-              key={inv.date}
-              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < INVOICES.length - 1 ? 'border-b border-line' : ''}`}
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                <span className="text-[13px] font-medium text-ink">{inv.date}</span>
-                <span className="text-[12px] text-muted">{inv.desc}</span>
+        {/* Empty state */}
+        {isEmpty && (
+          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
+            <p className="text-[13px] text-muted">No usage this period yet.</p>
+          </div>
+        )}
+
+        {/* Live data */}
+        {usage && !isEmpty && !isError && (
+          <>
+            {/* Balance + used */}
+            <div className="mb-[24px] grid grid-cols-2 gap-[12px]">
+              <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
+                <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Balance</p>
+                <p className="text-[24px] font-semibold text-ink">{usage.balance.toLocaleString()}</p>
+                <p className="mt-[4px] text-[12px] text-muted">
+                  credits · {usage.included.toLocaleString()} included in plan
+                </p>
               </div>
-              <span className="text-[13px] font-medium text-ink">{inv.amount}</span>
-              <span className="rounded-pill bg-ok-tint px-[8px] py-[2px] text-[11px] font-medium text-ok">{inv.status}</span>
-              <button type="button" aria-label="Download invoice" className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
-                <Download size={14} aria-hidden />
-              </button>
+              <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
+                <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Used this period</p>
+                <p className="text-[24px] font-semibold text-ink">{usage.usedThisPeriod.toLocaleString()}</p>
+                <p className="mt-[4px] text-[12px] text-muted">credits consumed</p>
+              </div>
             </div>
-          ))}
-        </div>
+
+            {/* By-helper breakdown */}
+            {usage.byHelper.length > 0 && (
+              <>
+                <p className="mb-[10px] text-[13px] font-medium text-ink">By helper</p>
+                <div className="mb-[24px] overflow-hidden rounded-lg border border-line-strong bg-surface">
+                  {usage.byHelper.map((row, i) => {
+                    const total = usage.byHelper.reduce((sum, r) => sum + r.credits, 0)
+                    const pct = total > 0 ? Math.round((row.credits / total) * 100) : 0
+                    return (
+                      <div
+                        key={row.helperId}
+                        className={`flex items-center gap-[12px] px-[16px] py-[10px] ${i < usage.byHelper.length - 1 ? 'border-b border-line' : ''}`}
+                      >
+                        <span className="min-w-[120px] text-[13px] font-medium text-ink">{row.helperId}</span>
+                        <div className="flex flex-1 items-center gap-[8px]">
+                          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-line-strong">
+                            <div className="h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="shrink-0 text-[12px] text-muted">{row.credits.toLocaleString()} cr</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* By-day chart (simple bar visualization) */}
+            {usage.byDay.length > 0 && (
+              <>
+                <p className="mb-[10px] text-[13px] font-medium text-ink">Daily usage</p>
+                <div className="mb-[24px] flex items-end gap-[4px]" style={{ height: 60 }}>
+                  {usage.byDay.map((row) => {
+                    const max = Math.max(...usage.byDay.map((r) => r.credits), 1)
+                    const pct = Math.round((row.credits / max) * 100)
+                    return (
+                      <div key={row.day} className="flex flex-1 flex-col items-center gap-[2px]">
+                        <div className="w-full rounded-sm bg-ink" style={{ height: `${pct}%`, minHeight: 2 }} />
+                        <span className="text-[9px] text-faint">{row.day.slice(5)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* Pending topups */}
+            {usage.pendingTopups && usage.pendingTopups.count > 0 && (
+              <div className="mb-[16px] rounded-lg border border-warn-line bg-warn-tint px-[14px] py-[10px]">
+                <p className="text-[12.5px] text-warn">
+                  {usage.pendingTopups.count} pending top-up{usage.pendingTopups.count > 1 ? 's' : ''} · {usage.pendingTopups.totalCredits.toLocaleString()} credits
+                </p>
+              </div>
+            )}
+
+            {/* Last payment */}
+            {usage.lastPayment && (
+              <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[10px]">
+                <p className="text-[12px] font-medium text-ink">Last payment</p>
+                <p className="text-[12px] text-muted">
+                  {usage.lastPayment.kind} · {usage.lastPayment.status} ·{' '}
+                  {usage.lastPayment.amountIdr.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })}
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </SectionPane>
     </div>
   )

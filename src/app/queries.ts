@@ -105,3 +105,45 @@ export function useGoals(areaId: Id | null) {
     queryFn: () => (areaId ? repos.goals.listByChannel(areaId) : repos.goals.listAll()),
   })
 }
+
+// ── P5d control-panel queries ─────────────────────────────────────────────────
+
+export function useUsage() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['usage'],
+    queryFn: () => repos.usage.get(),
+  })
+}
+
+export function useConnectors() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['connectors'],
+    queryFn: () => repos.connectors.list(),
+  })
+}
+
+export function useMarketplace(params?: { category?: string; q?: string }) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['marketplace', params ?? {}],
+    queryFn: () => repos.marketplace.list(params),
+  })
+}
+
+export function useMcpTokens() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['mcpTokens'],
+    queryFn: () => repos.mcpTokens.list(),
+  })
+}
+
+export function useAiAccounts() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['aiAccounts'],
+    queryFn: () => repos.aiAccounts.list(),
+  })
+}

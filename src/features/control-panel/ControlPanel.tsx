@@ -10,6 +10,7 @@ import { SectionAiEngine } from './sections/SectionAiEngine'
 import { SectionAiAccounts } from './sections/SectionAiAccounts'
 import { SectionKnowledge } from './sections/SectionKnowledge'
 import { SectionConnectors } from './sections/SectionConnectors'
+import { SectionMcpTokens } from './sections/SectionMcpTokens'
 import { SectionSkills } from './sections/SectionSkills'
 import { SectionUsage } from './sections/SectionUsage'
 import { SectionActivity } from './sections/SectionActivity'
@@ -61,6 +62,7 @@ function SectionContent({ section, ...p }: SectionProps & { section: ControlPane
     case 'ai-accounts':   return <SectionAiAccounts onDialog={legacy} />
     case 'knowledge':     return <SectionKnowledge />
     case 'connectors':    return <SectionConnectors onDialog={legacy} />
+    case 'mcp-tokens':    return <SectionMcpTokens />
     case 'skills':        return <SectionSkills onDialog={legacy} />
     case 'usage':         return <SectionUsage onDialog={legacy} />
     case 'activity':      return <SectionActivity />
