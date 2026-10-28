@@ -57,8 +57,9 @@ export interface AIOption {
   icon: LucideIcon
   title: string
   desc: string
-  /** Detail line shown under the selected option: mono value + muted note + link. */
-  found?: { value: string; note: string; link: string }
+  /** Detail line shown under the selected option: mono value + muted note + link.
+   *  `action` says what the link does: open pricing, or pick a different account. */
+  found?: { value: string; note: string; link: string; action?: 'pricing' | 'use-another' }
   chips?: string[]
 }
 
@@ -67,8 +68,8 @@ export interface AIModeCopy {
   lead: string
   hint: string
   options: AIOption[]
-  footQ: string
-  footA: string
+  footQ?: string
+  footA?: string
   cta: string
   good: { icon: LucideIcon; title: string; desc: string }[]
 }
@@ -84,7 +85,7 @@ export const AI_MODES: Record<AIMode, AIModeCopy> = {
         icon: Laptop,
         title: 'Already signed in on this computer',
         desc: 'No key, no extra cost. Your login never leaves this machine.',
-        found: { value: 'Claude Code 2.1.169', note: '· signed in on this computer', link: 'Use another' },
+        found: { value: 'Claude Code 2.1.169', note: '· signed in on this computer', link: 'Use another', action: 'use-another' },
       },
       {
         id: 'subscription',
@@ -100,8 +101,6 @@ export const AI_MODES: Record<AIMode, AIModeCopy> = {
         chips: ['Anthropic', 'OpenAI', 'Google', 'More…'],
       },
     ],
-    footQ: 'No AI yet?',
-    footA: 'Try with fixed questions',
     cta: 'Connect and continue',
     good: [
       { icon: Users, title: 'It runs your whole team', desc: 'Every helper and every job uses the AI you connect here.' },
@@ -124,7 +123,7 @@ export const AI_MODES: Record<AIMode, AIModeCopy> = {
         icon: Gift,
         title: 'Start with 1,000 free credits',
         desc: 'About 2 weeks for a small team. No card needed.',
-        found: { value: '1 credit ≈ 1 helper step', note: '· usage shown live in Billing', link: 'See pricing' },
+        found: { value: '1 credit ≈ 1 helper step', note: '· usage shown live in Billing', link: 'See pricing', action: 'pricing' },
       },
       { id: 'pack', icon: Package, title: 'Buy a credit pack', desc: 'Top up anytime. Credits never expire.' },
       {

@@ -5,7 +5,9 @@ Tenant table (company_id + RLS): Member.
 """
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omilo.db import Base
@@ -57,6 +59,16 @@ class User(IdMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(nullable=False)
     # nullable: SSO users may not have a password hash
     password_hash: Mapped[str | None] = mapped_column(nullable=True)
+
+    # Email verification — null until the user confirms a 6-digit code.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Two-step verification — when true, password sign-in issues a challenge
+    # instead of a session, and a second-factor code is required.
+    two_factor_enabled: Mapped[bool] = mapped_column(
+        nullable=False, server_default="false"
+    )
 
 
 class Member(IdMixin, TimestampMixin, Base):

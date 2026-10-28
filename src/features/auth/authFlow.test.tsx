@@ -101,6 +101,16 @@ beforeEach(() => {
     me: vi.fn(),
     switchCompany: vi.fn(),
     publicConfig: vi.fn(),
+    requestEmailCode: vi.fn(),
+    verifyEmailCode: vi.fn(),
+    requestVerifyEmail: vi.fn(),
+    confirmEmail: vi.fn(),
+    forgotPassword: vi.fn(),
+    resetPassword: vi.fn(),
+    twoFactorVerify: vi.fn(),
+    getInvite: vi.fn(),
+    acceptInvite: vi.fn(),
+    createInvite: vi.fn(),
   }
 })
 

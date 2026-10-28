@@ -6,6 +6,7 @@ import { useAuth, isMockMode } from '../../app/useAuth'
 import { useSession } from '../../app/session'
 import { ApiError } from '../../adapters/http/auth'
 import { isTauri } from '../../platform'
+import { useAuthFlow } from './authFlow'
 import { AuthLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthLinks, AuthTitle, GoogleButton, OrDivider, PasswordStrength } from './AuthPrimitives'
 
@@ -15,6 +16,7 @@ export function SignUpPage() {
   const { adapter, applySignIn, mock } = useAuth()
   const navigate = useNavigate()
   const googleEnabled = useSession((s) => s.googleEnabled)
+  const setFlowEmail = useAuthFlow((s) => s.setEmail)
 
   function handleGoogleSignUp() {
     const client = isTauri() ? 'desktop' : 'web'
@@ -38,12 +40,29 @@ export function SignUpPage() {
     try {
       const result = await adapter.signUp(name, email, password)
       applySignIn(result)
-      await navigate({ to: '/onboarding' })
+      // Email a verification code and route through the confirm-email step.
+      setFlowEmail(email)
+      try {
+        await adapter.requestVerifyEmail(email)
+      } catch {
+        // Non-fatal — the user can resend from the confirm page.
+      }
+      await navigate({ to: '/auth/confirm-email' })
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 409)) {
+      if (err instanceof ApiError && err.status === 409 && err.message === 'email_unverified') {
+        // Existing but UNVERIFIED account (an earlier attempt that never
+        // verified) — don't dead-end; resend the code and route to verify.
+        setFlowEmail(email)
+        try {
+          await adapter.requestVerifyEmail(email)
+        } catch {
+          // Surfaced on the confirm page's resend if it fails.
+        }
+        await navigate({ to: '/auth/confirm-email' })
+      } else if (err instanceof ApiError && (err.status === 401 || err.status === 409)) {
         setError(
           err.status === 409
-            ? 'An account with this email already exists.'
+            ? 'An account with this email already exists. Try signing in.'
             : 'Sign-up failed. Please check your details.',
         )
       } else {
@@ -88,7 +107,7 @@ export function SignUpPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <PasswordStrength bars={3} hint="Strong · at least 10 characters, with a number" />
+        <PasswordStrength password={password} />
       </div>
       {error && (
         <p role="alert" className="w-full text-[12.5px] text-danger">

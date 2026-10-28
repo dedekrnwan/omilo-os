@@ -5,8 +5,9 @@
  * plus the repeated screen parts (title block, code row, notes, links).
  */
 
+import { useRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
-import { Check, ChevronDown, Eye } from 'lucide-react'
+import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
 
@@ -122,6 +123,7 @@ export function AuthField({
   children,
   ...inputProps
 }: AuthFieldProps) {
+  const [show, setShow] = useState(false)
   return (
     <div className="flex w-full flex-col gap-[6px]">
       {(label || right) && (
@@ -141,13 +143,24 @@ export function AuthField({
         {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
         <input
           id={id}
-          type={secret ? 'password' : 'text'}
+          type={secret && !show ? 'password' : 'text'}
           className={`min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint ${
-            secret ? 'tracking-[1px]' : ''
+            secret && !show ? 'tracking-[1px]' : ''
           }`}
           {...inputProps}
         />
-        {secret && <Eye size={16} aria-hidden className="shrink-0 text-muted" style={{ marginRight: 2 }} />}
+        {secret && (
+          <button
+            type="button"
+            onClick={() => setShow((v) => !v)}
+            aria-label={show ? 'Hide password' : 'Show password'}
+            aria-pressed={show}
+            className="shrink-0 text-muted hover:text-ink transition-colors"
+            style={{ marginRight: 2 }}
+          >
+            {show ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+          </button>
+        )}
         {children}
       </div>
       {help && <p className="text-[12.5px] text-muted">{help}</p>}
@@ -155,20 +168,49 @@ export function AuthField({
   )
 }
 
-export function AuthSelect({ label, icon: Icon, value }: { label: string; icon?: LucideIcon; value: string }) {
+export function AuthSelect({
+  label,
+  icon: Icon,
+  value,
+  defaultValue,
+  options,
+  onChange,
+  id,
+}: {
+  label: string
+  icon?: LucideIcon
+  /** Controlled value — pair with onChange. Omit and use defaultValue for uncontrolled. */
+  value?: string
+  defaultValue?: string
+  /** The choices. Falls back to the current value when omitted (single, read-only). */
+  options?: string[]
+  onChange?: (value: string) => void
+  id?: string
+}) {
+  const choices = options ?? [value ?? defaultValue ?? '']
+  const controlled = value !== undefined && onChange !== undefined
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-[6px]">
-      <span className="text-[13px] font-medium text-ink-2">{label}</span>
-      <button
-        type="button"
-        aria-haspopup="listbox"
-        aria-label={label}
-        className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong"
-      >
+      <label htmlFor={id} className="text-[13px] font-medium text-ink-2">
+        {label}
+      </label>
+      <div className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong focus-within:outline-wire-strong">
         {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
-        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{value}</span>
+        <select
+          id={id}
+          aria-label={label}
+          {...(controlled ? { value } : { defaultValue: defaultValue ?? value })}
+          onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+          className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent text-[14px] text-ink outline-none"
+        >
+          {choices.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
         <ChevronDown size={16} aria-hidden className="shrink-0 text-muted" />
-      </button>
+      </div>
     </div>
   )
 }
@@ -257,6 +299,78 @@ export function CodeRow({ digits, caret }: { digits: string; caret: number }) {
   )
 }
 
+/** Editable verification-code entry: an invisible input over the pen boxes. */
+export function CodeInput({
+  length = 6,
+  value,
+  onChange,
+  onComplete,
+  autoFocus = true,
+}: {
+  length?: number
+  value: string
+  onChange: (v: string) => void
+  onComplete?: (v: string) => void
+  autoFocus?: boolean
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function handle(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.value.replace(/\D/g, '').slice(0, length)
+    onChange(next)
+    if (next.length === length) onComplete?.(next)
+  }
+
+  const box = (i: number) => {
+    const active = i === value.length
+    return (
+      <div
+        key={i}
+        className="flex h-[54px] min-w-0 flex-1 items-center justify-center rounded-[10px]"
+        style={{
+          boxShadow: active
+            ? 'inset 0 0 0 1.5px #171717, 0 0 4px #0C0A0914'
+            : 'inset 0 0 0 1px var(--color-line-strong)',
+        }}
+      >
+        {active ? (
+          <span className="h-[22px] w-[1.5px] animate-pulse bg-ink" />
+        ) : (
+          <span className="font-mono text-[22px] font-medium text-ink">{value[i] ?? ''}</span>
+        )}
+      </div>
+    )
+  }
+
+  const idx = Array.from({ length }, (_, i) => i)
+  return (
+    <div className="relative w-full">
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={handle}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        aria-label="Verification code"
+        autoFocus={autoFocus}
+        maxLength={length}
+        className="absolute inset-0 z-10 h-full w-full cursor-pointer tracking-[0] opacity-0"
+      />
+      <div className="flex w-full gap-[8px]" aria-hidden>
+        {length === 6 ? (
+          <>
+            {idx.slice(0, 3).map(box)}
+            <span className="h-[54px] w-[6px] shrink-0" />
+            {idx.slice(3).map(box)}
+          </>
+        ) : (
+          idx.map(box)
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Soft note (icon + text on $soft) ─────────────────────────────────────────
 export function AuthNote({ icon, children, lead = false }: { icon: ReactNode; children: ReactNode; lead?: boolean }) {
   return (
@@ -305,19 +419,66 @@ export function AuthIconLink({ icon: Icon, size = 14, children, href = '#', to }
 }
 
 // ── Strength meter (4 bars) ───────────────────────────────────────────────────
-export function PasswordStrength({ bars = 3, hint, hintWeight = 'normal' }: { bars?: number; hint: string; hintWeight?: 'normal' | 'medium' }) {
+// Requirement: at least 10 characters, with a number. When a `password` is
+// passed the meter computes live strength (bar count + colour + hint). Without
+// it, falls back to the static `bars`/`hint` (back-compat for existing callers).
+type StrengthTone = 'muted' | 'bad' | 'warn' | 'ok'
+
+export function scorePassword(pw: string): { fill: number; text: string; tone: StrengthTone } {
+  if (pw.length === 0) {
+    return { fill: 0, text: 'At least 10 characters, with a number', tone: 'muted' }
+  }
+  const hasLen = pw.length >= 10
+  const hasNum = /\d/.test(pw)
+  const hasVariety = /[A-Z]/.test(pw) || /[^A-Za-z0-9]/.test(pw)
+  const score = [pw.length >= 6, hasLen, hasNum, hasVariety].filter(Boolean).length
+
+  if (!(hasLen && hasNum)) {
+    // Requirement not met yet → amber/red, tell them what's missing.
+    const missing = !hasLen ? 'Use at least 10 characters' : 'Add a number'
+    return { fill: Math.min(Math.max(score, 1), 2), text: missing, tone: score <= 1 ? 'bad' : 'warn' }
+  }
+  // Requirement met.
+  return score >= 4
+    ? { fill: 4, text: 'Very strong', tone: 'ok' }
+    : { fill: 3, text: 'Strong · at least 10 characters, with a number', tone: 'ok' }
+}
+
+export function PasswordStrength({
+  password,
+  bars = 3,
+  hint,
+  hintWeight = 'normal',
+}: {
+  /** When provided, the meter computes strength from this value. */
+  password?: string
+  bars?: number
+  hint?: string
+  hintWeight?: 'normal' | 'medium'
+}) {
+  const live = password !== undefined
+  const s = live ? scorePassword(password ?? '') : null
+  const fill = s ? s.fill : bars
+  const text = s ? s.text : (hint ?? '')
+  const tone: StrengthTone = s ? s.tone : 'ok'
+
+  const barColor =
+    tone === 'bad' ? '#EF4444' : tone === 'warn' ? '#F59E0B' : tone === 'ok' ? '#22C55E' : '#E7E5E4'
+  const textClass =
+    tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-[#B45309]' : tone === 'muted' ? 'text-muted' : 'text-ok'
+
   return (
     <div className="flex w-full flex-col gap-[6px]">
       <div className="flex w-full gap-[4px]">
         {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
-            className="h-[4px] flex-1 rounded-pill"
-            style={{ background: i < bars ? '#22C55E' : '#E7E5E4' }}
+            className="h-[4px] flex-1 rounded-pill transition-colors"
+            style={{ background: i < fill ? barColor : '#E7E5E4' }}
           />
         ))}
       </div>
-      <p className={`text-[12px] text-ok ${hintWeight === 'medium' ? 'font-medium' : ''}`}>{hint}</p>
+      <p className={`text-[12px] ${textClass} ${hintWeight === 'medium' ? 'font-medium' : ''}`}>{text}</p>
     </div>
   )
 }

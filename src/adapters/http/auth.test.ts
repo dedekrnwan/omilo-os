@@ -6,8 +6,15 @@
  */
 
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { createAuthAdapter, ApiError } from './auth'
-import type { AuthTokenStorage } from './auth'
+import { createAuthAdapter, ApiError, isTwoFactorChallenge } from './auth'
+import type { AuthTokenStorage, TwoFactorChallenge } from './auth'
+import type { SignInResult } from '../../core/domain/session'
+
+/** Assert a sign-in outcome is a full session (not a 2FA challenge) and narrow it. */
+function expectSession(r: SignInResult | TwoFactorChallenge): SignInResult {
+  if (isTwoFactorChallenge(r)) throw new Error('expected a session, got a 2FA challenge')
+  return r
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -54,7 +61,7 @@ describe('signIn', () => {
     const ts = makeTokenStorage()
     const adapter = createAuthAdapter(BASE, ts)
 
-    const result = await adapter.signIn('a@b.com', 'secret')
+    const result = expectSession(await adapter.signIn('a@b.com', 'secret'))
 
     // Verify the correct URL was called
     expect(stub).toHaveBeenCalledOnce()
@@ -93,7 +100,7 @@ describe('signIn', () => {
     vi.stubGlobal('fetch', stub)
 
     const adapter = createAuthAdapter(BASE, makeTokenStorage())
-    const result = await adapter.signIn('b@c.com', 'pass')
+    const result = expectSession(await adapter.signIn('b@c.com', 'pass'))
     expect(result.companies).toHaveLength(0)
     expect(result.company).toBeNull()
   })

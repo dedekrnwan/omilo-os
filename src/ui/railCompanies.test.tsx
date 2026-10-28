@@ -43,6 +43,16 @@ function resetFakeAdapter() {
     me: vi.fn(),
     switchCompany: vi.fn().mockResolvedValue(SIGN_IN_RESULT_B),
     publicConfig: vi.fn(),
+    requestEmailCode: vi.fn(),
+    verifyEmailCode: vi.fn(),
+    requestVerifyEmail: vi.fn(),
+    confirmEmail: vi.fn(),
+    forgotPassword: vi.fn(),
+    resetPassword: vi.fn(),
+    twoFactorVerify: vi.fn(),
+    getInvite: vi.fn(),
+    acceptInvite: vi.fn(),
+    createInvite: vi.fn(),
   } as AuthAdapter
 }
 

@@ -2,8 +2,10 @@
 import { ArrowLeft, ExternalLink, MailCheck } from 'lucide-react'
 import { AuthLayout } from './AuthLayout'
 import { AuthButton, AuthIconLink, AuthTitle } from './AuthPrimitives'
+import { useAuthFlow } from './authFlow'
 
 export function ResetLinkSentPage() {
+  const email = useAuthFlow((s) => s.email)
   return (
     <AuthLayout>
       <AuthTitle
@@ -11,15 +13,15 @@ export function ResetLinkSentPage() {
         iconBg="#E0E7FF"
         iconColor="#4338CA"
         title="Check your email"
-        sub="If dede@saga.co.id has an account, a reset link is on its way. It works for 30 minutes."
+        sub={
+          email
+            ? `If ${email} has an account, a reset link is on its way. It works for 30 minutes.`
+            : 'If that email has an account, a reset link is on its way. It works for 30 minutes.'
+        }
       />
       <AuthButton variant="secondary" icon={ExternalLink} onClick={() => window.open('https://mail.google.com', '_blank')}>
         Open Gmail
       </AuthButton>
-      <div className="flex w-full justify-center gap-[6px] text-[13px]">
-        <span className="text-muted">Didn’t get it?</span>
-        <span className="font-medium text-faint">Resend in 0:58</span>
-      </div>
       <AuthIconLink icon={ArrowLeft} to="/auth/sign-in">
         Back to sign in
       </AuthIconLink>

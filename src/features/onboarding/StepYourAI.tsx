@@ -1,5 +1,6 @@
 /** Onboarding 2 · Your AI — Self-host (pen InMeZ) / Cloud (pen CbbZR). */
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { AI_MODES } from './data'
@@ -7,7 +8,18 @@ import type { AIMode, AIOption } from './data'
 import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, WizardCard } from './parts'
 import { capture } from '../../telemetry'
 
-function Option({ option, selected, onSelect }: { option: AIOption; selected: boolean; onSelect: () => void }) {
+function Option({
+  option,
+  selected,
+  onSelect,
+  onUseAnother,
+}: {
+  option: AIOption
+  selected: boolean
+  onSelect: () => void
+  onUseAnother: () => void
+}) {
+  const navigate = useNavigate()
   return (
     <div
       role="radio"
@@ -35,7 +47,15 @@ function Option({ option, selected, onSelect }: { option: AIOption; selected: bo
           <span className="font-mono text-[12px] text-ink-2">{option.found.value}</span>
           <span className="text-[12px] text-muted">{option.found.note}</span>
           <span className="h-px flex-1" />
-          <button type="button" onClick={(e) => e.stopPropagation()} className="text-[12px] font-medium text-link hover:underline">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (option.found?.action === 'pricing') navigate({ to: '/auth/onboarding/plan' })
+              else if (option.found?.action === 'use-another') onUseAnother()
+            }}
+            className="text-[12px] font-medium text-link hover:underline"
+          >
             {option.found.link}
           </button>
         </div>
@@ -113,6 +133,11 @@ export function StepYourAI({
               option={o}
               selected={picked[mode] === o.id}
               onSelect={() => setPicked((p) => ({ ...p, [mode]: o.id }))}
+              onUseAnother={() => {
+                // "Use another" → switch off the detected account to another option.
+                const other = copy.options.find((opt) => opt.id !== picked[mode])
+                if (other) setPicked((p) => ({ ...p, [mode]: other.id }))
+              }}
             />
           ))}
         </div>
@@ -122,14 +147,16 @@ export function StepYourAI({
             Back
           </QuietButton>
           <span className="h-px flex-1" />
-          <span className="text-[13px] text-muted">{copy.footQ}</span>
-          <button
-            type="button"
-            onClick={() => mode === 'cloud' && setMode('self-host')}
-            className="text-[13px] font-medium text-link hover:underline"
-          >
-            {copy.footA}
-          </button>
+          {copy.footQ && <span className="text-[13px] text-muted">{copy.footQ}</span>}
+          {copy.footA && (
+            <button
+              type="button"
+              onClick={() => mode === 'cloud' && setMode('self-host')}
+              className="text-[13px] font-medium text-link hover:underline"
+            >
+              {copy.footA}
+            </button>
+          )}
           <PrimaryButton icon={ArrowRight} onClick={onNext}>
             {copy.cta}
           </PrimaryButton>

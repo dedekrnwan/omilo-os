@@ -109,6 +109,26 @@ class Settings(BaseSettings):
     # e.g. http://localhost:5173 (dev) or https://app.omilo.app (prod).
     frontend_base: str = "http://localhost:5173"
 
+    # ---------------------------------------------------------------------------
+    # SMTP / transactional email (control-plane feature).
+    #
+    # Used by the auth flows that must email the user: email verification,
+    # magic-code sign-in, password reset, team invites, two-step codes.
+    # Provider-agnostic — point these at any SMTP relay (Resend, SendGrid,
+    # Mailgun, Gmail, Postmark, SES, …).  When smtp_host is unset the sender
+    # raises a clear 503 instead of silently dropping mail.
+    # ---------------------------------------------------------------------------
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    # The From: address.  Falls back to smtp_user when unset.
+    smtp_from: str | None = None
+    smtp_from_name: str = "Omilo"
+    # STARTTLS (587) by default; set false + port 465 for implicit TLS.
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

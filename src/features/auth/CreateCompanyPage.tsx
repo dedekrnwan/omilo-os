@@ -1,11 +1,24 @@
 /** Create company — /auth/onboarding/company (pen OsWDG). */
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Globe, Users } from 'lucide-react'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
 
+const TEAM_SIZES = ['Just me', '2–10 people', '11–50 people', '51–200 people', '200+ people']
+const TIME_ZONES = [
+  'Asia/Jakarta',
+  'Asia/Makassar',
+  'Asia/Jayapura',
+  'Asia/Singapore',
+  'Asia/Kuala_Lumpur',
+  'Asia/Bangkok',
+  'UTC',
+]
+
 export function CreateCompanyPage() {
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const [teamSize, setTeamSize] = useState('2–10 people')
+  const [timeZone, setTimeZone] = useState('Asia/Jakarta')
   return (
     <OnboardingLayout step={2}>
       <div className="flex w-[440px] flex-col gap-[20px]">
@@ -48,8 +61,22 @@ export function CreateCompanyPage() {
             help="One line. Chief uses it in every intro."
           />
           <div className="flex w-full gap-[12px]">
-            <AuthSelect label="Team size" icon={Users} value="2–10 people" />
-            <AuthSelect label="Time zone" icon={Globe} value="Asia/Jakarta" />
+            <AuthSelect
+              id="team-size"
+              label="Team size"
+              icon={Users}
+              options={TEAM_SIZES}
+              value={teamSize}
+              onChange={setTeamSize}
+            />
+            <AuthSelect
+              id="time-zone"
+              label="Time zone"
+              icon={Globe}
+              options={TIME_ZONES}
+              value={timeZone}
+              onChange={setTimeZone}
+            />
           </div>
         </div>
         <AuthButton to="/auth/onboarding/plan">Continue</AuthButton>

@@ -11,9 +11,9 @@ export function PasswordUpdatedPage() {
         iconBg="#DCFCE7"
         iconColor="var(--color-ok)"
         title="Password updated"
-        sub="You’re signed in. We signed you out on 2 other devices, just in case."
+        sub="Your password has been changed and you’re signed in on this device."
       />
-      <AuthButton to="/chat">Continue to Sahabat Warga</AuthButton>
+      <AuthButton to="/chat">Continue to Omilo</AuthButton>
       <AuthNote icon={<ShieldAlert size={13} aria-hidden className="shrink-0 text-muted" />} lead>
         Didn’t change this yourself? Secure your account and tell an admin.
       </AuthNote>

@@ -1,8 +1,11 @@
 /** Payment — /auth/onboarding/payment (pen rK2oH). */
+import { useState } from 'react'
 import { CreditCard, Globe, Lock, ShieldCheck } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
+
+const COUNTRIES = ['Indonesia', 'Singapore', 'Malaysia', 'Philippines', 'Thailand', 'Vietnam', 'United States']
 
 const LINES: { k: string; v: string; tone?: 'ok'; strong?: boolean; rule?: boolean }[] = [
   { k: 'Team plan, 12 × $49', v: '$588' },
@@ -13,6 +16,7 @@ const LINES: { k: string; v: string; tone?: 'ok'; strong?: boolean; rule?: boole
 ]
 
 export function PaymentPage() {
+  const [country, setCountry] = useState('Indonesia')
   return (
     <OnboardingLayout step={4}>
       <div className="flex w-[920px] gap-[24px]">
@@ -31,7 +35,7 @@ export function PaymentPage() {
             </div>
             <AuthField id="name-on-card" label="Name on card" defaultValue="Dede Kurniawan" />
             <div className="flex w-full gap-[12px]">
-              <AuthSelect label="Country" icon={Globe} value="Indonesia" />
+              <AuthSelect id="country" label="Country" icon={Globe} options={COUNTRIES} value={country} onChange={setCountry} />
               <AuthField id="tax-id" label="Tax ID (optional)" defaultValue="NPWP" />
             </div>
             <p className="flex items-center gap-[6px] text-[12px] text-muted">

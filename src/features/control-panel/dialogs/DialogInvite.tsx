@@ -1,5 +1,9 @@
+import { useState } from 'react'
 import { Armchair, CircleCheck, Copy, Hash, Link, Send, Shield, UserPlus, X } from 'lucide-react'
 import { DialogCard, Field, PenButton, Radio } from '../ControlPanelShared'
+
+const ROLE_OPTIONS = ['Member', 'Admin', 'Viewer']
+const CHANNEL_OPTIONS = ['Engineering, General', 'General', 'Engineering', 'All channels']
 
 function EmailChip({ email }: { email: string }) {
   return (
@@ -29,6 +33,8 @@ function Option({ on, title, sub, right }: { on?: boolean; title: string; sub: s
 
 /** pen aNKDy · Members · Invite — and iKSyB · Seats full (`seatsFull`). */
 export function DialogInvite({ onClose, seatsFull }: { onClose: () => void; seatsFull?: boolean }) {
+  const [role, setRole] = useState('Member')
+  const [channels, setChannels] = useState('Engineering, General')
   return (
     <DialogCard
       width={520}
@@ -57,8 +63,8 @@ export function DialogInvite({ onClose, seatsFull }: { onClose: () => void; seat
         </div>
       </div>
       <div className="flex w-full gap-[12px]">
-        <Field className="min-w-0 flex-1" width="auto" label="Role" icon={Shield} value="Member" fs={13} select />
-        <Field className="min-w-0 flex-1" width="auto" label="Channels" icon={Hash} value="Engineering, General" fs={13} select />
+        <Field className="min-w-0 flex-1" width="auto" label="Role" icon={Shield} value={role} onChange={setRole} options={ROLE_OPTIONS} fs={13} select />
+        <Field className="min-w-0 flex-1" width="auto" label="Channels" icon={Hash} value={channels} onChange={setChannels} options={CHANNEL_OPTIONS} fs={13} select />
       </div>
 
       {seatsFull ? (
