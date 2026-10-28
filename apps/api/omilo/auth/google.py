@@ -99,6 +99,7 @@ def _make_state(client: str, settings) -> str:
     """Create a signed state JWT encoding {client, nonce, exp}."""
     now = datetime.now(tz=timezone.utc)
     payload = {
+        "typ": "oauth_state",  # domain-separate from access tokens (same jwt_secret in HS256)
         "client": client,
         "nonce": uuid.uuid4().hex,
         "iat": now,
@@ -113,6 +114,9 @@ def _decode_state(state: str, settings) -> dict:
         claims = jwt.decode(state, settings.jwt_secret, algorithms=["HS256"])
     except PyJWTError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid or expired state: {exc}") from exc
+    # Reject anything that isn't an oauth_state token (e.g. a replayed access token).
+    if claims.get("typ") != "oauth_state":
+        raise HTTPException(status_code=400, detail="Invalid state.")
     return claims
 
 
@@ -238,19 +242,31 @@ async def google_callback(
 
     redirect_uri = f"{settings.google_redirect_base}/v1/auth/google/callback"
 
-    # Exchange code for tokens.
-    token_data = await _exchange_code(code, redirect_uri)
+    # Exchange code for tokens (Google HTTP errors → 502, never a 500 leak).
+    try:
+        token_data = await _exchange_code(code, redirect_uri)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Google authentication failed.") from exc
     access_token = token_data.get("access_token")
     if not access_token:
         raise HTTPException(status_code=502, detail="Google did not return an access token.")
 
     # Fetch user profile.
-    userinfo = await _fetch_userinfo(access_token)
+    try:
+        userinfo = await _fetch_userinfo(access_token)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Google authentication failed.") from exc
     email: str = userinfo.get("email", "")
     name: str = userinfo.get("name", email)
 
     if not email:
         raise HTTPException(status_code=502, detail="Google did not return an email address.")
+
+    # SECURITY: only treat the email as an identity key if Google says it's verified.
+    # Otherwise an unverified Google email matching an existing email+password
+    # account would hijack it (account-takeover). Google returns a JSON boolean.
+    if userinfo.get("email_verified") is not True:
+        raise HTTPException(status_code=403, detail="Your Google email is not verified.")
 
     # Upsert user record.
     user, company, role = _upsert_user(email, name)

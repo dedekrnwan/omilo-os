@@ -51,13 +51,22 @@ def _unconfigured_settings() -> Settings:
     return Settings()
 
 
-def _fake_exchange(email: str = "newuser@example.com", name: str = "New User"):
+def _fake_exchange(
+    email: str = "newuser@example.com",
+    name: str = "New User",
+    email_verified: bool = True,
+):
     """Return a monkeypatch pair: fake _exchange_code + fake _fetch_userinfo."""
     async def _exchange_code(code: str, redirect_uri: str) -> dict:
         return {"access_token": "fake-access-token", "token_type": "Bearer"}
 
     async def _fetch_userinfo(access_token: str) -> dict:
-        return {"email": email, "name": name, "sub": f"google|{email}"}
+        return {
+            "email": email,
+            "name": name,
+            "email_verified": email_verified,
+            "sub": f"google|{email}",
+        }
 
     return _exchange_code, _fetch_userinfo
 
@@ -268,3 +277,63 @@ async def test_f_desktop_client_redirects_to_deep_link(async_client):
     assert location.startswith("omilo://auth/callback?token="), (
         f"Desktop redirect should be omilo://, got: {location}"
     )
+
+
+# ---------------------------------------------------------------------------
+# G. /callback with an UNVERIFIED Google email → 403 (no account takeover)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_g_callback_unverified_email_rejected(async_client):
+    """A Google email that is not verified must NOT be used to sign in/link."""
+    settings = _configured_settings()
+    email = f"oauth_unverified_{uuid.uuid4().hex[:8]}@example.com"
+    fake_exchange, fake_userinfo = _fake_exchange(email=email, name="Spoofer", email_verified=False)
+
+    with patch("omilo.auth.google.get_settings", return_value=settings):
+        start_resp = await async_client.get(
+            "/v1/auth/google/start?client=web", follow_redirects=False
+        )
+    state = parse_qs(urlparse(start_resp.headers["location"]).query)["state"][0]
+
+    with patch("omilo.auth.google.get_settings", return_value=settings), \
+         patch("omilo.auth.google._exchange_code", fake_exchange), \
+         patch("omilo.auth.google._fetch_userinfo", fake_userinfo):
+        cb_resp = await async_client.get(
+            f"/v1/auth/google/callback?code=fake-code&state={state}",
+            follow_redirects=False,
+        )
+
+    assert cb_resp.status_code == 403, cb_resp.text
+
+
+# ---------------------------------------------------------------------------
+# H. Google HTTP error during exchange → 502 (never a 500 internal leak)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_h_google_http_error_returns_502(async_client):
+    """If Google's token endpoint errors, the callback returns 502, not 500."""
+    import httpx
+
+    settings = _configured_settings()
+
+    async def _boom_exchange(code: str, redirect_uri: str) -> dict:
+        raise httpx.HTTPError("google token endpoint failed")
+
+    with patch("omilo.auth.google.get_settings", return_value=settings):
+        start_resp = await async_client.get(
+            "/v1/auth/google/start?client=web", follow_redirects=False
+        )
+    state = parse_qs(urlparse(start_resp.headers["location"]).query)["state"][0]
+
+    with patch("omilo.auth.google.get_settings", return_value=settings), \
+         patch("omilo.auth.google._exchange_code", _boom_exchange):
+        cb_resp = await async_client.get(
+            f"/v1/auth/google/callback?code=fake-code&state={state}",
+            follow_redirects=False,
+        )
+
+    assert cb_resp.status_code == 502, cb_resp.text
