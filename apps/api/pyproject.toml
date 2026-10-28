@@ -35,6 +35,7 @@ dev = [
 omilo-api = "omilo.main:run"
 omilo-migrate = "omilo.cli:migrate"
 omilo-seed = "omilo.cli:seed"
+omilo-register = "omilo.control.register:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["omilo"]

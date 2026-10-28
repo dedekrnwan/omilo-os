@@ -331,6 +331,8 @@ def check_can_start_job(
 
     # For cloud mode (all engines) and runtime mode (credit-consuming engines):
     # check balance via the control plane.
+    # Both LocalControlPlane and RemoteControlPlane accept **kw (including db=);
+    # FakeControlPlane in tests must also accept **kw — see ControlPlane Protocol.
     try:
         balance_state = cp.check_balance(company.id, db=db)
         current_balance = balance_state.balance
@@ -343,17 +345,6 @@ def check_can_start_job(
         # but if it does, fall back to local balance
         current_balance = balance(db, company)
         overage_policy = getattr(company, "overage_policy", "soft") or "soft"
-    except TypeError:
-        # Fallback: call without db kwarg (for test doubles that don't accept it)
-        try:
-            balance_state = cp.check_balance(company.id)
-            current_balance = balance_state.balance
-            overage_policy = balance_state.overage_policy or "soft"
-        except ControlPlaneUnreachable:
-            if not is_cloud_mode and is_credit_consuming:
-                return False, "paused_offline"
-            current_balance = balance(db, company)
-            overage_policy = getattr(company, "overage_policy", "soft") or "soft"
 
     if current_balance <= 0 and overage_policy == "hard":
         _create_credit_alert(db, company, helper)
