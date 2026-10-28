@@ -102,3 +102,36 @@ Additive — today's single backend is already "cloud mode" with an in-process c
 - The runtime is not a billing authority and never writes the credit ledger.
 - No peer-to-peer or runtime→runtime trust; all trust flows through the cloud control plane.
 - Offline pooled inference is intentionally **not** supported (credits must be authoritative); BYO/local covers the offline use case.
+
+---
+
+## 10. Addendum (2026-10-28): THREE install modes — local / hybrid / cloud
+
+The original design had two modes (cloud, runtime). Product decision: support a **fully-local, cloud-free** install too, chosen by the user **at install time**. There are now three modes via `OMILO_MODE`:
+
+| Mode | ControlPlane | Identity + Company | AI usage | Cloud contact | Monetization |
+|---|---|---|---|---|---|
+| **`local`** (NEW) | `LocalControlPlane`, single-tenant | **local-authoritative** — owns User/Member/Company, issues its own JWTs | **BYO-key / local-model only (0-credit)** — no metering, no gate; pooled cloud inference is NOT available | **none** (air-gap-capable) | free ELv2 self-host |
+| **`hybrid`** (= the former `runtime`) | `RemoteControlPlane` | cloud-authoritative (federated; local Company shadow + claims-only auth) | pooled cloud credits (cloud-metered) + BYO free | identity/billing federate; data stays local | subscription + credits |
+| **`cloud`** | `LocalControlPlane`, multi-tenant | cloud-authoritative | pooled credits | vendor-hosted | subscription + credits |
+
+**Why this fits ELv2 + the margin model:** the free self-host (`local`) runs on the user's own compute (BYO), never contacts the cloud, and cannot use pooled credits — so there is nothing to forge and nothing to meter. Monetization is entirely the cloud/hybrid path (managed identity + pooled credits), which the ELv2 "no hosted service" clause protects. `local` IS essentially today's `LocalControlPlane` (cloud mode's in-process auth+billing) deployed single-tenant with pooled inference disabled — the `ControlPlane` port already supports it; the new work is the mode selection + the BYO-only billing posture + no `/control` dependency.
+
+### 10.1 `local` mode specifics
+- Factory: `OMILO_MODE=local` → `LocalControlPlane` (same authoritative in-process auth/billing as cloud, single tenant). Requires NO `OMILO_CONTROL_PLANE_URL` / `OMILO_INSTALL_TOKEN`. Does not need the RS256 federation signer (HS256 is fine — no remote runtime verifies its tokens). `/control/*` is not required (local owns everything in-process); mounting it is harmless but unnecessary.
+- Auth/Company are LOCAL and authoritative (normal sign-up/sign-in against the local backend; the local DB owns User/Member/Company) — NOT claims-only, NOT shadowed. RLS still FORCE-applies (single tenant).
+- **Billing posture — free BYO-only:** the gate treats every job as 0-credit (no balance check, no metering, no `CreditLedger` writes); pooled/cloud-metered engines (`litellm` pool) are disabled/unconfigured — users run BYO keys or local models. No subscription, no credit ledger enforcement. (A user's OWN litellm key, if they configure one, is their cost, not ours — still 0 of our credits.)
+- Zero cloud contact: no register, no heartbeat, no usage report, no JWKS fetch. Air-gap-capable.
+
+### 10.2 Install-time choice
+Onboarding asks the operator: **"Connect to Omilo Cloud (managed identity + pooled AI credits) or run fully local (your data + identity stay on this machine, bring your own AI)?"** → sets `OMILO_MODE` (local vs hybrid) in the runtime config (the cloud/multi-tenant deployment is the vendor's, not an end-user install choice).
+
+### 10.3 Upgrade path: `local` → `hybrid` (one-way, supported)
+A free local-only install can later connect to the cloud and become hybrid, keeping its local workspace data:
+1. The user signs up / signs in to the cloud → obtains a cloud-issued identity (cloud `company_id`) + registers the install → gets an install token.
+2. A migration **re-keys** the local workspace data from the self-issued local `company_id` to the cloud `company_id` (all tenant tables are `company_id`-scoped, so this is a scoped `UPDATE`/re-tenant within the local DB), then switches `OMILO_MODE=local` → `hybrid` (now `RemoteControlPlane`: verifies cloud JWTs, local Company shadow, cloud-metered pooled credits become available).
+3. The local User/Member tables are retired (identity is now cloud); the workspace data persists under the cloud company.
+One-way only (hybrid→local is not supported). This is a strong funnel: try free local, upgrade for cloud credits. The re-key migration + the switch are the only net-new work beyond `local` mode itself; it can land as a distinct task after the base `local` mode.
+
+### 10.4 Packaging impact (revises P5e)
+The runtime compose/npx gain a mode selector: `OMILO_MODE=local` (default for a privacy-first self-host, no cloud env needed) vs `OMILO_MODE=hybrid` (set `OMILO_CONTROL_PLANE_URL` + register). `npx omilo up` should default to `local` and offer `omilo connect` to upgrade to hybrid. The cloud compose is unchanged (vendor-only).

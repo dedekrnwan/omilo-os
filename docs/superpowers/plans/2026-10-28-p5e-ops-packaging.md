@@ -1,106 +1,89 @@
-# P5e — Ops & Packaging (make + CI + self-host + npx + dmg) Implementation Plan
+# P5e — Ops & Packaging (make + CI + two-deployable self-host + npx + dmg) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give omilo-v2 the same install/dev/CI ergonomics as omilo-os, adapted to v2's architecture (frontend at repo root, backend `apps/api`, thin Tauri client `src-tauri`): a root `Makefile`, a self-host Docker stack (API `Dockerfile` + prod `docker-compose.yml`), GitHub Actions CI, an `npx` launcher that runs the stack, and a `make desktop` thin-client dmg target.
+**Goal:** Give omilo-v2 the install/dev/CI ergonomics of omilo-os, adapted to its **control-plane / runtime split** (P6). One API image runs as either a **cloud control plane** (`OMILO_MODE=cloud`) or a **local runtime** (`OMILO_MODE=runtime` + `OMILO_CONTROL_PLANE_URL`). Deliver: a root `Makefile`, one API `Dockerfile` + two compose files (cloud + runtime), GitHub Actions CI, an `npx` launcher that runs the **local runtime** against the cloud, and a `make desktop` thin-client dmg.
 
-**Architecture:** v2 is cloud-client-first — the desktop is a thin shell, not an embedded backend (docs/technical/10). So self-host = a Docker stack (pgvector + redis + api + nginx-served web), the `npx` launcher just drives that compose stack (a small Node CLI; no Go binary), and the `.dmg` is the Tauri shell pointing at a configurable backend URL (unsigned in CI until Apple certs are added). Nothing changes in app code; this is additive ops.
+**Architecture:** Per P6 (docs/technical/12), self-host = **two deployables from one image**: (1) the vendor-hosted **control plane** (auth + billing + `/control/*`), (2) the user's **local runtime** (private workspace + execution, federating identity/billing to the control plane). `npx omilo up` + the runtime compose run mode=runtime pointing at `OMILO_CONTROL_PLANE_URL` (default the hosted cloud); the user registers an install token (`omilo-register`). The `.dmg` is the thin Tauri client (P5c) pointing at a local runtime. Nothing in app code changes; this is additive ops.
 
-**Tech Stack:** GNU Make, Docker + Compose v2, GitHub Actions, Node (launcher), Tauri CLI. Backend = Python package (`apps/api`, console scripts `omilo-api`/`omilo-migrate`/`omilo-seed`); frontend = Vite at repo root (`npm run build` → `dist/`); desktop = `src-tauri`. Builds on merged P0–P5c (`main @ cbe6ea2`).
+**Tech Stack:** GNU Make, Docker + Compose v2, GitHub Actions, Node (launcher), Tauri CLI. Backend = one Python package image (console scripts `omilo-api`/`omilo-migrate`/`omilo-seed`/`omilo-register`); frontend = Vite at repo root (`npm run build` → `dist/`); desktop = `src-tauri`. Builds on merged P0–P6 (`main @ 95b9fa5`).
 
-**Spec:** omilo-os is the reference (`../omilo-os/Makefile`, `.github/workflows/{ci,desktop,release}.yml`, `Dockerfile`, `packaging/npm`), adapted to v2's layout + cloud-client desktop. docs/technical/10-tauri-desktop.md + 10a-desktop-release.md.
+**Spec:** omilo-os ops (`../omilo-os/{Makefile,.github/workflows,Dockerfile,packaging/npm}`) as ergonomic reference; docs/technical/12-control-plane-runtime-split.md §7 (deployment shapes) is the authority for the two-deployable model; 10/10a for desktop.
 
 ## Global Constraints
 
-- Builds on merged P0–P5c; branch off fresh `main` (`cbe6ea2`). This is ops/config only — **do NOT touch app source** under `src/`, `apps/api/omilo/`, or `src-tauri/src/` except where a start-script/env wiring is unavoidable (note it). The existing suites stay green (backend 619, frontend 395, cargo check 0).
-- **Verify everything that can be verified in this env (docker daemon is UP):** `docker compose -f <file> config` must succeed (valid compose); the API image must `docker build` successfully; every CI workflow + compose + Makefile must be valid YAML/syntax (parse-check). `make -n <target>` must expand sanely. The npx launcher must run (`node bin/omilo.js --help` / a dry path) without throwing.
-- **No secrets committed:** CI uses `${{ secrets.* }}` / `${{ github.token }}` only; the prod compose + Dockerfile read secrets from env (`OMILO_JWT_SECRET`, DB creds) with a documented `.env` — never a hardcoded JWT/key. The API image must NOT run as root (add a non-root user). `.dockerignore` excludes `node_modules`, `.venv`, `target`, `dist`, `.git`.
-- **RLS prod note:** the app enforces tenant isolation by `SET LOCAL ROLE omilo_app` per transaction (P0 design), so the API may connect as the `omilo` DB role; this already works. The compose must run `omilo-migrate` (which creates the `omilo_app` role + FORCE RLS) before the API serves. Document that for a hardened deploy the API's own DB login should be a non-superuser member of `omilo_app`.
-- **Layout facts (differ from omilo-os):** frontend is at the REPO ROOT (not `apps/web`); build = `npm run build` → `dist/`; backend dev already has `apps/api/Makefile` (reuse/My root Makefile delegates to it); dev infra = `deploy/docker-compose.dev.yml` (postgres+redis). Frontend lint = `oxlint` (`npm run lint`); backend test = `pytest` (check `apps/api/pyproject.toml` for a linter like ruff; run it only if configured).
-- Pin action versions (checkout@v4, setup-python@v5, setup-node@v4) and the pgvector service image `pgvector/pgvector:pg16` in CI, mirroring omilo-os.
+- Builds on merged P0–P6; branch off fresh `main` (`95b9fa5`). Ops/config only — **do NOT touch app source** under `src/`, `apps/api/omilo/`, `src-tauri/src/` (a start-script/env wiring is the only exception, noted). Suites stay green (backend 719, frontend 395, cargo 0).
+- **Verify what's verifiable (docker daemon is UP):** `docker compose -f <file> config` succeeds for BOTH compose files; the API image `docker build`s; CI/compose/Makefile/launcher are valid (parse/`make -n`/`node`-run). No task claims a signed dmg or a pushed image.
+- **One image, two modes — never two images for the app.** The cloud compose sets `OMILO_MODE=cloud`; the runtime compose sets `OMILO_MODE=runtime` + `OMILO_CONTROL_PLANE_URL` + `OMILO_INSTALL_TOKEN`. Same `Dockerfile.api`.
+- **Data residency is the point of the runtime:** the runtime compose's Postgres holds only workspace data; it does NOT run `/control` and never owns the credit ledger. The cloud compose is the authoritative one (runs migrations that seed plans, exposes `/control/*` + the Doit webhook).
+- **No secrets committed:** CI uses `${{ secrets.* }}`/`${{ github.token }}`; compose/Dockerfile read env (`OMILO_JWT_PRIVATE_KEY` for the cloud RS256 signer, `OMILO_INSTALL_TOKEN` for the runtime, DB creds) from documented `.env` files — never hardcoded. API image runs **non-root**; `.dockerignore` excludes node_modules/.venv/target/dist/.git.
+- Pin action versions (checkout@v4, setup-python@v5, setup-node@v4) + `pgvector/pgvector:pg16` in CI/compose.
 
 ## Review Focus
 
-- **Compose brings the stack up coherently:** `docker compose -f deploy/docker-compose.yml config` is valid; services have healthchecks + depends_on (api waits for a healthy postgres+redis); migrations run before the API serves; the web service proxies `/v1`, `/me`, `/auth`, and the `/v1/ws` WebSocket upgrade to the API. (T1)
-- **API image is secure + builds:** `docker build` succeeds; runs as a non-root user; no secret baked in; only the backend context is copied (`.dockerignore`). (T1)
-- **CI gates the real things:** the workflow actually runs backend `pytest` (against a pgvector+redis service), frontend `vitest` + `tsc -b` + `oxlint`, and `cargo check` + `cargo fmt --check` — a green CI must mean all four suites pass. No step silently skips. (T2)
-- **npx launcher is safe + honest:** `npx <pkg> up/down/logs` shells `docker compose` with the shipped compose file; if Docker is absent it prints a clear message and exits non-zero (doesn't hang or pretend); `--help` lists commands. No `curl | sh` of an unverified binary. (T3)
-- **No secret or fake cert committed** anywhere in the branch (CI, compose, Dockerfile, launcher, desktop workflow). (all)
+- **Both compose files are coherent + mode-correct:** `config` valid for both; the **cloud** compose runs mode=cloud, migrations-before-serve, exposes `/control` + Doit webhook, web proxies to it; the **runtime** compose runs mode=runtime with `OMILO_CONTROL_PLANE_URL` + `OMILO_INSTALL_TOKEN`, does NOT expose `/control`, and its web proxies `/v1`,`/auth`,`/me`,`/v1/ws` to the local runtime. Healthchecks + depends_on on both. (T1)
+- **API image secure + builds:** `docker build` succeeds; non-root user; no secret baked; only backend context copied. (T1)
+- **CI gates the real things:** backend `pytest` (pgvector+redis service), frontend `vitest`+`tsc -b`+`oxlint`, `cargo check`+`cargo fmt --check` — a green CI means all four pass; no silent skip. (T3)
+- **npx launcher is runtime-correct + safe:** `npx omilo up` runs the **runtime** stack against `OMILO_CONTROL_PLANE_URL` (default cloud), guides the `omilo-register` step for the install token; Docker-absent → clear message + non-zero exit (no hang); no `curl|sh` of an unverified binary. (T4)
+- **No secret/fake cert committed** anywhere on the branch. (all)
 
 ---
 
-### Task 1: Root Makefile + self-host Docker stack (API Dockerfile + prod compose + nginx web)
+### Task 1: API `Dockerfile` + web image + TWO compose files (cloud + runtime) + root `Makefile`
 
 **Files:**
-- Create: `Makefile` (root), `deploy/Dockerfile.api`, `deploy/docker-compose.yml` (prod/self-host), `deploy/web/nginx.conf`, `deploy/web/Dockerfile.web`, `.dockerignore`, `deploy/.env.example`
-- (Reference, don't edit: `apps/api/Makefile`, `deploy/docker-compose.dev.yml`, `apps/api/pyproject.toml`.)
+- Create: `deploy/Dockerfile.api`, `deploy/web/Dockerfile.web`, `deploy/web/nginx.conf`, `deploy/docker-compose.cloud.yml`, `deploy/docker-compose.runtime.yml`, `.dockerignore`, `deploy/.env.cloud.example`, `deploy/.env.runtime.example`, `Makefile` (root)
+- (Reference: `apps/api/Makefile`, `deploy/docker-compose.dev.yml`, `apps/api/pyproject.toml` console scripts, `../omilo-os/{Dockerfile,Makefile}`.)
 
 **Interfaces:**
-- Root `Makefile` targets (delegate to the right dir; frontend at root, backend apps/api): `dev` (up dev db + run api + run web — or document the two-terminal flow), `db` / `db-stop` / `db-logs` (compose.dev up/stop/logs), `api` (apps/api venv + omilo-api), `web` (npm ci + npm run dev or build), `test` (backend pytest + frontend vitest + tsc + oxlint + cargo check), `build` (frontend `npm run build`), `image` (docker build the api + web images), `up` / `down` / `logs` (the self-host prod compose), `desktop` (deferred to T4 — a placeholder that T4 fills), `migrate` / `seed` (delegate to apps/api). Use a `PYTHON`/venv detection like omilo-os. `.PHONY` all.
-- `deploy/Dockerfile.api`: python:3.12-slim base; install the `apps/api` package (`pip install .` from a copied `apps/api`); create + switch to a non-root user; entrypoint runs `omilo-migrate` then `omilo-api` (a small start script or `sh -c`); expose the API port. No secrets.
-- `deploy/web/Dockerfile.web`: a build stage (node:22, `npm ci && npm run build` → `dist/`) + an `nginx:alpine` stage serving `dist/` with `deploy/web/nginx.conf`. The web build sets `VITE_USE_HTTP=1` and a same-origin API base so the SPA talks to the API via nginx.
-- `deploy/web/nginx.conf`: serve the SPA (try_files → index.html for client routing) + `proxy_pass` `/v1`, `/me`, `/auth` to `http://api:<port>`; proxy the `/v1/ws` path with `Upgrade`/`Connection` headers for WebSocket.
-- `deploy/docker-compose.yml` (prod/self-host): `postgres` (pgvector/pgvector:pg16, healthcheck, volume), `redis` (7, healthcheck), `api` (build Dockerfile.api, depends_on healthy postgres+redis, env from `.env`: OMILO_DATABASE_URL/OMILO_REDIS_URL/OMILO_JWT_SECRET), `web` (build Dockerfile.web, depends_on api, publish port 8080→80). `deploy/.env.example` documents the env (JWT_SECRET ≥32 bytes, DB creds).
+- `deploy/Dockerfile.api`: python:3.12-slim; `pip install .` from copied `apps/api`; non-root user; entrypoint = a start script that runs `omilo-migrate` then `omilo-api` (both modes migrate their own DB — cloud seeds plans, runtime creates its workspace schema). Expose the API port. One image for both modes.
+- `deploy/web/Dockerfile.web`: node:22 build stage (`npm ci && npm run build` → `dist/`, with `VITE_USE_HTTP=1` + same-origin API base) + `nginx:alpine` serving `dist/` via `nginx.conf`.
+- `deploy/web/nginx.conf`: SPA `try_files … /index.html`; `proxy_pass` `/v1`,`/me`,`/auth` → `http://api:<port>`; WebSocket upgrade headers for `/v1/ws`.
+- `deploy/docker-compose.cloud.yml` (the control plane we host): postgres(pgvector,healthcheck,volume) + redis(7,healthcheck) + api(build Dockerfile.api, `OMILO_MODE=cloud`, env: DB/REDIS/`OMILO_JWT_PRIVATE_KEY`/Doit keys, depends_on healthy) + web(publish 8080→80). This image runs `/control/*` + the Doit webhook.
+- `deploy/docker-compose.runtime.yml` (what a self-host user runs): postgres(pgvector) + redis + api(same image, `OMILO_MODE=runtime`, env: `OMILO_CONTROL_PLANE_URL`, `OMILO_INSTALL_TOKEN`, DB/REDIS, depends_on healthy) + web(publish e.g. 7700→80). No `/control`. Its Postgres holds only workspace data.
+- `deploy/.env.cloud.example` / `.env.runtime.example`: document each mode's env (cloud: RS256 private key ≥, DB creds, Doit; runtime: control-plane URL default `https://api.omilo.app`, install token from `omilo-register`, DB creds). No real secrets.
+- Root `Makefile` (frontend at root, backend apps/api): `dev` (dev db + api + web, delegate to apps/api), `db`/`db-stop`/`db-logs` (compose.dev), `test` (backend pytest + frontend vitest+tsc+oxlint + cargo check), `build` (npm run build), `image` (docker build api+web), `up-cloud`/`up-runtime`/`down`/`logs` (the two compose files), `register` (runtime install registration: `omilo-register`), `desktop` (placeholder filled in T4), `migrate`/`seed` (delegate). `.PHONY`, venv/PYTHON detection.
 
-- [ ] **Step 1: Write** the Makefile, Dockerfiles, nginx.conf, prod compose, .dockerignore, .env.example.
-- [ ] **Step 2: Validate** — `docker compose -f deploy/docker-compose.yml config >/dev/null` exits 0 (valid); `docker build -f deploy/Dockerfile.api -t omilo-api:test apps/api` (or correct context) succeeds; `make -n test` / `make -n up` expand sanely; confirm the api image runs as non-root (`USER` in the Dockerfile).
+- [ ] **Step 1: Write** the Dockerfiles, nginx.conf, BOTH compose files, .dockerignore, .env examples, root Makefile.
+- [ ] **Step 2: Validate** — `docker compose -f deploy/docker-compose.cloud.yml config >/dev/null` AND `… runtime.yml config >/dev/null` both exit 0; `docker build -f deploy/Dockerfile.api -t omilo-api:test apps/api` (correct context) succeeds; confirm non-root `USER`; `make -n test`/`-n up-cloud`/`-n up-runtime` expand sanely; the runtime compose has NO `/control` env/exposure and sets OMILO_MODE=runtime + control-plane URL; the cloud compose sets OMILO_MODE=cloud.
 - [ ] **Step 3: Commit.**
 
 ### Task 2: GitHub Actions CI (backend + frontend + rust + image)
 
-**Files:**
-- Create: `.github/workflows/ci.yml`
-- (Reference: `../omilo-os/.github/workflows/ci.yml`.)
+**Files:** Create `.github/workflows/ci.yml` (reference `../omilo-os/.github/workflows/ci.yml`).
 
-**Interfaces:**
-- `ci.yml` on `[push, pull_request]`, jobs:
-  - **api**: ubuntu, `defaults.run.working-directory: apps/api`; services `postgres` (pgvector/pgvector:pg16, env omilo_test/omilo/omilo, healthcheck) + `redis` (7-alpine, healthcheck); steps: checkout@v4, setup-python@v5 (3.12), `pip install -e ".[dev]"`, run the backend linter IF configured (ruff — check pyproject; else skip with a note), `alembic upgrade head` if the tests need it (check how the suite sets up the DB — the tests may create their own), `pytest -q`.
-  - **web**: ubuntu; checkout@v4, setup-node@v4 (22, npm cache), `npm ci`, `npm run lint` (oxlint), `npx tsc -b`, `npm run test` (vitest), `npm run build`.
-  - **rust**: ubuntu; checkout@v4, setup rust (dtolnay/rust-toolchain stable or actions), `cd src-tauri`, install the Linux Tauri system deps (libgtk/webkit2gtk — mirror omilo-os desktop.yml if it lists them; a Tauri cargo check on Linux needs them) OR scope the rust job to `cargo fmt --check` + `cargo check` with the apt deps; if the webkit deps make it flaky, at minimum `cargo fmt --check` + `cargo clippy`/`check` with the deps installed. Pin the approach that reliably passes.
-  - **image** (needs [api, web], `if: github.ref == 'refs/heads/main'`, permissions packages: write): login ghcr, `docker/build-push-action@v6` building the api image (and optionally web) → `ghcr.io/${{ github.repository_owner }}/omilo-v2-api:latest`. Use `${{ secrets.GITHUB_TOKEN }}`.
-- No secrets hardcoded; pin action majors.
+**Interfaces:** `ci.yml` on `[push, pull_request]`, jobs: **api** (ubuntu, working-dir apps/api, services pgvector/pgvector:pg16 + redis:7-alpine with healthchecks, setup-python@v5 3.12, `pip install -e ".[dev]"`, the backend linter if configured, `pytest -q`); **web** (setup-node@v4 22 + npm cache, `npm ci`, `npm run lint` [oxlint], `npx tsc -b`, `npm run test`, `npm run build`); **rust** (rust toolchain + the Linux Tauri system deps [libgtk/webkit2gtk — mirror omilo-os desktop.yml if present], `cd src-tauri`, `cargo fmt --check` + `cargo check` — pin whatever reliably passes on Linux); **image** (needs [api, web], `if: github.ref=='refs/heads/main'`, packages:write, login ghcr, build-push `ghcr.io/${{ github.repository_owner }}/omilo-v2-api:latest` from Dockerfile.api, `${{ secrets.GITHUB_TOKEN }}`). Pin action majors, no hardcoded secrets.
 
 - [ ] **Step 1: Write** `.github/workflows/ci.yml`.
-- [ ] **Step 2: Validate** — the YAML parses (`node -e "require('js-yaml')"` isn't available; use `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"` → exits 0). Confirm each job's steps run the REAL gate (pytest / vitest+tsc+oxlint / cargo check) and the service images/healthchecks are correct. Cross-check against omilo-os ci.yml structure.
+- [ ] **Step 2: Validate** — `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` exits 0; each job runs the REAL gate (pytest / vitest+tsc+oxlint / cargo check); services/healthchecks correct; cross-check vs omilo-os ci.yml.
 - [ ] **Step 3: Commit.**
 
-### Task 3: npx launcher (self-host stack runner)
+### Task 3: npx launcher (runs the local runtime against the cloud)
 
-**Files:**
-- Create: `packaging/npm/package.json`, `packaging/npm/bin/omilo.js`, `packaging/npm/README.md`
-- (Reference: `../omilo-os/packaging/npm/` — but v2's launcher drives `docker compose`, it does NOT download a binary.)
+**Files:** Create `packaging/npm/package.json`, `packaging/npm/bin/omilo.js`, `packaging/npm/README.md` (reference `../omilo-os/packaging/npm` — but v2 drives `docker compose`, no downloaded binary).
 
-**Interfaces:**
-- `packaging/npm/package.json`: name (e.g. `@omilo/v2` or `omilo-v2` — a scoped placeholder is fine, note it), `bin: { "omilo": "bin/omilo.js" }`, `files: ["bin/omilo.js", "deploy"]` or bundle the compose file, engines node >=18, license ELv2/SEE-LICENSE.
-- `bin/omilo.js` (Node, no deps): a small CLI — `omilo up` (`docker compose -f <shipped compose> up -d --wait` then print the URL), `omilo down`, `omilo logs`, `omilo --help`/`-h` (usage), unknown/absent command → help + exit non-zero. **Docker-absence handling:** if `docker`/`docker compose` is missing, print a clear install message and exit 1 (never hang). The compose file is shipped inside the package (copy `deploy/docker-compose.yml` into the package, or resolve it relative to the launcher) so `npx` works standalone. No `curl|sh`, no unverified downloads.
-- `README.md`: `npx omilo up` quickstart + prerequisites (Docker) + where it serves.
+**Interfaces:** `package.json` (`bin: {omilo: "bin/omilo.js"}`, ships `deploy/docker-compose.runtime.yml`, engines node>=18, SEE-LICENSE). `bin/omilo.js` (Node, no deps): `omilo up` → `docker compose -f <bundled runtime compose> up -d --wait` then print the local URL + a reminder to `omilo register` if no install token; `omilo register` → runs the registration (guide the user through sign-in → install token, or shell `omilo-register` in the api container); `omilo down`/`omilo logs`; `omilo --help`. The runtime points at `OMILO_CONTROL_PLANE_URL` (default the hosted cloud, overridable). **Docker-absent → clear message + exit 1** (never hang). No `curl|sh`/unverified downloads. README: `npx omilo up` quickstart + prerequisites + that identity/billing go to the cloud while data stays local.
 
 - [ ] **Step 1: Write** the launcher + package.json + README.
-- [ ] **Step 2: Validate** — `node packaging/npm/bin/omilo.js --help` prints usage + exits 0; an unknown command exits non-zero with help; simulate docker-absent (e.g. temporarily PATH-shadow or assert the code path) → clear message + exit 1 (do NOT actually `up` the stack in the gate). `node -c packaging/npm/bin/omilo.js` (syntax) passes.
+- [ ] **Step 2: Validate** — `node packaging/npm/bin/omilo.js --help` prints usage, exits 0; unknown command → non-zero + help; docker-absent path → clear message + exit 1 (assert the branch, don't actually `up`); `node -c bin/omilo.js` syntax passes.
 - [ ] **Step 3: Commit.**
 
-### Task 4: `make desktop` thin-client dmg target + CI desktop job + install docs
+### Task 4: `make desktop` thin-client dmg + CI desktop job + install docs (both modes)
 
-**Files:**
-- Modify: `Makefile` (fill the `desktop` target), `.github/workflows/` add `desktop.yml`
-- Create/Modify: `README.md` (root) — an "Install & run" section (npx / self-host compose / `make dev` / desktop)
-- (Reference: `../omilo-os/.github/workflows/desktop.yml` for the macOS Tauri build job + system deps.)
+**Files:** Modify `Makefile` (desktop target), add `.github/workflows/desktop.yml`, create/modify root `README.md` (Install & run) (reference `../omilo-os/.github/workflows/desktop.yml`).
 
-**Interfaces:**
-- `Makefile` `desktop` target: `npm ci && npm run build && npx tauri build --bundles app,dmg` (the THIN client — no embedded runtime); echo the resulting `src-tauri/target/release/bundle/dmg/*.dmg` path; note that signing needs `APPLE_SIGNING_IDENTITY` (see 10a-desktop-release.md) and is ad-hoc/unsigned by default. A `desktop-dev` target = `npx tauri dev`.
-- `.github/workflows/desktop.yml`: on tag/manual (`workflow_dispatch` + `push: tags: ['v*']`), a `macos-latest` job: checkout, setup-node, rust toolchain, `npm ci`, `npm run build`, `npx tauri build` (unsigned — NO cert secrets required to build the artifact; document that notarized release needs the secrets from 10a), upload the `.dmg`/`.app` as a build artifact (actions/upload-artifact@v4). Keep it building-only (no publish) unless certs are present.
-- `README.md` "Install & run": (1) `npx omilo up` (Docker self-host), (2) `make dev` (local dev), (3) `docker compose -f deploy/docker-compose.yml up` (manual), (4) desktop `make desktop`. Link docs/technical/10a for signing.
+**Interfaces:** `Makefile` `desktop` = `npm ci && npm run build && npx tauri build --bundles app,dmg` (thin client; echo the dmg path; signing via `APPLE_SIGNING_IDENTITY`, ad-hoc by default — see 10a); `desktop-dev` = `npx tauri dev`. `.github/workflows/desktop.yml` (on tag/`workflow_dispatch`, macos-latest): checkout, setup-node, rust, `npm ci && npm run build && npx tauri build` (unsigned — no cert secrets needed to build), upload the `.dmg`/`.app` artifact; building-only (no publish without certs). `README.md` "Install & run": (1) `npx omilo up` (local runtime → cloud), (2) `make dev` (local dev), (3) cloud deploy `docker compose -f deploy/docker-compose.cloud.yml up` (vendor/control plane), (4) `docker compose -f deploy/docker-compose.runtime.yml up` (self-host runtime), (5) desktop `make desktop` — explain the control-plane/runtime split + that identity/billing are cloud. Link 10a (signing) + docs/technical/12.
 
 - [ ] **Step 1: Write** the desktop Makefile targets, desktop.yml, README Install section.
-- [ ] **Step 2: Validate** — `make -n desktop` expands sanely; `desktop.yml` parses (python yaml.safe_load exit 0); README renders (no broken fences). Do NOT run a full `tauri build` here (slow + needs the full toolchain); the gate is config validity + the earlier P5c `cargo check` still 0.
+- [ ] **Step 2: Validate** — `make -n desktop` expands sanely; `desktop.yml` parses (python yaml.safe_load exit 0); README renders (no broken fences); the P6/P5c suites still green (quick: don't full-build the dmg).
 - [ ] **Step 3: Commit.**
 
 ---
 
 ## Self-Review notes (author)
 
-- **Coverage:** make (T1 root Makefile), CI (T2 ci.yml + T4 desktop.yml), self-host image/compose (T1), npx (T3), dmg (T4) — the full omilo-os ops surface, adapted: frontend-at-root, thin-client desktop (no embedded runtime), compose-driven npx (no Go binary).
-- **Verification is real:** docker is UP, so T1 genuinely `docker build`s the image + `compose config`-validates; CI/compose/desktop YAML are parse-checked; the launcher runs. No task claims a signed release or a pushed image.
-- **Security:** no secrets/certs committed (CI uses `secrets.*`, compose/Dockerfile read env, `.env.example` only); API image non-root + `.dockerignore`; launcher never downloads/execs an unverified binary; RLS prod caveat documented.
-- **Divergence from omilo-os is deliberate and noted** at each task (root frontend, thin desktop, compose-launcher) so a reader isn't surprised the two repos' ops differ.
-- **Proportion:** 4 config-centric tasks; reviews check correctness + the security-focus items (no secrets, non-root image, WS proxy, CI runs the real gates), not business logic.
+- **Coverage:** make (T1 root Makefile), CI (T3? no — T2 ci.yml + T4 desktop.yml), self-host two-deployable (T1 cloud+runtime compose, one image), npx runtime-launcher (T3), dmg (T4) — the full omilo-os ops surface, adapted to the P6 split.
+- **The split is honored:** two compose files from ONE image (cloud vs runtime via env); npx runs the runtime against the cloud; identity/billing cloud, data local — matches docs/technical/12 §7. A reader won't be surprised the self-host user runs runtime mode, not a self-contained backend.
+- **Verification is real:** docker UP → T1 builds the image + `config`-validates BOTH compose files; CI/desktop YAML parse-checked; launcher runs. No signed release / pushed image claimed.
+- **Security:** no secrets/certs committed (CI `secrets.*`, env-driven compose, `.env.*.example` only); non-root API image + `.dockerignore`; launcher never downloads/execs an unverified binary; runtime compose never exposes `/control` or owns the ledger.
+- **Proportion:** 4 config-centric tasks; reviews check correctness + the security-focus items (no secrets, non-root image, mode-correct compose, WS proxy, CI runs the real gates), not business logic.
