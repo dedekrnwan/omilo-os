@@ -10,6 +10,7 @@ import { StepProfile } from './StepProfile'
 import { StepCheck } from './StepCheck'
 import { StepTeam } from './StepTeam'
 import { StepInbox } from './StepInbox'
+import { capture } from '../../telemetry'
 
 const STEPS: OnboardingStep[] = ['welcome', 'your-ai', 'know-you', 'profile', 'check', 'team', 'inbox']
 
@@ -25,6 +26,16 @@ export function OnboardingRoute() {
   const [step, setStep] = useState<OnboardingStep>(initial)
   const initialMode: AIMode = search.mode === 'cloud' ? 'cloud' : 'self-host'
 
+  function goToStep(next: OnboardingStep) {
+    capture('onboarding_step', { step: next })
+    setStep(next)
+  }
+
+  function completeOnboarding() {
+    capture('onboarding_completed', {})
+    setStep('inbox')
+  }
+
   return (
     <div role="main" aria-label="Onboarding" className="flex h-svh w-full flex-col overflow-hidden bg-app">
       {step === 'inbox' ? (
@@ -32,14 +43,14 @@ export function OnboardingRoute() {
       ) : (
         <>
           <OnboardingHeader step={step} />
-          {step === 'welcome' && <StepWelcome onNext={() => setStep('your-ai')} />}
+          {step === 'welcome' && <StepWelcome onNext={() => goToStep('your-ai')} />}
           {step === 'your-ai' && (
-            <StepYourAI initialMode={initialMode} onBack={() => setStep('welcome')} onNext={() => setStep('know-you')} />
+            <StepYourAI initialMode={initialMode} onBack={() => goToStep('welcome')} onNext={() => goToStep('know-you')} />
           )}
-          {step === 'know-you' && <StepKnowYou onNext={() => setStep('profile')} />}
-          {step === 'profile' && <StepProfile onNext={() => setStep('check')} />}
-          {step === 'check' && <StepCheck onBack={() => setStep('profile')} onNext={() => setStep('team')} />}
-          {step === 'team' && <StepTeam onBack={() => setStep('check')} onNext={() => setStep('inbox')} />}
+          {step === 'know-you' && <StepKnowYou onNext={() => goToStep('profile')} />}
+          {step === 'profile' && <StepProfile onNext={() => goToStep('check')} />}
+          {step === 'check' && <StepCheck onBack={() => goToStep('profile')} onNext={() => goToStep('team')} />}
+          {step === 'team' && <StepTeam onBack={() => goToStep('check')} onNext={completeOnboarding} />}
         </>
       )}
     </div>

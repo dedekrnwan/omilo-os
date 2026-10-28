@@ -5,6 +5,7 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { AI_MODES } from './data'
 import type { AIMode, AIOption } from './data'
 import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, WizardCard } from './parts'
+import { capture } from '../../telemetry'
 
 function Option({ option, selected, onSelect }: { option: AIOption; selected: boolean; onSelect: () => void }) {
   return (
@@ -73,7 +74,10 @@ export function StepYourAI({
         type="button"
         role="radio"
         aria-checked={on}
-        onClick={() => setMode(id)}
+        onClick={() => {
+          setMode(id)
+          if (id === 'cloud') capture('connect_to_cloud_clicked', {})
+        }}
         className={`flex h-[28px] items-center rounded-sm px-[10px] text-[12px] font-medium ${on ? 'bg-surface text-ink' : 'text-muted'}`}
         style={on ? { boxShadow: '0 1px 2px #00000014' } : undefined}
       >
