@@ -1,13 +1,14 @@
 /**
- * SectionUsage — Usage & billing rewired to live useUsage() data.
- * Shows balance, usedThisPeriod, byHelper breakdown, byDay bars.
+ * SectionUsage — Usage & billing rewired to live useUsage() + useSubscription() data.
+ * Shows trial countdown (is_trial), plan + interval, balance, usedThisPeriod,
+ * byHelper breakdown, byDay bars.
  * Empty state when usedThisPeriod === 0 and byHelper is empty.
  * Error state when the query rejects.
  */
 import { Breadcrumb, SectionPane } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 import { Button } from '../../../ui/ds/Button'
-import { useUsage } from '../../../app/queries'
+import { useUsage, useSubscription } from '../../../app/queries'
 
 interface Props {
   onDialog: (d: DialogKind) => void
@@ -15,6 +16,7 @@ interface Props {
 
 export function SectionUsage({ onDialog }: Props) {
   const { data: usage, isError, isLoading } = useUsage()
+  const { data: subscription } = useSubscription()
 
   const isEmpty = !isLoading && !isError && usage &&
     usage.usedThisPeriod === 0 && usage.byHelper.length === 0
@@ -33,6 +35,36 @@ export function SectionUsage({ onDialog }: Props) {
       <SectionPane>
         <h1 className="mb-[4px] font-display text-[28px] font-semibold text-ink">Usage & billing</h1>
         <p className="mb-[24px] text-[13px] text-muted">Your credit balance and what AI cost this period.</p>
+
+        {/* Subscription / trial banner */}
+        {subscription && (
+          <div className="mb-[20px] rounded-lg border border-line-strong bg-surface p-[14px]">
+            <div className="flex items-center justify-between gap-[12px]">
+              <div className="flex flex-col gap-[2px]">
+                <p className="text-[13px] font-medium text-ink">
+                  {subscription.planId} · {subscription.billingInterval}
+                </p>
+                {subscription.isTrial ? (
+                  <p className="text-[12px] text-warn">
+                    {subscription.trialDaysLeft} day{subscription.trialDaysLeft !== 1 ? 's' : ''} left in trial
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-muted">
+                    {subscription.status}
+                    {subscription.currentPeriodEnd
+                      ? ` · renews ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`
+                      : ''}
+                  </p>
+                )}
+              </div>
+              {subscription.isTrial && (
+                <Button variant="secondary" height={28} onClick={() => onDialog('change-plan')}>
+                  Subscribe
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Error state */}
         {isError && (

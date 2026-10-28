@@ -267,8 +267,8 @@ export interface Commands {
   updateWallet(input: UpdateWalletInput): Promise<WalletSettings>
   /** POST /v1/billing/topup — returns raw response (Manual: balance; Doit: hosted_url). */
   topup(pack: string): Promise<unknown>
-  /** POST /v1/billing/change-plan — returns raw response (Manual: subscription; Doit: hosted_url). */
-  changePlan(planId: string): Promise<unknown>
+  /** POST /v1/billing/change-plan {plan_id, interval} — returns raw response (Manual: subscription; Doit: hosted_url). */
+  changePlan(planId: string, interval: 'monthly' | 'yearly'): Promise<unknown>
 
   // ── P5d Company profile command ─────────────────────────────────────────────
   /** PATCH /v1/company — update writable profile fields. */
@@ -495,11 +495,11 @@ export function createCommands(
     },
 
     /**
-     * POST /v1/billing/change-plan {plan_id} — returns the raw response as-is.
+     * POST /v1/billing/change-plan {plan_id, interval} — returns the raw response as-is.
      * Manual provider: {subscription, balance}; Doit: {payment_id, hosted_url, ...}.
      */
-    async changePlan(planId: string): Promise<unknown> {
-      return post<unknown>('/v1/billing/change-plan', { plan_id: planId })
+    async changePlan(planId: string, interval: 'monthly' | 'yearly'): Promise<unknown> {
+      return post<unknown>('/v1/billing/change-plan', { plan_id: planId, interval })
     },
 
     // ── P5d Company profile command ──────────────────────────────────────────

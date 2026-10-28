@@ -532,19 +532,29 @@ describe('createCommands', () => {
 
   // ── changePlan ───────────────────────────────────────────────────────────────
 
-  it('changePlan POSTs to /v1/billing/change-plan with {plan_id} body + Bearer', async () => {
+  it('changePlan POSTs to /v1/billing/change-plan with {plan_id, interval} body + Bearer', async () => {
     fetchMock.mockResolvedValueOnce(okJson({ subscription: { id: 'sub_1' } }))
 
     const commands = createCommands(BASE, () => TOKEN)
-    await commands.changePlan('plan_pro')
+    await commands.changePlan('plan_pro', 'yearly')
 
     expect(fetchMock).toHaveBeenCalledOnce()
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
 
     expect(url).toBe(`${BASE}/v1/billing/change-plan`)
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body as string)).toEqual({ plan_id: 'plan_pro' })
+    expect(JSON.parse(init.body as string)).toEqual({ plan_id: 'plan_pro', interval: 'yearly' })
     expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('changePlan sends monthly interval when specified', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ subscription: { id: 'sub_1' } }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.changePlan('plan_pro', 'monthly')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ plan_id: 'plan_pro', interval: 'monthly' })
   })
 
   it('changePlan returns the raw response body as-is', async () => {
@@ -552,9 +562,19 @@ describe('createCommands', () => {
     fetchMock.mockResolvedValueOnce(okJson(rawRes))
 
     const commands = createCommands(BASE, () => TOKEN)
-    const result = await commands.changePlan('plan_pro')
+    const result = await commands.changePlan('plan_pro', 'yearly')
 
     expect(result).toEqual(rawRes)
+  })
+
+  it('changePlan redirects via hosted_url when returned by Doit provider', async () => {
+    const rawRes = { payment_id: 'pay_1', hosted_url: 'https://pay.doit.id/abc', status: 'pending', plan_id: 'plan_pro' }
+    fetchMock.mockResolvedValueOnce(okJson(rawRes))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.changePlan('plan_pro', 'yearly')
+
+    expect((result as Record<string, unknown>).hosted_url).toBe('https://pay.doit.id/abc')
   })
 
   // ── updateCompanyProfile ─────────────────────────────────────────────────────

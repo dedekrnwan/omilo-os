@@ -50,6 +50,8 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
     sessions: { get: vi.fn().mockResolvedValue(null), listByChannel: vi.fn().mockResolvedValue([]), listAll: vi.fn().mockResolvedValue([]) },
     messages: { listBySession: vi.fn().mockResolvedValue([]) },
     inbox: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    billingPlans: { list: vi.fn().mockResolvedValue([]) },
+    billingSubscription: { get: vi.fn().mockResolvedValue(null) },
     usage: { get: vi.fn().mockResolvedValue({ balance: 0, included: 0, usedThisPeriod: 0, byHelper: [], byDay: [] }) },
     wallet: { get: vi.fn().mockResolvedValue({ autoTopupEnabled: false, autoTopupThresholdCredits: 0, autoTopupPack: null }) },
     aiAccounts: { list: vi.fn().mockResolvedValue([]) },
