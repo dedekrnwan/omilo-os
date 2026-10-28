@@ -13,6 +13,15 @@ import {
   pieces,
   connectors,
   mcpTokens,
+  flows,
+  flowRuns,
+  routines,
+  kbSources,
+  kbItems,
+  analyticsOverview,
+  analyticsHelpers,
+  skills,
+  helpers,
 } from './fixtures'
 
 export function createMockRepos(): Repos {
@@ -86,6 +95,45 @@ export function createMockRepos(): Repos {
 
     mcpTokens: {
       list: () => Promise.resolve([...mcpTokens]),
+    },
+
+    flows: {
+      list: () => Promise.resolve([...flows]),
+      get: (id: Id) => Promise.resolve(flows.find(f => f.id === id) ?? null),
+      runs: (id: Id) => Promise.resolve(flowRuns.filter(r => r.flowId === id)),
+    },
+
+    routines: {
+      list: () => Promise.resolve([...routines]),
+      get: (id: Id) => Promise.resolve(routines.find(r => r.id === id) ?? null),
+    },
+
+    knowledge: {
+      sources: () => Promise.resolve([...kbSources]),
+      list: (params?: { q?: string }) => {
+        if (!params?.q) return Promise.resolve([...kbItems])
+        const q = params.q.toLowerCase()
+        return Promise.resolve(
+          kbItems.filter(
+            i => i.heading.toLowerCase().includes(q) || i.text.toLowerCase().includes(q),
+          ),
+        )
+      },
+    },
+
+    analytics: {
+      overview: (_range?: string) => Promise.resolve({ ...analyticsOverview }),
+      helpers: (_range?: string) => Promise.resolve([...analyticsHelpers]),
+    },
+
+    skills: {
+      list: () => Promise.resolve([...skills]),
+      get: (id: Id) => Promise.resolve(skills.find(s => s.id === id) ?? null),
+    },
+
+    helpers: {
+      list: () => Promise.resolve([...helpers]),
+      get: (id: Id) => Promise.resolve(helpers.find(h => h.id === id) ?? null),
     },
   }
 }

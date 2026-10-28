@@ -273,6 +273,20 @@ export interface Commands {
   // ── P5d Company profile command ─────────────────────────────────────────────
   /** PATCH /v1/company — update writable profile fields. */
   updateCompanyProfile(input: UpdateCompanyProfileInput): Promise<Company>
+
+  // ── P8 flow + routine + goal + skill commands ────────────────────────────────
+  /** POST /v1/flows/{id}/publish → Proposal */
+  publishFlow(id: string): Promise<unknown>
+  /** POST /v1/flows/{id}/run → FlowRun */
+  runFlow(id: string): Promise<unknown>
+  /** POST /v1/flows/{id}/test-run {sample?} → FlowRun */
+  testRunFlow(id: string, input?: Record<string, unknown>): Promise<unknown>
+  /** POST /v1/routines/{id}/run-now → {job_id} */
+  runRoutineNow(id: string): Promise<{ jobId: string }>
+  /** POST /v1/goals/{id}/replan → {job_id} */
+  replanGoal(id: string): Promise<{ jobId: string }>
+  /** POST /v1/skills/{id}/publish → Proposal */
+  publishSkill(id: string): Promise<unknown>
 }
 
 /**
@@ -505,6 +519,58 @@ export function createCommands(
       if (input.picRole !== undefined) body.pic_role = input.picRole
       const raw = await patch<RawCompany>('/v1/company', body)
       return mapCompany(raw)
+    },
+
+    // ── P8 flow + routine + goal + skill commands ────────────────────────────
+
+    /**
+     * POST /v1/flows/{id}/publish → Proposal (type=flow_publish, pending).
+     * Returns the raw Proposal object from the backend.
+     */
+    async publishFlow(id: string): Promise<unknown> {
+      return post<unknown>(`/v1/flows/${id}/publish`, {})
+    },
+
+    /**
+     * POST /v1/flows/{id}/run → FlowRun.
+     * Manually triggers a flow run (test=False).
+     */
+    async runFlow(id: string): Promise<unknown> {
+      return post<unknown>(`/v1/flows/${id}/run`, {})
+    },
+
+    /**
+     * POST /v1/flows/{id}/test-run {sample?} → FlowRun.
+     * Simulates a flow run (test=True — no real side effects).
+     */
+    async testRunFlow(id: string, input?: Record<string, unknown>): Promise<unknown> {
+      return post<unknown>(`/v1/flows/${id}/test-run`, { sample: input ?? {} })
+    },
+
+    /**
+     * POST /v1/routines/{id}/run-now → {job_id}.
+     * Returns {jobId} mapped from job_id.
+     */
+    async runRoutineNow(id: string): Promise<{ jobId: string }> {
+      const raw = await post<{ job_id: string }>(`/v1/routines/${id}/run-now`, {})
+      return { jobId: raw.job_id }
+    },
+
+    /**
+     * POST /v1/goals/{id}/replan → {job_id}.
+     * Re-runs plan_goal for the given goal. Returns {jobId} mapped from job_id.
+     */
+    async replanGoal(id: string): Promise<{ jobId: string }> {
+      const raw = await post<{ job_id: string }>(`/v1/goals/${id}/replan`, {})
+      return { jobId: raw.job_id }
+    },
+
+    /**
+     * POST /v1/skills/{id}/publish → Proposal (type=skill_publish, pending).
+     * Returns the raw Proposal object from the backend.
+     */
+    async publishSkill(id: string): Promise<unknown> {
+      return post<unknown>(`/v1/skills/${id}/publish`, {})
     },
   }
 }

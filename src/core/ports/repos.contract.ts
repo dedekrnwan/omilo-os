@@ -137,5 +137,147 @@ export function runReposContract(name: string, makeRepos: () => Repos): void {
         expect(typeof tok.active).toBe('boolean')
       }
     })
+
+    // ── P8 new repos ──────────────────────────────────────────────────────
+
+    // flows
+    it('flows.list() returns a non-empty array; each item has id, title, status, enabled', async () => {
+      const repos = makeRepos()
+      const result = await repos.flows.list()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const f of result) {
+        expect(typeof f.id).toBe('string')
+        expect(typeof f.title).toBe('string')
+        expect(typeof f.status).toBe('string')
+        expect(typeof f.enabled).toBe('boolean')
+      }
+    })
+
+    it('flows.get(unknownId) resolves to null', async () => {
+      const repos = makeRepos()
+      const result = await repos.flows.get('unknown-flow-' + Math.random())
+      expect(result).toBeNull()
+    })
+
+    it('flows.runs(id) returns an array (may be empty)', async () => {
+      const repos = makeRepos()
+      const allFlows = await repos.flows.list()
+      const result = await repos.flows.runs(allFlows[0]?.id ?? 'x')
+      expect(Array.isArray(result)).toBe(true)
+    })
+
+    // routines
+    it('routines.list() returns a non-empty array; each item has id, name, helperId, cron', async () => {
+      const repos = makeRepos()
+      const result = await repos.routines.list()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const r of result) {
+        expect(typeof r.id).toBe('string')
+        expect(typeof r.name).toBe('string')
+        expect(typeof r.helperId).toBe('string')
+        expect(typeof r.cron).toBe('string')
+      }
+    })
+
+    it('routines.get(unknownId) resolves to null', async () => {
+      const repos = makeRepos()
+      const result = await repos.routines.get('unknown-routine-' + Math.random())
+      expect(result).toBeNull()
+    })
+
+    // knowledge
+    it('knowledge.list() returns an array; each item has sourceId, heading, text, kind, score', async () => {
+      const repos = makeRepos()
+      const result = await repos.knowledge.list()
+      expect(Array.isArray(result)).toBe(true)
+      for (const item of result) {
+        expect(typeof item.sourceId).toBe('string')
+        expect(typeof item.heading).toBe('string')
+        expect(typeof item.text).toBe('string')
+        expect(typeof item.kind).toBe('string')
+        expect(typeof item.score).toBe('number')
+      }
+    })
+
+    it('knowledge.sources() returns an array; each item has id, kind, title', async () => {
+      const repos = makeRepos()
+      const result = await repos.knowledge.sources()
+      expect(Array.isArray(result)).toBe(true)
+      for (const src of result) {
+        expect(typeof src.id).toBe('string')
+        expect(typeof src.kind).toBe('string')
+        expect(typeof src.title).toBe('string')
+      }
+    })
+
+    // analytics
+    it('analytics.overview() returns {stats[], series[]}', async () => {
+      const repos = makeRepos()
+      const result = await repos.analytics.overview()
+      expect(Array.isArray(result.stats)).toBe(true)
+      expect(result.stats.length).toBeGreaterThan(0)
+      expect(Array.isArray(result.series)).toBe(true)
+      for (const stat of result.stats) {
+        expect(typeof stat.label).toBe('string')
+        expect(typeof stat.value).toBe('number')
+      }
+    })
+
+    it('analytics.helpers() returns an array; each item has helperId, name, jobs, success, tokens, spend', async () => {
+      const repos = makeRepos()
+      const result = await repos.analytics.helpers()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const h of result) {
+        expect(typeof h.helperId).toBe('string')
+        expect(typeof h.name).toBe('string')
+        expect(typeof h.jobs).toBe('number')
+        expect(typeof h.success).toBe('number')
+        expect(typeof h.tokens).toBe('number')
+        expect(typeof h.spend).toBe('number')
+      }
+    })
+
+    // skills
+    it('skills.list() returns a non-empty array; each item has id, name, status, version, helperId', async () => {
+      const repos = makeRepos()
+      const result = await repos.skills.list()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const s of result) {
+        expect(typeof s.id).toBe('string')
+        expect(typeof s.name).toBe('string')
+        expect(typeof s.status).toBe('string')
+        expect(typeof s.version).toBe('number')
+        expect(typeof s.helperId).toBe('string')
+      }
+    })
+
+    it('skills.get(unknownId) resolves to null', async () => {
+      const repos = makeRepos()
+      const result = await repos.skills.get('unknown-skill-' + Math.random())
+      expect(result).toBeNull()
+    })
+
+    // helpers
+    it('helpers.list() returns a non-empty array; each item has id, name, area', async () => {
+      const repos = makeRepos()
+      const result = await repos.helpers.list()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const h of result) {
+        expect(typeof h.id).toBe('string')
+        expect(typeof h.name).toBe('string')
+        expect(typeof h.area).toBe('string')
+      }
+    })
+
+    it('helpers.get(unknownId) resolves to null', async () => {
+      const repos = makeRepos()
+      const result = await repos.helpers.get('unknown-helper-' + Math.random())
+      expect(result).toBeNull()
+    })
   })
 }

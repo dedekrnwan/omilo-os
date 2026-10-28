@@ -628,4 +628,120 @@ describe('createCommands', () => {
     const commands = createCommands(BASE, () => TOKEN)
     await expect(commands.disconnectConnector('con_missing')).rejects.toBeInstanceOf(ApiError)
   })
+
+  // ── P8 commands ──────────────────────────────────────────────────────────────
+
+  it('publishFlow POSTs to /v1/flows/{id}/publish with Bearer', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'prp_1', type: 'flow_publish', status: 'pending' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.publishFlow('flw_1')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw_1/publish`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('runFlow POSTs to /v1/flows/{id}/run with Bearer', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'frn_1', flow_id: 'flw_1', status: 'done' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.runFlow('flw_1')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw_1/run`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('testRunFlow POSTs to /v1/flows/{id}/test-run with sample body', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'frn_2', status: 'done' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.testRunFlow('flw_1', { key: 'value' })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw_1/test-run`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ sample: { key: 'value' } })
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('testRunFlow sends empty sample when input is omitted', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'frn_3', status: 'done' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.testRunFlow('flw_1')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ sample: {} })
+  })
+
+  it('runRoutineNow POSTs to /v1/routines/{id}/run-now and returns {jobId}', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ job_id: 'job_42' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.runRoutineNow('rtn_1')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines/rtn_1/run-now`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result.jobId).toBe('job_42')
+    expect((result as unknown as Record<string, unknown>).job_id).toBeUndefined()
+  })
+
+  it('replanGoal POSTs to /v1/goals/{id}/replan and returns {jobId}', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ job_id: 'job_55' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.replanGoal('goal_1')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/goals/goal_1/replan`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result.jobId).toBe('job_55')
+    expect((result as unknown as Record<string, unknown>).job_id).toBeUndefined()
+  })
+
+  it('publishSkill POSTs to /v1/skills/{id}/publish with Bearer', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'prp_2', type: 'skill_publish', status: 'pending' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.publishSkill('skl_1')
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/skills/skl_1/publish`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('publishFlow throws ApiError on non-OK response', async () => {
+    fetchMock.mockResolvedValueOnce(errorJson(404, 'Flow not found'))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await expect(commands.publishFlow('flw_missing')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('runRoutineNow throws ApiError on non-OK response', async () => {
+    fetchMock.mockResolvedValueOnce(errorJson(404, 'Routine not found'))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await expect(commands.runRoutineNow('rtn_missing')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('replanGoal throws ApiError on non-OK response', async () => {
+    fetchMock.mockResolvedValueOnce(errorJson(404, 'Goal not found'))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await expect(commands.replanGoal('goal_missing')).rejects.toBeInstanceOf(ApiError)
+  })
 })
