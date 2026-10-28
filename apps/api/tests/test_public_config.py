@@ -118,3 +118,50 @@ async def test_e_response_shape_complete(async_client):
     body = resp.json()
     for field in ("mode", "signupEnabled"):
         assert field in body, f"Field '{field}' missing from response"
+
+
+# ---------------------------------------------------------------------------
+# F. googleEnabled — P10 T1
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_f_google_enabled_false_when_unconfigured(async_client):
+    """googleEnabled is False when GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are absent."""
+    from omilo.config import Settings
+
+    settings = Settings()  # no google creds
+    with patch("omilo.api.public_config.get_settings", return_value=settings):
+        resp = await async_client.get("/v1/public-config")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["googleEnabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_f2_google_enabled_true_when_both_creds_set(async_client):
+    """googleEnabled is True when both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set."""
+    from omilo.config import Settings
+
+    settings = Settings(
+        google_client_id="gid-xxx",
+        google_client_secret="gsec-yyy",
+    )
+    with patch("omilo.api.public_config.get_settings", return_value=settings):
+        resp = await async_client.get("/v1/public-config")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["googleEnabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_f3_google_enabled_false_when_only_client_id_set(async_client):
+    """googleEnabled is False when only GOOGLE_CLIENT_ID is set (secret missing)."""
+    from omilo.config import Settings
+
+    settings = Settings(google_client_id="gid-only")
+    with patch("omilo.api.public_config.get_settings", return_value=settings):
+        resp = await async_client.get("/v1/public-config")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["googleEnabled"] is False
