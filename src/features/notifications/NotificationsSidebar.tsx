@@ -3,50 +3,30 @@ import { Bell } from 'lucide-react'
 import { GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
 import { BackToApp } from '../shell/BackToApp'
 import { helperColor } from '../../ui/tokens'
-import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
+import { areasFromItems, countForFilter } from './inboxAdapter'
 import type { NotifFilter } from './data'
-import type { HelperArea } from '../../core/domain/types'
-
-// ── Derived counts ────────────────────────────────────────────────────────────
-
-const totalCount = DECISIONS.length + NOTIF_GROUPS.flatMap((g) => g.items).length
-
-const needsYouCount = DECISIONS.length
-
-const mentionsCount = (() => {
-  const hasMention = (text: string) => text.includes('@')
-  const dCount = DECISIONS.filter((d) => hasMention(d.title) || hasMention(d.body)).length
-  const nCount = NOTIF_GROUPS.flatMap((g) => g.items).filter(
-    (n) => hasMention(n.title) || (n.preview != null && hasMention(n.preview)),
-  ).length
-  return dCount + nCount
-})()
-
-/** All unique areas that appear in the notification data, in display order. */
-const AREAS: HelperArea[] = Array.from(
-  new Set([
-    ...DECISIONS.map((d) => d.senderArea),
-    ...NOTIF_GROUPS.flatMap((g) => g.items.map((n) => n.senderArea)),
-  ]),
-)
-
-function areaCount(area: HelperArea): number {
-  const { decisions, groups } = filterNotifs(area)
-  return decisions.length + groups.flatMap((g) => g.items).length
-}
+import type { InboxItem, HelperArea } from '../../core/domain/types'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
   filter: NotifFilter
   onFilter: (f: NotifFilter) => void
+  /** Live inbox items from useInbox(). Drives counts + area list. */
+  items: InboxItem[]
 }
 
 /**
  * pen `Notifications Sidebar`: 232px filter rail.
  * All / Needs you / Mentions at the top, then an AREAS group with per-area dots.
+ * Counts are derived from the live inbox items passed in.
  */
-export function NotificationsSidebar({ filter, onFilter }: Props) {
+export function NotificationsSidebar({ filter, onFilter, items }: Props) {
+  const totalCount = countForFilter(items, 'all')
+  const needsYouCount = countForFilter(items, 'needs-you')
+  const mentionsCount = countForFilter(items, 'mentions')
+  const areas: HelperArea[] = areasFromItems(items)
+
   return (
     <SidebarFrame label="Notifications">
       <BackToApp />
@@ -83,11 +63,11 @@ export function NotificationsSidebar({ filter, onFilter }: Props) {
       {/* Per-area filters */}
       <NavGroup>
         <GroupLabel label="AREAS" />
-        {AREAS.map((area) => (
+        {areas.map((area) => (
           <NavLink
             key={area}
             label={area.charAt(0).toUpperCase() + area.slice(1)}
-            count={areaCount(area)}
+            count={countForFilter(items, area)}
             labelClassName="text-ink-2"
             active={filter === area}
             onClick={() => onFilter(area)}

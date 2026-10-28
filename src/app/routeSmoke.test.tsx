@@ -65,7 +65,8 @@ describe('feature route smoke tests', () => {
     renderRouter(root.addChildren([r]), '/notifications')
     // Topbar h1 + page h1 both read "Notifications" — the page is its own content.
     expect((await screen.findAllByRole('heading', { name: 'Notifications' })).length).toBeGreaterThan(0)
-    expect(screen.getByRole('region', { name: 'Needs you' })).toBeInTheDocument()
+    // "Needs you" region renders after async inbox data loads
+    expect(await screen.findByRole('region', { name: 'Needs you' })).toBeInTheDocument()
     expect(screen.queryByTestId('not-found')).not.toBeInTheDocument()
   })
 

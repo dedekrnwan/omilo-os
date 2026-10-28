@@ -4,12 +4,13 @@ import { Bell, CheckCheck, Settings, X } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Inset, Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DECISIONS, NOTIF_GROUPS, filterNotifs } from './data'
 import { NotificationsSidebar } from './NotificationsSidebar'
 import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 import { notify } from '../../ui/ds/Toaster'
 import { usePush } from '../../app/push'
 import { useUIStore } from '../../app/store'
+import { useInbox } from '../../app/queries'
+import { inboxToDisplay } from './inboxAdapter'
 
 /**
  * Prompt to turn on real desktop/browser push — shown until the user grants
@@ -173,44 +174,58 @@ function NotifGroupSection({ group, onRowClick }: { group: NotifGroup; onRowClic
  * A filter sidebar scopes the decisions + notification list.
  * Decisions waiting on you are pinned at the top; grouped notifications follow.
  *
- * Local state owns decisions + groups (copy of static data) so actions can
- * mutate (remove resolved decisions, mark all read) without touching data.ts.
+ * Data comes from useInbox() (GET /v1/inbox → InboxItem[]).
+ * The inboxToDisplay adapter maps items → Decision/Notif/NotifGroup display shapes.
  */
 export function NotificationsRoute() {
   const navigate = useNavigate()
   const [filter, setFilter] = useState<NotifFilter>('all')
 
-  // Lift static data into local state so we can mutate it
-  const [allDecisions, setAllDecisions] = useState(DECISIONS)
-  const [allGroups, setAllGroups] = useState(NOTIF_GROUPS)
+  // ── Live data via useInbox ─────────────────────────────────────────────────
+  const { data: inboxItems = [], isLoading, isError } = useInbox()
 
-  // Re-filter from local state
-  const { decisions, groups } = filterNotifs(filter, allDecisions, allGroups)
+  // Local state for resolved decisions (removed from view after action)
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set())
+  // Local state for read status override (mark all read)
+  const [readIds, setReadIds] = useState<Set<string>>(new Set())
+
+  // Active items = inbox minus those the user has already resolved
+  const activeItems = inboxItems.filter((i) => !resolvedIds.has(i.id))
+
+  // Apply sidebar filter to get the display shapes
+  const { decisions, groups: filteredGroups } = inboxToDisplay(activeItems, filter)
+
+  // Apply read overrides (mark-all-read mutates local state, not server)
+  const groups = filteredGroups.map((g) => ({
+    ...g,
+    items: g.items.map((n) => (readIds.has(n.id) ? { ...n, unread: false } : n)),
+  }))
 
   const totalDecisions = decisions.length
   const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
 
   function resolveDecision(id: string, label: string) {
-    setAllDecisions((prev) => prev.filter((d) => d.id !== id))
+    setResolvedIds((prev) => new Set([...prev, id]))
     notify(`${label} — decision resolved`)
   }
 
   function markAllRead() {
-    setAllGroups((prev) =>
-      prev.map((g) => ({
-        ...g,
-        items: g.items.map((n) => ({ ...n, unread: false })),
-      })),
-    )
+    // Mark all notif rows across all groups (unfiltered) as read
+    const { groups: allGroups } = inboxToDisplay(activeItems, 'all')
+    const allNotifIds = allGroups.flatMap((g) => g.items.map((n) => n.id))
+    setReadIds((prev) => new Set([...prev, ...allNotifIds]))
   }
 
   function handleRowClick(_notif: Notif) {
     void navigate({ to: '/chat' })
   }
 
+  // ── Empty / error states ───────────────────────────────────────────────────
+  const isEmpty = !isLoading && !isError && decisions.length === 0 && groups.length === 0
+
   return (
     <>
-      <NotificationsSidebar filter={filter} onFilter={setFilter} />
+      <NotificationsSidebar filter={filter} onFilter={setFilter} items={inboxItems} />
 
       <Inset label="Notifications">
         {/* Topbar */}
@@ -251,8 +266,32 @@ export function NotificationsRoute() {
           {/* Enable real push */}
           <EnablePushBanner />
 
+          {/* Loading skeleton */}
+          {isLoading && (
+            <div className="flex flex-col gap-[8px]" aria-label="Loading notifications">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-[80px] animate-pulse rounded-lg bg-hover" />
+              ))}
+            </div>
+          )}
+
+          {/* Error state */}
+          {isError && (
+            <p className="text-[13px] text-muted" role="alert">
+              Could not load notifications. Please try again.
+            </p>
+          )}
+
+          {/* All caught up */}
+          {isEmpty && (
+            <div className="flex flex-col items-center gap-[12px] py-[40px] text-center" data-testid="empty-state">
+              <p className="text-[15px] font-medium text-ink">You&apos;re all caught up</p>
+              <p className="text-[13px] text-muted">No notifications here right now.</p>
+            </div>
+          )}
+
           {/* Pinned decisions */}
-          {decisions.length > 0 && (
+          {!isLoading && !isError && decisions.length > 0 && (
             <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
               <NeedsYouLabel count={decisions.length} />
               {decisions.map((d) => (
@@ -262,11 +301,13 @@ export function NotificationsRoute() {
           )}
 
           {/* Grouped notification list */}
-          <div className="flex flex-col gap-[4px]">
-            {groups.map((group) => (
-              <NotifGroupSection key={group.label} group={group} onRowClick={handleRowClick} />
-            ))}
-          </div>
+          {!isLoading && !isError && (
+            <div className="flex flex-col gap-[4px]">
+              {groups.map((group) => (
+                <NotifGroupSection key={group.label} group={group} onRowClick={handleRowClick} />
+              ))}
+            </div>
+          )}
         </div>
       </Inset>
     </>
