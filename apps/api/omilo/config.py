@@ -36,13 +36,22 @@ class Settings(BaseSettings):
     omilo_jwt_public_key: str | None = None
 
     # ---------------------------------------------------------------------------
-    # Run mode (P6 control-plane / runtime split)
+    # Run mode (P6 control-plane / runtime split + P6b local mode)
     # ---------------------------------------------------------------------------
-    # OMILO_MODE=cloud   — control plane mode (default).  Auth + billing resolve
-    #                      in-process via LocalControlPlane.  This is the existing
-    #                      production behavior; no code changes in cloud mode.
-    # OMILO_MODE=runtime — local runtime mode (T3).  Auth/billing delegate to the
-    #                      cloud control plane via RemoteControlPlane + HTTP.
+    # OMILO_MODE=local   — fully-local, cloud-free, BYO-only self-host (P6b).
+    #                      LocalControlPlane (authoritative, in-process).  No
+    #                      OMILO_CONTROL_PLANE_URL / OMILO_INSTALL_TOKEN required.
+    #                      Pooled cloud inference (litellm) is disabled; BYO keys
+    #                      and local models only.  No metering, no credit ledger.
+    #                      Air-gap-capable.
+    # OMILO_MODE=hybrid  — local runtime (the former "runtime" mode, renamed).
+    #                      Auth/billing delegate to the cloud control plane via
+    #                      RemoteControlPlane + HTTP.  Requires
+    #                      OMILO_CONTROL_PLANE_URL + OMILO_INSTALL_TOKEN.
+    # OMILO_MODE=cloud   — control plane mode (default, vendor-hosted).  Auth +
+    #                      billing resolve in-process via LocalControlPlane.
+    #                      This is the existing production behavior; no code change.
+    # OMILO_MODE=runtime — ALIAS for hybrid (accepted for backward compat).
     omilo_mode: str = "cloud"
 
     # ---------------------------------------------------------------------------

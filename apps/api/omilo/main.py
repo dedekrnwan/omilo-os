@@ -89,9 +89,15 @@ def create_app() -> FastAPI:
     # Doit payment gateway webhooks (Task 3 P5a)
     app.include_router(webhooks_router, prefix="/v1")
 
-    # /control/* federation endpoints — cloud mode only (P6 Task 2)
+    # /control/* federation endpoints — cloud + local mode (P6 Task 2, P6b).
+    # Not mounted in hybrid/runtime mode (runtime delegates to the cloud /control).
+    # local mode owns everything in-process (LocalControlPlane), so /control is
+    # available but not required (harmless to mount; avoids breaking callers).
+    from omilo.control.factory import _normalize_mode
+
     settings = get_settings()
-    if settings.omilo_mode != "runtime":
+    normalized_mode = _normalize_mode(getattr(settings, "omilo_mode", "cloud") or "cloud")
+    if normalized_mode != "hybrid":
         from omilo.api.control import router as control_router
         app.include_router(control_router)
 
