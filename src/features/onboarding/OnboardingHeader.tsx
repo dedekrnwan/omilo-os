@@ -1,8 +1,8 @@
 import { Check, LogOut } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
-import { COMPANY_NAME } from './data'
 import { QuietButton } from './parts'
+import { useSession } from '../../app/session'
 
 export type OnboardingStep = 'welcome' | 'your-ai' | 'know-you' | 'profile' | 'check' | 'team' | 'inbox'
 
@@ -64,11 +64,12 @@ function StepIndicator({ current }: { current: OnboardingStep }) {
 export function OnboardingHeader({ step }: { step: OnboardingStep }) {
   const showSteps = step !== 'welcome' && step !== 'inbox'
   const navigate = useNavigate()
+  const companyName = useSession((s) => s.company?.name ?? 'your workspace')
   return (
     <header className="flex h-[60px] w-full shrink-0 items-center gap-[10px] px-[24px]">
       <Mascot size={26} radius={7} prop="spark" title="Omilo" />
       <span className="font-display text-[15px] font-semibold text-ink">Omilo</span>
-      <span className="text-[13px] text-muted">· Setting up {COMPANY_NAME}</span>
+      <span className="text-[13px] text-muted">· Setting up {companyName}</span>
       <div className="flex min-w-0 flex-1 justify-center">{showSteps && <StepIndicator current={step} />}</div>
       <div className="flex items-center gap-[12px]">
         <span className="text-[12px] text-muted">Saved as you go</span>

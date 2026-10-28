@@ -764,4 +764,25 @@ describe('createCommands', () => {
     const commands = createCommands(BASE, () => TOKEN)
     await expect(commands.replanGoal('goal_missing')).rejects.toBeInstanceOf(ApiError)
   })
+
+  // ── onboardCompany ────────────────────────────────────────────────────────────
+
+  it('onboardCompany POSTs to /v1/company/onboard with Bearer and returns company with onboarded=true', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({
+      id: 'cmp-1',
+      name: 'Test Corp',
+      currency: 'IDR',
+      onboarded: true,
+    }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.onboardCompany()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/company/onboard`)
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result.onboarded).toBe(true)
+  })
 })

@@ -16,6 +16,7 @@ import { isMockMode } from '../../app/useAuth'
 import { createCommands } from '../../adapters/http/commands'
 import { platform } from '../../platform'
 import { useUIStore, MODE_HOME } from '../../app/store'
+import { useSession } from '../../app/session'
 
 /**
  * localStorage key for the client-side "onboarded" flag.
@@ -72,23 +73,39 @@ export function OnboardingRoute() {
   async function completeOnboarding() {
     capture('onboarding_completed', {})
 
-    // Persist profile to backend (skipped in mock mode — no real server).
-    if (!isMockMode() && profileData) {
+    if (!isMockMode()) {
+      const commands = createCommands(BASE_URL, getToken)
+
+      // Persist profile to backend (non-fatal — profile can be updated later in settings).
+      if (profileData) {
+        try {
+          await commands.updateCompanyProfile({
+            industry: profileData.industry,
+            teamSize: profileData.teamSize,
+            region: profileData.region,
+            currency: profileData.currency,
+            picRole: profileData.picRole,
+          })
+        } catch {
+          // Non-fatal: profile can be updated later in settings.
+        }
+      }
+
+      // Set the backend onboarded flag (idempotent) and update the session so
+      // AuthGate won't redirect back to /onboarding after navigation.
       try {
-        const commands = createCommands(BASE_URL, getToken)
-        await commands.updateCompanyProfile({
-          industry: profileData.industry,
-          teamSize: profileData.teamSize,
-          region: profileData.region,
-          currency: profileData.currency,
-          picRole: profileData.picRole,
-        })
+        await commands.onboardCompany()
+        // Patch the session store so the gate sees onboarded=true immediately.
+        const currentCompany = useSession.getState().company
+        if (currentCompany) {
+          useSession.setState({ company: { ...currentCompany, onboarded: true } })
+        }
       } catch {
-        // Non-fatal: profile can be updated later in settings.
+        // Non-fatal: gate will not bounce if localStorage flag is also set.
       }
     }
 
-    // Mark the user as onboarded so they won't see the wizard again.
+    // Mark the user as onboarded (secondary localStorage signal — fast and offline-safe).
     localStorage.setItem(ONBOARDED_KEY, '1')
 
     // Navigate into the app.

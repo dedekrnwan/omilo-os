@@ -33,6 +33,7 @@ export function AuthGate({ children }: AuthGateProps) {
   // Always call hooks unconditionally (Rules of Hooks).
   const status = useSession((s) => s.status)
   const mode = useSession((s) => s.mode)
+  const company = useSession((s) => s.company)
 
   // Mock mode: synthetic always-authed session — guard is a complete no-op.
   // isMockMode() is a plain env read, not a hook, safe to use in a branch.
@@ -46,7 +47,14 @@ export function AuthGate({ children }: AuthGateProps) {
     return <Navigate to={to} />
   }
 
-  // status === 'authed' (or 'loading' as safe fallback — SessionProvider
+  // HTTP mode + authed but not onboarded → force to /onboarding.
+  // /onboarding is outside the shell so no redirect loop is possible.
+  // company?.onboarded !== true catches: onboarded=false, undefined (old response), null.
+  if (status === 'authed' && company?.onboarded !== true) {
+    return <Navigate to="/onboarding" />
+  }
+
+  // status === 'authed' + onboarded (or 'loading' as safe fallback — SessionProvider
   // ensures 'loading' never reaches here in practice).
   return <>{children}</>
 }

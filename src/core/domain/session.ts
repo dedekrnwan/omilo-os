@@ -25,6 +25,8 @@ export interface Company {
   region?: string | null
   currency: string
   picRole?: string | null
+  /** P13 onboarding gate — true once the company completed the onboarding wizard. */
+  onboarded?: boolean
 }
 
 /**

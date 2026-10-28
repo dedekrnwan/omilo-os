@@ -56,7 +56,8 @@ function getAdapter(): AuthAdapter {
 // ── Demo fixture (mock mode only) ─────────────────────────────────────────────
 
 const DEMO_USER: SessionUser = { id: 'usr-demo', email: 'demo@omilo.app', name: 'Demo' }
-const DEMO_COMPANY: Company = { id: 'cmp-demo', name: 'Demo Workspace', currency: 'IDR' }
+// Mock demo company is always onboarded so mock mode never triggers the onboarding gate.
+const DEMO_COMPANY: Company = { id: 'cmp-demo', name: 'Demo Workspace', currency: 'IDR', onboarded: true }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 

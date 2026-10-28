@@ -186,13 +186,13 @@ describe('AuthGate — HTTP mode, authed', () => {
     vi.stubEnv('VITE_USE_HTTP', '1')
   })
 
-  test('renders app content when status=authed', async () => {
+  test('renders app content when status=authed and onboarded=true', async () => {
     useSession.setState({
       status: 'authed',
       mode: 'cloud',
       user: { id: 'u-1', email: 'user@test.com', name: 'Test User' },
-      company: { id: 'cmp-1', name: 'Test Corp', currency: 'USD' },
-      companies: [{ id: 'cmp-1', name: 'Test Corp', currency: 'USD' }],
+      company: { id: 'cmp-1', name: 'Test Corp', currency: 'USD', onboarded: true },
+      companies: [{ id: 'cmp-1', name: 'Test Corp', currency: 'USD', onboarded: true }],
     })
 
     const root = makeRoot()
@@ -208,5 +208,82 @@ describe('AuthGate — HTTP mode, authed', () => {
     expect(await screen.findByTestId('inbox-content')).toBeInTheDocument()
     expect(screen.queryByTestId('sign-in-page')).not.toBeInTheDocument()
     expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+  })
+})
+
+// ── (e) HTTP mode + authed + onboarded=false → /onboarding ───────────────────
+
+describe('AuthGate — HTTP mode, authed but not onboarded', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_USE_HTTP', '1')
+  })
+
+  test('redirects to /onboarding when authed but onboarded=false', async () => {
+    useSession.setState({
+      status: 'authed',
+      mode: 'cloud',
+      user: { id: 'u-new', email: 'new@test.com', name: 'New User' },
+      company: { id: 'cmp-new', name: 'New Corp', currency: 'IDR', onboarded: false },
+      companies: [{ id: 'cmp-new', name: 'New Corp', currency: 'IDR', onboarded: false }],
+    })
+
+    const root = makeRoot()
+    const gatedLayout = createRoute({ getParentRoute: () => root, id: 'gated', component: AuthGateLayout })
+    const inbox = createRoute({
+      getParentRoute: () => gatedLayout,
+      path: '/inbox',
+      component: () => <div data-testid="inbox-content">inbox</div>,
+    })
+    const onboarding = createRoute({
+      getParentRoute: () => root,
+      path: '/onboarding',
+      component: () => <div data-testid="onboarding-page">onboarding</div>,
+    })
+
+    renderRouter(
+      root.addChildren([
+        gatedLayout.addChildren([inbox]),
+        onboarding,
+      ]),
+      '/inbox',
+    )
+
+    expect(await screen.findByTestId('onboarding-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('inbox-content')).not.toBeInTheDocument()
+  })
+
+  test('redirects to /onboarding when authed but company.onboarded is undefined (fresh user)', async () => {
+    useSession.setState({
+      status: 'authed',
+      mode: 'cloud',
+      user: { id: 'u-undef', email: 'undef@test.com', name: 'Undef User' },
+      // onboarded field absent (as from old /me response without the field)
+      company: { id: 'cmp-undef', name: 'Undef Corp', currency: 'IDR' },
+      companies: [{ id: 'cmp-undef', name: 'Undef Corp', currency: 'IDR' }],
+    })
+
+    const root = makeRoot()
+    const gatedLayout = createRoute({ getParentRoute: () => root, id: 'gated', component: AuthGateLayout })
+    const inbox = createRoute({
+      getParentRoute: () => gatedLayout,
+      path: '/inbox',
+      component: () => <div data-testid="inbox-content">inbox</div>,
+    })
+    const onboarding = createRoute({
+      getParentRoute: () => root,
+      path: '/onboarding',
+      component: () => <div data-testid="onboarding-page">onboarding</div>,
+    })
+
+    renderRouter(
+      root.addChildren([
+        gatedLayout.addChildren([inbox]),
+        onboarding,
+      ]),
+      '/inbox',
+    )
+
+    expect(await screen.findByTestId('onboarding-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('inbox-content')).not.toBeInTheDocument()
   })
 })

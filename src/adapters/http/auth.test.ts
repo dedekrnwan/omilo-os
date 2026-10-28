@@ -186,6 +186,49 @@ describe('me', () => {
     expect(result.companies).toHaveLength(1)
   })
 
+  test('maps onboarded:true from /me raw company', async () => {
+    const rawCompany = {
+      id: 'cmp-2',
+      name: 'Onboarded Corp',
+      currency: 'IDR',
+      onboarded: true,
+    }
+    const stub = makeFetch({
+      user: { id: 'u-ob', email: 'ob@test.com', name: 'OB User' },
+      member: { role: 'owner' },
+      company: rawCompany,
+      companies: [rawCompany],
+    })
+    vi.stubGlobal('fetch', stub)
+
+    const adapter = createAuthAdapter(BASE, makeTokenStorage('tok'))
+    const result = await adapter.me()
+
+    expect(result.company.onboarded).toBe(true)
+    expect(result.companies[0].onboarded).toBe(true)
+  })
+
+  test('defaults onboarded:false when backend omits it from raw company', async () => {
+    const rawCompany = {
+      id: 'cmp-3',
+      name: 'Fresh Corp',
+      currency: 'IDR',
+      // onboarded absent
+    }
+    const stub = makeFetch({
+      user: { id: 'u-fr', email: 'fr@test.com', name: 'Fresh User' },
+      member: { role: 'owner' },
+      company: rawCompany,
+      companies: [rawCompany],
+    })
+    vi.stubGlobal('fetch', stub)
+
+    const adapter = createAuthAdapter(BASE, makeTokenStorage('tok'))
+    const result = await adapter.me()
+
+    expect(result.company.onboarded).toBe(false)
+  })
+
   test('throws ApiError with status 401 on unauthorized response', async () => {
     const stub = vi.fn().mockResolvedValue({
       ok: false,
