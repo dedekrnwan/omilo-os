@@ -421,6 +421,17 @@ export interface Skill {
   createdAt?: string | null
 }
 
+// ── Company Members ───────────────────────────────────────────────────────────
+
+/** A member of the company — joined Member + User from GET /v1/members. */
+export interface CompanyMember {
+  id: Id
+  userId: Id
+  name: string
+  email: string
+  role: string
+}
+
 export interface InboxItem {
   id: Id
   title: string

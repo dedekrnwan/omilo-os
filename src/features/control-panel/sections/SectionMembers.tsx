@@ -1,11 +1,27 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Crown, Ellipsis, Mail, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
 import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
-import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
+import { useMembers } from '../../../app/queries'
+import type { CompanyMember } from '../../../core/domain/types'
+
+/** Derive display initials from a name string. */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+/** Deterministic color from a string (cycles through a palette). */
+const PALETTE = ['#57534E', '#0EA5E9', '#14B8A6', '#F97316', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B']
+function memberColor(id: string): string {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return PALETTE[h % PALETTE.length]
+}
 
 const ROLES = [
   { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
@@ -76,16 +92,41 @@ function MemberMoreMenu({ name, onEdit, onRemove }: { name: string; onEdit: () =
 
 type PersonRow = { email: string; name: string; initials: string; color: string; channels: string; role: string; seen: string }
 
+/** Map a CompanyMember to a PersonRow for display. */
+function toPersonRow(m: CompanyMember): PersonRow {
+  return {
+    email: m.email,
+    name: m.name,
+    initials: initials(m.name),
+    color: memberColor(m.id),
+    channels: 'All channels',
+    role: m.role.charAt(0).toUpperCase() + m.role.slice(1),
+    seen: '',
+  }
+}
+
 /** pen ZDdLD · Members & roles — and X16ZX · Self-hosted (variant). */
 export function SectionMembers({ onDialog, variant }: SectionProps) {
   const selfHosted = variant === 'self-hosted'
+  const { data: fetchedMembers, isLoading, isError } = useMembers()
 
-  // Local state: role per person (keyed by email)
-  const [roles, setRoles] = useState<Record<string, string>>(() =>
-    Object.fromEntries(PEOPLE.map((p) => [p.email, p.role])),
+  // Convert API members to PersonRow; fall back to empty while loading
+  const apiRows = useMemo<PersonRow[]>(
+    () => (fetchedMembers ?? []).map(toPersonRow),
+    [fetchedMembers],
   )
-  const [members, setMembers] = useState<PersonRow[]>([...PEOPLE] as PersonRow[])
+
+  // Local state: role per person (keyed by email) — initialised from API data
+  const [roles, setRoles] = useState<Record<string, string>>({})
+  const [removedEmails, setRemovedEmails] = useState<Set<string>>(new Set())
   const [pendingRole, setPendingRole] = useState<RoleOption>('Member')
+
+  // Merge API rows with local overrides and removals
+  const members = useMemo<PersonRow[]>(() => {
+    return apiRows
+      .filter((p) => !removedEmails.has(p.email))
+      .map((p) => ({ ...p, role: roles[p.email] ?? p.role }))
+  }, [apiRows, roles, removedEmails])
 
   function changeRole(email: string, r: RoleOption) {
     setRoles((prev) => ({ ...prev, [email]: r }))
@@ -96,8 +137,24 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
   }
 
   function handleRemove(email: string, name: string) {
-    setMembers((prev) => prev.filter((m) => m.email !== email))
+    setRemovedEmails((prev) => new Set([...prev, email]))
     notify(`${name} removed`)
+  }
+
+  if (isLoading) {
+    return (
+      <PageShell crumb="Members & roles">
+        <p className="text-[13px] text-muted">Loading members…</p>
+      </PageShell>
+    )
+  }
+
+  if (isError) {
+    return (
+      <PageShell crumb="Members & roles">
+        <p className="text-[13px] text-danger">Failed to load members.</p>
+      </PageShell>
+    )
   }
 
   return (
@@ -163,15 +220,15 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
               <Initials text={p.initials} color={p.color} />
               <div className="flex flex-col gap-px">
                 <span className="text-[13px] font-medium text-ink">{p.name}</span>
-                <span className="text-[11.5px] text-muted">{p.email} · {p.seen}</span>
+                <span className="text-[11.5px] text-muted">{p.email}{p.seen ? ` · ${p.seen}` : ''}</span>
               </div>
             </div>
             <span className="w-[190px] text-[12px] text-ink-2">{p.channels}</span>
             <div className="w-[150px]">
-              {roles[p.email] === 'Owner' ? (
+              {p.role === 'Owner' ? (
                 <Chip icon={Crown}>Owner</Chip>
               ) : (
-                <RoleDropdown role={roles[p.email] ?? p.role} onChange={(r) => changeRole(p.email, r)} />
+                <RoleDropdown role={p.role} onChange={(r) => changeRole(p.email, r)} />
               )}
             </div>
             <MemberMoreMenu

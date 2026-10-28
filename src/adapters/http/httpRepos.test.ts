@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHttpRepos } from './httpRepos'
 import { ApiError } from './client'
 import { runReposContract } from '../../core/ports/repos.contract'
-import type { Channel, InboxItem, Session, UsageSummary, WalletSettings, AiAccount, Piece, Connector, McpToken, Flow, FlowRun, Routine, KbItem, KbSource, AnalyticsOverview, HelperStat, Skill, Helper } from '../../core/domain/types'
+import type { Channel, CompanyMember, InboxItem, Session, UsageSummary, WalletSettings, AiAccount, Piece, Connector, McpToken, Flow, FlowRun, Routine, KbItem, KbSource, AnalyticsOverview, HelperStat, Skill, Helper } from '../../core/domain/types'
 
 const BASE = 'http://api.test'
 const TOKEN = 'test-token-abc'
@@ -171,6 +171,11 @@ const rawSkill: Skill = {
 }
 const rawHelper: Helper = {
   id: 'h-c1', name: 'Chief', area: 'brand', role: 'Chief of Staff', status: 'active', isChief: true,
+}
+
+// P13 members seed
+const rawMember = {
+  id: 'mem-1', user_id: 'usr-1', name: 'Dede Kurniawan', email: 'dede@saga.co.id', role: 'owner',
 }
 
 // ── unit tests ────────────────────────────────────────────────────────────────
@@ -806,6 +811,24 @@ describe('createHttpRepos — unit', () => {
     const repos = createHttpRepos(BASE, () => TOKEN)
     await expect(repos.helpers.get('h-chief')).rejects.toBeInstanceOf(ApiError)
   })
+
+  // ── P13 members ────────────────────────────────────────────────────────────
+
+  it('members.list() calls GET /v1/members and maps snake→camel', async () => {
+    const raw = [{ id: 'mem-1', user_id: 'usr-1', name: 'Dede Kurniawan', email: 'dede@saga.co.id', role: 'owner' }]
+    fetchMock.mockResolvedValueOnce(okJson(raw))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.members.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/members`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    const m = result[0] as CompanyMember
+    expect(m.userId).toBe('usr-1')
+    expect(m.name).toBe('Dede Kurniawan')
+    expect((m as unknown as Record<string, unknown>).user_id).toBeUndefined()
+  })
 })
 
 // ── contract suite against the http impl (mocked fetch) ───────────────────────
@@ -893,6 +916,9 @@ runReposContract('http (mocked fetch)', () => {
     if (path === '/v1/helpers') return Promise.resolve(okJson([rawHelper]))
     if (path === `/v1/helpers/${rawHelper.id}`) return Promise.resolve(okJson({ helper: rawHelper, jobs: [], skills: [] }))
     if (path.match(/^\/v1\/helpers\/.+$/)) return Promise.resolve(notFound())
+
+    // members
+    if (path === '/v1/members') return Promise.resolve(okJson([rawMember]))
 
     return Promise.resolve(notFound())
   })

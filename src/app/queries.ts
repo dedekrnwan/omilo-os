@@ -292,3 +292,13 @@ export function useHelper(id: Id) {
     queryFn: () => repos.helpers.get(id),
   })
 }
+
+// ── P13 control-panel members ─────────────────────────────────────────────────
+
+export function useMembers() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['members'],
+    queryFn: () => repos.members.list(),
+  })
+}

@@ -4,6 +4,7 @@ import type {
   BillingPlan,
   BillingSubscription,
   Channel,
+  CompanyMember,
   Connector,
   Flow,
   FlowRun,
@@ -796,4 +797,13 @@ export const inboxItems: InboxItem[] = [
     asker: 'Growth', askerArea: 'marketing',
     meta: '2m 4s · 2 sources · 5 steps',
   },
+]
+
+// ── Members ───────────────────────────────────────────────────────────────────
+
+export const members: CompanyMember[] = [
+  { id: 'mem-dk', userId: 'usr-dk', name: 'Dede Kurniawan', email: 'dede@saga.co.id', role: 'owner' },
+  { id: 'mem-ra', userId: 'usr-ra', name: 'Rina Ayu',       email: 'rina@saga.co.id', role: 'admin' },
+  { id: 'mem-by', userId: 'usr-by', name: 'Bayu Pratama',   email: 'bayu@saga.co.id', role: 'member' },
+  { id: 'mem-sn', userId: 'usr-sn', name: 'Sari Nur',       email: 'sari@saga.co.id', role: 'member' },
 ]

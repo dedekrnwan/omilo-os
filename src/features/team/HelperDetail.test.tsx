@@ -65,6 +65,7 @@ function makeRepos(helper: Helper | null = CHIEF_HELPER): Repos {
         Promise.resolve(helper?.id === id ? helper : null),
       ),
     },
+    members: { list: vi.fn().mockResolvedValue([]) },
   }
 }
 

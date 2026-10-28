@@ -40,6 +40,7 @@ function makeRepos(): Repos {
     analytics: { overview: vi.fn().mockResolvedValue({ stats: [], series: [] }), helpers: vi.fn().mockResolvedValue([]) },
     skills: { list: vi.fn().mockResolvedValue([...MOCK_SKILLS]), get: vi.fn().mockResolvedValue(null) },
     helpers: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    members: { list: vi.fn().mockResolvedValue([]) },
   }
 }
 

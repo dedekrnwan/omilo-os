@@ -4,6 +4,7 @@ import type {
   BillingPlan,
   BillingSubscription,
   Channel,
+  CompanyMember,
   Connector,
   Flow,
   FlowRun,
@@ -123,6 +124,11 @@ export interface HelperRepo {
   get(id: Id): Promise<Helper | null>
 }
 
+export interface MemberRepo {
+  /** GET /v1/members — list all members of the authed company. */
+  list(): Promise<CompanyMember[]>
+}
+
 export interface Repos {
   channels: ChannelRepo
   folders: FolderRepo
@@ -144,4 +150,5 @@ export interface Repos {
   analytics: AnalyticsRepo
   skills: SkillRepo
   helpers: HelperRepo
+  members: MemberRepo
 }

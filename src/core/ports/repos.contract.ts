@@ -306,5 +306,20 @@ export function runReposContract(name: string, makeRepos: () => Repos): void {
       const result = await repos.helpers.get('unknown-helper-' + Math.random())
       expect(result).toBeNull()
     })
+
+    // members
+    it('members.list() returns a non-empty array; each item has id, userId, name, email, role', async () => {
+      const repos = makeRepos()
+      const result = await repos.members.list()
+      expect(Array.isArray(result)).toBe(true)
+      expect(result.length).toBeGreaterThan(0)
+      for (const m of result) {
+        expect(typeof m.id).toBe('string')
+        expect(typeof m.userId).toBe('string')
+        expect(typeof m.name).toBe('string')
+        expect(typeof m.email).toBe('string')
+        expect(typeof m.role).toBe('string')
+      }
+    })
   })
 }
