@@ -4,11 +4,16 @@ import { UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { helperColor } from '../../ui/tokens'
 import { notify } from '../../ui/ds/Toaster'
-import type { HelperRecord } from './teamData'
+import type { HelperArea } from '../../core/domain/types'
 import { Btn } from './ui'
 
+interface LetGoHelper {
+  name: string
+  area: HelperArea
+}
+
 /** Let go — pen HX7PZ (Confirm Dialog x70TQk, worried mascot). */
-export function LetGoDialog({ helper, onClose, onLetGo }: { helper: HelperRecord; onClose: () => void; onLetGo?: () => void }) {
+export function LetGoDialog({ helper, onClose, onLetGo }: { helper: LetGoHelper; onClose: () => void; onLetGo?: () => void }) {
   const n = helper.name
   const handleLetGo = () => {
     if (onLetGo) {

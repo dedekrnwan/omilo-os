@@ -5,9 +5,8 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
 import { notify } from '../../ui/ds/Toaster'
-import type { HelperArea } from '../../core/domain/types'
-import { HELPERS } from './teamData'
-import type { HelperRecord } from './teamData'
+import type { Helper, HelperArea } from '../../core/domain/types'
+import { useHelpers } from '../../app/queries'
 import { StatusChip, TeamTopbar } from './StatusChip'
 import { Btn, Chip, IconBtn, Segmented } from './ui'
 import { HireDialog } from './HireDialog'
@@ -15,9 +14,33 @@ import { SetupDialog } from './SetupDialog'
 import { RolesModelsDialog } from './RolesModelsDialog'
 import { LetGoDialog } from './LetGoDialog'
 
+// ── Adapter: Helper domain type → roster display shape ────────────────────────
+
+type RosterHelper = Helper & {
+  rosterStatus: 'Working' | 'Needs you' | 'Caught up' | 'Idle' | 'Always on' | 'Planning next week'
+  rosterMeta: string
+  roleArea: string
+  nowLabel: 'NOW' | 'NEXT'
+  now: string
+  cost: string
+}
+
+function toRosterHelper(h: Helper): RosterHelper {
+  const status = h.isChief ? 'Planning next week' : h.status === 'active' ? 'Working' : 'Idle'
+  return {
+    ...h,
+    rosterStatus: status as RosterHelper['rosterStatus'],
+    rosterMeta: h.role ?? '',
+    roleArea: h.role ?? h.area,
+    nowLabel: 'NOW',
+    now: '',
+    cost: '',
+  }
+}
+
 // ── Lead · Chief (pen FEsXM) ──────────────────────────────────────────────────
 
-function ChiefLead({ chief }: { chief: HelperRecord }) {
+function ChiefLead({ chief }: { chief: RosterHelper }) {
   return (
     <Link
       to="/team/$helperId"
@@ -64,7 +87,7 @@ function CardMoreMenu({
   onPause,
   onLetGo,
 }: {
-  helper: HelperRecord
+  helper: RosterHelper
   paused: boolean
   onClose: () => void
   onPause: () => void
@@ -115,8 +138,8 @@ function CardMoreMenu({
 
 // ── Helper card (pen "Helper · Builder" QbN3H) ────────────────────────────────
 
-function HelperCard({ helper }: { helper: HelperRecord }) {
-  const area = (helper.rosterArea ?? helper.area) as HelperArea
+function HelperCard({ helper }: { helper: RosterHelper }) {
+  const area = helper.area as HelperArea
   const [menuOpen, setMenuOpen] = useState(false)
   const [paused, setPaused] = useState(false)
   const [letGoOpen, setLetGoOpen] = useState(false)
@@ -212,7 +235,7 @@ function HireCard({ onHire }: { onHire: () => void }) {
 const FILTERS = ['All', 'Working', 'Needs you', 'Idle'] as const
 type Filter = (typeof FILTERS)[number]
 
-function matches(h: HelperRecord, f: Filter) {
+function matches(h: RosterHelper, f: Filter) {
   if (f === 'All') return true
   if (f === 'Working') return h.rosterStatus === 'Working' || h.rosterStatus === 'Caught up'
   return h.rosterStatus === f
@@ -232,10 +255,13 @@ export function TeamRoster() {
   const setState = (s: RosterState) =>
     void navigate({ to: '/team', search: (s ? { state: s } : {}) as never, replace: true })
 
-  const [chief, ...reports] = HELPERS
+  const { data: rawHelpers, isLoading, isError } = useHelpers()
+  const allHelpers = (rawHelpers ?? []).map(toRosterHelper)
+  const chief = allHelpers.find((h) => h.isChief)
+  const reports = allHelpers.filter((h) => !h.isChief)
   const shown = reports.filter((h) => matches(h, filter))
-  const cells: (HelperRecord | 'hire')[] = [...shown, 'hire']
-  const rows: (HelperRecord | 'hire')[][] = []
+  const cells: (RosterHelper | 'hire')[] = [...shown, 'hire']
+  const rows: (RosterHelper | 'hire')[][] = []
   for (let i = 0; i < cells.length; i += 3) rows.push(cells.slice(i, i + 3))
 
   return (
@@ -248,7 +274,7 @@ export function TeamRoster() {
               <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
                 <h2 className="m-0 font-display text-[22px] font-semibold tracking-[-0.4px] text-ink">Team</h2>
                 <p className="m-0 text-[13px] text-muted">
-                  Six helpers run Sahabat Warga. Each owns a job, works on loops, and checks in only when a decision is
+                  Helpers run your company. Each owns a job, works on loops, and checks in only when a decision is
                   yours.
                 </p>
               </div>
@@ -260,14 +286,37 @@ export function TeamRoster() {
               </Btn>
             </div>
 
-            <ChiefLead chief={chief} />
+            {isLoading && (
+              <div className="flex w-full items-center justify-center py-[40px] text-[13px] text-muted">
+                Loading helpers…
+              </div>
+            )}
 
-            <div className="flex w-full items-center gap-[8px] pt-[8px]">
-              <h3 className="m-0 text-[14px] font-semibold text-ink">Reports to Chief</h3>
-              <span className="font-mono text-[12px] text-muted">{reports.length} helpers</span>
-              <span className="h-px flex-1" />
-              <Segmented items={FILTERS} value={filter} onChange={setFilter} />
-            </div>
+            {isError && (
+              <div className="flex w-full items-center justify-center py-[40px] text-[13px] text-muted">
+                Could not load helpers. Please try again.
+              </div>
+            )}
+
+            {!isLoading && !isError && allHelpers.length === 0 && (
+              <div className="flex w-full items-center justify-center py-[40px] text-[13px] text-muted">
+                No helpers on your team yet.{' '}
+                <button type="button" className="ml-[4px] text-link hover:underline" onClick={() => setState('hire')}>
+                  Hire your first helper
+                </button>
+              </div>
+            )}
+
+            {chief && <ChiefLead chief={chief} />}
+
+            {!isLoading && !isError && (
+              <div className="flex w-full items-center gap-[8px] pt-[8px]">
+                <h3 className="m-0 text-[14px] font-semibold text-ink">Reports to Chief</h3>
+                <span className="font-mono text-[12px] text-muted">{reports.length} helpers</span>
+                <span className="h-px flex-1" />
+                <Segmented items={FILTERS} value={filter} onChange={setFilter} />
+              </div>
+            )}
 
             {rows.map((row, i) => (
               <div key={i} className="grid w-full grid-cols-3 gap-[12px]">
