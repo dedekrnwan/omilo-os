@@ -100,6 +100,7 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
       }),
     },
     aiAccounts: { list: vi.fn().mockResolvedValue([...MOCK_ACCOUNTS]) },
+    members: { list: vi.fn().mockResolvedValue([]) },
     marketplace: { list: vi.fn().mockResolvedValue([]) },
     connectors: { list: vi.fn().mockResolvedValue([]) },
     mcpTokens: { list: vi.fn().mockResolvedValue([]) },
