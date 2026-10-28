@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { ReposProvider } from './ReposProvider'
+import { SessionProvider } from './SessionProvider'
 
 const queryClient = new QueryClient()
 
@@ -11,7 +12,9 @@ interface ProvidersProps {
 export function Providers({ children }: ProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ReposProvider>{children}</ReposProvider>
+      <ReposProvider>
+        <SessionProvider>{children}</SessionProvider>
+      </ReposProvider>
     </QueryClientProvider>
   )
 }
