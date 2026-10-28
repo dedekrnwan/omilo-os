@@ -203,7 +203,7 @@ export function createAuthAdapter(
      * Stores the returned access token via tokenStorage.setToken.
      */
     async signIn(email: string, password: string): Promise<SignInResult> {
-      const res = await tokenlessFetch(`${baseUrl}/auth/sign-in`, {
+      const res = await tokenlessFetch(`${baseUrl}/v1/auth/sign-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -224,7 +224,7 @@ export function createAuthAdapter(
      * Sign-up does not return a companies list; companies is set to [].
      */
     async signUp(name: string, email: string, password: string): Promise<SignInResult> {
-      const res = await tokenlessFetch(`${baseUrl}/auth/sign-up`, {
+      const res = await tokenlessFetch(`${baseUrl}/v1/auth/sign-up`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password }),
@@ -244,7 +244,7 @@ export function createAuthAdapter(
      * Throws ApiError (status 401) when the token is invalid/expired.
      */
     async me(): Promise<MeResult> {
-      const res = await bearerFetch(`${baseUrl}/me`, getToken)
+      const res = await bearerFetch(`${baseUrl}/v1/me`, getToken)
       const raw: RawMeResponse = await res.json()
       return {
         user: mapUser(raw.user),
@@ -259,7 +259,7 @@ export function createAuthAdapter(
      * Stores the new access token returned by the backend.
      */
     async switchCompany(companyId: string): Promise<SignInResult> {
-      const res = await bearerFetch(`${baseUrl}/auth/switch-company`, getToken, {
+      const res = await bearerFetch(`${baseUrl}/v1/auth/switch-company`, getToken, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Backend speaks snake_case for request bodies (cf. changePlan → {plan_id}).

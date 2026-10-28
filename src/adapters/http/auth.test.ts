@@ -59,7 +59,7 @@ describe('signIn', () => {
     // Verify the correct URL was called
     expect(stub).toHaveBeenCalledOnce()
     const [url, init] = stub.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(`${BASE}/auth/sign-in`)
+    expect(url).toBe(`${BASE}/v1/auth/sign-in`)
     expect(init.method).toBe('POST')
 
     // CRITICAL: no Authorization header must be sent
@@ -116,7 +116,7 @@ describe('signUp', () => {
 
     expect(stub).toHaveBeenCalledOnce()
     const [url, init] = stub.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(`${BASE}/auth/sign-up`)
+    expect(url).toBe(`${BASE}/v1/auth/sign-up`)
 
     // No Authorization header
     const headers = init.headers as Record<string, string>
@@ -159,7 +159,7 @@ describe('me', () => {
 
     expect(stub).toHaveBeenCalledOnce()
     const [url, init] = stub.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(`${BASE}/me`)
+    expect(url).toBe(`${BASE}/v1/me`)
 
     // Bearer header must be present
     const headers = init?.headers as Record<string, string> | undefined
@@ -232,7 +232,7 @@ describe('switchCompany', () => {
     const result = await adapter.switchCompany('cmp-2')
 
     const [url, init] = stub.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe(`${BASE}/auth/switch-company`)
+    expect(url).toBe(`${BASE}/v1/auth/switch-company`)
     const headers = init?.headers as Record<string, string> | undefined
     expect(headers?.['Authorization']).toBe('Bearer old-token')
 

@@ -11,9 +11,10 @@ export default defineConfig({
   // forwarded to the API on :8000; `/v1/ws` upgrades as a WebSocket (ws: true).
   server: {
     proxy: {
+      // All API routes (auth, me, company, etc.) are mounted under /v1 on the
+      // backend, so this single entry covers everything; /v1/ws upgrades as a
+      // WebSocket (ws: true).
       '/v1': { target: 'http://localhost:8000', changeOrigin: true, ws: true },
-      '/auth': { target: 'http://localhost:8000', changeOrigin: true },
-      '/me': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },
 })
