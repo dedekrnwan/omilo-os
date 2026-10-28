@@ -8,7 +8,7 @@
 # Quick start: make db && make dev
 
 SHELL := /bin/bash
-.PHONY: dev db db-stop db-logs test build image \
+.PHONY: dev dev-api dev-web _api db db-stop db-logs test build image \
         up up-cloud up-runtime connect down logs \
         migrate seed register desktop desktop-dev
 
@@ -41,15 +41,28 @@ $(VENV_BIN)/python:
 venv: $(VENV_BIN)/python
 
 # ── dev: start infra + api (two-terminal or background approach) ──────────────
-# Terminal 1: make db && make api   (or: make dev starts db then api in foreground)
-# Terminal 2: npm run dev           (frontend dev server)
+# make dev — full stack in ONE command: DB + migrate + seed + API (:8000) + web
+# dev server (:5173), run concurrently; Ctrl-C stops both. The web talks to the API
+# through the Vite proxy (vite.config.ts) so it is a wired full stack (no CORS).
+# Use `make dev-api` or `make dev-web` to run just one side.
 dev: db
-	@echo "→ DB is up. Starting API in foreground (Ctrl-C to stop)."
-	@echo "→ Open a second terminal and run: npm run dev   (frontend)"
-	$(MAKE) _api
+	@echo "→ DB up. Migrating + seeding, then API (:8000) + web (:5173). Ctrl-C stops both."
+	@$(MAKE) --no-print-directory migrate seed
+	@command -v npm >/dev/null 2>&1 || { echo "npm is required for the web dev server."; exit 1; }
+	@test -d node_modules || npm install --no-audit --no-fund
+	@trap 'kill 0' INT TERM; \
+	  ( cd apps/api && $(VENV_BIN)/omilo-api ) & \
+	  ( VITE_USE_HTTP=1 VITE_API_URL=http://localhost:5173 npm run dev ) & \
+	  wait
 
-_api: venv
+# Just the backend API (migrate + serve).
+dev-api _api: venv
 	cd apps/api && $(VENV_BIN)/omilo-migrate && $(VENV_BIN)/omilo-api
+
+# Just the web dev server, wired to a locally-running API via the Vite proxy.
+dev-web:
+	@test -d node_modules || npm install --no-audit --no-fund
+	VITE_USE_HTTP=1 VITE_API_URL=http://localhost:5173 npm run dev
 
 # ── db: start dev Postgres + Redis ───────────────────────────────────────────
 db:
