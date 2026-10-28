@@ -25,6 +25,7 @@ type WsEventHandler<T extends Event> = ((ev: T) => void) | null
 
 class MockWS {
   static latest: MockWS | null = null
+  static instanceCount = 0
 
   readonly url: string
   readyState = 0
@@ -37,6 +38,7 @@ class MockWS {
   constructor(url: string) {
     this.url = url
     MockWS.latest = this
+    MockWS.instanceCount++
   }
 
   send(_data: string) {}
@@ -78,6 +80,7 @@ const assistantMsg: Message = {
 
 beforeEach(() => {
   MockWS.latest = null
+  MockWS.instanceCount = 0
   vi.stubGlobal('WebSocket', MockWS)
 })
 
@@ -370,41 +373,132 @@ describe('Fix round 1 — 4401 auth-close and concurrent socket guard', () => {
   })
 
   // ------------------------------------------------------------------
-  // Fix 2: concurrent socket guard — second send while first in-flight
-  // does NOT open a second WebSocket instance
+  // Fix 2: concurrent socket guard — exercises the REAL ChatSession
+  // handleSend guard (`if (isSending) return`) by rendering the component
+  // in live mode and driving sends through the composer UI.
+  //
+  // Uses vi.doMock (not hoisted) + vi.resetModules so the freshly-loaded
+  // ChatSession sees VITE_USE_HTTP=1 and the stubbed createCommands.
+  //
+  // Sequence:
+  //   1. First send → MockWS instance count = 1, socket open, in-flight.
+  //   2. Second send while in-flight → guard fires → count still 1.
+  //   3. Fire job_done on first socket → isSending clears.
+  //   4. Third send → guard allows → count = 2.
   // ------------------------------------------------------------------
-  test('second send while first in-flight does NOT open a second socket', () => {
-    const wsCountBefore = MockWS.latest
+  test('second send while first in-flight does NOT open a second socket (real ChatSession)', async () => {
+    // ── live-mode env + module stubs ──────────────────────────────────
+    vi.stubEnv('VITE_USE_HTTP', '1')
 
-    let isSending = false
+    // Reset module registry so ChatSession is re-imported with the stub env
+    vi.resetModules()
 
-    // First send — simulate in-flight (no job_done yet)
-    const firstSend = () => {
-      if (isSending) return // guard: deny concurrent send
-      isSending = true
-      openSocket({
-        onJobDone: () => { isSending = false },
-      })
-    }
+    // vi.doMock (not hoisted) — register before the dynamic import below
+    vi.doMock('../../adapters/http/commands', () => ({
+      createCommands: () => ({
+        sendMessage: vi.fn().mockResolvedValue({ message: null, jobId: 'j0' }),
+        createSession: vi.fn(),
+        createArea: vi.fn(),
+        updateArea: vi.fn(),
+        deleteArea: vi.fn(),
+        addParticipant: vi.fn(),
+        removeParticipant: vi.fn(),
+        createFolder: vi.fn(),
+        updateFolder: vi.fn(),
+        deleteFolder: vi.fn(),
+        createGoal: vi.fn(),
+        updateGoal: vi.fn(),
+        deleteGoal: vi.fn(),
+      }),
+    }))
 
-    const secondSend = () => {
-      if (isSending) return // guard fires: does NOT open another socket
-      isSending = true
-      openSocket({
-        onJobDone: () => { isSending = false },
-      })
-    }
+    // Stub localStorage.getItem so getToken() returns a non-null value,
+    // which causes openChatSocket to include ?token=… in the URL.
+    const localStorageStub = { getItem: () => 'test-jwt', setItem: () => {}, removeItem: () => {} }
+    vi.stubGlobal('localStorage', localStorageStub)
 
-    firstSend()
-    const wsAfterFirst = MockWS.latest
+    // Dynamic imports AFTER env + module stubs are registered
+    const { ChatSession } = await import('./ChatSession')
+    const { createMockRepos } = await import('../../adapters/mock/mockRepos')
+    const { render: tlRender, screen: tlScreen, waitFor: tlWaitFor, act } = await import('@testing-library/react')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    const { ReposProvider } = await import('../../app/ReposProvider')
+    const userEvent = (await import('@testing-library/user-event')).default
 
-    // Second send arrives while first is in-flight (isSending = true)
-    secondSend()
-    const wsAfterSecond = MockWS.latest
+    const repos = createMockRepos()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    MockWS.instanceCount = 0
+    MockWS.latest = null
 
-    // Should be the SAME instance — no second WS opened
-    expect(wsAfterSecond).toBe(wsAfterFirst)
-    expect(wsAfterSecond).not.toBe(wsCountBefore)
+    const user = userEvent.setup()
+
+    tlRender(
+      <QueryClientProvider client={qc}>
+        <ReposProvider repos={repos}>
+          <ChatSession sessionId="sess-passkey" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+
+    // Wait for composer to mount
+    await tlWaitFor(() => {
+      expect(tlScreen.getByRole('button', { name: /send/i })).toBeInTheDocument()
+    })
+
+    // ── First send ────────────────────────────────────────────────────
+    const input = tlScreen.getByRole('textbox')
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'First message')
+    })
+
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    // One WebSocket opened — first turn is in-flight
+    expect(MockWS.instanceCount).toBe(1)
+    const firstSocket = MockWS.latest!
+
+    // ── Second send while in-flight ────────────────────────────────────
+    // Type something so the send button becomes enabled again
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'Second message')
+    })
+
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    // Guard must have fired: still exactly one socket open
+    expect(MockWS.instanceCount).toBe(1)
+    // The socket instance has not changed
+    expect(MockWS.latest).toBe(firstSocket)
+
+    // ── Fire job_done → isSending clears ──────────────────────────────
+    await act(async () => {
+      firstSocket.fireMessage({ type: 'job_done', job_id: 'job-guard-test' })
+    })
+
+    // ── Third send after guard releases ───────────────────────────────
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'Third message')
+    })
+
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    // A new socket must have been opened — guard released correctly
+    expect(MockWS.instanceCount).toBe(2)
+    expect(MockWS.latest).not.toBe(firstSocket)
+
+    // Cleanup
+    vi.unstubAllEnvs()
+    vi.doUnmock('../../adapters/http/commands')
+    vi.resetModules()
   })
 })
 
