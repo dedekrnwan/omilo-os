@@ -14,11 +14,16 @@ Public API:
         Append a negative-delta ledger row, decrement Company.credit_balance.
         Mirror of grant_credits() for reversals (refunds, adjustments).
 
-    check_can_start_job(db, company, helper) -> tuple[bool, str | None]
+    check_can_start_job(db, company, helper, engine_type=None) -> tuple[bool, str | None]
         Gate function called by the runner BEFORE starting a consequential job:
           - paused helper         → (False, "helper_paused")
           - helper budget exceeded → pause helper, return (False, "helper_budget_exceeded")
-          - hard overage          → block + alert InboxItem, (False, "insufficient_credits")
+          - 0-credit engine (BYO/local/pool): always allowed, even offline
+          - CLOUD mode, hard overage: block + alert InboxItem, (False, "insufficient_credits")
+          - RUNTIME mode, credit-consuming job:
+              check_balance via ControlPlane; on ControlPlaneUnreachable →
+              (False, "paused_offline"); on balance ≤ 0 + hard policy →
+              (False, "insufficient_credits"); otherwise (True, None).
           - soft overage / ok     → (True, None)
 
 Design decisions:
@@ -30,6 +35,10 @@ Design decisions:
   and hard-overage blocks.  It never raises; always returns a (bool, reason).
 - Alert InboxItem (kind="alert") is created for hard-overage so the owner
   sees "Out of credits" in their inbox.
+- Runtime mode: gate routes credit-consuming jobs through get_control_plane()
+  so the cloud is the authority. BYO/local (0-credit) jobs always pass even
+  when the control plane is offline.
+- CLOUD mode (LocalControlPlane): behavior is identical to pre-T4 — no change.
 """
 from __future__ import annotations
 
@@ -42,12 +51,18 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from omilo.control import ControlPlaneUnreachable
+from omilo.control.factory import get_control_plane
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger
 
 if TYPE_CHECKING:
     from omilo.models.agents import Helper
     from omilo.models.tenancy import Company
+
+# Engine types that consume credits (cloud-billed) — mirrors meter._CLOUD_ENGINE_TYPES.
+# Kept in sync manually; both are the canonical classification.
+_CREDIT_ENGINE_TYPES = frozenset({"litellm"})
 
 # Public API summary (keep docstring at top of module in sync):
 #   debit_credits(db, company, amount, reason="refund", meta=None) -> CreditLedger
@@ -244,6 +259,7 @@ def check_can_start_job(
     db: Session,
     company: "Company",
     helper: "Helper",
+    engine_type: str | None = None,
 ) -> tuple[bool, str | None]:
     """Gate: determine whether starting a new consequential job is permitted.
 
@@ -253,18 +269,31 @@ def check_can_start_job(
       1. Helper already paused → (False, "helper_paused")
       2. Per-helper monthly budget exceeded → pause helper,
          (False, "helper_budget_exceeded")
-      3. Hard-overage: balance ≤ 0 + overage_policy=="hard" →
-         create alert InboxItem, (False, "insufficient_credits")
-      4. Otherwise (soft overage or positive balance) → (True, None)
+      3. If engine_type is 0-credit (BYO/local/pool) → ALWAYS allowed,
+         even when the control plane is offline. Skip credit checks entirely.
+      4a. CLOUD mode (LocalControlPlane):
+          Hard-overage: balance ≤ 0 + overage_policy=="hard" →
+          create alert InboxItem, (False, "insufficient_credits")
+      4b. RUNTIME mode (RemoteControlPlane):
+          - Call get_control_plane().check_balance(company_id).
+          - On ControlPlaneUnreachable → (False, "paused_offline")
+            (caller handles this by creating the job with paused_offline status)
+          - On balance ≤ 0 + hard policy → create alert InboxItem,
+            (False, "insufficient_credits")
+          - Soft overage or positive balance → (True, None)
+      5. Allowed → (True, None)
 
     Args:
-        db:      Company-scoped session.
-        company: Company ORM object.
-        helper:  Helper ORM object.
+        db:          Company-scoped session.
+        company:     Company ORM object.
+        helper:      Helper ORM object.
+        engine_type: The engine type for the job (from helper.engine["type"]).
+                     Used to determine if the job consumes credits.
+                     If None, defaults to 0-credit path (conservative safe).
 
     Returns:
         (allowed, reason) — if allowed is False, reason is a short string
-        explaining why.
+        explaining why. "paused_offline" is a special reason handled by runner.
     """
     # ── 1. Already paused ────────────────────────────────────────────────────
     if getattr(helper, "status", "active") == "paused":
@@ -280,9 +309,51 @@ def check_can_start_job(
             db.flush()
             return False, "helper_budget_exceeded"
 
-    # ── 3. Hard overage ──────────────────────────────────────────────────────
-    current_balance = balance(db, company)
-    overage_policy = getattr(company, "overage_policy", "soft") or "soft"
+    # ── 3. Determine mode (cloud vs runtime) and resolve balance ─────────────
+    # Route through get_control_plane() so:
+    #   - CLOUD mode (LocalControlPlane) → current in-process behavior (P4 unchanged):
+    #       checks balance for ALL engine types (BYO/local jobs also gated).
+    #   - RUNTIME mode (RemoteControlPlane):
+    #       0-credit (BYO/local/pool) → ALWAYS allowed, even offline.
+    #       Credit-consuming (litellm) → check_balance via cloud; on
+    #       ControlPlaneUnreachable → paused_offline.
+    from omilo.control.local import LocalControlPlane
+
+    resolved_engine_type = engine_type or "fake"
+    is_credit_consuming = resolved_engine_type in _CREDIT_ENGINE_TYPES
+
+    cp = get_control_plane()
+    is_cloud_mode = isinstance(cp, LocalControlPlane)
+
+    if not is_cloud_mode and not is_credit_consuming:
+        # RUNTIME MODE + 0-credit engine: always allowed, even offline.
+        return True, None
+
+    # For cloud mode (all engines) and runtime mode (credit-consuming engines):
+    # check balance via the control plane.
+    try:
+        balance_state = cp.check_balance(company.id, db=db)
+        current_balance = balance_state.balance
+        overage_policy = balance_state.overage_policy or "soft"
+    except ControlPlaneUnreachable:
+        if not is_cloud_mode and is_credit_consuming:
+            # Runtime mode + credit-consuming + unreachable → paused_offline
+            return False, "paused_offline"
+        # Cloud mode should never raise ControlPlaneUnreachable (LocalControlPlane)
+        # but if it does, fall back to local balance
+        current_balance = balance(db, company)
+        overage_policy = getattr(company, "overage_policy", "soft") or "soft"
+    except TypeError:
+        # Fallback: call without db kwarg (for test doubles that don't accept it)
+        try:
+            balance_state = cp.check_balance(company.id)
+            current_balance = balance_state.balance
+            overage_policy = balance_state.overage_policy or "soft"
+        except ControlPlaneUnreachable:
+            if not is_cloud_mode and is_credit_consuming:
+                return False, "paused_offline"
+            current_balance = balance(db, company)
+            overage_policy = getattr(company, "overage_policy", "soft") or "soft"
 
     if current_balance <= 0 and overage_policy == "hard":
         _create_credit_alert(db, company, helper)
