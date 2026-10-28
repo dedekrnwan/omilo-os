@@ -24,6 +24,7 @@ import {
   analyticsHelpers,
   skills,
   helpers,
+  members,
 } from './fixtures'
 
 export function createMockRepos(): Repos {
@@ -144,6 +145,10 @@ export function createMockRepos(): Repos {
     helpers: {
       list: () => Promise.resolve([...helpers]),
       get: (id: Id) => Promise.resolve(helpers.find(h => h.id === id) ?? null),
+    },
+
+    members: {
+      list: () => Promise.resolve([...members]),
     },
   }
 }

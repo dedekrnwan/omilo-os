@@ -9,6 +9,7 @@ from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
 from omilo.api.approvals import router as approvals_router
 from omilo.api.company import router as company_router
+from omilo.api.members import router as members_router
 from omilo.api.mcp_tokens import router as mcp_tokens_router
 from omilo.api.billing import router as billing_router
 from omilo.api.wallet import router as wallet_router
@@ -65,6 +66,8 @@ def create_app() -> FastAPI:
     app.include_router(me_router, prefix="/v1")
     # Company profile: GET + PATCH /v1/company (P5d Task 1b)
     app.include_router(company_router, prefix="/v1")
+    # Members list: GET /v1/members (P13)
+    app.include_router(members_router, prefix="/v1")
     # Telemetry config: GET + POST /v1/telemetry-config (P7 Task 3)
     app.include_router(telemetry_config_router, prefix="/v1")
     # Repos-parity read endpoints (Task 7)

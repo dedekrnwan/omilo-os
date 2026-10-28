@@ -15,6 +15,7 @@ import type {
   BillingPlan,
   BillingSubscription,
   Channel,
+  CompanyMember,
   Connector,
   Flow,
   FlowRun,
@@ -236,6 +237,26 @@ function mapMcpToken(r: RawMcpToken): McpToken {
     lastUsedAt: r.last_used_at,
     revokedAt: r.revoked_at,
     active: r.active,
+  }
+}
+
+// ── Members ────────────────────────────────────────────────────────────────────
+
+type RawMember = {
+  id: string
+  user_id: string
+  name: string
+  email: string
+  role: string
+}
+
+function mapMember(r: RawMember): CompanyMember {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    email: r.email,
+    role: r.role,
   }
 }
 
@@ -686,6 +707,14 @@ export function createHttpRepos(
           if (err instanceof ApiError && err.status === 404) return null
           throw err
         }
+      },
+    },
+
+    members: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/members`, getToken)
+        const raw = await res.json() as RawMember[]
+        return raw.map(mapMember)
       },
     },
   }

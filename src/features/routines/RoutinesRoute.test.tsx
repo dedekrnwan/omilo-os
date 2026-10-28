@@ -91,6 +91,7 @@ function makeFixtureRepos(): Repos {
     analytics: { overview: stub({ stats: [], series: [] }), helpers: stub([]) },
     skills: { list: stub([]), get: stub(null) },
     helpers: { list: stub([]), get: stub(null) },
+    members: { list: stub([]) },
   }
 }
 
@@ -353,6 +354,7 @@ function makeRepos(routines: Routine[]): Repos {
     analytics: { overview: stub({ stats: [], series: [] }), helpers: stub([]) },
     skills: { list: stub([]), get: stub(null) },
     helpers: { list: stub([]), get: stub(null) },
+    members: { list: stub([]) },
   }
 }
 

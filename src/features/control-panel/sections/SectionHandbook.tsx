@@ -23,9 +23,17 @@ import { Mascot } from '../../../ui/ds/Mascot'
 import type { HelperArea } from '../../../core/domain/types'
 import { Drawer } from '../../routines/ui'
 import { Chip, IconTile, Initials, PageHeader, PageShell, PenButton } from '../ControlPanelShared'
-import { PEOPLE } from '../data'
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
+import { useMembers } from '../../../app/queries'
+
+// NOTE: The Handbook uses rich structured HandbookFile objects (sections,
+// suggestions, history, used-by stats). useKnowledge() returns KbItem recall
+// chunks (sourceId, heading, text, score) which lack this metadata. Wiring the
+// handbook *file list* to useKnowledge would require a sources list endpoint
+// (GET /v1/knowledge/sources — not yet implemented) and a mapping layer.
+// For P13 we wire only the "read by N people" avatar stack to real members;
+// the handbook file content stays as-is until a dedicated handbook endpoint exists.
 
 interface Section {
   h: string
@@ -257,8 +265,24 @@ const FILES: HandbookFile[] = [
 /** pen Read-by stack: Chief · Builder · Grower · Sales · Finance · Support (Mini/*, 24, r7). */
 const READERS: HelperArea[] = ['brand', 'dev', 'marketing', 'sales', 'finance', 'support']
 
+/** Derive display initials from a name string. */
+function nameInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+/** Deterministic color from an id string. */
+const AVATAR_PALETTE = ['#57534E', '#0EA5E9', '#14B8A6', '#F97316', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B']
+function avatarColor(id: string): string {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length]
+}
+
 /** pen TZ6Ia · Company handbook. Clicking a file opens it in a right-side drawer. */
 export function SectionHandbook({ variant, onVariant }: SectionProps) {
+  const { data: members } = useMembers()
   const [open, setOpen] = useState<HandbookFile | null>(() =>
     variant === 'policies' ? FILES.find((f) => f.name === 'POLICIES.md') ?? null : null,
   )
@@ -312,11 +336,11 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
         <div className="flex items-center gap-[8px]">
           <span className="text-[12px] text-muted">and</span>
           <div className="flex -space-x-[6px]">
-            {PEOPLE.map((p) => (
-              <Initials key={p.initials} text={p.initials} color={p.initials === 'DK' ? '#44403C' : p.color} size={24} fs={9.5} ring />
+            {(members ?? []).map((m) => (
+              <Initials key={m.id} text={nameInitials(m.name)} color={avatarColor(m.id)} size={24} fs={9.5} ring />
             ))}
           </div>
-          <span className="text-[12px] font-medium text-ink-2">4 people</span>
+          <span className="text-[12px] font-medium text-ink-2">{(members ?? []).length} {(members ?? []).length === 1 ? 'person' : 'people'}</span>
         </div>
         <div className="h-px flex-1" />
         <div className="flex items-center gap-[6px]">
