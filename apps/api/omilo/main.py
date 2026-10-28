@@ -1,3 +1,5 @@
+import os
+
 import uvicorn
 from fastapi import FastAPI
 
@@ -99,11 +101,15 @@ def create_app() -> FastAPI:
 
 
 def run() -> None:
+    # Watch only the source package for reloads — not tests/ or other sibling
+    # dirs, so running pytest (or editing tests) doesn't bounce the server.
+    pkg_dir = os.path.dirname(__file__)
     uvicorn.run(
         "omilo.main:create_app",
         host="0.0.0.0",
         port=8000,
         reload=True,
+        reload_dirs=[pkg_dir],
         factory=True,
     )
 

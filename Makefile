@@ -14,7 +14,8 @@ SHELL := /bin/bash
 
 # ── Python / venv detection ───────────────────────────────────────────────────
 # Prefer the virtualenv binary; fall back to a system Python 3.11+.
-VENV      := apps/api/.venv
+# Absolute paths so they survive the `cd apps/api` used by the api/test targets.
+VENV      := $(CURDIR)/apps/api/.venv
 VENV_BIN  := $(VENV)/bin
 PYTHON    ?= $(shell for p in python3.13 python3.12 python3.11 python3; do \
                command -v $$p >/dev/null 2>&1 \
