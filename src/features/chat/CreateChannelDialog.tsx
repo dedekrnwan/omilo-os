@@ -17,6 +17,7 @@ import { Dialog } from '../../ui/ds/Dialog'
 import { Mascot } from '../../ui/ds/Mascot'
 import { createCommands } from '../../adapters/http/commands'
 import { platform } from '../../platform'
+import { capture } from '../../telemetry'
 
 // ── pen `Chat · Create channel` (W0f1Ji) → Dialog bPWTh: right-side sheet ────
 
@@ -173,6 +174,7 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
         contextScope: context,
       })
       await queryClient.invalidateQueries({ queryKey: ['channels'] })
+      capture('area_created', {})
       onOpenChange(false)
     } catch {
       // Silent — network error; dialog stays open

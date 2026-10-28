@@ -1,5 +1,6 @@
 import { Button } from '../../../ui/ds/Button'
 import { Modal } from '../legacyShared'
+import { capture } from '../../../telemetry'
 
 interface Props {
   onClose: () => void
@@ -84,7 +85,7 @@ export function DialogChangePlan({ onClose }: Props) {
                   Current plan
                 </button>
               ) : p.action === 'Upgrade' ? (
-                <Button variant="primary" height={30} className="mt-auto w-full justify-center">{p.action}</Button>
+                <Button variant="primary" height={30} className="mt-auto w-full justify-center" onClick={() => capture('plan_changed', { plan: p.id })}>{p.action}</Button>
               ) : (
                 <Button variant="secondary" height={30} className="mt-auto w-full justify-center">{p.action}</Button>
               )}

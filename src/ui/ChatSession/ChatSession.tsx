@@ -23,6 +23,7 @@ import { ChatMenu } from './ChatMenu'
 import { ResultsPanel } from './ResultsPanel'
 import { BrowserPanel } from './BrowserPanel'
 import { RoutineCreatedThread } from './RoutineFromChat'
+import { capture } from '../../telemetry'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
 
@@ -294,6 +295,9 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
     // Guard (a): if a send is already in-flight, deny the new send.
     // The composer disables send during isSending; this enforces it at the logic layer too.
     if (isSending) return
+
+    // Content-free: no message text sent to telemetry
+    capture('message_sent', {})
 
     setIsSending(true)
     setSendNotice(null)

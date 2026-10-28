@@ -18,6 +18,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useMcpTokens } from '../../../app/queries'
 import type { McpToken } from '../../../core/domain/types'
 import { getCommands } from './getCommands'
+import { capture } from '../../../telemetry'
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ function MintDialog({
       })
       setSecret(result.token)
       setPhase('secret')
+      capture('mcp_token_minted', {})
       onMinted(result.token)
     } catch {
       notify('Failed to mint token')

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Monitor, Smartphone, Terminal } from 'lucide-react'
+import { optOut as telemetryOptOut, optIn as telemetryOptIn } from '../../../telemetry'
 import {
   Breadcrumb,
   RowDivider,
@@ -26,6 +27,29 @@ const DEVICES_INIT = [
 export function SectionAccount() {
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  // Telemetry opt-out: local state only; backend persistence happens via POST
+  // /v1/telemetry-config in a full integration, but the toggle wires the client-side
+  // opt-out immediately so capture() becomes a no-op.
+  const [analyticsOptedOut, setAnalyticsOptedOut] = useState(false)
+
+  function handleAnalyticsToggle() {
+    const next = !analyticsOptedOut
+    setAnalyticsOptedOut(next)
+    if (next) {
+      telemetryOptOut()
+    } else {
+      telemetryOptIn()
+    }
+    // Best-effort: persist preference to the backend (fire-and-forget)
+    void fetch(
+      `${(import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'}/v1/telemetry-config`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opted_out: next }),
+      },
+    ).catch(() => {/* swallow — opt-out is applied locally regardless */})
+  }
 
   function handleSignOut(name: string, isCli: boolean) {
     setDevices((prev) => prev.filter((d) => d.name !== name))
@@ -124,6 +148,23 @@ export function SectionAccount() {
             </div>
           ))}
         </div>
+
+        <Rule />
+
+        {/* Analytics & privacy */}
+        <SubHeading label="Analytics & privacy" />
+        <SettingCardRows>
+          <SettingRow
+            label="Share usage analytics"
+            desc="Sends content-free counts (e.g. messages sent, features used) to help improve Omilo. No message text, keys, or names are ever collected."
+          >
+            <Toggle
+              on={!analyticsOptedOut}
+              onClick={handleAnalyticsToggle}
+              label="Share usage analytics"
+            />
+          </SettingRow>
+        </SettingCardRows>
       </SectionPane>
 
       <SaveBar />

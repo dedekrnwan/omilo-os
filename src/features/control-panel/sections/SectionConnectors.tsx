@@ -11,6 +11,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useConnectors, useMarketplace } from '../../../app/queries'
 import type { Connector } from '../../../core/domain/types'
 import { getCommands } from './getCommands'
+import { capture } from '../../../telemetry'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ export function SectionConnectors({ onDialog }: Props) {
     try {
       await getCommands().installConnector(pieceId)
       await queryClient.invalidateQueries({ queryKey: ['connectors'] })
+      capture('connector_installed', { piece: pieceId })
       notify('Connector installed')
     } catch {
       notify('Install failed')
