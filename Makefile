@@ -9,7 +9,7 @@
 
 SHELL := /bin/bash
 .PHONY: dev db db-stop db-logs test build image \
-        up-cloud up-runtime down logs \
+        up up-cloud up-runtime connect down logs \
         migrate seed register desktop desktop-dev
 
 # ── Python / venv detection ───────────────────────────────────────────────────
@@ -89,14 +89,27 @@ image:
 	@echo "── building web image ───────────────────────────────────────────────"
 	docker build -f deploy/web/Dockerfile.web -t omilo-web:dev .
 
+# ── local runtime stack (default) ─────────────────────────────────────────────
+# `make up` starts Omilo in local mode: free, BYO AI, no cloud env needed.
+# To upgrade to hybrid (cloud identity + pooled credits): make connect
+up:
+	@echo "Starting self-host runtime (OMILO_MODE=local — free, BYO AI, no cloud)…"
+	$(DC_RUNTIME) up -d
+
+# ── hybrid upgrade — omilo connect ────────────────────────────────────────────
+# Sign in to the Omilo cloud, issue an install token, switch to hybrid mode.
+# Requires the runtime stack to be running: make up
+connect:
+	$(DC_RUNTIME) exec api omilo-connect
+
 # ── cloud stack ──────────────────────────────────────────────────────────────
 up-cloud:
 	@echo "Starting cloud control-plane stack (OMILO_MODE=cloud)…"
 	$(DC_CLOUD) up -d
 
-# ── runtime stack ─────────────────────────────────────────────────────────────
+# ── runtime stack (alias — kept for backward compat) ──────────────────────────
 up-runtime:
-	@echo "Starting local runtime stack (OMILO_MODE=runtime)…"
+	@echo "Starting self-host runtime stack (OMILO_MODE=local)…"
 	$(DC_RUNTIME) up -d
 
 # ── down / logs (default: dev stack; override with FILE=) ─────────────────────
@@ -106,9 +119,8 @@ down:
 logs:
 	docker compose -f $(FILE) logs -f --tail 200
 
-# ── register: register this runtime with the Omilo cloud ─────────────────────
-# Requires the runtime stack to be running.  The printed install token goes into
-# .env.runtime as OMILO_INSTALL_TOKEN, then restart the stack.
+# ── register: legacy alias for omilo-register (kept for compat) ──────────────
+# Prefer: make connect  (runs omilo-connect — full hybrid upgrade flow).
 register:
 	$(DC_RUNTIME) exec api omilo-register
 

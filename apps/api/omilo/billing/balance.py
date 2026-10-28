@@ -52,7 +52,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from omilo.control import ControlPlaneUnreachable
-from omilo.control.factory import get_control_plane
+from omilo.control.factory import get_control_plane, is_local_mode
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger
 
@@ -309,11 +309,18 @@ def check_can_start_job(
             db.flush()
             return False, "helper_budget_exceeded"
 
-    # ── 3. Determine mode (cloud vs runtime) and resolve balance ─────────────
+    # ── 3. LOCAL MODE early-return — free BYO-only posture (P6b) ─────────────
+    # In local mode every job is 0-credit and always allowed — no balance
+    # check, no CreditLedger, no cloud contact.  Pooled/litellm engines are
+    # refused separately at the engine factory layer (engine/__init__.py).
+    if is_local_mode():
+        return True, None
+
+    # ── 4. Determine mode (cloud vs hybrid/runtime) and resolve balance ───────
     # Route through get_control_plane() so:
     #   - CLOUD mode (LocalControlPlane) → current in-process behavior (P4 unchanged):
     #       checks balance for ALL engine types (BYO/local jobs also gated).
-    #   - RUNTIME mode (RemoteControlPlane):
+    #   - HYBRID mode (RemoteControlPlane):
     #       0-credit (BYO/local/pool) → ALWAYS allowed, even offline.
     #       Credit-consuming (litellm) → check_balance via cloud; on
     #       ControlPlaneUnreachable → paused_offline.

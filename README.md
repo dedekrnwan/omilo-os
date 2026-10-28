@@ -5,47 +5,82 @@ An open-source work OS — AI-native chat, goals, flows, routines, and connector
 remain cloud-authoritative.
 
 See [docs/technical/12-control-plane-runtime-split.md](docs/technical/12-control-plane-runtime-split.md)
-for the full architecture.
+for the full architecture (§10 covers the local / hybrid / cloud modes).
 
 ---
 
 ## Architecture in one paragraph
 
-The same backend image runs in two modes via `OMILO_MODE`:
+The same backend image runs in three modes via `OMILO_MODE`:
 
-- **`cloud`** — the control plane. Owns authentication (JWT issuance), the credit ledger, and
-  entitlements. This is what runs at `api.omilo.app`.
-- **`runtime`** — the local runtime. Runs the agent loop and stores your data (messages, RAG,
-  connectors, keys) locally. It verifies cloud-issued JWTs against the cloud's JWKS (offline-
-  capable) and reports credit usage to the cloud ledger; it never owns auth or billing.
+- **`local`** (default self-host) — fully local, privacy-first, no cloud env required. BYO AI
+  keys (set in the UI). Pooled/metered inference is disabled. No account needed.
+- **`hybrid`** — cloud identity + pooled credits, data stays on your machine. Upgrade via
+  `omilo connect`; the connect flow signs you in, issues an install token, and re-keys the stack.
+- **`cloud`** — the vendor control plane. Owns JWT issuance, the credit ledger, and entitlements.
+  This is what runs at `api.omilo.app`.
 
 BYO-key and local-model jobs are always free and fully offline. Only pooled/cloud-inference
-jobs require the control plane reachable (for credit gating).
+jobs require the control plane (hybrid or cloud mode).
 
 ---
 
 ## Install & run
 
-### 1. `npx omilo up` — local runtime (data on your machine, identity via the cloud)
+### Mode 1 — Local (default): free, BYO AI, no cloud account needed
 
-The quickest way to run Omilo locally. Pulls the runtime image and connects it to the Omilo
-cloud control plane for sign-in and billing.
+The quickest way to run Omilo. Starts in **local mode**: fully private, no cloud required,
+bring your own AI provider key in the UI.
 
 ```bash
 npx omilo up
+# Then open: http://localhost:7700
+# Add your AI provider key in Settings → AI Keys.
 ```
 
-Then register your install:
-
-```bash
-omilo register
-```
-
-Your workspace data lives locally. Identity and billing are handled by the cloud control plane.
+Everything runs on your machine. No Omilo account required. Pooled inference is disabled;
+BYO-key and local-model jobs work out of the box.
 
 ---
 
-### 2. `make dev` — local development
+### Mode 2 — Hybrid: cloud identity + pooled credits (via `omilo connect`)
+
+Start in local mode first, then upgrade to hybrid. The connect flow signs you in to the
+Omilo cloud, issues an install token, and switches `OMILO_MODE` to `hybrid`. Your workspace
+data stays on your machine.
+
+```bash
+npx omilo up          # start locally first
+npx omilo connect     # upgrade: sign in to cloud → pooled credits enabled
+```
+
+Or with Docker Compose directly (after the connect flow writes your `.env.runtime`):
+
+```bash
+docker compose -f deploy/docker-compose.runtime.yml --env-file deploy/.env.runtime up -d
+```
+
+---
+
+### Mode 3 — Cloud (vendor / self-hosted control plane)
+
+Run the full Omilo control plane yourself — own auth, billing, and the credit ledger.
+
+```bash
+cp deploy/.env.cloud.example deploy/.env.cloud
+# Set in deploy/.env.cloud:
+#   JWT_SECRET=<strong random secret>
+#   OMILO_JWT_PRIVATE_KEY=<Ed25519 private key PEM>
+#   # ... see deploy/.env.cloud.example for all required vars
+docker compose -f deploy/docker-compose.cloud.yml up
+```
+
+Point your runtime instances at this control plane:
+`OMILO_CONTROL_PLANE_URL=https://<your-domain>`.
+
+---
+
+### 4. `make dev` — local development
 
 Starts a dev Postgres + Redis, runs the API in the foreground, and tells you to open a second
 terminal for the frontend dev server.
@@ -58,39 +93,6 @@ npm run dev   # start the Vite frontend dev server
 ```
 
 Prerequisites: Docker, Python 3.11+, Node 22+, npm.
-
----
-
-### 3. Self-host the runtime (Docker)
-
-Run the local runtime stack against the Omilo cloud control plane. Your data stays on your
-server; identity and billing stay cloud-authoritative.
-
-```bash
-cp deploy/.env.runtime.example deploy/.env.runtime
-# Set in deploy/.env.runtime:
-#   OMILO_CONTROL_PLANE_URL=https://api.omilo.app
-#   OMILO_INSTALL_TOKEN=<token from omilo register>
-docker compose -f deploy/docker-compose.runtime.yml up
-```
-
----
-
-### 4. Deploy the cloud control plane (vendor / self-hosted cloud)
-
-Run the full control plane yourself — own auth, billing, and the credit ledger.
-
-```bash
-cp deploy/.env.cloud.example deploy/.env.cloud
-# Set in deploy/.env.cloud:
-#   JWT_SECRET=<strong random secret>
-#   OMILO_JWT_PRIVATE_KEY=<Ed25519 private key PEM>
-#   # ... see deploy/.env.cloud.example for all required vars
-docker compose -f deploy/docker-compose.cloud.yml up
-```
-
-Point your runtime instances at this control plane with
-`OMILO_CONTROL_PLANE_URL=https://<your-domain>`.
 
 ---
 
@@ -124,13 +126,15 @@ to produce the unsigned artifact.
 
 | Command | What it does |
 |---|---|
+| `make up` | Start self-host runtime (local mode, free, BYO AI) |
+| `make connect` | Upgrade to hybrid mode (cloud identity + pooled credits) |
 | `make db` | Start dev Postgres + Redis |
 | `make dev` | Start API (+ `npm run dev` for frontend) |
 | `make test` | Backend + frontend + Rust checks |
 | `make build` | Production frontend bundle |
 | `make image` | Build Docker images |
 | `make up-cloud` | Start cloud control-plane stack |
-| `make up-runtime` | Start local runtime stack |
+| `make up-runtime` | Start self-host runtime stack (alias for `make up`) |
 | `make desktop` | Build the macOS .dmg thin client |
 | `make desktop-dev` | Tauri dev shell (live-reload) |
 | `make migrate` | Run Alembic migrations |

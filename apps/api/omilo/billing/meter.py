@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from omilo.control import ControlPlaneUnreachable, UsageEvent
-from omilo.control.factory import get_control_plane
+from omilo.control.factory import get_control_plane, is_local_mode
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger
 
@@ -156,6 +156,12 @@ def meter_job(db: Session, job: "Job") -> CreditLedger | None:  # noqa: F821
     model = getattr(job, "model", None)  # may not be set on all paths
     tokens_in = int(job.tokens_in or 0)
     tokens_out = int(job.tokens_out or 0)
+
+    # ── LOCAL MODE early-return — no-op (P6b) ────────────────────────────────
+    # In local mode all jobs are 0-credit BYO; no CreditLedger row is written
+    # and no usage is reported to any control plane.
+    if is_local_mode():
+        return None
 
     # ── Determine control plane mode ──────────────────────────────────────────
     cp = get_control_plane()

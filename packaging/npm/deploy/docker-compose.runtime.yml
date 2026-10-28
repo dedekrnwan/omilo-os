@@ -1,17 +1,27 @@
 # packaging/npm/deploy/docker-compose.runtime.yml — BUNDLED COPY (ships with npx omilo)
-# ⚠  KEEP IN SYNC with deploy/docker-compose.runtime.yml at the repo root.
+# KEEP IN SYNC with deploy/docker-compose.runtime.yml at the repo root.
 #    To update: cp deploy/docker-compose.runtime.yml packaging/npm/deploy/docker-compose.runtime.yml
 #
-# deploy/docker-compose.runtime.yml — Omilo LOCAL RUNTIME (self-host stack)
+# deploy/docker-compose.runtime.yml — Omilo SELF-HOST RUNTIME stack
 #
 # What a self-hosted user runs on their machine.
-# OMILO_MODE=runtime: delegates auth/billing to the cloud control plane.
-# Users sign in via the cloud, JWT is verified locally (JWKS); workspace data
-# stays entirely on this machine.
+# Default: OMILO_MODE=local — fully local, privacy-first, no cloud env needed.
+#   - BYO AI keys (BYOK), no cloud auth or billing required.
+#   - Pooled/metered inference disabled (engine refuses cloud jobs).
+#   - No OMILO_CONTROL_PLANE_URL or OMILO_INSTALL_TOKEN needed.
 #
-# Copy deploy/.env.runtime.example → .env.runtime, fill in your install token, then:
+# After `omilo connect` (hybrid upgrade):
+#   OMILO_MODE=hybrid — cloud identity + pooled credits, data stays local.
+#   The connect flow writes OMILO_MODE=hybrid + OMILO_CONTROL_PLANE_URL +
+#   OMILO_INSTALL_TOKEN into deploy/.env.runtime, then restarts the stack.
 #
+# Usage (local default — no env file needed):
+#   docker compose -f deploy/docker-compose.runtime.yml up -d
+#
+# Usage (hybrid, after omilo connect):
 #   docker compose -f deploy/docker-compose.runtime.yml --env-file deploy/.env.runtime up -d
+#
+# See deploy/.env.runtime.example for documented variables.
 
 services:
   postgres:
@@ -46,16 +56,18 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.api
     environment:
-      # Run mode — runtime: delegates auth/billing to the cloud control plane.
-      # There is NO /control/* exposure in this mode.
-      OMILO_MODE: runtime
+      # Run mode — default: local (privacy-first, no cloud required).
+      # After `omilo connect`: hybrid (cloud identity + pooled credits, data local).
+      # (pydantic-settings: OMILO_MODE → Settings.omilo_mode)
+      OMILO_MODE: ${OMILO_MODE:-local}
 
-      # URL of the cloud control plane. Default points to Omilo's hosted cloud.
+      # Cloud control plane URL — only used in hybrid mode.
+      # Leave unset in local mode (no cloud env needed).
       # (pydantic-settings: OMILO_CONTROL_PLANE_URL → Settings.omilo_control_plane_url)
-      OMILO_CONTROL_PLANE_URL: ${OMILO_CONTROL_PLANE_URL:-https://api.omilo.app}
+      OMILO_CONTROL_PLANE_URL: ${OMILO_CONTROL_PLANE_URL:-}
 
-      # Install token issued by `omilo-register` on first run.
-      # Run: docker compose -f deploy/docker-compose.runtime.yml exec api omilo-register
+      # Install token issued by `omilo connect` during hybrid upgrade.
+      # Leave unset in local mode.
       # (pydantic-settings: OMILO_INSTALL_TOKEN → Settings.omilo_install_token)
       OMILO_INSTALL_TOKEN: ${OMILO_INSTALL_TOKEN:-}
 
