@@ -3,8 +3,10 @@
 JWT claims: sub=user_id, cmp=company_id, role, exp.
 
 Default algorithm: HS256 with Settings.jwt_secret (existing behavior preserved).
-RS256 (optional): when OMILO_JWT_PRIVATE_KEY is set in config, encode() signs RS256
-and decode_token() tries RS256 first, then falls back to HS256.
+RS256 (optional): when OMILO_JWT_PRIVATE_KEY / OMILO_JWT_PUBLIC_KEY is set,
+encode() signs RS256 and decode_token() verifies RS256 ONLY — no HS256 fallback.
+Accepting exactly one algorithm per configuration eliminates JWT algorithm-confusion
+attacks (an HS256-forged token is rejected when RS256 is configured).
 
 JWKS: get_jwks() returns the RS256 public key as a JWKS dict when configured,
 else {"keys": []}.
@@ -88,12 +90,21 @@ def make_access_token(user_id: str, company_id: str, role: str) -> tuple[str, da
     return token, expires_at
 
 
+def _rs256_enabled() -> bool:
+    """Return True when at least one RS256 key (private or public) is configured."""
+    settings = get_settings()
+    return bool(
+        getattr(settings, "omilo_jwt_private_key", None)
+        or getattr(settings, "omilo_jwt_public_key", None)
+    )
+
+
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT access token.
 
-    If OMILO_JWT_PUBLIC_KEY is configured: try RS256 first, then fall back to
-    HS256 so both algorithms work during migration.  When no RS key is configured:
-    HS256 only (original behavior).
+    The accepted algorithm is UNAMBIGUOUS based on configuration:
+    - RS256 key configured → RS256 ONLY, no HS256 fallback (prevents algorithm-confusion).
+    - No RS256 key configured → HS256 only (default / dev behavior unchanged).
 
     Returns the decoded claims dict.
     Raises jwt.PyJWTError (including ExpiredSignatureError) on any failure.
@@ -101,14 +112,20 @@ def decode_token(token: str) -> dict:
     settings = get_settings()
     public_key_pem: str | None = getattr(settings, "omilo_jwt_public_key", None)
 
-    if public_key_pem:
+    if _rs256_enabled():
         from cryptography.hazmat.primitives.serialization import load_pem_public_key
-        public_key = load_pem_public_key(public_key_pem.encode())
-        try:
-            return jwt.decode(token, public_key, algorithms=["RS256"])  # type: ignore[arg-type]
-        except PyJWTError:
-            # Fall back to HS256 during migration
-            return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        # Public key may not be set when only the private key is present;
+        # derive it from the private key in that case.
+        if public_key_pem:
+            public_key = load_pem_public_key(public_key_pem.encode())
+        else:
+            from cryptography.hazmat.primitives.serialization import (
+                load_pem_private_key,
+            )
+            private_key_pem: str = getattr(settings, "omilo_jwt_private_key")
+            public_key = load_pem_private_key(private_key_pem.encode(), password=None).public_key()
+        # RS256 ONLY — no HS256 fallback; an HS256-forged token is rejected here.
+        return jwt.decode(token, public_key, algorithms=["RS256"])  # type: ignore[arg-type]
     else:
         return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 
@@ -151,7 +168,9 @@ def get_jwks() -> dict:
     if not isinstance(public_key, RSAPublicKey):
         return {"keys": []}
 
-    pub_numbers = public_key.public_key().public_numbers() if hasattr(public_key, "public_key") else public_key.public_numbers()
+    # `public_key` is already an RSAPublicKey — call public_numbers() directly.
+    # (RSAPublicKey has no .public_key() method; only private keys do.)
+    pub_numbers = public_key.public_numbers()
     kid = _kid_from_public_pem(pem_to_use)
 
     return {

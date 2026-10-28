@@ -242,6 +242,43 @@ class TestRS256AndJWKS:
         with pytest.raises(pyjwt.PyJWTError):
             _tok_mod.decode_token(token)
 
+    def test_hs256_forgery_rejected_when_rs256_configured(self, monkeypatch):
+        """Security: an HS256-forged token MUST be rejected when RS256 is configured.
+
+        This guards against the JWT algorithm-confusion attack: an attacker who
+        knows the HS256 jwt_secret cannot forge an accepted token once RS256 is on.
+        """
+        import jwt as pyjwt
+        from datetime import datetime, timezone, timedelta
+
+        private_pem, public_pem = self._gen_keypair_pem()
+        shared_secret = "known-secret"
+
+        fake_settings = type("S", (), {
+            "jwt_secret": shared_secret,
+            "jwt_access_ttl_s": 3600,
+            "omilo_jwt_private_key": private_pem,
+            "omilo_jwt_public_key": public_pem,
+        })()
+        monkeypatch.setattr("omilo.auth.tokens.get_settings", lambda: fake_settings)
+
+        # Forge an HS256 token using the known jwt_secret
+        forged = pyjwt.encode(
+            {
+                "sub": "attacker",
+                "cmp": "c",
+                "role": "admin",
+                "exp": datetime.now(tz=timezone.utc) + timedelta(hours=1),
+                "iat": datetime.now(tz=timezone.utc),
+            },
+            shared_secret,
+            algorithm="HS256",
+        )
+
+        from omilo.auth import tokens as _tok_mod
+        with pytest.raises(pyjwt.PyJWTError):
+            _tok_mod.decode_token(forged)
+
     def test_get_jwks_returns_public_key(self, monkeypatch):
         """get_jwks() returns a valid JWK object when RS256 key is configured."""
         private_pem, public_pem = self._gen_keypair_pem()
