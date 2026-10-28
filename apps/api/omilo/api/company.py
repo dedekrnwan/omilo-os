@@ -1,18 +1,21 @@
-"""Company profile endpoints — GET + PATCH /v1/company.
+"""Company profile endpoints — GET + PATCH /v1/company + POST /v1/company/onboard.
 
 Endpoints:
-  GET   /v1/company   → return authed user's company with profile fields
-  PATCH /v1/company   → update writable profile fields (owner/admin only)
+  GET   /v1/company         → return authed user's company with profile fields
+  PATCH /v1/company         → update writable profile fields (owner/admin only)
+  POST  /v1/company/onboard → mark the company as onboarded (idempotent)
 
 Company is the global tenant-root (no RLS). Loaded by ctx.company_id via
 a bootstrap (superuser) session — same pattern as /me.
 
-Auth: both endpoints require a valid Bearer session (get_context).
+Auth: all endpoints require a valid Bearer session (get_context).
       PATCH additionally requires owner or admin role (require_role guard).
 
-Spec: P5d Task 1b.
+Spec: P5d Task 1b (profile), P13 (onboarding gate).
 """
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -94,4 +97,36 @@ def patch_company(
             session.flush()
 
             # Snapshot fields before session closes (expire_on_commit default).
+            return _company_out(company)
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/company/onboard
+# ---------------------------------------------------------------------------
+
+
+@router.post("/company/onboard", response_model=CompanyOut)
+def onboard_company(ctx: RequestContext = Depends(get_context)) -> CompanyOut:
+    """Mark the authed company as onboarded (idempotent).
+
+    Sets ``onboarded_at`` to now() if not already set; if the company has
+    already been onboarded the timestamp is left unchanged (idempotent).
+    Returns the updated CompanyOut with ``onboarded=True``.
+    """
+    with SessionLocal() as session:
+        with session.begin():
+            company = session.get(Company, ctx.company_id)
+
+            if company is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Company not found.",
+                )
+
+            # Idempotent: only set if not already onboarded.
+            if company.onboarded_at is None:
+                company.onboarded_at = datetime.now(timezone.utc)
+
+            session.flush()
+
             return _company_out(company)

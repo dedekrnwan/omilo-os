@@ -28,7 +28,7 @@ import { createMockRepos } from '../../adapters/mock/mockRepos'
 import { useUIStore } from '../../app/store'
 import { ONBOARDED_KEY } from './OnboardingRoute'
 
-// ── command mock — intercept createCommands so we can spy on updateCompanyProfile ──
+// ── command mock — intercept createCommands so we can spy on commands ──────────
 
 const mockUpdateCompanyProfile = vi.fn().mockResolvedValue({
   id: 'cmp-test',
@@ -36,8 +36,17 @@ const mockUpdateCompanyProfile = vi.fn().mockResolvedValue({
   color: '',
 })
 
+const mockOnboardCompany = vi.fn().mockResolvedValue({
+  id: 'cmp-test',
+  name: 'Test Co',
+  onboarded: true,
+})
+
 vi.mock('../../adapters/http/commands', () => ({
-  createCommands: () => ({ updateCompanyProfile: mockUpdateCompanyProfile }),
+  createCommands: () => ({
+    updateCompanyProfile: mockUpdateCompanyProfile,
+    onboardCompany: mockOnboardCompany,
+  }),
 }))
 
 // ── isMockMode mock — control HTTP vs mock mode per test ──────────────────────
@@ -109,6 +118,7 @@ async function fillAndSubmitProfile(user: ReturnType<typeof userEvent.setup>) {
 describe('onboarding finish', () => {
   beforeEach(() => {
     mockUpdateCompanyProfile.mockClear()
+    mockOnboardCompany.mockClear()
     mockIsMockMode.mockReturnValue(false) // HTTP mode by default
     localStorage.removeItem(ONBOARDED_KEY)
     // Reset to chat mode so navigate target is /chat
@@ -211,6 +221,34 @@ describe('onboarding finish', () => {
       expect(localStorage.getItem(ONBOARDED_KEY)).toBe('1')
     })
     expect(mockUpdateCompanyProfile).not.toHaveBeenCalled()
+    expect(router.state.location.pathname).not.toBe('/onboarding')
+  })
+
+  test('(c) HTTP mode: finishing calls onboardCompany to set backend flag', async () => {
+    const user = userEvent.setup()
+    const router = buildRouter('/onboarding')
+    render(<RouterProvider router={router} />)
+
+    expect(await screen.findByRole('main', { name: 'Onboarding' })).toBeInTheDocument()
+
+    // Navigate quickly through steps
+    const startBtn = await screen.findByRole('button', { name: /get started|let's go|start|connect|continue/i })
+    await user.click(startBtn)
+    const yourAiNext = await screen.findByRole('button', { name: /connect and continue|continue/i })
+    await user.click(yourAiNext)
+    const skipBtn = await screen.findByRole('button', { name: /skip this topic/i })
+    await user.click(skipBtn)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
+    await fillAndSubmitProfile(user)
+    const looksRightBtn = await screen.findByRole('button', { name: /looks right|build my team/i })
+    await user.click(looksRightBtn)
+    const createTeamBtn = await screen.findByRole('button', { name: /create my team/i })
+    await user.click(createTeamBtn)
+
+    // onboardCompany must have been called in HTTP mode
+    await waitFor(() => {
+      expect(mockOnboardCompany).toHaveBeenCalled()
+    })
     expect(router.state.location.pathname).not.toBe('/onboarding')
   })
 

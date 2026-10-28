@@ -319,6 +319,13 @@ export interface Commands {
    */
   createAiAccount(input: CreateAiAccountInput): Promise<AiAccount>
 
+  // ── P13 onboarding gate command ─────────────────────────────────────────────
+  /**
+   * POST /v1/company/onboard — mark the authed company as onboarded (idempotent).
+   * Returns the updated company object with onboarded: true.
+   */
+  onboardCompany(): Promise<{ id: string; name: string; onboarded: boolean; [key: string]: unknown }>
+
   // ── P8 flow + routine + goal + skill commands ────────────────────────────────
   /** POST /v1/flows/{id}/publish → Proposal */
   publishFlow(id: string): Promise<unknown>
@@ -583,6 +590,16 @@ export function createCommands(
       if (input.tag !== undefined) body.tag = input.tag
       const raw = await post<RawAiAccount>('/v1/ai-accounts', body)
       return mapAiAccount(raw)
+    },
+
+    // ── P13 onboarding gate command ──────────────────────────────────────────
+
+    /**
+     * POST /v1/company/onboard — mark the authed company as onboarded (idempotent).
+     * Returns the updated CompanyOut with onboarded: true.
+     */
+    async onboardCompany(): Promise<{ id: string; name: string; onboarded: boolean; [key: string]: unknown }> {
+      return post('/v1/company/onboard', {})
     },
 
     // ── P8 flow + routine + goal + skill commands ────────────────────────────
