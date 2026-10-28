@@ -9,6 +9,7 @@ import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession
 import { useChatStore } from '../../app/store'
 import { createCommands } from '../../adapters/http/commands'
 import { openChatSocket } from '../../adapters/http/chatSocket'
+import { platform } from '../../platform'
 import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
@@ -268,7 +269,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const { commands, baseUrl, getToken } = useMemo(() => {
     if (!isLiveMode) return { commands: null, baseUrl: '', getToken: () => null }
     const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-    const tok = () => localStorage.getItem('omilo_token')
+    const tok = () => platform.tokenStorage.getToken()
     return { commands: createCommands(base, tok), baseUrl: base, getToken: tok }
   }, [isLiveMode])
 

@@ -9,12 +9,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { platform } from '../platform'
 
 /** Browser permission state, plus an `unsupported` sentinel for old engines. */
 export type PushPermission = NotificationPermission | 'unsupported'
-
-/** The app icon shown on each notification. */
-const PUSH_ICON = '/chief-mascot.png'
 
 /** True when this runtime can show notifications at all. */
 export function pushSupported(): boolean {
@@ -54,18 +52,9 @@ export interface PushOptions {
 export function sendPush(title: string, opts: PushOptions = {}): boolean {
   if (pushPermission() !== 'granted') return false
   try {
-    // TODO(desktop): under Tauri, route through
-    // @tauri-apps/plugin-notification's `sendNotification` instead of `new Notification`.
-    const n = new Notification(title, {
-      body: opts.body,
-      tag: opts.tag,
-      silent: opts.silent,
-      icon: PUSH_ICON,
-    })
-    n.onclick = () => {
-      window.focus()
-      n.close()
-    }
+    // Route through the platform seam: web uses `new Notification`, Tauri uses
+    // the native notification plugin. The platform impl never throws.
+    void platform.notifications.send(title, opts.body)
     return true
   } catch {
     return false
