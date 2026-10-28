@@ -198,10 +198,30 @@ export function createHttpRepos(
     }
   }
 
+  // ── channel mapper (surfaces icon, purpose, contextScope from backend DTO) ──
+  // The backend returns icon/purpose/contextScope as camelCase (by_alias=True).
+  // contextScope is always present with default "isolated".
+  type RawChannel = Omit<Channel, 'contextScope'> & {
+    contextScope?: string
+    context_scope?: string
+  }
+  function mapChannel(raw: RawChannel): Channel {
+    return {
+      ...raw,
+      contextScope: raw.contextScope ?? raw.context_scope ?? 'isolated',
+    }
+  }
+
   return {
     channels: {
-      list: () => get<Channel[]>('/v1/channels'),
-      get: (id: Id) => getOrNull<Channel>(`/v1/channels/${id}`),
+      list: async () => {
+        const rows = await get<RawChannel[]>('/v1/channels')
+        return rows.map(mapChannel)
+      },
+      get: async (id: Id) => {
+        const raw = await getOrNull<RawChannel>(`/v1/channels/${id}`)
+        return raw ? mapChannel(raw) : null
+      },
     },
 
     folders: {

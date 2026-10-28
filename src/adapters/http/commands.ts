@@ -111,6 +111,11 @@ type RawChannel = {
   agent_count: number
   chat_count: number
   open_items: number
+  icon?: string
+  purpose?: string
+  /** Backend returns contextScope (camelCase via by_alias) or context_scope. */
+  contextScope?: string
+  context_scope?: string
 }
 
 function mapChannel(r: RawChannel): Channel {
@@ -122,6 +127,9 @@ function mapChannel(r: RawChannel): Channel {
     agentCount: r.agent_count,
     chatCount: r.chat_count,
     openItems: r.open_items,
+    icon: r.icon,
+    purpose: r.purpose,
+    contextScope: r.contextScope ?? r.context_scope ?? 'isolated',
   }
 }
 

@@ -26,7 +26,7 @@ function notFound(): Response {
 // Seed data for contract tests
 const seedChannel: Channel = {
   id: 'ch-1', name: 'General', accent: 'general', isDefault: true,
-  agentCount: 0, chatCount: 5, openItems: 1,
+  agentCount: 0, chatCount: 5, openItems: 1, contextScope: 'isolated',
 }
 
 const seedSession: Session = {

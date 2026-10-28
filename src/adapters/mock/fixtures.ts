@@ -19,10 +19,10 @@ import type {
 // ── Channels ─────────────────────────────────────────────────────────────────
 
 export const channels: Channel[] = [
-  { id: 'ch-general',     name: 'General',     accent: 'general',   isDefault: true, agentCount: 0, chatCount: 31, openItems: 2 },
-  { id: 'ch-engineering', name: 'Engineering', accent: 'dev',       agentCount: 3, chatCount: 24, openItems: 5 },
-  { id: 'ch-marketing',   name: 'Marketing',   accent: 'marketing', agentCount: 2, chatCount: 18, openItems: 4 },
-  { id: 'ch-business',    name: 'Business',    accent: 'sales',     agentCount: 2, chatCount: 9, openItems: 3 },
+  { id: 'ch-general',     name: 'General',     accent: 'general',   isDefault: true, agentCount: 0, chatCount: 31, openItems: 2, contextScope: 'isolated' },
+  { id: 'ch-engineering', name: 'Engineering', accent: 'dev',       agentCount: 3, chatCount: 24, openItems: 5, contextScope: 'isolated' },
+  { id: 'ch-marketing',   name: 'Marketing',   accent: 'marketing', agentCount: 2, chatCount: 18, openItems: 4, contextScope: 'isolated' },
+  { id: 'ch-business',    name: 'Business',    accent: 'sales',     agentCount: 2, chatCount: 9, openItems: 3, contextScope: 'isolated' },
 ]
 
 // ── Goals (hero "Or start from a goal" + sidebar Goals count) ───────────────

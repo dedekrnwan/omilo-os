@@ -35,6 +35,12 @@ export interface Channel {
   chatCount: number
   /** Open Office items in this area (Office › Areas counts). */
   openItems: number
+  /** Lucide icon name for the area, e.g. 'rocket', 'headphones'. */
+  icon?: string
+  /** One-line purpose description for the area. */
+  purpose?: string
+  /** Agent context scope: 'isolated' | 'isolated_general'. Defaults to 'isolated'. */
+  contextScope: string
 }
 
 /**

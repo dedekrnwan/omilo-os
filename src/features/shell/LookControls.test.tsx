@@ -6,7 +6,7 @@ import { AreaBadgeButton, FolderIconButton } from './LookControls'
 import { LookPicker } from '../../ui/ds/LookPicker'
 
 const area: Channel = {
-  id: 'ch-engineering', name: 'Engineering', accent: 'dev', agentCount: 3, chatCount: 24, openItems: 5,
+  id: 'ch-engineering', name: 'Engineering', accent: 'dev', agentCount: 3, chatCount: 24, openItems: 5, contextScope: 'isolated',
 }
 
 beforeEach(() => {
