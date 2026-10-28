@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     omilo_mode: str = "cloud"
 
     # ---------------------------------------------------------------------------
+    # Remote control plane (runtime mode — T3)
+    # ---------------------------------------------------------------------------
+    # OMILO_CONTROL_PLANE_URL: Base URL of the cloud control plane.
+    #   Required when OMILO_MODE=runtime.
+    #   Example: https://api.omilo.app
+    omilo_control_plane_url: str | None = None
+
+    # OMILO_INSTALL_TOKEN: Per-company, revocable install token issued by
+    #   POST /control/register during first-run setup.
+    #   Required when OMILO_MODE=runtime.
+    omilo_install_token: str | None = None
+
+    # ---------------------------------------------------------------------------
     # Payment provider
     # ---------------------------------------------------------------------------
     # Which payment provider to use: "manual" (default, offline), "doit",

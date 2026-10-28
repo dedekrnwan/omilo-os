@@ -14,9 +14,9 @@ OMILO_MODE=cloud (default)
     against the local database — exactly today's behavior.
 
 OMILO_MODE=runtime
-    Reserved for T3 (RemoteControlPlane).  Currently raises
-    NotConfiguredError with a clear message so the failure is descriptive
-    rather than silent.
+    Returns RemoteControlPlane() configured from OMILO_CONTROL_PLANE_URL
+    and OMILO_INSTALL_TOKEN settings.  Raises NotConfiguredError if those
+    settings are missing.
 
 The factory is intentionally NOT cached (no lru_cache) so that tests can
 change Settings.omilo_mode without stale state.  For production the mode is
@@ -30,7 +30,7 @@ from omilo.control.local import LocalControlPlane
 
 
 class NotConfiguredError(RuntimeError):
-    """Raised when the requested run-mode is not yet available in this build."""
+    """Raised when the requested run-mode is not properly configured."""
 
 
 def get_control_plane() -> ControlPlane:
@@ -41,9 +41,9 @@ def get_control_plane() -> ControlPlane:
         auth, balance, and metering resolve in-process.
 
     Runtime mode (OMILO_MODE == "runtime"):
-        T3 will add ``RemoteControlPlane``.  Until then this raises
-        ``NotConfiguredError`` with a descriptive message so that
-        misconfigured deployments fail loudly rather than silently.
+        Returns ``RemoteControlPlane`` configured from
+        ``OMILO_CONTROL_PLANE_URL`` and ``OMILO_INSTALL_TOKEN``.
+        Raises ``NotConfiguredError`` if those settings are missing.
 
     Returns:
         A ControlPlane-compatible object.
@@ -52,11 +52,25 @@ def get_control_plane() -> ControlPlane:
     mode = getattr(settings, "omilo_mode", "cloud") or "cloud"
 
     if mode == "runtime":
-        # T3 implements RemoteControlPlane.
-        raise NotConfiguredError(
-            "OMILO_MODE=runtime is not yet configured in this build. "
-            "Set OMILO_MODE=cloud (or unset it) to use LocalControlPlane. "
-            "RemoteControlPlane will be added in P6 Task 3."
+        from omilo.control.remote import RemoteControlPlane
+
+        control_plane_url = getattr(settings, "omilo_control_plane_url", None)
+        install_token = getattr(settings, "omilo_install_token", None)
+
+        if not control_plane_url:
+            raise NotConfiguredError(
+                "OMILO_MODE=runtime requires OMILO_CONTROL_PLANE_URL to be set. "
+                "Example: OMILO_CONTROL_PLANE_URL=https://api.omilo.app"
+            )
+        if not install_token:
+            raise NotConfiguredError(
+                "OMILO_MODE=runtime requires OMILO_INSTALL_TOKEN to be set. "
+                "Obtain one via POST /control/register on the cloud control plane."
+            )
+
+        return RemoteControlPlane(
+            control_plane_url=control_plane_url,
+            install_token=install_token,
         )
 
     # Default: cloud mode → LocalControlPlane (authoritative, in-process)
