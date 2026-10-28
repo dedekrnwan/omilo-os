@@ -11,11 +11,12 @@ Privacy contract:
     company's persisted opt-out flag.
   - `opted_out` is persisted per company (Company.telemetry_opted_out).
 
-Enabled logic (mirrors factory.get_telemetry()):
+Enabled logic (mirrors factory.get_telemetry() via shared telemetry_is_active()):
   enabled = (
-      POSTHOG_API_KEY is set
-      AND (mode != "local" OR TELEMETRY_ENABLED is True)
-      AND (NOT company.telemetry_opted_out)
+      TELEMETRY_ENABLED is not False           # kill-switch honored
+      AND POSTHOG_API_KEY is set               # configured
+      AND (mode != "local" OR TELEMETRY_ENABLED is True)  # local privacy default
+      AND (NOT company.telemetry_opted_out)    # company opt-out
   )
 
 Auth: valid Bearer session required (get_context). Company resolved from
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 from omilo.config import get_settings
 from omilo.control.factory import _normalize_mode
 from omilo.db import SessionLocal
+from omilo.telemetry.factory import telemetry_is_active
 from omilo.models.tenancy import Company
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context
@@ -72,9 +74,9 @@ def _compute_config(
     """Compute the telemetry config dict from settings + the company's opt-out flag.
 
     Enabled iff:
-      1. POSTHOG_API_KEY is set (non-empty).
-      2. mode is not local, OR TELEMETRY_ENABLED is explicitly True.
-      3. The company has NOT opted out.
+      1. telemetry_is_active(settings) is True — mirrors factory.get_telemetry()
+         exactly (honors kill-switch, key presence, local-privacy default).
+      2. The company has NOT opted out.
 
     The key and host are returned ONLY when enabled.
     """
@@ -84,19 +86,12 @@ def _compute_config(
     posthog_host: str = (
         getattr(settings, "posthog_host", "https://us.i.posthog.com") or "https://us.i.posthog.com"
     )
-    telemetry_enabled = getattr(settings, "telemetry_enabled", None)
 
-    # Step 1: API key configured?
-    has_key = bool(api_key)
-
-    # Step 2: Mode allows telemetry?
-    # local mode is off by default; explicit TELEMETRY_ENABLED=True overrides.
-    mode_allows = (mode != "local") or (telemetry_enabled is True)
-
-    # Step 3: Company has not opted out?
-    not_opted_out = not opted_out
-
-    enabled = has_key and mode_allows and not_opted_out
+    # Use the shared predicate so backend and frontend always agree.
+    # telemetry_is_active() mirrors get_telemetry()'s Noop-vs-PostHog decision,
+    # including the explicit TELEMETRY_ENABLED=False kill-switch.
+    active = telemetry_is_active(settings)
+    enabled = active and not opted_out
 
     return TelemetryConfigOut(
         enabled=enabled,

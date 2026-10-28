@@ -340,6 +340,64 @@ async def test_t5_company_scoped_opt_out(async_client):
 
 
 # ---------------------------------------------------------------------------
+# T_KS: Kill-switch (TELEMETRY_ENABLED=False) — backend + endpoint must agree
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tks_kill_switch_endpoint_disabled(async_client):
+    """POSTHOG_API_KEY set + mode=hybrid + TELEMETRY_ENABLED=False →
+    GET returns enabled:false + key:null (kill-switch honored by endpoint)."""
+    token, _ = await _sign_up(async_client, name="TC KS User")
+
+    settings = _fake_settings(
+        posthog_api_key="phc_kskey",
+        omilo_mode="hybrid",
+        telemetry_enabled=False,  # explicit kill-switch
+    )
+
+    with patch("omilo.api.telemetry_config.get_settings", return_value=settings):
+        resp = await async_client.get(
+            "/v1/telemetry-config", headers=_auth(token)
+        )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert body["enabled"] is False, "kill-switch must disable endpoint even with key+hybrid"
+    assert body["key"] is None, "key must be null when kill-switch active"
+    assert body["host"] is None, "host must be null when kill-switch active"
+
+
+def test_tks_kill_switch_factory_noop():
+    """POSTHOG_API_KEY set + mode=hybrid + TELEMETRY_ENABLED=False →
+    get_telemetry() returns NoopTelemetry — factory and endpoint agree."""
+    from omilo.telemetry.factory import get_telemetry, telemetry_is_active
+    from omilo.telemetry.noop import NoopTelemetry
+
+    settings = _fake_settings(
+        posthog_api_key="phc_kskey",
+        omilo_mode="hybrid",
+        telemetry_enabled=False,
+    )
+
+    # Shared predicate must return False.
+    assert telemetry_is_active(settings) is False, (
+        "telemetry_is_active must be False when TELEMETRY_ENABLED=False"
+    )
+
+    # Factory must return Noop.
+    get_telemetry.cache_clear()
+    with patch("omilo.telemetry.factory.get_settings", return_value=settings):
+        instance = get_telemetry()
+    get_telemetry.cache_clear()
+
+    assert isinstance(instance, NoopTelemetry), (
+        f"Expected NoopTelemetry, got {type(instance).__name__}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # T6: Unauthenticated → 401
 # ---------------------------------------------------------------------------
 
