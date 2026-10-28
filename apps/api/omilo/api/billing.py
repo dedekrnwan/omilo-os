@@ -15,8 +15,9 @@ granted by the webhook handler (T3) on payment.paid.
 """
 from __future__ import annotations
 
+import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -28,6 +29,8 @@ from sqlalchemy.orm import Session
 from omilo.billing.balance import balance as get_balance, grant_credits
 from omilo.billing.doit_provider import DoitProvider
 from omilo.billing.provider import get_payment_provider
+from omilo.config import get_settings
+from omilo.control.factory import _normalize_mode
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger, Invoice, Plan, Subscription
 from omilo.models.commerce import DoitPayment
@@ -58,6 +61,7 @@ PACKS: dict[str, dict[str, int]] = {
 
 class ChangePlanBody(BaseModel):
     plan_id: str
+    interval: str = "monthly"  # "monthly" | "yearly"
 
 
 class TopupBody(BaseModel):
@@ -90,11 +94,27 @@ def _load_company(db: Session, company_id: str) -> Company:
 
 
 def _subscription_dict(sub: Subscription) -> dict[str, Any]:
+    is_trial = sub.status == "trialing"
+    now = datetime.now(timezone.utc)
+
+    trial_ends_at = None
+    trial_days_left = None
+    if is_trial and sub.current_period_end is not None:
+        # Ensure period_end is timezone-aware
+        period_end = sub.current_period_end
+        if period_end.tzinfo is None:
+            period_end = period_end.replace(tzinfo=timezone.utc)
+        trial_ends_at = period_end.isoformat()
+        remaining_seconds = (period_end - now).total_seconds()
+        # ceil to give full days remaining; clamp to 0 for expired trials
+        trial_days_left = max(0, math.ceil(remaining_seconds / 86400))
+
     return {
         "id": sub.id,
         "company_id": sub.company_id,
         "plan_id": sub.plan_id,
         "status": sub.status,
+        "billing_interval": sub.billing_interval or "monthly",
         "seats": sub.seats,
         "provider": sub.provider,
         "current_period_end": (
@@ -103,6 +123,10 @@ def _subscription_dict(sub: Subscription) -> dict[str, Any]:
         "created_at": (
             sub.created_at.isoformat() if sub.created_at else None
         ),
+        # Trial fields
+        "is_trial": is_trial,
+        "trial_ends_at": trial_ends_at,
+        "trial_days_left": trial_days_left,
     }
 
 
@@ -112,10 +136,21 @@ def _plan_dict(plan: Plan) -> dict[str, Any]:
         "tier": plan.tier,
         "name": plan.name,
         "monthly_price_usd": float(plan.monthly_price_usd),
+        "monthly_price_idr": plan.monthly_price_idr,
+        "yearly_price_usd": float(plan.yearly_price_usd),
+        "yearly_price_idr": plan.yearly_price_idr,
         "included_credits": plan.included_credits,
         "credit_overage_usd": float(plan.credit_overage_usd),
         "seats": plan.seats,
+        "trial_days": 14,
     }
+
+
+def _is_cloud_or_hybrid() -> bool:
+    """Return True when mode is cloud or hybrid (billing-enabled)."""
+    settings = get_settings()
+    raw = getattr(settings, "omilo_mode", "cloud") or "cloud"
+    return _normalize_mode(raw) in {"cloud", "hybrid"}
 
 
 def _invoice_dict(inv: Invoice) -> dict[str, Any]:
@@ -283,6 +318,52 @@ def get_ledger(
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/billing/plans
+# ---------------------------------------------------------------------------
+
+
+@router.get("/billing/plans", status_code=200)
+def get_plans(
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> list[dict[str, Any]]:
+    """Return the plan catalog available in the current mode.
+
+    Cloud/hybrid: returns [plan_cloud].
+    Local: returns [plan_self_hosted] (free, 0 credits).
+
+    Also lazy-starts a trial for a fresh cloud/hybrid company with no subscription.
+
+    All keys are snake_case: monthly_price_usd, monthly_price_idr,
+    yearly_price_usd, yearly_price_idr, included_credits, trial_days.
+    """
+    company = _load_company(db, ctx.company_id)
+
+    if _is_cloud_or_hybrid():
+        # Lazy trial start for companies with no subscription
+        existing_any = (
+            db.query(Subscription)
+            .filter(Subscription.company_id == company.id)
+            .first()
+        )
+        if existing_any is None:
+            from omilo.billing.trial import start_trial
+            start_trial(db, company)
+            db.flush()
+
+        plan = db.get(Plan, "plan_cloud")
+        if plan is None:
+            return []
+        return [_plan_dict(plan)]
+    else:
+        # local mode — self-hosted plan only
+        plan = db.get(Plan, "plan_self_hosted")
+        if plan is None:
+            return []
+        return [_plan_dict(plan)]
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/billing/subscription
 # ---------------------------------------------------------------------------
 
@@ -294,16 +375,33 @@ def get_subscription(
 ) -> dict[str, Any]:
     """Return the company's current subscription in spec §7 shape.
 
-    Shape: {plan, status, period_end, seats, provider, payment_method?}
+    Shape: {plan, status, period_end, seats, provider, payment_method?,
+            billing_interval, is_trial, trial_ends_at, trial_days_left}
     Returns nulls when no active subscription exists.
+
+    Lazy trial: if the company is in cloud/hybrid mode and has no subscription,
+    a 14-day trial is started on the first call here (idempotent).
     """
     company = _load_company(db, ctx.company_id)
 
+    # ── Lazy trial start for cloud/hybrid companies ───────────────────────────
+    if _is_cloud_or_hybrid():
+        existing_any = (
+            db.query(Subscription)
+            .filter(Subscription.company_id == company.id)
+            .first()
+        )
+        if existing_any is None:
+            from omilo.billing.trial import start_trial
+            start_trial(db, company)
+            db.flush()
+
+    # ── Find most recent active or trialing subscription ─────────────────────
     sub = (
         db.query(Subscription)
         .filter(
             Subscription.company_id == company.id,
-            Subscription.status == "active",
+            Subscription.status.in_(["active", "trialing"]),
         )
         .order_by(Subscription.created_at.desc())
         .first()
@@ -317,9 +415,15 @@ def get_subscription(
             "seats": None,
             "provider": None,
             "payment_method": None,
+            "billing_interval": None,
+            "is_trial": False,
+            "trial_ends_at": None,
+            "trial_days_left": None,
         }
 
     plan = db.get(Plan, sub.plan_id) if sub.plan_id else None
+
+    sub_dict = _subscription_dict(sub)
 
     return {
         "plan": _plan_dict(plan) if plan else None,
@@ -331,6 +435,10 @@ def get_subscription(
         "provider": sub.provider,
         # ManualProvider has no stored payment method; wired providers may populate this.
         "payment_method": None,
+        "billing_interval": sub_dict["billing_interval"],
+        "is_trial": sub_dict["is_trial"],
+        "trial_ends_at": sub_dict["trial_ends_at"],
+        "trial_days_left": sub_dict["trial_days_left"],
     }
 
 
@@ -401,6 +509,22 @@ def change_plan(
 
     company = _load_company(db, ctx.company_id)
 
+    # ── Resolve billing interval ──────────────────────────────────────────────
+    interval = (body.interval or "monthly").lower()
+    if interval not in ("monthly", "yearly"):
+        interval = "monthly"
+
+    # ── Compute amount and period_end based on interval ───────────────────────
+    now = datetime.now(timezone.utc)
+    if interval == "yearly":
+        amount_idr = plan.yearly_price_idr
+        amount_usd = float(plan.yearly_price_usd)
+        period_end = now + timedelta(days=365)
+    else:
+        amount_idr = plan.monthly_price_idr
+        amount_usd = float(plan.monthly_price_usd)
+        period_end = now + timedelta(days=30)
+
     # -----------------------------------------------------------------------
     # DoitProvider path — create a pending payment; do NOT activate subscription
     # -----------------------------------------------------------------------
@@ -411,14 +535,12 @@ def change_plan(
         # Call provider to create a Doit billing plan + subscription → get hosted_url
         sub_result = provider.change_subscription(company, plan)
 
-        # Use provider_ref from the subscription result to create a payment
-        # We need a payment record; use charge_one_off for the initial payment
-        amount_idr = plan.monthly_price_idr
+        # Use interval-specific amount for the charge
         charge_result = provider.charge_one_off(
             company,
             amount_idr,
             reference,
-            metadata={"plan_id": plan.id, "credits": plan.included_credits},
+            metadata={"plan_id": plan.id, "credits": plan.included_credits, "interval": interval},
         )
 
         # Persist a pending Subscription row (status="pending" — not yet active)
@@ -427,6 +549,7 @@ def change_plan(
             company_id=company.id,
             plan_id=plan.id,
             status="pending",
+            billing_interval=interval,
             seats=plan.seats,
             provider="doit",
             external_ref=None,
@@ -467,12 +590,12 @@ def change_plan(
     # Provider call (ManualProvider → offline no-op)
     provider.change_subscription(company, plan)
 
-    # Deactivate existing subscriptions for this company
+    # Deactivate existing active/trialing subscriptions for this company
     existing_subs = (
         db.query(Subscription)
         .filter(
             Subscription.company_id == company.id,
-            Subscription.status == "active",
+            Subscription.status.in_(["active", "trialing"]),
         )
         .all()
     )
@@ -480,16 +603,17 @@ def change_plan(
         s.status = "canceled"
     db.flush()
 
-    # Create new active subscription
+    # Create new active subscription with interval and period_end
     new_sub = Subscription(
         id=prefixed_id("sub"),
         company_id=company.id,
         plan_id=plan.id,
         status="active",
+        billing_interval=interval,
         seats=plan.seats,
         provider="manual",
         external_ref=None,
-        current_period_end=None,
+        current_period_end=period_end,
     )
     db.add(new_sub)
     db.flush()
