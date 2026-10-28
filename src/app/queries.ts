@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import type { Id } from '../core/domain/types'
+import { useQueries, useQuery } from '@tanstack/react-query'
+import type { Flow, Id } from '../core/domain/types'
 import { useRepos } from './ReposProvider'
 
 export function useChannels() {
@@ -172,6 +172,27 @@ export function useFlowRuns(flowId: Id) {
     queryKey: ['flowRuns', flowId],
     queryFn: () => repos.flows.runs(flowId),
   })
+}
+
+/**
+ * Aggregate runs across ALL flows for the office "Runs" tab. The backend has
+ * no cross-flow runs endpoint, so we fan out `repos.flows.runs(id)` per flow
+ * and flatten. Shares the per-flow `['flowRuns', id]` cache key with
+ * `useFlowRuns`, so the editor and this tab reuse the same cached runs.
+ */
+export function useAllFlowRuns(flows: Flow[]) {
+  const repos = useRepos()
+  const results = useQueries({
+    queries: flows.map((f) => ({
+      queryKey: ['flowRuns', f.id],
+      queryFn: () => repos.flows.runs(f.id),
+    })),
+  })
+  return {
+    runs: results.flatMap((r) => r.data ?? []),
+    isLoading: results.some((r) => r.isLoading),
+    isError: results.some((r) => r.isError),
+  }
 }
 
 export function useRoutines() {

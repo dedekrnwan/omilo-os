@@ -1,7 +1,7 @@
 // ── Office Flows: List + New Flow dialog ─────────────────────────────────────
 // Matches design ref: Cv9lg.png (company-wide flows list + new-flow panel)
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { SegmentedTabs } from '../../../ui/ds/Segmented'
 import { Drawer } from '../../../ui/ds/Drawer'
 import { Copy, GitFork, History, Link, Pause, Play, Plus, Power, Settings2, Sparkles, Trash2, Workflow } from 'lucide-react'
@@ -12,8 +12,9 @@ import { useFlowStore } from './editor/store'
 import { useFlowBoard, flowToCard } from './boardStore'
 import type { FlowCard } from './boardStore'
 import type { Flow } from '../../../core/domain/types'
+import { officeRunRow, runsStats, sortRunsByStartedDesc } from './runsAdapter'
 import { useNavigate } from '@tanstack/react-router'
-import { useArea, useFlows } from '../../../app/queries'
+import { useAllFlowRuns, useArea, useFlows } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
@@ -22,7 +23,6 @@ import { FlowChain } from '../../../ui/ds/FlowChain'
 import {
   TEMPLATES,
   SUGGESTED_FLOWS,
-  OFFICE_FLOW_RUNS,
   newDraftId,
 } from './data'
 import type { FlowTab } from './data'
@@ -326,22 +326,36 @@ function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (templateId: string) 
 const RUN_FILTERS = ['All', 'Running', 'Needs you', 'Failed', 'Done'] as const
 type RunFilter = (typeof RUN_FILTERS)[number]
 
-const RUNS_STATS = {
-  'Runs this week': '14',
-  'Success rate': '91%',
-  'Needs you': '1',
-  Spend: '$0.018',
-}
-
-function RunsTab() {
+function RunsTab({ flows }: { flows: Flow[] }) {
   const [filter, setFilter] = useState<RunFilter>('All')
-  const shown = filter === 'All' ? OFFICE_FLOW_RUNS : OFFICE_FLOW_RUNS.filter((r) => r.status === filter)
+  const { runs, isLoading, isError } = useAllFlowRuns(flows)
+
+  const now = Date.now()
+  const titleById = useMemo(() => new Map(flows.map((f) => [f.id, f.title])), [flows])
+  const rows = useMemo(
+    () => sortRunsByStartedDesc(runs).map((r) => officeRunRow(r, titleById.get(r.flowId) ?? 'Flow', now)),
+    [runs, titleById, now],
+  )
+  const stats = useMemo(() => runsStats(runs, now), [runs, now])
+
+  if (isError) {
+    return (
+      <div role="alert" className="px-[24px] py-[20px] text-[13px] text-bad">
+        Failed to load runs. Please refresh to try again.
+      </div>
+    )
+  }
+  if (isLoading) {
+    return <div className="px-[24px] py-[20px] text-[13px] text-muted">Loading runs…</div>
+  }
+
+  const shown = filter === 'All' ? rows : rows.filter((r) => r.status === filter)
 
   return (
     <div className="flex flex-col gap-[20px]">
       {/* Stats */}
       <div className="flex gap-[32px]">
-        {Object.entries(RUNS_STATS).map(([label, val]) => (
+        {Object.entries(stats).map(([label, val]) => (
           <div key={label} className="flex flex-col gap-[2px]">
             <span className="text-[11.5px] text-muted">{label}</span>
             <span className="text-[22px] font-semibold text-ink">{val}</span>
@@ -644,7 +658,7 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
           />
         )}
         {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToDraft(id)} />}
-        {activeTab === 'Runs'      && <RunsTab />}
+        {activeTab === 'Runs'      && <RunsTab flows={liveFlows} />}
       </div>
 
       <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} onDraft={() => goToDraft()} onBlank={goToBlank} />
