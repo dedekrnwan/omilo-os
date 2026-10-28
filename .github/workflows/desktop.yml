@@ -1,0 +1,116 @@
+name: desktop
+# Builds the Omilo thin-client .dmg (Tauri shell + web frontend; no embedded runtime).
+#
+# Triggers:
+#   - workflow_dispatch (Actions → desktop → Run workflow)
+#   - push of a tag matching v* or desktop-v*
+#
+# Signing: UNSIGNED by default — no cert secrets are required to produce a working .dmg.
+# macOS shows "Open Anyway" on first launch (ad-hoc signing).
+# For a Developer ID-signed + notarized release, add these optional repo secrets:
+#   APPLE_CERTIFICATE          — base64-encoded .p12 certificate
+#   APPLE_CERTIFICATE_PASSWORD — password for the .p12
+#   APPLE_SIGNING_IDENTITY     — "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID                   — Apple ID email (for notarytool)
+#   APPLE_PASSWORD             — app-specific password (for notarytool)
+#   APPLE_TEAM_ID              — 10-character team ID
+# See docs/technical/10a-desktop-release.md for the full signing / notarization runbook.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+      - "desktop-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: mac (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15        # Apple Silicon
+            arch: arm64
+          - runner: macos-15-intel  # Intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ── Optional: import Developer ID certificate into a temporary keychain ──
+      # Skipped entirely when APPLE_CERTIFICATE secret is absent (ad-hoc build).
+      - name: Import signing certificate (optional)
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          kc="$RUNNER_TEMP/omilo.keychain-db"
+          pw="$(openssl rand -hex 16)"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$kc"
+          security set-key-partition-list -S apple-tool:,apple: -k "$pw" "$kc" >/dev/null
+          security list-keychain -d user -s "$kc"
+          echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      # ── Build ──────────────────────────────────────────────────────────────
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend (tsc + vite)
+        run: npm run build
+
+      - name: Build Tauri app + .dmg (UNSIGNED unless cert secrets present)
+        env:
+          # Notarization env vars — Tauri reads these automatically.
+          # If absent, the build proceeds without notarization (ad-hoc / unsigned).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx tauri build --bundles app,dmg
+
+      # ── Collect artifact ───────────────────────────────────────────────────
+      - name: Name the .dmg
+        run: |
+          v="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          mkdir -p out
+          cp src-tauri/target/release/bundle/dmg/*.dmg \
+             "out/Omilo-${v}-mac-${{ matrix.arch }}.dmg" || true
+          # Also copy the .app bundle (zipped for upload)
+          app=$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1)
+          if [ -n "$app" ]; then
+            ditto -c -k --keepParent "$app" "out/Omilo-${v}-mac-${{ matrix.arch }}.app.zip" || true
+          fi
+          ls -lh out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omilo-mac-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: warn
+
+      # ── NOTE: no publish / gh release step ────────────────────────────────
+      # This workflow is build-only. Upload to GitHub Releases manually or add
+      # a separate release job with the signed + notarized artifact (see 10a).

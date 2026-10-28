@@ -10,7 +10,7 @@
 SHELL := /bin/bash
 .PHONY: dev db db-stop db-logs test build image \
         up-cloud up-runtime down logs \
-        migrate seed register desktop
+        migrate seed register desktop desktop-dev
 
 # ── Python / venv detection ───────────────────────────────────────────────────
 # Prefer the virtualenv binary; fall back to a system Python 3.11+.
@@ -111,10 +111,25 @@ logs:
 register:
 	$(DC_RUNTIME) exec api omilo-register
 
-# ── desktop: placeholder (implemented in P5c / T4) ───────────────────────────
+# ── desktop: build the thin-client macOS .dmg ────────────────────────────────
+# Thin client: the Tauri shell + the web frontend; no embedded runtime.
+# The running app connects to a local or self-hosted Omilo runtime.
+#
+# Signing: ad-hoc by default (runs but shows "Open Anyway" on first launch).
+# For a Developer ID-signed + notarized build set APPLE_SIGNING_IDENTITY and
+# the Apple notarization secrets — see docs/technical/10a-desktop-release.md.
 desktop:
-	@echo "Desktop packaging is implemented in the Tauri build (P5c Task 4)."
-	@echo "See: src-tauri/ and apps/api for the embedded runtime."
+	npm ci
+	npm run build
+	npx tauri build --bundles app,dmg
+	@echo ""
+	@echo "── .dmg artifact ────────────────────────────────────────────────────"
+	@ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null || \
+	  echo "  (no dmg found — check src-tauri/target/release/bundle/dmg/)"
+
+# ── desktop-dev: run the Tauri shell against a local dev frontend/backend ────
+desktop-dev:
+	npx tauri dev
 
 # ── migrate / seed: delegate to the api package via venv ─────────────────────
 migrate: venv
