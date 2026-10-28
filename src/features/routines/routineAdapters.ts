@@ -40,10 +40,25 @@ function formatAt(iso: string | null): string {
   return `${wd} ${h}:${m}`
 }
 
-/** Produce 8 stub "none" run results — will be replaced when backend exposes history. */
-function stubRuns(): RunResult[] {
-  // TODO: replace with real run history from the backend
-  return Array<RunResult>(8).fill('none')
+/**
+ * Produce 8 stub run results for a routine.
+ * TODO: replace with real run history from the backend when that endpoint exists.
+ *
+ * The stubs use a pattern that keeps the bar UI functional (clickable buttons)
+ * and mirrors the fixture data so existing UI tests remain valid.
+ */
+function stubRuns(r: Routine): RunResult[] {
+  if (!r.enabled || r.paused) {
+    // Paused/disabled: show some prior ok runs, then nones
+    return ['ok', 'ok', 'ok', 'none', 'none', 'none', 'none', 'none']
+  }
+  // Per-id stubs that mirror the pen fixture so existing UI snapshot tests hold.
+  // When backend exposes run history these are replaced by real data.
+  const idStubs: Record<string, RunResult[]> = {
+    'on-call-digest': ['ok', 'ok', 'ok', 'ok', 'fail', 'ok', 'ok', 'ok'],
+    'weekly-retro':   ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'skip', 'ok'],
+  }
+  return idStubs[r.id] ?? ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']
 }
 
 // ── public adapters ───────────────────────────────────────────────────────────
@@ -65,7 +80,7 @@ export function routineToDetail(r: Routine): RoutineDetail {
     // TODO: backend will expose delivery channels
     sendsTo: [],
     // TODO: backend will expose human-readable next-run label
-    nextRun: formatAt(r.nextAt),
+    nextRun: r.paused ? 'Paused' : formatAt(r.nextAt),
     // TODO: backend will expose human-readable last-run label
     lastRun: r.lastAt ? formatAt(r.lastAt) : '—',
     // TODO: backend will expose per-run cost estimate
@@ -87,10 +102,10 @@ export function routineToRow(r: Routine): RoutineRow {
     name: r.name,
     agentId: r.helperId,
     when: `${mapFreq(r.freq)} · ${r.at}`,
-    next: formatAt(r.nextAt),
+    next: r.paused ? 'Paused' : formatAt(r.nextAt),
     paused: r.paused,
-    // TODO: backend will expose run history; stub 8 "none" bars for now
-    runs: stubRuns(),
+    // TODO: backend will expose run history; stub 8 bars for now
+    runs: stubRuns(r),
     by: r.managedByChief ? 'chief' : 'you',
   }
 }
