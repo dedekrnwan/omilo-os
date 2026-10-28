@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle, PanelRight, ScrollText, ShieldCheck, Target, UserPlus, X } from 'lucide-react'
-import type { Model, SessionParticipant } from '../../core/domain/types'
+import type { Message, Model, SessionParticipant } from '../../core/domain/types'
 import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession } from '../../app/queries'
 import { useChatStore } from '../../app/store'
 import { createCommands } from '../../adapters/http/commands'
+import { openChatSocket } from '../../adapters/http/chatSocket'
 import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
@@ -247,27 +249,91 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [actionToast, setActionToast] = useState<string | null>(null)
   const [autoCompact, setAutoCompact] = useState(true)
 
-  // ── HTTP commands (env-gated) ─────────────────────────────────────────────
-  // In http mode, the composer's onSend calls the API to persist the message.
-  // In mock mode this is a no-op and the Composer's onSend prop is left unset,
-  // preserving the existing mock-mode behaviour exactly.
-  const commands = useMemo(() => {
-    if (import.meta.env.VITE_USE_HTTP !== '1') return null
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-    const getToken = () => localStorage.getItem('omilo_token')
-    return createCommands(baseUrl, getToken)
-  }, [])
+  // Live-mode streaming state
+  const [streamedMessages, setStreamedMessages] = useState<Message[]>([])
+  const [isSending, setIsSending] = useState(false)
+  const [sendNotice, setSendNotice] = useState<string | null>(null)
 
-  function handleSend(text: string) {
-    if (commands) {
-      // Fire-and-forget: the user's message is already in the backend.
-      // Optimistic UI is handled by the existing mock-mode path; live WS
-      // streaming is wired in a later task (P5+ frontend-gaps).
-      commands.sendMessage(sessionId, text).catch(() => {
-        // Swallow errors silently in P1 — error feedback is a later task.
-      })
+  const queryClient = useQueryClient()
+
+  // ── HTTP commands + WS socket (env-gated) ────────────────────────────────
+  // In live mode (VITE_USE_HTTP=1): the send path opens a WS, streams frames,
+  // appends message_saved messages, and clears sending state on job_done/failed.
+  // If the socket errors or closes early the UI falls back to POST+refetch.
+  // In mock mode (default): the existing behaviour is preserved exactly.
+  const isLiveMode = import.meta.env.VITE_USE_HTTP === '1'
+
+  const { commands, baseUrl, getToken } = useMemo(() => {
+    if (!isLiveMode) return { commands: null, baseUrl: '', getToken: () => null }
+    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+    const tok = () => localStorage.getItem('omilo_token')
+    return { commands: createCommands(base, tok), baseUrl: base, getToken: tok }
+  }, [isLiveMode])
+
+  // Fallback: POST + refetch (called when socket errors / closes before job_done)
+  const runFallback = useCallback(async (text: string) => {
+    try {
+      if (commands) {
+        await commands.sendMessage(sessionId, text)
+        // Invalidate the messages query so useMessages refetches the saved message
+        await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+      }
+    } catch {
+      // Fallback also failed — best effort, nothing more to do
     }
-  }
+    setIsSending(false)
+    setSendNotice('Message sent via fallback — response may take a moment.')
+  }, [commands, sessionId, queryClient])
+
+  const handleSend = useCallback((text: string) => {
+    if (!isLiveMode || !commands) return
+
+    setIsSending(true)
+    setSendNotice(null)
+    setStreamedMessages([])
+
+    let jobDone = false
+
+    const socket = openChatSocket(sessionId, getToken, baseUrl, {
+      onRunEvent: (_kind, _data) => {
+        // Optional: could surface run_event progress in UI; for now no-op
+      },
+      onMessageSaved: (message) => {
+        // Append every message_saved (assistant OR user echo) to the thread
+        setStreamedMessages(prev => {
+          const alreadyPresent = prev.some(m => m.id === message.id)
+          return alreadyPresent ? prev : [...prev, message]
+        })
+      },
+      onJobDone: (_jobId) => {
+        jobDone = true
+        setIsSending(false)
+        // Invalidate to merge streamed messages with the server state
+        void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+        socket.close()
+      },
+      onJobFailed: (_jobId) => {
+        jobDone = true
+        setIsSending(false)
+        void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+        socket.close()
+      },
+      onError: (_ev) => {
+        if (!jobDone) {
+          void runFallback(text)
+          socket.close()
+        }
+      },
+      onClose: (_ev) => {
+        // Socket closed before job_done — fall back to POST+refetch
+        if (!jobDone) {
+          void runFallback(text)
+        }
+      },
+    })
+
+    socket.send(text)
+  }, [isLiveMode, commands, sessionId, getToken, baseUrl, queryClient, runFallback])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -281,7 +347,22 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const meta = [channel?.name, folder?.name].filter(Boolean).join(' / ')
   const participants = session?.participants?.length ? session.participants : [CHIEF]
   const composerState = screen ? COMPOSER_STATE[screen] : undefined
-  const contextUsed = screen === 'almost-full' ? 94 : screen === 'compacted' ? 18 : 42
+
+  // ── Composer context meter — real-state-driven ────────────────────────────
+  // Screen-state overrides take priority (for design preview frames).
+  // Otherwise: coarse proxy from message count + total content chars.
+  //   Assumption: ~200k char context window, each char ≈ 0.25 token → ~50k tokens.
+  //   We estimate fill% = totalChars / 200_000 clamped to [0, 99].
+  //   Streamed messages (in-flight turn) are included for immediacy.
+  //   Note: this is an approximation — the exact token count lives server-side.
+  //   When a run_event carries token data in the future, switch to that signal.
+  const contextUsed: number = useMemo(() => {
+    if (screen === 'almost-full') return 94
+    if (screen === 'compacted') return 18
+    const allMsgs = [...(messages ?? []), ...streamedMessages]
+    const totalChars = allMsgs.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
+    return Math.min(99, Math.round((totalChars / 200_000) * 100))
+  }, [screen, messages, streamedMessages])
   const browser = browserOpen
   const panelOpen = resultsOpen || browserOpen
   // With the 600px browser beside it the thread and composer keep 28px gutters (pen E5554m).
@@ -557,47 +638,82 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {screen === 'routine' ? (
           <RoutineCreatedThread />
-        ) : isLoading ? null : !messages || messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-[6px] px-[24px] text-center">
-            <Mascot size={40} radius={11} />
-            <p className="m-0 mt-[6px] text-[13.5px] font-medium text-ink">No messages yet</p>
-            <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
-          </div>
-        ) : (
-          <MessageList
-            messages={messages}
-            columnClass={col}
-            before={screen === 'compacted' ? <CompactedMarker onViewFullHistory={() => setActionToast('Loading full history…')} /> : undefined}
-            onTasksAction={createTasks}
-            replaceActions={
-              tasksCreated && effectiveGoal ? (
-                <TasksCreated goal={effectiveGoal} onUndo={() => setTasksCreated(false)} />
-              ) : undefined
+        ) : isLoading ? null : (
+          (() => {
+            // Merge server messages with in-flight streamed messages (deduped by id)
+            const serverMsgs = messages ?? []
+            const serverIds = new Set(serverMsgs.map(m => m.id))
+            const combined = [
+              ...serverMsgs,
+              ...streamedMessages.filter(m => !serverIds.has(m.id)),
+            ]
+            if (combined.length === 0) {
+              return (
+                <div className="flex h-full flex-col items-center justify-center gap-[6px] px-[24px] text-center">
+                  <Mascot size={40} radius={11} />
+                  <p className="m-0 mt-[6px] text-[13.5px] font-medium text-ink">No messages yet</p>
+                  <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
+                </div>
+              )
             }
-          />
+            return (
+              <MessageList
+                messages={combined}
+                columnClass={col}
+                before={screen === 'compacted' ? <CompactedMarker onViewFullHistory={() => setActionToast('Loading full history…')} /> : undefined}
+                onTasksAction={createTasks}
+                replaceActions={
+                  tasksCreated && effectiveGoal ? (
+                    <TasksCreated goal={effectiveGoal} onUndo={() => setTasksCreated(false)} />
+                  ) : undefined
+                }
+              />
+            )
+          })()
         )}
       </div>
 
       {/* Composer area */}
       <div className="flex shrink-0 flex-col items-center gap-[8px] pt-[4px] pb-[13px]">
         <div className={col}>
+          {/* Non-blocking fallback notice (shown when WS fell back to POST) */}
+          {sendNotice && (
+            <div
+              role="status"
+              className="mb-[6px] flex items-center gap-[8px] rounded-base bg-soft px-[10px] py-[6px] text-[12px] text-muted outline-1 -outline-offset-1 outline-line"
+            >
+              <span className="flex-1">{sendNotice}</span>
+              <button
+                type="button"
+                aria-label="Dismiss notice"
+                onClick={() => setSendNotice(null)}
+                className="text-muted hover:text-ink-2"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <Composer
             key={screen ?? 'base'}
             sessionId={sessionId}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             contextUsed={contextUsed}
-            contextAlmostFull={screen === 'almost-full'}
+            contextAlmostFull={screen === 'almost-full' || contextUsed >= 90}
             autoCompact={autoCompact}
             onAutoCompactToggle={() => setAutoCompact(v => !v)}
             onCompactNow={() => setActionToast('Context compacted')}
             initialText={composerState?.text}
             initialPopover={composerState?.popover}
             initialMenu={composerState?.menu}
-            placeholder={`Reply — ${joinNames(participants.map((p) => p.name))} ${
-              participants.length > 1 ? 'are' : 'is'
-            } in this chat`}
-            onSend={commands ? handleSend : undefined}
+            placeholder={
+              isSending
+                ? 'Chief is thinking…'
+                : `Reply — ${joinNames(participants.map((p) => p.name))} ${
+                    participants.length > 1 ? 'are' : 'is'
+                  } in this chat`
+            }
+            onSend={isLiveMode ? handleSend : undefined}
           />
         </div>
         <p className="m-0 flex items-center gap-[6px] text-[12px] text-faint">
