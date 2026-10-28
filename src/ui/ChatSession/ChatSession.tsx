@@ -299,6 +299,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
     setStreamedMessages([])
 
     let jobDone = false
+    let fallbackDone = false
 
     const socket = openChatSocket(sessionId, getToken, baseUrl, {
       onRunEvent: (_kind, _data) => {
@@ -329,7 +330,8 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
         socket.close()
       },
       onError: (_ev) => {
-        if (!jobDone) {
+        if (!jobDone && !fallbackDone) {
+          fallbackDone = true
           socketRef.current = null
           void runFallback(text)
           socket.close()
@@ -344,8 +346,9 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             // Clear spinner and surface a non-blocking auth error notice.
             setIsSending(false)
             setSendNotice('Session expired — please sign in again.')
-          } else {
-            // Transient drop: fall back to POST+refetch.
+          } else if (!fallbackDone) {
+            // Transient drop: fall back to POST+refetch (only if onError didn't already).
+            fallbackDone = true
             void runFallback(text)
           }
         }

@@ -298,6 +298,253 @@ describe('chatSocket → fallback on error (Review-Focus)', () => {
   })
 })
 
+// ── WS double-fallback fix tests ──────────────────────────────────────────────
+
+describe('WS double-fallback fix — onerror then onclose fires fallback EXACTLY ONCE', () => {
+  // ------------------------------------------------------------------
+  // Test: real ChatSession — error then close → sendMessage called once
+  // ------------------------------------------------------------------
+  test('error then close → sendMessage POST called EXACTLY ONCE (not twice)', async () => {
+    vi.stubEnv('VITE_USE_HTTP', '1')
+    vi.resetModules()
+
+    const sendMessage = vi.fn().mockResolvedValue({ message: null, jobId: 'j-double' })
+
+    vi.doMock('../../adapters/http/commands', () => ({
+      createCommands: () => ({
+        sendMessage,
+        createSession: vi.fn(),
+        createArea: vi.fn(),
+        updateArea: vi.fn(),
+        deleteArea: vi.fn(),
+        addParticipant: vi.fn(),
+        removeParticipant: vi.fn(),
+        createFolder: vi.fn(),
+        updateFolder: vi.fn(),
+        deleteFolder: vi.fn(),
+        createGoal: vi.fn(),
+        updateGoal: vi.fn(),
+        deleteGoal: vi.fn(),
+      }),
+    }))
+
+    vi.stubGlobal('localStorage', { getItem: () => 'test-jwt', setItem: () => {}, removeItem: () => {} })
+
+    const { ChatSession } = await import('./ChatSession')
+    const { createMockRepos } = await import('../../adapters/mock/mockRepos')
+    const { render: tlRender, screen: tlScreen, waitFor: tlWaitFor, act } = await import('@testing-library/react')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    const { ReposProvider } = await import('../../app/ReposProvider')
+    const userEvent = (await import('@testing-library/user-event')).default
+
+    const repos = createMockRepos()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    MockWS.instanceCount = 0
+    MockWS.latest = null
+
+    const user = userEvent.setup()
+
+    tlRender(
+      <QueryClientProvider client={qc}>
+        <ReposProvider repos={repos}>
+          <ChatSession sessionId="sess-double-fallback" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+
+    await tlWaitFor(() => {
+      expect(tlScreen.getByRole('button', { name: /send/i })).toBeInTheDocument()
+    })
+
+    const input = tlScreen.getByRole('textbox')
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'Test double fallback')
+    })
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    const ws = MockWS.latest!
+
+    // Fire error then close — the browser does this on network failure
+    await act(async () => {
+      ws.fireError()
+    })
+    await act(async () => {
+      ws.fireClose(1006)
+    })
+
+    // sendMessage must be called EXACTLY once — guard prevents double-POST
+    await tlWaitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+    })
+
+    vi.unstubAllEnvs()
+    vi.doUnmock('../../adapters/http/commands')
+    vi.resetModules()
+  })
+
+  // ------------------------------------------------------------------
+  // Test: 4401 close after error → still no fallback (auth path intact)
+  // ------------------------------------------------------------------
+  test('4401 close → NO fallback (auth path unchanged)', async () => {
+    vi.stubEnv('VITE_USE_HTTP', '1')
+    vi.resetModules()
+
+    const sendMessage = vi.fn().mockResolvedValue({ message: null, jobId: 'j-4401' })
+
+    vi.doMock('../../adapters/http/commands', () => ({
+      createCommands: () => ({
+        sendMessage,
+        createSession: vi.fn(),
+        createArea: vi.fn(),
+        updateArea: vi.fn(),
+        deleteArea: vi.fn(),
+        addParticipant: vi.fn(),
+        removeParticipant: vi.fn(),
+        createFolder: vi.fn(),
+        updateFolder: vi.fn(),
+        deleteFolder: vi.fn(),
+        createGoal: vi.fn(),
+        updateGoal: vi.fn(),
+        deleteGoal: vi.fn(),
+      }),
+    }))
+
+    vi.stubGlobal('localStorage', { getItem: () => 'test-jwt', setItem: () => {}, removeItem: () => {} })
+
+    const { ChatSession } = await import('./ChatSession')
+    const { createMockRepos } = await import('../../adapters/mock/mockRepos')
+    const { render: tlRender, screen: tlScreen, waitFor: tlWaitFor, act } = await import('@testing-library/react')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    const { ReposProvider } = await import('../../app/ReposProvider')
+    const userEvent = (await import('@testing-library/user-event')).default
+
+    const repos = createMockRepos()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    MockWS.latest = null
+
+    const user = userEvent.setup()
+
+    tlRender(
+      <QueryClientProvider client={qc}>
+        <ReposProvider repos={repos}>
+          <ChatSession sessionId="sess-4401-nofall" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+
+    await tlWaitFor(() => {
+      expect(tlScreen.getByRole('button', { name: /send/i })).toBeInTheDocument()
+    })
+
+    const input = tlScreen.getByRole('textbox')
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'Auth fail message')
+    })
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    const ws = MockWS.latest!
+
+    await act(async () => {
+      ws.fireClose(4401)
+    })
+
+    // 4401 → auth notice only, no fallback POST
+    await tlWaitFor(() => {
+      expect(tlScreen.getByText(/session expired/i)).toBeInTheDocument()
+    })
+    expect(sendMessage).not.toHaveBeenCalled()
+
+    vi.unstubAllEnvs()
+    vi.doUnmock('../../adapters/http/commands')
+    vi.resetModules()
+  })
+
+  // ------------------------------------------------------------------
+  // Test: clean non-4401 close (no prior error) → fallback runs exactly once
+  // ------------------------------------------------------------------
+  test('clean non-4401 close (no prior error) → fallback runs exactly once', async () => {
+    vi.stubEnv('VITE_USE_HTTP', '1')
+    vi.resetModules()
+
+    const sendMessage = vi.fn().mockResolvedValue({ message: null, jobId: 'j-clean' })
+
+    vi.doMock('../../adapters/http/commands', () => ({
+      createCommands: () => ({
+        sendMessage,
+        createSession: vi.fn(),
+        createArea: vi.fn(),
+        updateArea: vi.fn(),
+        deleteArea: vi.fn(),
+        addParticipant: vi.fn(),
+        removeParticipant: vi.fn(),
+        createFolder: vi.fn(),
+        updateFolder: vi.fn(),
+        deleteFolder: vi.fn(),
+        createGoal: vi.fn(),
+        updateGoal: vi.fn(),
+        deleteGoal: vi.fn(),
+      }),
+    }))
+
+    vi.stubGlobal('localStorage', { getItem: () => 'test-jwt', setItem: () => {}, removeItem: () => {} })
+
+    const { ChatSession } = await import('./ChatSession')
+    const { createMockRepos } = await import('../../adapters/mock/mockRepos')
+    const { render: tlRender, screen: tlScreen, waitFor: tlWaitFor, act } = await import('@testing-library/react')
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+    const { ReposProvider } = await import('../../app/ReposProvider')
+    const userEvent = (await import('@testing-library/user-event')).default
+
+    const repos = createMockRepos()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    MockWS.latest = null
+
+    const user = userEvent.setup()
+
+    tlRender(
+      <QueryClientProvider client={qc}>
+        <ReposProvider repos={repos}>
+          <ChatSession sessionId="sess-clean-close" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+
+    await tlWaitFor(() => {
+      expect(tlScreen.getByRole('button', { name: /send/i })).toBeInTheDocument()
+    })
+
+    const input = tlScreen.getByRole('textbox')
+    await act(async () => {
+      await user.click(input)
+      await user.type(input, 'Clean close message')
+    })
+    await act(async () => {
+      await user.click(tlScreen.getByRole('button', { name: /send/i }))
+    })
+
+    const ws = MockWS.latest!
+
+    // Only close, no prior error
+    await act(async () => {
+      ws.fireClose(1001)
+    })
+
+    await tlWaitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+    })
+
+    vi.unstubAllEnvs()
+    vi.doUnmock('../../adapters/http/commands')
+    vi.resetModules()
+  })
+})
+
 // ── Fix round 1 tests ─────────────────────────────────────────────────────────
 
 describe('Fix round 1 — 4401 auth-close and concurrent socket guard', () => {
