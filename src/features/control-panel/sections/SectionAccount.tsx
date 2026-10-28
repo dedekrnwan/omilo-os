@@ -17,6 +17,7 @@ import {
 } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
+import { useAuth } from '../../../app/useAuth'
 
 const DEVICES_INIT = [
   { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
@@ -25,6 +26,7 @@ const DEVICES_INIT = [
 ]
 
 export function SectionAccount() {
+  const { signOut } = useAuth()
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
   // Telemetry opt-out: local state only; backend persistence happens via POST
@@ -64,6 +66,11 @@ export function SectionAccount() {
     if (e.target.files?.[0]) {
       notify('Photo updated')
     }
+  }
+
+  function handleGlobalSignOut() {
+    signOut()
+    window.location.assign('/auth/sign-in')
   }
 
   return (
@@ -120,6 +127,12 @@ export function SectionAccount() {
           <RowDivider />
           <SettingRow label="Two-step verification" desc="Authenticator app · required for owners.">
             <Toggle on />
+          </SettingRow>
+          <RowDivider />
+          <SettingRow label="Sign out" desc="Sign out of Omilo on this device.">
+            <Button variant="secondary" height={28} onClick={handleGlobalSignOut} aria-label="Sign out of Omilo">
+              Sign out
+            </Button>
           </SettingRow>
         </SettingCardRows>
 
