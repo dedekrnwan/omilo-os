@@ -26,6 +26,7 @@ import type {
 } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
 import { apiFetch, ApiError } from './client'
+import type { RawChannel } from './commands'
 
 // ── snake_case → camelCase mappers ────────────────────────────────────────────
 // The legacy endpoints (channels, sessions, inbox, …) return camelCase already.
@@ -199,15 +200,20 @@ export function createHttpRepos(
   }
 
   // ── channel mapper (surfaces icon, purpose, contextScope from backend DTO) ──
-  // The backend returns icon/purpose/contextScope as camelCase (by_alias=True).
-  // contextScope is always present with default "isolated".
-  type RawChannel = Omit<Channel, 'contextScope'> & {
-    contextScope?: string
-    context_scope?: string
-  }
+  // The backend channels LIST/GET endpoints return mostly camelCase (by_alias=True).
+  // RawChannel (imported from commands.ts) models both camelCase and snake_case
+  // field variants so the same type covers the LIST/GET and CREATE responses.
   function mapChannel(raw: RawChannel): Channel {
     return {
-      ...raw,
+      id: raw.id,
+      name: raw.name,
+      accent: raw.accent as Channel['accent'],
+      isDefault: raw.is_default ?? raw.isDefault,
+      agentCount: (raw.agent_count ?? raw.agentCount) ?? 0,
+      chatCount: (raw.chat_count ?? raw.chatCount) ?? 0,
+      openItems: (raw.open_items ?? raw.openItems) ?? 0,
+      icon: raw.icon,
+      purpose: raw.purpose,
       contextScope: raw.contextScope ?? raw.context_scope ?? 'isolated',
     }
   }

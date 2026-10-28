@@ -99,14 +99,33 @@ function mapConnector(r: RawConnector): Connector {
   }
 }
 
-type RawChannel = {
+/**
+ * Raw channel DTO as returned by the backend.
+ *
+ * The channels LIST/GET endpoints return mostly camelCase (FastAPI by_alias=True),
+ * while the channels CREATE endpoint returns snake_case. Both forms are modelled
+ * here so a single shared mapper can handle either response.
+ */
+export type RawChannel = {
   id: string
   name: string
   accent: string
+  /** snake_case (CREATE endpoint) */
   is_default?: boolean
-  agent_count: number
-  chat_count: number
-  open_items: number
+  /** camelCase (LIST/GET endpoint, by_alias=True) */
+  isDefault?: boolean
+  /** snake_case (CREATE endpoint) */
+  agent_count?: number
+  /** camelCase (LIST/GET endpoint, by_alias=True) */
+  agentCount?: number
+  /** snake_case (CREATE endpoint) */
+  chat_count?: number
+  /** camelCase (LIST/GET endpoint, by_alias=True) */
+  chatCount?: number
+  /** snake_case (CREATE endpoint) */
+  open_items?: number
+  /** camelCase (LIST/GET endpoint, by_alias=True) */
+  openItems?: number
   icon?: string
   purpose?: string
   /** Backend returns contextScope (camelCase via by_alias) or context_scope. */
@@ -119,10 +138,10 @@ function mapChannel(r: RawChannel): Channel {
     id: r.id,
     name: r.name,
     accent: r.accent as Channel['accent'],
-    isDefault: r.is_default,
-    agentCount: r.agent_count,
-    chatCount: r.chat_count,
-    openItems: r.open_items,
+    isDefault: r.is_default ?? r.isDefault,
+    agentCount: (r.agent_count ?? r.agentCount) ?? 0,
+    chatCount: (r.chat_count ?? r.chatCount) ?? 0,
+    openItems: (r.open_items ?? r.openItems) ?? 0,
     icon: r.icon,
     purpose: r.purpose,
     contextScope: r.contextScope ?? r.context_scope ?? 'isolated',
