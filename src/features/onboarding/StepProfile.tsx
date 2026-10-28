@@ -11,12 +11,13 @@ import { ArrowRight, Building2 } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { PrimaryButton, Stroke, WizardCard } from './parts'
 import { createCommands } from '../../adapters/http/commands'
+import { platform } from '../../platform'
 
 // ── commands factory (mirrors ChatSession.tsx pattern) ────────────────────────
 
 const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
 function getToken(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem('omilo_token') : null
+  return platform.tokenStorage.getToken()
 }
 
 // ── field option sets ─────────────────────────────────────────────────────────

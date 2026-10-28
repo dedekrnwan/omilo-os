@@ -16,12 +16,13 @@ import { Button } from '../../ui/ds/Button'
 import { Dialog } from '../../ui/ds/Dialog'
 import { Mascot } from '../../ui/ds/Mascot'
 import { createCommands } from '../../adapters/http/commands'
+import { platform } from '../../platform'
 
 // ── pen `Chat · Create channel` (W0f1Ji) → Dialog bPWTh: right-side sheet ────
 
 const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
 function getToken(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem('omilo_token') : null
+  return platform.tokenStorage.getToken()
 }
 
 const SWATCHES = [

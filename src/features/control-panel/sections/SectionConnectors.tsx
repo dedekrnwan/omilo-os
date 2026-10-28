@@ -11,12 +11,13 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useConnectors, useMarketplace } from '../../../app/queries'
 import { createCommands } from '../../../adapters/http/commands'
 import type { Connector } from '../../../core/domain/types'
+import { platform } from '../../../platform'
 
 // ── commands factory ─────────────────────────────────────────────────────────
 
 const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
 function getToken(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem('omilo_token') : null
+  return platform.tokenStorage.getToken()
 }
 function getCommands() {
   return createCommands(BASE_URL, getToken)
