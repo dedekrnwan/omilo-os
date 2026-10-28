@@ -11,15 +11,24 @@
 
 import type {
   AiAccount,
+  AnalyticsOverview,
   Channel,
   Connector,
+  Flow,
+  FlowRun,
   Folder,
   Goal,
+  Helper,
+  HelperStat,
   Id,
+  KbItem,
+  KbSource,
   McpToken,
   Message,
   Piece,
+  Routine,
   Session,
+  Skill,
   InboxItem,
   UsageSummary,
   WalletSettings,
@@ -174,6 +183,185 @@ function mapMcpToken(r: RawMcpToken): McpToken {
   }
 }
 
+// ── P8 raw types + mappers ─────────────────────────────────────────────────────
+
+// Flow: GET /v1/flows returns FlowCard (id, title, status, enabled, count, areas, created_at)
+// GET /v1/flows/{id} returns full Flow (adds company_id, version, trigger, nodes, edges, etc.)
+type RawFlow = {
+  id: string
+  title: string
+  status: string
+  enabled: boolean
+  count: number
+  areas: string[]
+  created_at: string | null
+  company_id?: string
+  version?: number
+  created_by?: string
+  proposed_from_pattern?: boolean
+  trigger?: { kind: string; spec: Record<string, unknown> }
+  nodes?: unknown[]
+  edges?: unknown[]
+  channel_ids?: string[]
+  poll_cursor?: unknown | null
+}
+
+function mapFlow(r: RawFlow): Flow {
+  return {
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    enabled: r.enabled,
+    count: r.count,
+    areas: r.areas ?? [],
+    createdAt: r.created_at,
+    companyId: r.company_id,
+    version: r.version,
+    createdBy: r.created_by,
+    proposedFromPattern: r.proposed_from_pattern,
+    trigger: r.trigger,
+    nodes: r.nodes,
+    edges: r.edges,
+    channelIds: r.channel_ids,
+    pollCursor: r.poll_cursor,
+  }
+}
+
+type RawFlowRun = {
+  id: string
+  flow_id: string
+  status: string
+  trigger_summary: string | null
+  started_by: string | null
+  cost_credits: number
+  duration: number | null
+  waiting_for: string | null
+  job_ids: string[]
+  started_at: string | null
+  ended_at: string | null
+}
+
+function mapFlowRun(r: RawFlowRun): FlowRun {
+  return {
+    id: r.id,
+    flowId: r.flow_id,
+    status: r.status,
+    triggerSummary: r.trigger_summary,
+    startedBy: r.started_by,
+    costCredits: r.cost_credits,
+    duration: r.duration,
+    waitingFor: r.waiting_for,
+    jobIds: r.job_ids ?? [],
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+  }
+}
+
+// Routine: GET /v1/routines returns _routine_to_dict (snake_case)
+type RawRoutine = {
+  id: string
+  company_id: string
+  helper_id: string
+  name: string
+  subtitle: string
+  instructions: string
+  freq: string
+  at: string
+  days: number[]
+  monthly: string | null
+  timezone: string
+  cron: string
+  sends_to: unknown[]
+  enabled: boolean
+  paused: boolean
+  managed_by_chief: boolean
+  next_at: string | null
+  last_at: string | null
+  goal_ids: string[]
+  created_by: string
+}
+
+function mapRoutine(r: RawRoutine): Routine {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    helperId: r.helper_id,
+    name: r.name,
+    subtitle: r.subtitle,
+    instructions: r.instructions,
+    freq: r.freq,
+    at: r.at,
+    days: r.days ?? [],
+    monthly: r.monthly,
+    timezone: r.timezone,
+    cron: r.cron,
+    sendsTo: r.sends_to ?? [],
+    enabled: r.enabled,
+    paused: r.paused,
+    managedByChief: r.managed_by_chief,
+    nextAt: r.next_at,
+    lastAt: r.last_at,
+    goalIds: r.goal_ids ?? [],
+    createdBy: r.created_by,
+  }
+}
+
+// GET /v1/routines/{id} returns {routine: RoutineRow, runs: []}
+type RawRoutineDetail = { routine: RawRoutine; runs: unknown[] }
+
+// KbSource: GET /v1/knowledge/sources — this endpoint does NOT exist on the backend yet.
+// The frontend repo is defined for forward-compatibility; it will 404 until the endpoint is added.
+type RawKbSource = {
+  id: string
+  company_id: string
+  kind: string
+  ref: string
+  title: string
+  content_hash: string
+  helper_id: string | null
+}
+
+function mapKbSource(r: RawKbSource): KbSource {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    kind: r.kind,
+    ref: r.ref,
+    title: r.title,
+    contentHash: r.content_hash,
+    helperId: r.helper_id,
+  }
+}
+
+// KbItem: GET /v1/knowledge returns [{source_id, heading, text, kind, score}] — already snake_case
+type RawKbItem = {
+  source_id: string
+  heading: string
+  text: string
+  kind: string
+  score: number
+}
+
+function mapKbItem(r: RawKbItem): KbItem {
+  return {
+    sourceId: r.source_id,
+    heading: r.heading,
+    text: r.text,
+    kind: r.kind,
+    score: r.score,
+  }
+}
+
+// Analytics: GET /v1/analytics/overview returns {stats[], series[]} — fields already camelCase (NOT snake_case)
+// Helpers: GET /v1/analytics/helpers returns [{helperId, name, jobs, success, tokens, spend}] — already camelCase
+
+// Skills: GET /v1/skills returns SkillCard[] (id, name, status, version, helperId, usageCount — already camelCase via _skill_card)
+// GET /v1/skills/{id} returns full Skill (camelCase via _skill_to_dict)
+
+// Helpers: GET /v1/helpers returns HelperStat[] (id, name, area, role, status, jobs, success, isChief — camelCase via _helper_to_stat)
+// GET /v1/helpers/{id} returns {helper, jobs[], skills[]} (camelCase via _helper_to_dict)
+type RawHelperDetail = { helper: Helper; jobs: unknown[]; skills: unknown[] }
+
 /**
  * Creates a Repos implementation that calls the real backend over HTTP.
  *
@@ -309,6 +497,118 @@ export function createHttpRepos(
         const res = await apiFetch(`${baseUrl}/v1/mcp-access-tokens`, getToken)
         const raw = await res.json() as RawMcpToken[]
         return raw.map(mapMcpToken)
+      },
+    },
+
+    // ── P8 new repos ────────────────────────────────────────────────────────
+
+    flows: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/flows`, getToken)
+        const raw = await res.json() as RawFlow[]
+        return raw.map(mapFlow)
+      },
+      get: async (id: Id) => {
+        try {
+          const res = await apiFetch(`${baseUrl}/v1/flows/${id}`, getToken)
+          const raw = await res.json() as RawFlow
+          return mapFlow(raw)
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }
+      },
+      runs: async (id: Id) => {
+        const res = await apiFetch(`${baseUrl}/v1/flows/${id}/runs`, getToken)
+        const raw = await res.json() as RawFlowRun[]
+        return raw.map(mapFlowRun)
+      },
+    },
+
+    routines: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/routines`, getToken)
+        const raw = await res.json() as RawRoutine[]
+        return raw.map(mapRoutine)
+      },
+      get: async (id: Id) => {
+        try {
+          const res = await apiFetch(`${baseUrl}/v1/routines/${id}`, getToken)
+          const raw = await res.json() as RawRoutineDetail
+          return mapRoutine(raw.routine)
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }
+      },
+    },
+
+    knowledge: {
+      sources: async () => {
+        // NOTE: GET /v1/knowledge/sources does NOT exist on the backend yet.
+        // This call will fail until the endpoint is added. Flagged as absent.
+        const res = await apiFetch(`${baseUrl}/v1/knowledge/sources`, getToken)
+        const raw = await res.json() as RawKbSource[]
+        return raw.map(mapKbSource)
+      },
+      list: async (params?: { q?: string }) => {
+        const qs = new URLSearchParams()
+        if (params?.q) qs.set('q', params.q)
+        const query = qs.toString()
+        const path = query ? `/v1/knowledge?${query}` : '/v1/knowledge'
+        const res = await apiFetch(`${baseUrl}${path}`, getToken)
+        const raw = await res.json() as RawKbItem[]
+        return raw.map(mapKbItem)
+      },
+    },
+
+    analytics: {
+      overview: async (range?: string) => {
+        const qs = range ? `?range=${encodeURIComponent(range)}` : ''
+        const res = await apiFetch(`${baseUrl}/v1/analytics/overview${qs}`, getToken)
+        // Response fields are already camelCase from the backend (stats, series)
+        return res.json() as Promise<AnalyticsOverview>
+      },
+      helpers: async (range?: string) => {
+        const qs = range ? `?range=${encodeURIComponent(range)}` : ''
+        const res = await apiFetch(`${baseUrl}/v1/analytics/helpers${qs}`, getToken)
+        // Response fields are already camelCase: helperId, name, jobs, success, tokens, spend
+        return res.json() as Promise<HelperStat[]>
+      },
+    },
+
+    skills: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/skills`, getToken)
+        // Already camelCase: id, name, status, version, helperId, usageCount
+        return res.json() as Promise<Skill[]>
+      },
+      get: async (id: Id) => {
+        try {
+          const res = await apiFetch(`${baseUrl}/v1/skills/${id}`, getToken)
+          return res.json() as Promise<Skill>
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }
+      },
+    },
+
+    helpers: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/helpers`, getToken)
+        // Already camelCase: id, name, area, role, status, jobs, success, isChief
+        return res.json() as Promise<Helper[]>
+      },
+      get: async (id: Id) => {
+        try {
+          const res = await apiFetch(`${baseUrl}/v1/helpers/${id}`, getToken)
+          const raw = await res.json() as RawHelperDetail
+          return raw.helper
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }
       },
     },
   }

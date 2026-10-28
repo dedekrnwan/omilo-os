@@ -147,3 +147,109 @@ export function useAiAccounts() {
     queryFn: () => repos.aiAccounts.list(),
   })
 }
+
+// ── P8 query hooks ─────────────────────────────────────────────────────────────
+
+export function useFlows() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['flows'],
+    queryFn: () => repos.flows.list(),
+  })
+}
+
+export function useFlow(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['flow', id],
+    queryFn: () => repos.flows.get(id),
+  })
+}
+
+export function useFlowRuns(flowId: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['flowRuns', flowId],
+    queryFn: () => repos.flows.runs(flowId),
+  })
+}
+
+export function useRoutines() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['routines'],
+    queryFn: () => repos.routines.list(),
+  })
+}
+
+export function useRoutine(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['routine', id],
+    queryFn: () => repos.routines.get(id),
+  })
+}
+
+export function useKnowledgeSources() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['knowledgeSources'],
+    queryFn: () => repos.knowledge.sources(),
+  })
+}
+
+export function useKnowledge(params?: { q?: string }) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['knowledge', params ?? {}],
+    queryFn: () => repos.knowledge.list(params),
+  })
+}
+
+export function useAnalyticsOverview(range?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsOverview', range ?? 'week'],
+    queryFn: () => repos.analytics.overview(range),
+  })
+}
+
+export function useAnalyticsHelpers(range?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsHelpers', range ?? 'week'],
+    queryFn: () => repos.analytics.helpers(range),
+  })
+}
+
+export function useSkills() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['skills'],
+    queryFn: () => repos.skills.list(),
+  })
+}
+
+export function useSkill(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['skill', id],
+    queryFn: () => repos.skills.get(id),
+  })
+}
+
+export function useHelpers() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['helpers'],
+    queryFn: () => repos.helpers.list(),
+  })
+}
+
+export function useHelper(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['helper', id],
+    queryFn: () => repos.helpers.get(id),
+  })
+}

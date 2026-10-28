@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHttpRepos } from './httpRepos'
 import { ApiError } from './client'
 import { runReposContract } from '../../core/ports/repos.contract'
-import type { Channel, InboxItem, Session, UsageSummary, WalletSettings, AiAccount, Piece, Connector, McpToken } from '../../core/domain/types'
+import type { Channel, InboxItem, Session, UsageSummary, WalletSettings, AiAccount, Piece, Connector, McpToken, Flow, FlowRun, Routine, KbItem, KbSource, AnalyticsOverview, HelperStat, Skill, Helper } from '../../core/domain/types'
 
 const BASE = 'http://api.test'
 const TOKEN = 'test-token-abc'
@@ -113,6 +113,40 @@ const rawMcpToken = {
   last_used_at: null,
   revoked_at: null,
   active: true,
+}
+
+// P8 contract seeds
+const rawFlow = {
+  id: 'flw-c1', title: 'Morning brief', status: 'active', enabled: true,
+  count: 4, areas: ['general'], created_at: '2026-10-01T08:00:00Z',
+}
+const rawRoutine = {
+  id: 'rtn-c1', company_id: 'cmp-1', helper_id: 'h-c1',
+  name: 'Morning brief', subtitle: '', instructions: 'Do it',
+  freq: 'daily', at: '07:00', days: [], monthly: null,
+  timezone: 'UTC', cron: '0 7 * * *', sends_to: [],
+  enabled: true, paused: false, managed_by_chief: false,
+  next_at: null, last_at: null, goal_ids: [], created_by: 'operator',
+}
+const rawKbItem = {
+  source_id: 'kbs-c1', heading: 'Test heading', text: 'Test body', kind: 'skill', score: 0.8,
+}
+const rawKbSource = {
+  id: 'kbs-c1', company_id: 'cmp-1', kind: 'skill', ref: 'skill:x',
+  title: 'Test Source', content_hash: 'abc', helper_id: null,
+}
+const rawAnalyticsOverview = {
+  stats: [{ label: 'Jobs done', value: 10 }],
+  series: [{ label: 'Jobs per day', labels: ['2026-10-28'], values: [10] }],
+}
+const rawAnalyticsHelpers: HelperStat[] = [
+  { helperId: 'h-c1', name: 'Chief', jobs: 10, success: 90, tokens: 1000, spend: 50 },
+]
+const rawSkill: Skill = {
+  id: 'skl-c1', name: 'Passkeys', status: 'active', version: 1, helperId: 'h-c1', usageCount: 3,
+}
+const rawHelper: Helper = {
+  id: 'h-c1', name: 'Chief', area: 'brand', role: 'Chief of Staff', status: 'active', isChief: true,
 }
 
 // ── unit tests ────────────────────────────────────────────────────────────────
@@ -425,6 +459,329 @@ describe('createHttpRepos — unit', () => {
     const repos = createHttpRepos(BASE, () => TOKEN)
     await expect(repos.wallet.get()).rejects.toBeInstanceOf(ApiError)
   })
+
+  // ── P8 flows ───────────────────────────────────────────────────────────────
+
+  it('flows.list() calls GET /v1/flows with Bearer and returns Flow[]', async () => {
+    const rawFlows = [{
+      id: 'flw-1', title: 'Morning brief', status: 'active', enabled: true,
+      count: 4, areas: ['general'], created_at: '2026-10-01T08:00:00Z',
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawFlows))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.flows.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    const f = result[0] as Flow
+    expect(f.id).toBe('flw-1')
+    expect(f.createdAt).toBe('2026-10-01T08:00:00Z')
+    expect((f as unknown as Record<string, unknown>).created_at).toBeUndefined()
+  })
+
+  it('flows.get(id) calls GET /v1/flows/{id} and returns mapped Flow', async () => {
+    const raw = {
+      id: 'flw-1', title: 'Morning brief', status: 'active', enabled: true,
+      count: 4, areas: ['general'], created_at: '2026-10-01T08:00:00Z',
+      company_id: 'cmp-1', version: 1, created_by: 'operator',
+      trigger: { kind: 'schedule', spec: { cron: '0 7 * * *' } },
+      nodes: [], edges: [], channel_ids: [],
+    }
+    fetchMock.mockResolvedValueOnce(okJson(raw))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.flows.get('flw-1')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw-1`)
+    expect(result).not.toBeNull()
+    expect(result!.companyId).toBe('cmp-1')
+    expect(result!.createdBy).toBe('operator')
+    expect((result as unknown as Record<string, unknown>).company_id).toBeUndefined()
+  })
+
+  it('flows.get("missing") resolves to null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(notFound())
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.flows.get('missing')
+    expect(result).toBeNull()
+  })
+
+  it('flows.get() throws ApiError on non-OK non-404', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 500 }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await expect(repos.flows.get('flw-1')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('flows.runs(id) calls GET /v1/flows/{id}/runs and returns FlowRun[]', async () => {
+    const rawRuns = [{
+      id: 'frn-1', flow_id: 'flw-1', status: 'done',
+      trigger_summary: 'schedule', started_by: 'scheduler',
+      cost_credits: 12, duration: 45, waiting_for: null,
+      job_ids: ['job-1'], started_at: '2026-10-28T07:00:05Z', ended_at: '2026-10-28T07:00:50Z',
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawRuns))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.flows.runs('flw-1')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw-1/runs`)
+    expect(result).toHaveLength(1)
+    const run = result[0] as FlowRun
+    expect(run.flowId).toBe('flw-1')
+    expect(run.triggerSummary).toBe('schedule')
+    expect(run.startedBy).toBe('scheduler')
+    expect(run.costCredits).toBe(12)
+    expect((run as unknown as Record<string, unknown>).flow_id).toBeUndefined()
+    expect((run as unknown as Record<string, unknown>).trigger_summary).toBeUndefined()
+  })
+
+  // ── P8 routines ────────────────────────────────────────────────────────────
+
+  it('routines.list() calls GET /v1/routines with Bearer and returns Routine[]', async () => {
+    const rawRoutines = [{
+      id: 'rtn-1', company_id: 'cmp-1', helper_id: 'h-chief',
+      name: 'Morning brief', subtitle: '', instructions: 'Do it',
+      freq: 'daily', at: '07:00', days: [], monthly: null,
+      timezone: 'UTC', cron: '0 7 * * *', sends_to: [],
+      enabled: true, paused: false, managed_by_chief: false,
+      next_at: '2026-10-29T07:00:00Z', last_at: null, goal_ids: [], created_by: 'operator',
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawRoutines))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.routines.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    const r = result[0] as Routine
+    expect(r.helperId).toBe('h-chief')
+    expect(r.managedByChief).toBe(false)
+    expect(r.nextAt).toBe('2026-10-29T07:00:00Z')
+    expect((r as unknown as Record<string, unknown>).helper_id).toBeUndefined()
+    expect((r as unknown as Record<string, unknown>).managed_by_chief).toBeUndefined()
+  })
+
+  it('routines.get(id) calls GET /v1/routines/{id} and unwraps {routine}', async () => {
+    const rawRoutine = {
+      id: 'rtn-1', company_id: 'cmp-1', helper_id: 'h-chief',
+      name: 'Morning brief', subtitle: '', instructions: 'Do it',
+      freq: 'daily', at: '07:00', days: [], monthly: null,
+      timezone: 'UTC', cron: '0 7 * * *', sends_to: [],
+      enabled: true, paused: false, managed_by_chief: false,
+      next_at: null, last_at: null, goal_ids: [], created_by: 'operator',
+    }
+    fetchMock.mockResolvedValueOnce(okJson({ routine: rawRoutine, runs: [] }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.routines.get('rtn-1')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines/rtn-1`)
+    expect(result).not.toBeNull()
+    expect(result!.id).toBe('rtn-1')
+    expect(result!.helperId).toBe('h-chief')
+  })
+
+  it('routines.get("missing") resolves to null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(notFound())
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.routines.get('missing')
+    expect(result).toBeNull()
+  })
+
+  // ── P8 knowledge ───────────────────────────────────────────────────────────
+
+  it('knowledge.list() calls GET /v1/knowledge with Bearer and returns KbItem[]', async () => {
+    const rawItems = [{
+      source_id: 'kbs-1', heading: 'Passkeys', text: 'Ship by Nov 14', kind: 'skill', score: 0.9,
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawItems))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.knowledge.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/knowledge`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    const item = result[0] as KbItem
+    expect(item.sourceId).toBe('kbs-1')
+    expect((item as unknown as Record<string, unknown>).source_id).toBeUndefined()
+  })
+
+  it('knowledge.list({q}) appends q param to URL', async () => {
+    fetchMock.mockResolvedValueOnce(okJson([]))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await repos.knowledge.list({ q: 'passkeys' })
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/knowledge?q=passkeys`)
+  })
+
+  it('knowledge.sources() calls GET /v1/knowledge/sources and maps snake→camel', async () => {
+    const rawSources = [{
+      id: 'kbs-1', company_id: 'cmp-1', kind: 'skill', ref: 'skill:x',
+      title: 'Passkeys', content_hash: 'abc', helper_id: 'h-dev',
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawSources))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.knowledge.sources()
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/knowledge/sources`)
+    expect(result).toHaveLength(1)
+    const src = result[0] as KbSource
+    expect(src.companyId).toBe('cmp-1')
+    expect(src.contentHash).toBe('abc')
+    expect(src.helperId).toBe('h-dev')
+    expect((src as unknown as Record<string, unknown>).company_id).toBeUndefined()
+  })
+
+  // ── P8 analytics ───────────────────────────────────────────────────────────
+
+  it('analytics.overview() calls GET /v1/analytics/overview with Bearer', async () => {
+    const rawOverview: AnalyticsOverview = {
+      stats: [{ label: 'Jobs done', value: 10 }],
+      series: [{ label: 'Jobs per day', labels: ['2026-10-28'], values: [10] }],
+    }
+    fetchMock.mockResolvedValueOnce(okJson(rawOverview))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.analytics.overview()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/analytics/overview`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result.stats).toHaveLength(1)
+    expect(result.stats[0].label).toBe('Jobs done')
+  })
+
+  it('analytics.overview(range) appends range param to URL', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ stats: [], series: [] }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await repos.analytics.overview('month')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/analytics/overview?range=month`)
+  })
+
+  it('analytics.helpers() calls GET /v1/analytics/helpers and returns HelperStat[]', async () => {
+    const rawHelpers: HelperStat[] = [
+      { helperId: 'h-1', name: 'Chief', jobs: 10, success: 90, tokens: 1000, spend: 50 },
+    ]
+    fetchMock.mockResolvedValueOnce(okJson(rawHelpers))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.analytics.helpers()
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/analytics/helpers`)
+    expect(result).toHaveLength(1)
+    expect(result[0].helperId).toBe('h-1')
+    expect(result[0].spend).toBe(50)
+  })
+
+  it('analytics.helpers(range) appends range param', async () => {
+    fetchMock.mockResolvedValueOnce(okJson([]))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await repos.analytics.helpers('day')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/analytics/helpers?range=day`)
+  })
+
+  // ── P8 skills ──────────────────────────────────────────────────────────────
+
+  it('skills.list() calls GET /v1/skills with Bearer and returns Skill[]', async () => {
+    const rawSkills: Skill[] = [{
+      id: 'skl-1', name: 'Passkeys', status: 'active',
+      version: 1, helperId: 'h-dev', usageCount: 3,
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawSkills))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.skills.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/skills`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    expect(result[0].helperId).toBe('h-dev')
+    expect(result[0].usageCount).toBe(3)
+  })
+
+  it('skills.get(id) calls GET /v1/skills/{id} and returns Skill', async () => {
+    const rawSkill: Skill = {
+      id: 'skl-1', name: 'Passkeys', status: 'active', version: 1,
+      helperId: 'h-dev', usageCount: 3, bodyMd: 'Do the thing.',
+    }
+    fetchMock.mockResolvedValueOnce(okJson(rawSkill))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.skills.get('skl-1')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/skills/skl-1`)
+    expect(result!.bodyMd).toBe('Do the thing.')
+  })
+
+  it('skills.get("missing") resolves to null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(notFound())
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.skills.get('missing')
+    expect(result).toBeNull()
+  })
+
+  it('skills.get() throws ApiError on non-OK non-404', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 500 }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await expect(repos.skills.get('skl-1')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  // ── P8 helpers (team) ──────────────────────────────────────────────────────
+
+  it('helpers.list() calls GET /v1/helpers with Bearer and returns Helper[]', async () => {
+    const rawHelpers: Helper[] = [{
+      id: 'h-chief', name: 'Chief', area: 'brand',
+      role: 'Chief of Staff', status: 'active', isChief: true,
+      jobs: 80, success: 96,
+    }]
+    fetchMock.mockResolvedValueOnce(okJson(rawHelpers))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.helpers.list()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/helpers`)
+    expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
+    expect(result).toHaveLength(1)
+    expect(result[0].isChief).toBe(true)
+    expect(result[0].jobs).toBe(80)
+  })
+
+  it('helpers.get(id) calls GET /v1/helpers/{id} and unwraps {helper}', async () => {
+    const rawHelper: Helper = {
+      id: 'h-chief', name: 'Chief', area: 'brand',
+      role: 'Chief of Staff', status: 'active', isChief: true,
+    }
+    fetchMock.mockResolvedValueOnce(okJson({ helper: rawHelper, jobs: [], skills: [] }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.helpers.get('h-chief')
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/helpers/h-chief`)
+    expect(result!.id).toBe('h-chief')
+    expect(result!.isChief).toBe(true)
+  })
+
+  it('helpers.get("missing") resolves to null on 404', async () => {
+    fetchMock.mockResolvedValueOnce(notFound())
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const result = await repos.helpers.get('missing')
+    expect(result).toBeNull()
+  })
+
+  it('helpers.get() throws ApiError on non-OK non-404', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 500 }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    await expect(repos.helpers.get('h-chief')).rejects.toBeInstanceOf(ApiError)
+  })
 })
 
 // ── contract suite against the http impl (mocked fetch) ───────────────────────
@@ -479,6 +836,35 @@ runReposContract('http (mocked fetch)', () => {
 
     // mcp-access-tokens
     if (path === '/v1/mcp-access-tokens') return Promise.resolve(okJson([rawMcpToken]))
+
+    // flows
+    if (path === '/v1/flows') return Promise.resolve(okJson([rawFlow]))
+    if (path === `/v1/flows/${rawFlow.id}`) return Promise.resolve(okJson(rawFlow))
+    if (path.match(/^\/v1\/flows\/[^/]+\/runs$/)) return Promise.resolve(okJson([]))
+    if (path.match(/^\/v1\/flows\/.+$/) && !path.includes('/runs') && !path.includes('/publish') && !path.includes('/run') && !path.includes('/test-run')) return Promise.resolve(notFound())
+
+    // routines
+    if (path === '/v1/routines') return Promise.resolve(okJson([rawRoutine]))
+    if (path === `/v1/routines/${rawRoutine.id}`) return Promise.resolve(okJson({ routine: rawRoutine, runs: [] }))
+    if (path.match(/^\/v1\/routines\/.+$/) && !path.includes('/run-now')) return Promise.resolve(notFound())
+
+    // knowledge
+    if (path === '/v1/knowledge/sources') return Promise.resolve(okJson([rawKbSource]))
+    if (path === '/v1/knowledge') return Promise.resolve(okJson([rawKbItem]))
+
+    // analytics
+    if (path === '/v1/analytics/overview') return Promise.resolve(okJson(rawAnalyticsOverview))
+    if (path === '/v1/analytics/helpers') return Promise.resolve(okJson(rawAnalyticsHelpers))
+
+    // skills
+    if (path === '/v1/skills') return Promise.resolve(okJson([rawSkill]))
+    if (path === `/v1/skills/${rawSkill.id}`) return Promise.resolve(okJson(rawSkill))
+    if (path.match(/^\/v1\/skills\/.+$/) && !path.includes('/publish')) return Promise.resolve(notFound())
+
+    // helpers (team)
+    if (path === '/v1/helpers') return Promise.resolve(okJson([rawHelper]))
+    if (path === `/v1/helpers/${rawHelper.id}`) return Promise.resolve(okJson({ helper: rawHelper, jobs: [], skills: [] }))
+    if (path.match(/^\/v1\/helpers\/.+$/)) return Promise.resolve(notFound())
 
     return Promise.resolve(notFound())
   })

@@ -1,13 +1,22 @@
 import type {
   AiAccount,
+  AnalyticsOverview,
   Channel,
   Connector,
+  Flow,
+  FlowRun,
   Folder,
   Goal,
+  Helper,
+  HelperStat,
+  KbItem,
+  KbSource,
   McpToken,
   Message,
   Piece,
+  Routine,
   Session,
+  Skill,
   InboxItem,
   UsageSummary,
   WalletSettings,
@@ -366,6 +375,253 @@ export const mcpTokens: McpToken[] = [
     lastUsedAt: '2026-10-23T16:00:00Z',
     revokedAt: null,
     active: true,
+  },
+]
+
+// ── Flows ─────────────────────────────────────────────────────────────────────
+
+export const flows: Flow[] = [
+  {
+    id: 'flw-morning-brief',
+    title: 'Morning brief',
+    status: 'active',
+    enabled: true,
+    count: 4,
+    areas: ['general'],
+    createdAt: '2026-10-01T08:00:00Z',
+    trigger: { kind: 'schedule', spec: { cron: '0 7 * * *' } },
+  },
+  {
+    id: 'flw-weekly-summary',
+    title: 'Weekly cross-area summary',
+    status: 'draft',
+    enabled: false,
+    count: 6,
+    areas: ['general', 'engineering'],
+    createdAt: '2026-10-10T10:00:00Z',
+    trigger: { kind: 'schedule', spec: { cron: '0 9 * * 1' } },
+  },
+  {
+    id: 'flw-incident-response',
+    title: 'Incident response',
+    status: 'draft',
+    enabled: false,
+    count: 8,
+    areas: ['engineering'],
+    createdAt: '2026-10-15T14:00:00Z',
+    trigger: { kind: 'manual', spec: {} },
+  },
+]
+
+export const flowRuns: FlowRun[] = [
+  {
+    id: 'frn-1',
+    flowId: 'flw-morning-brief',
+    status: 'done',
+    triggerSummary: 'schedule',
+    startedBy: 'scheduler',
+    costCredits: 12,
+    duration: 45,
+    waitingFor: null,
+    jobIds: ['job-1', 'job-2'],
+    startedAt: '2026-10-28T07:00:05Z',
+    endedAt: '2026-10-28T07:00:50Z',
+  },
+  {
+    id: 'frn-2',
+    flowId: 'flw-morning-brief',
+    status: 'done',
+    triggerSummary: 'schedule',
+    startedBy: 'scheduler',
+    costCredits: 10,
+    duration: 38,
+    waitingFor: null,
+    jobIds: ['job-3'],
+    startedAt: '2026-10-27T07:00:04Z',
+    endedAt: '2026-10-27T07:00:42Z',
+  },
+]
+
+// ── Routines ──────────────────────────────────────────────────────────────────
+
+export const routines: Routine[] = [
+  {
+    id: 'rtn-morning-brief',
+    companyId: 'cmp-1',
+    helperId: 'h-chief',
+    name: 'Morning brief',
+    subtitle: 'Daily morning briefing',
+    instructions: 'Summarise overnight activity and surface any blockers.',
+    freq: 'daily',
+    at: '07:00',
+    days: [],
+    monthly: null,
+    timezone: 'Asia/Jakarta',
+    cron: '0 7 * * *',
+    sendsTo: [{ channel: 'whatsapp', id: '+628123456789' }],
+    enabled: true,
+    paused: false,
+    managedByChief: true,
+    nextAt: '2026-10-29T00:00:00Z',
+    lastAt: '2026-10-28T00:00:00Z',
+    goalIds: [],
+    createdBy: 'operator',
+  },
+  {
+    id: 'rtn-weekly-report',
+    companyId: 'cmp-1',
+    helperId: 'h-chief',
+    name: 'Weekly cross-area report',
+    subtitle: 'Monday morning summary',
+    instructions: 'Compile weekly highlights from all areas into one summary.',
+    freq: 'weekly',
+    at: '09:00',
+    days: [0],
+    monthly: null,
+    timezone: 'Asia/Jakarta',
+    cron: '0 9 * * 1',
+    sendsTo: [],
+    enabled: true,
+    paused: false,
+    managedByChief: false,
+    nextAt: '2026-11-03T02:00:00Z',
+    lastAt: '2026-10-27T02:00:00Z',
+    goalIds: ['g-books'],
+    createdBy: 'operator',
+  },
+]
+
+// ── Knowledge ─────────────────────────────────────────────────────────────────
+
+export const kbSources: KbSource[] = [
+  {
+    id: 'kbs-1',
+    companyId: 'cmp-1',
+    kind: 'skill',
+    ref: 'skill:skl-passkeys',
+    title: 'Passkey rollout runbook',
+    contentHash: 'abc123',
+    helperId: 'h-dev',
+  },
+  {
+    id: 'kbs-2',
+    companyId: 'cmp-1',
+    kind: 'upload',
+    ref: 'upload:q3-board-deck',
+    title: 'Q3 Board Deck',
+    contentHash: 'def456',
+    helperId: null,
+  },
+]
+
+export const kbItems: KbItem[] = [
+  {
+    sourceId: 'kbs-1',
+    heading: 'Passkey Rollout',
+    text: 'Ship passkeys to web + iOS by Nov 14. Android follows with a password fallback.',
+    kind: 'skill',
+    score: 0.92,
+  },
+  {
+    sourceId: 'kbs-2',
+    heading: 'Q3 Board Deck',
+    text: 'Revenue up 12% month over month. Two goals moved, one hire closed.',
+    kind: 'upload',
+    score: 0.75,
+  },
+]
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+export const analyticsOverview: AnalyticsOverview = {
+  stats: [
+    { label: 'Jobs done', value: 142 },
+    { label: 'Success rate', value: 94, note: '%' },
+    { label: 'Tokens', value: 284_000 },
+    { label: 'Spend', value: 1_450, note: 'credits' },
+  ],
+  series: [
+    {
+      label: 'Jobs per day',
+      labels: ['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28'],
+      values: [18, 22, 25, 19, 24, 21, 13],
+    },
+  ],
+}
+
+export const analyticsHelpers: HelperStat[] = [
+  { helperId: 'h-chief', name: 'Chief', jobs: 80, success: 96, tokens: 160_000, spend: 820 },
+  { helperId: 'h-dev',   name: 'Dev',   jobs: 42, success: 93, tokens: 98_000,  spend: 430 },
+  { helperId: 'h-growth',name: 'Growth',jobs: 20, success: 90, tokens: 26_000,  spend: 200 },
+]
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+export const skills: Skill[] = [
+  {
+    id: 'skl-passkeys',
+    name: 'Passkey rollout runbook',
+    status: 'active',
+    version: 2,
+    helperId: 'h-dev',
+    usageCount: 5,
+  },
+  {
+    id: 'skl-morning-brief',
+    name: 'Morning brief template',
+    status: 'active',
+    version: 1,
+    helperId: 'h-chief',
+    usageCount: 22,
+  },
+  {
+    id: 'skl-incident-playbook',
+    name: 'Incident playbook',
+    status: 'draft',
+    version: 1,
+    helperId: 'h-dev',
+    usageCount: 0,
+  },
+]
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+export const helpers: Helper[] = [
+  {
+    id: 'h-chief',
+    name: 'Chief',
+    area: 'brand',
+    role: 'Chief of Staff',
+    status: 'active',
+    isChief: true,
+    autonomyCap: 'review_first',
+    jobDescription: 'Coordinate across all areas and surface decisions.',
+    jobs: 80,
+    success: 96,
+  },
+  {
+    id: 'h-dev',
+    name: 'Dev',
+    area: 'dev',
+    role: 'Engineering agent',
+    status: 'active',
+    isChief: false,
+    autonomyCap: 'review_first',
+    jobDescription: 'Handle engineering tasks, PRs, and CI.',
+    jobs: 42,
+    success: 93,
+  },
+  {
+    id: 'h-growth',
+    name: 'Growth',
+    area: 'marketing',
+    role: 'Marketing agent',
+    status: 'active',
+    isChief: false,
+    autonomyCap: 'review_first',
+    jobDescription: 'Drive marketing campaigns and content.',
+    jobs: 20,
+    success: 90,
   },
 ]
 

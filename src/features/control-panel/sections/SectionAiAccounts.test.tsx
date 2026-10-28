@@ -53,6 +53,12 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
     marketplace: { list: vi.fn().mockResolvedValue([]) },
     connectors: { list: vi.fn().mockResolvedValue([]) },
     mcpTokens: { list: vi.fn().mockResolvedValue([]) },
+    flows: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null), runs: vi.fn().mockResolvedValue([]) },
+    routines: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    knowledge: { sources: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([]) },
+    analytics: { overview: vi.fn().mockResolvedValue({ stats: [], series: [] }), helpers: vi.fn().mockResolvedValue([]) },
+    skills: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    helpers: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
     ...overrides,
   }
 }

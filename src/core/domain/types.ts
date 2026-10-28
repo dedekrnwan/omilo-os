@@ -22,6 +22,20 @@ export interface Helper {
   id: Id
   name: string
   area: HelperArea
+  /** Role / title (e.g. "Chief of Staff"). */
+  role?: string
+  /** Health status: 'active' | 'paused' | 'error'. */
+  status?: string
+  /** True if this is the Chief helper. */
+  isChief?: boolean
+  /** Autonomy cap: 'yolo' | 'review_first' | 'off'. */
+  autonomyCap?: string | null
+  /** Free-text job description. */
+  jobDescription?: string
+  /** Job count in current period (from HelperStat list endpoint). */
+  jobs?: number
+  /** Success percentage 0-100 (from HelperStat list endpoint). */
+  success?: number
 }
 
 export interface Channel {
@@ -244,6 +258,141 @@ export interface McpToken {
   revokedAt?: string | null
   /** True when the token is not revoked and not expired. */
   active: boolean
+}
+
+// ── Flows ─────────────────────────────────────────────────────────────────────
+
+/**
+ * FlowCard: lightweight list representation (no nodes/edges).
+ * Full Flow (with nodes/edges/trigger) returned by GET /v1/flows/{id}.
+ */
+export interface Flow {
+  id: Id
+  title: string
+  status: string
+  enabled: boolean
+  /** Number of nodes in the flow. */
+  count: number
+  areas: string[]
+  createdAt: string | null
+  /** Full detail fields (present on GET /v1/flows/{id} only). */
+  companyId?: string
+  version?: number
+  createdBy?: string
+  proposedFromPattern?: boolean
+  trigger?: { kind: string; spec: Record<string, unknown> }
+  nodes?: unknown[]
+  edges?: unknown[]
+  channelIds?: string[]
+  pollCursor?: unknown | null
+}
+
+export interface FlowRun {
+  id: Id
+  flowId: string
+  status: string
+  triggerSummary: string | null
+  startedBy: string | null
+  costCredits: number
+  duration: number | null
+  waitingFor: string | null
+  jobIds: string[]
+  startedAt: string | null
+  endedAt: string | null
+}
+
+// ── Routines ──────────────────────────────────────────────────────────────────
+
+export interface Routine {
+  id: Id
+  companyId: string
+  helperId: string
+  name: string
+  subtitle: string
+  instructions: string
+  freq: string
+  at: string
+  days: number[]
+  monthly: string | null
+  timezone: string
+  cron: string
+  sendsTo: unknown[]
+  enabled: boolean
+  paused: boolean
+  managedByChief: boolean
+  nextAt: string | null
+  lastAt: string | null
+  goalIds: string[]
+  createdBy: string
+}
+
+// ── Knowledge Base ────────────────────────────────────────────────────────────
+
+/** A KbSource row (from GET /v1/knowledge/sources — when that endpoint exists). */
+export interface KbSource {
+  id: Id
+  companyId: string
+  kind: string
+  ref: string
+  title: string
+  contentHash: string
+  helperId: string | null
+}
+
+/** A KbItem is a recall result from GET /v1/knowledge?q=… */
+export interface KbItem {
+  sourceId: string
+  heading: string
+  text: string
+  kind: string
+  score: number
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+export interface AnalyticsStat {
+  label: string
+  value: number
+  note?: string
+}
+
+export interface AnalyticsSeries {
+  label: string
+  values: number[]
+  labels: string[]
+}
+
+/** Response from GET /v1/analytics/overview */
+export interface AnalyticsOverview {
+  stats: AnalyticsStat[]
+  series: AnalyticsSeries[]
+}
+
+/** One row from GET /v1/analytics/helpers */
+export interface HelperStat {
+  helperId: string
+  name: string
+  jobs: number
+  success: number
+  tokens: number
+  spend: number
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+/** SkillCard from list; full Skill from GET /v1/skills/{id}. */
+export interface Skill {
+  id: Id
+  name: string
+  status: string
+  version: number
+  helperId: string
+  usageCount: number
+  /** Present on full GET /v1/skills/{id} response. */
+  companyId?: string
+  bodyMd?: string
+  createdBy?: string
+  createdAt?: string | null
 }
 
 export interface InboxItem {

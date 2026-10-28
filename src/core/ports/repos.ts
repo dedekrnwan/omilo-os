@@ -1,14 +1,23 @@
 import type {
   AiAccount,
+  AnalyticsOverview,
   Channel,
   Connector,
+  Flow,
+  FlowRun,
   Folder,
   Goal,
+  Helper,
+  HelperStat,
   Id,
+  KbItem,
+  KbSource,
   McpToken,
   Message,
   Piece,
+  Routine,
   Session,
+  Skill,
   InboxItem,
   UsageSummary,
   WalletSettings,
@@ -71,6 +80,39 @@ export interface McpTokenRepo {
   list(): Promise<McpToken[]>
 }
 
+export interface FlowRepo {
+  list(): Promise<Flow[]>
+  get(id: Id): Promise<Flow | null>
+  runs(id: Id): Promise<FlowRun[]>
+}
+
+export interface RoutineRepo {
+  list(): Promise<Routine[]>
+  get(id: Id): Promise<Routine | null>
+}
+
+export interface KnowledgeRepo {
+  /** GET /v1/knowledge/sources — list indexed sources. */
+  sources(): Promise<KbSource[]>
+  /** GET /v1/knowledge?q= — recall knowledge items. */
+  list(params?: { q?: string }): Promise<KbItem[]>
+}
+
+export interface AnalyticsRepo {
+  overview(range?: string): Promise<AnalyticsOverview>
+  helpers(range?: string): Promise<HelperStat[]>
+}
+
+export interface SkillRepo {
+  list(): Promise<Skill[]>
+  get(id: Id): Promise<Skill | null>
+}
+
+export interface HelperRepo {
+  list(): Promise<Helper[]>
+  get(id: Id): Promise<Helper | null>
+}
+
 export interface Repos {
   channels: ChannelRepo
   folders: FolderRepo
@@ -84,4 +126,10 @@ export interface Repos {
   marketplace: MarketplaceRepo
   connectors: ConnectorRepo
   mcpTokens: McpTokenRepo
+  flows: FlowRepo
+  routines: RoutineRepo
+  knowledge: KnowledgeRepo
+  analytics: AnalyticsRepo
+  skills: SkillRepo
+  helpers: HelperRepo
 }
