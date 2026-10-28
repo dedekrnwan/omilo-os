@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     pieces_source: str = _DEFAULT_PIECES_SOURCE
 
     # ---------------------------------------------------------------------------
+    # Run mode (P6 control-plane / runtime split)
+    # ---------------------------------------------------------------------------
+    # OMILO_MODE=cloud   — control plane mode (default).  Auth + billing resolve
+    #                      in-process via LocalControlPlane.  This is the existing
+    #                      production behavior; no code changes in cloud mode.
+    # OMILO_MODE=runtime — local runtime mode (T3).  Auth/billing delegate to the
+    #                      cloud control plane via RemoteControlPlane + HTTP.
+    omilo_mode: str = "cloud"
+
+    # ---------------------------------------------------------------------------
     # Payment provider
     # ---------------------------------------------------------------------------
     # Which payment provider to use: "manual" (default, offline), "doit",
