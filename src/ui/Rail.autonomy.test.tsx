@@ -7,11 +7,19 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useUIStore } from '../app/store'
 import { Rail } from './Rail'
 
 async function renderRail() {
-  const root = createRootRoute({ component: () => <Rail /> })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const root = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={qc}>
+        <Rail />
+      </QueryClientProvider>
+    ),
+  })
   const router = createRouter({
     routeTree: root,
     history: createMemoryHistory({ initialEntries: ['/'] }),

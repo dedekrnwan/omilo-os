@@ -37,14 +37,17 @@ import { useUIStore, MODE_HOME } from '../app/store'
 import type { Autonomy, Mode } from '../app/store'
 import { Mascot } from './ds/Mascot'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from './ds/Menu'
-import { COMPANIES } from '../app/companies'
-import type { CompanyRecord } from '../app/companies'
 import { useAppearance } from '../app/appearance'
 import { CompanyLogo } from './ds/CompanyLogo'
 import { useCompanyLook } from './ds/looks'
+import type { CompanyDefaults } from './ds/looks'
 import { LookPicker } from './ds/LookPicker'
 import { ContextMenuArea } from './ds/ItemMenu'
 import type { MenuEntries } from './ds/ItemMenu'
+import { useSession } from '../app/session'
+import { useAuth } from '../app/useAuth'
+import { useQueryClient } from '@tanstack/react-query'
+import type { Company } from '../core/domain/session'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +61,7 @@ function CompanyTile({
   badge,
   onClick,
 }: {
-  company: CompanyRecord
+  company: CompanyDefaults
   active?: boolean
   badge?: boolean
   onClick?: () => void
@@ -661,6 +664,7 @@ function ProfileMenu() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
+  const signOut = useSession((s) => s.signOut)
 
   return (
     <>
@@ -757,12 +761,36 @@ function ProfileMenu() {
         open={logoutOpen}
         onOpenChange={setLogoutOpen}
         title="Log out?"
-        message="You’ll need to sign in again to get back to your workspace. Chief will be here when you return."
+        message="You'll need to sign in again to get back to your workspace. Chief will be here when you return."
         confirmLabel="Log out"
-        onConfirm={() => void navigate({ to: '/auth/sign-in' })}
+        onConfirm={() => {
+          signOut()
+          void navigate({ to: '/auth/sign-in' })
+        }}
       />
     </>
   )
+}
+
+// ── Adapt live Company to CompanyDefaults ─────────────────────────────────────
+
+/** Default color palette for company tiles when no live source provides one. */
+const COMPANY_COLORS = [
+  '#EB6834', '#6366F1', '#14B8A6', '#F97316', '#8B5CF6', '#EC4899', '#EAB308',
+]
+
+/**
+ * Derive a stable CompanyDefaults from a live Company domain object.
+ * - `initial`: first char of name, uppercased.
+ * - `color`: deterministic color from COMPANY_COLORS palette (no live source).
+ */
+function toCompanyDefaults(c: Company, index: number): CompanyDefaults {
+  return {
+    id: c.id,
+    name: c.name,
+    initial: c.name[0]?.toUpperCase() ?? '?',
+    color: COMPANY_COLORS[index % COMPANY_COLORS.length],
+  }
 }
 
 // ── Rail ──────────────────────────────────────────────────────────────────────
@@ -775,9 +803,13 @@ function ProfileMenu() {
 export function Rail() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { mode, companyId, setCompany, setMode } = useUIStore()
+  const { mode, setMode } = useUIStore()
   const isChat = mode === 'chat'
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
+
+  const { companies, company: activeCompany, applySignIn } = useSession()
+  const { adapter } = useAuth()
+  const qc = useQueryClient()
 
   const currentPage: RailPage | undefined = location.pathname.startsWith('/team')
     ? 'team'
@@ -799,9 +831,13 @@ export function Rail() {
     if (leavingChat || leavingOffice) void navigate({ to: MODE_HOME[next] })
   }
 
-  // Clicking a company switches workspace and lands on the current mode's home.
-  function selectCompany(id: string) {
-    setCompany(id)
+  // Clicking an inactive company tile: switch company, apply session, invalidate
+  // all React Query caches so data reloads for the new company.
+  async function selectCompany(id: string) {
+    if (id === activeCompany?.id) return
+    const result = await adapter.switchCompany(id)
+    applySignIn(result)
+    await qc.invalidateQueries()
     void navigate({ to: MODE_HOME[mode] })
   }
 
@@ -814,13 +850,12 @@ export function Rail() {
       <Mascot size={30} radius={9} title="Omilo" />
 
       <div className="flex flex-col items-center gap-[8px] pt-[6px]">
-        {COMPANIES.map((c) => (
+        {companies.map((c, i) => (
           <CompanyTile
             key={c.id}
-            company={c}
-            badge={'badge' in c ? c.badge : undefined}
-            active={c.id === companyId}
-            onClick={() => selectCompany(c.id)}
+            company={toCompanyDefaults(c, i)}
+            active={c.id === activeCompany?.id}
+            onClick={() => void selectCompany(c.id)}
           />
         ))}
         <button

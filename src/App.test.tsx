@@ -7,6 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Shell } from './app/Shell'
 
 /**
@@ -14,7 +15,14 @@ import { Shell } from './app/Shell'
  * landmark is reachable synchronously.
  */
 function renderShell() {
-  const rootRoute = createRootRoute({ component: Shell })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const rootRoute = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={qc}>
+        <Shell />
+      </QueryClientProvider>
+    ),
+  })
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/chat',

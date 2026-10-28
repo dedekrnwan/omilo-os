@@ -9,18 +9,22 @@ import {
   RouterProvider,
   Outlet,
 } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Rail } from './Rail'
 import { useUIStore } from '../app/store'
 
 // Build a minimal test router with memory history. Routes are mode-neutral:
 // the chat primary is /chat, the office primary is /inbox.
 function makeTestRouter(initialPath = '/chat') {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const rootRoute = createRootRoute({
     component: () => (
-      <div>
-        <Rail />
-        <Outlet />
-      </div>
+      <QueryClientProvider client={qc}>
+        <div>
+          <Rail />
+          <Outlet />
+        </div>
+      </QueryClientProvider>
     ),
   })
 
