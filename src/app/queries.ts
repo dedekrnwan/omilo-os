@@ -15,6 +15,10 @@ export function useChannel(id: Id) {
   return useQuery({
     queryKey: ['channel', id],
     queryFn: () => repos.channels.get(id),
+    // Skip when there's no id (e.g. the "all areas" view passes ''): an empty id
+    // would hit GET /v1/channels/ (trailing slash) → a 307 redirect that drops
+    // the auth header on the cross-origin hop → 401.
+    enabled: !!id,
   })
 }
 
