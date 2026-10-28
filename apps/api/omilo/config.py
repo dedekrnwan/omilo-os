@@ -94,6 +94,21 @@ class Settings(BaseSettings):
     doit_signing_secret: str | None = None
     doit_base_url: str = "https://pay.doit.id/v1"
 
+    # ---------------------------------------------------------------------------
+    # Google OAuth (P10) — off by default; enabled when both creds are set.
+    # GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET must both be present for any OAuth
+    # endpoint to activate (/v1/auth/google/start and /v1/auth/google/callback
+    # return 404 when either is absent).
+    # ---------------------------------------------------------------------------
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    # google_redirect_base: the backend's own public base URL, used to build the
+    # OAuth redirect_uri: {google_redirect_base}/v1/auth/google/callback
+    google_redirect_base: str = "http://localhost:8000"
+    # frontend_base: where web clients are redirected after OAuth completes.
+    # e.g. http://localhost:5173 (dev) or https://app.omilo.app (prod).
+    frontend_base: str = "http://localhost:5173"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

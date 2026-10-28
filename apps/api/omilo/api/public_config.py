@@ -34,6 +34,7 @@ class PublicConfigOut(BaseModel):
 
     mode: str
     signupEnabled: bool
+    googleEnabled: bool
 
 
 # ---------------------------------------------------------------------------
@@ -52,5 +53,9 @@ def get_public_config() -> PublicConfigOut:
     raw_mode: str = getattr(settings, "omilo_mode", "cloud") or "cloud"
     mode: str = _normalize_mode(raw_mode)
     signup_enabled: bool = mode != "cloud"
+    google_enabled: bool = bool(
+        getattr(settings, "google_client_id", None)
+        and getattr(settings, "google_client_secret", None)
+    )
 
-    return PublicConfigOut(mode=mode, signupEnabled=signup_enabled)
+    return PublicConfigOut(mode=mode, signupEnabled=signup_enabled, googleEnabled=google_enabled)

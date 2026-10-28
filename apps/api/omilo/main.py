@@ -33,6 +33,7 @@ from omilo.api.sessions import router as sessions_router
 from omilo.api.public_config import router as public_config_router
 from omilo.api.telemetry_config import router as telemetry_config_router
 from omilo.auth.router import me_router, router as auth_router
+from omilo.auth.google import router as google_auth_router
 from omilo.realtime.sse import router as sse_router
 from omilo.realtime.ws import router as ws_router
 
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     # Public pre-auth config: GET /v1/public-config (P9 T1) — NO auth required
     app.include_router(public_config_router, prefix="/v1")
     app.include_router(auth_router, prefix="/v1")
+    app.include_router(google_auth_router, prefix="/v1")
     app.include_router(me_router, prefix="/v1")
     # Company profile: GET + PATCH /v1/company (P5d Task 1b)
     app.include_router(company_router, prefix="/v1")
