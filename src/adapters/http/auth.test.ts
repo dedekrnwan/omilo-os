@@ -250,8 +250,9 @@ describe('switchCompany', () => {
 // ── publicConfig ──────────────────────────────────────────────────────────────
 
 describe('publicConfig', () => {
-  test('GETs /v1/public-config WITHOUT Authorization header and maps signup_enabled', async () => {
-    const stub = makeFetch({ mode: 'cloud', signup_enabled: true })
+  test('GETs /v1/public-config WITHOUT Authorization header and maps camelCase keys', async () => {
+    // public-config emits camelCase (PublicConfigOut has no alias) — unlike the snake bodies elsewhere.
+    const stub = makeFetch({ mode: 'cloud', signupEnabled: true, googleEnabled: true })
     vi.stubGlobal('fetch', stub)
 
     const ts = makeTokenStorage('has-token') // token present but must NOT be sent
@@ -267,6 +268,7 @@ describe('publicConfig', () => {
     expect(headers?.['Authorization']).toBeUndefined()
 
     expect(result.mode).toBe('cloud')
-    expect(result.signupEnabled).toBe(true)    // snake → camel
+    expect(result.signupEnabled).toBe(true)
+    expect(result.googleEnabled).toBe(true)
   })
 })

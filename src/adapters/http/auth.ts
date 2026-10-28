@@ -73,11 +73,13 @@ interface RawMeResponse {
   companies: RawCompany[]
 }
 
-/** Raw shape of GET /v1/public-config response. */
+/** Raw shape of GET /v1/public-config response. NOTE: this endpoint emits
+ * camelCase keys (PublicConfigOut has no alias), unlike the snake_case bodies
+ * elsewhere — so we read camelCase here. */
 interface RawPublicConfig {
   mode: string
-  signup_enabled: boolean
-  google_enabled?: boolean
+  signupEnabled: boolean
+  googleEnabled?: boolean
 }
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
@@ -285,8 +287,8 @@ export function createAuthAdapter(
       const raw: RawPublicConfig = await res.json()
       return {
         mode: raw.mode,
-        signupEnabled: raw.signup_enabled,
-        googleEnabled: raw.google_enabled ?? false,
+        signupEnabled: raw.signupEnabled,
+        googleEnabled: raw.googleEnabled ?? false,
       }
     },
   }
