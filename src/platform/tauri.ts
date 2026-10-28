@@ -56,31 +56,43 @@ function createTauriTokenStorage(): TokenStorage {
 
 // ── NotificationService ───────────────────────────────────────────────────────
 
+type NotificationPlugin = {
+  isPermissionGranted: () => Promise<boolean>
+  requestPermission: () => Promise<string>
+  sendNotification: (opts: { title: string; body?: string }) => void
+}
+
 function createTauriNotificationService(): NotificationService {
   return {
     async send(title: string, body?: string): Promise<void> {
       try {
-        // Lazy import — @tauri-apps/plugin-notification may not be in package.json yet.
-        // Fall back gracefully if unavailable.
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        const mod = await (import(/* @vite-ignore */ '@tauri-apps/plugin-notification') as Promise<{ sendNotification: (opts: { title: string; body?: string }) => void } | null>).catch(() => null)
-        if (mod) {
-          mod.sendNotification({ title, body })
-        } else {
-          // Stub: invoke a Rust command if the JS plugin isn't installed.
-          await tauriInvoke<void>('send_notification', { title, body }).catch(() => {})
+        // Lazy import of @tauri-apps/plugin-notification — mirroring the pattern
+        // used for @tauri-apps/api/core above.  The plugin's Rust side IS registered
+        // in lib.rs, so its JS API works; we must NOT invoke non-existent commands.
+        const mod = await (
+          import('@tauri-apps/plugin-notification') as Promise<NotificationPlugin>
+        ).catch(() => null)
+        if (!mod) return
+
+        // Request permission if not already granted — best effort, never throw.
+        let granted = await mod.isPermissionGranted().catch(() => false)
+        if (!granted) {
+          const status = await mod.requestPermission().catch(() => 'denied')
+          granted = status === 'granted'
         }
+        if (!granted) return
+
+        mod.sendNotification({ title, body })
       } catch {
         // Never throw — best effort.
       }
     },
 
-    async setBadge(count: number): Promise<void> {
-      try {
-        await tauriInvoke<void>('set_badge', { count }).catch(() => {})
-      } catch {
-        // No-op if command not registered yet.
-      }
+    async setBadge(_count: number): Promise<void> {
+      // Dock-badge support requires a dedicated Rust command (e.g. set_badge)
+      // that is not yet registered in src-tauri/src/lib.rs.  Rather than invoking
+      // a non-existent command (which silently fails), this is an intentional no-op
+      // until a follow-up task adds the Rust side.
     },
   }
 }
