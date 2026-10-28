@@ -106,6 +106,24 @@ export function useGoals(areaId: Id | null) {
   })
 }
 
+// ── P12 billing queries ────────────────────────────────────────────────────────
+
+export function usePlans() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['billingPlans'],
+    queryFn: () => repos.billingPlans.list(),
+  })
+}
+
+export function useSubscription() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['billingSubscription'],
+    queryFn: () => repos.billingSubscription.get(),
+  })
+}
+
 // ── P5d control-panel queries ─────────────────────────────────────────────────
 
 export function useUsage() {

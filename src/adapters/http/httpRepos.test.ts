@@ -115,6 +115,30 @@ const rawMcpToken = {
   active: true,
 }
 
+// P12 billing seeds
+const rawBillingPlan = {
+  id: 'plan-cloud',
+  tier: 'cloud',
+  name: 'Cloud',
+  monthly_price_usd: 39,
+  monthly_price_idr: 599_000,
+  yearly_price_usd: 31,
+  yearly_price_idr: 479_000,
+  included_credits: 2_000,
+  seats: 5,
+  trial_days: 14,
+}
+const rawBillingSubscription = {
+  plan_id: 'plan-cloud',
+  status: 'trialing',
+  current_period_end: null,
+  seats: 5,
+  billing_interval: 'yearly',
+  is_trial: true,
+  trial_ends_at: null,
+  trial_days_left: 14,
+}
+
 // P8 contract seeds
 const rawFlow = {
   id: 'flw-c1', title: 'Morning brief', status: 'active', enabled: true,
@@ -818,6 +842,10 @@ runReposContract('http (mocked fetch)', () => {
     if (path === '/v1/inbox') return Promise.resolve(okJson([seedInboxItem]))
     if (path === `/v1/inbox/${seedInboxItem.id}`) return Promise.resolve(okJson(seedInboxItem))
     if (path.match(/^\/v1\/inbox\/.+$/)) return Promise.resolve(notFound())
+
+    // billing plans + subscription
+    if (path === '/v1/billing/plans') return Promise.resolve(okJson([rawBillingPlan]))
+    if (path === '/v1/billing/subscription') return Promise.resolve(okJson(rawBillingSubscription))
 
     // usage
     if (path === '/v1/usage') return Promise.resolve(okJson(rawUsage))

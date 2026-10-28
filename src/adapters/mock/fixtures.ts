@@ -1,6 +1,8 @@
 import type {
   AiAccount,
   AnalyticsOverview,
+  BillingPlan,
+  BillingSubscription,
   Channel,
   Connector,
   Flow,
@@ -24,6 +26,34 @@ import type {
 
 // Mock data mirrors the content of omilo-v2.pen (Chat · New chat, Chat · Session,
 // Office · Inbox) so the running app reads exactly like the design.
+
+// ── Billing Plans ─────────────────────────────────────────────────────────────
+
+export const billingPlans: BillingPlan[] = [
+  {
+    id: 'plan-cloud',
+    tier: 'cloud',
+    name: 'Cloud',
+    monthlyPriceUsd: 39,
+    monthlyPriceIdr: 599_000,
+    yearlyPriceUsd: 31,
+    yearlyPriceIdr: 479_000,
+    includedCredits: 2_000,
+    seats: 5,
+    trialDays: 14,
+  },
+]
+
+export const billingSubscription: BillingSubscription = {
+  planId: 'plan-cloud',
+  status: 'trialing',
+  currentPeriodEnd: '2026-11-11T00:00:00Z',
+  seats: 5,
+  billingInterval: 'yearly',
+  isTrial: true,
+  trialEndsAt: '2026-11-11T00:00:00Z',
+  trialDaysLeft: 14,
+}
 
 // ── Channels ─────────────────────────────────────────────────────────────────
 

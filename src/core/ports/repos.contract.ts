@@ -46,6 +46,33 @@ export function runReposContract(name: string, makeRepos: () => Repos): void {
       }
     })
 
+    // ── billingPlans ───────────────────────────────────────────────────────
+
+    it('billingPlans.list() returns an array; each item has id, tier, monthlyPriceIdr, yearlyPriceIdr', async () => {
+      const repos = makeRepos()
+      const plans = await repos.billingPlans.list()
+      expect(Array.isArray(plans)).toBe(true)
+      expect(plans.length).toBeGreaterThan(0)
+      for (const p of plans) {
+        expect(typeof p.id).toBe('string')
+        expect(typeof p.tier).toBe('string')
+        expect(typeof p.monthlyPriceIdr).toBe('number')
+        expect(typeof p.yearlyPriceIdr).toBe('number')
+        expect(typeof p.trialDays).toBe('number')
+      }
+    })
+
+    it('billingSubscription.get() returns a BillingSubscription or null', async () => {
+      const repos = makeRepos()
+      const sub = await repos.billingSubscription.get()
+      if (sub !== null) {
+        expect(typeof sub.planId).toBe('string')
+        expect(typeof sub.isTrial).toBe('boolean')
+        expect(typeof sub.trialDaysLeft).toBe('number')
+        expect(typeof sub.billingInterval).toBe('string')
+      }
+    })
+
     // ── usage ──────────────────────────────────────────────────────────────
 
     it('usage.get() returns a UsageSummary with numeric balance and arrays', async () => {

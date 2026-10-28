@@ -150,6 +150,32 @@ export interface InboxAction {
   icon?: 'check' | 'reply'
 }
 
+// ── Billing / Plans / Subscription ───────────────────────────────────────────
+
+export interface BillingPlan {
+  id: string
+  tier: string
+  name: string
+  monthlyPriceUsd: number
+  monthlyPriceIdr: number
+  yearlyPriceUsd: number
+  yearlyPriceIdr: number
+  includedCredits: number
+  seats: number
+  trialDays: number
+}
+
+export interface BillingSubscription {
+  planId: string
+  status: string
+  currentPeriodEnd: string | null
+  seats: number
+  billingInterval: 'monthly' | 'yearly'
+  isTrial: boolean
+  trialEndsAt: string | null
+  trialDaysLeft: number
+}
+
 // ── Billing / Usage ───────────────────────────────────────────────────────────
 
 export interface UsageSummary {

@@ -1,6 +1,8 @@
 import type {
   AiAccount,
   AnalyticsOverview,
+  BillingPlan,
+  BillingSubscription,
   Channel,
   Connector,
   Flow,
@@ -54,6 +56,14 @@ export interface MessageRepo {
 export interface InboxRepo {
   list(): Promise<InboxItem[]>
   get(id: Id): Promise<InboxItem | null>
+}
+
+export interface BillingPlanRepo {
+  list(): Promise<BillingPlan[]>
+}
+
+export interface BillingSubscriptionRepo {
+  get(): Promise<BillingSubscription | null>
 }
 
 export interface UsageRepo {
@@ -120,6 +130,8 @@ export interface Repos {
   sessions: SessionRepo
   messages: MessageRepo
   inbox: InboxRepo
+  billingPlans: BillingPlanRepo
+  billingSubscription: BillingSubscriptionRepo
   usage: UsageRepo
   wallet: WalletRepo
   aiAccounts: AiAccountRepo

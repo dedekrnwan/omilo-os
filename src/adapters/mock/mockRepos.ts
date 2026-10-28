@@ -1,6 +1,8 @@
 import type { Id } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
 import {
+  billingPlans,
+  billingSubscription,
   channels,
   folders,
   goals,
@@ -58,6 +60,14 @@ export function createMockRepos(): Repos {
     inbox: {
       list: () => Promise.resolve([...inboxItems]),
       get: (id: Id) => Promise.resolve(inboxItems.find(i => i.id === id) ?? null),
+    },
+
+    billingPlans: {
+      list: () => Promise.resolve([...billingPlans]),
+    },
+
+    billingSubscription: {
+      get: () => Promise.resolve({ ...billingSubscription }),
     },
 
     usage: {

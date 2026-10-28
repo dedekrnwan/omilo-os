@@ -12,6 +12,8 @@
 import type {
   AiAccount,
   AnalyticsOverview,
+  BillingPlan,
+  BillingSubscription,
   Channel,
   Connector,
   Flow,
@@ -40,7 +42,61 @@ import type { RawChannel } from './commands'
 // ── snake_case → camelCase mappers ────────────────────────────────────────────
 // The legacy endpoints (channels, sessions, inbox, …) return camelCase already.
 // The new endpoints (usage, wallet, ai-accounts, marketplace, connectors,
-// mcp-access-tokens) return snake_case fields that must be mapped here.
+// mcp-access-tokens, billing) return snake_case fields that must be mapped here.
+
+// ── Billing Plans + Subscription ─────────────────────────────────────────────
+
+type RawBillingPlan = {
+  id: string
+  tier: string
+  name: string
+  monthly_price_usd: number
+  monthly_price_idr: number
+  yearly_price_usd: number
+  yearly_price_idr: number
+  included_credits: number
+  seats: number
+  trial_days: number
+}
+
+function mapBillingPlan(r: RawBillingPlan): BillingPlan {
+  return {
+    id: r.id,
+    tier: r.tier,
+    name: r.name,
+    monthlyPriceUsd: r.monthly_price_usd,
+    monthlyPriceIdr: r.monthly_price_idr,
+    yearlyPriceUsd: r.yearly_price_usd,
+    yearlyPriceIdr: r.yearly_price_idr,
+    includedCredits: r.included_credits,
+    seats: r.seats,
+    trialDays: r.trial_days,
+  }
+}
+
+type RawBillingSubscription = {
+  plan_id: string
+  status: string
+  current_period_end: string | null
+  seats: number
+  billing_interval: 'monthly' | 'yearly'
+  is_trial: boolean
+  trial_ends_at: string | null
+  trial_days_left: number
+}
+
+function mapBillingSubscription(r: RawBillingSubscription): BillingSubscription {
+  return {
+    planId: r.plan_id,
+    status: r.status,
+    currentPeriodEnd: r.current_period_end,
+    seats: r.seats,
+    billingInterval: r.billing_interval,
+    isTrial: r.is_trial,
+    trialEndsAt: r.trial_ends_at,
+    trialDaysLeft: r.trial_days_left,
+  }
+}
 
 type RawUsage = {
   balance: number
@@ -445,6 +501,27 @@ export function createHttpRepos(
     inbox: {
       list: () => get<InboxItem[]>('/v1/inbox'),
       get: (id: Id) => getOrNull<InboxItem>(`/v1/inbox/${id}`),
+    },
+
+    billingPlans: {
+      list: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/billing/plans`, getToken)
+        const raw = await res.json() as RawBillingPlan[]
+        return raw.map(mapBillingPlan)
+      },
+    },
+
+    billingSubscription: {
+      get: async () => {
+        try {
+          const res = await apiFetch(`${baseUrl}/v1/billing/subscription`, getToken)
+          const raw = await res.json() as RawBillingSubscription
+          return mapBillingSubscription(raw)
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }
+      },
     },
 
     usage: {
