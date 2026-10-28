@@ -296,6 +296,20 @@ def connect_to_cloud(
         _target_env_file,
     )
 
+    # Emit local_to_hybrid_upgraded telemetry — best-effort, never raises.
+    # Note: get_telemetry() reads the cached settings (still "local" at this point),
+    # so it may be a NoopTelemetry here unless TELEMETRY_ENABLED=True was set.
+    # The event is still wired for completeness; operators who opt in see it.
+    try:
+        from omilo.telemetry import LOCAL_TO_HYBRID_UPGRADED
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(
+            LOCAL_TO_HYBRID_UPGRADED,
+            company_id=cloud_company_id,
+        )
+    except Exception:
+        pass
+
     return UpgradeResult(
         cloud_company_id=cloud_company_id,
         install_token=install_token,

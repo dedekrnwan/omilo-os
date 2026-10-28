@@ -84,6 +84,14 @@ def register_main(
     """
     result = register_install(user_jwt, control_plane=control_plane)
 
+    # Emit install_registered telemetry — best-effort, never raises.
+    try:
+        from omilo.telemetry import INSTALL_REGISTERED
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(INSTALL_REGISTERED, company_id=result.company_id)
+    except Exception:
+        pass
+
     print(f"Install token obtained for company: {result.company_id}")
     print(f"Install token: {result.install_token}")
     print()
