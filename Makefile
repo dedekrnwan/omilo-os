@@ -84,7 +84,7 @@ build:
 # ── image: build Docker images ───────────────────────────────────────────────
 image:
 	@echo "── building API image ───────────────────────────────────────────────"
-	docker build -f deploy/Dockerfile.api -t omilo-api:dev apps/api
+	docker build -f deploy/Dockerfile.api -t omilo-api:dev .
 	@echo "── building web image ───────────────────────────────────────────────"
 	docker build -f deploy/web/Dockerfile.web -t omilo-web:dev .
 

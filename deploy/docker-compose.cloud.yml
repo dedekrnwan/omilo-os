@@ -36,8 +36,8 @@ services:
 
   api:
     build:
-      context: ../apps/api
-      dockerfile: ../deploy/Dockerfile.api
+      context: ..
+      dockerfile: deploy/Dockerfile.api
     environment:
       # Run mode — this is the authoritative control plane
       OMILO_MODE: cloud
@@ -45,9 +45,16 @@ services:
       # Database — pydantic-settings reads DATABASE_URL → Settings.database_url
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://omilo:omilo@postgres:5432/omilo}
 
-      # JWT — RS256 private key PEM. Referenced from env; never baked into the image.
-      # (pydantic-settings reads OMILO_JWT_PRIVATE_KEY → Settings.omilo_jwt_private_key)
-      # RS256 private key PEM — REQUIRED in production. Set in .env.cloud.
+      # JWT signing — two mutually exclusive paths:
+      #   RS256 (RECOMMENDED): set OMILO_JWT_PRIVATE_KEY; runtimes verify via JWKS offline.
+      #   HS256 (fallback):    set JWT_SECRET to a strong random value — NEVER the default.
+      #
+      # JWT_SECRET uses `:?` — compose FAILS FAST if unset or empty, so the weak
+      # built-in default ("change-me-in-production") can never slip into production.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value (or use RS256 via OMILO_JWT_PRIVATE_KEY)}
+      # RS256 private key PEM — REQUIRED for the recommended RS256 path.
+      # Runtimes then verify JWTs offline via the cloud JWKS endpoint.
+      # (pydantic-settings: OMILO_JWT_PRIVATE_KEY → Settings.omilo_jwt_private_key)
       OMILO_JWT_PRIVATE_KEY: ${OMILO_JWT_PRIVATE_KEY:-}
 
       # Payment provider — Doit (optional; defaults to manual/offline)

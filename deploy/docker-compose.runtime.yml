@@ -39,8 +39,8 @@ services:
 
   api:
     build:
-      context: ../apps/api
-      dockerfile: ../deploy/Dockerfile.api
+      context: ..
+      dockerfile: deploy/Dockerfile.api
     environment:
       # Run mode — runtime: delegates auth/billing to the cloud control plane.
       # There is NO /control/* exposure in this mode.
