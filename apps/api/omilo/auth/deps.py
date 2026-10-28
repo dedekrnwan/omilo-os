@@ -10,11 +10,26 @@ auth.tokens.decode_token — identical behavior to before.  In runtime mode
 Returns 401 on:
 - Missing / malformed Authorization header
 - Invalid or expired JWT
-- User not found in the DB
+- (Cloud only) User not found in the DB
 
 Returns 503 on:
 - Control plane misconfigured (e.g. OMILO_MODE=runtime before T3 is wired)
 - Runtime mode first-run: no local Company shadow AND entitlements unreachable
+
+Identity resolution — RUNTIME vs CLOUD
+---------------------------------------
+**RUNTIME mode** (not LocalControlPlane):
+  The JWT is cryptographically verified against the cloud JWKS (RS256/offline
+  capable).  The verified claims ARE the identity — user_id, company_id, role
+  come directly from the token.  No local ``User`` or ``Member`` row is
+  required.  A lightweight ``_RuntimeIdentity`` carrier (duck-typed to ``User``)
+  is returned so the rest of the app (tenancy/deps.py, /me handler) works
+  identically.
+
+**CLOUD mode** (LocalControlPlane, default):
+  Behavior IDENTICAL to before — ``session.get(User, user_id)`` + Member
+  lookup in get_context.  No change.  Cloud mode still 401s if no local User
+  row exists.
 
 Shadow wiring (RUNTIME mode only)
 ----------------------------------
@@ -40,7 +55,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError
 from sqlalchemy.orm import Session
 
-from omilo.control import ControlPlaneUnreachable
+from omilo.control import ControlPlaneUnreachable, Identity
 from omilo.control.factory import NotConfiguredError, get_control_plane
 from omilo.control.local import LocalControlPlane
 from omilo.db import SessionLocal
@@ -49,6 +64,31 @@ from omilo.models.tenancy import Company, User
 logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
+
+# Default role when JWT claims contain no 'role' field (mirrors cloud-mode default).
+_DEFAULT_ROLE = "member"
+
+
+class _RuntimeIdentity:
+    """Lightweight claims-carrier that duck-types ``User`` for runtime mode.
+
+    In RUNTIME mode the local DB has no ``User`` rows (cloud-authoritative).
+    The verified JWT claims ARE the identity.  This object satisfies the
+    ``user.id`` / ``user._jwt_claims`` contract that the rest of the app uses,
+    without requiring a DB lookup.
+
+    It is intentionally NOT a SQLAlchemy model — it is never persisted.
+    """
+
+    __slots__ = ("id", "_jwt_claims")
+
+    def __init__(self, identity: Identity) -> None:
+        self.id: str = identity.user_id
+        self._jwt_claims: dict = {
+            "sub": identity.user_id,
+            "cmp": identity.company_id,
+            "role": identity.role or _DEFAULT_ROLE,
+        }
 
 _401 = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -118,7 +158,7 @@ def _ensure_company_shadow(cp, company_id: str, db: Session) -> None:
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> User:
+) -> User | _RuntimeIdentity:
     """Dependency that resolves a Bearer JWT to the authenticated User.
 
     Routes token verification through the ControlPlane port so that cloud
@@ -151,18 +191,23 @@ def get_current_user(
     if not user_id:
         raise _401
 
-    # Open a plain session (no RLS needed — User and Company are global tables).
+    if not isinstance(cp, LocalControlPlane):
+        # ── RUNTIME MODE ────────────────────────────────────────────────────
+        # The JWT is cryptographically verified (RS256/JWKS, T3).  The claims
+        # ARE the identity — no local User/Member row required.
+        # We only touch the DB to ensure the Company shadow exists.
+        if company_id:
+            with SessionLocal() as session:
+                with session.begin():
+                    _ensure_company_shadow(cp, company_id, session)
+        return _RuntimeIdentity(identity)
+
+    # ── CLOUD MODE (LocalControlPlane) — IDENTICAL to before ────────────────
+    # The local DB is authoritative for User and Member.  We load the User row
+    # and attach _jwt_claims so get_context can read them without re-decoding.
     with SessionLocal() as session:
         with session.begin():
             user = session.get(User, user_id)
-
-            # RUNTIME mode only: ensure local Company shadow exists before handler runs.
-            # Cloud mode (LocalControlPlane): pure no-op — authoritative Company already
-            # in the local DB; we never clobber or add extra queries.
-            # The transaction is committed at the end of the `with session.begin()` block,
-            # making the shadow visible to all subsequent DB reads in this request.
-            if not isinstance(cp, LocalControlPlane) and company_id:
-                _ensure_company_shadow(cp, company_id, session)
 
     if user is None:
         raise _401

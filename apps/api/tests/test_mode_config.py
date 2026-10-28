@@ -623,3 +623,171 @@ class TestAuthPathShadowWiring:
         mock_get_entitlements.assert_not_called(), (
             "get_entitlements must NOT be called when Company shadow already exists"
         )
+
+
+# ---------------------------------------------------------------------------
+# F. Runtime claims-only auth (P6-T5 fix-round-2)
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeClaimsOnlyAuth:
+    """Runtime mode builds identity from verified JWT claims — no local User/Member required.
+
+    Tests:
+    F1. RUNTIME mode: get_current_user with a valid JWT but NO local User row
+        returns a _RuntimeIdentity (not None, not 401) — authenticates successfully.
+    F2. RUNTIME mode: the returned identity carries user_id, company_id, and role
+        from the JWT claims — app.company_id scoping is correct for RLS.
+    F3. CLOUD mode: get_current_user with a valid JWT but NO local User row
+        returns 401 (unchanged — cloud path still requires local User row).
+    F4. RUNTIME mode: get_context returns RequestContext with company_id from
+        JWT claims (no Member lookup) so RLS scoping is correct.
+    F5. RUNTIME mode: X-Company-Id header matching JWT company_id is accepted
+        (same-company override); mismatched header raises 403 (no cross-company
+        switch without local Member rows).
+    """
+
+    def test_f1_runtime_auth_without_local_user_row_succeeds(self):
+        """Runtime mode: valid JWT + no local User row → _RuntimeIdentity, not 401."""
+        from omilo.auth.deps import _RuntimeIdentity, get_current_user
+        from omilo.control import Identity
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        fake_cp = FakeControlPlane(company_id=prefixed_id("cmp"))
+
+        # Seed Company shadow so _ensure_company_shadow doesn't 503
+        with _superuser_session() as db:
+            company = Company(
+                id=fake_cp._company_id,
+                name="RuntimeAuthCo",
+                color="#112233",
+                autonomy_default="ask",
+                credit_balance=0,
+                overage_policy="soft",
+                edition="runtime",
+            )
+            db.add(company)
+            db.flush()
+
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="fake.jwt.token"
+        )
+
+        with patch("omilo.auth.deps.get_control_plane", return_value=fake_cp):
+            result = get_current_user(credentials=credentials)
+
+        assert isinstance(result, _RuntimeIdentity), (
+            f"Runtime mode must return _RuntimeIdentity, got {type(result).__name__}"
+        )
+        assert result.id == "usr_test", (
+            f"user_id must come from JWT claims, got {result.id!r}"
+        )
+
+    def test_f2_runtime_identity_carries_correct_claims(self):
+        """Runtime mode: _RuntimeIdentity has user_id, company_id, role from JWT."""
+        from omilo.auth.deps import _RuntimeIdentity, get_current_user
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        cmp_id = prefixed_id("cmp")
+        fake_cp = FakeControlPlane(company_id=cmp_id)
+
+        # Seed Company shadow
+        with _superuser_session() as db:
+            company = Company(
+                id=cmp_id,
+                name="ClaimsCo",
+                color="#223344",
+                autonomy_default="ask",
+                credit_balance=0,
+                overage_policy="soft",
+                edition="runtime",
+            )
+            db.add(company)
+            db.flush()
+
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="fake.jwt.token"
+        )
+
+        with patch("omilo.auth.deps.get_control_plane", return_value=fake_cp):
+            result = get_current_user(credentials=credentials)
+
+        assert isinstance(result, _RuntimeIdentity)
+        claims = result._jwt_claims
+        assert claims["sub"] == "usr_test", f"sub claim wrong: {claims}"
+        assert claims["cmp"] == cmp_id, f"cmp claim wrong: {claims}"
+        assert claims["role"] == "owner", f"role claim wrong: {claims}"
+
+    def test_f3_cloud_mode_without_local_user_row_returns_401(self):
+        """Cloud mode: valid JWT but NO local User row → 401 (unchanged behavior)."""
+        from omilo.auth.deps import get_current_user
+        from omilo.control.local import LocalControlPlane
+        from fastapi import HTTPException
+        from fastapi.security import HTTPAuthorizationCredentials
+
+        fake_local_cp = LocalControlPlane()
+        # Patch verify_token to return a valid identity for a user that doesn't exist in DB
+        nonexistent_user_id = prefixed_id("usr")
+        from omilo.control import Identity
+        fake_identity = Identity(
+            user_id=nonexistent_user_id,
+            company_id=prefixed_id("cmp"),
+            role="owner",
+        )
+        fake_local_cp.verify_token = lambda jwt: fake_identity  # type: ignore[method-assign]
+
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="fake.jwt.token"
+        )
+
+        with patch("omilo.auth.deps.get_control_plane", return_value=fake_local_cp):
+            with pytest.raises(HTTPException) as exc_info:
+                get_current_user(credentials=credentials)
+
+        assert exc_info.value.status_code == 401, (
+            f"Cloud mode must return 401 when no local User row, got {exc_info.value.status_code}"
+        )
+
+    def test_f4_runtime_get_context_uses_claims_not_member_lookup(self):
+        """Runtime mode: get_context returns company_id from JWT claims (no Member lookup)."""
+        from omilo.auth.deps import _RuntimeIdentity
+        from omilo.control import Identity
+        from omilo.tenancy.deps import get_context
+        from omilo.tenancy.context import RequestContext
+
+        cmp_id = prefixed_id("cmp")
+        identity = _RuntimeIdentity(Identity(user_id="usr_test", company_id=cmp_id, role="owner"))
+
+        mock_member_query = MagicMock()
+
+        with patch("omilo.tenancy.deps.SessionLocal") as mock_session_local:
+            # If Member lookup fires, we'd catch it here
+            mock_session_local.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_session_local.return_value.__exit__ = MagicMock(return_value=False)
+
+            ctx = get_context(user=identity, x_company_id=None)
+
+        assert isinstance(ctx, RequestContext)
+        assert ctx.user_id == "usr_test"
+        assert ctx.company_id == cmp_id, f"company_id must be from JWT claims: {ctx.company_id!r}"
+        assert ctx.role == "owner", f"role must be from JWT claims: {ctx.role!r}"
+        # Verify SessionLocal was NOT called (no Member lookup)
+        mock_session_local.assert_not_called()
+
+    def test_f5_runtime_cross_company_header_raises_403(self):
+        """Runtime mode: X-Company-Id with different company → 403 (no Member lookup possible)."""
+        from omilo.auth.deps import _RuntimeIdentity
+        from omilo.control import Identity
+        from omilo.tenancy.deps import get_context
+        from fastapi import HTTPException
+
+        cmp_id = prefixed_id("cmp")
+        other_cmp_id = prefixed_id("cmp")  # different company
+        identity = _RuntimeIdentity(Identity(user_id="usr_test", company_id=cmp_id, role="owner"))
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_context(user=identity, x_company_id=other_cmp_id)
+
+        assert exc_info.value.status_code == 403, (
+            f"Runtime mode cross-company override must return 403, got {exc_info.value.status_code}"
+        )
