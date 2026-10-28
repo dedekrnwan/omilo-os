@@ -30,6 +30,7 @@ from omilo.api.routines_write import router as routines_write_router
 from omilo.api.health import router as health_router
 from omilo.api.inbox import router as inbox_router
 from omilo.api.sessions import router as sessions_router
+from omilo.api.telemetry_config import router as telemetry_config_router
 from omilo.auth.router import me_router, router as auth_router
 from omilo.realtime.sse import router as sse_router
 from omilo.realtime.ws import router as ws_router
@@ -45,6 +46,8 @@ def create_app() -> FastAPI:
     app.include_router(me_router, prefix="/v1")
     # Company profile: GET + PATCH /v1/company (P5d Task 1b)
     app.include_router(company_router, prefix="/v1")
+    # Telemetry config: GET + POST /v1/telemetry-config (P7 Task 3)
+    app.include_router(telemetry_config_router, prefix="/v1")
     # Repos-parity read endpoints (Task 7)
     app.include_router(channels_router, prefix="/v1")
     app.include_router(chat_write_router, prefix="/v1")

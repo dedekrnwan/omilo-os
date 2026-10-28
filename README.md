@@ -142,8 +142,39 @@ to produce the unsigned artifact.
 
 ---
 
+## Telemetry
+
+Omilo collects **content-free usage analytics** via PostHog to support product improvement.
+Privacy design: `local` mode is **off by default** (no events leave the process); hybrid/cloud
+mode sends events only when `POSTHOG_API_KEY` is configured. A property allowlist ensures no
+message content, PII, API keys, or free-text ever reaches PostHog. Companies can opt out at any
+time via Settings or `POST /v1/telemetry-config {opted_out: true}`.
+
+To configure or disable telemetry:
+```bash
+# Disable (default — leave POSTHOG_API_KEY unset)
+# No events leave the process in any mode.
+
+# Enable (PostHog Cloud US)
+POSTHOG_API_KEY=phc_xxxxxx
+
+# Enable with EU data residency
+POSTHOG_API_KEY=phc_xxxxxx
+POSTHOG_HOST=https://eu.i.posthog.com
+
+# Enable with self-hosted PostHog
+POSTHOG_API_KEY=phc_xxxxxx
+POSTHOG_HOST=https://posthog.your-domain.com
+```
+
+See [docs/technical/13-telemetry.md](docs/technical/13-telemetry.md) for the full event taxonomy,
+no-content guarantee, mode behaviour, opt-out API, and self-host configuration.
+
+---
+
 ## Docs
 
 - [Architecture: control-plane / runtime split](docs/technical/12-control-plane-runtime-split.md)
+- [Product telemetry (PostHog, mode-aware, privacy)](docs/technical/13-telemetry.md)
 - [Desktop release runbook (signing + notarization)](docs/technical/10a-desktop-release.md)
 - [Full technical docs](docs/technical/)
