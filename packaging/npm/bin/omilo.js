@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Omilo local-runtime launcher — drives `docker compose` against the cloud control plane.
+// Omilo self-host launcher — drives `docker compose` for the local runtime.
+// Default mode: OMILO_MODE=local (free, BYO AI, no cloud env needed).
 // NO external downloads, NO remote execution. Requires Docker (Desktop or Engine).
 "use strict";
 
@@ -26,29 +27,42 @@ const LOCAL_URL = "http://localhost:7700";
 // ── Help text ────────────────────────────────────────────────────────────────
 function printHelp() {
   console.log(`
-Omilo CLI — local runtime launcher
+Omilo CLI — self-host launcher
 
-  Identity & billing are handled by the Omilo cloud control plane
-  (OMILO_CONTROL_PLANE_URL, default: https://api.omilo.app).
-  Your workspace data (messages, RAG, connectors) stays on your machine.
+  Default mode: local — free, BYO AI keys, no cloud account required.
+  Your workspace data stays on your machine. Pooled/metered inference
+  is disabled in local mode; bring your own API keys in the UI.
+
+  Run \`omilo connect\` to upgrade to hybrid mode: cloud identity +
+  pooled credits, data stays local.
 
 Prerequisite: Docker Desktop (or Docker Engine with the Compose plugin).
   Install: https://docs.docker.com/get-docker/
 
 Usage:
-  omilo up          Start the local Omilo runtime (builds images, pulls deps).
+  omilo up          Start Omilo locally (local mode, free, BYO AI, no cloud).
+  omilo connect     Upgrade to hybrid mode — sign in to cloud, get pooled credits.
   omilo down        Stop and remove the runtime containers.
   omilo logs        Stream live logs (Ctrl-C to stop).
-  omilo register    Register this install with the Omilo cloud (first-run setup).
   omilo --help      Show this help.
 
-Environment (in deploy/.env.runtime):
-  OMILO_CONTROL_PLANE_URL   Cloud control plane URL (default: https://api.omilo.app).
-  OMILO_INSTALL_TOKEN       Install token obtained via: omilo register.
+Modes:
+  local   (default) — free, BYO AI keys, no cloud env needed, fully private.
+  hybrid            — cloud identity + pooled credits; run \`omilo connect\`.
+  cloud             — vendor control plane; see docs/technical/12-control-plane-runtime-split.md §10.
 
-Quickstart:
+Environment (optional, in deploy/.env.runtime — hybrid mode only):
+  OMILO_MODE                Set to "hybrid" after running omilo connect.
+  OMILO_CONTROL_PLANE_URL   Cloud control plane URL (default: https://api.omilo.app).
+  OMILO_INSTALL_TOKEN       Install token obtained via: omilo connect.
+
+Quickstart (local, no cloud account needed):
   npx omilo up
   # Then visit: http://localhost:7700
+  # Add your AI provider key in Settings → AI Keys.
+
+Upgrade to hybrid (cloud identity + pooled credits):
+  npx omilo connect
 `);
 }
 
@@ -86,6 +100,18 @@ function run(cmd, args) {
   process.exit(res.status === null ? 1 : res.status);
 }
 
+// ── Resolve env file (alongside compose, or in cwd/deploy/) ─────────────────
+function resolveEnvFile() {
+  const candidates = [
+    path.join(path.dirname(COMPOSE_FILE), ".env.runtime"),
+    path.join(process.cwd(), "deploy", ".env.runtime"),
+  ];
+  for (const f of candidates) {
+    try { require("fs").accessSync(f); return f; } catch { /* try next */ }
+  }
+  return null;
+}
+
 // ── Commands ─────────────────────────────────────────────────────────────────
 const [,, cmd, ...rest] = process.argv;
 
@@ -93,15 +119,11 @@ switch (cmd) {
 
   case "up": {
     requireDocker();
-    // Check for an env-file alongside the compose file (convenience).
-    const envFile = path.join(path.dirname(COMPOSE_FILE), ".env.runtime");
-    const envFileExists = (() => {
-      try { require("fs").accessSync(envFile); return true; } catch { return false; }
-    })();
+    const envFile = resolveEnvFile();
 
     const args = [
       "compose", "-f", COMPOSE_FILE,
-      ...(envFileExists ? ["--env-file", envFile] : []),
+      ...(envFile ? ["--env-file", envFile] : []),
       "up", "-d", "--wait",
     ];
 
@@ -116,54 +138,40 @@ switch (cmd) {
       console.log(`
 omilo: runtime is up! Open: ${LOCAL_URL}
 
-  Identity & billing use the Omilo cloud control plane (OMILO_CONTROL_PLANE_URL).
-  Your workspace data stays on this machine — it never leaves.
+  Running locally — free, BYO AI, no cloud account required.
+  Add your AI provider key in Settings → AI Keys.
 
-  If you haven't registered this install yet, run: omilo register
+  To enable cloud identity + pooled credits, run: omilo connect
 `);
     }
     process.exit(status);
   }
 
-  case "down": {
-    requireDocker();
-    run("docker", ["compose", "-f", COMPOSE_FILE, "down"]);
-    break;
-  }
-
-  case "logs": {
-    requireDocker();
-    run("docker", ["compose", "-f", COMPOSE_FILE, "logs", "-f", "--tail", "100"]);
-    break;
-  }
-
-  case "register": {
-    // Guide the user through the install registration flow.
-    // Attempts to exec `omilo-register` inside the api container.
-    // If the stack is not up, prints the exact manual command.
+  case "connect": {
+    // Upgrade this install from local to hybrid mode.
+    // Runs `omilo-connect` inside the api container, which guides the user
+    // through cloud sign-in, issues an install token, re-keys tenant data,
+    // and sets OMILO_MODE=hybrid in the env file.
     console.log(`
-omilo register — connect this install to the Omilo cloud
+omilo connect — upgrade to hybrid mode
 
-  Step 1: Sign in to the Omilo cloud at https://app.omilo.app
-          (or https://OMILO_CONTROL_PLANE_URL if self-hosting the control plane).
+  This will sign you in to the Omilo cloud, issue an install token,
+  and switch this install to hybrid mode (cloud identity + pooled credits).
+  Your workspace data stays on this machine.
 
-  Step 2: This command will run the registration script inside the api container.
-          When it completes, copy the printed install token.
-
-  Step 3: Add the token to deploy/.env.runtime:
-            OMILO_INSTALL_TOKEN=<printed token>
-          Then restart with: omilo down && omilo up
+  The runtime stack must be running. Start it first if needed:
+    omilo up
 `);
 
     if (!isDockerAvailable()) {
       console.error(
         "omilo: Docker is not available — start Docker first, then run: omilo up\n" +
-        "       Once the stack is running, re-run: omilo register\n"
+        "       Once the stack is running, re-run: omilo connect\n"
       );
       process.exit(1);
     }
 
-    // Check if the stack is running by looking for the api container.
+    // Check if the api container is running.
     const psRes = spawnSync(
       "docker",
       ["compose", "-f", COMPOSE_FILE, "ps", "--status", "running", "--services"],
@@ -176,14 +184,26 @@ omilo register — connect this install to the Omilo cloud
       console.log(
         "omilo: the runtime stack is not up. Start it first:\n\n" +
         "  omilo up\n\n" +
-        "Then re-run: omilo register\n\n" +
-        "Or run the registration command manually once the stack is up:\n" +
-        `  docker compose -f ${COMPOSE_FILE} exec api omilo-register\n`
+        "Then re-run: omilo connect\n\n" +
+        "Or run the connect command manually once the stack is up:\n" +
+        `  docker compose -f ${COMPOSE_FILE} exec api omilo-connect\n`
       );
       process.exit(1);
     }
 
-    run("docker", ["compose", "-f", COMPOSE_FILE, "exec", "api", "omilo-register"]);
+    run("docker", ["compose", "-f", COMPOSE_FILE, "exec", "api", "omilo-connect"]);
+    break;
+  }
+
+  case "down": {
+    requireDocker();
+    run("docker", ["compose", "-f", COMPOSE_FILE, "down"]);
+    break;
+  }
+
+  case "logs": {
+    requireDocker();
+    run("docker", ["compose", "-f", COMPOSE_FILE, "logs", "-f", "--tail", "100"]);
     break;
   }
 
