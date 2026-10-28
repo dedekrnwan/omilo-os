@@ -80,16 +80,17 @@ Point your runtime instances at this control plane:
 
 ---
 
-### 4. `make dev` — local development
+### 4. `make dev` — local development (full stack)
 
-Starts a dev Postgres + Redis, runs the API in the foreground, and tells you to open a second
-terminal for the frontend dev server.
+One command starts the whole stack: dev Postgres + Redis, migrations + seed, the API
+(`:8000`), and the Vite web dev server (`:5173`) — run concurrently; **Ctrl-C stops both**.
+The web talks to the API through a dev-only Vite proxy (no CORS), so it's wired end-to-end.
 
 ```bash
-make db       # start Postgres (pgvector) + Redis via Docker
-make dev      # start the API (migrations run automatically)
-# second terminal:
-npm run dev   # start the Vite frontend dev server
+make dev        # DB + API + web, all together → open http://localhost:5173
+# or run one side:
+make dev-api    # just the API (migrate + serve)
+make dev-web    # just the web dev server (expects a running API)
 ```
 
 Prerequisites: Docker, Python 3.11+, Node 22+, npm.
@@ -129,7 +130,7 @@ to produce the unsigned artifact.
 | `make up` | Start self-host runtime (local mode, free, BYO AI) |
 | `make connect` | Upgrade to hybrid mode (cloud identity + pooled credits) |
 | `make db` | Start dev Postgres + Redis |
-| `make dev` | Start API (+ `npm run dev` for frontend) |
+| `make dev` | Full stack: DB + API (:8000) + web (:5173), Ctrl-C stops both |
 | `make test` | Backend + frontend + Rust checks |
 | `make build` | Production frontend bundle |
 | `make image` | Build Docker images |
