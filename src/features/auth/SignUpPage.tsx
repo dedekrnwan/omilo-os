@@ -2,14 +2,24 @@
 import { useState } from 'react'
 import { Lock, Mail, User } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import { useAuth } from '../../app/useAuth'
+import { useAuth, isMockMode } from '../../app/useAuth'
+import { useSession } from '../../app/session'
 import { ApiError } from '../../adapters/http/auth'
+import { isTauri } from '../../platform'
 import { AuthLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthLinks, AuthTitle, GoogleButton, OrDivider, PasswordStrength } from './AuthPrimitives'
+
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 export function SignUpPage() {
   const { adapter, applySignIn, mock } = useAuth()
   const navigate = useNavigate()
+  const googleEnabled = useSession((s) => s.googleEnabled)
+
+  function handleGoogleSignUp() {
+    const client = isTauri() ? 'desktop' : 'web'
+    window.location.assign(`${API}/v1/auth/google/start?client=${client}`)
+  }
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -47,8 +57,10 @@ export function SignUpPage() {
   return (
     <AuthLayout>
       <AuthTitle title="Create your Omilo account" sub="Google is the fastest. Or use your work email and a password." />
-      <GoogleButton to="/auth/choose-company">Sign up with Google</GoogleButton>
-      <OrDivider />
+      {!isMockMode() && googleEnabled && (
+        <GoogleButton onClick={handleGoogleSignUp}>Sign up with Google</GoogleButton>
+      )}
+      {!isMockMode() && googleEnabled && <OrDivider />}
       <AuthField
         id="name"
         label="Your name"

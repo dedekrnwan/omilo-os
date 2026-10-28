@@ -1,37 +1,39 @@
 /** Choose company — /auth/choose-company (pen Ltj2k). */
 import { ArrowRight, Plus } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { useSession } from '../../app/session'
+import { MODE_HOME, useUIStore } from '../../app/store'
 import { AuthLayout } from './AuthLayout'
 import { AuthTitle, GoogleLogo } from './AuthPrimitives'
 
-const COMPANIES = [
-  { name: 'Sahabat Warga', initial: 'S', color: '#EB6834', meta: 'Owner · 4 members · opened today', current: true },
-  { name: 'Kopi Kenangan', initial: 'K', color: '#6366F1', meta: 'Admin · 12 members · 3 need you', current: false },
-]
-
 export function ChooseCompanyPage() {
+  const { companies, user } = useSession()
+  const home = MODE_HOME[useUIStore.getState().mode]
+
   return (
     <AuthLayout>
-      <AuthTitle title="Welcome back, Dede" sub="Pick a company to open. You can switch any time from the rail." />
+      <AuthTitle
+        title={user ? `Welcome back, ${user.name.split(' ')[0]}` : 'Choose a company'}
+        sub="Pick a company to open. You can switch any time from the rail."
+      />
       <div className="flex w-full flex-col gap-[8px]">
-        {COMPANIES.map((c) => (
+        {companies.map((c, i) => (
           <Link
-            key={c.name}
-            to="/inbox"
+            key={c.id}
+            to={home}
             className="flex w-full items-center gap-[12px] rounded-lg p-[12px] transition-colors hover:bg-soft"
-            style={{ boxShadow: c.current ? 'inset 0 0 0 1.5px #171717' : 'inset 0 0 0 1px var(--color-line-strong)' }}
+            style={{ boxShadow: i === 0 ? 'inset 0 0 0 1.5px #171717' : 'inset 0 0 0 1px var(--color-line-strong)' }}
           >
             <span
               className="flex size-[36px] shrink-0 items-center justify-center rounded-[10px] text-[15px] font-bold text-white"
-              style={{ background: c.color }}
+              style={{ background: '#6366F1' }}
             >
-              {c.initial}
+              {c.name.charAt(0)}
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
               <span className="text-[14px] font-semibold text-ink">{c.name}</span>
-              <span className="text-[12px] text-muted">{c.meta}</span>
             </span>
-            <ArrowRight size={16} aria-hidden className={c.current ? 'text-ink' : 'text-faint'} />
+            <ArrowRight size={16} aria-hidden className={i === 0 ? 'text-ink' : 'text-faint'} />
           </Link>
         ))}
         <Link
@@ -48,14 +50,16 @@ export function ChooseCompanyPage() {
           </span>
         </Link>
       </div>
-      <div className="flex w-full items-center justify-center gap-[8px] text-[12.5px]">
-        <GoogleLogo size={14} />
-        <span className="text-muted">dede@saga.co.id</span>
-        <span className="text-faint">·</span>
-        <Link to="/auth/sign-in" className="font-medium text-link hover:underline">
-          Switch account
-        </Link>
-      </div>
+      {user && (
+        <div className="flex w-full items-center justify-center gap-[8px] text-[12.5px]">
+          <GoogleLogo size={14} />
+          <span className="text-muted">{user.email}</span>
+          <span className="text-faint">·</span>
+          <Link to="/auth/sign-in" className="font-medium text-link hover:underline">
+            Switch account
+          </Link>
+        </div>
+      )}
     </AuthLayout>
   )
 }

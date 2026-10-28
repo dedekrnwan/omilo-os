@@ -77,6 +77,7 @@ interface RawMeResponse {
 interface RawPublicConfig {
   mode: string
   signup_enabled: boolean
+  google_enabled?: boolean
 }
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
@@ -285,6 +286,7 @@ export function createAuthAdapter(
       return {
         mode: raw.mode,
         signupEnabled: raw.signup_enabled,
+        googleEnabled: raw.google_enabled ?? false,
       }
     },
   }
