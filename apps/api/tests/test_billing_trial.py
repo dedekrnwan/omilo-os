@@ -213,6 +213,9 @@ def test_start_trial_cloud_mode_creates_trialing_sub():
     # Seats from plan_cloud = 5
     assert sub.seats == 5
 
+    # N1: a trial must be hard-overage so pooled blocks at 0 (no unpaid debt).
+    assert _get_company(company.id).overage_policy == "hard"
+
     # Credits granted: 2000
     balance = _get_credit_balance(company.id)
     assert balance == 2000, f"Expected 2000 credits, got {balance}"

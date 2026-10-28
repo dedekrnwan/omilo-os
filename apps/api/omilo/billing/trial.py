@@ -24,6 +24,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+
 from omilo.billing.balance import grant_credits
 from omilo.billing.catalog import PLAN_CATALOG
 from omilo.config import get_settings
@@ -79,6 +81,18 @@ def start_trial(db: "Session", company: "Company") -> "Subscription | None":
         )
         return None
 
+    # ── Serialize concurrent first-touch (advisory lock, released at txn end) ─
+    # start_trial is invoked lazily from TWO endpoints (GET /plans + /subscription).
+    # Two simultaneous requests for a brand-new company could both pass the
+    # "no existing sub / no trial_grant" checks and double-grant. A per-company
+    # Postgres advisory xact lock serializes them so only the first creates the
+    # trial; the second then sees the committed sub and no-ops.
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:k)::bigint)"),
+            {"k": company.id},
+        )
+
     # ── If ANY subscription exists, return it (idempotent) ───────────────────
     existing_sub = (
         db.query(Subscription)
@@ -120,6 +134,14 @@ def start_trial(db: "Session", company: "Company") -> "Subscription | None":
         seats=plan.seats,
     )
     db.add(sub)
+
+    # ── Trial must NOT run into debt: hard-overage so pooled blocks at 0 ──────
+    # A trial grants 2000 credits; when they're spent (or the 14 days lapse),
+    # the balance gate (balance.py) blocks pooled/litellm jobs ONLY under a
+    # "hard" policy. BYO/local keys stay free regardless. Without this, the
+    # default "soft" policy lets a trial run unpaid into a negative balance.
+    company.overage_policy = "hard"
+
     db.flush()
 
     # ── Grant trial credits — idempotent via trial_grant ledger guard ─────────

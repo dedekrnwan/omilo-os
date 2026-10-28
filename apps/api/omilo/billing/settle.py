@@ -127,13 +127,15 @@ def _settle_subscription(
         )
         return
 
-    # Deactivate any existing active subscriptions for this company (mirrors the
-    # Manual path in omilo/api/billing.py lines ~479-480 which sets "canceled").
+    # Deactivate any existing active OR trialing subscriptions for this company
+    # (mirrors the Manual path in omilo/api/billing.py which cancels
+    # ["active","trialing"]). Including "trialing" ensures a company that pays
+    # via Doit during its trial doesn't end up with a stale trialing row.
     existing_active = (
         db.query(Subscription)
         .filter(
             Subscription.company_id == company.id,
-            Subscription.status == "active",
+            Subscription.status.in_(["active", "trialing"]),
         )
         .all()
     )
