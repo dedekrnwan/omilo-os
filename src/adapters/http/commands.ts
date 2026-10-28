@@ -9,10 +9,6 @@
  * Reuses `apiFetch` from ./client for auth header attachment and error mapping.
  * All camelCase input is mapped to snake_case body keys before sending, and
  * snake_case response fields are mapped back to camelCase.
- *
- * NOTE: POST /v1/channels does NOT currently exist on the backend (only GET
- * endpoints are present). createArea targets that path for future use; T5
- * depends on it being implemented.
  */
 
 import type { Channel, Company, Connector, McpToken, Message, Session, WalletSettings } from '../../core/domain/types'
@@ -242,10 +238,8 @@ export interface Commands {
 
   // ── P5d Area (Channel) commands ─────────────────────────────────────────────
   /**
-   * POST /v1/channels — create a new area.
-   * NOTE: This endpoint does NOT yet exist on the backend (channels.py is
-   * read-only). createArea is forward-compatible; T5 depends on the backend
-   * implementing POST /v1/channels.
+   * POST /v1/channels — create a new area (name, accent, icon, purpose,
+   * context_scope). Added to the backend in P5d-T2b.
    */
   createArea(input: CreateAreaInput): Promise<Channel>
 
