@@ -264,8 +264,17 @@ def connect_to_cloud(
     # User rows have their password_hash set to None so they cannot sign in
     # locally any more (they still exist for referential integrity).
     # -----------------------------------------------------------------------
-    db_bootstrap.query(Member).filter_by(company_id=cloud_company_id).delete()
-    db_bootstrap.query(User).update({"password_hash": None}, synchronize_session=False)
+    member_user_ids = [
+        m.user_id
+        for m in db_bootstrap.query(Member).filter_by(company_id=cloud_company_id).all()
+    ]
+    db_bootstrap.query(Member).filter_by(company_id=cloud_company_id).delete(
+        synchronize_session=False
+    )
+    if member_user_ids:
+        db_bootstrap.query(User).filter(User.id.in_(member_user_ids)).update(
+            {"password_hash": None}, synchronize_session=False
+        )
 
     logger.info("connect_to_cloud: retired local User/Member authority")
 

@@ -906,6 +906,70 @@ def test_r9_local_identity_retired():
 
 
 # ===========================================================================
+# R9b — Retirement is SCOPED: other-company user's password_hash untouched
+# ===========================================================================
+
+
+def test_r9b_retirement_scoped_to_local_company_members():
+    """Retiring local identity must not touch users belonging to other companies.
+
+    Seed:
+      - Local company L with user_L (member of L)
+      - Other company O with user_O (member of O, NOT L)
+
+    Run connect_to_cloud for company L.
+
+    Assert:
+      - user_L.password_hash is None  (retired — was a member of L)
+      - user_O.password_hash is NOT None  (untouched — belongs to O, not L)
+    """
+    local_cid = prefixed_id("cmp")
+    other_cid = prefixed_id("cmp")
+    cloud_cid = prefixed_id("cmp")
+    fake_cp = FakeControlPlane(cloud_company_id=cloud_cid)
+
+    user_l_id: str | None = None
+    user_o_id: str | None = None
+
+    with _boot_session() as db:
+        # Local company + its user/member
+        _make_company(db, company_id=local_cid, name="LocalCo")
+        user_l = _make_user(db)
+        user_l_id = user_l.id
+        _make_member(db, local_cid, user_l_id)
+
+        # Separate other company + its own user/member (should NOT be retired)
+        _make_company(db, company_id=other_cid, name="OtherCo")
+        user_o = _make_user(db)
+        user_o_id = user_o.id
+        _make_member(db, other_cid, user_o_id)
+
+    with tempfile.NamedTemporaryFile(suffix=".env", delete=False) as f:
+        env_file = Path(f.name)
+
+    try:
+        with _boot_session() as db:
+            _run_connect_to_cloud(db, local_cid, fake_cp, env_file)
+
+        with _boot_session() as db:
+            user_l_row = db.get(User, user_l_id)
+            user_o_row = db.get(User, user_o_id)
+
+            assert user_l_row is not None
+            assert user_l_row.password_hash is None, (
+                "Local company user should have password_hash=None after retirement"
+            )
+
+            assert user_o_row is not None
+            assert user_o_row.password_hash is not None, (
+                "Other-company user's password_hash must NOT be nulled "
+                f"(got {user_o_row.password_hash!r}) — global UPDATE was removed"
+            )
+    finally:
+        env_file.unlink(missing_ok=True)
+
+
+# ===========================================================================
 # R10 — rekey_company raises when old_company_id == new_company_id
 # ===========================================================================
 
