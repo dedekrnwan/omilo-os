@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, UserRound, Zap } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
-import { getHelper } from './teamData'
+import type { Helper } from '../../core/domain/types'
+import { useHelper } from '../../app/queries'
 import type { HelperRecord, HelperTab } from './teamData'
 import { StatusChip, TeamTopbar } from './StatusChip'
 import { Btn, IconBtn } from './ui'
@@ -27,6 +28,35 @@ import { LetGoDialog } from './LetGoDialog'
  * email (WruOn) · browse (uvNJ3) · letgo (HX7PZ).
  */
 export type HelperState = 'model' | 'playbook' | 'telegram' | 'whatsapp' | 'email' | 'browse' | 'letgo'
+
+/**
+ * Adapt a live Helper domain type to the HelperRecord display shape.
+ * Fields not present in the API (routines, files, cost, etc.) are given
+ * safe defaults so the tab UIs remain unchanged.
+ */
+function helperToRecord(h: Helper): HelperRecord {
+  return {
+    id: h.id,
+    name: h.name,
+    area: h.area,
+    roleIcon: UserRound,
+    role: h.role ?? h.area,
+    roleArea: h.role ?? h.area,
+    status: (h.status === 'active' ? 'Working' : h.status === 'paused' ? 'Idle' : 'Idle') as HelperRecord['status'],
+    rosterStatus: 'Working',
+    model: 'Opus 5.5',
+    statsLine: `${h.jobs ?? 0} jobs · ${h.success ?? 0}% success`,
+    nowLabel: 'NOW',
+    now: h.jobDescription ?? '',
+    rosterMeta: h.role ?? '',
+    cost: '',
+    description: h.jobDescription ?? '',
+    routinesNote: '',
+    routines: [],
+    files: [],
+    counts: { channels: '—', tools: '—', skills: '—' },
+  }
+}
 
 const TABS: { id: HelperTab; label: string; count?: keyof HelperRecord['counts'] }[] = [
   { id: 'job', label: 'Job' },
@@ -402,11 +432,26 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
  * Route component for /team/$helperId — pen ZOLDU (Chief) · mM9lI (Builder) ·
  * TVKhl (Grower) · koZok (Sales) · w6dUO3 (Finance) · XB1kX (Support).
  * Tabs via `?tab=channels|behavior|tools|skills|profile`.
+ *
+ * Data source: useHelper(id) from the live repos layer (P8-T6).
  */
 export function HelperDetail() {
   const params = useParams({ strict: false }) as { helperId?: string }
-  const helper = getHelper(params.helperId ?? '')
-  if (!helper) {
+  const id = params.helperId ?? ''
+  const { data: rawHelper, isLoading, isError } = useHelper(id)
+
+  if (isLoading) {
+    return (
+      <Inset label="Team">
+        <TeamTopbar meta="Loading…" />
+        <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
+          Loading helper…
+        </div>
+      </Inset>
+    )
+  }
+
+  if (isError || !rawHelper) {
     return (
       <Inset label="Team">
         <TeamTopbar meta="Not found" />
@@ -419,5 +464,7 @@ export function HelperDetail() {
       </Inset>
     )
   }
+
+  const helper = helperToRecord(rawHelper)
   return <HelperDetailPage key={helper.id} helper={helper} />
 }

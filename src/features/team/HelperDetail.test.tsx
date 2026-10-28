@@ -1,14 +1,19 @@
 /**
- * HelperDetail behaviour tests — Task 8.
+ * HelperDetail behaviour tests — Task 8 (updated for P8-T6 live repo wiring).
  *
  * These tests cover wired controls in HelperDetail:
  * 1. Model dropdown opens and picking an option updates the pill label.
  * 2. Role dropdown opens and picking updates the pill label.
  * 3. Pause button toggles to Resume.
  * 4. More-options (ellipsis) menu opens and has Pause + Let go items.
+ *
+ * P8-T6: HelperDetail now uses useHelper(id) → needs QueryClientProvider + ReposProvider.
+ * We inject a mock repo that returns a helper with the fixture-matching shape so
+ * the pill/menu tests remain identical.
  */
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -16,11 +21,54 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
+import { ReposProvider } from '../../app/ReposProvider'
+import type { Repos } from '../../core/ports/repos'
+import type { Helper } from '../../core/domain/types'
 import { HelperDetail } from './HelperDetail'
 import { TeamLayout } from './TeamLayout'
 
+// ── mock repo helper ──────────────────────────────────────────────────────────
+
+const CHIEF_HELPER: Helper = {
+  id: 'chief',
+  name: 'Chief',
+  area: 'brand',
+  role: 'Chief of Staff',
+  status: 'active',
+  isChief: true,
+}
+
+function makeRepos(helper: Helper | null = CHIEF_HELPER): Repos {
+  return {
+    channels: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    folders: { listByChannel: vi.fn().mockResolvedValue([]), listAll: vi.fn().mockResolvedValue([]) },
+    goals: { listByChannel: vi.fn().mockResolvedValue([]), listAll: vi.fn().mockResolvedValue([]) },
+    sessions: { get: vi.fn().mockResolvedValue(null), listByChannel: vi.fn().mockResolvedValue([]), listAll: vi.fn().mockResolvedValue([]) },
+    messages: { listBySession: vi.fn().mockResolvedValue([]) },
+    inbox: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    usage: { get: vi.fn().mockResolvedValue({ balance: 0, included: 0, usedThisPeriod: 0, byHelper: [], byDay: [] }) },
+    wallet: { get: vi.fn().mockResolvedValue({ autoTopupEnabled: false, autoTopupThresholdCredits: 0, autoTopupPack: null }) },
+    aiAccounts: { list: vi.fn().mockResolvedValue([]) },
+    marketplace: { list: vi.fn().mockResolvedValue([]) },
+    connectors: { list: vi.fn().mockResolvedValue([]) },
+    mcpTokens: { list: vi.fn().mockResolvedValue([]) },
+    flows: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null), runs: vi.fn().mockResolvedValue([]) },
+    routines: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    knowledge: { sources: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([]) },
+    analytics: { overview: vi.fn().mockResolvedValue({ stats: [], series: [] }), helpers: vi.fn().mockResolvedValue([]) },
+    skills: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    helpers: {
+      list: vi.fn().mockResolvedValue(helper ? [helper] : []),
+      get: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve(helper?.id === id ? helper : null),
+      ),
+    },
+  }
+}
+
 /** Mount the HelperDetail for a given helperId via a minimal memory router. */
-function renderHelperDetail(helperId: string) {
+function renderHelperDetail(helperId: string, repos?: Repos) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({
     notFoundComponent: () => <div data-testid="not-found">Not found</div>,
   })
@@ -29,7 +77,13 @@ function renderHelperDetail(helperId: string) {
   const routeTree = root.addChildren([team.addChildren([detail])])
   const history = createMemoryHistory({ initialEntries: [`/team/${helperId}`] })
   const router = createRouter({ routeTree, history })
-  return render(<RouterProvider router={router} />)
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ReposProvider repos={repos ?? makeRepos()}>
+        <RouterProvider router={router} />
+      </ReposProvider>
+    </QueryClientProvider>,
+  )
 }
 
 describe('HelperDetail — wired controls', () => {
