@@ -4,8 +4,9 @@ import { Activity, Check, ChevronDown, LayoutDashboard, Repeat, ShieldCheck, Use
 import type { LucideIcon } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DAY_LABELS, DAYS, UPDATED_AT, helpers } from './data'
-import type { BarChart, ChipTone, HelperStat, HelperStatus, Stat } from './data'
+import { DAY_LABELS, DAYS } from './data'
+import type { BarChart, ChipTone, HelperStatus, Stat } from './data'
+import type { LocalHelperRow } from './AnalyticsPage'
 
 // ── Small primitives (pen Chip/*, Status Dot/*, Switch/*, Checkbox/*, Radio/*) ──
 
@@ -186,12 +187,20 @@ export function Tabs({ value, onChange }: { value: TabId; onChange: (t: TabId) =
 const RANGES = ['7 days', '30 days', '90 days'] as const
 const ALL_HELPERS_LABEL = 'All helpers'
 
-export function Toolbar({ range, onRange }: { range: string; onRange: (r: string) => void }) {
+export function Toolbar({
+  range,
+  onRange,
+  helperNames = [],
+}: {
+  range: string
+  onRange: (r: string) => void
+  helperNames?: string[]
+}) {
   const [helperFilter, setHelperFilter] = useState<string>(ALL_HELPERS_LABEL)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const helperOptions = [ALL_HELPERS_LABEL, ...helpers.map((h) => h.name)]
+  const helperOptions = [ALL_HELPERS_LABEL, ...helperNames]
 
   return (
     <div className="flex w-full items-center gap-[8px]">
@@ -242,10 +251,6 @@ export function Toolbar({ range, onRange }: { range: string; onRange: (r: string
         )}
       </div>
       <div className="h-px min-w-0 flex-1" />
-      <span className="flex items-center gap-[6px]">
-        <span className="size-[7px] rounded-full bg-ok" />
-        <span className="font-mono text-[11px] text-muted">Updated {UPDATED_AT}</span>
-      </span>
     </div>
   )
 }
@@ -391,9 +396,9 @@ export function HelpersTable({
   sub,
   onSetBudget,
 }: {
-  rows: HelperStat[]
+  rows: LocalHelperRow[]
   sub: string
-  onSetBudget?: (h: HelperStat) => void
+  onSetBudget?: (h: LocalHelperRow) => void
 }) {
   const head = ['Now', 'Jobs', 'Success', 'Tokens', 'Spend', 'Budget (month)', 'Last active']
   return (
