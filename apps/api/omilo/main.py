@@ -40,8 +40,22 @@ from omilo.realtime.ws import router as ws_router
 
 def create_app() -> FastAPI:
     from omilo.config import get_settings
+    from fastapi.middleware.cors import CORSMiddleware
 
     app = FastAPI(title="Omilo API", version="0.1.0")
+
+    # CORS — allow the configured browser origins. Without this, a trailing-slash
+    # redirect (e.g. /v1/channels/ → /v1/channels) resolves to the API's absolute
+    # origin and escapes the Vite dev proxy, so the browser blocks it. Credentials
+    # are not used (auth is a Bearer header), so this stays safe with explicit origins.
+    _origins = [o.strip() for o in (get_settings().cors_origins or "").split(",") if o.strip()]
+    if _origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     app.include_router(health_router, prefix="/v1")
     # Public pre-auth config: GET /v1/public-config (P9 T1) — NO auth required

@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     # frontend_base: where web clients are redirected after OAuth completes.
     # e.g. http://localhost:5173 (dev) or https://app.omilo.app (prod).
     frontend_base: str = "http://localhost:5173"
+    # cors_origins: comma-separated browser origins allowed to call the API
+    # cross-origin. Needed because a trailing-slash redirect can send the browser
+    # straight to the API origin (bypassing the dev proxy), and the packaged
+    # desktop/web clients are a different origin than the API in prod.
+    cors_origins: str = "http://localhost:5173,http://localhost:1420,tauri://localhost"
 
     # ---------------------------------------------------------------------------
     # SMTP / transactional email (control-plane feature).
