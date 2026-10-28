@@ -78,8 +78,8 @@ describe('Flows list — live repo data', () => {
     renderAt('/flows', root)
     // fixtureFlows[0].title = 'Morning brief' — a live-repo flow title
     await screen.findByText(fixtureFlows[0].title)
-    // 'Deploy failure triage' is ONLY in OFFICE_FLOWS fixture, not in mock repo
-    expect(screen.queryByText('Deploy failure triage')).not.toBeInTheDocument()
+    // 'Weekly latency report' is only in OFFICE_FLOWS fixture (not in mock repo, templates, or suggested)
+    expect(screen.queryByText('Weekly latency report')).not.toBeInTheDocument()
   })
 
   test('shows empty state when no flows returned', async () => {
@@ -122,7 +122,8 @@ describe('Flow runs — seeded from useFlowRuns()', () => {
     // 'Run #214' is only in the local RUNS fixture — must NOT appear
     await waitFor(() => expect(screen.queryByText('Run #214')).not.toBeInTheDocument())
     // Repo has frn-1 and frn-2; after seedRuns they become Run #1 and Run #2
-    await screen.findByText(/Run #1/)
+    // Run #1 appears in both the list row and the detail panel h2
+    expect((await screen.findAllByText(/Run #1/)).length).toBeGreaterThan(0)
   })
 
   test('shows empty state when flow has no runs', async () => {
