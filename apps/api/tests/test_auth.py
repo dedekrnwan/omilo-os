@@ -6,10 +6,17 @@ Tests cover:
 - GET  /v1/me with valid token → 200 + user + member + company
 - GET  /v1/me with bad/absent token → 401
 - POST /v1/auth/sign-up with duplicate email → 409
+- GET  /v1/me with NotConfiguredError from control plane → 503 (P6-T1)
 """
 import uuid
 
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+import omilo.auth.deps as _auth_deps_mod
+from omilo.control.factory import NotConfiguredError
+from omilo.main import create_app
 
 
 @pytest.mark.asyncio
@@ -147,3 +154,32 @@ async def test_duplicate_email_returns_409(async_client):
         json={"email": email, "name": "Duplicate", "password": "secondP4ss!"},
     )
     assert second.status_code == 409, second.text
+
+
+@pytest.mark.asyncio
+async def test_me_with_misconfigured_control_plane_returns_503(monkeypatch):
+    """P6-T1: NotConfiguredError from get_control_plane() must yield 503, not 500.
+
+    Simulates a deployment where OMILO_MODE=runtime is set but RemoteControlPlane
+    is not yet wired — get_control_plane() raises NotConfiguredError before
+    verify_token is ever called.  The auth dependency must catch this and return
+    503 Service Unavailable rather than letting the exception bubble as a 500.
+    """
+    def _raise_not_configured():
+        raise NotConfiguredError("OMILO_MODE=runtime not configured")
+
+    monkeypatch.setattr(_auth_deps_mod, "get_control_plane", _raise_not_configured)
+
+    app = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.get(
+            "/v1/me",
+            headers={"Authorization": "Bearer any.token.here"},
+        )
+
+    assert resp.status_code == 503, (
+        f"Expected 503 when control plane raises NotConfiguredError, got {resp.status_code}: {resp.text}"
+    )

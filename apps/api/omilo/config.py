@@ -26,6 +26,39 @@ class Settings(BaseSettings):
     pieces_source: str = _DEFAULT_PIECES_SOURCE
 
     # ---------------------------------------------------------------------------
+    # Asymmetric JWT signing (RS256) — optional; HS256 used when not set
+    # ---------------------------------------------------------------------------
+    # OMILO_JWT_PRIVATE_KEY: RSA private key in PEM format (PKCS8).  When set,
+    #   make_access_token() signs with RS256 and get_jwks() returns the public JWK.
+    # OMILO_JWT_PUBLIC_KEY:  Corresponding RSA public key PEM.  If omitted when
+    #   a private key is configured, the public key is derived from the private key.
+    omilo_jwt_private_key: str | None = None
+    omilo_jwt_public_key: str | None = None
+
+    # ---------------------------------------------------------------------------
+    # Run mode (P6 control-plane / runtime split)
+    # ---------------------------------------------------------------------------
+    # OMILO_MODE=cloud   — control plane mode (default).  Auth + billing resolve
+    #                      in-process via LocalControlPlane.  This is the existing
+    #                      production behavior; no code changes in cloud mode.
+    # OMILO_MODE=runtime — local runtime mode (T3).  Auth/billing delegate to the
+    #                      cloud control plane via RemoteControlPlane + HTTP.
+    omilo_mode: str = "cloud"
+
+    # ---------------------------------------------------------------------------
+    # Remote control plane (runtime mode — T3)
+    # ---------------------------------------------------------------------------
+    # OMILO_CONTROL_PLANE_URL: Base URL of the cloud control plane.
+    #   Required when OMILO_MODE=runtime.
+    #   Example: https://api.omilo.app
+    omilo_control_plane_url: str | None = None
+
+    # OMILO_INSTALL_TOKEN: Per-company, revocable install token issued by
+    #   POST /control/register during first-run setup.
+    #   Required when OMILO_MODE=runtime.
+    omilo_install_token: str | None = None
+
+    # ---------------------------------------------------------------------------
     # Payment provider
     # ---------------------------------------------------------------------------
     # Which payment provider to use: "manual" (default, offline), "doit",

@@ -81,15 +81,22 @@ def start_job(
     # If either is missing the gate defaults to "allowed" (the run_job path
     # will fail with its own descriptive error shortly after).
     _gate_allowed, _gate_reason = True, None
+    _gate_engine_type: str | None = None
+    _gate_helper = None
     try:
         from omilo.models.agents import Helper as _Helper
         from omilo.models.tenancy import Company as _Company
 
         _gcompany = db.get(_Company, company_id)
         _ghelper = db.get(_Helper, helper_id)
+        _gate_helper = _ghelper
         if _gcompany is not None and _ghelper is not None:
+            # Extract engine_type from helper config for the gate's credit check.
+            _gate_engine_type = (
+                (_ghelper.engine or {}).get("type", "fake") if _ghelper.engine else "fake"
+            )
             _gate_allowed, _gate_reason = check_can_start_job(
-                db, _gcompany, _ghelper
+                db, _gcompany, _ghelper, engine_type=_gate_engine_type
             )
     except Exception as exc:
         logger.warning(
@@ -119,6 +126,38 @@ def start_job(
     db.flush()
 
     if not _gate_allowed:
+        if _gate_reason == "paused_offline":
+            # ── paused_offline: control plane unreachable for a credit job ────
+            # Record the job as paused_offline; do NOT run the engine.
+            # The job can be retried once the control plane is reachable again.
+            job.status = "paused_offline"
+            job.error = "paused_offline"
+            job.ended_at = datetime.now(timezone.utc)
+            db.flush()
+
+            # Create an alert InboxItem so the user knows work is paused.
+            _helper_for_alert = _gate_helper
+            _create_paused_offline_inbox_item(
+                db=db,
+                company_id=company_id,
+                job=job,
+                helper=_helper_for_alert,
+            )
+
+            _broker_publish(company_id, {
+                "type": "job.paused_offline",
+                "id": job.id,
+                "data": {
+                    "job_id": job.id,
+                    "reason": "paused_offline",
+                    "message": (
+                        "Working offline — cloud credits unavailable; "
+                        "this task is paused until you reconnect."
+                    ),
+                },
+            })
+            return job
+
         # Record the blocked job without running the engine.
         job.status = "blocked"
         job.error = _gate_reason
@@ -247,6 +286,10 @@ def run_job(
     )
 
     engine_cfg = helper.engine if helper.engine else {"type": "fake"}
+    # Record engine_type on the job for metering/analytics downstream.
+    job.engine_type = engine_cfg.get("type", "fake")
+    db.flush()
+
     engine = get_engine(engine_cfg)
 
     # ── d. Run the engine ─────────────────────────────────────────────────────
@@ -547,6 +590,54 @@ def _broker_publish(company_id: str, event: dict) -> None:
         broker.publish(company_id, event)
     except Exception:
         pass  # publish failures must never break a job
+
+
+def _create_paused_offline_inbox_item(
+    *,
+    db: Session,
+    company_id: str,
+    job: Job,
+    helper: object | None,
+) -> None:
+    """Create an alert InboxItem for a paused_offline job (best-effort, no raise).
+
+    This mirrors _create_credit_alert in balance.py but for the offline case.
+    The message informs the user that the job is paused until the cloud
+    control plane is reachable again.
+    """
+    try:
+        item = InboxItem(
+            id=prefixed_id("inb"),
+            company_id=company_id,
+            title="Working offline — job paused",
+            summary=(
+                "Working offline — cloud credits unavailable; "
+                "this task is paused until you reconnect. "
+                "No action was taken. The job will be retried once you are back online."
+            ),
+            session_id=job.session_id or "",
+            channel_id=(
+                helper.channel_ids[0]
+                if helper is not None and getattr(helper, "channel_ids", None)
+                else ""
+            ),
+            kind="alert",
+            status="pending",
+            asker=getattr(helper, "name", "system") if helper is not None else "system",
+            asker_area=getattr(helper, "area", "ops") if helper is not None else "ops",
+            needs_you=False,
+            proposals=None,
+            actions=None,
+        )
+        db.add(item)
+        db.flush()
+    except Exception as exc:
+        logger.warning(
+            "paused_offline InboxItem creation failed for company_id=%s job_id=%s: %s",
+            company_id,
+            job.id,
+            exc,
+        )  # alert creation must never break the gate path
 
 
 def _meter_job_best_effort(db: Session, job: Job) -> None:

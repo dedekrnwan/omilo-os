@@ -9,11 +9,21 @@ Design decisions:
 - CREDITS_PER_USD=100: 1 USD = 100 credits (1 credit = $0.01).
 - PRICE_TABLE: keyed by (engine_type, model) → {in_per_1k, out_per_1k} USD.
   Fallback key ("*", "*") is used when no exact match found.
-- Cloud/litellm path: charges credits (ceil), decrements Company.credit_balance.
-- Pool/BYO path (fake|anthropic|claude_code): metered at credits_charged=0
-  for analytics only; balance unchanged.
-- Idempotent: a CreditLedger row for (company_id, job_id, reason="job") that
-  already exists is returned as-is without double-charging.
+
+Billing paths (routed through get_control_plane()):
+- CLOUD mode (LocalControlPlane, default):
+    Cloud/litellm: charges credits (ceil), decrements Company.credit_balance.
+    Pool/BYO (fake|anthropic|claude_code): metered at credits_charged=0
+    for analytics only; balance unchanged. Writes local CreditLedger always.
+- RUNTIME mode (RemoteControlPlane):
+    Credit-consuming (litellm): calls report_usage on the control plane
+    (cloud debits). On ControlPlaneUnreachable, enqueues to outbox and
+    swallows the error (best-effort). Does NOT write a local CreditLedger.
+    0-credit (BYO/local/pool): no-op — no local ledger, no report_usage.
+
+- Idempotent in cloud mode: a CreditLedger row for (company_id, job_id,
+  reason="job") that already exists is returned as-is without double-charging.
+  In runtime mode: idempotency is the cloud's responsibility (per job_id).
 """
 from __future__ import annotations
 
@@ -26,6 +36,8 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from omilo.control import ControlPlaneUnreachable, UsageEvent
+from omilo.control.factory import get_control_plane
 from omilo.models.base import prefixed_id
 from omilo.models.billing import CreditLedger
 
@@ -114,30 +126,77 @@ def provider_cost_usd(
 # ---------------------------------------------------------------------------
 
 def meter_job(db: Session, job: "Job") -> CreditLedger | None:  # noqa: F821
-    """Record a CreditLedger entry for a completed job.
+    """Record a CreditLedger entry or cloud usage event for a completed job.
 
-    Idempotent: if a ledger row for (company_id, job_id, reason="job") already
-    exists, returns it immediately without creating another.
+    Routes through get_control_plane() so:
+    - CLOUD mode (LocalControlPlane): behavior unchanged from P4 — writes a
+      local CreditLedger row (even for 0-credit BYO jobs, for analytics).
+    - RUNTIME mode (RemoteControlPlane):
+        - Credit-consuming (litellm): calls report_usage on the control plane.
+          On ControlPlaneUnreachable, enqueues to outbox + swallows (best-effort).
+          Does NOT write a local CreditLedger row.
+        - 0-credit (BYO/local/pool): no-op — no local ledger, no report_usage.
 
-    Cloud/litellm path:
-        credits_charged = ceil(provider_cost * MARGIN * CREDITS_PER_USD)
-        delta           = -credits_charged
-        Company.credit_balance decremented by credits_charged
-
-    Pool/BYO path (fake|anthropic|claude_code|graph):
-        credits_charged = 0, delta = 0 (metered for analytics only)
-        balance unchanged
+    Idempotent in cloud mode: if a ledger row for (company_id, job_id, reason="job")
+    already exists, returns it without double-charging. Runtime mode idempotency
+    is the cloud's responsibility.
 
     Args:
         db:  Company-scoped SQLAlchemy session (caller owns the transaction).
         job: The Job ORM object (must have company_id, helper_id, job_id set).
 
     Returns:
-        The CreditLedger row (new or existing), or None on unexpected failure.
+        The CreditLedger row (new or existing) in cloud mode, or None in runtime
+        mode / on unexpected failure.
     """
+    from omilo.control.local import LocalControlPlane
     from omilo.models.tenancy import Company
 
-    # ── Idempotency check ─────────────────────────────────────────────────────
+    engine_type = getattr(job, "engine_type", "fake") or "fake"
+    model = getattr(job, "model", None)  # may not be set on all paths
+    tokens_in = int(job.tokens_in or 0)
+    tokens_out = int(job.tokens_out or 0)
+
+    # ── Determine control plane mode ──────────────────────────────────────────
+    cp = get_control_plane()
+    is_runtime_mode = not isinstance(cp, LocalControlPlane)
+
+    # ── Compute provider cost (informational on pool path too) ────────────────
+    cost = provider_cost_usd(engine_type, model, tokens_in, tokens_out)
+    is_credit_consuming = engine_type in _CLOUD_ENGINE_TYPES
+    credits = int(math.ceil(cost * MARGIN * CREDITS_PER_USD)) if is_credit_consuming else 0
+
+    # ── RUNTIME MODE ──────────────────────────────────────────────────────────
+    if is_runtime_mode:
+        if is_credit_consuming and credits > 0:
+            # Delegate billing to the cloud control plane.
+            ev = UsageEvent(
+                company_id=job.company_id,
+                job_id=job.id,
+                engine_type=engine_type,
+                model=model,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                credits=credits,
+            )
+            try:
+                cp.report_usage(ev)
+            except ControlPlaneUnreachable as exc:
+                # RemoteControlPlane already enqueues to outbox; just log.
+                logger.warning(
+                    "meter_job: control plane unreachable for job_id=%s — "
+                    "usage queued to outbox: %s",
+                    job.id,
+                    exc,
+                )
+        # 0-credit job in runtime mode: no-op (no local ledger, no report_usage)
+        # Credit-consuming: cloud handles the ledger; we never write locally.
+        return None
+
+    # ── CLOUD MODE (LocalControlPlane) ────────────────────────────────────────
+    # Behavior is IDENTICAL to pre-T4 — unchanged for P4 test compat.
+
+    # Idempotency check
     existing = (
         db.query(CreditLedger)
         .filter_by(company_id=job.company_id, job_id=job.id, reason="job")
@@ -146,34 +205,25 @@ def meter_job(db: Session, job: "Job") -> CreditLedger | None:  # noqa: F821
     if existing is not None:
         return existing
 
-    # ── Load company (global table, visible in any session) ───────────────────
+    # Load company (global table, visible in any session)
     company = db.get(Company, job.company_id)
     if company is None:
         return None
 
-    engine_type = getattr(job, "engine_type", "fake") or "fake"
-    model = getattr(job, "model", None)  # may not be set on all paths
-    tokens_in = int(job.tokens_in or 0)
-    tokens_out = int(job.tokens_out or 0)
-
-    # ── Compute provider cost (informational on pool path too) ────────────────
-    cost = provider_cost_usd(engine_type, model, tokens_in, tokens_out)
-
-    # ── Determine billing path ────────────────────────────────────────────────
-    if engine_type in _CLOUD_ENGINE_TYPES:
-        # Cloud path: charge credits
-        credits = int(math.ceil(cost * MARGIN * CREDITS_PER_USD))
+    # Determine billing path
+    if is_credit_consuming:
+        # Cloud path: charge credits, decrement Company.credit_balance
         delta = -credits
         company.credit_balance = (company.credit_balance or 0) + delta
         db.flush()
     else:
-        # Pool / BYO path: metered, no charge
+        # Pool / BYO path: metered, no charge (analytics only)
         credits = 0
         delta = 0
 
     balance_after = company.credit_balance
 
-    # ── Append ledger row ─────────────────────────────────────────────────────
+    # Append ledger row
     entry = CreditLedger(
         id=prefixed_id("cl"),
         company_id=job.company_id,

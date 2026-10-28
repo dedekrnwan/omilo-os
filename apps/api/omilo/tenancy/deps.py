@@ -17,6 +17,7 @@ Two session planes
 
 Active-company resolution (get_context)
 -----------------------------------------
+**CLOUD mode** (LocalControlPlane):
 1. Default: JWT ``cmp`` claim.
 2. Override: ``X-Company-Id`` header — only if the user has a ``Member`` row
    there.  Lookup uses a privileged session (it crosses companies).  403 if
@@ -24,6 +25,14 @@ Active-company resolution (get_context)
 3. Role is derived from the ``Member`` row for the ACTIVE company (not from
    the JWT ``role`` claim).
 4. 403 if the user has no Member row in the active company.
+
+**RUNTIME mode** (not LocalControlPlane):
+  The local DB has no ``Member`` rows (cloud-authoritative).  Role and
+  company_id come directly from the verified JWT claims.  Member lookups are
+  skipped entirely.  ``X-Company-Id`` override is accepted if the claim
+  company_id matches (same-company override) — cross-company override is not
+  supported in runtime mode (403).  This is consistent with the JWT being
+  cryptographically bound to a single company.
 """
 from __future__ import annotations
 
@@ -32,7 +41,9 @@ from collections.abc import Generator
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from omilo.auth.deps import get_current_user
+from omilo.auth.deps import _RuntimeIdentity, get_current_user
+from omilo.control.factory import get_control_plane
+from omilo.control.local import LocalControlPlane
 from omilo.db import SessionLocal, get_db
 from omilo.models.tenancy import Member, User
 from omilo.tenancy.context import RequestContext
@@ -68,22 +79,46 @@ def get_bootstrap_db() -> Generator[Session, None, None]:
 # ---------------------------------------------------------------------------
 
 def get_context(
-    user: User = Depends(get_current_user),
+    user: User | _RuntimeIdentity = Depends(get_current_user),
     x_company_id: str | None = Header(default=None, alias="X-Company-Id"),
 ) -> RequestContext:
     """Resolve the active company and role for a request.
 
-    Active company:
-    - JWT ``cmp`` claim by default.
-    - Overridden by ``X-Company-Id`` header if the user is a Member there.
+    CLOUD mode (LocalControlPlane):
+    - Active company: JWT ``cmp`` claim by default; ``X-Company-Id`` header
+      override if the user has a Member row there.
+    - Role is fetched from the Member row (authoritative).
+    - 403 if no membership in the active company.
 
-    Role is fetched from the Member row for the ACTIVE company (not from JWT).
-    Returns ``RequestContext(user_id, company_id, role)``.
-    Raises 403 if no membership in the active company.
+    RUNTIME mode (not LocalControlPlane):
+    - Active company: JWT ``cmp`` claim.  ``X-Company-Id`` is allowed only if
+      it matches the JWT company_id (same-company; no cross-company switch in
+      runtime mode).
+    - Role comes directly from the verified JWT claims (no Member lookup).
+    - RLS is still enforced via app.company_id = company_id.
     """
     claims = user._jwt_claims  # type: ignore[attr-defined]
     jwt_company_id: str = claims.get("cmp", "")
+    jwt_role: str = claims.get("role", "member")
 
+    # Detect runtime mode: _RuntimeIdentity is only returned in runtime mode.
+    is_runtime = isinstance(user, _RuntimeIdentity)
+
+    if is_runtime:
+        # ── RUNTIME MODE — claims-only, no Member lookup ───────────────────
+        if x_company_id is not None and x_company_id != jwt_company_id:
+            # Cross-company header override is not supported in runtime mode —
+            # the JWT is bound to a single company; we cannot verify membership
+            # without local Member rows.
+            raise _403_no_membership
+        active_company_id = x_company_id if x_company_id is not None else jwt_company_id
+        return RequestContext(
+            user_id=user.id,
+            company_id=active_company_id,
+            role=jwt_role,
+        )
+
+    # ── CLOUD MODE — IDENTICAL to before ─────────────────────────────────
     if x_company_id is not None:
         # Header override: must verify membership with a privileged query.
         # This query intentionally runs without RLS (as omilo superuser)
