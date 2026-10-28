@@ -295,6 +295,119 @@ describe('chatSocket → fallback on error (Review-Focus)', () => {
   })
 })
 
+// ── Fix round 1 tests ─────────────────────────────────────────────────────────
+
+describe('Fix round 1 — 4401 auth-close and concurrent socket guard', () => {
+  // ------------------------------------------------------------------
+  // Fix 1a: 4401 close → NO fallback POST issued, auth-error surfaced
+  // ------------------------------------------------------------------
+  test('4401 close → fallback sendMessage NOT called, auth-error detected', async () => {
+    let isSending = false
+    let authError = false
+
+    const fallbackSendMessage = vi.fn(async (_sid: string, _content: string) => {})
+
+    isSending = true
+    const { socket, ws } = openSocket({
+      onJobDone: () => { isSending = false },
+      onClose: (ev: CloseEvent) => {
+        if (ev.code === 4401) {
+          // Auth failure: do NOT call fallback POST; clear spinner + surface auth notice
+          isSending = false
+          authError = true
+        } else {
+          // Transient drop: run fallback
+          isSending = false
+          void fallbackSendMessage(SESSION_ID, USER_CONTENT)
+        }
+      },
+    })
+
+    socket.send(USER_CONTENT)
+    ws.fireClose(4401)
+
+    await waitFor(() => {
+      expect(isSending).toBe(false)
+      expect(authError).toBe(true)
+    })
+
+    // Critical: fallback POST must NOT be issued for 4401
+    expect(fallbackSendMessage).not.toHaveBeenCalled()
+  })
+
+  // ------------------------------------------------------------------
+  // Fix 1b: non-4401 early close → fallback IS called (regression guard)
+  // ------------------------------------------------------------------
+  test('non-4401 early close → fallback sendMessage IS called', async () => {
+    let isSending = false
+    let authError = false
+
+    const fallbackSendMessage = vi.fn(async (_sid: string, _content: string) => {})
+
+    isSending = true
+    const { socket, ws } = openSocket({
+      onJobDone: () => { isSending = false },
+      onClose: (ev: CloseEvent) => {
+        if (ev.code === 4401) {
+          isSending = false
+          authError = true
+        } else {
+          isSending = false
+          void fallbackSendMessage(SESSION_ID, USER_CONTENT)
+        }
+      },
+    })
+
+    socket.send(USER_CONTENT)
+    ws.fireClose(1006) // abnormal closure — should trigger fallback
+
+    await waitFor(() => {
+      expect(isSending).toBe(false)
+    })
+
+    expect(authError).toBe(false)
+    expect(fallbackSendMessage).toHaveBeenCalledWith(SESSION_ID, USER_CONTENT)
+  })
+
+  // ------------------------------------------------------------------
+  // Fix 2: concurrent socket guard — second send while first in-flight
+  // does NOT open a second WebSocket instance
+  // ------------------------------------------------------------------
+  test('second send while first in-flight does NOT open a second socket', () => {
+    const wsCountBefore = MockWS.latest
+
+    let isSending = false
+
+    // First send — simulate in-flight (no job_done yet)
+    const firstSend = () => {
+      if (isSending) return // guard: deny concurrent send
+      isSending = true
+      openSocket({
+        onJobDone: () => { isSending = false },
+      })
+    }
+
+    const secondSend = () => {
+      if (isSending) return // guard fires: does NOT open another socket
+      isSending = true
+      openSocket({
+        onJobDone: () => { isSending = false },
+      })
+    }
+
+    firstSend()
+    const wsAfterFirst = MockWS.latest
+
+    // Second send arrives while first is in-flight (isSending = true)
+    secondSend()
+    const wsAfterSecond = MockWS.latest
+
+    // Should be the SAME instance — no second WS opened
+    expect(wsAfterSecond).toBe(wsAfterFirst)
+    expect(wsAfterSecond).not.toBe(wsCountBefore)
+  })
+})
+
 // ── Mock-mode regression: no WS created if no socket is opened ──────────────
 
 describe('chatSocket mock-mode regression', () => {

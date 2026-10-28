@@ -253,6 +253,8 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [streamedMessages, setStreamedMessages] = useState<Message[]>([])
   const [isSending, setIsSending] = useState(false)
   const [sendNotice, setSendNotice] = useState<string | null>(null)
+  // Active socket handle — guards against concurrent sockets (approach a: deny new send while in-flight)
+  const socketRef = useRef<{ close(): void } | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -288,6 +290,10 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const handleSend = useCallback((text: string) => {
     if (!isLiveMode || !commands) return
 
+    // Guard (a): if a send is already in-flight, deny the new send.
+    // The composer disables send during isSending; this enforces it at the logic layer too.
+    if (isSending) return
+
     setIsSending(true)
     setSendNotice(null)
     setStreamedMessages([])
@@ -300,6 +306,8 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       },
       onMessageSaved: (message) => {
         // Append every message_saved (assistant OR user echo) to the thread
+        // Defensive dedup: backend currently does not echo the user message, but
+        // guard here in case a future backend version sends a user message_saved.
         setStreamedMessages(prev => {
           const alreadyPresent = prev.some(m => m.id === message.id)
           return alreadyPresent ? prev : [...prev, message]
@@ -307,6 +315,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       },
       onJobDone: (_jobId) => {
         jobDone = true
+        socketRef.current = null
         setIsSending(false)
         // Invalidate to merge streamed messages with the server state
         void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
@@ -314,26 +323,38 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       },
       onJobFailed: (_jobId) => {
         jobDone = true
+        socketRef.current = null
         setIsSending(false)
         void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
         socket.close()
       },
       onError: (_ev) => {
         if (!jobDone) {
+          socketRef.current = null
           void runFallback(text)
           socket.close()
         }
       },
       onClose: (_ev) => {
-        // Socket closed before job_done — fall back to POST+refetch
+        // Socket closed before job_done — branch on close code.
         if (!jobDone) {
-          void runFallback(text)
+          socketRef.current = null
+          if (_ev.code === 4401) {
+            // Auth failure: the fallback POST would also 401.
+            // Clear spinner and surface a non-blocking auth error notice.
+            setIsSending(false)
+            setSendNotice('Session expired — please sign in again.')
+          } else {
+            // Transient drop: fall back to POST+refetch.
+            void runFallback(text)
+          }
         }
       },
     })
 
+    socketRef.current = socket
     socket.send(text)
-  }, [isLiveMode, commands, sessionId, getToken, baseUrl, queryClient, runFallback])
+  }, [isLiveMode, commands, isSending, sessionId, getToken, baseUrl, queryClient, runFallback])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)

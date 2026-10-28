@@ -199,7 +199,7 @@ describe('openChatSocket — frame dispatch order', () => {
   it('dispatches user message_saved (echo) the same way', () => {
     const savedMessages: Message[] = []
     openChatSocket(SESSION_ID, getToken, BASE_HTTP, {
-      onMessageSaved: (m) => savedMessages.push(m),
+      onMessageSaved: (m: Message) => savedMessages.push(m),
       onJobDone: () => {},
     })
     const ws = getWs()
@@ -260,7 +260,7 @@ describe('openChatSocket — message_saved DTO mapping', () => {
     const saved: Message[] = []
 
     openChatSocket(SESSION_ID, getToken, BASE_HTTP, {
-      onMessageSaved: (m) => saved.push(m),
+      onMessageSaved: (m: Message) => saved.push(m),
       onJobDone: () => {},
     })
 
