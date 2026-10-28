@@ -77,7 +77,15 @@ interface ProfileErrors {
   picRole?: string
 }
 
-export function StepProfile({ onNext }: { onNext: () => void }) {
+export interface ProfileData {
+  industry: string
+  teamSize: string
+  region: string
+  currency: string
+  picRole: string
+}
+
+export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; onProfileChange?: (data: ProfileData) => void }) {
   const [form, setForm] = useState<ProfileForm>({
     industry: '',
     teamSize: '',
@@ -113,13 +121,15 @@ export function StepProfile({ onNext }: { onNext: () => void }) {
     setSaving(true)
     try {
       const commands = createCommands(BASE_URL, getToken)
-      await commands.updateCompanyProfile({
+      const profileData: ProfileData = {
         industry: form.industry.trim(),
         teamSize: form.teamSize,
         region: form.region,
         currency: form.currency,
         picRole: form.picRole.trim(),
-      })
+      }
+      await commands.updateCompanyProfile(profileData)
+      onProfileChange?.(profileData)
       onNext()
     } finally {
       setSaving(false)
