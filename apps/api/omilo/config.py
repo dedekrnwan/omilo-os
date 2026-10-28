@@ -74,6 +74,20 @@ class Settings(BaseSettings):
     # "stripe", "xendit".
     omilo_payment_provider: str = "manual"
 
+    # ---------------------------------------------------------------------------
+    # Product analytics (PostHog) — P7
+    # ---------------------------------------------------------------------------
+    # POSTHOG_API_KEY: Server-side project key.  Leave empty to disable telemetry
+    #   in all modes (the safe default — no events leave the process).
+    # POSTHOG_HOST: PostHog ingest endpoint.  Defaults to PostHog Cloud US.
+    #   Override to https://eu.i.posthog.com (EU residency) or a self-hosted URL.
+    # TELEMETRY_ENABLED: Explicit override.  True → enable even in local mode
+    #   (requires POSTHOG_API_KEY).  False → always Noop.  None (default) → auto
+    #   by mode + key (local = Noop unless opted in; hybrid/cloud = on when key set).
+    posthog_api_key: str = ""
+    posthog_host: str = "https://us.i.posthog.com"
+    telemetry_enabled: bool | None = None
+
     # Doit (pay.doit.id) credentials
     doit_api_key: str | None = None
     doit_signing_secret: str | None = None

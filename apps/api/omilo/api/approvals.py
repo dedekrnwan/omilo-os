@@ -270,6 +270,18 @@ def approve_proposal(
         },
     })
 
+    # Emit telemetry: proposal decided (approved) — best-effort, never raises.
+    try:
+        from omilo.telemetry import PROPOSAL_DECIDED
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(
+            PROPOSAL_DECIDED,
+            company_id=proposal.company_id,
+            props={"decision": "approved", "risk": proposal.risk or "unknown"},
+        )
+    except Exception:
+        pass
+
     return {
         "proposal": _proposal_to_dict(proposal),
         "execution_job_id": exec_job.id,
@@ -321,6 +333,18 @@ def reject_proposal(
             "decision": "rejected",
         },
     })
+
+    # Emit telemetry: proposal decided (rejected) — best-effort, never raises.
+    try:
+        from omilo.telemetry import PROPOSAL_DECIDED
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(
+            PROPOSAL_DECIDED,
+            company_id=proposal.company_id,
+            props={"decision": "rejected", "risk": proposal.risk or "unknown"},
+        )
+    except Exception:
+        pass
 
     # Add a lesson for the helper so it learns from the rejection (best-effort)
     if proposal.helper_id and body.note:

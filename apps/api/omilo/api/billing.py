@@ -510,6 +510,18 @@ def change_plan(
 
     new_balance = get_balance(db, company)
 
+    # Emit telemetry: plan changed — best-effort, never raises.
+    try:
+        from omilo.telemetry import PLAN_CHANGED
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(
+            PLAN_CHANGED,
+            company_id=company.id,
+            props={"plan_id": plan.id},
+        )
+    except Exception:
+        pass
+
     return {
         "subscription": _subscription_dict(new_sub),
         "balance": new_balance,
@@ -627,6 +639,18 @@ def topup(
     db.flush()
 
     new_balance = get_balance(db, company)
+
+    # Emit telemetry: credit topup — best-effort, never raises.
+    try:
+        from omilo.telemetry import CREDIT_TOPUP
+        from omilo.telemetry.factory import get_telemetry
+        get_telemetry().capture(
+            CREDIT_TOPUP,
+            company_id=company.id,
+            props={"pack": pack_name},
+        )
+    except Exception:
+        pass
 
     return {
         "balance": new_balance,

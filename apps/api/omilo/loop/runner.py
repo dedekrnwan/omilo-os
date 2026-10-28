@@ -353,6 +353,7 @@ def run_job(
                 "data": {"job_id": job.id},
             })
             _meter_job_best_effort(db, job)
+            _emit_job_completed_telemetry(job)
 
         elif verdict == "needs_owner":
             # ── create Proposal + ProposalRevision + InboxItem(decision) ──────
@@ -454,6 +455,7 @@ def run_job(
                 "data": {"job_id": job.id, "error": job.error},
             })
             _meter_job_best_effort(db, job)
+            _emit_job_completed_telemetry(job)
             return job
 
     # ── f. No pending_action — write Report, mark done ────────────────────────
@@ -481,6 +483,7 @@ def run_job(
 
     # ── g. Meter the job (best-effort — never breaks a completed job) ─────────
     _meter_job_best_effort(db, job)
+    _emit_job_completed_telemetry(job)
 
     return job
 
@@ -638,6 +641,46 @@ def _create_paused_offline_inbox_item(
             job.id,
             exc,
         )  # alert creation must never break the gate path
+
+
+def _emit_job_completed_telemetry(job: Job) -> None:
+    """Emit job_completed telemetry event (best-effort, never raises)."""
+    try:
+        from datetime import timezone as _tz
+        from omilo.telemetry import (
+            JOB_COMPLETED,
+            duration_bucket as _duration_bucket,
+            token_bucket as _token_bucket,
+        )
+        from omilo.telemetry.factory import get_telemetry
+
+        # Build coarse buckets — never emit raw values
+        duration_s: float | None = None
+        if job.started_at and job.ended_at:
+            started = job.started_at
+            ended = job.ended_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=_tz.utc)
+            if ended.tzinfo is None:
+                ended = ended.replace(tzinfo=_tz.utc)
+            duration_s = (ended - started).total_seconds()
+
+        total_tokens = (job.tokens_in or 0) + (job.tokens_out or 0)
+
+        props = {
+            "type": job.origin or "unknown",
+            "engine_type": getattr(job, "engine_type", None) or "unknown",
+            "status": job.status or "unknown",
+            "duration_bucket": _duration_bucket(duration_s) if duration_s is not None else "unknown",
+            "token_bucket": _token_bucket(total_tokens),
+        }
+        get_telemetry().capture(
+            JOB_COMPLETED,
+            company_id=job.company_id,
+            props=props,
+        )
+    except Exception:
+        pass  # telemetry must NEVER break a completed job
 
 
 def _meter_job_best_effort(db: Session, job: Job) -> None:

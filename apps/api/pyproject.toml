@@ -23,6 +23,7 @@ dependencies = [
     "croniter>=2.0",
     "pgvector>=0.3",
     "pyyaml>=6.0",
+    "posthog>=3.0",
 ]
 
 [project.optional-dependencies]

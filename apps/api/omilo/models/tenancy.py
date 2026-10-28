@@ -42,6 +42,11 @@ class Company(IdMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(nullable=False, server_default="IDR")
     pic_role: Mapped[str | None] = mapped_column(nullable=True)
 
+    # P7 telemetry opt-out — per-company, off by default (False = opted in)
+    telemetry_opted_out: Mapped[bool] = mapped_column(
+        nullable=False, server_default="false"
+    )
+
 
 class User(IdMixin, TimestampMixin, Base):
     """Human login — global, no company_id, no RLS."""
