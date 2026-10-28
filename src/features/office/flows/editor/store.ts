@@ -1,16 +1,13 @@
 import { create } from 'zustand'
-import { OFFICE_FLOWS } from '../data'
-import { useFlowBoard } from '../boardStore'
+import type { Flow, FlowRun as DomainFlowRun } from '../../../../core/domain/types'
 import {
   AI_DETAIL,
   DEFAULT_SETTINGS,
   IF_H,
   NODE_H,
   NODE_W,
-  RUNS,
   TRIAGE_EDGES,
   TRIAGE_NODES,
-  runDetail,
 } from './data'
 import type { AiStepDetail, FlowEdge, FlowNode, FlowRun, FlowSettings, PaletteItem, RunStep } from './data'
 
@@ -49,23 +46,29 @@ export interface FlowEditorState {
   renamingId: string | null
 }
 
+/**
+ * Create initial editor state for a flow.
+ * For blank/new flows: empty canvas, no runs.
+ * For known flow IDs: demo graph (TRIAGE_NODES/EDGES) + empty runs until
+ * CanvasPage calls seed() and RunsPage calls seedRuns() with live data.
+ */
 function makeFlow(flowId: string): FlowEditorState {
   // A blank flow (from "Start blank") opens an empty canvas — no demo graph/runs.
   const blank = flowId.startsWith('blank')
-  const card = [...OFFICE_FLOWS, ...useFlowBoard.getState().copies].find((f) => f.id === flowId)
-  const settings = card ? { ...DEFAULT_SETTINGS, name: card.title } : { ...DEFAULT_SETTINGS, name: blank ? 'Untitled flow' : DEFAULT_SETTINGS.name }
+  const settings = { ...DEFAULT_SETTINGS, name: blank ? 'Untitled flow' : DEFAULT_SETTINGS.name }
   return {
     graph: blank ? { nodes: [], edges: [] } : { nodes: TRIAGE_NODES, edges: TRIAGE_EDGES },
     past: [],
     future: [],
     selected: blank ? null : 'read-logs',
     ai: blank ? {} : AI_DETAIL,
-    enabled: blank ? false : card?.enabled ?? true,
+    enabled: !blank,
     dirty: true,
     publishedAt: null,
     test: 'idle',
     testStep: 0,
-    runs: blank ? [] : RUNS.map((r) => ({ ...r, detail: structuredClone(runDetail(r)) })),
+    // Runs start empty; RunsPage seeds from useFlowRuns() via seedRuns()
+    runs: [],
     settings,
     savedSettings: settings,
     draft: 'draft',
@@ -112,6 +115,10 @@ export function stepFromPalette(item: PaletteItem, x: number, y: number): FlowNo
 
 interface Actions {
   get(flowId: string): FlowEditorState
+  /** Seed editor settings/enabled from a live Flow (called by CanvasPage on query resolve). */
+  seed(flowId: string, flow: Flow): void
+  /** Seed runs from live FlowRun[] (called by RunsPage on query resolve). */
+  seedRuns(flowId: string, apiRuns: DomainFlowRun[]): void
   select(flowId: string, id: string | null): void
   /** Commit a graph change (undoable). */
   edit(flowId: string, fn: (g: Graph) => Graph): void
@@ -172,9 +179,62 @@ export const useFlowStore = create<Store>()((set, get) => {
   const updateRun = (flowId: string, runId: string, fn: (r: RunState) => RunState) =>
     patch(flowId, (f) => ({ runs: f.runs.map((r) => (r.id === runId ? fn(r) : r)) }))
 
+  // ── Live data seeding helpers ────────────────────────────────────────────────
+
+  function normaliseStatus(s: string): FlowRun['status'] {
+    if (s === 'done' || s === 'succeeded') return 'succeeded'
+    if (s === 'waiting') return 'waiting'
+    if (s === 'failed') return 'failed'
+    return 'noop'
+  }
+
+  function apiRunToRunState(r: DomainFlowRun, i: number): RunState {
+    const number = i + 1
+    const status = normaliseStatus(r.status)
+    const when = r.startedAt ? new Date(r.startedAt).toLocaleDateString() : 'Unknown'
+    const durationSec = r.duration ?? 0
+    const costUsd = (r.costCredits * 0.001).toFixed(3)
+    const meta = durationSec > 0 ? `${durationSec}s · $${costUsd}` : `$${costUsd}`
+    const chipMap: Record<FlowRun['status'], string> = {
+      waiting: 'Waiting for you',
+      succeeded: 'Succeeded',
+      failed: 'Failed',
+      noop: 'No action needed',
+    }
+    return {
+      id: r.id,
+      number,
+      status,
+      when,
+      what: r.triggerSummary ?? '',
+      meta,
+      retry: status === 'failed',
+      detail: {
+        title: `Run #${number}`,
+        chip: chipMap[status],
+        sub: `${when} · ${r.triggerSummary ?? ''} · ${meta}`,
+        steps: [],
+      },
+    }
+  }
+
   return {
     flows: {},
     get: (flowId) => get().flows[flowId] ?? FALLBACK.get(flowId),
+
+    seed: (flowId, flow) => {
+      patch(flowId, (f) => ({
+        settings: { ...f.settings, name: flow.title },
+        savedSettings: { ...f.savedSettings, name: flow.title },
+        enabled: flow.enabled,
+      }))
+    },
+
+    seedRuns: (flowId, apiRuns) => {
+      const runs = apiRuns.map((r, i) => apiRunToRunState(r, i))
+      patch(flowId, () => ({ runs }))
+    },
+
     select: (flowId, id) => patch(flowId, () => ({ selected: id })),
     edit: (flowId, fn) => commit(flowId, fn),
     undo: (flowId) =>

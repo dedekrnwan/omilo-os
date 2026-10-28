@@ -10,6 +10,7 @@ import { Palette } from './Palette'
 import { useFlow, useFlowStore } from './store'
 import { TestRunPanel } from './TestRunPanel'
 import { stepMenu } from './stepMenu'
+import { useFlow as useFlowQuery } from '../../../../app/queries'
 
 /** `?state=test` opens the test-run sheet (used for visual checks and deep links). */
 function useTestFromUrl(flowId: string) {
@@ -26,6 +27,11 @@ function Editor({ flowId, draft }: { flowId: string; draft: boolean }) {
   const navigate = useNavigate()
   const f = useFlow(flowId)
   const s = useFlowStore()
+  const { data: liveFlow } = useFlowQuery(flowId)
+  useEffect(() => {
+    if (liveFlow) s.seed(flowId, liveFlow)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowId, liveFlow])
   useTestFromUrl(flowId)
 
   const runsPill = !draft && f.runs.length > 0 && (

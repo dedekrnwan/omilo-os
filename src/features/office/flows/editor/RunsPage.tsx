@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, CircleCheck, CircleSlash, Hash, Link, PanelRight, X, CircleDashed, CircleMinus, CircleX, Hourglass, Loader2, RotateCcw } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { RunStatus, RunStep } from './data'
@@ -8,6 +8,7 @@ import type { MenuEntries } from '../../../../ui/ds/ItemMenu'
 import { notify } from '../../../../ui/ds/Toaster'
 import { useFlow, useFlowStore } from './store'
 import type { RunState } from './store'
+import { useFlowRuns } from '../../../../app/queries'
 
 type Filter = 'all' | 'waiting' | 'failed'
 
@@ -184,6 +185,11 @@ export function FlowRunsPage() {
   const navigate = useNavigate()
   const f = useFlow(flowId)
   const s = useFlowStore()
+  const { data: apiRuns } = useFlowRuns(flowId)
+  useEffect(() => {
+    if (apiRuns) s.seedRuns(flowId, apiRuns)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowId, apiRuns])
   const [filter, setFilter] = useState<Filter>('all')
   const [selectedId, setSelectedId] = useState(f.runs[0]?.id)
   const runs = f.runs.filter((r) => (filter === 'all' ? true : r.status === filter))
@@ -246,7 +252,11 @@ export function FlowRunsPage() {
               ]}
             />
           ))}
-          {runs.length === 0 && <li className="px-[16px] py-[24px] text-[12.5px] text-muted">No {filter} runs this week.</li>}
+          {runs.length === 0 && (
+            <li className="px-[16px] py-[24px] text-[12.5px] text-muted">
+              {f.runs.length === 0 ? 'No runs yet' : `No ${filter} runs this week.`}
+            </li>
+          )}
         </ul>
       </section>
       {run ? (

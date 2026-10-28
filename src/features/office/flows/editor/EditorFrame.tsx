@@ -3,16 +3,15 @@ import { ArrowLeft, Check, Play, Power, Upload } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { AreaChip } from '../../../../ui/ds/AreaChip'
 import { useChannel } from '../../../../app/queries'
-import { OFFICE_FLOWS } from '../data'
+import { getCommands } from '../../../control-panel/sections/getCommands'
 import { useFlow, useFlowStore } from './store'
 
 export type EditorTab = 'canvas' | 'runs' | 'settings'
 
-/** Flow title for the editor crumb. */
+/** Flow title for the editor crumb — driven solely by the store's settings.name (seeded from live data). */
 export function useFlowTitle(flowId: string) {
   const f = useFlow(flowId)
-  const fallback = OFFICE_FLOWS.find((x) => x.id === flowId)?.title ?? 'Untitled flow'
-  return f.settings.name || fallback
+  return f.settings.name || 'Untitled flow'
 }
 
 /** pen 34px dark switch with "On" label. */
@@ -153,7 +152,7 @@ export function EditorFrame({
               <button
                 type="button"
                 disabled={!f.dirty}
-                onClick={() => publish(flowId)}
+                onClick={() => { void getCommands().publishFlow(flowId); publish(flowId) }}
                 className="inline-flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover disabled:bg-surface disabled:text-muted disabled:outline-1 disabled:-outline-offset-1 disabled:outline-line-strong"
               >
                 {f.dirty ? <Upload size={14} aria-hidden /> : <Check size={14} aria-hidden />}
