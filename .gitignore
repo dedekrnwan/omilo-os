@@ -8,3 +8,9 @@ src-tauri/gen/
 **/__pycache__/
 .venv/
 apps/api/.venv/
+
+# Secrets — never commit real env files (public repo). The *.example templates stay tracked.
+.env
+.env.*
+!.env.example
+!.env.*.example
