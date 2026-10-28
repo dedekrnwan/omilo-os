@@ -236,6 +236,9 @@ describe('switchCompany', () => {
     const headers = init?.headers as Record<string, string> | undefined
     expect(headers?.['Authorization']).toBe('Bearer old-token')
 
+    // Backend expects snake_case `company_id` (cf. SwitchCompanyRequest) — not camelCase.
+    expect(JSON.parse(init?.body as string)).toEqual({ company_id: 'cmp-2' })
+
     // New token stored
     expect(ts._token).toBe('tok-switched')
     expect(result.token).toBe('tok-switched')

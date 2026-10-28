@@ -262,7 +262,8 @@ export function createAuthAdapter(
       const res = await bearerFetch(`${baseUrl}/auth/switch-company`, getToken, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId }),
+        // Backend speaks snake_case for request bodies (cf. changePlan → {plan_id}).
+        body: JSON.stringify({ company_id: companyId }),
       })
       const raw: RawSignInResponse = await res.json()
       await tokenStorage.setToken(raw.session.access)
