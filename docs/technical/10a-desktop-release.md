@@ -264,8 +264,9 @@ patterns are silently dropped.
 
 ## 7. Updater plugin wiring (follow-up task)
 
-The `plugins.updater` block in `tauri.conf.json` is present and configured. To activate in-app
-auto-updates, wire the Rust plugin:
+The `plugins.updater` block is NOT yet in `tauri.conf.json` — it was intentionally omitted so
+`cargo check` stays green without the `tauri-plugin-updater` crate. To activate in-app
+auto-updates, add the config block alongside wiring the Rust plugin:
 
 1. Add to `src-tauri/Cargo.toml`:
    ```toml
