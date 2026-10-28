@@ -16,6 +16,7 @@ import { ModeLayout } from '../shell/ModeLayout'
 const OfficeLayout = () => <ModeLayout />
 import { OfficeGoalsRoute } from '../goals/GoalsRoute'
 import { InboxRoute } from './InboxRoute'
+import type { Repos } from '../../core/ports/repos'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,8 +26,8 @@ import { InboxRoute } from './InboxRoute'
  *   /office/inbox    → InboxRoute (content only)
  *   /office/goals    → OfficeGoalsRoute (content only)
  */
-function makeTestRouter(initialPath: string) {
-  useUIStore.setState({ mode: 'office' })
+function makeTestRouter(initialPath: string, repos: Repos = createMockRepos()) {
+  useUIStore.setState({ mode: 'office', areaId: null })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -34,7 +35,7 @@ function makeTestRouter(initialPath: string) {
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={queryClient}>
-        <ReposProvider repos={createMockRepos()}>
+        <ReposProvider repos={repos}>
           <Outlet />
         </ReposProvider>
       </QueryClientProvider>
@@ -109,28 +110,51 @@ describe('OfficeGoalsRoute — /office/goals', () => {
     })
   })
 
-  test('shows area group headings: Engineering, Marketing, Business', async () => {
+  // ── Live-data rendering (via mock repo) ─────────────────────────────────
+  // These tests prove the page renders LIVE-shaped goals from the mock repo,
+  // NOT the old hardcoded Engineering/Marketing/Business fixtures.
+
+  test('renders real channel names from mock repo (not hardcoded fixture labels)', async () => {
     const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      // Each area appears multiple times (sidebar, tab, heading) — just verify presence
+      // Mock repo channels: General, Engineering, Marketing, Business.
+      // These names come from fixtures.channels, not hardcoded strings in GoalsRoute.
+      // At least one area with goals must appear.
       expect(screen.getAllByText('Engineering').length).toBeGreaterThanOrEqual(1)
       expect(screen.getAllByText('Marketing').length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText('Business').length).toBeGreaterThanOrEqual(1)
     })
   })
 
-  test('shows goal titles from all areas', async () => {
+  test('renders goal titles from mock repo goals fixture', async () => {
     const { router } = makeTestRouter('/goals')
     await router.load()
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
+      // These goal titles come from fixtures.goals in the mock repo,
+      // NOT from hardcoded AREA_GROUPS constants in GoalsRoute.
       expect(screen.getByText(/Passwordless login by Q4/i)).toBeInTheDocument()
-      expect(screen.getByText(/Launch referral program/i)).toBeInTheDocument()
-      expect(screen.getByText(/Close 5 enterprise pilots/i)).toBeInTheDocument()
+    })
+  })
+
+  test('shows empty state when repo returns no goals', async () => {
+    // Build a custom mock repo with zero goals.
+    const emptyRepos: Repos = {
+      ...createMockRepos(),
+      goals: {
+        listAll: () => Promise.resolve([]),
+        listByChannel: () => Promise.resolve([]),
+      },
+    }
+    const { router } = makeTestRouter('/goals', emptyRepos)
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/No goals yet/i)).toBeInTheDocument()
     })
   })
 

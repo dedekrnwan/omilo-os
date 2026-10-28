@@ -14,9 +14,9 @@ import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { notify } from '../../ui/ds/Toaster'
-import { helperColor } from '../../ui/tokens'
-import type { HelperArea } from '../../core/domain/types'
-import { useArea } from '../../app/queries'
+import { accents } from '../../ui/ds/accents'
+import type { HelperArea, Channel, Goal } from '../../core/domain/types'
+import { useArea, useAreas, useGoals } from '../../app/queries'
 import { useUIStore } from '../../app/store'
 
 // ── Helper-picker popover ─────────────────────────────────────────────────────
@@ -66,43 +66,17 @@ function HelperPickerPopover({
   )
 }
 
-// ── Static data (matching qDPJo.png) ─────────────────────────────────────────
+// ── Live-shaped GoalRow ───────────────────────────────────────────────────────
+// NOTE (defaulted fields): The Goal domain type only has {id, channelId, title,
+// progress}. The following fields have no backend equivalent and are defaulted
+// locally until the backend adds them:
+//   • status  → always 'On track' (no status field on Goal)
+//   • tasks   → '' (no tasks field)
+//   • due     → '' (no due date field)
+//   • badge   → never shown (no "Needs you" signal)
+//   • subItems → [] (no sub-items from the API)
 
 type GoalStatus = 'On track' | 'At risk' | 'Blocked' | 'Needs you'
-
-interface OfficeGoalRow {
-  id: string
-  title: string
-  status: GoalStatus
-  /** 0-100 */
-  progress: number
-  tasks: string
-  due: string
-  ownerArea: HelperArea
-  ownerLabel: string
-  area: OfficeArea
-  /** Optional badge shown alongside status */
-  badge?: 'Needs you'
-  /** Sub-items for expanded view */
-  subItems?: OfficeSubItem[]
-}
-
-interface OfficeSubItem {
-  id: string
-  title: string
-  meta: string
-  statusLabel: string
-  statusKind: 'review' | 'slipping' | 'todo'
-  date: string
-}
-
-type OfficeArea = 'Engineering' | 'Marketing' | 'Business'
-
-interface AreaGroup {
-  area: OfficeArea
-  accentColor: string
-  goals: OfficeGoalRow[]
-}
 
 const RING_COLOR: Record<GoalStatus, string> = {
   'On track': 'var(--color-ok)',
@@ -110,125 +84,6 @@ const RING_COLOR: Record<GoalStatus, string> = {
   'Blocked':  'var(--color-bad)',
   'Needs you': '#EB6834',
 }
-
-const AREA_COLOR: Record<OfficeArea, string> = {
-  Engineering: helperColor.dev,
-  Marketing:   helperColor.marketing,
-  Business:    helperColor.sales,
-}
-
-const SUB_ITEM_STATUS: Record<'review' | 'slipping' | 'todo', { label: string; ink: string }> = {
-  review:   { label: 'In review',   ink: 'var(--color-info)' },
-  slipping: { label: 'Slipping 2d', ink: 'var(--color-warn)' },
-  todo:     { label: 'To do',       ink: 'var(--color-muted)' },
-}
-
-const AREA_GROUPS: AreaGroup[] = [
-  {
-    area: 'Engineering',
-    accentColor: AREA_COLOR.Engineering,
-    goals: [
-      {
-        id: 'g-passkeys',
-        title: 'Passwordless login by Q4',
-        status: 'On track',
-        progress: 40,
-        tasks: '3/8 tasks',
-        due: 'Nov 28',
-        ownerArea: 'brand',
-        ownerLabel: 'Chief',
-        area: 'Engineering',
-        badge: 'Needs you',
-        subItems: [
-          { id: 's1', title: 'Ship passkeys on web + iOS', meta: '', statusLabel: 'In review', statusKind: 'review', date: 'Nov 14' },
-          { id: 's2', title: 'Android password fallback flow', meta: '', statusLabel: 'Slipping 2d', statusKind: 'slipping', date: 'Nov 23' },
-          { id: 's3', title: 'Launch comms to all users', meta: '', statusLabel: 'To do', statusKind: 'todo', date: 'Nov 26' },
-          { id: 's4', title: 'Open goal session · Chief asked you something 2h ago', meta: '', statusLabel: '', statusKind: 'todo', date: '' },
-        ],
-      },
-      {
-        id: 'g-p95',
-        title: 'Cut p95 API latency to 250ms',
-        status: 'On track',
-        progress: 65,
-        tasks: '8/12 tasks',
-        due: 'Dec 12',
-        ownerArea: 'dev',
-        ownerLabel: 'Dev',
-        area: 'Engineering',
-      },
-      {
-        id: 'g-pg16',
-        title: 'Postgres 16 upgrade',
-        status: 'At risk',
-        progress: 20,
-        tasks: '2/10 tasks',
-        due: 'Nov 30',
-        ownerArea: 'dev',
-        ownerLabel: 'Dev',
-        area: 'Engineering',
-      },
-    ],
-  },
-  {
-    area: 'Marketing',
-    accentColor: AREA_COLOR.Marketing,
-    goals: [
-      {
-        id: 'g-referral',
-        title: 'Launch referral program',
-        status: 'At risk',
-        progress: 35,
-        tasks: '4/11 tasks',
-        due: 'Nov 20',
-        ownerArea: 'marketing',
-        ownerLabel: 'Growth',
-        area: 'Marketing',
-        badge: 'Needs you',
-      },
-      {
-        id: 'g-casestudies',
-        title: '3 case studies published',
-        status: 'On track',
-        progress: 66,
-        tasks: '2/3 tasks',
-        due: 'Dec 5',
-        ownerArea: 'marketing',
-        ownerLabel: 'Growth',
-        area: 'Marketing',
-      },
-    ],
-  },
-  {
-    area: 'Business',
-    accentColor: AREA_COLOR.Business,
-    goals: [
-      {
-        id: 'g-pilots',
-        title: 'Close 5 enterprise pilots',
-        status: 'Blocked',
-        progress: 0,
-        tasks: '1/5 tasks',
-        due: 'Dec 19',
-        ownerArea: 'sales',
-        ownerLabel: 'Sales',
-        area: 'Business',
-        badge: 'Needs you',
-      },
-      {
-        id: 'g-octbooks',
-        title: 'Close October books',
-        status: 'On track',
-        progress: 70,
-        tasks: '7/10 tasks',
-        due: 'Nov 7',
-        ownerArea: 'finance',
-        ownerLabel: 'Finance',
-        area: 'Business',
-      },
-    ],
-  },
-]
 
 // ── StatusRing ────────────────────────────────────────────────────────────────
 
@@ -256,115 +111,50 @@ function StatusRing({ value, status }: { value: number; status: GoalStatus }) {
   )
 }
 
-// ── NeedsYouBadge ─────────────────────────────────────────────────────────────
+// ── GoalRow (live-shaped) ─────────────────────────────────────────────────────
 
-function NeedsYouBadge() {
-  return (
-    <span className="inline-flex h-[20px] shrink-0 items-center rounded-pill px-[7px] text-[11px] font-semibold"
-      style={{ background: '#EB68341A', color: '#C2410C' }}>
-      Needs you
-    </span>
-  )
-}
-
-// ── SubItemRow ────────────────────────────────────────────────────────────────
-
-function SubItemRow({ item }: { item: OfficeSubItem }) {
-  const st = item.statusKind !== 'todo' || item.statusLabel
-    ? SUB_ITEM_STATUS[item.statusKind]
-    : null
-
-  return (
-    <div className="flex items-center gap-[10px] py-[5px] pr-[12px]">
-      <span className="size-[5px] shrink-0 rounded-full bg-faint" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{item.title}</span>
-      {st && item.statusLabel && (
-        <span className="text-[11.5px] shrink-0 whitespace-nowrap" style={{ color: st.ink }}>
-          {item.statusLabel}
-        </span>
-      )}
-      {item.date && (
-        <span className="text-[11.5px] text-faint shrink-0 whitespace-nowrap">{item.date}</span>
-      )}
-    </div>
-  )
-}
-
-// ── GoalRow ───────────────────────────────────────────────────────────────────
-
-function GoalRow({
-  goal,
-  expanded,
-  onToggle,
-}: {
-  goal: OfficeGoalRow
-  expanded: boolean
-  onToggle: () => void
-}) {
+function GoalRow({ goal }: { goal: Goal }) {
   const navigate = useNavigate()
+  // NOTE: status/tasks/due defaulted locally — no backend equivalent yet
+  const status: GoalStatus = 'On track'
   return (
     <div className="flex flex-col">
-      {/* Main row */}
       <div className="flex w-full items-center gap-[10px] py-[10px]">
-        {/* Left clickable: ring + title (+ Needs you) + inline status meta */}
         <button
           type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
+          aria-label={goal.title}
           className="flex min-w-0 flex-1 items-center gap-[12px] rounded-base px-[2px] py-0 text-left transition-colors hover:bg-soft"
         >
-          <StatusRing value={goal.progress} status={goal.status} />
+          <StatusRing value={goal.progress} status={status} />
           <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="flex min-w-0 items-center gap-[8px]">
-              <span className="truncate text-[13.5px] font-medium text-ink">{goal.title}</span>
-              {goal.badge && <NeedsYouBadge />}
-            </span>
+            <span className="truncate text-[13.5px] font-medium text-ink">{goal.title}</span>
             <span className="text-[11.5px] text-muted">
-              <span className="font-medium" style={{ color: RING_COLOR[goal.status] }}>{goal.status}</span>
-              {' · '}{goal.progress}% · {goal.tasks} · due {goal.due}
+              <span className="font-medium" style={{ color: RING_COLOR[status] }}>{status}</span>
+              {' · '}{goal.progress}%
             </span>
           </span>
         </button>
-
-        {/* Owner avatar + name */}
-        <span className="flex shrink-0 items-center gap-[6px]">
-          <Mascot size={18} radius={5} area={goal.ownerArea} title={goal.ownerLabel} />
-          <span className="text-[12px] text-ink-2">{goal.ownerLabel}</span>
-        </span>
 
         {/* Session action */}
         <Button variant="secondary" height={28} icon={MessageCircle} onClick={() => navigate({ to: '/chat' })}>
           Session
         </Button>
       </div>
-
-      {/* Expanded sub-items */}
-      {expanded && goal.subItems && goal.subItems.length > 0 && (
-        <div className="flex flex-col gap-px pb-[6px] pl-[56px]">
-          <div className="flex flex-col gap-px border-l border-line-strong pl-[12px]">
-            {goal.subItems.map((sub) => (
-              <SubItemRow key={sub.id} item={sub} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 // ── AreaGroupSection ──────────────────────────────────────────────────────────
 
-function AreaGroupSection({
-  group,
-  expandedId,
-  onToggle,
-}: {
-  group: AreaGroup
-  expandedId: string | null
-  onToggle: (id: string) => void
-}) {
+interface LiveAreaGroup {
+  channel: Channel
+  accentColor: string
+  goals: Goal[]
+}
+
+function AreaGroupSection({ group }: { group: LiveAreaGroup }) {
   return (
-    <section aria-label={group.area}>
+    <section aria-label={group.channel.name}>
       {/* Area heading row */}
       <div className="flex items-center gap-[6px] pb-[4px] pt-[16px]">
         <span
@@ -373,32 +163,25 @@ function AreaGroupSection({
           style={{ background: group.accentColor }}
         />
         <span className="text-[12.5px] font-semibold" style={{ color: group.accentColor }}>
-          {group.area}
+          {group.channel.name}
         </span>
         <span className="text-[12px] text-muted">{group.goals.length} goals</span>
       </div>
 
       <div className="flex flex-col divide-y divide-line">
         {group.goals.map((goal) => (
-          <GoalRow
-            key={goal.id}
-            goal={goal}
-            expanded={expandedId === goal.id}
-            onToggle={() => onToggle(goal.id)}
-          />
+          <GoalRow key={goal.id} goal={goal} />
         ))}
       </div>
     </section>
   )
 }
 
-const ALL_GOALS_COUNT = AREA_GROUPS.reduce((n, g) => n + g.goals.length, 0)
-
 // ── StatusFilter tabs ─────────────────────────────────────────────────────────
 
-type StatusFilter = 'All' | 'Needs you' | 'At risk' | 'Blocked' | 'On track'
+type StatusFilter = 'All' | 'On track'
 
-const STATUS_FILTERS: StatusFilter[] = ['All', 'Needs you', 'At risk', 'Blocked', 'On track']
+const STATUS_FILTERS: StatusFilter[] = ['All', 'On track']
 
 function StatusFilterTabs({
   active,
@@ -548,7 +331,7 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
                   <span
                     aria-hidden
                     className="size-[8px] shrink-0 rounded-full"
-                    style={{ background: AREA_COLOR.Engineering }}
+                    style={{ background: accents.dev.color }}
                   />
                   <select
                     id="goal-channel"
@@ -663,7 +446,7 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
   )
 }
 
-// ── OfficeGoalsPage ───────────────────────────────────────────────────────────
+// ── GoalsBoard (live-wired) ───────────────────────────────────────────────────
 
 /**
  * Shared Goals board for both modes. `areaId === null` → all areas, grouped
@@ -671,33 +454,47 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
  */
 function GoalsBoard({ areaId }: { areaId: string | null }) {
   const { data: area } = useArea(areaId ?? '')
-  const areaName = areaId ? area?.name ?? '' : null
-  const [expandedId, setExpandedId] = useState<string | null>(AREA_GROUPS[0].goals[0].id)
+  const { data: allAreas = [], isLoading: areasLoading, isError: areasError } = useAreas()
+  const { data: allGoals = [], isLoading: goalsLoading, isError: goalsError } = useGoals(areaId)
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // Scope to the selected area (matched by name), or all areas when null.
-  const scopedGroups = areaName ? AREA_GROUPS.filter((g) => g.area === areaName) : AREA_GROUPS
-  const allGoals = scopedGroups.flatMap((g) => g.goals)
-  const statusCounts: Record<StatusFilter, number> = {
-    All: allGoals.length,
-    'Needs you': allGoals.filter((g) => g.badge === 'Needs you').length,
-    'At risk': allGoals.filter((g) => g.status === 'At risk').length,
-    Blocked: allGoals.filter((g) => g.status === 'Blocked').length,
-    'On track': allGoals.filter((g) => g.status === 'On track').length,
-  }
+  const areaName = areaId ? area?.name ?? '' : null
+  const isLoading = areasLoading || goalsLoading
+  const isError = areasError || goalsError
 
-  const filteredGroups = scopedGroups
-    .map((g) => ({
-      ...g,
-      goals:
-        statusFilter === 'All'
-          ? g.goals
-          : statusFilter === 'Needs you'
-            ? g.goals.filter((goal) => goal.badge === 'Needs you')
-            : g.goals.filter((goal) => goal.status === statusFilter),
-    }))
-    .filter((g) => g.goals.length > 0)
+  // Build area groups: each Channel that has at least one goal in the current scope.
+  // When areaId is set, allAreas/allGoals are already scoped by the hook.
+  const liveGroups: LiveAreaGroup[] = (() => {
+    // Determine which channels to group by
+    const channelsToShow = areaId
+      ? allAreas.filter((ch) => ch.id === areaId)
+      : allAreas
+
+    return channelsToShow
+      .map((ch) => ({
+        channel: ch,
+        accentColor: accents[ch.accent]?.color ?? '#78716C',
+        goals: allGoals.filter((g) => g.channelId === ch.id),
+      }))
+      .filter((g) => g.goals.length > 0)
+  })()
+
+  // Status filter (simplified: only "All" / "On track" since status is defaulted)
+  // NOTE: When the backend adds a status field to Goal, this can be expanded.
+  const filteredGroups =
+    statusFilter === 'All'
+      ? liveGroups
+      : liveGroups
+          .map((g) => ({ ...g, goals: g.goals })) // all are 'On track' when defaulted
+          .filter((g) => g.goals.length > 0)
+
+  const totalGoals = allGoals.length
+  const counts: Record<StatusFilter, number> = {
+    All: totalGoals,
+    'On track': totalGoals, // all defaulted to On track
+  }
 
   return (
     <>
@@ -727,29 +524,41 @@ function GoalsBoard({ areaId }: { areaId: string | null }) {
           </h1>
           <p className="m-0 text-[13px] text-muted">
             {areaName
-              ? `${allGoals.length} goals this quarter. Open a goal to jump into its session, tasks and decisions.`
-              : `${ALL_GOALS_COUNT} goals this quarter across every area. Open a goal to jump into its session, tasks and decisions.`}
+              ? `${totalGoals} goals this quarter. Open a goal to jump into its session, tasks and decisions.`
+              : `${totalGoals} goals this quarter across every area. Open a goal to jump into its session, tasks and decisions.`}
           </p>
         </header>
 
-        {/* Filter bar — status only */}
+        {/* Filter bar */}
         <div className="mt-[14px] mb-[6px]">
-          <StatusFilterTabs active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+          <StatusFilterTabs active={statusFilter} onChange={setStatusFilter} counts={counts} />
         </div>
 
-        {/* Goal groups */}
-        {filteredGroups.length === 0 ? (
-          <p className="mt-[24px] text-[13px] text-muted">
-            {allGoals.length === 0 ? 'No goals in this area yet.' : 'No goals match the selected filter.'}
+        {/* States */}
+        {isError ? (
+          <p className="mt-[24px] text-[13px] text-bad" role="alert">
+            Failed to load goals. Please try again.
           </p>
+        ) : isLoading ? (
+          <p className="mt-[24px] text-[13px] text-muted">Loading…</p>
+        ) : filteredGroups.length === 0 ? (
+          <div className="mt-[40px] flex flex-col items-center gap-[8px] text-center">
+            <Target size={32} className="text-faint" aria-hidden />
+            <p className="m-0 text-[14px] font-medium text-ink-2">No goals yet</p>
+            <p className="m-0 text-[12.5px] text-muted">
+              {totalGoals === 0
+                ? 'Create your first goal to start tracking what the team is pushing on.'
+                : 'No goals match the selected filter.'}
+            </p>
+            {totalGoals === 0 && (
+              <Button icon={Plus} height={30} onClick={() => setDialogOpen(true)} className="mt-[4px]">
+                New goal
+              </Button>
+            )}
+          </div>
         ) : (
           filteredGroups.map((group) => (
-            <AreaGroupSection
-              key={group.area}
-              group={group}
-              expandedId={expandedId}
-              onToggle={(id) => setExpandedId((prev) => (prev === id ? null : id))}
-            />
+            <AreaGroupSection key={group.channel.id} group={group} />
           ))
         )}
       </div>
