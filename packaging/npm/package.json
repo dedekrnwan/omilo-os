@@ -1,0 +1,9 @@
+{
+  "name": "@omilo/cli",
+  "version": "0.0.0",
+  "description": "Omilo CLI — run your local Omilo runtime against the Omilo cloud control plane.",
+  "bin": { "omilo": "bin/omilo.js" },
+  "files": ["bin/omilo.js", "deploy"],
+  "engines": { "node": ">=18" },
+  "license": "SEE LICENSE IN LICENSE"
+}

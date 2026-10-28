@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend: Python / FastAPI / Alembic / pytest
+  # ---------------------------------------------------------------------------
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: omilo
+          POSTGRES_USER: omilo
+          POSTGRES_PASSWORD: omilo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omilo -d omilo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      # conftest.py session fixture calls run_alembic("upgrade","head") automatically;
+      # pytest will migrate then run all tests against the pgvector service.
+      - name: Run tests
+        run: pytest -q
+        env:
+          DATABASE_URL: postgresql+psycopg://omilo:omilo@localhost:5432/omilo
+
+  # ---------------------------------------------------------------------------
+  # Frontend: Node / oxlint / TypeScript / Vitest / Vite build
+  # ---------------------------------------------------------------------------
+  web:
+    name: web
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      - name: Type-check (tsc)
+        run: npx tsc -b
+
+      - name: Unit tests (vitest)
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Rust: Tauri 2 desktop shell — fmt check + cargo check
+  # ---------------------------------------------------------------------------
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri 2 Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check formatting
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+  # ---------------------------------------------------------------------------
+  # Image: build + push to GHCR (main branch only)
+  # ---------------------------------------------------------------------------
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.api
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/omilo-v2-api:latest
