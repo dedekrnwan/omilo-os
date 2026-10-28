@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     pieces_source: str = _DEFAULT_PIECES_SOURCE
 
     # ---------------------------------------------------------------------------
+    # Asymmetric JWT signing (RS256) — optional; HS256 used when not set
+    # ---------------------------------------------------------------------------
+    # OMILO_JWT_PRIVATE_KEY: RSA private key in PEM format (PKCS8).  When set,
+    #   make_access_token() signs with RS256 and get_jwks() returns the public JWK.
+    # OMILO_JWT_PUBLIC_KEY:  Corresponding RSA public key PEM.  If omitted when
+    #   a private key is configured, the public key is derived from the private key.
+    omilo_jwt_private_key: str | None = None
+    omilo_jwt_public_key: str | None = None
+
+    # ---------------------------------------------------------------------------
     # Run mode (P6 control-plane / runtime split)
     # ---------------------------------------------------------------------------
     # OMILO_MODE=cloud   — control plane mode (default).  Auth + billing resolve

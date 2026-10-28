@@ -1,11 +1,18 @@
 """JWT token creation and decoding.
 
 JWT claims: sub=user_id, cmp=company_id, role, exp.
-Algorithm: HS256 with Settings.jwt_secret.
-TTL: Settings.jwt_access_ttl_s.
+
+Default algorithm: HS256 with Settings.jwt_secret (existing behavior preserved).
+RS256 (optional): when OMILO_JWT_PRIVATE_KEY is set in config, encode() signs RS256
+and decode_token() tries RS256 first, then falls back to HS256.
+
+JWKS: get_jwks() returns the RS256 public key as a JWKS dict when configured,
+else {"keys": []}.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -14,8 +21,34 @@ from jwt.exceptions import PyJWTError
 from omilo.config import get_settings
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _kid_from_public_pem(public_pem: str) -> str:
+    """Derive a stable key-id from the SHA-256 of the public PEM bytes."""
+    digest = hashlib.sha256(public_pem.encode()).hexdigest()
+    return digest[:16]
+
+
+def _b64url_uint(n: int) -> str:
+    """Encode a big integer as base64url (for JWK n/e fields)."""
+    byte_length = (n.bit_length() + 7) // 8
+    raw = n.to_bytes(byte_length, "big")
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
 def make_access_token(user_id: str, company_id: str, role: str) -> tuple[str, datetime]:
     """Sign and return (token, expires_at) for the given user/company/role.
+
+    When OMILO_JWT_PRIVATE_KEY is configured → signs with RS256 (kid header set).
+    Otherwise → HS256 with jwt_secret (default, existing behavior unchanged).
 
     Args:
         user_id:    The user's id (sub claim).
@@ -35,15 +68,101 @@ def make_access_token(user_id: str, company_id: str, role: str) -> tuple[str, da
         "exp": expires_at,
         "iat": now,
     }
-    token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+    private_key_pem: str | None = getattr(settings, "omilo_jwt_private_key", None)
+    public_key_pem: str | None = getattr(settings, "omilo_jwt_public_key", None)
+
+    if private_key_pem:
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        private_key = load_pem_private_key(private_key_pem.encode(), password=None)
+        kid = _kid_from_public_pem(public_key_pem or private_key_pem)
+        token = jwt.encode(
+            payload,
+            private_key,  # type: ignore[arg-type]
+            algorithm="RS256",
+            headers={"kid": kid},
+        )
+    else:
+        token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
     return token, expires_at
 
 
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT access token.
 
+    If OMILO_JWT_PUBLIC_KEY is configured: try RS256 first, then fall back to
+    HS256 so both algorithms work during migration.  When no RS key is configured:
+    HS256 only (original behavior).
+
     Returns the decoded claims dict.
     Raises jwt.PyJWTError (including ExpiredSignatureError) on any failure.
     """
     settings = get_settings()
-    return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    public_key_pem: str | None = getattr(settings, "omilo_jwt_public_key", None)
+
+    if public_key_pem:
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+        public_key = load_pem_public_key(public_key_pem.encode())
+        try:
+            return jwt.decode(token, public_key, algorithms=["RS256"])  # type: ignore[arg-type]
+        except PyJWTError:
+            # Fall back to HS256 during migration
+            return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+    else:
+        return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+
+
+def get_jwks() -> dict:
+    """Return the RS256 public key as a JWKS dict, or {"keys": []} if not configured.
+
+    The returned structure is a JSON Web Key Set (JWKS) compatible with the
+    standard RFC 7517 format.  Usable by remote clients to verify JWTs offline.
+
+    Returns:
+        {"keys": [{kty, n, e, kid, alg, use}]} or {"keys": []} if no RS key set.
+    """
+    settings = get_settings()
+    public_key_pem: str | None = getattr(settings, "omilo_jwt_public_key", None)
+    private_key_pem: str | None = getattr(settings, "omilo_jwt_private_key", None)
+
+    # Try public key first, then derive from private
+    pem_to_use = public_key_pem
+    if not pem_to_use and private_key_pem:
+        # Derive public key from private
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key,
+            Encoding,
+            PublicFormat,
+        )
+        priv = load_pem_private_key(private_key_pem.encode(), password=None)
+        pem_to_use = priv.public_key().public_bytes(
+            encoding=Encoding.PEM,
+            format=PublicFormat.SubjectPublicKeyInfo,
+        ).decode()
+
+    if not pem_to_use:
+        return {"keys": []}
+
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
+    public_key = load_pem_public_key(pem_to_use.encode())
+    if not isinstance(public_key, RSAPublicKey):
+        return {"keys": []}
+
+    pub_numbers = public_key.public_key().public_numbers() if hasattr(public_key, "public_key") else public_key.public_numbers()
+    kid = _kid_from_public_pem(pem_to_use)
+
+    return {
+        "keys": [
+            {
+                "kty": "RSA",
+                "alg": "RS256",
+                "use": "sig",
+                "kid": kid,
+                "n": _b64url_uint(pub_numbers.n),
+                "e": _b64url_uint(pub_numbers.e),
+            }
+        ]
+    }

@@ -34,6 +34,8 @@ from omilo.realtime.ws import router as ws_router
 
 
 def create_app() -> FastAPI:
+    from omilo.config import get_settings
+
     app = FastAPI(title="Omilo API", version="0.1.0")
 
     app.include_router(health_router, prefix="/v1")
@@ -86,6 +88,12 @@ def create_app() -> FastAPI:
     app.include_router(sse_router, prefix="/v1")
     # Doit payment gateway webhooks (Task 3 P5a)
     app.include_router(webhooks_router, prefix="/v1")
+
+    # /control/* federation endpoints — cloud mode only (P6 Task 2)
+    settings = get_settings()
+    if settings.omilo_mode != "runtime":
+        from omilo.api.control import router as control_router
+        app.include_router(control_router)
 
     return app
 
