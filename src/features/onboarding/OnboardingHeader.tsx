@@ -3,16 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import { QuietButton } from './parts'
 import { useSession } from '../../app/session'
+import { NUMBERED_STEPS as STEPS, stepPosition } from './steps'
+import type { OnboardingStep } from './steps'
 
-export type OnboardingStep = 'welcome' | 'your-ai' | 'know-you' | 'profile' | 'check' | 'team' | 'inbox'
-
-const STEPS: { id: OnboardingStep; label: string }[] = [
-  { id: 'your-ai', label: 'Your AI' },
-  { id: 'know-you', label: 'Get to know you' },
-  { id: 'profile', label: 'Your company' },
-  { id: 'check', label: 'Check' },
-  { id: 'team', label: 'Your team' },
-]
+export type { OnboardingStep }
 
 /** pen onboarding Stepper: done = brand dot + check, active = primary dot, todo = outlined. */
 function StepIndicator({ current }: { current: OnboardingStep }) {
@@ -65,7 +59,7 @@ export function OnboardingHeader({ step }: { step: OnboardingStep }) {
   const showSteps = step !== 'welcome' && step !== 'inbox'
   const navigate = useNavigate()
   const companyName = useSession((s) => s.company?.name ?? 'your workspace')
-  const stepIdx = STEPS.findIndex((s) => s.id === step)
+  const pos = stepPosition(step)
   return (
     <header className="flex h-[60px] w-full shrink-0 items-center gap-[10px] px-[16px] sm:px-[24px]">
       <Mascot size={26} radius={7} prop="spark" title="Omilo" />
@@ -78,9 +72,9 @@ export function OnboardingHeader({ step }: { step: OnboardingStep }) {
             <div className="hidden lg:block">
               <StepIndicator current={step} />
             </div>
-            {stepIdx >= 0 && (
+            {pos && (
               <span className="text-[12px] font-medium text-muted lg:hidden">
-                Step {stepIdx + 1} of {STEPS.length}
+                Step {pos.n} of {pos.total}
               </span>
             )}
           </>

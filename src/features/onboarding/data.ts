@@ -146,26 +146,23 @@ export interface LearnedNote {
   text?: string
 }
 
+// Fresh workspace: nothing has been captured yet. The seven topics start as a
+// checklist Chief will fill in from your answers — no pre-filled demo content.
 export const LEARNED: LearnedNote[] = [
-  { id: 'company', state: 'done', text: 'Community app for RT/RW neighbourhoods in Jabodetabek. 2 founders, 3 developers.' },
-  { id: 'customers', state: 'done', text: 'RT heads and residents. Each neighbourhood pays monthly.' },
-  { id: 'goals', state: 'writing', text: '100 paying neighbourhoods by December · fewer support chats' },
-  { id: 'offer', state: 'next', text: 'Next: what you sell and for how much' },
+  { id: 'company', state: 'next' },
+  { id: 'customers', state: 'todo' },
+  { id: 'goals', state: 'todo' },
+  { id: 'offer', state: 'todo' },
   { id: 'rules', state: 'todo' },
   { id: 'systems', state: 'todo' },
   { id: 'voice', state: 'todo' },
 ]
 
 export const INTERVIEW = {
-  covered: 'Company and Customers covered · 9 answers',
-  q1: 'What would make the next 3 months a win for Sahabat Warga?',
-  ideas1: ['100 paying neighbourhoods', 'Launch the WhatsApp sign-up', 'Fewer support chats'],
-  hint1: 'Not sure? Pick one to start, or say “give me ideas”.',
-  answer:
-    '100 paying neighbourhoods using the app by December. And I want fewer manual support chats, they eat my whole day.',
-  q2: 'Got it, two goals. How do you count a “paying neighbourhood” today?',
-  ideas2: ['An RT that paid this month', 'Any RT with an active admin', "I don't track it yet"],
-  saved: 'Saved to Goals: 100 paying neighbourhoods by Dec · fewer support chats',
+  // {company} is replaced with the real workspace name at render time.
+  q1: 'What would make the next 3 months a win for {company}?',
+  ideas1: ['More paying customers', 'Ship a key launch', 'Less manual work'],
+  hint1: 'Not sure? Pick one to start, or tell me in your own words.',
 }
 
 // ── Step 4 · Check ───────────────────────────────────────────────────────────

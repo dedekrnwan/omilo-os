@@ -15,10 +15,9 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight, KeyRound, Loader } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Mascot } from '../../ui/ds/Mascot'
 import { AI_MODES } from './data'
 import type { AIMode, AIOption } from './data'
-import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, WizardCard } from './parts'
+import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, StepEyebrow, WizardCard } from './parts'
 import { capture } from '../../telemetry'
 import { useAiAccounts } from '../../app/queries'
 import { createCommands } from '../../adapters/http/commands'
@@ -427,10 +426,7 @@ export function StepYourAI({
   return (
     <WizardCard>
       <div className="flex min-w-0 flex-1 flex-col gap-[16px] px-[24px] py-[28px] sm:px-[48px] sm:py-[44px] lg:min-h-0 lg:overflow-y-auto">
-        <div className="flex items-center gap-[10px]">
-          <Mascot helper area="brand" size={24} radius={7} title="Chief of Staff" />
-          <span className="text-[12px] text-muted">Step 1 of 4</span>
-        </div>
+        <StepEyebrow step="your-ai" />
         <h1 className="font-display text-[24px] font-semibold tracking-[-0.5px] text-ink sm:text-[30px]">
           {copy.title}
         </h1>

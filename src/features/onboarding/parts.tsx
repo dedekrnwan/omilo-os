@@ -6,6 +6,24 @@
  */
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { Mascot } from '../../ui/ds/Mascot'
+import { stepPosition } from './steps'
+import type { OnboardingStep } from './steps'
+
+/**
+ * Chief mascot + a dynamic "Step N of M" label, derived from the single
+ * NUMBERED_STEPS source so the per-step counter can never drift from the header.
+ * Renders just the mascot for non-numbered steps (welcome/inbox).
+ */
+export function StepEyebrow({ step }: { step: OnboardingStep }) {
+  const pos = stepPosition(step)
+  return (
+    <div className="flex items-center gap-[10px]">
+      <Mascot helper area="brand" size={24} radius={7} title="Chief of Staff" />
+      {pos && <span className="text-[12px] text-muted">Step {pos.n} of {pos.total}</span>}
+    </div>
+  )
+}
 
 export function PrimaryButton({
   icon: Icon,

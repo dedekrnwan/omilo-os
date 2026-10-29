@@ -1,21 +1,11 @@
 /** Onboarding 3 · Get to know you (pen sG2L3). */
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import {
-  ArrowUp,
-  BookmarkCheck,
-  Check,
-  CircleCheck,
-  Globe,
-  Mic,
-  Paperclip,
-  Pause,
-  Pencil,
-  SkipForward,
-  Sparkles,
-} from 'lucide-react'
+import { CircleCheck, Globe, Paperclip, Pause, Pencil, SkipForward, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { IconButton } from '../../ui/ds/Button'
+import { Composer } from '../../ui/ChatSession/Composer'
+import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { INTERVIEW, KNOWLEDGE_NOTES, LEARNED } from './data'
 import { Pill, QuietButton, Stroke } from './parts'
 import { useSession } from '../../app/session'
@@ -101,7 +91,7 @@ function LearnedPanel({
             <Globe size={13} aria-hidden className="shrink-0 text-muted" />
             <input
               aria-label="Website"
-              placeholder="sahabatwarga.id"
+              placeholder="yourcompany.com"
               value={website}
               onChange={(e) => onWebsiteChange(e.target.value)}
               className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-faint"
@@ -117,42 +107,47 @@ function LearnedPanel({
 
 export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  const [draft, setDraft] = useState('')
+  const [answers, setAnswers] = useState<string[]>([])
   const [website, setWebsite] = useState('')
+  const [model, setModel] = useState(DEFAULT_MODEL)
   const updateSettings = useUpdateCompanySettings()
   const navigate = useNavigate()
 
-  // Persist the interview answer + website into company settings so the knowledge
-  // the owner typed survives the step instead of being discarded on submit.
-  const submitAnswer = () => {
-    const answer = draft.trim()
-    const site = website.trim()
-    if (!answer && !site) return
+  // Append the answer to the thread and persist the running set into the
+  // company's "about" knowledge note. Nothing is pre-filled — a fresh workspace
+  // starts empty and fills only from what the owner actually types.
+  const handleSend = (text: string) => {
+    const answer = text.trim()
+    if (!answer) return
+    const next = [...answers, answer]
+    setAnswers(next)
     if (!isMockMode()) {
       updateSettings.mutate({
-        about: answer || undefined,
-        ...(site ? { website: site } : {}),
+        about: next.join('\n\n'),
+        ...(website.trim() ? { website: website.trim() } : {}),
       })
     }
     notify('Saved to your company knowledge')
-    setDraft('')
   }
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[16px] pt-[8px] pb-[16px] sm:px-[24px] sm:pb-[24px] lg:flex-row lg:overflow-hidden">
       <section aria-label="Interview" className="relative flex min-h-[460px] min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface lg:h-full lg:min-h-0">
         <div className="flex w-full items-center gap-[12px] px-[24px] py-[14px]" style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}>
-          <h2 className="text-[14px] font-semibold text-ink">Topic 3 of 7 · Goals</h2>
+          <h2 className="text-[14px] font-semibold text-ink">Getting to know you</h2>
           <span
             role="progressbar"
-            aria-valuenow={3}
+            aria-valuenow={answers.length}
             aria-valuemin={0}
             aria-valuemax={7}
-            className="relative h-[6px] w-[180px] overflow-hidden rounded-[3px] bg-soft"
+            className="relative hidden h-[6px] w-[160px] overflow-hidden rounded-[3px] bg-soft sm:block"
           >
-            <span className="absolute inset-y-0 left-0 w-[64px] rounded-[3px] bg-helper-brand" />
+            <span
+              className="absolute inset-y-0 left-0 rounded-[3px] bg-helper-brand transition-[width]"
+              style={{ width: `${Math.min(answers.length / 7, 1) * 100}%` }}
+            />
             <Stroke color="var(--color-line)" />
           </span>
-          <span className="text-[12px] text-muted">~6 min left</span>
+          <span className="text-[12px] text-muted">{answers.length} of 7</span>
           <span className="h-px flex-1" />
           <QuietButton icon={SkipForward} onClick={onNext}>
             Skip this topic
@@ -161,63 +156,29 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
         </div>
 
         <div className="flex min-h-0 w-full flex-1 flex-col justify-end gap-[16px] px-[20px] py-[16px] sm:px-[48px] sm:py-[20px]">
-          <div className="flex w-full items-center gap-[10px]">
-            <span className="h-px flex-1 bg-line" />
-            <span className="relative flex items-center gap-[6px] rounded-pill bg-soft px-[10px] py-[4px]">
-              <Check size={12} aria-hidden className="text-muted" />
-              <span className="text-[12px] font-medium text-muted">{INTERVIEW.covered}</span>
-              <Stroke color="var(--color-line)" />
-            </span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-          <ChiefSays text={INTERVIEW.q1.replace('Sahabat Warga', companyName)} ideas={INTERVIEW.ideas1}>
+          <ChiefSays text={INTERVIEW.q1.replace('{company}', companyName)} ideas={INTERVIEW.ideas1}>
             <p className="text-[12px] text-muted">{INTERVIEW.hint1}</p>
           </ChiefSays>
-          <div className="flex w-full justify-end">
-            <div className="relative max-w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
-              <p className="w-full text-[14px] leading-[1.55] text-ink">{INTERVIEW.answer}</p>
-              <Stroke color="var(--color-line)" />
+          {answers.map((a, i) => (
+            <div key={i} className="flex w-full justify-end">
+              <div className="relative max-w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
+                <p className="w-full text-[14px] leading-[1.55] text-ink">{a}</p>
+                <Stroke color="var(--color-line)" />
+              </div>
             </div>
-          </div>
-          <ChiefSays text={INTERVIEW.q2} ideas={INTERVIEW.ideas2}>
-            <p className="flex items-center gap-[6px] pt-[2px] text-[12px] text-helper-brand">
-              <BookmarkCheck size={13} aria-hidden />
-              {INTERVIEW.saved}
-            </p>
-          </ChiefSays>
+          ))}
         </div>
 
         <div className="w-full px-[20px] pb-[16px] sm:px-[48px] sm:pb-[20px]">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              submitAnswer()
-            }}
-            className="relative flex w-full items-center gap-[12px] rounded-lg py-[10px] pr-[10px] pl-[16px]"
-            style={{ boxShadow: 'inset 0 0 0 1px var(--color-line-strong), 0 2px 8px #0C0A090D' }}
-          >
-            <input
-              aria-label="Your answer"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Type your answer, or hold space to talk…"
-              className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-faint"
-            />
-            <button
-              type="button"
-              aria-label="Talk"
-              className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-soft outline-1 -outline-offset-1 outline-line-strong"
-            >
-              <Mic size={16} aria-hidden className="text-ink" />
-            </button>
-            <button
-              type="submit"
-              aria-label="Send"
-              className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-primary"
-            >
-              <ArrowUp size={16} aria-hidden className="text-primary-ink" />
-            </button>
-          </form>
+          {/* Reuse the real chat Composer (compact) instead of a bespoke input. */}
+          <Composer
+            sessionId="onboarding-interview"
+            selectedModel={model}
+            onModelChange={setModel}
+            onSend={handleSend}
+            compact
+            placeholder="Type your answer…"
+          />
         </div>
         <Stroke />
       </section>
