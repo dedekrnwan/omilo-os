@@ -3,13 +3,15 @@
  * Shows account pool with name, harness, status, pctWindow, lastUsed.
  * Empty state when no accounts. Error state when query rejects.
  */
+import { useState } from 'react'
 import { KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 import { HARNESS_BY_ID } from '../harnesses'
 import type { HarnessId } from '../harnesses'
-import { useAiAccounts } from '../../../app/queries'
+import { useAiAccounts, useCheckAiAccounts, useTestAiAccount } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 const GRID = 'grid-cols-[168px_1fr_96px_176px_80px_auto]'
 
@@ -43,6 +45,30 @@ function formatLastUsed(iso: string | null | undefined): string {
 
 export function SectionAiAccounts({ onDialog }: Props) {
   const { data: accounts, isError, isLoading } = useAiAccounts()
+  const checkAccounts = useCheckAiAccounts()
+  const testAccount = useTestAiAccount()
+  const [testingId, setTestingId] = useState<string | null>(null)
+
+  async function handleCheck() {
+    try {
+      await checkAccounts.mutateAsync()
+      notify('Connection check complete')
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Connection check failed')
+    }
+  }
+
+  async function handleTest(id: string) {
+    setTestingId(id)
+    try {
+      await testAccount.mutateAsync(id)
+      notify('Account tested')
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Account test failed')
+    } finally {
+      setTestingId(null)
+    }
+  }
 
   const isEmpty = !isLoading && !isError && accounts && accounts.length === 0
 
@@ -56,7 +82,9 @@ export function SectionAiAccounts({ onDialog }: Props) {
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
         <Breadcrumb section="AI accounts" />
         <div className="ml-auto">
-          <Button variant="secondary" height={28} icon={RefreshCw}>Run connection check</Button>
+          <Button variant="secondary" height={28} icon={RefreshCw} disabled={checkAccounts.isPending} onClick={() => void handleCheck()}>
+            {checkAccounts.isPending ? 'Checking…' : 'Run connection check'}
+          </Button>
         </div>
       </div>
 
@@ -164,7 +192,9 @@ export function SectionAiAccounts({ onDialog }: Props) {
                     <span className="text-[12px] text-muted">{formatLastUsed(a.lastUsed)}</span>
                     {/* Actions */}
                     <div className="flex items-center justify-end gap-[4px]">
-                      <Button variant="secondary" height={28}>Test</Button>
+                      <Button variant="secondary" height={28} disabled={testingId === a.id} onClick={() => void handleTest(a.id)}>
+                        {testingId === a.id ? 'Testing…' : 'Test'}
+                      </Button>
                     </div>
                   </div>
                 )

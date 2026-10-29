@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { Button } from '../../../ui/ds/Button'
 import { Modal } from '../legacyShared'
 import { capture } from '../../../telemetry'
+import { useChangePlan } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 interface Props {
   onClose: () => void
@@ -38,6 +41,29 @@ const PLANS = [
 ]
 
 export function DialogChangePlan({ onClose }: Props) {
+  const [yearly, setYearly] = useState(false)
+  const changePlan = useChangePlan()
+
+  async function handleChange(planId: string) {
+    try {
+      capture('plan_changed', { plan: planId })
+      const result = await changePlan.mutateAsync({ planId, interval: yearly ? 'yearly' : 'monthly' })
+      // Doit/PayBridge returns a hosted checkout URL; redirect there to pay.
+      const hostedUrl =
+        result && typeof result === 'object' && 'hosted_url' in result
+          ? (result as { hosted_url?: string | null }).hosted_url
+          : null
+      if (hostedUrl) {
+        window.location.assign(hostedUrl)
+        return
+      }
+      notify('Plan updated')
+      onClose()
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not change plan')
+    }
+  }
+
   return (
     <Modal
       title="Change plan"
@@ -85,9 +111,9 @@ export function DialogChangePlan({ onClose }: Props) {
                   Current plan
                 </button>
               ) : p.action === 'Upgrade' ? (
-                <Button variant="primary" height={30} className="mt-auto w-full justify-center" onClick={() => capture('plan_changed', { plan: p.id })}>{p.action}</Button>
+                <Button variant="primary" height={30} className="mt-auto w-full justify-center" disabled={changePlan.isPending} onClick={() => void handleChange(p.id)}>{p.action}</Button>
               ) : (
-                <Button variant="secondary" height={30} className="mt-auto w-full justify-center">{p.action}</Button>
+                <Button variant="secondary" height={30} className="mt-auto w-full justify-center" disabled={changePlan.isPending} onClick={() => void handleChange(p.id)}>{p.action}</Button>
               )}
             </div>
           ))}
@@ -106,7 +132,15 @@ export function DialogChangePlan({ onClose }: Props) {
         {/* Pay yearly / Enterprise */}
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-[6px] cursor-pointer">
-            <span className="flex size-[16px] items-center justify-center rounded-full border-2 border-line-strong bg-surface" />
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={yearly}
+              onChange={() => setYearly((v) => !v)}
+            />
+            <span className={`flex size-[16px] items-center justify-center rounded-full border-2 ${yearly ? 'border-ink bg-ink' : 'border-line-strong bg-surface'}`}>
+              {yearly && <span className="size-[6px] rounded-full bg-white" />}
+            </span>
             <span className="text-[12.5px] text-muted">Pay yearly · 2 months free</span>
           </label>
           <button type="button" className="text-[12.5px] text-link hover:underline">Talk to us about Enterprise</button>
