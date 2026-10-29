@@ -165,6 +165,15 @@ export function createMockRepos(): Repos {
     analytics: {
       overview: (_range?: string) => Promise.resolve({ ...analyticsOverview }),
       helpers: (_range?: string) => Promise.resolve([...analyticsHelpers]),
+      // ── sweep/team-analytics ──
+      overviewFor: (_range: string, _channelId?: string) => Promise.resolve(sweepMockOverview()),
+      helpersFor: (_range: string, channelId?: string) => Promise.resolve(sweepMockHelperStats(channelId)),
+      spendByChannel: () => Promise.resolve(mockSpendByChannel),
+      tokensByHelper: () => Promise.resolve(mockTokensByHelper),
+      loops: () => Promise.resolve(mockLoops.map((l) => ({ ...l }))),
+      reliability: () => Promise.resolve(mockReliability),
+      failures: () => Promise.resolve(mockFailures.map((f) => ({ ...f }))),
+      activity: (q: ActivityQuery) => Promise.resolve(sweepMockActivity(q)),
     },
 
     skills: {
@@ -175,6 +184,12 @@ export function createMockRepos(): Repos {
     helpers: {
       list: () => Promise.resolve([...helpers]),
       get: (id: Id) => Promise.resolve(helpers.find(h => h.id === id) ?? null),
+      // ── sweep/team-analytics ──
+      detail: (id: Id) => Promise.resolve(sweepMockHelperDetail(id)),
+      channels: (id: Id) => Promise.resolve([...(mockHelperChannels[id] ?? [])]),
+      tools: (id: Id) => Promise.resolve(mockToolsFor(id)),
+      skillRows: (id: Id) => Promise.resolve(sweepMockSkillRows(id)),
+      files: (id: Id) => Promise.resolve(mockFilesFor(id, helpers.find((h) => h.id === id)?.name ?? 'Helper')),
     },
 
     members: {
@@ -191,6 +206,132 @@ export function createMockRepos(): Repos {
         const p = mockProposals[id]
         return Promise.resolve(p ? { ...p } : null)
       },
+    },
+  }
+}
+
+// ── sweep/team-analytics ──
+
+import type {
+  ActivityPage,
+  AnalyticsOverview,
+  HelperDetail,
+  HelperSkillRow,
+  HelperStat,
+} from '../../core/domain/types'
+import type { ActivityQuery } from '../../core/ports/repos'
+import {
+  mockActivity,
+  mockAnalyticsBuckets,
+  mockFailures,
+  mockFilesFor,
+  mockHelperChannels,
+  mockHelperSkillSettings,
+  mockJobsSeries,
+  mockLoops,
+  mockReliability,
+  mockSpendByChannel,
+  mockTokensByHelper,
+  mockToolsFor,
+  routines as sweepRoutines,
+} from './fixtures'
+
+function sweepMockOverview(): AnalyticsOverview {
+  const labels = mockAnalyticsBuckets.map((b) => b.start)
+  return {
+    stats: [
+      { label: 'Jobs done', value: 128, prev: 114 },
+      { label: 'Success rate', value: 96, prev: 94, note: '%', failed: 4 },
+      { label: 'Tokens', value: 284_000, prev: 241_000, perJob: 2_100 },
+      { label: 'Spend', value: 1_450, prev: 1_310, note: 'credits' },
+    ],
+    series: [
+      ...analyticsOverview.series,
+      { label: 'Done', values: mockJobsSeries.done, labels },
+      { label: 'Failed', values: mockJobsSeries.failed, labels },
+    ],
+    buckets: mockAnalyticsBuckets,
+  }
+}
+
+function sweepMockHelperStats(channelId?: string): HelperStat[] {
+  const live = helpers.filter((h) => h.status !== 'retired')
+  return analyticsHelpers
+    .filter((s) => live.some((h) => h.id === s.helperId))
+    .filter((s) => !channelId || channelId === 'ch-general' || s.helperId !== 'h-growth' || channelId === 'ch-marketing')
+    .map((s) => {
+      const h = live.find((x) => x.id === s.helperId)!
+      const limit = h.budgetCreditsMonth ?? null
+      const spent = h.costMonth ?? 0
+      const cur = h.currentJob
+      return {
+        ...s,
+        name: h.name,
+        area: h.area,
+        role: h.title ?? h.role ?? '',
+        isChief: h.isChief,
+        status: h.status === 'paused' ? 'paused' : cur ? (cur.status === 'waiting' ? 'needs' : 'working') : 'idle',
+        doing: cur ? cur.brief : h.nextRoutine ? `Next: ${h.nextRoutine.name}` : '',
+        lastActive: h.lastActive ?? null,
+        budget: limit != null ? { spent, limit } : null,
+        budgetReached: limit != null && spent >= limit && !(h.budgetAllowJobs ?? 0),
+      }
+    })
+}
+
+function sweepMockSkillRows(helperId: string): HelperSkillRow[] {
+  const settings = (mockHelperSkillSettings[helperId] ??= {})
+  return skills
+    .filter((s) => s.helperId === helperId || s.id in settings)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      version: s.version,
+      status: s.status,
+      own: s.helperId === helperId,
+      description: '',
+      enabled: settings[s.id]?.enabled ?? true,
+      permission: settings[s.id]?.permission ?? (s.helperId === helperId ? 'always' : 'ask'),
+    }))
+}
+
+function sweepMockHelperDetail(id: string): HelperDetail | null {
+  const helper = helpers.find((h) => h.id === id)
+  if (!helper) return null
+  const rs = sweepRoutines.filter((r) => r.helperId === id)
+  const rows = sweepMockSkillRows(id)
+  const tools = mockToolsFor(id)
+  return {
+    helper,
+    routines: rs.map((r) => ({
+      id: r.id, name: r.name, freq: r.freq, at: r.at, days: r.days, paused: r.paused,
+      enabled: r.enabled, nextAt: r.nextAt, managedByChief: r.managedByChief,
+    })),
+    skills: rows,
+    counts: {
+      channels: (mockHelperChannels[id]?.length ?? 0) + 1,
+      tools: tools.connectors.filter((t) => t.on).length + tools.builtins.filter((t) => t.on).length,
+      skills: rows.filter((r) => r.enabled).length,
+      routines: rs.length,
+    },
+  }
+}
+
+function sweepMockActivity(q: ActivityQuery): ActivityPage {
+  const limit = q.limit ?? 30
+  const items = mockActivity
+    .filter((a) => !q.kinds || q.kinds.includes(a.kind))
+    .filter((a) => !q.helperIds || q.helperIds.includes(a.helperId))
+    .filter((a) => !q.cursor || a.at < q.cursor)
+  const page = items.slice(0, limit)
+  return {
+    items: page,
+    nextCursor: items.length > limit ? page[page.length - 1].at : null,
+    counts: {
+      done: mockActivity.filter((a) => a.kind === 'done').length,
+      needs_you: mockActivity.filter((a) => a.kind === 'needs_you').length,
+      failed: mockActivity.filter((a) => a.kind === 'failed').length,
+      started: mockActivity.length,
     },
   }
 }

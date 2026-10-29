@@ -691,6 +691,65 @@ export function useMemoryDoc(id: Id | null) {
   return useQuery({
     queryKey: ['docs', 'detail', id],
     queryFn: () => repos.docs.get(id!),
+// ── sweep/team-analytics ──────────────────────────────────────────────────────
+
+import type { ActivityQuery } from '../core/ports/repos'
+import type {
+  ConnectHelperChannelInput,
+  HelperSkillSetting,
+  SetHelperToolsInput,
+} from '../adapters/http/commands'
+
+const EMPTY_SERIES = { buckets: [], series: [], total: 0 }
+
+/** Analytics overview for a range ('week' | 'month' | 'quarter') and optional channel. */
+export function useAnalyticsOverviewFor(range: string, channelId?: string) {
+    queryKey: ['analyticsOverview', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.overviewFor ? repos.analytics.overviewFor(range, channelId) : repos.analytics.overview(range),
+
+export function useAnalyticsHelpersFor(range: string, channelId?: string) {
+    queryKey: ['analyticsHelpers', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.helpersFor ? repos.analytics.helpersFor(range, channelId) : repos.analytics.helpers(range),
+
+export function useSpendByChannel(range: string, channelId?: string) {
+    queryKey: ['analyticsSpendByChannel', range, channelId ?? null],
+    queryFn: () => repos.analytics.spendByChannel?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
+
+export function useTokensByHelper(range: string, channelId?: string) {
+    queryKey: ['analyticsTokensByHelper', range, channelId ?? null],
+    queryFn: () => repos.analytics.tokensByHelper?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
+
+export function useAnalyticsLoops(range: string) {
+    queryKey: ['analyticsLoops', range],
+    queryFn: () => repos.analytics.loops?.(range) ?? Promise.resolve([]),
+
+export function useAnalyticsReliability(range: string, channelId?: string) {
+    queryKey: ['analyticsReliability', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.reliability?.(range, channelId) ??
+      Promise.resolve({ stats: [], causes: [], causesTip: '' }),
+
+export function useAnalyticsFailures(range: string, channelId?: string) {
+    queryKey: ['analyticsFailures', range, channelId ?? null],
+    queryFn: () => repos.analytics.failures?.(range, channelId) ?? Promise.resolve([]),
+
+export function useActivity(q: ActivityQuery) {
+    queryKey: ['activity', q],
+    queryFn: () =>
+      repos.analytics.activity?.(q) ??
+      Promise.resolve({ items: [], nextCursor: null, counts: { done: 0, needs_you: 0, failed: 0, started: 0 } }),
+
+export function useHelperDetail(id: Id) {
+    queryKey: ['helperDetail', id],
+    queryFn: async () => {
+      if (repos.helpers.detail) return repos.helpers.detail(id)
+      const helper = await repos.helpers.get(id)
+      return helper
+        ? { helper, routines: [], skills: [], counts: { channels: 1, tools: 0, skills: 0, routines: 0 } }
+        : null
+    },
     enabled: !!id,
   })
 }
@@ -700,6 +759,10 @@ export function useDocVersions(id: Id | null) {
   return useQuery({
     queryKey: ['docs', 'versions', id],
     queryFn: () => repos.docs.versions(id!),
+export function useHelperChannels(id: Id) {
+  const repos = useRepos()
+    queryKey: ['helperChannels', id],
+    queryFn: () => repos.helpers.channels?.(id) ?? Promise.resolve([]),
     enabled: !!id,
   })
 }
@@ -1028,5 +1091,79 @@ export function usePublishFlow() {
 export function useRestoreFlowVersion() {
     mutationFn: ({ flowId, version }: { flowId: Id; version: number }) => commands.restoreFlowVersion(flowId, version),
     onSettled: () => invalidateDecisions(qc),
+export function useHelperTools(id: Id) {
+  const repos = useRepos()
+    queryKey: ['helperTools', id],
+    queryFn: () => repos.helpers.tools?.(id) ?? Promise.resolve({ connectors: [], builtins: [] }),
+    enabled: !!id,
+
+export function useHelperSkillRows(id: Id) {
+  const repos = useRepos()
+    queryKey: ['helperSkills', id],
+    queryFn: () => repos.helpers.skillRows?.(id) ?? Promise.resolve([]),
+    enabled: !!id,
+
+export function useHelperFiles(id: Id) {
+  const repos = useRepos()
+    queryKey: ['helperFiles', id],
+    queryFn: () => repos.helpers.files?.(id) ?? Promise.resolve([]),
+    enabled: !!id,
+
+function invalidateHelper(qc: ReturnType<typeof useQueryClient>, id: Id) {
+  void qc.invalidateQueries({ queryKey: ['helpers'] })
+  void qc.invalidateQueries({ queryKey: ['helper', id] })
+  void qc.invalidateQueries({ queryKey: ['helperDetail', id] })
+  void qc.invalidateQueries({ queryKey: ['analyticsHelpers'] })
+
+/** PATCH a helper and refresh roster, detail and analytics rows. */
+export function useUpdateHelperEverywhere() {
+    mutationFn: ({ id, input }: { id: Id; input: UpdateHelperInput }) => commands.updateHelper(id, input),
+    onSuccess: (_d, { id }) => invalidateHelper(qc, id),
+
+export function useRetireHelper() {
+    mutationFn: (id: Id) => commands.retireHelper(id),
+    onSuccess: (_d, id) => invalidateHelper(qc, id),
+
+export function useAllowHelperJob() {
+    mutationFn: (id: Id) => commands.allowHelperJob(id),
+    onSuccess: (_d, id) => invalidateHelper(qc, id),
+
+export function useConnectHelperChannel(helperId: Id) {
+    mutationFn: (input: ConnectHelperChannelInput) => commands.connectHelperChannel(helperId, input),
+      void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] })
+      void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+
+export function useUpdateHelperChannel(helperId: Id) {
+    mutationFn: ({ channelId, config }: { channelId: Id; config: Record<string, unknown> }) =>
+      commands.updateHelperChannel(helperId, channelId, config),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] }) },
+
+export function useDisconnectHelperChannel(helperId: Id) {
+    mutationFn: (channelId: Id) => commands.disconnectHelperChannel(helperId, channelId),
+      void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] })
+      void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+
+export function useSetHelperTools(helperId: Id) {
+    mutationFn: (input: SetHelperToolsInput) => commands.setHelperTools(helperId, input),
+    onSuccess: (data) => {
+      qc.setQueryData(['helperTools', helperId], data)
+      void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+
+export function useSetHelperSkills(helperId: Id) {
+    mutationFn: (list: HelperSkillSetting[]) => commands.setHelperSkills(helperId, list),
+    onSuccess: (data) => {
+      qc.setQueryData(['helperSkills', helperId], data)
+      void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+
+export function useSaveHelperFile(helperId: Id) {
+    mutationFn: ({ name, content }: { name: string; content: string }) =>
+      commands.saveHelperFile(helperId, name, content),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['helperFiles', helperId] }) },
+
+export function useRetryJob() {
+    mutationFn: (jobId: Id) => commands.retryJob(jobId),
+      void qc.invalidateQueries({ queryKey: ['analyticsFailures'] })
+      void qc.invalidateQueries({ queryKey: ['analyticsReliability'] })
+      void qc.invalidateQueries({ queryKey: ['activity'] })
   })
 }

@@ -436,6 +436,7 @@ function mapHelper(r: RawHelper): Helper {
     isChief: r.is_chief ?? r.isChief,
     autonomyCap: r.autonomy_cap ?? r.autonomyCap,
     jobDescription: r.job_description ?? r.jobDescription,
+    ...helperExtras(r),
   }
 }
 
@@ -1397,6 +1398,7 @@ export function createCommands(
       if (input.jobDescription !== undefined) body.job_description = input.jobDescription
       if (input.autonomyCap !== undefined) body.autonomy_cap = input.autonomyCap
       if (input.isChief !== undefined) body.is_chief = input.isChief
+      Object.assign(body, createHelperExtrasBody(input))
       const raw = await post<RawHelper>('/v1/helpers', body)
       return mapHelper(raw)
     },
@@ -1409,6 +1411,7 @@ export function createCommands(
       if (input.jobDescription !== undefined) body.job_description = input.jobDescription
       if (input.autonomyCap !== undefined) body.autonomy_cap = input.autonomyCap
       if (input.model !== undefined) body.model = input.model
+      Object.assign(body, updateHelperExtrasBody(input))
       const raw = await patch<RawHelper>(`/v1/helpers/${id}`, body)
       return mapHelper(raw)
     },
@@ -1603,6 +1606,35 @@ export function createCommands(
       return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/cancel`, {}))
     async restoreFlowVersion(flowId: string, version: number): Promise<Flow> {
       return mapFlow(await post<RawFlow>(`/v1/flows/${flowId}/versions/${version}/restore`, {}))
+    // ── sweep/team-analytics ──
+    async retireHelper(id: string): Promise<Helper> {
+      return mapHelper(await post<RawHelper>(`/v1/helpers/${id}/retire`, {}))
+    async allowHelperJob(id: string): Promise<Helper> {
+      return mapHelper(await post<RawHelper>(`/v1/helpers/${id}/budget/allow-one`, {}))
+    async connectHelperChannel(helperId: string, input: ConnectHelperChannelInput): Promise<HelperChannelBinding> {
+      return post<HelperChannelBinding>(`/v1/helpers/${helperId}/channels`, {
+        kind: input.kind,
+        config: input.config ?? {},
+        secrets: input.secrets ?? {},
+      })
+    async updateHelperChannel(helperId: string, channelId: string, config: Record<string, unknown>): Promise<HelperChannelBinding> {
+      return patch<HelperChannelBinding>(`/v1/helpers/${helperId}/channels/${channelId}`, { config })
+    async disconnectHelperChannel(helperId: string, channelId: string): Promise<void> {
+      await del(`/v1/helpers/${helperId}/channels/${channelId}`)
+    async setHelperTools(helperId: string, input: SetHelperToolsInput): Promise<HelperTools> {
+      const res = await apiFetch(`${baseUrl}/v1/helpers/${helperId}/tools`, getToken, putJson(input))
+      return res.json() as Promise<HelperTools>
+    async setHelperSkills(helperId: string, skills: HelperSkillSetting[]): Promise<HelperSkillRow[]> {
+      const res = await apiFetch(`${baseUrl}/v1/helpers/${helperId}/skills`, getToken, putJson({ skills }))
+      return res.json() as Promise<HelperSkillRow[]>
+    async saveHelperFile(helperId: string, name: string, content: string): Promise<HelperFile> {
+      const res = await apiFetch(
+        `${baseUrl}/v1/helpers/${helperId}/files/${encodeURIComponent(name)}`,
+        getToken,
+        putJson({ content }),
+      return res.json() as Promise<HelperFile>
+    async retryJob(jobId: string): Promise<RetryJobResult> {
+      return post<RetryJobResult>(`/v1/jobs/${jobId}/retry`, {})
     },
   }
 }
@@ -1614,4 +1646,118 @@ type RawRunSweep = Parameters<typeof mapFlowRunSweep>[0]
 export interface UpdateProposalInput {
   assignee?: string | null
   due?: string | null
+// ── sweep/team-analytics ──
+
+import type {
+  HelperBehavior,
+  HelperChannelBinding,
+  HelperChannelKind,
+  HelperFile,
+  HelperLook,
+  HelperSkillRow,
+  HelperTools,
+} from '../../core/domain/types'
+
+export interface CreateHelperInput {
+  model?: string
+  /** 'owner' | helper id */
+  reportsTo?: string
+  title?: string
+  look?: HelperLook
+  /** External channel kinds to bind on hire (telegram | whatsapp | email). */
+  channels?: string[]
+}
+
+export interface UpdateHelperInput {
+  name?: string
+  area?: string
+  title?: string | null
+  reportsTo?: string | null
+  look?: HelperLook | null
+  /** Shallow-merged server-side; a key set to null is removed. */
+  behavior?: { [K in keyof HelperBehavior]?: HelperBehavior[K] | null }
+  /** null clears the budget. */
+  budgetCreditsMonth?: number | null
+}
+
+export interface ConnectHelperChannelInput {
+  kind: HelperChannelKind
+  config?: Record<string, unknown>
+  /** Secret fields (bot token, password) — stored encrypted, never returned. */
+  secrets?: Record<string, string>
+}
+
+export interface SetHelperToolsInput {
+  connectors?: { id: string; on: boolean; access?: string }[]
+  builtins?: Record<string, boolean>
+}
+
+export interface HelperSkillSetting {
+  id: string
+  enabled: boolean
+  permission: 'always' | 'ask'
+}
+
+export interface RetryJobResult {
+  jobId: string
+  status: string
+  error: string | null
+  attempts: number
+}
+
+export interface Commands {
+  /** POST /v1/helpers/{id}/retire — let a helper go (Chief → 409). */
+  retireHelper(id: string): Promise<Helper>
+  /** POST /v1/helpers/{id}/budget/allow-one — one-off budget override. */
+  allowHelperJob(id: string): Promise<Helper>
+  /** POST /v1/helpers/{id}/channels {kind, config, secrets}. */
+  connectHelperChannel(helperId: string, input: ConnectHelperChannelInput): Promise<HelperChannelBinding>
+  /** PATCH /v1/helpers/{id}/channels/{cid} {config}. */
+  updateHelperChannel(helperId: string, channelId: string, config: Record<string, unknown>): Promise<HelperChannelBinding>
+  /** DELETE /v1/helpers/{id}/channels/{cid}. */
+  disconnectHelperChannel(helperId: string, channelId: string): Promise<void>
+  /** PUT /v1/helpers/{id}/tools. */
+  setHelperTools(helperId: string, input: SetHelperToolsInput): Promise<HelperTools>
+  /** PUT /v1/helpers/{id}/skills {skills}. */
+  setHelperSkills(helperId: string, skills: HelperSkillSetting[]): Promise<HelperSkillRow[]>
+  /** PUT /v1/helpers/{id}/files/{name} {content}. */
+  saveHelperFile(helperId: string, name: string, content: string): Promise<HelperFile>
+  /** POST /v1/jobs/{id}/retry. */
+  retryJob(jobId: string): Promise<RetryJobResult>
+}
+
+/** Pick the camelCase extras the helper endpoints return (model, title, …). */
+function helperExtras(r: RawHelper): Partial<Helper> {
+  const x = r as RawHelper & Partial<Helper>
+  const out: Partial<Helper> = {}
+  if (x.model !== undefined) out.model = x.model
+  if (x.title !== undefined) out.title = x.title
+  if (x.reportsTo !== undefined) out.reportsTo = x.reportsTo
+  if (x.look !== undefined) out.look = x.look
+  if (x.behavior !== undefined) out.behavior = x.behavior
+  if (x.budgetCreditsMonth !== undefined) out.budgetCreditsMonth = x.budgetCreditsMonth
+  if (x.budgetAllowJobs !== undefined) out.budgetAllowJobs = x.budgetAllowJobs
+  return out
+}
+
+function createHelperExtrasBody(input: CreateHelperInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (input.model !== undefined) body.model = input.model
+  if (input.reportsTo !== undefined) body.reports_to = input.reportsTo
+  if (input.title !== undefined) body.title = input.title
+  if (input.look !== undefined) body.look = input.look
+  if (input.channels !== undefined) body.channels = input.channels
+  return body
+}
+
+function updateHelperExtrasBody(input: UpdateHelperInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (input.name !== undefined) body.name = input.name
+  if (input.area !== undefined) body.area = input.area
+  if (input.title !== undefined) body.title = input.title
+  if (input.reportsTo !== undefined) body.reports_to = input.reportsTo
+  if (input.look !== undefined) body.look = input.look
+  if (input.behavior !== undefined) body.behavior = input.behavior
+  if (input.budgetCreditsMonth !== undefined) body.budget_credits_month = input.budgetCreditsMonth
+  return body
 }

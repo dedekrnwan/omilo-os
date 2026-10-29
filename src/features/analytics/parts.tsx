@@ -4,9 +4,11 @@ import { Activity, Check, ChevronDown, LayoutDashboard, Repeat, ShieldCheck, Use
 import type { LucideIcon } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
-import { DAY_LABELS, DAYS } from './data'
-import type { BarChart, ChipTone, HelperStatus, Stat } from './data'
-import type { LocalHelperRow } from './AnalyticsPage'
+import { RANGE_LABELS } from './data'
+import type { BarChart, ChipTone, HelperStat, HelperStatus, Stat } from './data'
+import { formatCredits } from './format'
+
+type LocalHelperRow = HelperStat
 
 // ── Small primitives (pen Chip/*, Status Dot/*, Switch/*, Checkbox/*, Radio/*) ──
 
@@ -184,7 +186,7 @@ export function Tabs({ value, onChange }: { value: TabId; onChange: (t: TabId) =
   return <SegmentedTabs label="Analytics views" options={TABS} value={value} onChange={onChange} />
 }
 
-const RANGES = ['7 days', '30 days', '90 days'] as const
+const RANGES = RANGE_LABELS
 const ALL_HELPERS_LABEL = 'All helpers'
 
 export const ALL_HELPERS = ALL_HELPERS_LABEL
@@ -296,11 +298,11 @@ function ChartTip({ chart, i }: { chart: BarChart; i: number }) {
     .sort((a, b) => b.v - a.v)
   const total = segs.reduce((n, s) => n + s.v, 0)
   // Flip to the left of the bar for the right half so it never runs off the card.
-  const side = i <= 3 ? 'left-full ml-[10px]' : 'right-full mr-[10px]'
+  const side = i < chart.labels.length / 2 ? 'left-full ml-[10px]' : 'right-full mr-[10px]'
   return (
     <div className={`pointer-events-none absolute top-1/2 z-20 w-[228px] -translate-y-1/2 ${side}`}>
       <div className="flex flex-col gap-[8px] rounded-lg bg-surface p-[12px] shadow-[0_8px_28px_#0000001f] outline-1 -outline-offset-1 outline-line-strong">
-        <span className="text-[12px] font-medium text-muted">{DAY_LABELS[i]}</span>
+        <span className="text-[12px] font-medium text-muted">{chart.tipLabels[i]}</span>
         <span className="font-mono text-[15px] text-ink">
           {chart.fmt(total)}
           {chart.unit && ` ${chart.unit}`} <span className="text-muted">total</span>
@@ -309,7 +311,7 @@ function ChartTip({ chart, i }: { chart: BarChart; i: number }) {
           {segs.map((s) => (
             <li key={s.label} className="flex items-center gap-[8px]">
               <span className="size-[8px] shrink-0 rounded-[2px]" style={{ background: s.color }} />
-              <span className="w-[48px] shrink-0 font-mono text-[12px] text-ink">{chart.fmt(s.v)}</span>
+              <span className="w-[64px] shrink-0 font-mono text-[12px] text-ink">{chart.fmt(s.v)}</span>
               <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{s.label}</span>
             </li>
           ))}
@@ -321,6 +323,10 @@ function ChartTip({ chart, i }: { chart: BarChart; i: number }) {
 
 export function BarChartCard({ chart, className = '' }: { chart: BarChart; className?: string }) {
   const [hover, setHover] = useState<number | null>(null)
+  // Bars are 110px tall at most: scale every stack against the tallest bar.
+  const totals = chart.labels.map((_, i) => chart.stack.reduce((n, s) => n + (s.values[i] ?? 0), 0))
+  const max = Math.max(1, ...totals)
+  const px = (v: number) => (v > 0 ? Math.max(2, Math.round((v / max) * 104)) : 0)
   return (
     <Card className={`flex flex-col gap-[14px] p-[16px] ${className}`}>
       <div className="flex w-full items-center gap-[8px]">
@@ -341,11 +347,11 @@ export function BarChartCard({ chart, className = '' }: { chart: BarChart; class
         aria-label={`${chart.title} per day`}
         className="relative flex h-[110px] w-full items-end gap-[10px] px-[4px]"
       >
-        {DAYS.map((d, i) => {
-          const segs = chart.stack.filter((s) => s.values[i] > 0)
+        {chart.labels.map((d, i) => {
+          const segs = chart.stack.filter((s) => (s.values[i] ?? 0) > 0)
           return (
             <div
-              key={d}
+              key={`${d}-${i}`}
               className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-end"
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
@@ -353,9 +359,9 @@ export function BarChartCard({ chart, className = '' }: { chart: BarChart; class
               {hover === i && (
                 <span className="pointer-events-none absolute inset-x-[2px] inset-y-0 z-0 rounded-[4px] bg-soft" />
               )}
-              <div className="relative z-[1] flex w-[28px] flex-col gap-px overflow-hidden rounded-t-[3px]">
+              <div className="relative z-[1] flex w-[28px] max-w-full flex-col gap-px overflow-hidden rounded-t-[3px]">
                 {segs.map((s) => (
-                  <div key={s.label} style={{ height: s.values[i], background: s.color }} />
+                  <div key={s.label} style={{ height: px(s.values[i]), background: s.color }} />
                 ))}
               </div>
               {hover === i && <ChartTip chart={chart} i={i} />}
@@ -365,8 +371,8 @@ export function BarChartCard({ chart, className = '' }: { chart: BarChart; class
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-line" />
       </div>
       <div className="flex w-full gap-[10px] px-[4px]">
-        {DAYS.map((d) => (
-          <span key={d} className="min-w-0 flex-1 text-center font-mono text-[10px] text-faint">
+        {chart.labels.map((d, i) => (
+          <span key={`${d}-${i}`} className="min-w-0 flex-1 text-center font-mono text-[10px] text-faint">
             {d}
           </span>
         ))}
@@ -450,7 +456,7 @@ export function HelpersTable({
               <>
                 <Track pct={h.budget.spent / h.budget.limit} color={h.budget.warn ? 'var(--color-warn)' : 'var(--color-ink)'} />
                 <span className="font-mono text-[11px] text-muted">
-                  ${h.budget.spent} / ${h.budget.limit}
+                  {formatCredits(h.budget.spent)} / {formatCredits(h.budget.limit)}
                 </span>
               </>
             ) : (

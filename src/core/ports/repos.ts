@@ -236,3 +236,50 @@ export interface ProposalRepo {
   /** GET /v1/proposals/{id} → proposal + revisions (null on 404). */
   get(id: Id): Promise<ProposalDetail | null>
 }
+
+// ── sweep/team-analytics ──
+// Optional so lightweight test repos need not implement them; the HTTP and
+// mock adapters both do. Hooks fall back to empty data when absent.
+
+import type {
+  ActivityPage,
+  AnalyticsFailure,
+  AnalyticsLoop,
+  AnalyticsReliability,
+  AnalyticsStackedSeries,
+  HelperChannelBinding,
+  HelperDetail,
+  HelperFile,
+  HelperSkillRow,
+  HelperTools,
+} from '../domain/types'
+
+export interface ActivityQuery {
+  kinds?: string[]
+  helperIds?: string[]
+  cursor?: string
+  limit?: number
+  channelId?: string
+}
+
+export interface AnalyticsRepo {
+  /** GET /v1/analytics/overview?range=&channel_id= */
+  overviewFor?(range: string, channelId?: string): Promise<AnalyticsOverview>
+  /** GET /v1/analytics/helpers?range=&channel_id= */
+  helpersFor?(range: string, channelId?: string): Promise<HelperStat[]>
+  spendByChannel?(range: string, channelId?: string): Promise<AnalyticsStackedSeries>
+  tokensByHelper?(range: string, channelId?: string): Promise<AnalyticsStackedSeries>
+  loops?(range: string): Promise<AnalyticsLoop[]>
+  reliability?(range: string, channelId?: string): Promise<AnalyticsReliability>
+  failures?(range: string, channelId?: string): Promise<AnalyticsFailure[]>
+  activity?(q: ActivityQuery): Promise<ActivityPage>
+}
+
+export interface HelperRepo {
+  /** GET /v1/helpers/{id} — full detail (routines, skills, counts). */
+  detail?(id: Id): Promise<HelperDetail | null>
+  channels?(id: Id): Promise<HelperChannelBinding[]>
+  tools?(id: Id): Promise<HelperTools>
+  skillRows?(id: Id): Promise<HelperSkillRow[]>
+  files?(id: Id): Promise<HelperFile[]>
+}

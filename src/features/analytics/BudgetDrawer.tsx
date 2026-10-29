@@ -3,19 +3,37 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Wallet, X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
-import { useCompanySettings, useUpdateCompanySettings } from '../../app/queries'
+import { useCompanySettings, useHelper, useUpdateCompanySettings, useUpdateHelperEverywhere } from '../../app/queries'
 import { notify } from '../../ui/ds/Toaster'
 import type { HelperStat } from './data'
+import { creditsInRp, formatCredits, formatRp } from './format'
 import { BigButton, Switch } from './parts'
 
-/** One helper's budget, stored under company settings → budgets[helperId]. */
+/**
+ * One helper's budget. The enforced cap is helper.budget_credits_month (the
+ * runner pauses the helper when month-to-date credits reach it); the alert
+ * threshold and run-out mode live under company settings → budgets[helperId].
+ * Amounts are credits.
+ */
 interface HelperBudget {
   amount: number
   threshold: string
   mode: string
 }
 
-const QUICK = [10, 15, 25, 50]
+const QUICK = [500, 1000, 2500, 5000]
+/** "Ask before any single job over Rp 15.000" → helper.behavior.spend_per_task_idr */
+const BIG_JOB_IDR = 15_000
+
+function suggestBudget(spent: number): number {
+  if (spent <= 0) return 1000
+  return Math.max(500, Math.ceil((spent * 1.5) / 100) * 100)
+}
+
+function nextMonthLabel(now = new Date()): string {
+  const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 const THRESHOLDS = ['50%', '80%', '90%']
 
 function runsOut(name: string) {
@@ -39,7 +57,10 @@ export function BudgetDrawer({ helper, onClose }: { helper: HelperStat | null; o
 }
 
 function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => void }) {
-  const suggested = helper.budget?.limit ?? 15
+  const spent = helper.budget?.spent ?? 0
+  const suggested = helper.budget?.limit ?? suggestBudget(spent)
+  const updateHelper = useUpdateHelperEverywhere()
+  const { data: liveHelper } = useHelper(helper.id)
   // Per-helper budgets live under company settings → budgets[helperId], so one
   // helper's budget never clobbers another's (the old company-wide wallet did).
   const { data: settings } = useCompanySettings()
@@ -50,7 +71,9 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const [amount, setAmount] = useState(String(saved?.amount ?? suggested))
   const [threshold, setThreshold] = useState(saved?.threshold ?? '80%')
   const [mode, setMode] = useState(saved?.mode ?? 'pause')
-  const [askBig, setAskBig] = useState(true)
+  const [askBig, setAskBigState] = useState<boolean | null>(null)
+  const askBigOn = askBig ?? (liveHelper?.behavior?.spend_per_task_idr ?? 0) > 0
+  const setAskBig = (v: boolean) => setAskBigState(v)
 
   // Hydrate from the saved per-helper entry once the settings query resolves,
   // as long as the user hasn't started editing.
@@ -69,31 +92,38 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
 
   const save = () => {
     const limit = Number(amount) || suggested
-    updateSettings.mutate(
-      { budgets: { [helper.id]: { amount: limit, threshold, mode } } },
-      {
-        onSuccess: () => {
-          notify(`Budget saved for ${helper.name}`)
-          onClose()
+    Promise.all([
+      // Enforced cap (credits) + the per-task ask switch on the helper itself…
+      updateHelper.mutateAsync({
+        id: helper.id,
+        input: {
+          budgetCreditsMonth: limit,
+          ...(askBig !== null ? { behavior: { spend_per_task_idr: askBig ? BIG_JOB_IDR : null } } : {}),
         },
-        onError: () => notify("Couldn't save the budget"),
-      },
-    )
+      }),
+      // …and the alert threshold / run-out mode under company settings.
+      updateSettings.mutateAsync({ budgets: { [helper.id]: { amount: limit, threshold, mode } } }),
+    ])
+      .then(() => {
+        notify(`Budget saved for ${helper.name}`)
+        onClose()
+      })
+      .catch(() => notify("Couldn't save the budget"))
   }
 
   const removeBudget = () => {
     // Clear only this helper's entry — leave every other helper's budget intact.
-    updateSettings.mutate(
-      { budgets: { [helper.id]: null } },
-      {
-        onSuccess: () => {
-          notify(`Budget removed for ${helper.name}`)
-          onClose()
-        },
-        onError: () => notify("Couldn't remove the budget"),
-      },
-    )
+    Promise.all([
+      updateHelper.mutateAsync({ id: helper.id, input: { budgetCreditsMonth: null } }),
+      updateSettings.mutateAsync({ budgets: { [helper.id]: null } }),
+    ])
+      .then(() => {
+        notify(`Budget removed for ${helper.name}`)
+        onClose()
+      })
+      .catch(() => notify("Couldn't remove the budget"))
   }
+  const saving = updateSettings.isPending || updateHelper.isPending
   return (
     <Dialog.Content
       aria-describedby={undefined}
@@ -104,7 +134,9 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
         <Mascot helper area={helper.area} size={40} radius={11} />
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">Budget for {helper.name}</Dialog.Title>
-          <span className="text-[12px] text-muted">{helper.spend} spent this month · resets Nov 1</span>
+          <span className="text-[12px] text-muted">
+            {formatCredits(spent)} spent this month · resets {nextMonthLabel()}
+          </span>
         </div>
         <Dialog.Close asChild>
           <IconButton icon={X} aria-label="Close" />
@@ -114,14 +146,15 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
       <div className="flex min-h-0 w-full flex-1 flex-col gap-[20px] overflow-y-auto p-[20px]">
         <div className="flex w-full flex-col gap-[8px]">
           <label className="flex w-full flex-col gap-[6px]">
-            <span className="text-[13px] font-medium text-ink-2">Monthly budget</span>
+            <span className="text-[13px] font-medium text-ink-2">Monthly budget (credits)</span>
             <input
-              value={`$${amount}`}
-              onChange={(e) => editAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+              value={`${amount} cr`}
+              onChange={(e) => editAmount(e.target.value.replace(/[^0-9]/g, ''))}
               className="h-[36px] w-full rounded-base bg-surface px-[10px] text-[14px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
             />
             <span className="text-[12.5px] text-muted">
-              Last 3 months {helper.name} spent $4–$9. We suggest $15.
+              {creditsInRp(Number(amount) || 0)} · {helper.name} has spent {formatCredits(spent)} this month. We
+              suggest {formatCredits(suggestBudget(spent))}.
             </span>
           </label>
           <div className="flex gap-[6px]">
@@ -137,7 +170,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
                     on ? 'bg-ink text-primary-ink outline-ink' : 'bg-surface text-ink-2 outline-line-strong hover:bg-soft'
                   }`}
                 >
-                  ${q}
+                  {formatCredits(q)}
                 </button>
               )
             })}
@@ -200,12 +233,12 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
 
         <div className="flex w-full gap-[12px] py-[12px] shadow-[inset_0_-1px_0_var(--color-line)]">
           <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="text-[13.5px] font-medium text-ink">Ask before any single job over $1</span>
+            <span className="text-[13.5px] font-medium text-ink">Ask before any single job over {formatRp(BIG_JOB_IDR)}</span>
             <span className="text-[12.5px] leading-[1.5] text-muted">
               Catches runaway jobs early, like a long research task.
             </span>
           </div>
-          <Switch on={askBig} label="Ask before any single job over $1" onChange={setAskBig} />
+          <Switch on={askBigOn} label="Ask before any single job" onChange={setAskBig} />
         </div>
       </div>
 
@@ -218,7 +251,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
           Cancel
         </BigButton>
         <BigButton kind="primary" onClick={save}>
-          {updateSettings.isPending ? 'Saving…' : 'Save budget'}
+          {saving ? 'Saving…' : 'Save budget'}
         </BigButton>
       </footer>
     </Dialog.Content>

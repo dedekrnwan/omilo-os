@@ -502,6 +502,7 @@ export function createMockCommands(): Commands {
         isChief: input.isChief ?? false,
         autonomyCap: input.autonomyCap ?? 'review_first',
         jobDescription: input.jobDescription,
+        ...sweepCreateHelperExtras(input),
       }
       helpers.push(helper)
       return Promise.resolve(helper)
@@ -513,6 +514,7 @@ export function createMockCommands(): Commands {
         if (input.role !== undefined) h.role = input.role
         if (input.jobDescription !== undefined) h.jobDescription = input.jobDescription
         if (input.autonomyCap !== undefined) h.autonomyCap = input.autonomyCap
+        sweepApplyHelperUpdate(h, input)
       }
       return Promise.resolve(h ?? helpers[0])
     },
@@ -674,5 +676,111 @@ export function createMockCommands(): Commands {
       rememberGraph(f)
       return Promise.resolve({ ...f })
     },
+    // ── sweep/team-analytics ──
+    retireHelper(id: string): Promise<Helper> {
+      const h = helpers.find((x) => x.id === id)
+      if (!h) return Promise.reject(new Error('Helper not found'))
+      if (h.isChief) return Promise.reject(new Error("The Chief can't be let go."))
+      h.status = 'retired'
+      return Promise.resolve(h)
+    allowHelperJob(id: string): Promise<Helper> {
+      const h = helpers.find((x) => x.id === id) ?? helpers[0]
+      h.budgetAllowJobs = (h.budgetAllowJobs ?? 0) + 1
+      if (h.status === 'paused') h.status = 'active'
+      return Promise.resolve(h)
+    connectHelperChannel(helperId: string, input: ConnectHelperChannelInput): Promise<HelperChannelBinding> {
+      const list = (mockHelperChannels[helperId] ??= [])
+      let ch = list.find((c) => c.kind === input.kind)
+      if (!ch) {
+        ch = { id: nextId('hch'), helperId, kind: input.kind, config: {}, secretsSet: [], status: 'pending_setup' }
+        list.push(ch)
+      ch.config = { ...ch.config, ...(input.config ?? {}) }
+      ch.secretsSet = [...new Set([...ch.secretsSet, ...Object.keys(input.secrets ?? {})])].sort()
+      return Promise.resolve({ ...ch })
+    updateHelperChannel(helperId: string, channelId: string, config: Record<string, unknown>): Promise<HelperChannelBinding> {
+      const ch = (mockHelperChannels[helperId] ?? []).find((c) => c.id === channelId)
+      if (!ch) return Promise.reject(new Error('Channel not found'))
+      ch.config = { ...ch.config, ...config }
+      return Promise.resolve({ ...ch })
+    disconnectHelperChannel(helperId: string, channelId: string): Promise<void> {
+      mockHelperChannels[helperId] = (mockHelperChannels[helperId] ?? []).filter((c) => c.id !== channelId)
+    setHelperTools(helperId: string, input: SetHelperToolsInput): Promise<HelperTools> {
+      const t = mockToolsFor(helperId)
+      for (const c of input.connectors ?? []) {
+        const row = t.connectors.find((x) => x.id === c.id)
+        if (row) { row.on = c.on; if (c.access) row.access = c.access }
+      for (const [k, v] of Object.entries(input.builtins ?? {})) {
+        const row = t.builtins.find((x) => x.id === k)
+        if (row) row.on = v
+      return Promise.resolve({ connectors: t.connectors.map((x) => ({ ...x })), builtins: t.builtins.map((x) => ({ ...x })) })
+    setHelperSkills(helperId: string, list: HelperSkillSetting[]): Promise<HelperSkillRow[]> {
+      const settings = (mockHelperSkillSettings[helperId] ??= {})
+      for (const s of list) settings[s.id] = { enabled: s.enabled, permission: s.permission }
+      return Promise.resolve(
+        skills
+          .filter((s) => s.helperId === helperId || s.id in settings)
+          .map((s) => ({
+            id: s.id, name: s.name, version: s.version, status: s.status, own: s.helperId === helperId,
+            description: '', enabled: settings[s.id]?.enabled ?? true,
+            permission: settings[s.id]?.permission ?? (s.helperId === helperId ? 'always' : 'ask'),
+          })),
+      )
+    saveHelperFile(helperId: string, name: string, content: string): Promise<HelperFile> {
+      const files = mockFilesFor(helperId, helpers.find((h) => h.id === helperId)?.name ?? 'Helper')
+      const f = files.find((x) => x.name === name)
+      if (!f) return Promise.reject(new Error('Unknown working file'))
+      f.content = content
+      f.docId ??= nextId('mem')
+      f.updatedAt = new Date().toISOString()
+      f.updatedBy = 'operator:me'
+    retryJob(jobId: string): Promise<RetryJobResult> {
+      const f = mockFailures.find((x) => x.jobId === jobId)
+      if (f) { f.status = 'recovered'; f.action = 'view'; f.attempts += 1 }
+      return Promise.resolve({ jobId, status: 'done', error: null, attempts: f?.attempts ?? 2 })
+  }
+}
+
+// ── sweep/team-analytics ──
+
+import type {
+  ConnectHelperChannelInput,
+  HelperSkillSetting,
+  RetryJobResult,
+  SetHelperToolsInput,
+} from '../http/commands'
+import type { HelperChannelBinding, HelperFile, HelperSkillRow, HelperTools } from '../../core/domain/types'
+import {
+  mockFailures,
+  mockFilesFor,
+  mockHelperChannels,
+  mockHelperSkillSettings,
+  mockToolsFor,
+  skills,
+} from './fixtures'
+
+function sweepCreateHelperExtras(input: CreateHelperInput): Partial<Helper> {
+  const out: Partial<Helper> = { jobs: 0, success: 0, jobsMonth: 0, costMonth: 0, loops: 0 }
+  if (input.model !== undefined) out.model = input.model
+  if (input.reportsTo !== undefined) out.reportsTo = input.reportsTo
+  if (input.title !== undefined) out.title = input.title
+  if (input.look !== undefined) out.look = input.look
+  return out
+}
+
+function sweepApplyHelperUpdate(h: Helper, input: UpdateHelperInput): void {
+  if (input.model !== undefined) h.model = input.model || null
+  if (input.name !== undefined) h.name = input.name
+  if (input.area !== undefined) h.area = input.area as Helper['area']
+  if (input.title !== undefined) h.title = input.title
+  if (input.reportsTo !== undefined) h.reportsTo = input.reportsTo
+  if (input.look !== undefined) h.look = input.look
+  if (input.budgetCreditsMonth !== undefined) h.budgetCreditsMonth = input.budgetCreditsMonth
+  if (input.behavior !== undefined) {
+    const merged: Record<string, unknown> = { ...(h.behavior ?? {}) }
+    for (const [k, v] of Object.entries(input.behavior)) {
+      if (v === null) delete merged[k]
+      else merged[k] = v
+    }
+    h.behavior = merged
   }
 }

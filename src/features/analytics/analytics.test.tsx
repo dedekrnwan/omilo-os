@@ -66,12 +66,12 @@ describe('ChatAnalyticsRoute', () => {
     await mount('/chat/ch-engineering/analytics')
     // Title reflects live area name from mock repos (channel 'ch-engineering' → 'Engineering')
     expect(await screen.findByText('Analytics · Engineering')).toBeInTheDocument()
-    // Tokens chart title (from fallback chart constant — static, not fixture)
-    expect(screen.getByText('Tokens by helper')).toBeInTheDocument()
-    // Stats label from mock analyticsOverview fixture
+    // Tokens chart built from GET /v1/analytics/tokens-by-helper
+    expect(await screen.findByText('Tokens by helper')).toBeInTheDocument()
+    // Stats label from the overview endpoint
     expect(screen.getByText('Jobs done')).toBeInTheDocument()
-    // helpersSub now reflects live helper count from useAnalyticsHelpers
-    expect(screen.getByText('3 helpers')).toBeInTheDocument()
+    // helpersSub reflects the live helper rows scoped to the area
+    expect(screen.getByText(/^2 helpers/)).toBeInTheDocument()
   })
 
   test('switches between tabs', async () => {
@@ -80,32 +80,44 @@ describe('ChatAnalyticsRoute', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Helpers/ }))
     expect(screen.getByText('Hire a helper')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /Loops/ }))
-    expect(screen.getByText('PR digest to #engineering')).toBeInTheDocument()
+    expect(await screen.findByText('PR digest to #engineering')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /Reliability/ }))
     expect(screen.getByText('Recent failures')).toBeInTheDocument()
     expect(screen.getByText('Top causes')).toBeInTheDocument()
+    expect(await screen.findByText('Weekly latency report')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /Activity/ }))
-    expect(screen.getByText('TODAY')).toBeInTheDocument()
+    expect(await screen.findByText('TODAY')).toBeInTheDocument()
     expect(screen.getByText('Show')).toBeInTheDocument()
   })
 
   test('Set budget opens the budget drawer', async () => {
     await mount('/chat/ch-engineering/analytics')
     await screen.findByText('Analytics · Engineering')
-    // All mock helpers have no budget; pick the first "Set" button
-    const setBtns = screen.getAllByRole('button', { name: 'Set' })
+    // Dev has no budget in the mock data; pick the first "Set" button
+    const setBtns = await screen.findAllByRole('button', { name: 'Set' })
     fireEvent.click(setBtns[0])
     // BudgetDrawer opens for the helper whose "Set" was clicked
     expect(await screen.findByText(/Budget for/i)).toBeInTheDocument()
     expect(screen.getByText('When the budget runs out')).toBeInTheDocument()
   })
 
-  test('?state=budget-reached shows the toast', async () => {
-    window.history.replaceState(null, '', '/?state=budget-reached')
-    await mount('/chat/ch-engineering/analytics')
-    // Toast shows for budget-reached URL param state
+  test('a helper that hit its budget shows the toast and the reached card', async () => {
+    const reached: HelperStat[] = [
+      {
+        helperId: 'h-dev', name: 'Dev', area: 'dev', jobs: 4, success: 100, tokens: 1000, spend: 50,
+        status: 'paused', budget: { spent: 1000, limit: 1000 }, budgetReached: true,
+      },
+    ]
+    window.history.replaceState(null, '', '/?tab=helpers')
+    await mount('/chat/ch-engineering/analytics', {
+      analytics: {
+        overview: () => Promise.resolve({ stats: [], series: [] }),
+        helpers: () => Promise.resolve(reached),
+      },
+    })
     expect(await screen.findByText('Budget limit reached')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Raise budget' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Allow this job' })).toBeInTheDocument()
   })
 })
 
@@ -114,10 +126,10 @@ describe('OfficeAnalyticsRoute', () => {
     await mount('/office/analytics')
     // In mock mode the session company is "Demo Workspace" (from session.ts DEMO_COMPANY)
     expect(await screen.findByText('Analytics · Demo Workspace')).toBeInTheDocument()
-    // Fallback chart title (static constant, not fixture)
-    expect(screen.getByText('Spend by channel')).toBeInTheDocument()
-    // helpersSub now reflects live helper count from mock analyticsHelpers (3 helpers)
-    expect(screen.getByText('3 helpers')).toBeInTheDocument()
+    // Spend chart built from GET /v1/analytics/spend-by-channel
+    expect(await screen.findByText('Spend by channel')).toBeInTheDocument()
+    // helpersSub reflects the live helper rows (3 helpers, 2 working)
+    expect(screen.getByText('3 helpers · 2 working now')).toBeInTheDocument()
   })
 })
 
@@ -168,7 +180,8 @@ describe('OfficeAnalyticsRoute — live data', () => {
     })
     await screen.findByRole('button', { name: /30 days/i })
     fireEvent.click(screen.getByRole('button', { name: /30 days/i }))
-    await waitFor(() => expect(capturedRange).toBe('30 days'))
+    // The toolbar label is mapped to the API range key
+    await waitFor(() => expect(capturedRange).toBe('month'))
   })
 
   test('empty state: no stats or helpers renders placeholder', async () => {

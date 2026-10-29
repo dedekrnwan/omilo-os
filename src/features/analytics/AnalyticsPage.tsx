@@ -1,103 +1,59 @@
 import { useState } from 'react'
 import { ChartLine } from 'lucide-react'
 import { Topbar } from '../../ui/ds/Frame'
-import type { HelperArea } from '../../core/domain/types'
-import type { AnalyticsStat, HelperStat as DomainHelperStat } from '../../core/domain/types'
-import { useAnalyticsOverview, useAnalyticsHelpers } from '../../app/queries'
+import type { AnalyticsOverview, HelperStat as DomainHelperStat } from '../../core/domain/types'
+import {
+  useAllowHelperJob,
+  useAnalyticsHelpersFor,
+  useAnalyticsOverviewFor,
+  useSpendByChannel,
+  useTokensByHelper,
+} from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
 import { BudgetDrawer, BudgetToast } from './BudgetDrawer'
-import type { BarChart, ChipTone, HelperStatus, Stat } from './data'
+import { PERIOD_SUFFIX, RANGE_KEY, asArea, jobsChart, stackedChart, toDisplayStat } from './data'
+import type { BarChart, HelperStat, HelperStatus, RangeLabel } from './data'
+import { formatCredits, formatTokens, relativeTime } from './format'
 import { ALL_HELPERS, PageHeader, Tabs, Toolbar } from './parts'
 import type { TabId } from './parts'
 import { ActivityTab, HelpersTab, LoopsTab, OverviewTab, ReliabilityTab } from './tabs'
 
-// ── Local bridge type: maps DomainHelperStat → display shape ─────────────────
+/** Display row for a helper — the analytics HelperStat view model. */
+export type LocalHelperRow = HelperStat
 
-/** Display-ready helper row built from domain HelperStat for the overview/helpers tabs. */
-export interface LocalHelperRow {
-  id: string
-  name: string
-  /** NOTE(p8-chart-gap): domain HelperStat lacks area — defaulting to 'brand'.
-   *  A future backend field (e.g. area) would wire this properly. */
-  area: HelperArea
-  role: string
-  doing: string
-  status: HelperStatus
-  jobs: string
-  success: string
-  successWarn?: boolean
-  tokens: string
-  spend: string
-  budget?: { spent: number; limit: number; warn?: boolean }
-  lastActive: string
-}
+/** Which chart a card shows: built from the matching analytics endpoint. */
+export type ChartKind = 'spend' | 'tokens' | 'jobs'
 
-// ── Shape conversion helpers ──────────────────────────────────────────────────
+// ── Shape conversion ──────────────────────────────────────────────────────────
 
-function toDisplayStat(s: AnalyticsStat): Stat {
-  const value = s.note === '%' ? `${s.value}%` : String(s.value)
-  return {
-    label: s.label,
-    value,
-    delta: '',
-    tone: 'neutral' as ChipTone,
-    note: s.note && s.note !== '%' ? s.note : '',
-  }
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1000) return `${Math.round(n / 1000)}k`
-  return String(n)
-}
+const STATUSES: HelperStatus[] = ['working', 'idle', 'needs', 'paused']
 
 function toDomainRow(h: DomainHelperStat): LocalHelperRow {
+  const status = (STATUSES as string[]).includes(h.status ?? '') ? (h.status as HelperStatus) : 'idle'
+  const budget = h.budget
+    ? { spent: h.budget.spent, limit: h.budget.limit, warn: h.budget.limit > 0 && h.budget.spent / h.budget.limit >= 0.8 }
+    : undefined
   return {
     id: h.helperId,
     name: h.name,
-    area: 'brand' as HelperArea, // NOTE(p8-chart-gap): area not in domain HelperStat; default 'brand'
-    role: '',
-    doing: '',
-    status: 'idle' as const,
+    area: asArea(h.area),
+    role: h.role ?? '',
+    doing: h.doing ?? '',
+    status,
     jobs: String(h.jobs),
-    // success is 0-100; display as percentage, or '—' if not applicable
-    success: h.success === 0 && h.jobs === 0 ? '—' : `${h.success}%`,
+    // success is 0-100; '—' when the helper hasn't run in this period
+    success: h.jobs === 0 ? '—' : `${h.success}%`,
     successWarn: h.success < 80 && h.jobs > 0,
     tokens: formatTokens(h.tokens),
-    // NOTE(p8-chart-gap): assuming spend is in cents; if backend returns dollars, remove /100
-    spend: `$${(h.spend / 100).toFixed(2)}`,
-    lastActive: '—',
+    spend: formatCredits(h.spend),
+    budget,
+    budgetReached: !!h.budgetReached,
+    lastActive: relativeTime(h.lastActive),
   }
 }
 
-// ── Fallback bar charts (used until series→BarChart mapping is implemented) ──
-// NOTE(p8-chart-gap): AnalyticsSeries {label, values, labels} does not map to
-// BarChart {stack, legend, fmt, unit} — using static fallback until chart wiring task.
-
-export const FALLBACK_JOBS_CHART: BarChart = {
-  title: 'Jobs',
-  sub: '',
-  stack: [],
-  legend: [],
-  fmt: (v) => String(v),
-  unit: 'jobs',
-}
-
-export const FALLBACK_TOKENS_CHART: BarChart = {
-  title: 'Tokens by helper',
-  sub: '',
-  stack: [],
-  legend: [],
-  fmt: (v) => String(v),
-  unit: 'tokens',
-}
-
-export const FALLBACK_SPEND_CHART: BarChart = {
-  title: 'Spend by channel',
-  sub: '',
-  stack: [],
-  legend: [],
-  fmt: (v) => `$${(v * 0.1).toFixed(2)}`,
-  unit: '',
+function seriesValues(o: AnalyticsOverview | undefined, label: string): number[] {
+  return o?.series.find((s) => s.label === label)?.values ?? []
 }
 
 // ── URL query helpers ─────────────────────────────────────────────────────────
@@ -121,39 +77,66 @@ export function AnalyticsPage({
   sub,
   left,
   right,
+  channelId,
 }: {
   meta: string
   title: string
   sub: string
-  left: BarChart
-  right: BarChart
+  left: ChartKind
+  right: ChartKind
+  /** Scope every number to one channel (chat analytics); omit for company-wide. */
+  channelId?: string
 }) {
   const [{ tab: initialTab, state }] = useState(readQuery)
   const [tab, setTab] = useState<TabId>(initialTab)
-  const [range, setRange] = useState('7 days')
+  const [range, setRange] = useState<RangeLabel>('7 days')
+  const rangeKey = RANGE_KEY[range]
 
-  const overviewQ = useAnalyticsOverview(range)
-  const helpersQ = useAnalyticsHelpers(range)
+  const overviewQ = useAnalyticsOverviewFor(rangeKey, channelId)
+  const helpersQ = useAnalyticsHelpersFor(rangeKey, channelId)
+  const spendQ = useSpendByChannel(rangeKey, channelId)
+  const tokensQ = useTokensByHelper(rangeKey, channelId)
+  const allowJob = useAllowHelperJob()
 
   const [helperFilter, setHelperFilter] = useState(ALL_HELPERS)
 
   const isError = overviewQ.isError || helpersQ.isError
-  const stats = (overviewQ.data?.stats ?? []).map(toDisplayStat)
+  const stats = (overviewQ.data?.stats ?? []).map((s) => toDisplayStat(s, rangeKey))
   const allRows = (helpersQ.data ?? []).map(toDomainRow)
   // Apply the toolbar helper filter so the overview/helpers lists genuinely narrow.
-  const rows =
-    helperFilter === ALL_HELPERS ? allRows : allRows.filter((r) => r.name === helperFilter)
-  const helpersSub = rows.length === 0 ? '' : `${rows.length} helper${rows.length === 1 ? '' : 's'}`
+  const rows = helperFilter === ALL_HELPERS ? allRows : allRows.filter((r) => r.name === helperFilter)
+  const working = rows.filter((r) => r.status === 'working').length
+  const helpersSub =
+    rows.length === 0
+      ? ''
+      : `${rows.length} helper${rows.length === 1 ? '' : 's'}${working ? ` · ${working} working now` : ''}`
 
-  // BudgetDrawer state — P5d, left unchanged
-  const [reached, setReached] = useState(state === 'budget-reached')
-  const [toast, setToast] = useState(state === 'budget-reached')
-  const [budgetFor, setBudgetFor] = useState<LocalHelperRow | null>(() =>
-    state === 'budget' ? (rows[0] ?? null) : null,
-  )
+  const periodWord = PERIOD_SUFFIX[rangeKey] ?? 'this week'
+  const charts: Record<ChartKind, BarChart> = {
+    jobs: jobsChart(
+      seriesValues(overviewQ.data, 'Done'),
+      seriesValues(overviewQ.data, 'Failed'),
+      overviewQ.data?.buckets ?? [],
+    ),
+    spend: stackedChart('spend', spendQ.data, periodWord),
+    tokens: stackedChart('tokens', tokensQ.data, periodWord),
+  }
 
-  // budget-reached demo: mark the first helper as reached (URL-param demo only)
-  const reachedId = reached && rows.length > 0 ? rows[0].id : undefined
+  // Budget reached is real: a helper whose month-to-date spend hit its budget.
+  const reachedRow = allRows.find((r) => r.budgetReached)
+  const [toastDismissed, setToastDismissed] = useState(false)
+  const [budgetFor, setBudgetFor] = useState<LocalHelperRow | null>(null)
+  const [budgetFromUrl, setBudgetFromUrl] = useState(state === 'budget')
+  if (budgetFromUrl && !budgetFor && allRows.length > 0) {
+    setBudgetFromUrl(false)
+    setBudgetFor(allRows[0])
+  }
+
+  const allowOneMore = (h: LocalHelperRow) =>
+    allowJob.mutate(h.id, {
+      onSuccess: () => notify(`Allowed one more job for ${h.name}`),
+      onError: () => notify(`Couldn't allow a job for ${h.name}`),
+    })
 
   return (
     <>
@@ -164,7 +147,7 @@ export function AnalyticsPage({
           <Tabs value={tab} onChange={setTab} />
           <Toolbar
             range={range}
-            onRange={setRange}
+            onRange={(r) => setRange(r as RangeLabel)}
             helperNames={allRows.map((r) => r.name)}
             helperFilter={helperFilter}
             onHelperFilter={setHelperFilter}
@@ -178,15 +161,19 @@ export function AnalyticsPage({
 
           {!isError && tab === 'overview' && (
             <>
-              {stats.length === 0 && rows.length === 0 ? (
+              {overviewQ.isLoading || helpersQ.isLoading ? (
+                <div className="flex w-full items-center justify-center p-[48px] text-[14px] text-muted">
+                  Loading analytics…
+                </div>
+              ) : stats.length === 0 && rows.length === 0 ? (
                 <div className="flex w-full items-center justify-center p-[48px] text-[14px] text-muted">
                   No data for this period.
                 </div>
               ) : (
                 <OverviewTab
                   stats={stats}
-                  left={left}
-                  right={right}
+                  left={charts[left]}
+                  right={charts[right]}
                   rows={rows.slice(0, 4)}
                   helpersSub={helpersSub}
                   onSetBudget={setBudgetFor}
@@ -195,25 +182,21 @@ export function AnalyticsPage({
             </>
           )}
           {!isError && tab === 'helpers' && (
-            <HelpersTab list={rows} reachedId={reachedId} onSetBudget={setBudgetFor} />
+            <HelpersTab list={rows} onSetBudget={setBudgetFor} onAllowJob={allowOneMore} />
           )}
-          {tab === 'loops' && <LoopsTab />}
-          {tab === 'reliability' && <ReliabilityTab />}
-          {tab === 'activity' && <ActivityTab />}
+          {tab === 'loops' && <LoopsTab range={rangeKey} />}
+          {tab === 'reliability' && (
+            <ReliabilityTab range={rangeKey} channelId={channelId} onRaiseBudget={() => setTab('helpers')} />
+          )}
+          {tab === 'activity' && <ActivityTab helpers={allRows} channelId={channelId} />}
         </div>
       </div>
-      <BudgetDrawer
-        helper={budgetFor}
-        onClose={() => {
-          if (reached) setReached(false)
-          setBudgetFor(null)
-        }}
-      />
-      {toast && (
+      <BudgetDrawer helper={budgetFor} onClose={() => setBudgetFor(null)} />
+      {reachedRow && !toastDismissed && (
         <BudgetToast
           title="Budget limit reached"
-          body="A helper hit its budget. Raise the budget or allow this one job."
-          onClose={() => setToast(false)}
+          body={`${reachedRow.name} hit its monthly budget and is paused. Raise the budget or allow one more job.`}
+          onClose={() => setToastDismissed(true)}
         />
       )}
     </>

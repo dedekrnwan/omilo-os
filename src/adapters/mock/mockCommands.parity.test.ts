@@ -93,6 +93,16 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'retryFlowRun',
   'cancelFlowRun',
   'restoreFlowVersion',
+  // ── sweep/team-analytics ──
+  'retireHelper',
+  'allowHelperJob',
+  'connectHelperChannel',
+  'updateHelperChannel',
+  'disconnectHelperChannel',
+  'setHelperTools',
+  'setHelperSkills',
+  'saveHelperFile',
+  'retryJob',
 ]
 
 describe('mock-mode parity', () => {

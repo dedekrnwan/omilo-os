@@ -1,7 +1,7 @@
 import { useArea } from '../../app/queries'
 import { useUIStore } from '../../app/store'
 import { useSession } from '../../app/session'
-import { AnalyticsPage, FALLBACK_JOBS_CHART, FALLBACK_SPEND_CHART, FALLBACK_TOKENS_CHART } from './AnalyticsPage'
+import { AnalyticsPage } from './AnalyticsPage'
 
 /**
  * Chat · Analytics — area-filtered. With no area selected it shows the
@@ -18,8 +18,8 @@ export function ChatAnalyticsRoute() {
         meta="All areas"
         title={`Analytics · ${companyName}`}
         sub="Every helper across all areas this week."
-        left={FALLBACK_SPEND_CHART}
-        right={FALLBACK_JOBS_CHART}
+        left="spend"
+        right="jobs"
       />
     )
   }
@@ -30,8 +30,9 @@ export function ChatAnalyticsRoute() {
       meta={`in ${name}`}
       title={`Analytics · ${name}`}
       sub={`How ${name}'s helpers did this week.`}
-      left={FALLBACK_TOKENS_CHART}
-      right={FALLBACK_JOBS_CHART}
+      left="tokens"
+      right="jobs"
+      channelId={areaId}
     />
   )
 }

@@ -745,6 +745,30 @@ export function createHttpRepos(
         // Response fields are already camelCase: helperId, name, jobs, success, tokens, spend
         return res.json() as Promise<HelperStat[]>
       },
+      // ── sweep/team-analytics ──
+      overviewFor: (range: string, channelId?: string) =>
+        get<AnalyticsOverview>(`/v1/analytics/overview${analyticsQs(range, channelId)}`),
+      helpersFor: (range: string, channelId?: string) =>
+        get<HelperStat[]>(`/v1/analytics/helpers${analyticsQs(range, channelId)}`),
+      spendByChannel: (range: string, channelId?: string) =>
+        get<AnalyticsStackedSeries>(`/v1/analytics/spend-by-channel${analyticsQs(range, channelId)}`),
+      tokensByHelper: (range: string, channelId?: string) =>
+        get<AnalyticsStackedSeries>(`/v1/analytics/tokens-by-helper${analyticsQs(range, channelId)}`),
+      loops: (range: string) => get<AnalyticsLoop[]>(`/v1/analytics/loops${analyticsQs(range)}`),
+      reliability: (range: string, channelId?: string) =>
+        get<AnalyticsReliability>(`/v1/analytics/reliability${analyticsQs(range, channelId)}`),
+      failures: (range: string, channelId?: string) =>
+        get<AnalyticsFailure[]>(`/v1/analytics/failures${analyticsQs(range, channelId)}`),
+      activity: (q: ActivityQuery) => {
+        const p = new URLSearchParams()
+        if (q.kinds) p.set('kinds', q.kinds.join(','))
+        if (q.helperIds) p.set('helper', q.helperIds.join(','))
+        if (q.cursor) p.set('cursor', q.cursor)
+        if (q.limit) p.set('limit', String(q.limit))
+        if (q.channelId) p.set('channel_id', q.channelId)
+        const qs = p.toString()
+        return get<ActivityPage>(`/v1/activity${qs ? `?${qs}` : ''}`)
+      },
     },
 
     skills: {
@@ -780,6 +804,12 @@ export function createHttpRepos(
           throw err
         }
       },
+      // ── sweep/team-analytics ──
+      detail: (id: Id) => getOrNull<HelperDetail>(`/v1/helpers/${id}`),
+      channels: (id: Id) => get<HelperChannelBinding[]>(`/v1/helpers/${id}/channels`),
+      tools: (id: Id) => get<HelperTools>(`/v1/helpers/${id}/tools`),
+      skillRows: (id: Id) => get<HelperSkillRow[]>(`/v1/helpers/${id}/skills`),
+      files: (id: Id) => get<HelperFile[]>(`/v1/helpers/${id}/files`),
     },
 
     members: {
@@ -1083,4 +1113,27 @@ export function mapProposalDetail(r: RawProposalDetail): ProposalDetail {
     createdAt: p.created_at,
     revisions: (r.revisions ?? []).map((v) => ({ n: v.n, author: v.author, summary: v.summary, bodyMd: v.body_md, at: v.at })),
   }
+}
+
+// ── sweep/team-analytics ──
+
+import type {
+  ActivityPage,
+  AnalyticsFailure,
+  AnalyticsLoop,
+  AnalyticsReliability,
+  AnalyticsStackedSeries,
+  HelperChannelBinding,
+  HelperDetail,
+  HelperFile,
+  HelperSkillRow,
+  HelperTools,
+} from '../../core/domain/types'
+import type { ActivityQuery } from '../../core/ports/repos'
+
+/** ?range=…&channel_id=… for the analytics endpoints. */
+function analyticsQs(range: string, channelId?: string): string {
+  const p = new URLSearchParams({ range })
+  if (channelId) p.set('channel_id', channelId)
+  return `?${p.toString()}`
 }

@@ -873,4 +873,168 @@ export interface ProposalDetail {
   due: string | null
   params: Record<string, unknown> | null
   revisions: { n: number; author: string; summary: string; bodyMd: string; at: string | null }[]
+// ── sweep/team-analytics ──────────────────────────────────────────────────────
+// Interface merging adds the fields the Team + Analytics endpoints now return.
+// Currency: every cost/spend below is in credits.
+
+export interface HelperJobRef {
+  brief: string
+  startedAt?: string | null
+
+export interface HelperNextRoutine {
+  nextAt: string
+
+/** Mascot look saved on the helper (Profile tab). picture = data URL. */
+export interface HelperLook {
+  color?: string
+  shape?: string
+  prop?: string
+  picture?: string | null
+
+/** Behavior tab settings (helper.behavior). */
+export interface HelperBehavior {
+  spend_per_task_idr?: number
+  messages_per_hour?: number
+  never_discuss?: string[]
+  work_hours_override?: boolean
+  /** 'owner' | 'helper:<id>' | 'member:<id>' */
+  handoff_to?: string
+  language?: string
+
+export interface Helper {
+  /** Engine model label, e.g. "Opus 5.5"; null = company default. */
+  model?: string | null
+  title?: string | null
+  /** 'owner' | helper id */
+  reportsTo?: string | null
+  look?: HelperLook | null
+  behavior?: HelperBehavior
+  jobsMonth?: number
+  costMonth?: number
+  currentJob?: HelperJobRef | null
+  nextRoutine?: HelperNextRoutine | null
+  /** Enabled routines owned by this helper. */
+  loops?: number
+  lastActive?: string | null
+  budgetCreditsMonth?: number | null
+  budgetAllowJobs?: number
+  channelCount?: number
+
+export interface HelperRoutineRow {
+  paused: boolean
+  enabled: boolean
+  managedByChief?: boolean
+
+export interface HelperSkillRow {
+  own: boolean
+  createdBy?: string
+  enabled: boolean
+  permission: 'always' | 'ask'
+
+/** GET /v1/helpers/{id} — helper plus its routines, skills and tab counts. */
+export interface HelperDetail {
+  helper: Helper
+  routines: HelperRoutineRow[]
+  skills: HelperSkillRow[]
+  counts: { channels: number; tools: number; skills: number; routines: number }
+
+export type HelperChannelKind = 'telegram' | 'whatsapp' | 'email'
+
+export interface HelperChannelBinding {
+  helperId: Id
+  kind: HelperChannelKind
+  config: Record<string, unknown>
+  /** Names of secret fields that are set (values are never returned). */
+  secretsSet: string[]
+  /** 'pending_setup' until a delivery integration confirms the binding. */
+
+export interface HelperConnectorTool {
+  kind?: string | null
+  status?: string | null
+  on: boolean
+  /** 'read' | 'write' | 'ask' */
+  access: string
+
+export interface HelperBuiltinTool {
+  on: boolean
+
+export interface HelperTools {
+  connectors: HelperConnectorTool[]
+  builtins: HelperBuiltinTool[]
+
+export interface HelperFile {
+  name: 'PERSONA.md' | 'STYLE.md' | 'PLAYBOOK.md' | 'MEMORY.md'
+  docId: Id | null
+  updatedBy: string | null
+
+export interface AnalyticsStat {
+  /** Same stat for the previous period (for the delta chip). */
+  prev?: number
+  failed?: number
+  perJob?: number
+  of?: number
+  p95?: number
+
+export interface AnalyticsOverview {
+  buckets?: { start: string; end: string }[]
+
+export interface HelperStat {
+  area?: HelperArea
+  role?: string
+  isChief?: boolean
+  /** 'working' | 'idle' | 'needs' | 'paused' */
+  doing?: string
+  nextAt?: string | null
+  lastActive?: string | null
+  budget?: { spent: number; limit: number } | null
+  budgetReached?: boolean
+
+/** Stacked bar chart data: one value per bucket per series. */
+export interface AnalyticsStackedSeries {
+  buckets: { start: string; end: string }[]
+  series: { key: string; label: string; area: string; values: number[] }[]
+  total: number
+
+export interface AnalyticsLoop {
+  kind: 'routine' | 'flow'
+  helperId: Id | null
+  helperName: string | null
+  schedule: string
+  lastResult: string | null
+  runs: number
+  avgCost: number
+  on: boolean
+
+export interface AnalyticsReliability {
+  stats: AnalyticsStat[]
+  causes: { label: string; count: number }[]
+  causesTip: string
+
+export interface AnalyticsFailure {
+  jobId: Id
+  helperId: Id
+  helperName: string | null
+  error: string
+  cause: string
+  attempts: number
+  /** 'failed' | 'recovered' | 'needs_you' */
+  /** 'retry' | 'connect' | 'budget' | 'view' */
+  action: string
+  sessionId?: string | null
+
+export type ActivityKind = 'done' | 'needs_you' | 'failed' | 'started'
+
+export interface ActivityEntry {
+  kind: ActivityKind
+  helperId: Id
+  who: string
+  what: string
+  meta: string
+  jobId?: Id
+  proposalId?: Id
+
+export interface ActivityPage {
+  items: ActivityEntry[]
+  nextCursor: string | null
+  counts: Record<ActivityKind, number>
 }

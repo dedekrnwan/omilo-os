@@ -807,3 +807,156 @@ export const members: CompanyMember[] = [
   { id: 'mem-by', userId: 'usr-by', name: 'Bayu Pratama',   email: 'bayu@saga.co.id', role: 'member' },
   { id: 'mem-sn', userId: 'usr-sn', name: 'Sari Nur',       email: 'sari@saga.co.id', role: 'member' },
 ]
+
+// ── sweep/team-analytics ──────────────────────────────────────────────────────
+// Demo content for the Team + Analytics screens in mock mode. Mutable so the
+// mock commands (retire, channels, tools, skills, files, retry) are reflected
+// by the next read.
+
+import type {
+  ActivityEntry,
+  AnalyticsFailure,
+  AnalyticsLoop,
+  AnalyticsReliability,
+  AnalyticsStackedSeries,
+  HelperChannelBinding,
+  HelperFile,
+  HelperTools,
+} from '../../core/domain/types'
+
+const SWEEP_TODAY = new Date()
+const iso = (minsAgo: number) => new Date(SWEEP_TODAY.getTime() - minsAgo * 60_000).toISOString()
+
+const MOCK_HELPER_EXTRAS: Record<string, Partial<Helper>> = {
+  'h-chief': {
+    model: 'Opus 5.5', title: 'Chief of Staff', reportsTo: 'owner', jobsMonth: 112, costMonth: 1_820, loops: 3,
+    currentJob: { id: 'job-brief', brief: 'Planning next week', status: 'running' },
+    nextRoutine: { id: 'rtn-morning-brief', name: 'Morning brief', nextAt: '2026-10-29T00:00:00Z' },
+    lastActive: iso(1), budgetCreditsMonth: 2_500, channelCount: 0,
+    behavior: { language: 'Bahasa Indonesia', never_discuss: ['Legal', 'Politics'], handoff_to: 'owner' },
+  },
+  'h-dev': {
+    model: 'Opus 5.5', title: 'Dev · Engineering', reportsTo: 'h-chief', jobsMonth: 61, costMonth: 930, loops: 2,
+    currentJob: { id: 'job-pr', brief: 'Opening the PR for the passkey cut-off', status: 'running' },
+    lastActive: iso(3), budgetCreditsMonth: null, channelCount: 0,
+  },
+  'h-growth': {
+    model: 'Sonnet 5.5', title: 'Growth · Marketing', reportsTo: 'h-chief', jobsMonth: 19, costMonth: 210, loops: 1,
+    currentJob: { id: 'job-ig', brief: 'Your pick between two Instagram drafts', status: 'waiting' },
+    lastActive: iso(120), budgetCreditsMonth: null, channelCount: 1,
+  },
+}
+for (const h of helpers) Object.assign(h, MOCK_HELPER_EXTRAS[h.id] ?? {})
+
+/** Per-helper channel bindings (Omilo chat is built in and not listed). */
+export const mockHelperChannels: Record<string, HelperChannelBinding[]> = {
+  'h-growth': [
+    { id: 'hch-wa-growth', helperId: 'h-growth', kind: 'whatsapp', config: { who: 'anyone', when: 'always', handoff: true }, secretsSet: [], status: 'pending_setup' },
+  ],
+}
+
+export const mockHelperTools: Record<string, HelperTools> = {}
+export function mockToolsFor(helperId: string): HelperTools {
+  mockHelperTools[helperId] ??= {
+    connectors: connectors.map((c, i) => ({ id: c.id, label: c.label, kind: null, status: c.status, on: i < 2, access: i === 0 ? 'write' : 'read' })),
+    builtins: [
+      { id: 'browser', label: 'Browser', desc: 'Open pages and fill simple forms', on: true },
+      { id: 'web_search', label: 'Web search', desc: 'Look things up on the web', on: true },
+      { id: 'code_runner', label: 'Code runner', desc: 'Run small scripts on files', on: false },
+    ],
+  }
+  return mockHelperTools[helperId]
+}
+
+/** {helperId: {skillId: {enabled, permission}}} */
+export const mockHelperSkillSettings: Record<string, Record<string, { enabled: boolean; permission: 'always' | 'ask' }>> = {}
+
+const FILE_DESCRIPTIONS: Record<HelperFile['name'], string> = {
+  'PERSONA.md': 'How {n} thinks and what it cares about',
+  'STYLE.md': 'Tone, language and formatting',
+  'PLAYBOOK.md': 'Step-by-step answers for common cases',
+  'MEMORY.md': 'What it remembers between chats',
+}
+export const mockHelperFiles: Record<string, HelperFile[]> = {}
+export function mockFilesFor(helperId: string, name: string): HelperFile[] {
+  mockHelperFiles[helperId] ??= (Object.keys(FILE_DESCRIPTIONS) as HelperFile['name'][]).map((f) => ({
+    name: f,
+    description: FILE_DESCRIPTIONS[f].replace('{n}', name),
+    docId: f === 'PLAYBOOK.md' ? `mem-${helperId}-playbook` : null,
+    content:
+      f === 'PLAYBOOK.md'
+        ? '## Common questions\n\n1. Look the answer up before replying — never guess.\n2. Reply short and warm.\n3. Hand anything about money disputes to the owner.'
+        : '',
+    updatedAt: f === 'PLAYBOOK.md' ? iso(2 * 24 * 60) : null,
+    updatedBy: f === 'PLAYBOOK.md' ? `helper:${helperId}` : null,
+  }))
+  return mockHelperFiles[helperId]
+}
+
+const BUCKETS_7 = Array.from({ length: 7 }, (_, i) => {
+  const d = new Date(SWEEP_TODAY.getTime() - (6 - i) * 86_400_000).toISOString().slice(0, 10)
+  return { start: d, end: d }
+})
+
+export const mockAnalyticsBuckets = BUCKETS_7
+
+export const mockJobsSeries = {
+  done: [16, 20, 23, 17, 21, 19, 12],
+  failed: [0, 1, 0, 0, 2, 1, 0],
+}
+
+export const mockSpendByChannel: AnalyticsStackedSeries = {
+  buckets: BUCKETS_7,
+  total: 1_450,
+  series: [
+    { key: 'ch-engineering', label: 'Engineering', area: 'dev', values: [110, 140, 160, 30, 20, 190, 120] },
+    { key: 'ch-marketing', label: 'Marketing', area: 'marketing', values: [30, 40, 20, 20, 10, 50, 60] },
+    { key: 'ch-general', label: 'General', area: 'brand', values: [20, 15, 25, 10, 5, 30, 25] },
+  ],
+}
+
+export const mockTokensByHelper: AnalyticsStackedSeries = {
+  buckets: BUCKETS_7,
+  total: 284_000,
+  series: [
+    { key: 'h-chief', label: 'Chief', area: 'brand', values: [23_000, 20_000, 27_000, 9_000, 8_000, 30_000, 25_000] },
+    { key: 'h-dev', label: 'Dev', area: 'dev', values: [14_000, 18_000, 16_000, 4_000, 3_000, 22_000, 21_000] },
+    { key: 'h-growth', label: 'Growth', area: 'marketing', values: [3_000, 4_000, 3_000, 2_000, 1_000, 5_000, 8_000] },
+  ],
+}
+
+export const mockLoops: AnalyticsLoop[] = [
+  { id: 'rtn-morning-brief', kind: 'routine', name: 'Morning brief', helperId: 'h-chief', helperName: 'Chief', area: 'brand', schedule: 'Daily · 07:00', nextAt: '2026-10-29T00:00:00Z', lastResult: 'done', runs: 7, avgCost: 12, on: true },
+  { id: 'rtn-pr-digest', kind: 'routine', name: 'PR digest to #engineering', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Weekdays · 09:00', nextAt: '2026-10-29T02:00:00Z', lastResult: 'done', runs: 5, avgCost: 4, on: true },
+  { id: 'rtn-latency', kind: 'routine', name: 'Weekly latency report', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Fri · 16:00', nextAt: '2026-10-30T09:00:00Z', lastResult: 'failed', runs: 1, avgCost: 21, on: true },
+  { id: 'flw-weekly-growth', kind: 'flow', name: 'Weekly growth review', helperId: null, helperName: 'Flow', area: 'marketing', schedule: 'Weekly · 08:00', nextAt: null, lastResult: 'done', runs: 1, avgCost: 35, on: false },
+]
+
+export const mockReliability: AnalyticsReliability = {
+  stats: [
+    { label: 'Success rate', value: 96, prev: 94, note: '%' },
+    { label: 'Failed jobs', value: 4, prev: 7 },
+    { label: 'Retried and recovered', value: 2, prev: 1, of: 6 },
+    { label: 'Median duration', value: 48, prev: 52, note: 's', p95: 190 },
+  ],
+  causes: [
+    { label: 'Expired or missing connection', count: 3 },
+    { label: 'Rate limits', count: 2 },
+    { label: 'Timeouts', count: 1 },
+  ],
+  causesTip: 'Most failures come from expired or missing connections. Reconnect them in Connectors.',
+}
+
+export const mockFailures: AnalyticsFailure[] = [
+  { jobId: 'job-latency', helperId: 'h-dev', helperName: 'Dev', area: 'dev', title: 'Weekly latency report', error: 'Grafana query timed out', cause: 'Timeouts', attempts: 3, at: iso(20 * 60), status: 'failed', action: 'retry' },
+  { jobId: 'job-brief-cal', helperId: 'h-chief', helperName: 'Chief', area: 'brand', title: 'Morning brief', error: 'Calendar not connected', cause: 'Expired or missing connection', attempts: 1, at: iso(3 * 24 * 60), status: 'failed', action: 'connect' },
+  { jobId: 'job-deploy', helperId: 'h-dev', helperName: 'Dev', area: 'dev', title: 'Deploy failure triage', error: 'GitHub token expired', cause: 'Expired or missing connection', attempts: 2, at: iso(2 * 24 * 60), status: 'recovered', action: 'view' },
+]
+
+export const mockActivity: ActivityEntry[] = [
+  { id: 'job:a1', at: iso(1), kind: 'started', helperId: 'h-dev', who: 'Dev', area: 'dev', what: 'started Deploy failure triage', meta: 'chat · step 2 of 4' },
+  { id: 'proposal:a2', at: iso(13), kind: 'needs_you', helperId: 'h-growth', who: 'Growth', area: 'marketing', what: 'asked you to approve the referral ad budget', meta: 'spend · medium risk' },
+  { id: 'job:a3', at: iso(16), kind: 'done', helperId: 'h-dev', who: 'Dev', area: 'dev', what: 'finished Open PR fix/otp-retry', meta: 'chat · 41,200 tokens · 18 cr' },
+  { id: 'job:a4', at: iso(4 * 60), kind: 'done', helperId: 'h-chief', who: 'Chief', area: 'brand', what: 'finished Morning brief', meta: 'routine · 12 cr' },
+  { id: 'job:a5', at: iso(20 * 60), kind: 'failed', helperId: 'h-dev', who: 'Dev', area: 'dev', what: "couldn't finish Weekly latency report", meta: 'routine · Grafana query timed out' },
+]
