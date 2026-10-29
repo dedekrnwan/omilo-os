@@ -188,7 +188,13 @@ describe('SectionAccount — sign-out', () => {
       writable: true,
     })
 
-    render(<SectionAccount />)
+    // SectionAccount now reads company settings via useQuery → needs a QueryClient.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SectionAccount />
+      </QueryClientProvider>,
+    )
 
     // The global sign-out button has aria-label "Sign out of Omilo";
     // device-level "Sign out" buttons have no aria-label.

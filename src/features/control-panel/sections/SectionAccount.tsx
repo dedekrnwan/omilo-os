@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Monitor, Smartphone, Terminal } from 'lucide-react'
 import { optOut as telemetryOptOut, optIn as telemetryOptIn } from '../../../telemetry'
 import {
@@ -7,7 +7,6 @@ import {
   Rule,
   SaveBar,
   SectionPane,
-  SelectField,
   SettingCard,
   SettingCardRows,
   SettingRow,
@@ -15,10 +14,13 @@ import {
   TextInput,
   Toggle,
 } from '../legacyShared'
+import { useSectionSave } from '../ControlPanelShared'
 import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 import { useAuth } from '../../../app/useAuth'
 import { useSession } from '../../../app/session'
+import { useCommands } from '../../../app/CommandsProvider'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
 
 const DEVICES_INIT = [
   { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
@@ -26,11 +28,58 @@ const DEVICES_INIT = [
   { name: 'CLI token "omilo-cli"', desc: 'Created Oct 2 · used yesterday', icon: Terminal, canSignOut: true, isCli: true },
 ]
 
+const PROFILE_INITIAL = { name: 'Dede Kurniawan', nickname: 'Mas Dede', language: 'Bahasa Indonesia' }
+const PROFILE_LANGUAGES = ['Bahasa Indonesia', 'English', 'Bahasa Melayu', 'Tiếng Việt', 'ไทย', '中文']
+
 export function SectionAccount() {
   const { signOut } = useAuth()
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
+  const commands = useCommands()
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // Editable profile fields with a real save lifecycle.
+  const [profile, setProfile] = useState(PROFILE_INITIAL)
+
+  async function persistProfile() {
+    // "Agents call you" maps to the company PIC role column (PATCH /v1/company);
+    // name + personal language persist in free-form company settings.
+    await commands.updateCompanyProfile({ picRole: profile.nickname })
+    await updateSettings.mutateAsync({
+      profile: { name: profile.name, nickname: profile.nickname, language: profile.language },
+    })
+    notify('Profile saved')
+  }
+
+  const {
+    dirty: profileDirty,
+    saving: profileSaving,
+    error: profileError,
+    saved: profileSaved,
+    markDirty: markProfileDirty,
+    save: saveProfile,
+    discard: discardProfile,
+  } = useSectionSave(persistProfile, () => setProfile(PROFILE_INITIAL))
+
+  const editProfile = (key: keyof typeof PROFILE_INITIAL) => (v: string) => {
+    setProfile((prev) => ({ ...prev, [key]: v }))
+    markProfileDirty()
+  }
+
+  // Hydrate from persisted settings when they arrive (unless editing).
+  useEffect(() => {
+    if (profileDirty) return
+    const p = settings?.profile as Record<string, unknown> | undefined
+    if (!p) return
+    setProfile((prev) => ({
+      name: typeof p.name === 'string' ? p.name : prev.name,
+      nickname: typeof p.nickname === 'string' ? p.nickname : prev.nickname,
+      language: typeof p.language === 'string' ? p.language : prev.language,
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
   // Telemetry opt-out: local state only; backend persistence happens via POST
   // /v1/telemetry-config in a full integration, but the toggle wires the client-side
   // opt-out immediately so capture() becomes a no-op.
@@ -106,15 +155,24 @@ export function SectionAccount() {
         <SubHeading label="Profile" />
         <SettingCardRows>
           <SettingRow label="Name" desc="How agents address you.">
-            <TextInput value="Dede Kurniawan" />
+            <TextInput aria-label="Name" value={profile.name} onChange={editProfile('name')} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Agents call you" desc="Chief learned this in onboarding.">
-            <TextInput value="Mas Dede" />
+            <TextInput aria-label="Agents call you" value={profile.nickname} onChange={editProfile('nickname')} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Your language" desc="Interface language, just for you.">
-            <SelectField value="Bahasa Indonesia" />
+            <select
+              aria-label="Your language"
+              value={profile.language}
+              onChange={(e) => editProfile('language')(e.target.value)}
+              className="h-[34px] min-w-[200px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none focus:border-ink"
+            >
+              {PROFILE_LANGUAGES.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
           </SettingRow>
         </SettingCardRows>
 
@@ -182,7 +240,14 @@ export function SectionAccount() {
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar />
+      <SaveBar
+        dirty={profileDirty}
+        saving={profileSaving}
+        error={profileError}
+        saved={profileSaved}
+        onSave={saveProfile}
+        onDiscard={discardProfile}
+      />
     </div>
   )
 }

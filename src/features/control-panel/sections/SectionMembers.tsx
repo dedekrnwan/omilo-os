@@ -3,9 +3,10 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { Crown, Ellipsis, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
 import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
+import { ConfirmDialog } from '../../../ui/ds/ConfirmDialog'
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
-import { useMembers } from '../../../app/queries'
+import { useChangeMemberRole, useMembers, useRemoveMember } from '../../../app/queries'
 import type { CompanyMember } from '../../../core/domain/types'
 import { useSession } from '../../../app/session'
 
@@ -91,11 +92,12 @@ function MemberMoreMenu({ name, onEdit, onRemove }: { name: string; onEdit: () =
   )
 }
 
-type PersonRow = { email: string; name: string; initials: string; color: string; channels: string; role: string; seen: string }
+type PersonRow = { id: string; email: string; name: string; initials: string; color: string; channels: string; role: string; seen: string }
 
 /** Map a CompanyMember to a PersonRow for display. */
 function toPersonRow(m: CompanyMember): PersonRow {
   return {
+    id: m.id,
     email: m.email,
     name: m.name,
     initials: initials(m.name),
@@ -118,9 +120,13 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
     [fetchedMembers],
   )
 
+  const changeRoleMutation = useChangeMemberRole()
+  const removeMemberMutation = useRemoveMember()
+
   // Local state: role per person (keyed by email) — initialised from API data
   const [roles, setRoles] = useState<Record<string, string>>({})
   const [removedEmails, setRemovedEmails] = useState<Set<string>>(new Set())
+  const [removeTarget, setRemoveTarget] = useState<PersonRow | null>(null)
 
   // Merge API rows with local overrides and removals
   const members = useMemo<PersonRow[]>(() => {
@@ -129,17 +135,35 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
       .map((p) => ({ ...p, role: roles[p.email] ?? p.role }))
   }, [apiRows, roles, removedEmails])
 
-  function changeRole(email: string, r: RoleOption) {
-    setRoles((prev) => ({ ...prev, [email]: r }))
+  async function changeRole(row: PersonRow, r: RoleOption) {
+    const prevRole = row.role
+    // optimistic
+    setRoles((prev) => ({ ...prev, [row.email]: r }))
+    try {
+      await changeRoleMutation.mutateAsync({ id: row.id, role: r.toLowerCase() })
+      notify(`${row.name} is now ${r}`)
+    } catch (e) {
+      // Roll back + surface the backend guard (e.g. last-owner demote → 400).
+      setRoles((prev) => ({ ...prev, [row.email]: prevRole }))
+      notify(e instanceof Error && e.message ? e.message : 'Could not change role')
+    }
   }
 
   function handleEdit(name: string) {
     notify(`Editing ${name}…`)
   }
 
-  function handleRemove(email: string, name: string) {
-    setRemovedEmails((prev) => new Set([...prev, email]))
-    notify(`${name} removed`)
+  async function confirmRemove() {
+    if (!removeTarget) return
+    const target = removeTarget
+    try {
+      await removeMemberMutation.mutateAsync(target.id)
+      setRemovedEmails((prev) => new Set([...prev, target.email]))
+      notify(`${target.name} removed`)
+    } catch (e) {
+      // Surface last-owner / role-guard errors rather than swallow them.
+      notify(e instanceof Error && e.message ? e.message : 'Could not remove member')
+    }
   }
 
   if (isLoading) {
@@ -229,13 +253,13 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
               {p.role === 'Owner' ? (
                 <Chip icon={Crown}>Owner</Chip>
               ) : (
-                <RoleDropdown role={p.role} onChange={(r) => changeRole(p.email, r)} />
+                <RoleDropdown role={p.role} onChange={(r) => void changeRole(p, r)} />
               )}
             </div>
             <MemberMoreMenu
               name={p.name}
               onEdit={() => handleEdit(p.name)}
-              onRemove={() => handleRemove(p.email, p.name)}
+              onRemove={() => setRemoveTarget(p)}
             />
           </div>
         ))}
@@ -251,6 +275,16 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           ))}
         </div>
       </Group>
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}
+        title={`Remove ${removeTarget?.name ?? ''}?`}
+        message="They lose access to this workspace immediately. You can invite them again later."
+        confirmLabel="Remove"
+        tone="danger"
+        onConfirm={() => void confirmRemove()}
+      />
     </PageShell>
   )
 }

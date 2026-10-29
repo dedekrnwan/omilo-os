@@ -1,12 +1,24 @@
 import { describe, test, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SectionAccount } from './SectionAccount'
+
+// SectionAccount now persists the profile via useUpdateCompanySettings → needs a
+// QueryClientProvider. CommandsProvider has a default (mock) client.
+function renderAccount() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <SectionAccount />
+    </QueryClientProvider>,
+  )
+}
 
 describe('SectionAccount · Devices & tokens', () => {
   test('rows use lucide icons, not emoji, and the CLI token is revoked (not signed out)', async () => {
     const user = userEvent.setup()
-    const { container } = render(<SectionAccount />)
+    const { container } = renderAccount()
 
     // The three entries render.
     expect(screen.getByText('MacBook Pro · Jakarta')).toBeInTheDocument()

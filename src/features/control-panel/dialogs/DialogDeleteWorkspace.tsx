@@ -3,12 +3,31 @@ import { Download, Trash2 } from 'lucide-react'
 import { Field, PenButton, Scrim } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { useSession } from '../../../app/session'
+import { useCommands } from '../../../app/CommandsProvider'
+import { useAuth } from '../../../app/useAuth'
+import { notify } from '../../../ui/ds/Toaster'
 
 /** pen JS6gc · General · Delete workspace */
 export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
   const workspaceName = useSession((s) => s.company?.name) ?? 'your company'
+  const commands = useCommands()
+  const { signOut } = useAuth()
   const [confirm, setConfirm] = useState('')
-  const canDelete = confirm.trim() === workspaceName
+  const [deleting, setDeleting] = useState(false)
+  const canDelete = confirm.trim() === workspaceName && !deleting
+
+  async function handleDelete() {
+    if (confirm.trim() !== workspaceName) return
+    setDeleting(true)
+    try {
+      await commands.deleteCompany()
+      signOut()
+      window.location.assign('/auth/sign-in')
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not delete workspace')
+      setDeleting(false)
+    }
+  }
   return (
     <Scrim onClose={onClose} align="right">
       <div
@@ -41,9 +60,9 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
             icon={Trash2}
             className={`flex-1 ${canDelete ? '' : 'cursor-not-allowed opacity-50'}`}
             disabled={!canDelete}
-            onClick={onClose}
+            onClick={() => void handleDelete()}
           >
-            Delete workspace
+            {deleting ? 'Deleting…' : 'Delete workspace'}
           </PenButton>
         </div>
       </div>

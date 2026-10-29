@@ -104,20 +104,31 @@ export function TextInput({
   placeholder,
   className = '',
   width,
+  onChange,
+  type = 'text',
+  'aria-label': ariaLabel,
 }: {
   value?: string
   placeholder?: string
   className?: string
   /** Fixed width in px; overrides the default min-width when set. */
   width?: number
+  /** When provided the field becomes editable (controlled). */
+  onChange?: (value: string) => void
+  type?: string
+  'aria-label'?: string
 }) {
+  const editable = onChange !== undefined
   return (
     <input
-      readOnly
+      readOnly={!editable}
+      type={type}
+      aria-label={ariaLabel}
       value={value}
       placeholder={placeholder}
+      onChange={editable ? (e) => onChange(e.target.value) : undefined}
       style={width !== undefined ? { width, minWidth: width } : undefined}
-      className={`h-[34px] ${width === undefined ? 'min-w-[240px]' : ''} rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none ${className}`}
+      className={`h-[34px] ${width === undefined ? 'min-w-[240px]' : ''} rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none ${editable ? 'focus:border-ink' : ''} ${className}`}
     />
   )
 }

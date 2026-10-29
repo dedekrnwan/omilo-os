@@ -2,18 +2,24 @@ import { useState } from 'react'
 import { Armchair, CircleCheck, Copy, Hash, Link, Send, Shield, UserPlus, X } from 'lucide-react'
 import { DialogCard, Field, PenButton, Radio } from '../ControlPanelShared'
 import { useSession } from '../../../app/session'
+import { useInviteMember } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 const ROLE_OPTIONS = ['Member', 'Admin', 'Viewer']
 const CHANNEL_OPTIONS = ['Engineering, General', 'General', 'Engineering', 'All channels']
 
-function EmailChip({ email }: { email: string }) {
+function EmailChip({ email, onRemove }: { email: string; onRemove?: () => void }) {
   return (
     <span className="flex items-center gap-[4px] rounded-sm bg-soft py-[4px] pr-[6px] pl-[8px] outline-1 -outline-offset-1 outline-line">
       <span className="text-[12.5px] text-ink-2">{email}</span>
-      <X size={12} aria-hidden className="text-muted" />
+      <button type="button" aria-label={`Remove ${email}`} onClick={onRemove}>
+        <X size={12} aria-hidden className="text-muted hover:text-ink" />
+      </button>
     </span>
   )
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function Option({ on, title, sub, right }: { on?: boolean; title: string; sub: string; right?: string }) {
   return (
@@ -37,6 +43,56 @@ export function DialogInvite({ onClose, seatsFull }: { onClose: () => void; seat
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [role, setRole] = useState('Member')
   const [channels, setChannels] = useState('Engineering, General')
+  const [emails, setEmails] = useState<string[]>(['rina@sahabatwarga.id', 'budi@sahabatwarga.id'])
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const inviteMember = useInviteMember()
+
+  function addEmail() {
+    const v = draft.trim()
+    if (!v) return
+    if (!EMAIL_RE.test(v)) {
+      notify('Enter a valid email address')
+      return
+    }
+    if (emails.includes(v)) {
+      setDraft('')
+      return
+    }
+    setEmails((prev) => [...prev, v])
+    setDraft('')
+  }
+
+  function removeEmail(email: string) {
+    setEmails((prev) => prev.filter((e) => e !== email))
+  }
+
+  async function handleSend() {
+    if (emails.length === 0) {
+      notify('Add at least one email')
+      return
+    }
+    setSending(true)
+    try {
+      const channelList = channels === 'All channels' ? undefined : channels.split(',').map((c) => c.trim()).filter(Boolean)
+      await Promise.all(
+        emails.map((email) =>
+          inviteMember.mutateAsync({ email, role: role.toLowerCase(), channels: channelList }),
+        ),
+      )
+      notify(emails.length === 1 ? `Invite sent to ${emails[0]}` : `${emails.length} invites sent`)
+      onClose()
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not send invites')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const sendLabel = seatsFull
+    ? `Add ${emails.length} seats & send`
+    : `Send ${emails.length} invite${emails.length === 1 ? '' : 's'}`
+
   return (
     <DialogCard
       width={520}
@@ -50,18 +106,33 @@ export function DialogInvite({ onClose, seatsFull }: { onClose: () => void; seat
           <span className="min-w-0 flex-1 text-center text-[12px] text-muted">
             {seatsFull ? 'Paid through Mayar' : 'Invites expire in 7 days'}
           </span>
-          <PenButton variant="primary" fs={13} icon={Send}>
-            {seatsFull ? 'Add 2 seats & send' : 'Send 2 invites'}
+          <PenButton variant="primary" fs={13} icon={Send} disabled={sending || emails.length === 0} onClick={() => void handleSend()}>
+            {sendLabel}
           </PenButton>
         </>
       }
     >
       <div className="flex w-full flex-col gap-[6px]">
         <span className="text-[13px] font-medium text-ink-2">Emails</span>
-        <div className="flex w-full items-center gap-[6px] rounded-base p-[8px] outline-1 -outline-offset-1 outline-faint">
-          <EmailChip email="rina@sahabatwarga.id" />
-          <EmailChip email="budi@sahabatwarga.id" />
-          <span className="text-[13px] text-faint">add more…</span>
+        <div className="flex w-full flex-wrap items-center gap-[6px] rounded-base p-[8px] outline-1 -outline-offset-1 outline-faint">
+          {emails.map((email) => (
+            <EmailChip key={email} email={email} onRemove={() => removeEmail(email)} />
+          ))}
+          <input
+            type="email"
+            aria-label="Add email"
+            placeholder="add more…"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault()
+                addEmail()
+              }
+            }}
+            onBlur={addEmail}
+            className="min-w-[120px] flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-faint"
+          />
         </div>
       </div>
       <div className="flex w-full gap-[12px]">
