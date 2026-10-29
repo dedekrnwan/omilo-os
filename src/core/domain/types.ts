@@ -371,7 +371,7 @@ export interface Routine {
 
 // ── Knowledge Base ────────────────────────────────────────────────────────────
 
-/** A KbSource row (from GET /v1/knowledge/sources — when that endpoint exists). */
+/** A KbSource row (from GET /v1/knowledge/sources). */
 export interface KbSource {
   id: Id
   companyId: string
@@ -380,6 +380,9 @@ export interface KbSource {
   title: string
   contentHash: string
   helperId: string | null
+  /** Chunks (passages) indexed from this source. */
+  chunks?: number
+  createdAt?: string | null
 }
 
 /** A KbItem is a recall result from GET /v1/knowledge?q=… */
@@ -507,4 +510,155 @@ export interface InboxItem {
   progress?: { step: number; total: number; elapsed: string }
   /** Done items: footer meta, e.g. "1m 50s · 5 sources · 11 steps" */
   meta?: string
+}
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+
+/** A company doc / handbook file / helper memory doc (GET /v1/memory). */
+export interface DocSummary {
+  id: Id
+  path: string
+  title: string
+  content: string
+  /** 'doc' (or a custom kind) for company docs, 'handbook', 'memory' for helper memory. */
+  kind: string
+  /** Area the doc belongs to (a channel id or a free label); null → General. */
+  area: string | null
+  pinned: boolean
+  /** Hidden from the doc graph. */
+  hidden: boolean
+  helperId: string | null
+  version: number
+  updatedAt: string | null
+  /** 'operator:<userId>', 'system', 'suggestion:<author>' … */
+  updatedBy: string
+  createdAt: string | null
+  createdBy: string
+}
+
+export interface DocLink {
+  id: Id
+  title: string
+  kind: string
+}
+
+export interface DocGoalLink {
+  id: Id
+  title: string
+  progress: number
+  status: string
+}
+
+/** GET /v1/memory/{id} — a doc plus links parsed from its [[wikilinks]]. */
+export interface DocDetail extends DocSummary {
+  links: DocLink[]
+  goals: DocGoalLink[]
+  /** [[targets]] that match no doc or goal. */
+  unresolved: string[]
+  backlinks: DocLink[]
+}
+
+export interface DocVersion {
+  id: Id
+  version: number
+  title: string | null
+  updatedBy: string
+  note: string | null
+  createdAt: string | null
+}
+
+export interface DocGraphNodeData {
+  id: Id
+  title: string
+  area: string | null
+  /** 'goal' for goal nodes (id 'goal:<goalId>'). */
+  kind: string
+  by: 'team' | 'agents'
+  updatedAt?: string | null
+  excerpt?: string
+}
+
+/** GET /v1/memory/graph */
+export interface DocGraph {
+  nodes: DocGraphNodeData[]
+  edges: { from: string; to: string }[]
+}
+
+/** A learned memory (GET /v1/lessons). helperId null → company fact. */
+export interface Lesson {
+  id: Id
+  helperId: string | null
+  tag: 'lesson' | 'preference' | 'fact'
+  text: string
+  source: string
+  status: 'review' | 'active'
+  createdBy: string
+  createdAt: string | null
+}
+
+export interface AskCitation {
+  n: number
+  sourceId: string
+  kind: string
+  title: string
+  heading: string
+  text: string
+  ref: string
+  /** Set when the passage came from a doc / handbook file. */
+  docId: string | null
+}
+
+/** POST /v1/ask */
+export interface AskAnswer {
+  answer: string
+  citations: AskCitation[]
+  /** False while Knowledge (agent memory) is off for the company. */
+  memorySearched: boolean
+}
+
+export interface HandbookFile {
+  id: Id
+  /** e.g. 'POLICIES.md' */
+  name: string
+  title: string
+  description: string
+  visibility: 'everyone' | 'members'
+  /** The company brief (BRIEF.md). */
+  brief: boolean
+  version: number
+  updatedAt: string | null
+  updatedBy: string
+  openSuggestions: number
+}
+
+export interface HandbookSuggestion {
+  id: Id
+  docId: string
+  file: string | null
+  helperId: string | null
+  author: string
+  text: string
+  proposedContent: string | null
+  status: 'open' | 'accepted' | 'dismissed'
+  createdAt: string | null
+  resolvedAt: string | null
+}
+
+export interface HandbookVersion {
+  version: number
+  updatedBy: string
+  note: string | null
+  createdAt: string | null
+}
+
+export interface HandbookFileDetail extends HandbookFile {
+  content: string
+  versions: HandbookVersion[]
+  suggestions: HandbookSuggestion[]
+}
+
+/** GET /v1/handbook */
+export interface HandbookIndex {
+  files: HandbookFile[]
+  openSuggestions: number
 }

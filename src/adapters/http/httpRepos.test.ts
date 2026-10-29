@@ -928,3 +928,51 @@ runReposContract('http (mocked fetch)', () => {
 
   return createHttpRepos(BASE, () => TOKEN)
 })
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+
+describe('httpRepos — docs, lessons, handbook (sweep/docs)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const rawDoc = {
+    id: 'mem_1', path: 'Docs/doc/a.md', title: 'A', content: 'See [[B]]', kind: 'doc', area: 'ch-1',
+    pinned: true, hidden: false, helper_id: null, version: 2, updatedAt: '2026-10-28T00:00:00Z',
+    updatedBy: 'operator:u1', createdAt: '2026-10-01T00:00:00Z', createdBy: 'operator:u1',
+  }
+
+  it('docs.get maps the doc and its links; 404 → null', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ ...rawDoc, links: [{ id: 'mem_2', title: 'B', kind: 'doc' }], goals: [], unresolved: ['C'], backlinks: [] }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const d = await repos.docs!.get('mem_1')
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`${BASE}/v1/memory/mem_1`)
+    expect(d!.helperId).toBeNull()
+    expect(d!.links[0].title).toBe('B')
+    expect(d!.unresolved).toEqual(['C'])
+    fetchMock.mockResolvedValueOnce(notFound())
+    expect(await repos.docs!.get('missing')).toBeNull()
+  })
+
+  it('lessons.list passes status and maps snake→camel', async () => {
+    fetchMock.mockResolvedValueOnce(okJson([{ id: 'les_1', helper_id: 'h1', tag: 'lesson', text: 'x', source: 's', status: 'review', created_by: 'system', created_at: null }]))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const out = await repos.lessons!.list({ status: 'review' })
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`${BASE}/v1/lessons?status=review`)
+    expect(out[0].helperId).toBe('h1')
+  })
+
+  it('handbook.index maps files and the open-suggestion count', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({
+      files: [{ id: 'mem_h', name: 'POLICIES.md', title: 'Policies', description: 'd', visibility: 'everyone', brief: false, version: 3, updated_at: null, updated_by: 'system', open_suggestions: 1 }],
+      open_suggestions: 1,
+    }))
+    const repos = createHttpRepos(BASE, () => TOKEN)
+    const idx = await repos.handbook!.index()
+    expect(idx.openSuggestions).toBe(1)
+    expect(idx.files[0].openSuggestions).toBe(1)
+  })
+})

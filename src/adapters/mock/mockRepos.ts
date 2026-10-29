@@ -18,7 +18,6 @@ import {
   flows,
   flowRuns,
   routines,
-  kbSources,
   kbItems,
   analyticsOverview,
   analyticsHelpers,
@@ -26,6 +25,8 @@ import {
   helpers,
   members,
 } from './fixtures'
+// ── sweep/docs ──
+import { mockDocsRepos } from './docsMock'
 
 export function createMockRepos(): Repos {
   return {
@@ -129,7 +130,7 @@ export function createMockRepos(): Repos {
     },
 
     knowledge: {
-      sources: () => Promise.resolve([...kbSources]),
+      sources: () => mockDocsRepos.sources(),
       list: (params?: { q?: string }) => {
         if (!params?.q) return Promise.resolve([...kbItems])
         const q = params.q.toLowerCase()
@@ -159,5 +160,10 @@ export function createMockRepos(): Repos {
     members: {
       list: () => Promise.resolve([...members]),
     },
+
+    // ── sweep/docs ──
+    docs: mockDocsRepos.docs,
+    lessons: mockDocsRepos.lessons,
+    handbook: mockDocsRepos.handbook,
   }
 }

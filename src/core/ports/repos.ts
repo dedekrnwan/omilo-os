@@ -156,4 +156,48 @@ export interface Repos {
   skills: SkillRepo
   helpers: HelperRepo
   members: MemberRepo
+  // ── sweep/docs ──
+  // Optional so hand-written Repos stubs in unrelated tests stay valid; the
+  // query hooks fall back to empty repos (see EMPTY_DOCS_REPOS in queries.ts).
+  docs?: DocsRepo
+  lessons?: LessonRepo
+  handbook?: HandbookRepo
+}
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+
+import type {
+  DocDetail,
+  DocGraph,
+  DocSummary,
+  DocVersion,
+  HandbookFileDetail,
+  HandbookIndex,
+  HandbookSuggestion,
+  Lesson,
+} from '../domain/types'
+
+export interface DocsRepo {
+  /** GET /v1/memory?helper_id=&kind= — every doc in the company. */
+  list(params?: { helperId?: string; kind?: string }): Promise<DocSummary[]>
+  /** GET /v1/memory/{id} — the doc with its links/backlinks; null on 404. */
+  get(id: Id): Promise<DocDetail | null>
+  /** GET /v1/memory/{id}/versions */
+  versions(id: Id): Promise<DocVersion[]>
+  /** GET /v1/memory/graph */
+  graph(): Promise<DocGraph>
+}
+
+export interface LessonRepo {
+  /** GET /v1/lessons?status= */
+  list(params?: { status?: 'review' | 'active' }): Promise<Lesson[]>
+}
+
+export interface HandbookRepo {
+  /** GET /v1/handbook (seeds a starter handbook on first read). */
+  index(): Promise<HandbookIndex>
+  /** GET /v1/handbook/{file}; null on 404. */
+  file(name: string): Promise<HandbookFileDetail | null>
+  /** GET /v1/handbook/suggestions?file=&status= */
+  suggestions(params?: { file?: string; status?: string }): Promise<HandbookSuggestion[]>
 }

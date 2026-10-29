@@ -38,6 +38,17 @@ import type {
 } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
 import { apiFetch, ApiError } from './client'
+// ── sweep/docs ──
+import type {
+  DocDetail,
+  DocGraph,
+  DocSummary,
+  DocVersion,
+  HandbookFile,
+  HandbookFileDetail,
+  HandbookSuggestion,
+  Lesson,
+} from '../../core/domain/types'
 import type { RawChannel } from './commands'
 
 // ── snake_case → camelCase mappers ────────────────────────────────────────────
@@ -386,8 +397,7 @@ function mapRoutine(r: RawRoutine): Routine {
 // GET /v1/routines/{id} returns {routine: RoutineRow, runs: []}
 type RawRoutineDetail = { routine: RawRoutine; runs: unknown[] }
 
-// KbSource: GET /v1/knowledge/sources — this endpoint does NOT exist on the backend yet.
-// The frontend repo is defined for forward-compatibility; it will 404 until the endpoint is added.
+// KbSource: GET /v1/knowledge/sources → [{id, kind, ref, title, chunks, created_at, …}]
 type RawKbSource = {
   id: string
   company_id: string
@@ -396,6 +406,8 @@ type RawKbSource = {
   title: string
   content_hash: string
   helper_id: string | null
+  chunks?: number
+  created_at?: string | null
 }
 
 function mapKbSource(r: RawKbSource): KbSource {
@@ -407,6 +419,8 @@ function mapKbSource(r: RawKbSource): KbSource {
     title: r.title,
     contentHash: r.content_hash,
     helperId: r.helper_id,
+    chunks: r.chunks ?? 0,
+    createdAt: r.created_at ?? null,
   }
 }
 
@@ -656,8 +670,6 @@ export function createHttpRepos(
 
     knowledge: {
       sources: async () => {
-        // NOTE: GET /v1/knowledge/sources does NOT exist on the backend yet.
-        // This call will fail until the endpoint is added. Flagged as absent.
         const res = await apiFetch(`${baseUrl}/v1/knowledge/sources`, getToken)
         const raw = await res.json() as RawKbSource[]
         return raw.map(mapKbSource)
@@ -730,5 +742,196 @@ export function createHttpRepos(
         return raw.map(mapMember)
       },
     },
+
+    // ── sweep/docs ──
+    docs: {
+      list: async (params?: { helperId?: string; kind?: string }) => {
+        const qs = new URLSearchParams()
+        if (params?.helperId) qs.set('helper_id', params.helperId)
+        if (params?.kind) qs.set('kind', params.kind)
+        const query = qs.toString()
+        const raw = await get<RawDoc[]>(query ? `/v1/memory?${query}` : '/v1/memory')
+        return raw.map(mapDoc)
+      },
+      get: async (id: Id) => {
+        const raw = await getOrNull<RawDocDetail>(`/v1/memory/${encodeURIComponent(id)}`)
+        return raw ? mapDocDetail(raw) : null
+      },
+      versions: async (id: Id) => get<DocVersion[]>(`/v1/memory/${encodeURIComponent(id)}/versions`),
+      graph: async () => get<DocGraph>('/v1/memory/graph'),
+    },
+    lessons: {
+      list: async (params?: { status?: 'review' | 'active' }) => {
+        const raw = await get<RawLesson[]>(params?.status ? `/v1/lessons?status=${params.status}` : '/v1/lessons')
+        return raw.map(mapLesson)
+      },
+    },
+    handbook: {
+      index: async () => {
+        const raw = await get<{ files: RawHandbookFile[]; open_suggestions: number }>('/v1/handbook')
+        return { files: raw.files.map(mapHandbookFile), openSuggestions: raw.open_suggestions }
+      },
+      file: async (name: string) => {
+        const raw = await getOrNull<RawHandbookDetail>(`/v1/handbook/${encodeURIComponent(name)}`)
+        return raw ? mapHandbookDetail(raw) : null
+      },
+      suggestions: async (params?: { file?: string; status?: string }) => {
+        const qs = new URLSearchParams()
+        if (params?.file) qs.set('file', params.file)
+        if (params?.status) qs.set('status', params.status)
+        const raw = await get<RawHandbookSuggestion[]>(`/v1/handbook/suggestions?${qs.toString()}`)
+        return raw.map(mapHandbookSuggestion)
+      },
+    },
+  }
+}
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+
+export type RawDoc = {
+  id: string
+  path: string
+  title: string
+  content: string
+  kind: string
+  area: string | null
+  pinned: boolean
+  hidden: boolean
+  helper_id: string | null
+  version: number
+  updatedAt: string | null
+  updatedBy: string
+  createdAt: string | null
+  createdBy: string
+}
+
+type RawDocDetail = RawDoc & {
+  links: DocDetail['links']
+  goals: DocDetail['goals']
+  unresolved: string[]
+  backlinks: DocDetail['backlinks']
+}
+
+export function mapDoc(r: RawDoc): DocSummary {
+  return {
+    id: r.id,
+    path: r.path,
+    title: r.title,
+    content: r.content,
+    kind: r.kind ?? 'doc',
+    area: r.area ?? null,
+    pinned: !!r.pinned,
+    hidden: !!r.hidden,
+    helperId: r.helper_id ?? null,
+    version: r.version ?? 1,
+    updatedAt: r.updatedAt ?? null,
+    updatedBy: r.updatedBy ?? '',
+    createdAt: r.createdAt ?? null,
+    createdBy: r.createdBy ?? r.updatedBy ?? '',
+  }
+}
+
+function mapDocDetail(r: RawDocDetail): DocDetail {
+  return {
+    ...mapDoc(r),
+    links: r.links ?? [],
+    goals: r.goals ?? [],
+    unresolved: r.unresolved ?? [],
+    backlinks: r.backlinks ?? [],
+  }
+}
+
+export type RawLesson = {
+  id: string
+  helper_id: string | null
+  tag: Lesson['tag']
+  text: string
+  source: string
+  status: Lesson['status']
+  created_by: string
+  created_at: string | null
+}
+
+export function mapLesson(r: RawLesson): Lesson {
+  return {
+    id: r.id,
+    helperId: r.helper_id,
+    tag: r.tag,
+    text: r.text,
+    source: r.source,
+    status: r.status,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }
+}
+
+type RawHandbookFile = {
+  id: string
+  name: string
+  title: string
+  description: string
+  visibility: HandbookFile['visibility']
+  brief: boolean
+  version: number
+  updated_at: string | null
+  updated_by: string
+  open_suggestions: number
+}
+
+export type RawHandbookSuggestion = {
+  id: string
+  doc_id: string
+  file: string | null
+  helper_id: string | null
+  author: string
+  text: string
+  proposed_content: string | null
+  status: HandbookSuggestion['status']
+  created_at: string | null
+  resolved_at: string | null
+}
+
+export type RawHandbookDetail = RawHandbookFile & {
+  content: string
+  versions: { version: number; updated_by: string; note: string | null; created_at: string | null }[]
+  suggestions: RawHandbookSuggestion[]
+}
+
+function mapHandbookFile(r: RawHandbookFile): HandbookFile {
+  return {
+    id: r.id,
+    name: r.name,
+    title: r.title,
+    description: r.description,
+    visibility: r.visibility,
+    brief: r.brief,
+    version: r.version,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+    openSuggestions: r.open_suggestions,
+  }
+}
+
+export function mapHandbookSuggestion(r: RawHandbookSuggestion): HandbookSuggestion {
+  return {
+    id: r.id,
+    docId: r.doc_id,
+    file: r.file,
+    helperId: r.helper_id,
+    author: r.author,
+    text: r.text,
+    proposedContent: r.proposed_content,
+    status: r.status,
+    createdAt: r.created_at,
+    resolvedAt: r.resolved_at,
+  }
+}
+
+export function mapHandbookDetail(r: RawHandbookDetail): HandbookFileDetail {
+  return {
+    ...mapHandbookFile(r),
+    content: r.content,
+    versions: (r.versions ?? []).map((v) => ({ version: v.version, updatedBy: v.updated_by, note: v.note, createdAt: v.created_at })),
+    suggestions: (r.suggestions ?? []).map(mapHandbookSuggestion),
   }
 }

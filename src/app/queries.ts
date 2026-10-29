@@ -15,6 +15,23 @@ import type {
   UpdateWalletInput,
 } from '../adapters/http/commands'
 import type { CompanySettings } from '../core/domain/types'
+// ── sweep/docs ──
+import type {
+  DocGraph,
+  DocSummary,
+  DocVersion,
+  HandbookIndex,
+  HandbookSuggestion,
+  Lesson,
+} from '../core/domain/types'
+import type { DocsRepo, HandbookRepo, LessonRepo } from '../core/ports/repos'
+import type {
+  AddKnowledgeSourceInput,
+  CreateLessonInput,
+  PatchDocInput,
+  SaveHandbookFileInput,
+  SuggestHandbookEditInput,
+} from '../adapters/http/commands'
 import { useCommands } from './CommandsProvider'
 import { useRepos } from './ReposProvider'
 import { useSession as useSessionStore } from './session'
@@ -579,7 +596,10 @@ export function useCreateDoc() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateDocInput) => commands.createDoc(input),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['knowledge'] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['knowledge'] })
+      void qc.invalidateQueries({ queryKey: ['docs'] })
+    },
   })
 }
 
@@ -589,7 +609,10 @@ export function useUpdateDoc() {
   return useMutation({
     mutationFn: ({ id, content }: { id: Id; content: string }) =>
       commands.updateDoc(id, content),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['knowledge'] }) },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['knowledge'] })
+      void qc.invalidateQueries({ queryKey: ['docs'] })
+    },
   })
 }
 
@@ -623,5 +646,203 @@ export function useUpdateWallet() {
   return useMutation({
     mutationFn: (input: UpdateWalletInput) => commands.updateWallet(input),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['usage'] }) },
+  })
+}
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+// Query keys: ['docs', …] (list/detail/versions/graph), ['lessons'],
+// ['knowledgeSources'], ['handbook', …].
+
+/** Fallbacks for Repos stubs that predate the docs/lessons/handbook repos. */
+const EMPTY_DOCS_REPOS = {
+  docs: {
+    list: () => Promise.resolve([] as DocSummary[]),
+    get: () => Promise.resolve(null),
+    versions: () => Promise.resolve([] as DocVersion[]),
+    graph: () => Promise.resolve({ nodes: [], edges: [] } as DocGraph),
+  } satisfies DocsRepo,
+  lessons: { list: () => Promise.resolve([] as Lesson[]) } satisfies LessonRepo,
+  handbook: {
+    index: () => Promise.resolve({ files: [], openSuggestions: 0 } as HandbookIndex),
+    file: () => Promise.resolve(null),
+    suggestions: () => Promise.resolve([] as HandbookSuggestion[]),
+  } satisfies HandbookRepo,
+}
+
+function useDocsRepos() {
+  const repos = useRepos()
+  return {
+    docs: repos.docs ?? EMPTY_DOCS_REPOS.docs,
+    lessons: repos.lessons ?? EMPTY_DOCS_REPOS.lessons,
+    handbook: repos.handbook ?? EMPTY_DOCS_REPOS.handbook,
+  }
+}
+
+export function useMemoryDocs(params?: { helperId?: string; kind?: string }) {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['docs', 'list', params ?? {}],
+    queryFn: () => repos.docs.list(params),
+  })
+}
+
+export function useMemoryDoc(id: Id | null) {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['docs', 'detail', id],
+    queryFn: () => repos.docs.get(id!),
+    enabled: !!id,
+  })
+}
+
+export function useDocVersions(id: Id | null) {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['docs', 'versions', id],
+    queryFn: () => repos.docs.versions(id!),
+    enabled: !!id,
+  })
+}
+
+export function useDocGraph() {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['docs', 'graph'],
+    queryFn: () => repos.docs.graph(),
+  })
+}
+
+export function useLessons(params?: { status?: 'review' | 'active' }) {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['lessons', params ?? {}],
+    queryFn: () => repos.lessons.list(params),
+  })
+}
+
+export function useHandbook() {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['handbook', 'index'],
+    queryFn: () => repos.handbook.index(),
+  })
+}
+
+export function useHandbookFile(name: string | null) {
+  const repos = useDocsRepos()
+  return useQuery({
+    queryKey: ['handbook', 'file', name],
+    queryFn: () => repos.handbook.file(name!),
+    enabled: !!name,
+  })
+}
+
+function useInvalidate(...keys: string[]) {
+  const qc = useQueryClient()
+  return () => { for (const k of keys) void qc.invalidateQueries({ queryKey: [k] }) }
+}
+
+export function usePatchDoc() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('docs', 'knowledge')
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: Id; patch: PatchDocInput }) => commands.patchDoc(id, patch),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteDoc() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('docs', 'knowledge')
+  return useMutation({
+    mutationFn: (id: Id) => commands.deleteDoc(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAddKnowledgeSource() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('knowledgeSources', 'knowledge')
+  return useMutation({
+    mutationFn: (input: AddKnowledgeSourceInput) => commands.addKnowledgeSource(input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteKnowledgeSource() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('knowledgeSources', 'knowledge')
+  return useMutation({
+    mutationFn: (id: Id) => commands.deleteKnowledgeSource(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useCreateLesson() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('lessons')
+  return useMutation({
+    mutationFn: (input: CreateLessonInput) => commands.createLesson(input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateLesson() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('lessons')
+  return useMutation({
+    mutationFn: ({ id, text }: { id: Id; text: string }) => commands.updateLesson(id, { text }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useConfirmLesson() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('lessons')
+  return useMutation({
+    mutationFn: (id: Id) => commands.confirmLesson(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useForgetLesson() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('lessons')
+  return useMutation({
+    mutationFn: (id: Id) => commands.forgetLesson(id),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAsk() {
+  const commands = useCommands()
+  return useMutation({ mutationFn: (q: string) => commands.ask(q) })
+}
+
+export function useSaveHandbookFile() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('handbook', 'docs')
+  return useMutation({
+    mutationFn: ({ name, input }: { name: string; input: SaveHandbookFileInput }) => commands.saveHandbookFile(name, input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useSuggestHandbookEdit() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('handbook')
+  return useMutation({
+    mutationFn: (input: SuggestHandbookEditInput) => commands.suggestHandbookEdit(input),
+    onSuccess: invalidate,
+  })
+}
+
+export function useResolveHandbookSuggestion() {
+  const commands = useCommands()
+  const invalidate = useInvalidate('handbook', 'docs')
+  return useMutation({
+    mutationFn: ({ id, accept }: { id: Id; accept: boolean }) =>
+      accept ? commands.acceptHandbookSuggestion(id) : commands.dismissHandbookSuggestion(id),
+    onSuccess: invalidate,
   })
 }

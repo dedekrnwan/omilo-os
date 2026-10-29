@@ -30,6 +30,17 @@ import type {
 } from '../../core/domain/types'
 import type { MeResult } from '../../core/domain/session'
 import { apiFetch } from './client'
+// ── sweep/docs ──
+import type {
+  AskAnswer,
+  DocSummary,
+  HandbookFileDetail,
+  HandbookSuggestion,
+  KbSource,
+  Lesson,
+} from '../../core/domain/types'
+import { mapDoc, mapHandbookDetail, mapHandbookSuggestion, mapLesson } from './httpRepos'
+import type { RawDoc, RawHandbookDetail, RawHandbookSuggestion, RawLesson } from './httpRepos'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -596,6 +607,8 @@ export interface CreateDocInput {
   title: string
   content: string
   kind?: string
+  /** Area (channel id) the doc belongs to. */
+  area?: string
 }
 
 // ── Commands port ─────────────────────────────────────────────────────────────
@@ -737,6 +750,70 @@ export interface Commands {
   createDoc(input: CreateDocInput): Promise<MemoryDoc>
   /** PATCH /v1/memory/{id} {content} → MemoryDoc. */
   updateDoc(id: string, content: string): Promise<MemoryDoc>
+
+  // ── sweep/docs ──
+  /** PATCH /v1/memory/{id} {title?,content?,pinned?,area?,hidden?} → DocSummary. */
+  patchDoc(id: string, patch: PatchDocInput): Promise<DocSummary>
+  /** DELETE /v1/memory/{id} */
+  deleteDoc(id: string): Promise<void>
+  /** POST /v1/knowledge/sources {kind,ref,title,body} → KbSource (with chunk count). */
+  addKnowledgeSource(input: AddKnowledgeSourceInput): Promise<KbSource>
+  /** DELETE /v1/knowledge/sources/{id} */
+  deleteKnowledgeSource(id: string): Promise<void>
+  /** POST /v1/lessons {text,helper_id?,tag?} → Lesson (active). */
+  createLesson(input: CreateLessonInput): Promise<Lesson>
+  /** PATCH /v1/lessons/{id} {text?,tag?} → Lesson. */
+  updateLesson(id: string, patch: { text?: string; tag?: Lesson['tag'] }): Promise<Lesson>
+  /** POST /v1/lessons/{id}/confirm → Lesson. */
+  confirmLesson(id: string): Promise<Lesson>
+  /** POST /v1/lessons/{id}/forget */
+  forgetLesson(id: string): Promise<void>
+  /** POST /v1/ask {q} → AskAnswer. */
+  ask(q: string): Promise<AskAnswer>
+  /** PUT /v1/handbook/{file} → HandbookFileDetail (creates the file if new). */
+  saveHandbookFile(name: string, input: SaveHandbookFileInput): Promise<HandbookFileDetail>
+  /** POST /v1/handbook/suggestions {file,text,proposed_content?} → HandbookSuggestion. */
+  suggestHandbookEdit(input: SuggestHandbookEditInput): Promise<HandbookSuggestion>
+  /** POST /v1/handbook/suggestions/{id}/accept */
+  acceptHandbookSuggestion(id: string): Promise<HandbookSuggestion>
+  /** POST /v1/handbook/suggestions/{id}/dismiss */
+  dismissHandbookSuggestion(id: string): Promise<HandbookSuggestion>
+}
+
+// ── sweep/docs ──
+export interface PatchDocInput {
+  title?: string
+  content?: string
+  pinned?: boolean
+  area?: string
+  hidden?: boolean
+}
+
+export interface AddKnowledgeSourceInput {
+  kind: string
+  ref: string
+  title: string
+  body: string
+}
+
+export interface CreateLessonInput {
+  text: string
+  helperId?: string | null
+  tag?: Lesson['tag']
+}
+
+export interface SaveHandbookFileInput {
+  content: string
+  title?: string
+  description?: string
+  visibility?: 'everyone' | 'members'
+  note?: string
+}
+
+export interface SuggestHandbookEditInput {
+  file: string
+  text: string
+  proposedContent?: string
 }
 
 /**
@@ -1288,6 +1365,7 @@ export function createCommands(
         content: input.content,
       }
       if (input.kind !== undefined) body.kind = input.kind
+      if (input.area) body.area = input.area
       const raw = await post<RawMemoryDoc>('/v1/memory', body)
       return mapMemoryDoc(raw)
     },
@@ -1296,6 +1374,71 @@ export function createCommands(
     async updateDoc(id: string, content: string): Promise<MemoryDoc> {
       const raw = await patch<RawMemoryDoc>(`/v1/memory/${id}`, { content })
       return mapMemoryDoc(raw)
+    },
+
+    // ── sweep/docs ──
+    async patchDoc(id: string, p: PatchDocInput): Promise<DocSummary> {
+      return mapDoc(await patch<RawDoc>(`/v1/memory/${encodeURIComponent(id)}`, p))
+    },
+    async deleteDoc(id: string): Promise<void> {
+      await del(`/v1/memory/${encodeURIComponent(id)}`)
+    },
+    async addKnowledgeSource(input: AddKnowledgeSourceInput): Promise<KbSource> {
+      const r = await post<{
+        id: string; company_id: string; kind: string; ref: string; title: string
+        content_hash: string; helper_id: string | null; chunks: number; created_at: string | null
+      }>('/v1/knowledge/sources', input)
+      return {
+        id: r.id, companyId: r.company_id, kind: r.kind, ref: r.ref, title: r.title,
+        contentHash: r.content_hash, helperId: r.helper_id, chunks: r.chunks, createdAt: r.created_at,
+      }
+    },
+    async deleteKnowledgeSource(id: string): Promise<void> {
+      await del(`/v1/knowledge/sources/${encodeURIComponent(id)}`)
+    },
+    async createLesson(input: CreateLessonInput): Promise<Lesson> {
+      const body: Record<string, unknown> = { text: input.text }
+      if (input.helperId) body.helper_id = input.helperId
+      if (input.tag) body.tag = input.tag
+      return mapLesson(await post<RawLesson>('/v1/lessons', body))
+    },
+    async updateLesson(id: string, p: { text?: string; tag?: Lesson['tag'] }): Promise<Lesson> {
+      return mapLesson(await patch<RawLesson>(`/v1/lessons/${encodeURIComponent(id)}`, p))
+    },
+    async confirmLesson(id: string): Promise<Lesson> {
+      return mapLesson(await post<RawLesson>(`/v1/lessons/${encodeURIComponent(id)}/confirm`, {}))
+    },
+    async forgetLesson(id: string): Promise<void> {
+      await post<unknown>(`/v1/lessons/${encodeURIComponent(id)}/forget`, {})
+    },
+    async ask(q: string): Promise<AskAnswer> {
+      const r = await post<{
+        answer: string
+        memory_searched: boolean
+        citations: { n: number; source_id: string; kind: string; title: string; heading: string; text: string; ref: string; doc_id: string | null }[]
+      }>('/v1/ask', { q })
+      return {
+        answer: r.answer,
+        memorySearched: r.memory_searched,
+        citations: r.citations.map((c) => ({
+          n: c.n, sourceId: c.source_id, kind: c.kind, title: c.title, heading: c.heading,
+          text: c.text, ref: c.ref, docId: c.doc_id,
+        })),
+      }
+    },
+    async saveHandbookFile(name: string, input: SaveHandbookFileInput): Promise<HandbookFileDetail> {
+      return mapHandbookDetail(await put<RawHandbookDetail>(`/v1/handbook/${encodeURIComponent(name)}`, input))
+    },
+    async suggestHandbookEdit(input: SuggestHandbookEditInput): Promise<HandbookSuggestion> {
+      const body: Record<string, unknown> = { file: input.file, text: input.text }
+      if (input.proposedContent !== undefined) body.proposed_content = input.proposedContent
+      return mapHandbookSuggestion(await post<RawHandbookSuggestion>('/v1/handbook/suggestions', body))
+    },
+    async acceptHandbookSuggestion(id: string): Promise<HandbookSuggestion> {
+      return mapHandbookSuggestion(await post<RawHandbookSuggestion>(`/v1/handbook/suggestions/${encodeURIComponent(id)}/accept`, {}))
+    },
+    async dismissHandbookSuggestion(id: string): Promise<HandbookSuggestion> {
+      return mapHandbookSuggestion(await post<RawHandbookSuggestion>(`/v1/handbook/suggestions/${encodeURIComponent(id)}/dismiss`, {}))
     },
   }
 }

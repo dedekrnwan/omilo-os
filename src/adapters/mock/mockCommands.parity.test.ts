@@ -61,6 +61,20 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'testAiAccount',
   'createDoc',
   'updateDoc',
+  // ── sweep/docs ──
+  'patchDoc',
+  'deleteDoc',
+  'addKnowledgeSource',
+  'deleteKnowledgeSource',
+  'createLesson',
+  'updateLesson',
+  'confirmLesson',
+  'forgetLesson',
+  'ask',
+  'saveHandbookFile',
+  'suggestHandbookEdit',
+  'acceptHandbookSuggestion',
+  'dismissHandbookSuggestion',
 ]
 
 describe('mock-mode parity', () => {

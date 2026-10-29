@@ -47,6 +47,8 @@ import type {
   UpdateWalletInput,
 } from '../http/commands'
 import type { MeResult } from '../../core/domain/session'
+// ── sweep/docs ──
+import { mockDocsCommands } from './docsMock'
 import {
   aiAccounts,
   channels,
@@ -483,15 +485,33 @@ export function createMockCommands(): Commands {
 
     // ── P2 Doc (memory) commands ──────────────────────────────────────────────────────
     createDoc(input: CreateDocInput): Promise<MemoryDoc> {
+      const id = nextId('doc')
+      mockDocsCommands.addDoc({ id, ...input })
       return Promise.resolve({
-        id: nextId('doc'),
+        id,
         title: input.title,
         content: input.content,
         kind: input.kind ?? 'note',
       })
     },
     updateDoc(id: string, content: string): Promise<MemoryDoc> {
+      mockDocsCommands.setContent(id, content)
       return Promise.resolve({ id, title: '', content, kind: 'note' })
     },
+
+    // ── sweep/docs ──
+    patchDoc: mockDocsCommands.patchDoc,
+    deleteDoc: mockDocsCommands.deleteDoc,
+    addKnowledgeSource: mockDocsCommands.addKnowledgeSource,
+    deleteKnowledgeSource: mockDocsCommands.deleteKnowledgeSource,
+    createLesson: mockDocsCommands.createLesson,
+    updateLesson: mockDocsCommands.updateLesson,
+    confirmLesson: mockDocsCommands.confirmLesson,
+    forgetLesson: mockDocsCommands.forgetLesson,
+    ask: mockDocsCommands.ask,
+    saveHandbookFile: mockDocsCommands.saveHandbookFile,
+    suggestHandbookEdit: mockDocsCommands.suggestHandbookEdit,
+    acceptHandbookSuggestion: mockDocsCommands.acceptHandbookSuggestion,
+    dismissHandbookSuggestion: mockDocsCommands.dismissHandbookSuggestion,
   }
 }
