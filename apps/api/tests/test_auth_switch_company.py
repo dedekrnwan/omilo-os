@@ -179,3 +179,33 @@ async def test_switch_company_no_token_returns_401(async_client):
         json={"company_id": "cmp_anything"},
     )
     assert resp.status_code == 401, resp.text
+
+
+# ── POST /v1/auth/companies (sweep) ───────────────────────────────────────────
+
+async def test_create_company_switches_and_seeds(async_client):
+    body = await _sign_up(async_client, email=f"newco-{uuid.uuid4().hex[:8]}@example.com")
+    token = body["session"]["access"]
+    r = await async_client.post(
+        "/v1/auth/companies",
+        json={"name": "Warung Dua", "industry": "Retail", "timezone": "Asia/Jakarta"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201, r.text
+    out = r.json()
+    names = [c["name"] for c in out["companies"]]
+    assert "Warung Dua" in names and len(names) == 2
+    new_token = out["session"]["access"]
+    me = await async_client.get("/v1/me", headers=_auth(new_token))
+    assert me.status_code == 200
+    # Seeded like sign-up: a Chief helper exists in the new company.
+    helpers = (await async_client.get("/v1/helpers", headers=_auth(new_token))).json()
+    assert any(h.get("isChief") or h.get("is_chief") for h in helpers)
+
+
+async def test_create_company_requires_name(async_client):
+    body = await _sign_up(async_client, email=f"noname-{uuid.uuid4().hex[:8]}@example.com")
+    r = await async_client.post(
+        "/v1/auth/companies", json={"name": "  "}, headers=_auth(body["session"]["access"])
+    )
+    assert r.status_code == 422

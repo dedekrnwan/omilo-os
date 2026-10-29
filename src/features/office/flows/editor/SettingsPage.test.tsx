@@ -81,7 +81,7 @@ describe('Flow settings — Save persists backend-supported fields', () => {
     const settings = input.settings as Record<string, unknown>
     expect(settings).not.toHaveProperty('name')
     expect(settings).not.toHaveProperty('areaId')
-    expect(settings).toHaveProperty('monthlyBudget')
+    expect(settings).toHaveProperty('monthlyBudgetRp')
     expect(settings).toHaveProperty('notifyFail')
   })
 })

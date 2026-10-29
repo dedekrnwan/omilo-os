@@ -138,8 +138,14 @@ export interface FlowSettings {
   quietFrom: string
   quietTo: string
   overlap: OverlapPolicy
-  costCap: string
-  monthlyBudget: string
+  /** @deprecated dollars (1 credit = $0.001); read once and migrated to the Rp fields. */
+  costCap?: string
+  /** @deprecated dollars; see costCap. */
+  monthlyBudget?: string
+  /** Max cost per run in Rupiah (enforced by the flow engine, converted to credits). */
+  costCapRp: string
+  /** Monthly budget in Rupiah (enforced by the flow engine, converted to credits). */
+  monthlyBudgetRp: string
   maxSteps: string
   runTimeout: string
   approvers: string[]
@@ -163,8 +169,8 @@ export const DEFAULT_SETTINGS: FlowSettings = {
   quietFrom: '22:00',
   quietTo: '07:00',
   overlap: 'queue',
-  costCap: '0.10',
-  monthlyBudget: '20',
+  costCapRp: '5000',
+  monthlyBudgetRp: '1000000',
   maxSteps: '12',
   runTimeout: '10 min',
   approvers: [],

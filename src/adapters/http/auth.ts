@@ -261,6 +261,17 @@ export interface AuthAdapter {
   acceptInvite(token: string, name?: string, password?: string): Promise<SignInResult>
   /** Create an invite for the signed-in company (owner/admin). */
   createInvite(email: string, role: string, channels?: string): Promise<void>
+  /** sweep — create another company owned by the caller and switch into it. */
+  createCompany?(input: CreateCompanyInput): Promise<SignInResult>
+}
+
+/** sweep — POST /v1/auth/companies body. */
+export interface CreateCompanyInput {
+  name: string
+  industry?: string
+  teamSize?: string
+  timezone?: string
+  picRole?: string
 }
 
 /**
@@ -404,6 +415,26 @@ export function createAuthAdapter(
      * POST /auth/switch-company — Bearer.
      * Stores the new access token returned by the backend.
      */
+    /** POST /auth/companies — Bearer. Creates a company and returns a token scoped to it. */
+    async createCompany(input: CreateCompanyInput): Promise<SignInResult> {
+      const res = await bearerFetch(`${baseUrl}/v1/auth/companies`, getToken, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: input.name,
+          industry: input.industry ?? null,
+          team_size: input.teamSize ?? null,
+          timezone: input.timezone ?? null,
+          pic_role: input.picRole ?? null,
+        }),
+      })
+      const raw: RawSignInResponse = await res.json()
+      await tokenStorage.setToken(raw.session.access)
+      const companies = raw.companies.map(mapCompany)
+      const created = [...companies].reverse().find((c) => c.name === input.name.trim()) ?? companies[companies.length - 1] ?? null
+      return { user: mapUser(raw.user), companies, company: created, token: raw.session.access }
+    },
+
     async switchCompany(companyId: string): Promise<SignInResult> {
       const res = await bearerFetch(`${baseUrl}/v1/auth/switch-company`, getToken, {
         method: 'POST',

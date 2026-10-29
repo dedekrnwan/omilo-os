@@ -432,6 +432,68 @@ def switch_company(
 
 
 # ---------------------------------------------------------------------------
+# POST /auth/companies — create another company for the signed-in user
+# ---------------------------------------------------------------------------
+
+class CreateCompanyRequest(BaseModel):
+    name: str
+    industry: str | None = None
+    team_size: str | None = None
+    timezone: str | None = None
+    pic_role: str | None = None
+
+
+@router.post("/companies", response_model=SignInResponse, status_code=201)
+def create_company(
+    body: CreateCompanyRequest,
+    current_user: User = Depends(get_current_user),
+) -> SignInResponse:
+    """Create a new company owned by the caller and switch into it.
+
+    Seeds the same default area + Chief Helper as sign-up, then returns the
+    sign-in shape (token scoped to the new company + full companies list) so the
+    client can apply it exactly like /switch-company.
+    """
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Company name is required.")
+    with SessionLocal() as session:
+        with session.begin():
+            company = Company(
+                id=prefixed_id("cmp"),
+                name=name[:120],
+                color="#6366f1",
+                timezone=(body.timezone or "UTC").strip() or "UTC",
+                industry=body.industry,
+                team_size=body.team_size,
+                pic_role=body.pic_role,
+            )
+            session.add(company)
+            session.flush()
+            session.add(
+                Member(
+                    id=prefixed_id("mem"),
+                    company_id=company.id,
+                    user_id=current_user.id,
+                    role="owner",
+                )
+            )
+            seed_new_company(session, company.id)
+        members = session.query(Member).filter_by(user_id=current_user.id).all()
+        companies: list[CompanyOut] = []
+        for m in members:
+            cmp = session.get(Company, m.company_id)
+            if cmp:
+                companies.append(_company_out(cmp))
+        token, expires_at = make_access_token(current_user.id, company.id, "owner")
+        return SignInResponse(
+            user=_user_out(current_user),
+            session=SessionOut(access=token, expires_at=expires_at),
+            companies=companies,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Email verification
 # ---------------------------------------------------------------------------
 

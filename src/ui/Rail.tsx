@@ -48,7 +48,7 @@ import { useSession } from '../app/session'
 import { useAuth } from '../app/useAuth'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Company } from '../core/domain/session'
-import { useCompanyDetail } from '../app/queries'
+import { useCompanyDetail, useSubscription, useUsage } from '../app/queries'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
@@ -556,15 +556,47 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [region, setRegion] = useState('Asia/Jakarta (GMT+7)')
   const [code, setCode] = useState('')
 
-  function submit() {
+  const [busy, setBusy] = useState(false)
+  const { adapter } = useAuth()
+  const applySignIn = useSession((s) => s.applySignIn)
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const uiMode = useUIStore((s) => s.mode)
+
+  async function submit() {
+    if (busy) return
     if (mode === 'create') {
-      notify(name.trim() ? `Company “${name.trim()}” created` : 'Enter a company name')
-      if (!name.trim()) return
+      const trimmed = name.trim()
+      if (!trimmed) { notify('Enter a company name'); return }
+      if (!adapter.createCompany) { notify('Creating companies needs the Omilo backend'); return }
+      setBusy(true)
+      try {
+        const result = await adapter.createCompany({
+          name: trimmed,
+          industry,
+          teamSize: size,
+          picRole: role,
+          timezone: region.split(' ')[0],
+        })
+        applySignIn(result)
+        await qc.invalidateQueries()
+        notify(`Company “${trimmed}” created`)
+        onClose()
+        void navigate({ to: MODE_HOME[uiMode] })
+      } catch (e) {
+        notify(e instanceof Error ? `Couldn't create the company — ${e.message}` : "Couldn't create the company")
+      } finally {
+        setBusy(false)
+      }
     } else {
-      notify(code.trim() ? 'Joining company…' : 'Paste an invite code')
-      if (!code.trim()) return
+      const raw = code.trim()
+      if (!raw) { notify('Paste an invite code'); return }
+      // Accept a full invite link or the bare token.
+      let token = raw
+      try { token = new URL(raw).searchParams.get('token') ?? raw } catch { /* bare token */ }
+      onClose()
+      void navigate({ to: '/auth/invite', search: { token } } as never)
     }
-    onClose()
   }
 
   return (
@@ -578,8 +610,8 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
         <>
           <span className="flex-1" />
           <Button variant="secondary" style={{ height: 32 }} onClick={onClose}>Cancel</Button>
-          <Button variant="primary" style={{ height: 32 }} onClick={submit}>
-            {mode === 'create' ? 'Create company' : 'Join'}
+          <Button variant="primary" style={{ height: 32 }} disabled={busy} onClick={() => void submit()}>
+            {mode === 'create' ? (busy ? 'Creating…' : 'Create company') : 'Join'}
           </Button>
         </>
       }
@@ -607,7 +639,7 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Sahabat Warga"
+              placeholder="e.g. Warung Bu Sri"
               aria-label="Company name"
               className={fieldInputClass}
             />
@@ -648,7 +680,7 @@ function AddCompanyDialog({ open, onClose }: { open: boolean; onClose: () => voi
             autoFocus
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Paste your invite code"
+            placeholder="Paste the invite link or code"
             aria-label="Invite code"
             className={fieldInputClass}
           />
@@ -667,6 +699,17 @@ function ProfileMenu() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [logoutOpen, setLogoutOpen] = useState(false)
   const signOut = useSession((s) => s.signOut)
+  const user = useSession((s) => s.user)
+  const sub = useSubscription().data
+  const usage = useUsage().data
+  const initialsOf = (n: string) =>
+    n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?'
+  const userInitials = user ? initialsOf(user.name || user.email) : '?'
+  const planLabel = sub ? `${sub.planName ?? sub.planId.replace(/^plan_/, '').replace(/^\w/, (c) => c.toUpperCase())} plan${sub.isTrial ? ' · trial' : ''}` : null
+  const included = usage?.included ?? 0
+  const used = usage?.usedThisPeriod ?? 0
+  const pct = included > 0 ? Math.min(100, Math.round((used / included) * 100)) : 0
+  const fmt = (n: number) => n.toLocaleString('id-ID')
 
   return (
     <>
@@ -675,7 +718,7 @@ function ProfileMenu() {
           aria-label="User menu"
           className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-[#D6D3D1] text-[11px] font-semibold text-ink-2 outline-none transition hover:bg-[#C8C4C1] focus-visible:ring-2 focus-visible:ring-ink active:scale-90 data-[state=open]:ring-2 data-[state=open]:ring-ink"
         >
-          DK
+          {userInitials}
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
@@ -687,25 +730,31 @@ function ProfileMenu() {
           >
             <div className="flex items-center gap-[10px] p-[10px]">
               <span className="flex size-[36px] items-center justify-center rounded-full bg-[#FED7AA] text-[13px] font-semibold text-[#9A3412]">
-                DK
+                {userInitials}
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="text-[14px] font-semibold text-ink">Dede Kurniawan</span>
-                <span className="text-[12px] text-muted">dede@sahabatwarga.id</span>
+                <span className="truncate text-[14px] font-semibold text-ink">{user?.name || 'Signed in'}</span>
+                <span className="truncate text-[12px] text-muted">{user?.email ?? ''}</span>
               </div>
             </div>
+            {planLabel && (
             <div className="px-[6px] pb-[6px]">
               <div className="flex flex-col gap-[6px] rounded-base outline-1 -outline-offset-1 outline-line bg-soft px-[12px] py-[10px]">
                 <div className="flex items-center gap-[6px]">
-                  <span className="text-[12px] font-semibold text-ink">Team plan</span>
+                  <span className="text-[12px] font-semibold text-ink">{planLabel}</span>
                   <span className="h-px flex-1" />
-                  <span className="font-mono text-[11px] text-muted">Rp 1,2 jt / 2 jt</span>
+                  <span className="font-mono text-[11px] text-muted">
+                    {included > 0 ? `${fmt(used)} / ${fmt(included)} credits` : `${fmt(usage?.balance ?? 0)} credits left`}
+                  </span>
                 </div>
+                {included > 0 && (
                 <div className="h-[4px] overflow-hidden rounded-[2px] bg-line-strong">
-                  <div className="h-full w-[60%] rounded-[2px] bg-ink" />
+                  <div className="h-full rounded-[2px] bg-ink" style={{ width: `${pct}%` }} />
                 </div>
+                )}
               </div>
             </div>
+            )}
             <MenuSeparatorLine />
             {/* Group 1: account / billing / settings / notifications */}
             <DropdownMenu.Item

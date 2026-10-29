@@ -1,5 +1,6 @@
 import type { FlowRun } from '../../../core/domain/types'
 import type { FlowRunRow, FlowRunStatus } from './data'
+import { costLabel } from '../../../app/money'
 
 /**
  * Adapters for the office-level "Runs" tab, which aggregates runs across ALL
@@ -46,9 +47,9 @@ export function formatDuration(sec: number | null): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
-/** USD cost label from a credit count (1 credit = $0.001). */
+/** Rupiah cost label from a credit count (app-wide rate, src/app/money.ts). */
 export function formatCost(credits: number): string {
-  return `$${(credits * 0.001).toFixed(3)}`
+  return costLabel(credits)
 }
 
 /** Map a live FlowRun + its flow's title into the office Runs table row. */

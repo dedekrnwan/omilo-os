@@ -4,9 +4,11 @@
  */
 
 import { useState } from 'react'
-import { Calendar, Check, DollarSign, Gauge, Wallet } from 'lucide-react'
+import { Banknote, Calendar, Check, DollarSign, Gauge, Wallet } from 'lucide-react'
 import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
+import { formatAmount } from './decisions'
+import type { AmountCurrency } from './decisions'
 import { Btn32, Field, OfficeDialog } from './ui'
 
 export interface InboxChangeAmountDialogProps {
@@ -17,7 +19,9 @@ export interface InboxChangeAmountDialogProps {
   forecastArea?: HelperArea
   /** Original ask, in dollars. */
   asked: number
-  /** Quick-pick amounts (dollars). */
+  /** Currency the request was written in (default Rupiah). */
+  currency?: AmountCurrency
+  /** Quick-pick amounts (in `currency`). */
   options: readonly number[]
   defaultAmount: number
   /** Campaign length in days (parsed from the request), when known. */
@@ -28,12 +32,10 @@ export interface InboxChangeAmountDialogProps {
   onApprove: (amount: number, note: string) => void | Promise<void>
 }
 
-function fmt(n: number) {
-  return `$${n.toLocaleString('en-US')}`
-}
 
-function parse(v: string) {
-  const n = Number(v.replace(/[^0-9.]/g, ''))
+function parse(v: string, currency: AmountCurrency) {
+  // Rupiah uses "." as the thousands separator; dollars may carry cents.
+  const n = Number(currency === 'USD' ? v.replace(/[^0-9.]/g, '') : v.replace(/[^0-9]/g, ''))
   return Number.isFinite(n) ? n : 0
 }
 
@@ -42,6 +44,7 @@ export function InboxChangeAmountDialog({
   asker,
   forecastArea = 'ops',
   asked,
+  currency = 'IDR',
   options,
   defaultAmount,
   days,
@@ -49,6 +52,7 @@ export function InboxChangeAmountDialog({
   onClose,
   onApprove,
 }: InboxChangeAmountDialogProps) {
+  const fmt = (n: number) => formatAmount(n, currency)
   const [amount, setAmount] = useState(defaultAmount)
   const [note, setNote] = useState(defaultNote)
   const [saving, setSaving] = useState(false)
@@ -91,9 +95,9 @@ export function InboxChangeAmountDialog({
       <Field
         id="budget-amount"
         label="Budget"
-        icon={DollarSign}
+        icon={currency === 'USD' ? DollarSign : Banknote}
         value={fmt(amount)}
-        onChange={(v) => setAmount(parse(v))}
+        onChange={(v) => setAmount(parse(v, currency))}
       />
       <div className="flex gap-[8px]" role="group" aria-label="Quick amounts">
         {options.map((opt) => {

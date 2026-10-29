@@ -252,3 +252,46 @@ describe('OfficeSidebar', () => {
     })
   })
 })
+
+describe('InboxRoute — Chief routine suggestion card', () => {
+  test('renders the first suggestion from GET /v1/routines/suggestions with its moves', async () => {
+    const base = createMockRepos()
+    const repos: Repos = {
+      ...base,
+      routines: {
+        ...base.routines,
+        suggestions: () =>
+          Promise.resolve([
+            {
+              id: 'sug-1',
+              kind: 'clash',
+              title: 'Spread Monday morning routines',
+              desc: 'Two routines start within 30 minutes.',
+              note: '',
+              moves: [
+                { routineId: 'r1', name: 'Instagram report', helperId: 'h-x', helperName: 'Grower', from: 'Mon 08:00', to: 'Mon 09:00', fromAt: '08:00', toAt: '09:00' },
+                { routineId: 'r2', name: 'Dependency updates', helperId: 'h-y', helperName: 'Builder', from: 'Mon 08:15', to: 'Mon 10:00', fromAt: '08:15', toAt: '10:00' },
+              ],
+            },
+          ]),
+      },
+    }
+    const { router } = makeTestRouter('/inbox', repos)
+    await router.load()
+    render(<RouterProvider router={router} />)
+    expect(await screen.findByRole('article', { name: 'Spread Monday morning routines' })).toBeInTheDocument()
+    expect(screen.getByText('Instagram report')).toBeInTheDocument()
+    expect(screen.getByText('Mon 10:00')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Apply both/ })).toBeInTheDocument()
+  })
+
+  test('no card when there are no suggestions', async () => {
+    const base = createMockRepos()
+    const repos: Repos = { ...base, routines: { ...base.routines, suggestions: () => Promise.resolve([]) } }
+    const { router } = makeTestRouter('/inbox', repos)
+    await router.load()
+    render(<RouterProvider router={router} />)
+    await screen.findAllByRole('article')
+    expect(screen.queryByRole('button', { name: /Apply both/ })).not.toBeInTheDocument()
+  })
+})

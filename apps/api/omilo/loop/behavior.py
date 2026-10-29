@@ -23,9 +23,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-# Rupiah per credit — the small top-up pack is 1 000 credits for Rp 15 000
-# (omilo.api.billing TOPUP_PACKS). Used to convert the Rupiah cap to credits.
-IDR_PER_CREDIT = 15
+# Rupiah per credit comes from the billing catalogue (base pack: 2,000 credits
+# for Rp 100 rb). Used to convert the Rupiah cap to credits.
+from omilo.billing.catalog import IDR_PER_CREDIT  # noqa: E402
 
 
 def _behavior(helper: Any) -> dict[str, Any]:

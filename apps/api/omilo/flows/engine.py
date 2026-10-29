@@ -104,7 +104,17 @@ def run_flow(
         _finish(db, run)
         return run
 
-    # ── 4. Walk the graph ────────────────────────────────────────────────────
+    # ── 4. Budget gate (flow Settings › Budget & limits) ─────────────────────
+    if not test:
+        cap = flow_limits(flow).get("monthly_budget_credits")
+        if cap is not None and spent_this_month_credits(db, flow.id) >= cap:
+            run.status = "failed"
+            run.waiting_for = "Monthly budget reached"
+            run.ended_at = datetime.now(timezone.utc)
+            _finish(db, run)
+            return run
+
+    # ── 5. Walk the graph ────────────────────────────────────────────────────
     _walk(db, run, flow, trigger_node["id"], nodes_by_id, out_edges, {"last_output": ""}, test, set())
     return run
 
@@ -135,7 +145,11 @@ def _walk(
     """Walk from ``start_id`` until the end of the graph or an approval pause."""
     current_id: str | None = start_id
     max_steps = max(len(nodes_by_id) + 1, 1)
-    steps = 0
+    limits = flow_limits(flow)
+    if limits.get("max_steps"):
+        max_steps = min(max_steps, limits["max_steps"])
+    cost_cap = None if test else limits.get("cost_cap_credits")
+    steps = len(run.steps or [])  # resumed runs keep counting
 
     while current_id is not None and steps < max_steps:
         if current_id in visited:
@@ -158,6 +172,17 @@ def _walk(
             return  # approval pause — status already set to needs_you
 
         current_id = result  # type: ignore[assignment]
+
+        if cost_cap is not None and current_id is not None and _run_cost(db, run) > cost_cap:
+            run.status = "failed"
+            run.waiting_for = "Max cost per run reached"
+            run.ended_at = datetime.now(timezone.utc)
+            break
+    else:
+        if current_id is not None and run.status == "running" and steps >= max_steps and limits.get("max_steps"):
+            run.status = "failed"
+            run.waiting_for = "Max steps per run reached"
+            run.ended_at = datetime.now(timezone.utc)
 
     # ── 5. End of walk ───────────────────────────────────────────────────────
     # Only mark "done" if the walk didn't already set a terminal status
@@ -518,3 +543,68 @@ def _get_helper(db: Session, company_id: str):
     if helper is None:
         helper = db.query(Helper).filter_by(company_id=company_id).first()
     return helper
+
+
+# ---------------------------------------------------------------------------
+# sweep: flow budget & limits (Settings › Budget & limits)
+# ---------------------------------------------------------------------------
+
+def _int_or_none(v: Any) -> int | None:
+    try:
+        n = int(float(str(v).replace(".", "").replace(",", ""))) if isinstance(v, str) else int(v)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def flow_limits(flow: Flow) -> dict[str, int | None]:
+    """Read the editor's Budget & limits into credits / step counts.
+
+    New settings store Rupiah strings (``monthlyBudgetRp``, ``costCapRp``);
+    flows saved earlier stored dollars (``monthlyBudget``, ``costCap``,
+    1 credit = $0.001). Missing / zero values mean "no limit".
+    """
+    from omilo.billing.catalog import IDR_PER_CREDIT
+
+    st = flow.settings if isinstance(flow.settings, dict) else {}
+
+    def credits(rp_key: str, usd_key: str) -> int | None:
+        rp = _int_or_none(st.get(rp_key))
+        if rp is not None:
+            return max(1, rp // IDR_PER_CREDIT)
+        usd = st.get(usd_key)
+        try:
+            usd_f = float(usd) if usd is not None else 0.0
+        except (TypeError, ValueError):
+            return None
+        return max(1, int(round(usd_f * 1000))) if usd_f > 0 else None
+
+    max_steps = _int_or_none(st.get("maxSteps"))
+    return {
+        "monthly_budget_credits": credits("monthlyBudgetRp", "monthlyBudget"),
+        "cost_cap_credits": credits("costCapRp", "costCap"),
+        "max_steps": max_steps,
+    }
+
+
+def spent_this_month_credits(db: Session, flow_id: str) -> int:
+    """Sum of finished runs' cost since the 1st of the current (UTC) month."""
+    from sqlalchemy import func
+
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    total = (
+        db.query(func.coalesce(func.sum(FlowRun.cost_credits), 0))
+        .filter(FlowRun.flow_id == flow_id, FlowRun.started_at >= start)
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def _run_cost(db: Session, run: FlowRun) -> int:
+    if not run.job_ids:
+        return 0
+    from omilo.models.execution import Job
+
+    jobs = db.query(Job).filter(Job.id.in_(list(run.job_ids))).all()
+    return sum(int(j.cost_credits or 0) for j in jobs)

@@ -1,9 +1,9 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { ArrowUpRight, Check, ChevronRight, CircleCheck, CircleX, Inbox, ListFilter, Reply } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarSync, Check, ChevronRight, CircleCheck, CircleX, Inbox, ListFilter, Reply } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import type React from 'react'
-import type { Channel, HelperArea, InboxItem } from '../../core/domain/types'
-import { useChannels, useDecide, useHelpers, useInbox, useInboxItem, useProposal, useRoutines } from '../../app/queries'
+import type { Channel, Helper, HelperArea, InboxItem, RoutineSuggestion } from '../../core/domain/types'
+import { useChannels, useDecide, useHelpers, useInbox, useInboxItem, useProposal, useRoutines, useRoutineSuggestions, useApplyRoutineSuggestion, useDismissRoutineSuggestion } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { AreaChip } from '../../ui/ds/AreaChip'
 import { Button } from '../../ui/ds/Button'
@@ -16,7 +16,7 @@ import type { AreaFilter } from '../shell/area'
 import { InboxReviewDialog } from './InboxReviewDialog'
 import type { ReviewResult } from './InboxReviewDialog'
 import { InboxChangeAmountDialog } from './InboxChangeAmountDialog'
-import { amountOf, daysOf, decisionsFor, isDecidable, isToday, linkedEntries, runAll } from './decisions'
+import { amountOf, currencyOf, formatAmount, daysOf, decisionsFor, isDecidable, isToday, linkedEntries, runAll } from './decisions'
 import { Toast } from './ui'
 
 /** Next scheduled routine for the "Running now" footer (earliest enabled nextAt). */
@@ -202,6 +202,92 @@ function DecisionCard({
   )
 }
 
+/** Chief's routine suggestion (pen BoenW) — from GET /v1/routines/suggestions. */
+function RoutineSuggestionCard({
+  suggestion: s,
+  helpers,
+  applied,
+  busy,
+  onApply,
+  onSee,
+  onDismiss,
+}: {
+  suggestion: RoutineSuggestion
+  helpers: Helper[]
+  applied: boolean
+  busy: boolean
+  onApply: () => void
+  onSee: () => void
+  onDismiss: () => void
+}) {
+  const areaOf = (id: string): HelperArea => {
+    const a = helpers.find((h) => h.id === id)?.area
+    return (a ?? 'ops') as HelperArea
+  }
+  const n = s.moves.length
+  return (
+    <article
+      aria-label={s.title}
+      className="flex w-full flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong"
+    >
+      <div className="flex w-full items-center gap-[8px]">
+        <Mascot size={22} radius={6} area="brand" />
+        <span className="text-[13px] font-semibold text-ink">Chief</span>
+        <span className="text-[12px] text-faint">suggestion</span>
+        <span className="h-px flex-1" />
+        <span className="inline-flex h-[22px] items-center gap-[4px] rounded-sm bg-soft px-[8px] outline-1 -outline-offset-1 outline-line-strong">
+          <CalendarSync size={12} aria-hidden className="text-ink-2" />
+          <span className="text-[12px] font-medium text-ink-2">Routines</span>
+        </span>
+      </div>
+      <div className="flex w-full flex-col gap-[4px]">
+        <h3 className="m-0 text-[14.5px] font-semibold text-ink">{s.title}</h3>
+        <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{s.desc}</p>
+      </div>
+      {n > 0 && (
+        <ul className="m-0 flex w-full list-none flex-col rounded-md bg-soft p-0 outline-1 -outline-offset-1 outline-line">
+          {s.moves.map((m, i) => (
+            <li
+              key={m.routineId}
+              className={`flex items-center gap-[10px] px-[12px] py-[9px] ${i < n - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
+            >
+              <Mascot size={18} radius={5} area={areaOf(m.helperId)} />
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{m.name}</span>
+              <span className="text-[12px] text-faint">{m.from}</span>
+              <ArrowRight size={12} aria-hidden className="text-faint" />
+              <span className="text-[12px] font-semibold text-ink">{m.to}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {applied ? (
+        <div className="flex w-full items-center gap-[8px] rounded-base bg-ok-tint px-[12px] py-[8px] outline-1 -outline-offset-1 outline-ok-line">
+          <CircleCheck size={14} aria-hidden className="shrink-0 text-ok" />
+          <span className="min-w-0 truncate text-[12.5px] font-medium text-ok">
+            {s.kind === 'failing' ? 'Applied · routine paused' : `Applied · ${n} routine${n === 1 ? '' : 's'} moved`}
+          </span>
+          <span className="h-px flex-1" />
+          <button type="button" onClick={onSee} className="text-[12px] whitespace-nowrap text-link hover:underline">
+            See in Routines
+          </button>
+        </div>
+      ) : (
+        <div className="flex w-full items-center gap-[6px]">
+          <Button height={28} variant="primary" icon={Check} onClick={onApply} disabled={busy}>
+            {s.kind === 'failing' ? 'Pause it' : n === 2 ? 'Apply both' : n > 2 ? `Apply all ${n}` : 'Apply'}
+          </Button>
+          <Button height={28} variant="secondary" icon={CalendarSync} onClick={onSee}>
+            See in Routines
+          </Button>
+          <Button height={28} variant="secondary" onClick={onDismiss} disabled={busy}>
+            Not now
+          </Button>
+        </div>
+      )}
+    </article>
+  )
+}
+
 /** Compact "more needs you" row: mascot 20 · title 13/500 · area chip · when · chevron. */
 function CompactRow({
   item,
@@ -292,11 +378,13 @@ function readState(): InboxState | undefined {
   return v === 'review' || v === 'amount' ? v : undefined
 }
 
-function fmt(n: number) {
-  return `$${n.toLocaleString('en-US')}`
+function fmtFor(item: InboxItem) {
+  const c = currencyOf(item)
+  return (n: number) => formatAmount(n, c)
 }
 
 function approvedTextFor(item: InboxItem, results: ReviewResult[], amount?: number) {
+  const fmt = fmtFor(item)
   if ((item.proposals?.length ?? 0) <= 1) {
     const value = amount ?? amountOf(item)
     return `You approved ${value != null ? fmt(value) : 'this'} · ${item.asker} started`
@@ -309,6 +397,7 @@ function approvedTextFor(item: InboxItem, results: ReviewResult[], amount?: numb
 
 /** Toast after approving: what was approved and who goes ahead. */
 function approvedToast(item: InboxItem, results: ReviewResult[], amount?: number) {
+  const fmt = fmtFor(item)
   const ok = results.filter((r) => r.decision === 'approved')
   if ((item.proposals?.length ?? 0) > 1) {
     const who = [...new Set(ok.map((r) => item.proposals![r.proposalIndex]?.who).filter(Boolean))]
@@ -359,6 +448,15 @@ function InboxList({ area }: { area: AreaFilter }) {
   const [changing, setChanging] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<{ title: string; body?: string } | null>(null)
+  // Chief's routine suggestion (GET /v1/routines/suggestions) — shown company-wide.
+  const { data: helpers = [] } = useHelpers()
+  const { data: suggestions = [] } = useRoutineSuggestions()
+  const applySuggestion = useApplyRoutineSuggestion()
+  const dismissSuggestion = useDismissRoutineSuggestion()
+  // Keep the applied card on screen after the list refetches without it.
+  const [appliedSnap, setAppliedSnap] = useState<RoutineSuggestion | null>(null)
+  const appliedSuggestion = appliedSnap?.id ?? null
+  const suggestion: RoutineSuggestion | undefined = appliedSnap ?? (area == null ? suggestions[0] : undefined)
 
   const items = area ? all.filter((i) => i.channelId === area) : all
   // Approved cards stay in place (green banner + Undo) until you leave the page.
@@ -440,7 +538,8 @@ function InboxList({ area }: { area: AreaFilter }) {
 
   const reviewingItem = cards.find((c) => c.id === reviewing)
   const changingItem = cards.find((c) => c.id === changing)
-  const needsCount = pending.filter((i) => !approved[i.id]).length
+  const needsCount =
+    pending.filter((i) => !approved[i.id]).length + (suggestion && appliedSuggestion !== suggestion.id ? 1 : 0)
   const asked = changingItem ? amountOf(changingItem) ?? 0 : 0
   const days = changingItem ? daysOf(changingItem) : null
 
@@ -470,9 +569,27 @@ function InboxList({ area }: { area: AreaFilter }) {
           <div className="flex w-full gap-[20px]">
             <section aria-label="Needs you" className="flex min-w-0 flex-1 flex-col gap-[10px]">
               <SectionTitle title="Needs you" count={needsCount} />
-              {/* TODO(sweep/routines): Chief's routine suggestion card (pen BoenW) renders
-                  from GET /v1/routines/suggestions once that endpoint lands. */}
-              {cards.length === 0 && rows.length === 0 && (
+              {suggestion && (
+                <RoutineSuggestionCard
+                  suggestion={suggestion}
+                  helpers={helpers}
+                  applied={appliedSuggestion === suggestion.id}
+                  busy={applySuggestion.isPending || dismissSuggestion.isPending}
+                  onApply={() =>
+                    applySuggestion.mutate(suggestion.id, {
+                      onSuccess: () => setAppliedSnap(suggestion),
+                      onError: (e) => notify(e instanceof Error ? `Couldn't apply — ${e.message}` : "Couldn't apply the suggestion"),
+                    })
+                  }
+                  onSee={() => void navigate({ to: '/routines' })}
+                  onDismiss={() =>
+                    dismissSuggestion.mutate(suggestion.id, {
+                      onError: () => notify("Couldn't dismiss the suggestion"),
+                    })
+                  }
+                />
+              )}
+              {cards.length === 0 && rows.length === 0 && !suggestion && (
                 <p className="m-0 text-[13px] text-muted">Nothing needs you right now.</p>
               )}
               {cards.map((item) => {
@@ -558,6 +675,7 @@ function InboxList({ area }: { area: AreaFilter }) {
           asker={changingItem.asker}
           forecastArea={changingItem.askerArea}
           asked={asked}
+          currency={currencyOf(changingItem)}
           options={[Math.round(asked / 3 / 100) * 100, Math.round((asked * 5) / 8 / 100) * 100, asked].filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)}
           defaultAmount={Math.round((asked * 5) / 8 / 100) * 100 || asked}
           days={days}

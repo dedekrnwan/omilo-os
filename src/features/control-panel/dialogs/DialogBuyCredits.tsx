@@ -12,13 +12,13 @@ import {
 } from '../../../app/queries'
 import { notify } from '../../../ui/ds/Toaster'
 import { errorMessage, formatIdr, formatIdrShort, openCheckout, parseIdr } from '../format'
+import { IDR_PER_CREDIT } from '../../../app/money'
 
 interface Props {
   onClose: () => void
 }
 
 /** Rupiah per credit (2,000 credits = Rp 100 rb) — converts the Rp cap to credits. */
-const IDR_PER_CREDIT = 50
 const AUTO_THRESHOLD = 500
 
 export function DialogBuyCredits({ onClose }: Props) {

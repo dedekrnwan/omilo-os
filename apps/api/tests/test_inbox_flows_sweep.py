@@ -348,3 +348,47 @@ async def test_tenancy_on_new_endpoints(async_client, tenant_a, tenant_b):
     run = (await async_client.post(f"/v1/flows/{flow['id']}/run", json={}, headers=ha)).json()
     assert (await async_client.get(f"/v1/flows/{flow['id']}/runs/{run['id']}", headers=hb)).status_code == 404
     assert (await async_client.get(f"/v1/flows/{flow['id']}/versions", headers=hb)).status_code == 404
+
+
+# ── Budget & limits enforcement (sweep merge) ───────────────────────────────
+
+
+def test_flow_limits_reads_rupiah_and_legacy_dollars():
+    from omilo.flows.engine import flow_limits
+
+    class F:  # minimal stand-in for the ORM object
+        settings: dict = {}
+
+    f = F()
+    f.settings = {"monthlyBudgetRp": "1.000.000", "costCapRp": "5000", "maxSteps": "12"}
+    assert flow_limits(f) == {"monthly_budget_credits": 20_000, "cost_cap_credits": 100, "max_steps": 12}
+    f.settings = {"monthlyBudget": "20", "costCap": "0.10"}  # pre-Rupiah flows (1 credit = $0.001)
+    assert flow_limits(f) == {"monthly_budget_credits": 20_000, "cost_cap_credits": 100, "max_steps": None}
+    f.settings = {}
+    assert flow_limits(f) == {"monthly_budget_credits": None, "cost_cap_credits": None, "max_steps": None}
+
+
+@pytest.mark.asyncio
+async def test_run_blocked_when_monthly_budget_spent(async_client, tenant_a):
+    from omilo.models.flows import FlowRun
+
+    company_id, _, h = await _auth(async_client, tenant_a)
+    flow = await _flow(async_client, h, title="Budget flow")
+    resp = await async_client.patch(
+        f"/v1/flows/{flow['id']}", json={"settings": {"monthlyBudgetRp": "5000"}}, headers=h
+    )
+    assert resp.status_code == 200, resp.text
+    with _tenant_session(company_id) as db:  # 100 credits = Rp 5.000 already spent
+        db.add(FlowRun(
+            id=prefixed_id("frn"), company_id=company_id, flow_id=flow["id"], status="done",
+            trigger_summary="earlier", started_by="test", job_ids=[], steps=[],
+            started_at=datetime.now(timezone.utc), cost_credits=100,
+        ))
+    resp = await async_client.post(f"/v1/flows/{flow['id']}/run", json={}, headers=h)
+    assert resp.status_code == 200, resp.text
+    run = resp.json()
+    assert run["status"] == "failed"
+    assert "budget" in str(run).lower()
+    # A test run is never blocked by the budget.
+    resp = await async_client.post(f"/v1/flows/{flow['id']}/test-run", json={}, headers=h)
+    assert resp.status_code == 200 and resp.json()["status"] != "failed"

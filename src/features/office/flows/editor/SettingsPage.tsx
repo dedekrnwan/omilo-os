@@ -5,7 +5,7 @@ import { Bell, Check, Plus, X, ChevronsUpDown, Copy, Gauge, History, Pause, Play
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { HelperArea } from '../../../../core/domain/types'
-import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow, useFlowRuns, useFlowVersions, useRestoreFlowVersion, useUpdateFlow } from '../../../../app/queries'
+import { useChannels, useMembers, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow, useFlowRuns, useFlowVersions, useRestoreFlowVersion, useUpdateFlow } from '../../../../app/queries'
 import { notify } from '../../../../ui/ds/Toaster'
 import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
@@ -14,6 +14,27 @@ import { Box, Chip, DialogCard, Group, PenButton, Row, SaveBar, Scrim, lineBotto
 import type { FlowSettings, OverlapPolicy } from './data'
 import { formatRelative } from '../runsAdapter'
 import { EditorFrame } from './EditorFrame'
+import { useSession } from '../../../../app/session'
+import { creditsToIdr, formatRp, IDR_PER_CREDIT } from '../../../../app/money'
+
+/** "1.000.000" / "Rp 5.000" / "5000" → 5000. */
+function parseRp(v: string | undefined): number {
+  const n = Number(String(v ?? '').replace(/[^0-9]/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Flows saved before the Rupiah switch stored $ budgets (1 credit = $0.001). */
+export function withRupiahBudgets(s: Partial<FlowSettings>): Partial<FlowSettings> {
+  const out = { ...s }
+  const usdToRp = (usd: string) => String(Math.round(Number(usd) * 1000 * IDR_PER_CREDIT))
+  if (out.monthlyBudgetRp === undefined && out.monthlyBudget !== undefined && !Number.isNaN(Number(out.monthlyBudget))) {
+    out.monthlyBudgetRp = usdToRp(out.monthlyBudget)
+  }
+  if (out.costCapRp === undefined && out.costCap !== undefined && !Number.isNaN(Number(out.costCap))) {
+    out.costCapRp = usdToRp(out.costCap)
+  }
+  return out
+}
 import { useFlow, useFlowStore } from './store'
 
 const initials = (n: string) => n.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
@@ -145,9 +166,9 @@ export function FlowSettingsPage() {
   const { data: runs = [] } = useFlowRuns(flowId)
   const restoreVersion = useRestoreFlowVersion()
   const v = f.settings
-  // Credits → dollars (1 credit = $0.001), as everywhere else in Flows.
-  const spent = (liveFlow?.spentThisMonthCredits ?? 0) * 0.001
-  const avgRun = runs.length ? (runs.reduce((acc, r) => acc + r.costCredits, 0) * 0.001) / runs.length : 0
+  // Spend is in credits; shown in Rupiah at the app-wide rate (src/app/money.ts).
+  const spent = creditsToIdr(liveFlow?.spentThisMonthCredits ?? 0)
+  const avgRun = runs.length ? creditsToIdr(runs.reduce((acc, r) => acc + r.costCredits, 0)) / runs.length : 0
   const nextMonth = new Date()
   nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
   const resets = nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -202,6 +223,8 @@ export function FlowSettingsPage() {
     }
   }
   const set = (p: Partial<FlowSettings>) => st.setSettings(flowId, p)
+  const meName = useSession((s) => s.user?.name) ?? ''
+  const memberNames = (useMembers().data ?? []).map((m) => m.name || m.email).filter(Boolean)
   const dirty = JSON.stringify(v) !== JSON.stringify(f.savedSettings)
 
   // Hydrate the Settings form from the flow's persisted `settings` once the
@@ -212,7 +235,7 @@ export function FlowSettingsPage() {
     const s = liveFlow?.settings
     if (!s) return
     hydratedSettingsRef.current = true
-    st.setSettings(flowId, s as Partial<FlowSettings>)
+    st.setSettings(flowId, withRupiahBudgets(s as Partial<FlowSettings>))
     st.saveSettings(flowId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveFlow])
@@ -238,7 +261,7 @@ export function FlowSettingsPage() {
     return () => io.disconnect()
   }, [])
 
-  const budget = Number(v.monthlyBudget) || 0
+  const budget = parseRp(v.monthlyBudgetRp)
   const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0
 
   return (
@@ -370,8 +393,8 @@ export function FlowSettingsPage() {
               <Anchor id="limits">
                 <Group title="Budget & limits" desc="A run that hits a limit stops and tells you — it never keeps spending.">
                   <Box>
-                    <Row title="Monthly budget" desc={`$${spent.toFixed(2)} spent this month · resets ${resets}`}>
-                      <Affix label="Monthly budget" prefix="$" value={v.monthlyBudget} onChange={(monthlyBudget) => set({ monthlyBudget })} width={110} />
+                    <Row title="Monthly budget" desc={`${formatRp(spent)} spent this month · resets ${resets}`}>
+                      <Affix label="Monthly budget" prefix="Rp" value={v.monthlyBudgetRp} onChange={(monthlyBudgetRp) => set({ monthlyBudgetRp })} width={140} />
                     </Row>
                     <div className={`flex flex-col gap-[6px] pt-[2px] pb-[14px] ${lineBottom}`}>
                       <div className="h-[6px] w-full overflow-hidden rounded-full bg-app" role="meter" aria-label="Budget used" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
@@ -382,8 +405,8 @@ export function FlowSettingsPage() {
                         {avgRun > 0 ? ` · about ${Math.max(0, Math.floor((budget - spent) / avgRun))} more runs at today’s cost` : ''}
                       </span>
                     </div>
-                    <Row title="Max cost per run" desc={avgRun > 0 ? `Typical run is ~$${avgRun.toFixed(3)}.` : 'No runs yet.'}>
-                      <Affix label="Max cost per run" prefix="$" value={v.costCap} onChange={(costCap) => set({ costCap })} width={110} />
+                    <Row title="Max cost per run" desc={avgRun > 0 ? `Typical run is ~${formatRp(avgRun)}.` : 'No runs yet.'}>
+                      <Affix label="Max cost per run" prefix="Rp" value={v.costCapRp} onChange={(costCapRp) => set({ costCapRp })} width={140} />
                     </Row>
                     <Row title="Max steps per run" desc="Counts every step, including retries.">
                       <Affix label="Max steps per run" value={v.maxSteps} suffix="steps" onChange={(maxSteps) => set({ maxSteps })} width={110} />
@@ -410,12 +433,12 @@ export function FlowSettingsPage() {
                           <Chip key={a}>
                             <span
                               className="flex size-[14px] items-center justify-center rounded-full text-[7px] font-semibold text-white"
-                              style={{ background: a === 'Dede Kurniawan' ? '#F97316' : '#8B5CF6' }}
+                              style={{ background: a === meName ? '#F97316' : '#8B5CF6' }}
                             >
                               {initials(a)}
                             </span>
-                            {a === 'Dede Kurniawan' ? 'You' : a.split(' ')[0]}
-                            {a !== 'Dede Kurniawan' && (
+                            {a === meName ? 'You' : a.split(' ')[0]}
+                            {a !== meName && (
                               <button type="button" aria-label={`Remove ${a}`} onClick={() => set({ approvers: v.approvers.filter((x) => x !== a) })} className="-mr-[3px] text-faint hover:text-ink">
                                 <X size={11} aria-hidden />
                               </button>
@@ -435,7 +458,7 @@ export function FlowSettingsPage() {
                           </Dropdown.Trigger>
                           <Dropdown.Portal>
                             <Dropdown.Content align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
-                              {['Rina Putri', 'Bagus Santoso', 'Sari Wulandari']
+                              {memberNames
                                 .filter((n) => !v.approvers.includes(n))
                                 .map((n) => (
                                   <Dropdown.Item key={n} className={menuItemClass} onSelect={() => set({ approvers: [...v.approvers, n] })}>

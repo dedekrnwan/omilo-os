@@ -61,9 +61,9 @@ describe('formatDuration / formatCost', () => {
     expect(formatDuration(72)).toBe('1m 12s')
     expect(formatDuration(120)).toBe('2m')
   })
-  it('formats cost from credits (1 credit = $0.001)', () => {
-    expect(formatCost(0)).toBe('$0.000')
-    expect(formatCost(18)).toBe('$0.018')
+  it('formats cost from credits in Rupiah (Rp 50 per credit)', () => {
+    expect(formatCost(0)).toBe('Rp 0')
+    expect(formatCost(18)).toBe('Rp 900')
   })
 })
 
@@ -90,7 +90,7 @@ describe('officeRunRow', () => {
       trigger: 'GitHub · deploy',
       startedAt: '12m ago',
       duration: '38s',
-      cost: '$0.004',
+      cost: 'Rp 200',
     })
   })
 
@@ -111,7 +111,7 @@ describe('runsStats', () => {
     expect(stats['Runs this week']).toBe('3') // a, b, c within 7d; d is 20d old
     expect(stats['Success rate']).toBe('50%') // finished = a(done) + b(failed); 1/2
     expect(stats['Needs you']).toBe('1') // c
-    expect(stats.Spend).toBe('$0.010') // 5+3+2+0 = 10 credits
+    expect(stats.Spend).toBe('Rp 500') // 5+3+2+0 = 10 credits
   })
 
   it('shows "—" success rate when nothing has finished', () => {

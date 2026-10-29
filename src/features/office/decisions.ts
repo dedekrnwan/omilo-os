@@ -37,11 +37,35 @@ export function decisionsFor(
   })
 }
 
-/** "$4,800" in the primary action label → 4800. */
-export function amountOf(item: InboxItem): number | null {
+export type AmountCurrency = 'IDR' | 'USD'
+
+function amountMatch(item: InboxItem): { value: number; currency: AmountCurrency } | null {
   const label = item.actions?.find((a) => a.primary)?.label ?? item.title
-  const m = /\$([\d,]+(?:\.\d+)?)/.exec(label)
-  return m ? Number(m[1].replace(/,/g, '')) : null
+  const rp = /Rp\.?\s?([\d.]+(?:,\d+)?)\s*(rb|ribu|jt|juta)?/i.exec(label)
+  if (rp) {
+    let value = Number(rp[1].replace(/\./g, '').replace(',', '.'))
+    const unit = rp[2]?.toLowerCase()
+    if (unit === 'rb' || unit === 'ribu') value *= 1_000
+    if (unit === 'jt' || unit === 'juta') value *= 1_000_000
+    return { value, currency: 'IDR' }
+  }
+  const usd = /\$([\d,]+(?:\.\d+)?)/.exec(label)
+  return usd ? { value: Number(usd[1].replace(/,/g, '')), currency: 'USD' } : null
+}
+
+/** The money amount a decision asks for ("Approve Rp 1,5 jt" / "Approve $300"). */
+export function amountOf(item: InboxItem): number | null {
+  return amountMatch(item)?.value ?? null
+}
+
+/** Currency the request was written in (defaults to Rupiah). */
+export function currencyOf(item: InboxItem): AmountCurrency {
+  return amountMatch(item)?.currency ?? 'IDR'
+}
+
+/** "Rp 1.500.000" / "$300" */
+export function formatAmount(n: number, currency: AmountCurrency): string {
+  return currency === 'USD' ? `$${n.toLocaleString('en-US')}` : `Rp ${n.toLocaleString('id-ID')}`
 }
 
 /** "14-day" / "14 days" in the summary → 14. */

@@ -1,29 +1,10 @@
 /**
  * Shared number / money / time formatting for Analytics and Team.
  *
- * Currency decision (sweep/team-analytics): the API reports spend in credits
- * (CreditLedger.credits_charged). We show credits everywhere and add the
- * Rupiah equivalent at the top-up rate — the small pack is 1 000 credits for
- * Rp 15 000 (apps/api/omilo/api/billing.py), i.e. Rp 15 per credit.
+ * Money: spend is reported in credits; the Rupiah equivalent uses the single
+ * app-wide rate in src/app/money.ts.
  */
-export const IDR_PER_CREDIT = 15
-
-const nf = new Intl.NumberFormat('id-ID')
-
-/** "1.450 cr" */
-export function formatCredits(n: number): string {
-  return `${nf.format(Math.round(n))} cr`
-}
-
-/** "Rp 21.750" */
-export function formatRp(n: number): string {
-  return `Rp ${nf.format(Math.round(n))}`
-}
-
-/** "≈ Rp 21.750" for a credit amount. */
-export function creditsInRp(credits: number): string {
-  return `≈ ${formatRp(credits * IDR_PER_CREDIT)}`
-}
+export { IDR_PER_CREDIT, formatCredits, formatRp, creditsInRp } from '../../app/money'
 
 /** 1240000 → "1.2M", 41200 → "41k", 950 → "950". */
 export function formatTokens(n: number): string {
