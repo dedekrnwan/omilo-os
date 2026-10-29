@@ -484,6 +484,67 @@ class TestPatchFlow:
         )
         assert patch_resp.status_code == 422, patch_resp.text
 
+    @pytest.mark.asyncio
+    async def test_patch_flow_settings_deep_merge_and_roundtrip(
+        self, async_client, tenant_a
+    ):
+        """PATCH settings deep-merges + persists, and GET round-trips it (Task C)."""
+        company_id, _ = tenant_a
+        token = await _get_token_for_company(async_client, company_id)
+        hdrs = {"Authorization": f"Bearer {token}", "X-Company-Id": company_id}
+
+        create_resp = await async_client.post(
+            "/v1/flows",
+            json={
+                "title": "Settings flow",
+                "trigger": _VALID_TRIGGER,
+                "nodes": _NODES,
+                "edges": _EDGES,
+            },
+            headers=hdrs,
+        )
+        assert create_resp.status_code == 200, create_resp.text
+        flow = create_resp.json()
+        flow_id = flow["id"]
+        # New flows default to empty settings.
+        assert flow["settings"] == {}
+
+        # First PATCH sets budget + a nested notifications block.
+        p1 = await async_client.patch(
+            f"/v1/flows/{flow_id}",
+            json={
+                "settings": {
+                    "budget": {"monthly_credits": 500},
+                    "notifications": {"email": True},
+                }
+            },
+            headers=hdrs,
+        )
+        assert p1.status_code == 200, p1.text
+        assert p1.json()["settings"]["budget"]["monthly_credits"] == 500
+
+        # Second PATCH deep-merges a sibling key without clobbering existing ones.
+        p2 = await async_client.patch(
+            f"/v1/flows/{flow_id}",
+            json={
+                "settings": {
+                    "quiet_hours": {"start": "22:00", "end": "08:00"},
+                    "notifications": {"slack": True},
+                }
+            },
+            headers=hdrs,
+        )
+        assert p2.status_code == 200, p2.text
+
+        # GET round-trip: all keys coexist.
+        get_resp = await async_client.get(f"/v1/flows/{flow_id}", headers=hdrs)
+        assert get_resp.status_code == 200, get_resp.text
+        settings = get_resp.json()["settings"]
+        assert settings["budget"]["monthly_credits"] == 500
+        assert settings["quiet_hours"] == {"start": "22:00", "end": "08:00"}
+        # notifications deep-merged: both email (from p1) and slack (from p2) present.
+        assert settings["notifications"] == {"email": True, "slack": True}
+
 
 # ---------------------------------------------------------------------------
 # Test 7: Publish → flow_publish Proposal + decision InboxItem

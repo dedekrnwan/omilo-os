@@ -36,6 +36,9 @@ class Flow(IdMixin, TimestampMixin, Base):
     # edges: CanvasEdge[] — {id,from,to,label}
     edges: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="[]")
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    # settings: free-form flow-editor settings (budget / approvals / quiet-hours /
+    # notifications). Deep-merged on PATCH /v1/flows/{id}, mirrors company.settings.
+    settings: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     status: Mapped[str] = mapped_column(nullable=False, server_default="draft")  # draft|published
     created_by: Mapped[str] = mapped_column(nullable=False, server_default="operator")
     proposed_from_pattern: Mapped[bool] = mapped_column(

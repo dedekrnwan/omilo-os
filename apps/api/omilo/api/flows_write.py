@@ -27,6 +27,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.models.approvals import Proposal, ProposalRevision
 from omilo.models.base import prefixed_id
@@ -71,6 +72,8 @@ class PatchFlowBody(BaseModel):
     edges: Optional[list[Any]] = None
     enabled: Optional[bool] = None
     areas: Optional[list[str]] = None
+    # settings: partial flow-editor settings, deep-merged into the stored object.
+    settings: Optional[dict[str, Any]] = None
 
 
 class TestRunBody(BaseModel):
@@ -104,6 +107,30 @@ def _validate_trigger_kind(kind: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Deep-merge (mirrors company.settings behavior)
+# ---------------------------------------------------------------------------
+
+
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge ``patch`` into ``base`` and return a new dict.
+
+    Nested dicts are merged key-by-key (a partial PATCH to one nested key does
+    not clobber its siblings); non-dict values overwrite.
+    """
+    result = dict(base)
+    for key, value in patch.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Serialisers
 # ---------------------------------------------------------------------------
 
@@ -123,6 +150,7 @@ def _flow_to_dict(flow: Flow) -> dict[str, Any]:
         "edges": flow.edges,
         "channel_ids": flow.channel_ids,
         "areas": flow.areas,
+        "settings": flow.settings or {},
         "poll_cursor": flow.poll_cursor,
         "created_at": flow.created_at.isoformat() if flow.created_at else None,
     }
@@ -288,6 +316,11 @@ def patch_flow(
 
     if body.areas is not None:
         flow.areas = body.areas
+
+    if body.settings is not None:
+        flow.settings = _deep_merge(dict(flow.settings or {}), body.settings)
+        # JSONB mutation via reassignment is tracked, but flag to be safe.
+        flag_modified(flow, "settings")
 
     db.flush()
     return _flow_to_dict(flow)
