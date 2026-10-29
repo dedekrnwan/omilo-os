@@ -332,6 +332,24 @@ flowchart TB
   opens the outbound relay connection). This unifies "connect a service" and "connect a computer"
   under one UX.
 
+### 11.1 Pieces catalog travels with every deployable (packaging rule)
+
+Pieces (connector + MCP manifests, in the separate `omilo-pieces` repo) are indexed into a **global
+`Piece` table** by `omilo-index` and served by the marketplace/connectors API. So the rule:
+
+> **Every omilo-API deployable must (a) carry the `omilo-pieces` manifests and (b) run `omilo-index`
+> on startup against its own DB.** Idempotent; without it the marketplace/connectors UI is empty.
+
+| Deployable | Serves pieces? | Status |
+|-----------|----------------|--------|
+| `make dev` (local dev) | yes | ✅ Done — `make dev` runs migrate → seed → **index** (pieces are a local sibling repo) |
+| **Web / managed cloud** (Docker API) | yes | `omilo-index` wired into `start-api.sh`; **bundling `omilo-pieces` into the image is the follow-up** (sibling repo → vendor via submodule, or set `PIECES_SOURCE` to a mounted copy) |
+| **`.dmg` desktop** | *not yet* | The dmg currently bundles **only the frontend** and uses the **cloud** API's catalog — so no local indexing needed *today*. When the **local-runtime** backend is packaged (the "2 deployables" control-plane/runtime split, **not built yet**), it inherits this rule: bundle pieces + run `omilo-index` on launch |
+| **Self-host** (fully local API) | yes | Same as the dmg local runtime — bundle pieces + index on startup |
+
+Net: `make dev` is covered; the cloud image needs the pieces bundled; and the desktop/self-host
+**local-runtime packaging does not exist yet** — when it's built it must carry pieces + `omilo-index`.
+
 ---
 
 ## 12. Comparison with nakama
