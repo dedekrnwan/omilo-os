@@ -3,7 +3,8 @@
  * Wired to the real AI-accounts backend (P13):
  *   - useAiAccounts() drives the "existing" option list.
  *   - Selecting "api-key" and submitting calls createAiAccount via commands.
- *   - The cloud segment is unchanged (credit-based, no AI account needed).
+ *   - Cloud: pick the company's plan (storage tiers) AND connect the company's
+ *     own AI key — Cloud plans don't include AI (bring your own key).
  *
  * NOTE: POST /v1/ai-accounts/check only reclassifies existing pool accounts
  * by pct_window — it does NOT detect locally running processes.  There is no
@@ -280,18 +281,17 @@ export function StepYourAI({
   const qc = useQueryClient()
   const updateSettings = useUpdateCompanySettings()
   const [checking, setChecking] = useState(false)
-  // Cloud: settle trial / pack / plan here; the interview opens once Omilo Cloud's AI is ready.
-  const cloud = useCloudSetup(() => onNext({ mode: 'cloud', cloudPick: cloud.pick }))
+  // Cloud: plan + AI key settled here; the interview opens once the key answers.
+  const cloud = useCloudSetup((pick) => onNext({ mode: 'cloud', cloudPick: pick }))
 
-  /** Prove the picked AI really answers (one tiny call), save it as the company's AI, then move on. */
-  async function confirmAccount(accountId: string | null) {
-    if (isMockMode()) {
-      onNext({ mode, accountId })
-      return
-    }
+  /** Prove the picked AI really answers (one tiny call) and save it as the company's AI. */
+  async function verifyAccount(accountId: string | null): Promise<boolean> {
+    if (isMockMode()) return true
     if (!accountId) {
-      setConnectError('Connect an AI first — Claude Code on this computer, or an API key — so Chief can interview you.')
-      return
+      setConnectError(mode === 'cloud'
+        ? 'Connect your company’s AI key first — Cloud plans don’t include AI.'
+        : 'Connect an AI first — Claude Code on this computer, or an API key — so Chief can interview you.')
+      return false
     }
     setChecking(true)
     setConnectError(null)
@@ -299,16 +299,21 @@ export function StepYourAI({
       const res = (await commands.testAiAccount(accountId)) as { ok?: boolean; detail?: string } | undefined
       if (res && res.ok === false) {
         setConnectError(res.detail ?? 'This AI didn’t answer. Check the key or the sign-in and try again.')
-        return
+        return false
       }
       await updateSettings.mutateAsync({ aiEngine: { defaultAccountId: accountId } })
       void qc.invalidateQueries({ queryKey: ['aiAccounts'] })
-      onNext({ mode, accountId })
+      return true
     } catch (err) {
       setConnectError(err instanceof Error ? err.message : 'Couldn’t check this AI. Try again.')
+      return false
     } finally {
       setChecking(false)
     }
+  }
+
+  async function confirmAccount(accountId: string | null) {
+    if (await verifyAccount(accountId)) onNext({ mode, accountId })
   }
 
   // Merge newly-connected account (optimistic) with the live list so it appears
@@ -321,7 +326,12 @@ export function StepYourAI({
     return base
   })()
 
-  const hasAccounts = displayAccounts.length > 0
+  // Cloud can't reach a CLI signed in on this computer — only API keys work there.
+  const usableAccounts = mode === 'cloud' ? displayAccounts.filter((a) => a.tag !== 'session') : displayAccounts
+  const pickedAccountId =
+    (existingAccountId && usableAccounts.some((a) => a.id === existingAccountId) ? existingAccountId : null) ??
+    usableAccounts[0]?.id ?? null
+  const hasAccounts = usableAccounts.length > 0
   const connectedHarnessIds = new Set(displayAccounts.map((a) => a.harness))
 
   /** Connect a detected local harness as a keyless "session" account. */
@@ -384,6 +394,76 @@ export function StepYourAI({
     }
   }
 
+  const keyOptions = AI_MODES['self-host'].options
+  const accountPicker = (
+    <div role="radiogroup" aria-label="AI account" className="flex flex-col gap-[8px]">
+      {/* "Existing accounts" option — shown when there are accounts or still loading */}
+      {(hasAccounts || accountsLoading) && (
+        <OptionCard
+          icon={keyOptions.find((o) => o.id === 'existing')?.icon ?? keyOptions[0].icon}
+          title={
+            keyOptions.find((o) => o.id === 'existing')?.title ??
+            'Use an account already connected'
+          }
+          desc={keyOptions.find((o) => o.id === 'existing')?.desc ?? ''}
+          selected={selfHostPick === 'existing'}
+          onSelect={() => setSelfHostPick('existing')}
+        />
+      )}
+
+      {/* Pool list (shown when "existing" is selected) */}
+      {selfHostPick === 'existing' && (
+        <div className="flex flex-col gap-[6px] pl-[8px]">
+          {accountsLoading && (
+            <p className="pl-[8px] text-[12px] text-muted">Loading accounts…</p>
+          )}
+          {usableAccounts.map((acc) => (
+            <ExistingAccountRow
+              key={acc.id}
+              account={acc}
+              selected={pickedAccountId === acc.id}
+              onSelect={() => setExistingAccountId(acc.id)}
+            />
+          ))}
+          {!accountsLoading && usableAccounts.length === 0 && (
+            <p className="pl-[8px] text-[12px] text-muted">
+              No AI accounts connected yet.{' '}
+              <button
+                type="button"
+                className="font-medium text-link hover:underline"
+                onClick={() => setSelfHostPick('api-key')}
+              >
+                Add one below.
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* API key option — collapsed card when not selected, expanded form when selected */}
+      {selfHostPick === 'api-key' ? (
+        <ApiKeyForm
+          onConnect={handleConnectKey}
+          connecting={connecting}
+          error={connectError}
+        />
+      ) : (
+        <OptionCard
+          icon={
+            keyOptions.find((o) => o.id === 'api-key')?.icon ?? KeyRound
+          }
+          title={
+            keyOptions.find((o) => o.id === 'api-key')?.title ?? 'Connect an API key'
+          }
+          desc={keyOptions.find((o) => o.id === 'api-key')?.desc ?? ''}
+          chips={keyOptions.find((o) => o.id === 'api-key')?.chips}
+          selected={false}
+          onSelect={() => setSelfHostPick('api-key')}
+        />
+      )}
+    </div>
+  )
+
   return (
     <WizardCard>
       <div className="flex min-w-0 flex-1 flex-col gap-[16px] px-[24px] py-[28px] sm:px-[48px] sm:py-[44px] lg:min-h-0 lg:overflow-y-auto">
@@ -420,82 +500,28 @@ export function StepYourAI({
               />
             </div>
 
-          <div role="radiogroup" aria-label="AI account" className="flex flex-col gap-[8px]">
-            {/* "Existing accounts" option — shown when there are accounts or still loading */}
-            {(hasAccounts || accountsLoading) && (
-              <OptionCard
-                icon={copy.options.find((o) => o.id === 'existing')?.icon ?? copy.options[0].icon}
-                title={
-                  copy.options.find((o) => o.id === 'existing')?.title ??
-                  'Use an account already connected'
-                }
-                desc={copy.options.find((o) => o.id === 'existing')?.desc ?? ''}
-                selected={selfHostPick === 'existing'}
-                onSelect={() => setSelfHostPick('existing')}
-              />
-            )}
-
-            {/* Pool list (shown when "existing" is selected) */}
-            {selfHostPick === 'existing' && (
-              <div className="flex flex-col gap-[6px] pl-[8px]">
-                {accountsLoading && (
-                  <p className="pl-[8px] text-[12px] text-muted">Loading accounts…</p>
-                )}
-                {displayAccounts.map((acc) => (
-                  <ExistingAccountRow
-                    key={acc.id}
-                    account={acc}
-                    selected={existingAccountId === acc.id}
-                    onSelect={() => setExistingAccountId(acc.id)}
-                  />
-                ))}
-                {!accountsLoading && displayAccounts.length === 0 && (
-                  <p className="pl-[8px] text-[12px] text-muted">
-                    No AI accounts connected yet.{' '}
-                    <button
-                      type="button"
-                      className="font-medium text-link hover:underline"
-                      onClick={() => setSelfHostPick('api-key')}
-                    >
-                      Add one below.
-                    </button>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* API key option — collapsed card when not selected, expanded form when selected */}
-            {selfHostPick === 'api-key' ? (
-              <ApiKeyForm
-                onConnect={handleConnectKey}
-                connecting={connecting}
-                error={connectError}
-              />
-            ) : (
-              <OptionCard
-                icon={
-                  copy.options.find((o) => o.id === 'api-key')?.icon ?? KeyRound
-                }
-                title={
-                  copy.options.find((o) => o.id === 'api-key')?.title ?? 'Connect an API key'
-                }
-                desc={copy.options.find((o) => o.id === 'api-key')?.desc ?? ''}
-                chips={copy.options.find((o) => o.id === 'api-key')?.chips}
-                selected={false}
-                onSelect={() => setSelfHostPick('api-key')}
-              />
-            )}
-          </div>
+          {accountPicker}
           </div>
         )}
 
-        {/* ── Cloud: trial / pack / plan, settled here (no jump to the pricing pages) ── */}
-        {mode === 'cloud' && <CloudSetup s={cloud} />}
+        {/* ── Cloud: plan (storage tier or trial) + the company's own AI key ── */}
+        {mode === 'cloud' && (
+          <div className="flex flex-col gap-[20px]">
+            <CloudSetup s={cloud} />
+            <div className="flex flex-col gap-[8px]">
+              <span className="text-[11px] font-semibold tracking-[0.8px] text-muted">2 · YOUR COMPANY’S AI KEY</span>
+              <p className="text-[12px] text-muted">
+                Your helpers think with your own Claude or OpenAI key — you pay the AI provider directly for what they use.
+              </p>
+              {accountPicker}
+            </div>
+          </div>
+        )}
 
         <div className="w-px flex-1" />
 
         {/* Footer */}
-        {connectError && selfHostPick === 'existing' && mode === 'self-host' && (
+        {connectError && selfHostPick === 'existing' && (
           <p role="alert" className="w-full text-[13px] text-bad">{connectError}</p>
         )}
         <div className="flex w-full items-center gap-[10px]">
@@ -517,11 +543,11 @@ export function StepYourAI({
             icon={ArrowRight}
             onClick={() =>
               mode === 'cloud'
-                ? cloud.busy ? undefined : void cloud.start()
-                : checking ? undefined : void confirmAccount(existingAccountId ?? displayAccounts[0]?.id ?? null)
+                ? cloud.busy || checking ? undefined : void cloud.start(() => verifyAccount(pickedAccountId))
+                : checking ? undefined : void confirmAccount(pickedAccountId)
             }
           >
-            {mode === 'cloud' ? cloud.cta : checking ? 'Checking your AI…' : copy.cta}
+            {checking ? 'Checking your AI…' : mode === 'cloud' ? cloud.cta : copy.cta}
           </PrimaryButton>
         </div>
       </div>

@@ -902,7 +902,7 @@ def _check_invite_seat(session: Session, company_id: str, role: str) -> None:
     from omilo.api.billing import seats_summary
 
     summary = seats_summary(session, company_id)
-    if summary.get("self_hosted") or not summary.get("plan_id"):
+    if summary.get("self_hosted") or summary.get("unlimited") or not summary.get("plan_id"):
         return
     if (summary.get("available") or 0) <= 0:
         raise HTTPException(

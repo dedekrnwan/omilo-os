@@ -48,7 +48,7 @@ import { useSession } from '../app/session'
 import { useAuth } from '../app/useAuth'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Company } from '../core/domain/session'
-import { useCompanyDetail, useSubscription, useUsage } from '../app/queries'
+import { useCompanyDetail, useSubscription, useStorage } from '../app/queries'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
@@ -701,15 +701,17 @@ function ProfileMenu() {
   const signOut = useSession((s) => s.signOut)
   const user = useSession((s) => s.user)
   const sub = useSubscription().data
-  const usage = useUsage().data
+  const storage = useStorage().data
   const initialsOf = (n: string) =>
     n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?'
   const userInitials = user ? initialsOf(user.name || user.email) : '?'
   const planLabel = sub ? `${sub.planName ?? sub.planId.replace(/^plan_/, '').replace(/^\w/, (c) => c.toUpperCase())} plan${sub.isTrial ? ' · trial' : ''}` : null
-  const included = usage?.included ?? 0
-  const used = usage?.usedThisPeriod ?? 0
-  const pct = included > 0 ? Math.min(100, Math.round((used / included) * 100)) : 0
-  const fmt = (n: number) => n.toLocaleString('id-ID')
+  // Cloud plans are sized by storage (docs, files, knowledge).
+  const quota = storage?.quotaBytes ?? null
+  const used = storage?.usedBytes ?? 0
+  const pct = quota ? Math.min(100, Math.round((used / quota) * 100)) : 0
+  const fmt = (n: number) =>
+    n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1).replace(/\.0$/, '')} GB` : `${Math.max(0, Math.round(n / 1024 ** 2))} MB`
 
   return (
     <>
@@ -744,10 +746,10 @@ function ProfileMenu() {
                   <span className="text-[12px] font-semibold text-ink">{planLabel}</span>
                   <span className="h-px flex-1" />
                   <span className="font-mono text-[11px] text-muted">
-                    {included > 0 ? `${fmt(used)} / ${fmt(included)} credits` : `${fmt(usage?.balance ?? 0)} credits left`}
+                    {storage ? (quota ? `${fmt(used)} / ${fmt(quota)}` : `${fmt(used)} · no limit`) : ''}
                   </span>
                 </div>
-                {included > 0 && (
+                {!!quota && (
                 <div className="h-[4px] overflow-hidden rounded-[2px] bg-line-strong">
                   <div className="h-full rounded-[2px] bg-ink" style={{ width: `${pct}%` }} />
                 </div>

@@ -95,7 +95,7 @@ def _prepare(ctx: RequestContext, session_id: str, body: StreamBody) -> dict:
 
             if not has_credits(db, ctx.company_id):
                 raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                                    detail="You're out of Omilo credits. Top up or pick a plan in Control panel → Usage & billing.")
+                                    detail="Omilo Cloud's AI has no allowance left. Connect your own AI key in Control panel → AI engine.")
         history = [
             {"role": "user" if (m.author or {}).get("kind") == "you" else "assistant", "content": m.content or ""}
             for m in reversed(past)

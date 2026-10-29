@@ -28,6 +28,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from omilo.tenancy.context import RequestContext
+from omilo.tenancy.deps import get_context
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func
@@ -54,11 +56,15 @@ class IndexSourceRequest(BaseModel):
 def post_knowledge_source(
     req: IndexSourceRequest,
     db: Session = Depends(get_knowledge_db),
+    ctx: RequestContext = Depends(get_context),
 ) -> dict:
     """Index a new (or updated) KB source.
 
-    Returns the source_id and chunk count.
+    Returns the source_id and chunk count. Paused (413) when storage is full.
     """
+    from omilo.billing.storage import check_upload
+
+    check_upload(ctx.company_id, len((req.body or "").encode()))
     src = index_source(
         db,
         kind=req.kind,

@@ -135,10 +135,12 @@ def from_account(acc: Any) -> AiConfig | None:
 
 
 def pool_config() -> AiConfig | None:
-    """Omilo Cloud's AI (cloud/hybrid mode only): the server's key, billed to the company in credits."""
+    """Omilo Cloud's AI (cloud mode, OMILO_POOL_AI=1 only): the partner's key, metered internally."""
     from omilo.control.factory import is_local_mode
 
-    if is_local_mode():
+    # Off until the AI partner is live: Cloud plans cover storage and hosting,
+    # companies bring their own key. Turn on with OMILO_POOL_AI=1.
+    if is_local_mode() or os.environ.get("OMILO_POOL_AI", "").lower() not in ("1", "true", "yes"):
         return None
     key = os.environ.get("OMILO_POOL_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     if not key:

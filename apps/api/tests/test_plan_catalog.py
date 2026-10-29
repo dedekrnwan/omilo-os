@@ -75,17 +75,15 @@ def test_cloud_plan_fields() -> None:
 
     assert plan is not None, "plan_team must exist after seeding"
     assert plan.tier == "team"
-    assert plan.monthly_price_idr == 2_000_000
-    assert plan.yearly_price_idr == 20_000_000  # 2 months free
-    assert plan.included_credits == 40_000
-    assert plan.seats == 5
-    assert plan.features["max_seats"] == 15
-    assert plan.features["seat_price_idr"] == 150_000
+    # Per company, sized by storage: no credits, unlimited people.
+    assert plan.monthly_price_idr == 499_000
+    assert plan.yearly_price_idr == 4_990_000  # 2 months free
+    assert plan.included_credits == 0
+    assert plan.features["storage_gb"] == 50
+    assert plan.features["max_seats"] is None and plan.features["seat_price_idr"] is None
 
-    assert starter.monthly_price_idr == 500_000 and starter.seats == 2
-    assert starter.features["seat_price_idr"] is None
-    assert business.monthly_price_idr == 6_000_000 and business.seats == 20
-    assert business.features["max_seats"] is None
+    assert starter.monthly_price_idr == 149_000 and starter.features["storage_gb"] == 5
+    assert business.monthly_price_idr == 1_499_000 and business.features["storage_gb"] == 250
 
     assert resolve_plan_id("plan_cloud") == "plan_team"
     assert resolve_plan_id("business") == "plan_business"

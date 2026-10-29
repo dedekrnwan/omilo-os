@@ -112,26 +112,15 @@ def _quota_bytes(session: Any, company: Company) -> int | None:
 
 @router.get("/data/storage")
 def get_storage(ctx: RequestContext = Depends(get_context)) -> dict[str, Any]:
+    """Storage used vs the plan: docs, files & artifacts and knowledge count;
+    chats and run logs are free (segment ``counted: false``)."""
+    from omilo.billing.storage import usage
+
     with SessionLocal() as session:
         company = session.get(Company, ctx.company_id)
         if company is None:
             raise HTTPException(status_code=404, detail="Company not found.")
-        segments = []
-        grouped: set[str] = set()
-        for key, label, tables in STORAGE_GROUPS:
-            grouped.update(tables)
-            segments.append(
-                {"key": key, "label": label, "bytes": sum(_table_bytes(session, t, ctx.company_id) for t in tables)}
-            )
-        other = sum(
-            _table_bytes(session, t, ctx.company_id) for t in _EXPORT_TABLES if t not in grouped
-        )
-        segments.append({"key": "other", "label": "Other", "bytes": other})
-        return {
-            "used_bytes": sum(s["bytes"] for s in segments),
-            "quota_bytes": _quota_bytes(session, company),
-            "segments": segments,
-        }
+        return usage(session, company)
 
 
 def _export_dict(e: DataExport) -> dict[str, Any]:

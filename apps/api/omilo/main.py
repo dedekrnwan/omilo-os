@@ -56,6 +56,15 @@ def create_app() -> FastAPI:
         from omilo import notify
 
         notify.start_loop()
+        # Keep the plan table in step with omilo.billing.catalog (prices are set there).
+        try:
+            from omilo.billing.catalog import seed_plans
+
+            seed_plans()
+        except Exception:  # noqa: BLE001 — never block start-up on the catalog
+            import logging
+
+            logging.getLogger(__name__).warning("plan catalog sync failed", exc_info=True)
         yield
 
     app = FastAPI(title="Omilo API", version="0.1.0", lifespan=_lifespan)

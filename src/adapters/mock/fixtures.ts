@@ -30,23 +30,11 @@ import type {
 
 // ── Billing Plans ─────────────────────────────────────────────────────────────
 
-export const billingPlans: BillingPlan[] = [
-  {
-    id: 'plan-cloud',
-    tier: 'cloud',
-    name: 'Cloud',
-    monthlyPriceUsd: 39,
-    monthlyPriceIdr: 599_000,
-    yearlyPriceUsd: 31,
-    yearlyPriceIdr: 479_000,
-    includedCredits: 2_000,
-    seats: 5,
-    trialDays: 14,
-  },
-]
+/** Filled below with the Cloud tiers (Starter / Team / Business). */
+export const billingPlans: BillingPlan[] = []
 
 export const billingSubscription: BillingSubscription = {
-  planId: 'plan-cloud',
+  planId: 'plan_team',
   status: 'trialing',
   currentPeriodEnd: '2026-11-11T00:00:00Z',
   seats: 5,
@@ -980,13 +968,13 @@ export const mockActivity: ActivityEntry[] = [
   UserPreferences,
 } from '../../core/domain/controlPanel'
 
-/** Cloud tiers (Starter / Team / Business) — the control-panel plan catalog. */
+/** Cloud tiers (Starter / Team / Business) — priced per company by storage (billing.catalog). */
 billingPlans.push(
   {
     id: 'plan_starter', tier: 'starter', name: 'Starter',
-    monthlyPriceUsd: 30, monthlyPriceIdr: 500_000, yearlyPriceUsd: 300, yearlyPriceIdr: 5_000_000,
-    includedCredits: 6_000, seats: 2, trialDays: 14, maxSeats: 2, maxHelpers: 2, seatPriceIdr: null,
-    features: ['2 people · no extra seats', '2 helpers', '1 channel per helper', 'Rp 300 rb AI spend included', 'Community support'],
+    monthlyPriceUsd: 9.31, monthlyPriceIdr: 149_000, yearlyPriceUsd: 93.1, yearlyPriceIdr: 1_490_000,
+    includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 5,
+    features: ['5 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Your own AI key'],
     badge: null,
   {
     id: 'plan_team', tier: 'team', name: 'Team',
@@ -1000,6 +988,15 @@ billingPlans.push(
     includedCredits: 120_000, seats: 20, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: 150_000,
     features: ['20 people · add more any time', 'Unlimited helpers', 'MCP servers & custom skills', 'Rp 6 jt AI spend included', 'SSO and audit log', 'Priority WhatsApp support'],
     badge: 'For growing estates',
+    monthlyPriceUsd: 31.19, monthlyPriceIdr: 499_000, yearlyPriceUsd: 311.9, yearlyPriceIdr: 4_990_000,
+    includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 50,
+    features: ['50 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Email support'],
+    badge: 'Most popular',
+  },
+    monthlyPriceUsd: 93.69, monthlyPriceIdr: 1_499_000, yearlyPriceUsd: 936.9, yearlyPriceIdr: 14_990_000,
+    includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 250,
+    features: ['250 GB for docs, files and knowledge', 'Unlimited people and helpers', 'SSO and audit log', 'Priority WhatsApp support'],
+  },
 )
 billingSubscription.planId = 'plan_team'
 billingSubscription.planName = 'Team'
@@ -1009,8 +1006,8 @@ export const companyDetail: CompanyDetail = {
   currency: 'IDR', autonomyDefault: 'ask', picRole: null, industry: 'Property',
 
 export const seatSummary: SeatSummary = {
-  selfHosted: false, planId: 'plan_team', planName: 'Team', included: 5, total: 5, max: 15, available: 0,
-  seatPriceIdr: 150_000, canAdd: true, used: 4, pending: 1, viewers: 0, billingInterval: 'monthly',
+  selfHosted: false, unlimited: true, planId: 'plan_team', planName: 'Team', included: null, total: null, max: null,
+  available: null, seatPriceIdr: null, canAdd: false, used: 4, pending: 1, viewers: 0, billingInterval: 'monthly',
   periodEnd: '2026-11-30T00:00:00Z',
 
 export const creditPacks: CreditPack[] = [
@@ -1066,14 +1063,20 @@ export const auditEvents: AuditEvent[] = [
 
 const GB = 1024 ** 3
 export const storageSummary: StorageSummary = {
-  usedBytes: Math.round(3.7 * GB),
-  quotaBytes: 10 * GB,
+  usedBytes: Math.round(1.24 * GB),
+  quotaBytes: 50 * GB,
   segments: [
     { key: 'chats', label: 'Chats', bytes: Math.round(2.1 * GB) },
     { key: 'docs', label: 'Docs', bytes: Math.round(1.2 * GB) },
     { key: 'run_logs', label: 'Run logs', bytes: Math.round(0.34 * GB) },
     { key: 'knowledge', label: 'Knowledge', bytes: Math.round(0.038 * GB) },
     { key: 'other', label: 'Other', bytes: Math.round(0.022 * GB) },
+    { key: 'docs', label: 'Docs', bytes: Math.round(0.82 * GB), counted: true },
+    { key: 'files', label: 'Files & artifacts', bytes: Math.round(0.38 * GB), counted: true },
+    { key: 'knowledge', label: 'Knowledge', bytes: Math.round(0.04 * GB), counted: true },
+    { key: 'chats', label: 'Chats & run logs (free)', bytes: Math.round(2.4 * GB), counted: false },
+  ],
+}
 
 export const dataExports: DataExport[] = [
   {

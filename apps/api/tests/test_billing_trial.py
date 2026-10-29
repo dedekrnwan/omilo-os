@@ -210,19 +210,15 @@ def test_start_trial_cloud_mode_creates_trialing_sub():
     delta = abs((sub.current_period_end - expected_end).total_seconds())
     assert delta < 120, f"period_end delta too large: {delta}s (expected ~14d from now)"
 
-    # Seats from plan_team = 5
-    assert sub.seats == 5
+    # Cloud plans are per company: unlimited people (sentinel seats)
+    assert sub.seats == 9999
 
     # N1: a trial must be hard-overage so pooled blocks at 0 (no unpaid debt).
     assert _get_company(company.id).overage_policy == "hard"
 
-    # Credits granted: 40000
+    # No credits: Cloud plans don't include AI (bring your own key)
     balance = _get_credit_balance(company.id)
-    assert balance == 40000, f"Expected 40000 credits, got {balance}"
-
-    # trial_grant ledger row exists
-    trial_rows = _get_ledger_rows(company.id, "trial_grant")
-    assert len(trial_rows) == 1, f"Expected 1 trial_grant ledger row, got {len(trial_rows)}"
+    assert balance == 0, f"Expected no credits, got {balance}"
 
 
 def test_start_trial_cloud_mode_no_double_grant():
@@ -249,17 +245,10 @@ def test_start_trial_cloud_mode_no_double_grant():
     assert sub1 is not None
     assert sub2 is not None
 
-    # Balance must still be exactly 40000 (not 80000)
+    # Same subscription, still no credits
+    assert sub1.id == sub2.id
     balance = _get_credit_balance(company.id)
-    assert balance == 40000, (
-        f"Expected 40000 credits after 2 start_trial calls, got {balance} — double-grant!"
-    )
-
-    # Only 1 trial_grant ledger row
-    trial_rows = _get_ledger_rows(company.id, "trial_grant")
-    assert len(trial_rows) == 1, (
-        f"Expected 1 trial_grant ledger row after 2 calls, got {len(trial_rows)}"
-    )
+    assert balance == 0, f"Expected no credits after 2 start_trial calls, got {balance}"
 
 
 def test_start_trial_returns_existing_sub_if_already_has_subscription():
@@ -432,8 +421,8 @@ async def test_change_plan_yearly_doit_uses_yearly_price():
             .first()
         )
     assert pay is not None
-    assert pay.amount_idr == 20000000, (
-        f"Expected yearly_price_idr=20000000, got {pay.amount_idr}"
+    assert pay.amount_idr == 4990000, (
+        f"Expected yearly_price_idr=4990000, got {pay.amount_idr}"
     )
 
 
@@ -476,17 +465,16 @@ async def test_get_plans_cloud_mode_returns_tiers_snake_case(async_client):
 
     # Correct values
     assert plan["id"] == "plan_team"
-    assert plan["monthly_price_idr"] == 2000000
-    assert plan["yearly_price_idr"] == 20000000
-    assert plan["monthly_price_usd"] == 120.0
-    assert plan["yearly_price_usd"] == 1200.0
-    assert plan["included_credits"] == 40000
+    assert plan["monthly_price_idr"] == 499000
+    assert plan["yearly_price_idr"] == 4990000
+    assert plan["storage_gb"] == 50
+    assert plan["included_credits"] == 0
     assert plan["trial_days"] == 14
     # sweep/control — the three cloud tiers, in order, with seat limits.
     assert [p["id"] for p in plans] == ["plan_starter", "plan_team", "plan_business"]
-    assert plan["seats"] == 5 and plan["max_seats"] == 15
-    assert plan["seat_price_idr"] == 150000
-    assert plan["features"] and plan["features"][0].startswith("5 people")
+    assert plan["seats"] == 9999 and plan["max_seats"] is None
+    assert plan["seat_price_idr"] is None
+    assert plan["features"] and plan["features"][0].startswith("50 GB")
 
 
 @pytest.mark.asyncio

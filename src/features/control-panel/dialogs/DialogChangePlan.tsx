@@ -109,7 +109,7 @@ export function DialogChangePlan({ onClose }: Props) {
                   <span className="text-[12px] text-muted">{yearly ? ' / year' : ' / month'}</span>
                 </div>
                 <ul className="flex flex-col gap-[4px]">
-                  {(p.features ?? [`${p.seats} people`, `${p.includedCredits.toLocaleString()} AI credits / month`]).map((f) => (
+                  {(p.features ?? [p.storageGb == null ? 'Unlimited storage' : `${p.storageGb} GB storage`, 'Unlimited people and helpers']).map((f) => (
                     <li key={f} className="flex items-start gap-[4px] text-[12px] text-muted">
                       <span className="mt-[2px] text-ok">✓</span> {f}
                     </li>

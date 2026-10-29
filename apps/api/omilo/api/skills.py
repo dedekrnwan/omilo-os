@@ -125,6 +125,9 @@ def create_skill(
     ctx: RequestContext = Depends(get_context),
 ) -> dict[str, Any]:
     """Create a Skill in status=draft, version=1, created_by='operator'."""
+    from omilo.billing.storage import check_upload
+
+    check_upload(ctx.company_id, len((body.body_md or "").encode()))
     skill = Skill(
         id=prefixed_id("skl"),
         company_id=ctx.company_id,

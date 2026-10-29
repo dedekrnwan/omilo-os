@@ -1,7 +1,6 @@
 /**
- * Your AI → Cloud settles the subscription inside the wizard, and the interview
- * only opens once an AI is ready. (See pricing used to jump to
- * /auth/onboarding/plan and skip the interview.)
+ * Your AI → Cloud settles the company's plan (storage tiers, no credits) and
+ * its own AI key inside the wizard; the interview only opens once both are set.
  */
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -14,6 +13,12 @@ import { createMockCommands } from '../../adapters/mock/mockCommands'
 const navigate = vi.fn()
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
+const mockMode = { on: true }
+vi.mock('../../app/useAuth', async (orig) => ({
+  ...(await orig<typeof import('../../app/useAuth')>()),
+  isMockMode: () => mockMode.on,
+}))
+
 const aiStatus = vi.fn()
 vi.mock('./interviewApi', async (orig) => ({
   ...(await orig<typeof import('./interviewApi')>()),
@@ -23,11 +28,13 @@ vi.mock('./interviewApi', async (orig) => ({
 import { StepYourAI } from './StepYourAI'
 import { StepKnowYou } from './StepKnowYou'
 
-function wrap(ui: React.ReactNode) {
+function wrap(ui: React.ReactNode, opts: { noAccounts?: boolean } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const repos = createMockRepos()
+  if (opts.noAccounts) repos.aiAccounts = { list: async () => [] }
   return render(
     <QueryClientProvider client={qc}>
-      <ReposProvider repos={createMockRepos()}>
+      <ReposProvider repos={repos}>
         <CommandsProvider commands={createMockCommands()}>{ui}</CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>,
@@ -37,38 +44,40 @@ function wrap(ui: React.ReactNode) {
 beforeEach(() => {
   navigate.mockClear()
   aiStatus.mockReset()
+  mockMode.on = true
 })
 
 describe('Your AI → Cloud', () => {
-  test('See pricing opens the plans inline — no navigation away from the wizard', async () => {
+  test('lists the storage plans and the free trial — no credits, no navigation away', async () => {
     wrap(<StepYourAI initialMode="cloud" onBack={() => {}} onNext={() => {}} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'See pricing' }))
-    expect(await screen.findByLabelText('Pricing')).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /Start a 14-day free trial/ })).toBeInTheDocument()
+    expect(await screen.findByRole('radio', { name: /Starter.*5 GB storage/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Business.*250 GB storage/ })).toBeInTheDocument()
+    expect(screen.queryByText(/buy credits|credit pack|credits left/i)).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  test('the free trial continues to the interview once the AI is ready', async () => {
-    aiStatus.mockResolvedValue({ ready: true, label: 'Omilo Cloud', pooled: true, mode: 'cloud', reason: null })
+  test('the free trial continues to the interview', async () => {
     const onNext = vi.fn()
     wrap(<StepYourAI initialMode="cloud" onBack={() => {}} onNext={onNext} />)
     fireEvent.click(await screen.findByRole('button', { name: /Start free and continue/ }))
     await waitFor(() => expect(onNext).toHaveBeenCalledWith(expect.objectContaining({ mode: 'cloud', cloudPick: 'trial' })))
   })
 
-  test('when Cloud has no AI yet, it stays on Your AI and says why', async () => {
-    aiStatus.mockResolvedValue({ ready: false, label: 'Practice mode', pooled: false, mode: 'cloud',
-      reason: 'Omilo Cloud’s AI isn’t set up on this server yet.' })
+  test('Cloud needs the company’s own AI key before anything else', async () => {
+    mockMode.on = false
     const onNext = vi.fn()
-    wrap(<StepYourAI initialMode="cloud" onBack={() => {}} onNext={onNext} />)
+    wrap(<StepYourAI initialMode="cloud" onBack={() => {}} onNext={onNext} />, { noAccounts: true })
+    expect(await screen.findByText(/YOUR COMPANY’S AI KEY/)).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /Start free and continue/ }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('isn’t set up on this server')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cloud plans don’t include AI')
     expect(onNext).not.toHaveBeenCalled()
   })
 
-  test('picking Monthly plan lists the real plans to choose from', async () => {
+  test('picking a plan subscribes to it', async () => {
     wrap(<StepYourAI initialMode="cloud" onBack={() => {}} onNext={() => {}} />)
-    fireEvent.click(await screen.findByRole('radio', { name: /Monthly plan/ }))
-    await waitFor(() => expect(screen.getByRole('button', { name: /Subscribe to .* and continue/ })).toBeInTheDocument())
+    fireEvent.click(await screen.findByRole('radio', { name: /^Starter/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Subscribe to Starter and continue/ })).toBeInTheDocument())
   })
 })
 

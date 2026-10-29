@@ -94,7 +94,7 @@ export function DialogInvite({
   const takesSeat = role !== 'Viewer'
   const need = takesSeat ? emails.length : 0
   const short = Math.max(0, need - available)
-  const full = !selfHosted && !!seats && (forceFull || short > 0) && takesSeat
+  const full = !selfHosted && !!seats && !seats.unlimited && (forceFull || short > 0) && takesSeat
   const room = seats?.max == null ? Infinity : Math.max(0, seats.max - (seats.total ?? 0))
   const canAddSeats = !!seats?.canAdd && room >= Math.max(short, 1)
   const business = plans.find((p) => p.tier === 'business')
@@ -196,7 +196,7 @@ export function DialogInvite({
       : effectiveChoice === 'viewers'
         ? `Invite ${n} as Viewer${n === 1 ? '' : 's'}`
         : 'Upgrade & send'
-  const usedLabel = seats && !selfHosted ? `${seats.used + seats.pending} of ${seats.total ?? 0} used` : ''
+  const usedLabel = seats && !selfHosted && !seats.unlimited ? `${seats.used + seats.pending} of ${seats.total ?? 0} used` : ''
 
   return (
     <DialogCard

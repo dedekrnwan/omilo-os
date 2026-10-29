@@ -22,6 +22,8 @@ export interface CompanyDetail {
 
 export interface SeatSummary {
   selfHosted: boolean
+  /** Cloud plans are per company: unlimited people, no seats to buy. */
+  unlimited?: boolean
   planId: string | null
   planName: string | null
   /** Seats included in the plan (null on self-hosted). */
@@ -124,11 +126,13 @@ export interface StorageSegment {
   key: string
   label: string
   bytes: number
+  /** Counts toward the plan's storage (docs, files, knowledge). Chats and run logs are free. */
+  counted?: boolean
 }
 
 export interface StorageSummary {
   usedBytes: number
-  /** null = no quota (self-hosted). */
+  /** Counted bytes only. null = no quota (self-hosted). */
   quotaBytes: number | null
   segments: StorageSegment[]
 }

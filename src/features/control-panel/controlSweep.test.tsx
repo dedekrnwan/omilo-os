@@ -46,7 +46,8 @@ describe('DialogChangePlan', () => {
     wrap(<DialogChangePlan onClose={() => {}} />)
     expect(await screen.findByText('Starter')).toBeInTheDocument()
     expect(screen.getByText('Business')).toBeInTheDocument()
-    expect(screen.getByText('Rp 2 jt')).toBeInTheDocument()
+    expect(screen.getByText('Rp 499 rb')).toBeInTheDocument()
+    expect(screen.getByText(/250 GB for docs, files and knowledge/)).toBeInTheDocument()
     // Mock subscription is a Team trial → Team offers "Subscribe", Business "Upgrade".
     expect(screen.getByRole('button', { name: 'Subscribe' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Upgrade' })).toBeInTheDocument()
@@ -94,7 +95,6 @@ describe('DialogInvite', () => {
     // No prefilled demo addresses.
     expect(screen.queryByText(/sahabatwarga/)).toBeNull()
     await user.type(screen.getByLabelText('Add email'), 'new@saga.co.id{enter}')
-    // Viewers never need a seat (the mock Team plan is full).
     await user.selectOptions(screen.getAllByRole('combobox')[0], 'Viewer')
     await user.click(screen.getByRole('button', { name: /Channels:/ }))
     await user.click(await screen.findByText('Engineering'))
@@ -107,22 +107,21 @@ describe('DialogInvite', () => {
 })
 
 describe('SectionMembers', () => {
-  test('seat bar, channels and pending invites come from the backend', async () => {
+  test('people, channels and pending invites come from the backend — unlimited people, no seats', async () => {
     wrap(<SectionMembers onDialog={() => {}} />)
-    expect(await screen.findByText('5 of 5 seats')).toBeInTheDocument()
-    expect(screen.getByText('Team plan · 5 included, up to 15')).toBeInTheDocument()
-    expect(screen.getByText('Rp 150 rb / seat / month')).toBeInTheDocument()
+    expect(await screen.findByText('Team plan · unlimited people, no per-seat fees')).toBeInTheDocument()
+    expect(screen.queryByText(/ of \d+ seats|Add seats/)).toBeNull()
     expect(screen.getByText('andi@saga.co.id')).toBeInTheDocument()
     expect(screen.getByText('Engineering, General')).toBeInTheDocument()
   })
 
-  test('Invite people opens the seats-full flow only when seats are full', async () => {
+  test('Invite people always opens the plain invite on Cloud plans', async () => {
     const onDialog = vi.fn()
     const user = userEvent.setup()
     wrap(<SectionMembers onDialog={onDialog} />)
-    await screen.findByText('5 of 5 seats')
+    await screen.findByText('Team plan · unlimited people, no per-seat fees')
     await user.click(screen.getByRole('button', { name: 'Invite people' }))
-    expect(onDialog).toHaveBeenCalledWith('seats-full')
+    expect(onDialog).toHaveBeenCalledWith('invite')
   })
 })
 

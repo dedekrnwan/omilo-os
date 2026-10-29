@@ -1,24 +1,25 @@
-"""Canonical plan + credit-pack catalog for Omilo billing.
+"""Canonical plan catalog for Omilo billing.
 
-Cloud tiers (owner decision, sweep/control): **Starter / Team / Business**,
-priced as the control-panel "Change plan" dialog shows them.  The free
-**Self-Hosted** plan stays for local mode.
+Owner decision (2026-10-29): the subscription pays for **Omilo Cloud** — hosting
+and storage — per **company**. AI is not part of the plan: companies bring their
+own AI (API key) now, and a partner's per-token pricing comes later.
 
-  plan_starter   Rp 500 rb / mo   2 seats (no extra seats)   2 helpers
-  plan_team      Rp 2 jt  / mo    5 seats, add up to 15      6 helpers
-  plan_business  Rp 6 jt  / mo    20 seats, add any time     unlimited helpers
-  plan_self_hosted  free          unlimited
+  plan_self_hosted  free         your computer, your AI, no limits
+  plan_starter      Rp 149 rb    5 GB storage
+  plan_team         Rp 499 rb    50 GB storage   (the 14-day free trial)
+  plan_business     Rp 1,5 jt    250 GB storage
 
-Yearly = 10 × monthly ("Pay yearly · 2 months free").  Extra seats cost
-Rp 150 rb / seat / month (Team, Business).  Included credits are the plan's
-"AI spend included" at Rp 50 / credit (the 2,000-credit pack price).
+Per company, unlimited people and helpers. Storage counts docs, artifacts
+(files, skills, exports) and knowledge; chats and run logs are free. At the
+limit, new uploads pause until the company upgrades — nothing is deleted or
+charged automatically. Yearly = 10 × monthly.
 
-Legacy ids: ``plan_cloud`` (the old single cloud tier) maps to ``plan_team``
-— migration 0024 moves existing subscriptions/companies over and
-``resolve_plan_id`` keeps old clients working.
+Prices are placeholders for the owner to set: change them here; the API syncs
+the catalog into the ``plan`` table on start-up.
 
-Plan IDs are stable strings so application code and tests can reference them
-without a DB lookup.
+Legacy ids: ``plan_cloud`` maps to ``plan_team`` (``resolve_plan_id``).
+Credits remain an *internal* unit for AI-spend caps (Rp 50 each, see
+IDR_PER_CREDIT); customers never buy them.
 """
 from __future__ import annotations
 
@@ -28,11 +29,11 @@ from typing import Any
 from omilo.db import SessionLocal
 from omilo.models.billing import Plan
 
-# Rupiah per credit (2,000 credits = Rp 100 rb).
+# Internal unit for AI-spend caps (helper / flow / company budgets): Rp 50 per credit.
 IDR_PER_CREDIT = 50
 
-# Extra seat price (Team + Business), per seat per month.
-SEAT_PRICE_IDR = 150_000
+# No per-seat billing: plans are per company with unlimited people.
+SEAT_PRICE_IDR = 0
 
 TRIAL_PLAN_ID = "plan_team"
 SELF_HOSTED_PLAN_ID = "plan_self_hosted"
@@ -64,133 +65,66 @@ PLAN_CATALOG: list[dict[str, Any]] = [
         "id": "plan_self_hosted",
         "tier": "self_hosted",
         "name": "Self-Hosted",
-        "monthly_price_usd": Decimal("0"),
+        "monthly_price_usd": Decimal("0.0"),
         "monthly_price_idr": 0,
-        "yearly_price_usd": Decimal("0"),
+        "yearly_price_usd": Decimal("0.0"),
         "yearly_price_idr": 0,
         "included_credits": 0,
         "credit_overage_usd": Decimal("0"),
-        "seats": 9999,  # sentinel: unlimited
-        "features": {
-            "max_seats": None,
-            "max_helpers": None,
-            "seat_price_idr": 0,
-            "bullets": [
-                "Unlimited people and helpers",
-                "Your own AI keys",
-                "No payment needed",
-            ],
-        },
+        "seats": 9999,  # unlimited people
+        "features": {"max_seats": None, 'max_helpers': None, 'storage_gb': None, 'seat_price_idr': None, 'bullets': ['Runs on your computer', 'Unlimited people, helpers and storage', 'Your own AI']},
     },
     {
         "id": "plan_starter",
         "tier": "starter",
         "name": "Starter",
-        "monthly_price_usd": Decimal("30"),
-        "monthly_price_idr": 500_000,
-        "yearly_price_usd": Decimal("300"),
-        "yearly_price_idr": 5_000_000,
-        "included_credits": 6_000,  # Rp 300 rb AI spend
+        "monthly_price_usd": Decimal("9.31"),
+        "monthly_price_idr": 149_000,
+        "yearly_price_usd": Decimal("93.12"),
+        "yearly_price_idr": 1_490_000,
+        "included_credits": 0,
         "credit_overage_usd": Decimal("0"),
-        "seats": 2,
-        "features": {
-            "max_seats": 2,
-            "max_helpers": 2,
-            "storage_gb": 5,
-            "seat_price_idr": None,  # no extra seats on Starter
-            "bullets": [
-                "2 people · no extra seats",
-                "2 helpers",
-                "1 channel per helper",
-                "Rp 300 rb AI spend included",
-                "Community support",
-            ],
-        },
+        "seats": 9999,  # unlimited people
+        "features": {"max_seats": None, 'max_helpers': None, 'storage_gb': 5, 'seat_price_idr': None, 'bullets': ['5 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Your own AI key']},
     },
     {
         "id": "plan_team",
         "tier": "team",
         "name": "Team",
-        "monthly_price_usd": Decimal("120"),
-        "monthly_price_idr": 2_000_000,
-        "yearly_price_usd": Decimal("1200"),
-        "yearly_price_idr": 20_000_000,
-        "included_credits": 40_000,  # Rp 2 jt AI spend
+        "monthly_price_usd": Decimal("31.19"),
+        "monthly_price_idr": 499_000,
+        "yearly_price_usd": Decimal("311.88"),
+        "yearly_price_idr": 4_990_000,
+        "included_credits": 0,
         "credit_overage_usd": Decimal("0"),
-        "seats": 5,
-        "features": {
-            "max_seats": 15,
-            "max_helpers": 6,
-            "storage_gb": 10,
-            "seat_price_idr": SEAT_PRICE_IDR,
-            "bullets": [
-                "5 people · add seats up to 15",
-                "6 helpers",
-                "All channels",
-                "Rp 2 jt AI spend included",
-                "Bring your own AI key",
-                "Email support",
-            ],
-        },
+        "seats": 9999,  # unlimited people
+        "features": {"max_seats": None, 'max_helpers': None, 'storage_gb': 50, 'seat_price_idr': None, 'bullets': ['50 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Email support'], 'badge': 'Most popular'},
     },
     {
         "id": "plan_business",
         "tier": "business",
         "name": "Business",
-        "monthly_price_usd": Decimal("360"),
-        "monthly_price_idr": 6_000_000,
-        "yearly_price_usd": Decimal("3600"),
-        "yearly_price_idr": 60_000_000,
-        "included_credits": 120_000,  # Rp 6 jt AI spend
+        "monthly_price_usd": Decimal("93.69"),
+        "monthly_price_idr": 1_499_000,
+        "yearly_price_usd": Decimal("936.88"),
+        "yearly_price_idr": 14_990_000,
+        "included_credits": 0,
         "credit_overage_usd": Decimal("0"),
-        "seats": 20,
-        "features": {
-            "max_seats": None,
-            "max_helpers": None,
-            "storage_gb": 50,
-            "seat_price_idr": SEAT_PRICE_IDR,
-            "badge": "For growing estates",
-            "bullets": [
-                "20 people · add more any time",
-                "Unlimited helpers",
-                "MCP servers & custom skills",
-                "Rp 6 jt AI spend included",
-                "SSO and audit log",
-                "Priority WhatsApp support",
-            ],
-        },
+        "seats": 9999,  # unlimited people
+        "features": {"max_seats": None, 'max_helpers': None, 'storage_gb': 250, 'seat_price_idr': None, 'bullets': ['250 GB for docs, files and knowledge', 'Unlimited people and helpers', 'SSO and audit log', 'Priority WhatsApp support']},
     },
 ]
 
-# ---------------------------------------------------------------------------
-# Credit packs (control-panel "Buy credits" dialog is canonical)
-# ---------------------------------------------------------------------------
-
+# Credit packs: NOT offered to customers today (Cloud plans are storage-priced
+# and AI is bring-your-own). Kept for the partner AI (OMILO_POOL_AI=1), which
+# will be prepaid; the UI doesn't show them.
 PACK_CATALOG: list[dict[str, Any]] = [
-    {
-        "id": "2000",
-        "credits": 2_000,
-        "amount_idr": 100_000,
-        "label": "2,000 credits",
-        "sub": "About 3 weeks · small team",
-        "badge": None,
-    },
-    {
-        "id": "5000",
-        "credits": 5_000,
-        "amount_idr": 238_000,
-        "label": "5,000 credits",
-        "sub": "About 2 months · most popular",
-        "badge": "Save 6%",
-    },
-    {
-        "id": "20000",
-        "credits": 20_000,
-        "amount_idr": 800_000,
-        "label": "20,000 credits",
-        "sub": "For busy teams",
-        "badge": "Save 22%",
-    },
+    {"id": "2000", "credits": 2_000, "amount_idr": 100_000, "label": "2,000 credits",
+     "sub": "About 3 weeks · small team", "badge": None},
+    {"id": "5000", "credits": 5_000, "amount_idr": 238_000, "label": "5,000 credits",
+     "sub": "About 2 months · most popular", "badge": "Save 6%"},
+    {"id": "20000", "credits": 20_000, "amount_idr": 800_000, "label": "20,000 credits",
+     "sub": "For busy teams", "badge": "Save 22%"},
 ]
 
 PACKS: dict[str, dict[str, int]] = {

@@ -222,7 +222,7 @@ describe('ChoosePlanPage', () => {
 // ── SectionUsage trial banner tests ──────────────────────────────────────────
 
 describe('SectionUsage — trial countdown', () => {
-  test('shows "7 days left in trial" when subscription is_trial + trial_days_left=7', async () => {
+  test('shows "Free trial · 7 days left" when subscription is_trial + trial_days_left=7', async () => {
     const { SectionUsage } = await import('../control-panel/sections/SectionUsage')
     const repos = makeRepos({
       billingSubscription: { get: vi.fn().mockResolvedValue(MOCK_SUB_TRIAL) },
@@ -247,7 +247,7 @@ describe('SectionUsage — trial countdown', () => {
       </QueryClientProvider>,
     )
 
-    await rtlWaitFor(() => expect(rtlScreen.getByText(/7 days? left in trial/i)).toBeInTheDocument())
+    await rtlWaitFor(() => expect(rtlScreen.getByText(/free trial · 7 days? left/i)).toBeInTheDocument())
   })
 
   test('shows Subscribe CTA when on trial', async () => {

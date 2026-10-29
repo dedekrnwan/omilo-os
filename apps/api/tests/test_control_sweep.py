@@ -101,14 +101,11 @@ async def test_change_plan_alias_and_seats(async_client):
     assert r.json()["plan"]["id"] == "plan_business"
     seats = (await async_client.get("/v1/billing/seats", headers=_auth(token))).json()
     assert seats["plan_id"] == "plan_business"
-    assert seats["total"] == 20 and seats["used"] == 1 and seats["max"] is None
+    # Cloud plans are per company: unlimited people, no seats to buy.
+    assert seats["unlimited"] is True and seats["total"] is None and seats["used"] == 1
+    assert seats["can_add"] is False
     add = await async_client.post("/v1/billing/seats", json={"count": 2}, headers=_auth(token))
-    assert add.status_code == 200, add.text
-    assert add.json()["seats"] == 22
-    # Downgrade carries no extra seats onto Starter and refuses when over its max.
-    r2 = await async_client.post("/v1/billing/change-plan", json={"plan_id": "plan_starter"}, headers=_auth(token))
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["subscription"]["seats"] == 2
+    assert add.status_code == 409 and "unlimited" in add.json()["detail"]
 
 
 @pytest.fixture
@@ -120,10 +117,10 @@ def no_email():
 @pytest.mark.asyncio
 async def test_invites_seat_gating_list_revoke_resend(async_client, no_email):
     token, _, company_id = await _sign_up(async_client)
-    # Lazy trial → Team (5 seats). Owner + 4 seeded members fill it.
+    # Lazy trial → Team. People are unlimited on every Cloud plan.
     sub = (await async_client.get("/v1/billing/subscription", headers=_auth(token))).json()
     assert sub["plan"]["id"] == "plan_team"
-    for _ in range(4):
+    for _ in range(12):
         _seed_member(company_id)
     channels = (await async_client.get("/v1/channels", headers=_auth(token))).json()
     general = channels[0]["id"]
@@ -132,7 +129,7 @@ async def test_invites_seat_gating_list_revoke_resend(async_client, no_email):
         "/v1/auth/invites", json={"email": "x@test.example", "role": "member", "channels": [general]},
         headers=_auth(token),
     )
-    assert full.status_code == 409, full.text
+    assert full.status_code == 201, full.text
     viewer = await async_client.post(
         "/v1/auth/invites", json={"email": "v@test.example", "role": "viewer", "channels": [general]},
         headers=_auth(token),
@@ -140,17 +137,13 @@ async def test_invites_seat_gating_list_revoke_resend(async_client, no_email):
     assert viewer.status_code == 201, viewer.text  # list[str] channels no longer 422
     assert viewer.json()["channel_ids"] == [general]
 
-    # Trial seats can't be bought; switch to a paid Team plan, then add one.
-    await async_client.post("/v1/billing/change-plan", json={"plan_id": "team"}, headers=_auth(token))
-    add = await async_client.post("/v1/billing/seats", json={"count": 1}, headers=_auth(token))
-    assert add.status_code == 200, add.text
     ok = await async_client.post(
         "/v1/auth/invites", json={"email": "m@test.example", "role": "member"}, headers=_auth(token)
     )
     assert ok.status_code == 201, ok.text
 
     listed = (await async_client.get("/v1/auth/invites", headers=_auth(token))).json()
-    assert {i["email"] for i in listed} == {"v@test.example", "m@test.example"}
+    assert {i["email"] for i in listed} == {"x@test.example", "v@test.example", "m@test.example"}
     inv_id = next(i["id"] for i in listed if i["email"] == "m@test.example")
     no_email.reset_mock()
     resent = await async_client.post(f"/v1/auth/invites/{inv_id}/resend", headers=_auth(token))
@@ -158,7 +151,7 @@ async def test_invites_seat_gating_list_revoke_resend(async_client, no_email):
     rv = await async_client.delete(f"/v1/auth/invites/{inv_id}", headers=_auth(token))
     assert rv.status_code == 204
     listed = (await async_client.get("/v1/auth/invites", headers=_auth(token))).json()
-    assert [i["email"] for i in listed] == ["v@test.example"]
+    assert sorted(i["email"] for i in listed) == ["v@test.example", "x@test.example"]
 
 
 # ── members ──────────────────────────────────────────────────────────────────
@@ -233,8 +226,9 @@ async def test_audit_log_written_filtered_and_csv(async_client):
 async def test_storage_and_export(async_client):
     token, _, _ = await _sign_up(async_client)
     st = (await async_client.get("/v1/data/storage", headers=_auth(token))).json()
-    assert {s["key"] for s in st["segments"]} >= {"chats", "docs", "run_logs", "knowledge"}
-    assert st["used_bytes"] >= 0
+    assert {s["key"] for s in st["segments"]} >= {"chats", "docs", "files", "knowledge"}
+    assert {s["key"] for s in st["segments"] if not s["counted"]} == {"chats"}  # chats & run logs are free
+    assert st["used_bytes"] >= 0 and st["quota_bytes"] == 50 * 1024**3  # Team trial
     ex = await async_client.post("/v1/data/exports", headers=_auth(token))
     assert ex.status_code == 201, ex.text
     body = ex.json()

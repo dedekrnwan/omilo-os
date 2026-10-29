@@ -611,6 +611,9 @@ def add_folder_file(
     ctx: RequestContext = Depends(get_context),
 ) -> dict:
     _require_folder(db, folder_id)
+    from omilo.billing.storage import check_upload
+
+    check_upload(ctx.company_id, len((body.text or "").encode()) or max(0, body.size))
     f = FolderFile(
         id=prefixed_id("ffl"),
         company_id=ctx.company_id,

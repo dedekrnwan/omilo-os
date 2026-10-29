@@ -154,6 +154,7 @@ def _plan_dict(plan: Plan) -> dict[str, Any]:
         "max_seats": plan_features(plan).get("max_seats"),
         "max_helpers": plan_features(plan).get("max_helpers"),
         "seat_price_idr": plan_features(plan).get("seat_price_idr"),
+        "storage_gb": plan_features(plan).get("storage_gb"),
         "features": plan_features(plan).get("bullets", []),
         "badge": plan_features(plan).get("badge"),
     }
@@ -887,6 +888,7 @@ def seats_summary(db: Session, company_id: str) -> dict[str, Any]:
     if not _is_cloud_or_hybrid():
         return {
             "self_hosted": True,
+            "unlimited": True,
             "plan_id": SELF_HOSTED_PLAN_ID,
             "plan_name": "Self-Hosted",
             "included": None,
@@ -900,6 +902,23 @@ def seats_summary(db: Session, company_id: str) -> dict[str, Any]:
     sub = _active_subscription(db, company_id)
     plan = db.get(Plan, sub.plan_id) if sub and sub.plan_id else None
     feats = plan_features(plan)
+    if plan is None or (feats.get("max_seats") is None and feats.get("seat_price_idr") is None):
+        # Cloud plans are per company: unlimited people, nothing to buy.
+        return {
+            "self_hosted": False,
+            "unlimited": True,
+            "plan_id": plan.id if plan else None,
+            "plan_name": plan.name if plan else None,
+            "included": None,
+            "total": None,
+            "max": None,
+            "available": None,
+            "seat_price_idr": None,
+            "can_add": False,
+            "billing_interval": sub.billing_interval if sub else "monthly",
+            "period_end": sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
+            **usage,
+        }
     total = (sub.seats if sub else (plan.seats if plan else 0)) or 0
     return {
         "self_hosted": False,
@@ -978,7 +997,7 @@ def add_seats(
     if seat_price is None:
         raise HTTPException(
             status_code=409,
-            detail=f"{plan.name} has no extra seats. Upgrade to add more people.",
+            detail=f"{plan.name} includes unlimited people — just invite them.",
         )
     max_seats = feats.get("max_seats")
     if max_seats is not None and (sub.seats or 0) + body.count > max_seats:

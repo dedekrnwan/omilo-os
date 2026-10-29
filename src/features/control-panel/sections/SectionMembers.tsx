@@ -26,7 +26,7 @@ const ROLES = [
   { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
   { r: 'Admin', d: 'Settings, connectors and approving spend. No billing.' },
   { r: 'Member', d: 'Chat, goals and flows in their channels. Approves their own flows.' },
-  { r: "Viewer", d: "Reads goals, docs and runs. Cannot approve or change anything. Free. Does not use a seat." },
+  { r: "Viewer", d: "Reads goals, docs and runs. Cannot approve or change anything. Free." },
 ]
 
 const ROLE_OPTIONS = ['Admin', 'Member', 'Viewer'] as const
@@ -236,7 +236,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
 
   /** Seats-full → Seats full / Plan max dialog; otherwise the plain invite. */
   function openInvite() {
-    if (selfHosted || !seats || (seats.available ?? 1) > 0) return onDialog('invite')
+    if (selfHosted || !seats || seats.unlimited || (seats.available ?? 1) > 0) return onDialog('invite')
     const atMax = seats.max != null && (seats.total ?? 0) >= seats.max
     onDialog(atMax || !seats.canAdd ? 'plan-max' : 'seats-full')
   }
@@ -246,7 +246,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
   const pendingSeats = seats?.pending ?? 0
   const totalSeats = seats?.total ?? 0
   const freeSeats = Math.max(0, totalSeats - used - pendingSeats)
-  const seatsFull = !selfHosted && !!seats && freeSeats === 0
+  const seatsFull = !selfHosted && !!seats && !seats.unlimited && freeSeats === 0
   const viewerCount = seats?.viewers ?? members.filter((m) => m.role === 'Viewer').length
 
   async function confirmRemove() {
@@ -299,6 +299,16 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
             <Chip tone="ok" icon={Server}>Self-hosted · free</Chip>
             <div className="h-px flex-1" />
             <span className="text-[12px] text-muted">Free — invite as many people as you like</span>
+          </div>
+        ) : seats?.unlimited ? (
+          <div className="flex min-w-0 flex-1 items-center gap-[8px]">
+            <span className="text-[13px] font-semibold text-ink">
+              {used} {used === 1 ? 'person' : 'people'}
+              {pendingSeats > 0 ? `, ${pendingSeats} pending invite${pendingSeats === 1 ? '' : 's'}` : ''}
+              {viewerCount > 0 ? ` · ${viewerCount} viewer${viewerCount === 1 ? '' : 's'}` : ''}
+            </span>
+            <div className="h-px flex-1" />
+            <span className="text-[12px] text-muted">{seats.planName ?? 'Your'} plan · unlimited people, no per-seat fees</span>
           </div>
         ) : (
           <>

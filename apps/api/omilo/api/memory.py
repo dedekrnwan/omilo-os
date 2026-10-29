@@ -96,6 +96,9 @@ def create_memory(
     The doc is company-scoped (helper_id=None). ``kind`` (default 'doc') prefixes
     the logical path. The content is KB-indexed so it appears in knowledge recall.
     """
+    from omilo.billing.storage import check_upload
+
+    check_upload(ctx.company_id, len((body.content or "").encode()))
     kind = body.kind or "doc"
     path = f"Docs/{kind}/{_slugify(body.title)}-{prefixed_id('mem')[-6:]}.md"
     by = f"operator:{ctx.user_id}"
@@ -217,6 +220,10 @@ def patch_memory(
     """
     doc = _get_or_404(db, doc_id)
     by = f"operator:{ctx.user_id}"
+    if body.content is not None and len(body.content) > len(doc.content or ""):
+        from omilo.billing.storage import check_upload
+
+        check_upload(ctx.company_id, len(body.content.encode()) - len((doc.content or "").encode()))
 
     changed_text = False
     if body.content is not None and body.content != doc.content:

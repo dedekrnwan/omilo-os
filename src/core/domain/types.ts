@@ -203,6 +203,8 @@ export interface BillingPlan {
   maxHelpers?: number | null
   /** Rp per extra seat per month; null = no extra seats on this plan. */
   seatPriceIdr?: number | null
+  /** Cloud storage for docs, files & artifacts and knowledge (GB); null = unlimited. */
+  storageGb?: number | null
   features?: string[]
   badge?: string | null
 }

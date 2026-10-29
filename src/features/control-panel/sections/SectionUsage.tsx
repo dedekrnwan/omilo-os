@@ -1,103 +1,83 @@
 /**
- * SectionUsage — Usage & billing rewired to live useUsage() + useSubscription() data.
- * Shows trial countdown (is_trial), plan + interval, balance, usedThisPeriod,
- * byHelper breakdown, byDay bars.
- * Empty state when usedThisPeriod === 0 and byHelper is empty.
- * Error state when the query rejects.
+ * SectionUsage — Usage & billing for Cloud plans priced per company by storage.
+ *
+ *  - Plan card       name, fixed monthly price, trial countdown / renewal
+ *  - Storage meter   docs, files & artifacts and knowledge count toward the plan;
+ *                    chats and run logs are free (GET /v1/data/storage)
+ *  - Invoices
+ *
+ * AI isn't billed here: the company's own key is billed by its AI provider.
+ * At the limit new uploads pause until the company upgrades (HTTP 413).
  */
-import { Breadcrumb, SectionPane, Toggle } from '../legacyShared'
+import { Breadcrumb, SectionPane } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 import { Button } from '../../../ui/ds/Button'
-import {
-  useCreditPacks,
-  useHelpers,
-  useInvoices,
-  useLedger,
-  usePlans,
-  useSubscription,
-  useUpdateWallet,
-  useUsage,
-  useWallet,
-} from '../../../app/queries'
-import { notify } from '../../../ui/ds/Toaster'
-import { errorMessage, formatIdr, shortDate } from '../format'
-
-const LEDGER_REASON: Record<string, string> = {
-  job: 'AI work',
-  topup: 'Top-up',
-  subscription_grant: 'Plan credits',
-  trial_grant: 'Trial credits',
-  refund: 'Refund',
-}
+import { useInvoices, usePlans, useStorage, useSubscription } from '../../../app/queries'
+import { formatBytes, formatIdr, formatIdrShort } from '../format'
 
 const money = (amount: number, currency: string) =>
   currency === 'IDR' ? formatIdr(amount) : `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+
+const SEGMENT_COLORS: Record<string, string> = {
+  docs: '#2563EB',
+  files: '#7C3AED',
+  knowledge: '#0F766E',
+}
 
 interface Props {
   onDialog: (d: DialogKind) => void
 }
 
 export function SectionUsage({ onDialog }: Props) {
-  const { data: usage, isError, isLoading } = useUsage()
   const { data: subscription } = useSubscription()
   const { data: plans = [] } = usePlans()
-  const { data: helpers = [] } = useHelpers()
+  const { data: storage, isLoading: storageLoading, isError } = useStorage()
   const { data: invoices = [] } = useInvoices()
-  const { data: ledger = [] } = useLedger()
-  const { data: wallet } = useWallet()
-  const { data: packs = [] } = useCreditPacks()
-  const updateWallet = useUpdateWallet()
 
-  const planName = subscription?.planName ?? plans.find((p) => p.id === subscription?.planId)?.name ?? subscription?.planId
-  const helperName = (id: string) => helpers.find((h) => h.id === id)?.name ?? id
-  const autoPack = packs.find((p) => p.id === wallet?.autoTopupPack) ?? packs.find((p) => p.id === '5000')
-
-  async function toggleAutoTopup() {
-    if (!wallet) return
-    try {
-      await updateWallet.mutateAsync({
-        autoTopupEnabled: !wallet.autoTopupEnabled,
-        autoTopupThresholdCredits: wallet.autoTopupThresholdCredits || 500,
-        autoTopupPack: wallet.autoTopupPack ?? autoPack?.id ?? '5000',
-      })
-      notify(wallet.autoTopupEnabled ? 'Auto top-up off' : 'Auto top-up on')
-    } catch (e) {
-      notify(errorMessage(e, 'Could not update auto top-up'))
-    }
-  }
-
-  const isEmpty = !isLoading && !isError && usage &&
-    usage.usedThisPeriod === 0 && usage.byHelper.length === 0
+  const plan = plans.find((p) => p.id === subscription?.planId)
+  const planName = subscription?.planName ?? plan?.name ?? subscription?.planId
+  const used = storage?.usedBytes ?? 0
+  const quota = storage?.quotaBytes ?? null
+  const pct = quota ? Math.min(100, (used / quota) * 100) : 0
+  const counted = (storage?.segments ?? []).filter((s) => s.counted !== false)
+  const free = (storage?.segments ?? []).filter((s) => s.counted === false)
+  const full = quota != null && used >= quota
+  const near = quota != null && !full && pct >= 80
+  const price = plan ? (subscription?.billingInterval === 'yearly' ? plan.yearlyPriceIdr : plan.monthlyPriceIdr) : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
         <Breadcrumb section="Usage & billing" />
         <div className="ml-auto flex items-center gap-[8px]">
-          <Button variant="secondary" height={28} onClick={() => onDialog('change-plan')}>
+          <Button variant="primary" height={28} onClick={() => onDialog('change-plan')}>
             Change plan
-          </Button>
-          <Button variant="primary" height={28} onClick={() => onDialog('buy-credits')}>
-            Buy credits
           </Button>
         </div>
       </div>
 
       <SectionPane>
         <h1 className="mb-[4px] font-display text-[28px] font-semibold text-ink">Usage & billing</h1>
-        <p className="mb-[24px] text-[13px] text-muted">Your credit balance and what AI cost this period.</p>
+        <p className="mb-[24px] text-[13px] text-muted">
+          One fixed price for your company, sized by storage. AI runs on your own key and is billed by your AI provider.
+        </p>
 
-        {/* Subscription / trial banner */}
+        {/* Plan */}
         {subscription && (
-          <div className="mb-[20px] rounded-lg border border-line-strong bg-surface p-[14px]">
+          <div className="mb-[20px] rounded-lg border border-line-strong bg-surface p-[16px]">
             <div className="flex items-center justify-between gap-[12px]">
               <div className="flex flex-col gap-[2px]">
-                <p className="text-[13px] font-medium text-ink">
-                  {planName ?? 'No plan'} · {subscription.billingInterval}
+                <p className="text-[15px] font-semibold text-ink">
+                  {planName ?? 'No plan'}
+                  {price != null && (
+                    <span className="ml-[8px] font-mono text-[13px] font-normal text-ink-2">
+                      {formatIdrShort(price)} / {subscription.billingInterval === 'yearly' ? 'year' : 'month'}
+                    </span>
+                  )}
                 </p>
                 {subscription.isTrial ? (
                   <p className="text-[12px] text-warn">
-                    {subscription.trialDaysLeft} day{subscription.trialDaysLeft !== 1 ? 's' : ''} left in trial
+                    Free trial · {subscription.trialDaysLeft} day{subscription.trialDaysLeft !== 1 ? 's' : ''} left
                   </p>
                 ) : (
                   <p className="text-[12px] text-muted">
@@ -107,6 +87,7 @@ export function SectionUsage({ onDialog }: Props) {
                       : ''}
                   </p>
                 )}
+                <p className="text-[12px] text-muted">Unlimited people and helpers.</p>
               </div>
               {subscription.isTrial && (
                 <Button variant="secondary" height={28} onClick={() => onDialog('change-plan')}>
@@ -117,152 +98,74 @@ export function SectionUsage({ onDialog }: Props) {
           </div>
         )}
 
-        {/* Error state */}
-        {isError && (
-          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[12px]">
-            <p className="text-[13px] text-muted">Could not load usage data. Please try again.</p>
-          </div>
-        )}
-
-        {/* Loading skeleton */}
-        {isLoading && (
-          <div className="animate-pulse space-y-[12px]">
-            <div className="h-[80px] rounded-lg bg-soft" />
-            <div className="h-[120px] rounded-lg bg-soft" />
-          </div>
-        )}
-
-        {/* Empty state */}
-        {isEmpty && (
-          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
-            <p className="text-[13px] text-muted">No usage this period yet.</p>
-          </div>
-        )}
-
-        {/* Live data */}
-        {usage && !isEmpty && !isError && (
-          <>
-            {/* Balance + used */}
-            <div className="mb-[24px] grid grid-cols-2 gap-[12px]">
-              <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
-                <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Balance</p>
-                <p className="text-[24px] font-semibold text-ink">{usage.balance.toLocaleString()}</p>
-                <p className="mt-[4px] text-[12px] text-muted">
-                  credits · {usage.included.toLocaleString()} included in plan
-                </p>
-              </div>
-              <div className="rounded-lg border border-line-strong bg-surface p-[16px]">
-                <p className="mb-[6px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint">Used this period</p>
-                <p className="text-[24px] font-semibold text-ink">{usage.usedThisPeriod.toLocaleString()}</p>
-                <p className="mt-[4px] text-[12px] text-muted">credits consumed</p>
-              </div>
-            </div>
-
-            {/* By-helper breakdown */}
-            {usage.byHelper.length > 0 && (
-              <>
-                <p className="mb-[10px] text-[13px] font-medium text-ink">By helper</p>
-                <div className="mb-[24px] overflow-hidden rounded-lg border border-line-strong bg-surface">
-                  {usage.byHelper.map((row, i) => {
-                    const total = usage.byHelper.reduce((sum, r) => sum + r.credits, 0)
-                    const pct = total > 0 ? Math.round((row.credits / total) * 100) : 0
-                    return (
-                      <div
-                        key={row.helperId}
-                        className={`flex items-center gap-[12px] px-[16px] py-[10px] ${i < usage.byHelper.length - 1 ? 'border-b border-line' : ''}`}
-                      >
-                        <span className="min-w-[120px] text-[13px] font-medium text-ink">{helperName(row.helperId)}</span>
-                        <div className="flex flex-1 items-center gap-[8px]">
-                          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-line-strong">
-                            <div className="h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className="shrink-0 text-[12px] text-muted">{row.credits.toLocaleString()} cr</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* By-day chart (simple bar visualization) */}
-            {usage.byDay.length > 0 && (
-              <>
-                <p className="mb-[10px] text-[13px] font-medium text-ink">Daily usage</p>
-                <div className="mb-[24px] flex items-end gap-[4px]" style={{ height: 60 }}>
-                  {usage.byDay.map((row) => {
-                    const max = Math.max(...usage.byDay.map((r) => r.credits), 1)
-                    const pct = Math.round((row.credits / max) * 100)
-                    return (
-                      <div key={row.day} className="flex flex-1 flex-col items-center gap-[2px]">
-                        <div className="w-full rounded-sm bg-ink" style={{ height: `${pct}%`, minHeight: 2 }} />
-                        <span className="text-[9px] text-faint">{row.day.slice(5)}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-
-            {/* Pending topups */}
-            {usage.pendingTopups && usage.pendingTopups.count > 0 && (
-              <div className="mb-[16px] rounded-lg border border-warn-line bg-warn-tint px-[14px] py-[10px]">
-                <p className="text-[12.5px] text-warn">
-                  {usage.pendingTopups.count} pending top-up{usage.pendingTopups.count > 1 ? 's' : ''} · {usage.pendingTopups.totalCredits.toLocaleString()} credits
-                </p>
-              </div>
-            )}
-
-            {/* Last payment */}
-            {usage.lastPayment && (
-              <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[10px]">
-                <p className="text-[12px] font-medium text-ink">Last payment</p>
-                <p className="text-[12px] text-muted">
-                  {usage.lastPayment.kind} · {usage.lastPayment.status} ·{' '}
-                  {usage.lastPayment.amountIdr.toLocaleString('id-ID', { style: 'currency', currency: 'IDR' })}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-        {/* Auto top-up */}
-        {wallet && (
-          <div className="mt-[24px] flex items-center gap-[10px] rounded-lg border border-line-strong bg-surface px-[16px] py-[12px]">
-            <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-              <p className="text-[13px] font-medium text-ink">Auto top-up</p>
-              <p className="text-[12px] text-muted">
-                When credits drop below {(wallet.autoTopupThresholdCredits || 500).toLocaleString()}, buy {(autoPack?.credits ?? 5000).toLocaleString()} more automatically.
+        {/* Storage */}
+        <p className="mb-[10px] text-[13px] font-medium text-ink">Storage</p>
+        <div className="mb-[24px] rounded-lg border border-line-strong bg-surface p-[16px]">
+          {isError ? (
+            <p className="text-[13px] text-muted">Could not measure storage. Please try again.</p>
+          ) : storageLoading ? (
+            <p className="text-[13px] text-muted">Measuring storage…</p>
+          ) : (
+            <>
+              <p className="mb-[8px] text-[24px] font-semibold text-ink">
+                {formatBytes(used)}{' '}
+                <span className="text-[15px] font-normal text-muted">
+                  {quota != null ? `of ${formatBytes(quota)}` : 'used · no limit'}
+                </span>
               </p>
-            </div>
-            <Toggle on={wallet.autoTopupEnabled} label="Auto top-up" onClick={() => void toggleAutoTopup()} />
-          </div>
-        )}
-
-        {/* Credit history */}
-        {ledger.length > 0 && (
-          <>
-            <p className="mt-[24px] mb-[10px] text-[13px] font-medium text-ink">Credit history</p>
-            <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
-              {ledger.slice(0, 10).map((l, i) => (
-                <div key={l.id} className={`flex items-center gap-[12px] px-[16px] py-[8px] ${i < Math.min(ledger.length, 10) - 1 ? 'border-b border-line' : ''}`}>
-                  <span className="w-[56px] text-[12px] text-muted">{shortDate(l.createdAt)}</span>
-                  <span className="min-w-0 flex-1 text-[12.5px] text-ink">
-                    {LEDGER_REASON[l.reason] ?? l.reason}
-                    {l.helperId ? ` · ${helperName(l.helperId)}` : ''}
-                  </span>
-                  <span className={`font-mono text-[12px] ${l.delta >= 0 ? 'text-ok' : 'text-ink-2'}`}>
-                    {l.delta >= 0 ? '+' : ''}{l.delta.toLocaleString()}
-                  </span>
+              {quota != null && (
+                <div
+                  className="mb-[10px] h-[8px] overflow-hidden rounded-full bg-line-strong"
+                  role="meter"
+                  aria-label="Storage used"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(pct)}
+                >
+                  <div className="flex h-full">
+                    {counted.filter((s) => s.bytes > 0).map((s) => (
+                      <div
+                        key={s.key}
+                        className="h-full"
+                        style={{ width: `${Math.max(0.5, (s.bytes / quota) * 100)}%`, background: SEGMENT_COLORS[s.key] ?? '#A8A29E' }}
+                      />
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
+              )}
+              <div className="flex flex-wrap gap-[12px]">
+                {counted.map((s) => (
+                  <span key={s.key} className="flex items-center gap-[4px] text-[11.5px] text-muted">
+                    <span className="size-[8px] rounded-full" style={{ background: SEGMENT_COLORS[s.key] ?? '#A8A29E' }} />
+                    {s.label} {formatBytes(s.bytes)}
+                  </span>
+                ))}
+              </div>
+              {free.length > 0 && (
+                <p className="mt-[8px] text-[11.5px] text-faint">
+                  Not counted: {free.map((s) => `${s.label.replace(' (free)', '')} ${formatBytes(s.bytes)}`).join(' · ')}
+                </p>
+              )}
+              {(full || near) && (
+                <div className={`mt-[12px] flex items-center gap-[10px] rounded-md px-[12px] py-[8px] ${full ? 'bg-bad-tint' : 'bg-warn-tint'}`}>
+                  <p className={`min-w-0 flex-1 text-[12.5px] ${full ? 'text-bad' : 'text-warn'}`}>
+                    {full
+                      ? 'Storage is full — new uploads are paused. Upgrade or delete files you no longer need.'
+                      : 'Storage is almost full. New uploads pause at the limit.'}
+                  </p>
+                  <Button variant="secondary" height={26} onClick={() => onDialog('change-plan')}>
+                    Upgrade
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Invoices */}
         {invoices.length > 0 && (
           <>
-            <p className="mt-[24px] mb-[10px] text-[13px] font-medium text-ink">Invoices</p>
+            <p className="mb-[10px] text-[13px] font-medium text-ink">Invoices</p>
             <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
               {invoices.map((inv, i) => (
                 <div key={inv.id} className={`flex items-center gap-[12px] px-[16px] py-[8px] ${i < invoices.length - 1 ? 'border-b border-line' : ''}`}>

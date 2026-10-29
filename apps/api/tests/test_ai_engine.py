@@ -356,34 +356,24 @@ async def test_reply_is_saved_even_if_nobody_reads_the_stream(async_client, ai_e
         assert kinds == ["you", "helper"]
 
 
-# ── Omilo Cloud's own AI (pooled, metered in credits) ───────────────────────
+# ── Omilo Cloud: bring your own key (pooled AI is off until the partner is live) ──
 
-async def test_cloud_ai_needs_credits_then_charges_them(async_client, ai_env, monkeypatch):
-    from omilo.models.billing import CreditLedger
-    from omilo.models.execution import Job
-
-    monkeypatch.setenv("OMILO_POOL_ANTHROPIC_API_KEY", "sk-test-123")  # the server's key (fake LLM accepts it)
-    token, cid = await _workspace(async_client)
+async def test_cloud_needs_own_key_by_default(async_client, ai_env, monkeypatch):
+    monkeypatch.setenv("OMILO_POOL_ANTHROPIC_API_KEY", "sk-test-123")  # present, but not enabled
+    token, _ = await _workspace(async_client)
     status = (await async_client.get("/v1/onboarding/ai-status", headers=_h(token))).json()
-    assert status["ready"] is False and status["pooled"] is True and "trial" in status["reason"]
+    assert status["ready"] is False and status["pooled"] is False and "key" in status["reason"]
+
+
+async def test_pooled_ai_behind_flag_needs_allowance(async_client, ai_env, monkeypatch):
+    monkeypatch.setenv("OMILO_POOL_ANTHROPIC_API_KEY", "sk-test-123")
+    monkeypatch.setenv("OMILO_POOL_AI", "1")
+    token, _ = await _workspace(async_client)
+    status = (await async_client.get("/v1/onboarding/ai-status", headers=_h(token))).json()
+    assert status["pooled"] is True and status["ready"] is False
     sid = await _session(async_client, token)
     r = await async_client.post(f"/v1/sessions/{sid}/messages/stream", json={"content": "hi"}, headers=_h(token))
-    assert r.status_code == 402 and "credits" in r.json()["detail"]
-
-    # Reading the subscription starts the free trial (credits granted once)
-    sub = await async_client.get("/v1/billing/subscription", headers=_h(token))
-    assert sub.status_code == 200, sub.text
-    status = (await async_client.get("/v1/onboarding/ai-status", headers=_h(token))).json()
-    assert status == {"ready": True, "label": "Omilo Cloud", "pooled": True, "mode": "cloud", "reason": None}
-
-    r = await async_client.post(f"/v1/sessions/{sid}/messages/stream", json={"content": "hi"}, headers=_h(token))
-    events = parse_sse(r.text)
-    assert events[-1][0] == "done"
-    with SessionLocal() as db:
-        job = db.get(Job, events[-1][1]["jobId"])
-        assert job.engine_type == "litellm"  # the credit-metered cloud engine
-        rows = db.query(CreditLedger).filter(CreditLedger.job_id == job.id).all()
-        assert rows and rows[0].credits_charged > 0
+    assert r.status_code == 402 and "own AI key" in r.json()["detail"]
 
 
 async def test_ai_status_with_own_account_is_ready(async_client, ai_env):

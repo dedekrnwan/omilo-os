@@ -8,26 +8,22 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
 import type { Repos } from '../../../core/ports/repos'
-import type { UsageSummary } from '../../../core/domain/types'
+import type { StorageSummary } from '../../../core/domain/controlPanel'
 
 import { SectionUsage } from './SectionUsage'
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
-const LIVE_USAGE: UsageSummary = {
-  balance: 4_200,
-  included: 2_000,
-  usedThisPeriod: 1_450,
-  byHelper: [
-    { helperId: 'h-chief', credits: 820 },
-    { helperId: 'h-dev', credits: 430 },
+const GB = 1024 ** 3
+const STORAGE: StorageSummary = {
+  usedBytes: 2 * GB,
+  quotaBytes: 50 * GB,
+  segments: [
+    { key: 'docs', label: 'Docs', bytes: 1.5 * GB, counted: true },
+    { key: 'files', label: 'Files & artifacts', bytes: 0.5 * GB, counted: true },
+    { key: 'knowledge', label: 'Knowledge', bytes: 0, counted: true },
+    { key: 'chats', label: 'Chats & run logs (free)', bytes: 3 * GB, counted: false },
   ],
-  byDay: [
-    { day: '2026-10-01', credits: 180 },
-    { day: '2026-10-08', credits: 260 },
-  ],
-  pendingTopups: { count: 0, totalCredits: 0 },
-  lastPayment: null,
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -42,7 +38,6 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
     inbox: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
     billingPlans: { list: vi.fn().mockResolvedValue([]) },
     billingSubscription: { get: vi.fn().mockResolvedValue(null) },
-    usage: { get: vi.fn().mockResolvedValue({ ...LIVE_USAGE }) },
     wallet: { get: vi.fn().mockResolvedValue({ autoTopupEnabled: false, autoTopupThresholdCredits: 0, autoTopupPack: null }) },
     aiAccounts: { list: vi.fn().mockResolvedValue([]) },
     marketplace: { list: vi.fn().mockResolvedValue([]) },
@@ -56,7 +51,11 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
     helpers: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
     members: { list: vi.fn().mockResolvedValue([]) },
     ...overrides,
-  }
+  } as Repos
+}
+
+function withStorage(storage: () => Promise<StorageSummary>): Partial<Repos> {
+  return { controlPanel: { storage, invoices: vi.fn().mockResolvedValue([]) } } as unknown as Partial<Repos>
 }
 
 function renderSection(repos: Repos) {
@@ -75,31 +74,21 @@ function renderSection(repos: Repos) {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('SectionUsage', () => {
-  test('renders live balance from the repo', async () => {
-    renderSection(makeRepos())
-    // balance 4200 credits should appear
-    await waitFor(() => expect(screen.getByText(/4,?200/)).toBeInTheDocument())
+  test('shows storage used against the plan', async () => {
+    renderSection(makeRepos(withStorage(vi.fn().mockResolvedValue({ ...STORAGE }))))
+    await waitFor(() => expect(screen.getByText(/of 50/)).toBeInTheDocument())
+    expect(screen.getByRole('meter', { name: /storage used/i })).toHaveAttribute('aria-valuenow', '4')
+    expect(screen.getByText(/not counted/i)).toBeInTheDocument()
+    expect(screen.queryByText(/buy credits/i)).not.toBeInTheDocument()
   })
 
-  test('renders usedThisPeriod from the repo', async () => {
-    renderSection(makeRepos())
-    await waitFor(() => expect(screen.getByText(/1,?450/)).toBeInTheDocument())
+  test('says uploads are paused when storage is full', async () => {
+    renderSection(makeRepos(withStorage(vi.fn().mockResolvedValue({ ...STORAGE, usedBytes: 50 * GB }))))
+    await waitFor(() => expect(screen.getByText(/new uploads are paused/i)).toBeInTheDocument())
   })
 
-  test('empty state renders when usage returns zero values', async () => {
-    const emptyUsage: UsageSummary = {
-      balance: 0,
-      included: 0,
-      usedThisPeriod: 0,
-      byHelper: [],
-      byDay: [],
-    }
-    renderSection(makeRepos({ usage: { get: vi.fn().mockResolvedValue(emptyUsage) } }))
-    await waitFor(() => expect(screen.getByText(/no usage/i)).toBeInTheDocument())
-  })
-
-  test('error state renders when usage query rejects', async () => {
-    renderSection(makeRepos({ usage: { get: vi.fn().mockRejectedValue(new Error('network')) } }))
-    await waitFor(() => expect(screen.getByText(/could not load/i)).toBeInTheDocument())
+  test('error state renders when storage query rejects', async () => {
+    renderSection(makeRepos(withStorage(vi.fn().mockRejectedValue(new Error('network')))))
+    await waitFor(() => expect(screen.getByText(/could not measure/i)).toBeInTheDocument())
   })
 })

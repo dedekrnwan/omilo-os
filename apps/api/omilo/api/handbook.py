@@ -369,6 +369,9 @@ def put_handbook_file(
     if not _NAME.match(name):
         raise HTTPException(status_code=422, detail="Use letters, numbers, dashes or underscores.")
     by = f"operator:{ctx.user_id}"
+    from omilo.billing.storage import check_upload
+
+    check_upload(ctx.company_id, len((body.content or "").encode()) if hasattr(body, "content") else 0)
     doc = _get_file(db, name)
     if doc is None:
         doc = _new_file(

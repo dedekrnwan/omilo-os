@@ -104,6 +104,7 @@ type RawBillingPlan = {
   max_seats?: number | null
   max_helpers?: number | null
   seat_price_idr?: number | null
+  storage_gb?: number | null
   features?: string[]
   badge?: string | null
 }
@@ -123,6 +124,7 @@ function mapBillingPlan(r: RawBillingPlan): BillingPlan {
     maxSeats: r.max_seats,
     maxHelpers: r.max_helpers,
     seatPriceIdr: r.seat_price_idr,
+    storageGb: r.storage_gb ?? null,
     features: r.features,
     badge: r.badge,
   }
@@ -929,7 +931,7 @@ type RawCompanyDetail = {
   currency?: string; autonomy_default?: string; pic_role?: string | null; industry?: string | null
 }
 type RawSeats = {
-  self_hosted: boolean; plan_id: string | null; plan_name: string | null; included: number | null
+  self_hosted: boolean; unlimited?: boolean; plan_id: string | null; plan_name: string | null; included: number | null
   total: number | null; max: number | null; available: number | null; seat_price_idr: number | null
   can_add: boolean; used: number; pending: number; viewers: number
   billing_interval?: 'monthly' | 'yearly'; period_end?: string | null
@@ -1017,7 +1019,7 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
     seats: async () => {
       const r = await get<RawSeats>('/v1/billing/seats')
       return {
-        selfHosted: r.self_hosted, planId: r.plan_id, planName: r.plan_name, included: r.included,
+        selfHosted: r.self_hosted, unlimited: r.unlimited ?? r.self_hosted, planId: r.plan_id, planName: r.plan_name, included: r.included,
         total: r.total, max: r.max, available: r.available, seatPriceIdr: r.seat_price_idr,
         canAdd: r.can_add, used: r.used, pending: r.pending, viewers: r.viewers,
         billingInterval: r.billing_interval, periodEnd: r.period_end ?? null,
@@ -1057,7 +1059,7 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
         nextCursor: raw.next_cursor,
       }
     storage: async () => {
-      const r = await get<{ used_bytes: number; quota_bytes: number | null; segments: { key: string; label: string; bytes: number }[] }>('/v1/data/storage')
+      const r = await get<{ used_bytes: number; quota_bytes: number | null; segments: { key: string; label: string; bytes: number; counted?: boolean }[] }>('/v1/data/storage')
       return { usedBytes: r.used_bytes, quotaBytes: r.quota_bytes, segments: r.segments }
     exports: async () => (await get<RawExport[]>('/v1/data/exports')).map(mapExport),
     account: async () => {
