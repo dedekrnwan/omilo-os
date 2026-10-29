@@ -41,6 +41,7 @@ omilo-index = "omilo.cli:index"
 omilo-register = "omilo.control.register:main"
 omilo-connect = "omilo.control.upgrade:main"
 omilo-notify = "omilo.notify.digest:main"
+omilo-worker = "omilo.cli:worker"
 
 [tool.hatch.build.targets.wheel]
 packages = ["omilo"]

@@ -1,5 +1,6 @@
 """CLI entry points."""
 
+import asyncio
 from pathlib import Path
 
 
@@ -46,3 +47,93 @@ def index() -> None:
     )
     for err in summary.get("errors", []):
         print(f"  ! {err}")
+
+
+def worker() -> None:
+    """Entry point for the ``omilo-worker`` console script.
+
+    Reads configuration from environment variables (with optional overrides via
+    CLI flags) and runs a :class:`~omilo.worker.runtime.WorkerRuntime` that
+    dials the compute relay, registers, and processes jobs indefinitely.
+
+    Environment variables
+    ---------------------
+    OMILO_RELAY_URL   WebSocket URL of the cloud relay (required).
+    OMILO_TOKEN       Worker authentication token (required).
+    OMILO_COMPANY_ID  Tenant identifier (required).
+    OMILO_WORKER_ID   Persistent worker identifier (required).
+    OMILO_CAPACITY    Max concurrent jobs (optional, default 1).
+    """
+    import argparse
+    import os
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="omilo-worker",
+        description="Run an Omilo compute worker that connects to the relay.",
+    )
+    parser.add_argument(
+        "--relay-url",
+        default=os.environ.get("OMILO_RELAY_URL", ""),
+        help="WebSocket URL of the relay (env: OMILO_RELAY_URL).",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("OMILO_TOKEN", ""),
+        help="Worker auth token (env: OMILO_TOKEN).",
+    )
+    parser.add_argument(
+        "--company-id",
+        default=os.environ.get("OMILO_COMPANY_ID", ""),
+        help="Company/tenant identifier (env: OMILO_COMPANY_ID).",
+    )
+    parser.add_argument(
+        "--worker-id",
+        default=os.environ.get("OMILO_WORKER_ID", ""),
+        help="Worker identifier from pairing (env: OMILO_WORKER_ID).",
+    )
+    parser.add_argument(
+        "--capacity",
+        type=int,
+        default=int(os.environ.get("OMILO_CAPACITY", "1")),
+        help="Max concurrent jobs (env: OMILO_CAPACITY, default 1).",
+    )
+    args = parser.parse_args()
+
+    missing = [
+        name
+        for name, val in [
+            ("--relay-url / OMILO_RELAY_URL", args.relay_url),
+            ("--token / OMILO_TOKEN", args.token),
+            ("--company-id / OMILO_COMPANY_ID", args.company_id),
+            ("--worker-id / OMILO_WORKER_ID", args.worker_id),
+        ]
+        if not val
+    ]
+    if missing:
+        print(
+            "omilo-worker: missing required configuration:\n  "
+            + "\n  ".join(missing),
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    from omilo.worker.runtime import WorkerRuntime
+
+    runtime = WorkerRuntime(
+        relay_url=args.relay_url,
+        token=args.token,
+        company_id=args.company_id,
+        worker_id=args.worker_id,
+        capacity=args.capacity,
+    )
+
+    print(
+        f"omilo-worker: starting (relay={args.relay_url}, "
+        f"worker_id={args.worker_id}, company={args.company_id}, "
+        f"capacity={args.capacity})"
+    )
+    try:
+        asyncio.run(runtime.run())
+    except KeyboardInterrupt:
+        print("\nomilo-worker: interrupted, shutting down.")
