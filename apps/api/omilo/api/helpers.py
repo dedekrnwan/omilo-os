@@ -606,6 +606,9 @@ def retire_helper(
     for r in db.query(Routine).filter(Routine.helper_id == helper_id).all():
         r.paused = True
     db.flush()
+    from omilo import audit  # sweep/control — activity log
+
+    audit.record_ctx(ctx, type="helpers", action="let go", target=helper.name)
     return _helper_to_dict(helper)
 
 

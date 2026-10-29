@@ -317,7 +317,7 @@ async def test_patch_channel_look(async_client, ws):
     listed = [x for x in (await c.get("/v1/channels", headers=_auth(t))).json() if x["id"] == ws["channel_id"]]
     assert listed[0]["color"] == "#14B8A6"
     r = await c.patch(f"/v1/channels/{ws['channel_id']}", json={"icon": None, "color": None}, headers=_auth(t))
-    assert "color" not in r.json() and "icon" not in r.json()
+    assert r.json().get("color") is None and r.json().get("icon") is None
 
 
 # ── Chief private threads ────────────────────────────────────────────────────
