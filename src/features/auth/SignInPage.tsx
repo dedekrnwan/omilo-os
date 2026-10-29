@@ -21,8 +21,18 @@ export function SignInPage() {
   const setFlowEmail = useAuthFlow((s) => s.setEmail)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [keepSignedIn, setKeepSignedIn] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  /** Persist the "keep me signed in" preference so the token layer can honour it. */
+  function rememberPreference() {
+    try {
+      localStorage.setItem('omilo.keepSignedIn', keepSignedIn ? '1' : '0')
+    } catch {
+      /* storage unavailable — preference is best-effort */
+    }
+  }
 
   function handleGoogleSignIn() {
     const client = isTauri() ? 'desktop' : 'web'
@@ -35,6 +45,7 @@ export function SignInPage() {
   }
 
   async function handleSignIn() {
+    rememberPreference()
     if (mock) {
       // Mock mode: app is already authed via synthetic session — navigate home directly.
       await goHome()
@@ -121,7 +132,7 @@ export function SignInPage() {
           {error}
         </p>
       )}
-      <AuthCheckbox label="Keep me signed in for 30 days" />
+      <AuthCheckbox label="Keep me signed in for 30 days" checked={keepSignedIn} onChange={setKeepSignedIn} />
       <AuthButton onClick={handleSignIn} disabled={loading}>
         {loading ? 'Signing in…' : 'Sign in'}
       </AuthButton>

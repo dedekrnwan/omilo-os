@@ -1,14 +1,39 @@
 /** Choose company — /auth/choose-company (pen Ltj2k). */
+import { useState } from 'react'
 import { ArrowRight, Plus } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSession } from '../../app/session'
+import { useAuth } from '../../app/useAuth'
 import { MODE_HOME, useUIStore } from '../../app/store'
 import { AuthLayout } from './AuthLayout'
 import { AuthTitle, GoogleLogo } from './AuthPrimitives'
 
 export function ChooseCompanyPage() {
-  const { companies, user } = useSession()
+  const { companies, user, company: activeCompany } = useSession()
+  const { adapter, applySignIn, mock } = useAuth()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const home = MODE_HOME[useUIStore.getState().mode]
+  const [switching, setSwitching] = useState<string | null>(null)
+
+  async function selectCompany(id: string) {
+    if (switching) return
+    // Mock mode: no backend to switch against — just open the home.
+    if (mock || id === activeCompany?.id) {
+      await navigate({ to: home })
+      return
+    }
+    setSwitching(id)
+    try {
+      const result = await adapter.switchCompany(id)
+      applySignIn(result)
+      await qc.invalidateQueries()
+      await navigate({ to: home })
+    } finally {
+      setSwitching(null)
+    }
+  }
 
   return (
     <AuthLayout>
@@ -18,10 +43,12 @@ export function ChooseCompanyPage() {
       />
       <div className="flex w-full flex-col gap-[8px]">
         {companies.map((c, i) => (
-          <Link
+          <button
             key={c.id}
-            to={home}
-            className="flex w-full items-center gap-[12px] rounded-lg p-[12px] transition-colors hover:bg-soft"
+            type="button"
+            disabled={!!switching}
+            onClick={() => void selectCompany(c.id)}
+            className="flex w-full items-center gap-[12px] rounded-lg p-[12px] text-left transition-colors hover:bg-soft disabled:opacity-60"
             style={{ boxShadow: i === 0 ? 'inset 0 0 0 1.5px #171717' : 'inset 0 0 0 1px var(--color-line-strong)' }}
           >
             <span
@@ -34,7 +61,7 @@ export function ChooseCompanyPage() {
               <span className="text-[14px] font-semibold text-ink">{c.name}</span>
             </span>
             <ArrowRight size={16} aria-hidden className={i === 0 ? 'text-ink' : 'text-faint'} />
-          </Link>
+          </button>
         ))}
         <Link
           to="/auth/onboarding/company"
