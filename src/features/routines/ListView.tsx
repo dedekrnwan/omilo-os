@@ -2,22 +2,35 @@ import { useState } from 'react'
 import { ArrowRight, Check, CornerDownLeft, Ellipsis, Repeat } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
+import type { RoutineSuggestion } from '../../core/domain/types'
 import {
-  AGENTS,
-  LIST_MORE,
   RUN_STATUS,
-  SUGGESTION,
-  colorOf,
-  runDetail,
+  colorOfArea,
+  runSummaryDetail,
   type RoutineGroup,
   type RoutineRow,
   type RunDetail,
   type RunResult,
 } from './data'
 import { Switch, YouAvatar } from './ui'
+import { useHelperLookup } from './useHelperLookup'
 
 /** pen `Chief Suggestion` (CqvAX): #EEF2FF · r14 · p16 · gap12. */
-export function SuggestionCard({ onApply, onDismiss }: { onApply: () => void; onDismiss: () => void }) {
+export function SuggestionCard({
+  suggestion,
+  onApply,
+  onDismiss,
+  busy = false,
+}: {
+  suggestion: RoutineSuggestion
+  onApply: () => void
+  onDismiss: () => void
+  busy?: boolean
+}) {
+  const { info } = useHelperLookup()
+  const SUGGESTION = suggestion
+  const applyLabel =
+    suggestion.kind === 'failing' ? 'Pause it' : suggestion.moves.length === 2 ? 'Apply both' : suggestion.moves.length > 2 ? 'Apply all' : 'Apply'
   return (
     <section
       aria-label="Chief suggestion"
@@ -32,11 +45,11 @@ export function SuggestionCard({ onApply, onDismiss }: { onApply: () => void; on
       </div>
       <div className="flex w-full gap-[10px]">
         {SUGGESTION.moves.map((m) => (
-          <div key={m.name} className="flex min-w-0 flex-1 items-center gap-[8px] rounded-md bg-surface px-[10px] py-[8px]">
-            <span className="h-[16px] w-[3px] shrink-0 rounded-[2px]" style={{ background: colorOf(m.agentId) }} />
+          <div key={m.routineId} className="flex min-w-0 flex-1 items-center gap-[8px] rounded-md bg-surface px-[10px] py-[8px]">
+            <span className="h-[16px] w-[3px] shrink-0 rounded-[2px]" style={{ background: colorOfArea(info(m.helperId).area) }} />
             <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
               <span className="truncate text-[12.5px] font-medium text-ink">{m.name}</span>
-              <span className="text-[11.5px] text-muted">{m.area}</span>
+              <span className="text-[11.5px] text-muted">{m.helperName || info(m.helperId).name}</span>
             </div>
             <span className="text-[12px] text-faint">{m.from}</span>
             <ArrowRight size={12} aria-hidden className="text-faint" />
@@ -45,8 +58,8 @@ export function SuggestionCard({ onApply, onDismiss }: { onApply: () => void; on
         ))}
       </div>
       <div className="flex items-center gap-[8px]">
-        <Button height={28} icon={Check} onClick={onApply}>
-          Apply both
+        <Button height={28} icon={Check} onClick={onApply} disabled={busy}>
+          {applyLabel}
         </Button>
         <Button variant="secondary" height={28} onClick={onDismiss}>
           Not now
@@ -61,7 +74,7 @@ const RUN_COLOR: Record<RunResult, string> = { ok: '#22C55E', skip: '#A8A29E', f
 const RUN_DOT: Partial<Record<RunResult, string>> = { ok: '#22C55E', fail: '#EF4444', skip: '#A8A29E' }
 
 /** Dark tooltip pinned above a hovered run bar (fixed, so it escapes the table's clipping). */
-function RunTooltip({ detail: d, anchor }: { detail: RunDetail; anchor: DOMRect }) {
+function RunTooltip({ detail: d, anchor, agentName }: { detail: RunDetail; anchor: DOMRect; agentName: string }) {
   const W = 240
   const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - W / 2, window.innerWidth - W - 8))
   const below = anchor.top < 180
@@ -85,7 +98,7 @@ function RunTooltip({ detail: d, anchor }: { detail: RunDetail; anchor: DOMRect 
       </div>
       <div className="flex justify-between">
         <span>Agent</span>
-        <span className="font-medium text-white">{AGENTS[d.agentId].name}</span>
+        <span className="font-medium text-white">{agentName}</span>
       </div>
       <p className={`m-0 border-t border-white/15 pt-[8px] leading-[1.4] ${d.result === 'fail' ? 'text-[#FCA5A5]' : 'text-[#E7E5E4]'}`}>
         {d.error ?? d.outcome}
@@ -100,6 +113,8 @@ function RunTooltip({ detail: d, anchor }: { detail: RunDetail; anchor: DOMRect 
 
 function Runs({ row, onOpenRun }: { row: RoutineRow; onOpenRun?: (row: RoutineRow, index: number) => void }) {
   const [hover, setHover] = useState<{ i: number; anchor: DOMRect } | null>(null)
+  const { info } = useHelperLookup()
+  const hovered = hover ? row.runRefs[hover.i] : null
   const ok = row.runs.filter((r) => r === 'ok').length
   return (
     <div
@@ -125,7 +140,9 @@ function Runs({ row, onOpenRun }: { row: RoutineRow; onOpenRun?: (row: RoutineRo
           />
         ),
       )}
-      {hover && <RunTooltip detail={runDetail(row, hover.i)} anchor={hover.anchor} />}
+      {hover && hovered && (
+        <RunTooltip detail={runSummaryDetail(hovered, row.agentId)} anchor={hover.anchor} agentName={info(row.agentId).name} />
+      )}
     </div>
   )
 }
@@ -140,6 +157,7 @@ function Row({
   onOpenRun,
   onMenu,
   menuOpen,
+  onToggle,
 }: {
   row: RoutineRow
   nameOverride?: string
@@ -148,8 +166,9 @@ function Row({
   onOpenRun?: (row: RoutineRow, index: number) => void
   onMenu?: (id: string, el: HTMLElement) => void
   menuOpen?: boolean
+  onToggle?: (id: string, on: boolean) => void
 }) {
-  const [on, setOn] = useState(!row.paused)
+  const on = !row.paused
   return (
     <div
       className={`flex w-full items-center gap-[14px] shadow-[inset_0_-1px_0_var(--color-line)] px-[14px] py-[10px] ${row.paused ? 'opacity-60' : ''}`}
@@ -173,7 +192,7 @@ function Row({
         {row.by === 'chief' ? <Mascot size={16} radius={4} area="brand" /> : <YouAvatar />}
         <span className="text-[12px] text-muted">{row.by === 'chief' ? 'Chief' : 'You'}</span>
       </div>
-      <Switch on={on} onChange={setOn} label={`${row.name} on`} />
+      <Switch on={on} onChange={(v) => onToggle?.(row.id, v)} label={`${row.name} on`} />
       {!compact && (
         <IconButton
           icon={Ellipsis}
@@ -196,6 +215,7 @@ export function ListView({
   onOpen,
   onOpenRun,
   onMenu,
+  onToggle,
 }: {
   groups: RoutineGroup[]
   compact?: boolean
@@ -204,8 +224,15 @@ export function ListView({
   onOpen: (id: string) => void
   onOpenRun?: (row: RoutineRow, index: number) => void
   onMenu?: (id: string, el: HTMLElement) => void
+  onToggle?: (id: string, on: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const { info } = useHelperLookup()
+  const VISIBLE_GROUPS = 3
+  const hidden = groups.slice(VISIBLE_GROUPS)
+  const shown = expanded ? groups : groups.slice(0, VISIBLE_GROUPS)
+  const total = groups.reduce((n, g) => n + g.count, 0)
+  const moreText = hidden.map((g) => `${info(g.agentId).name} ${g.count}`).join(' · ')
   const head = 'shrink-0 text-[10.5px] font-medium tracking-[0.8px] text-faint'
   return (
     <div
@@ -231,8 +258,8 @@ export function ListView({
         </span>
         <span className={`${head} w-[28px]`} />
       </div>
-      {groups.map((g, gi) => {
-        const agent = AGENTS[g.agentId]
+      {shown.map((g, gi) => {
+        const agent = info(g.agentId)
         return (
           <div key={g.agentId} className="contents">
             <div className="flex w-full items-center gap-[8px] shadow-[inset_0_-1px_0_var(--color-line)] bg-soft px-[14px] py-[8px]">
@@ -250,14 +277,16 @@ export function ListView({
                 onOpenRun={onOpenRun}
                 onMenu={onMenu}
                 menuOpen={menuFor === r.id}
+                onToggle={onToggle}
               />
             ))}
           </div>
         )
       })}
+      {hidden.length > 0 && (
       <div className="flex w-full items-center gap-[8px] px-[14px] py-[10px]">
         <span className="min-w-0 flex-1 text-[12.5px] text-muted">
-          {expanded ? '' : LIST_MORE.text}
+          {expanded ? '' : moreText}
         </span>
         {!expanded && (
           <button
@@ -265,7 +294,7 @@ export function ListView({
             onClick={() => setExpanded(true)}
             className="text-[12.5px] font-medium text-link hover:underline"
           >
-            {LIST_MORE.link}
+            {`Show all ${total}`}
           </button>
         )}
         {expanded && (
@@ -278,6 +307,7 @@ export function ListView({
           </button>
         )}
       </div>
+      )}
     </div>
   )
 }

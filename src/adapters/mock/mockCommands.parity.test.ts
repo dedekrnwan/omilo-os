@@ -75,6 +75,14 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'suggestHandbookEdit',
   'acceptHandbookSuggestion',
   'dismissHandbookSuggestion',
+  // ── sweep/goals-routines ──
+  'cancelJob',
+  'routineRunFeedback',
+  'resendRoutineRun',
+  'previewRoutine',
+  'applyRoutineSuggestion',
+  'dismissRoutineSuggestion',
+  'openGoalSession',
 ]
 
 describe('mock-mode parity', () => {

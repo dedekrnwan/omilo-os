@@ -844,5 +844,88 @@ export function useResolveHandbookSuggestion() {
     mutationFn: ({ id, accept }: { id: Id; accept: boolean }) =>
       accept ? commands.acceptHandbookSuggestion(id) : commands.dismissHandbookSuggestion(id),
     onSuccess: invalidate,
+// ── sweep/goals-routines ──────────────────────────────────────────────────────
+
+/** GET /v1/goals/{id} — goal + planned jobs + proposals (null when the repo lacks it). */
+export function useGoalDetail(id: Id | null) {
+    queryKey: ['goal', id],
+    queryFn: () => (repos.goals.get ? repos.goals.get(id as Id) : Promise.resolve(null)),
+
+/** POST /v1/goals/{id}/session — open (create once) the goal's session. */
+export function useOpenGoalSession() {
+    mutationFn: (goalId: Id) => commands.openGoalSession(goalId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['goals'] })
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+
+export function useReplanGoal() {
+    mutationFn: (goalId: Id) => commands.replanGoal(goalId),
+    onSuccess: (_r, goalId) => {
+      void qc.invalidateQueries({ queryKey: ['goals'] })
+      void qc.invalidateQueries({ queryKey: ['goal', goalId] })
+    },
+
+/** GET /v1/routines/schedule — Week view slots (empty when the repo lacks it). */
+export function useRoutineSchedule(from: string, to: string) {
+    queryKey: ['routines', 'schedule', from, to],
+    queryFn: () =>
+      repos.routines.schedule ? repos.routines.schedule(from, to) : Promise.resolve({ from, to, items: [] }),
+
+/** GET /v1/routines/{id}/runs/{runId}; polls every 2s while the run is going. */
+export function useRoutineRun(routineId: Id | null, runId: Id | null) {
+    queryKey: ['routines', 'run', routineId, runId],
+    queryFn: () =>
+      repos.routines.run ? repos.routines.run(routineId as Id, runId as Id) : Promise.resolve(null),
+    enabled: !!routineId && !!runId,
+    refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+
+export function useRoutineSuggestions() {
+    queryKey: ['routines', 'suggestions'],
+    queryFn: () => (repos.routines.suggestions ? repos.routines.suggestions() : Promise.resolve([])),
+
+/** Invalidate everything routine-shaped after a write. */
+function useInvalidateRoutines() {
+  return (id?: Id) => {
+    void qc.invalidateQueries({ queryKey: ['routines'] })
+    if (id) void qc.invalidateQueries({ queryKey: ['routine', id] })
+
+export function useRunRoutineNow() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: (id: Id) => commands.runRoutineNow(id),
+    onSuccess: (_r, id) => invalidate(id),
+
+export function useCancelJob() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: (jobId: Id) => commands.cancelJob(jobId),
+    onSettled: () => invalidate(),
+
+export function useRoutineRunFeedback() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: ({ runId, vote }: { runId: Id; vote: 'up' | 'down' | null }) =>
+      commands.routineRunFeedback(runId, vote),
+    onSuccess: () => invalidate(),
+
+export function useResendRoutineRun() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: (runId: Id) => commands.resendRoutineRun(runId),
+    onSuccess: () => invalidate(),
+
+export function useApplyRoutineSuggestion() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: (id: string) => commands.applyRoutineSuggestion(id),
+    onSuccess: () => invalidate(),
+
+export function useDismissRoutineSuggestion() {
+  const invalidate = useInvalidateRoutines()
+    mutationFn: (id: string) => commands.dismissRoutineSuggestion(id),
+    onSuccess: () => invalidate(),
+
+/** POST /v1/routines/preview — read-like, so exposed as a query keyed by the draft. */
+export function useRoutinePreview(input: import('../adapters/http/commands').PreviewRoutineInput | null) {
+    queryKey: ['routines', 'preview', input],
+    queryFn: () => commands.previewRoutine(input!),
+    enabled: !!input && /^\d{1,2}:\d{2}$/.test(input.at),
+    staleTime: 10_000,
   })
 }

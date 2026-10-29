@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { CalendarSync, Check, ChevronLeft, ChevronRight, Plus, Users } from 'lucide-react'
 import { Button, IconButton } from '../../ui/ds/Button'
@@ -6,72 +6,75 @@ import { Topbar } from '../../ui/ds/Frame'
 import { notify } from '../../ui/ds/Toaster'
 import { useCommands } from '../../app/CommandsProvider'
 import {
-  useRoutines,
-  useRoutine,
+  useApplyRoutineSuggestion,
+  useCancelJob,
   useCreateRoutine,
-  useUpdateRoutine,
   useDeleteRoutine,
+  useDismissRoutineSuggestion,
+  useResendRoutineRun,
+  useRoutine,
+  useRoutineRun,
+  useRoutineRunFeedback,
+  useRoutineSchedule,
+  useRoutineSuggestions,
+  useRoutines,
   useSkipRoutineNext,
+  useUpdateRoutine,
 } from '../../app/queries'
+import type { Routine, RoutineSuggestion } from '../../core/domain/types'
 import { routinesToGroups, routineToDetail } from './routineAdapters'
 import {
-  AGENTS,
-  BANNERS,
-  WEEK_LABEL,
-  runDetail,
-  weekLanes,
+  TEMPLATES,
+  browserTimeZone,
+  buildLanes,
+  fmtDayDate,
+  fmtDayTime,
+  fmtShort,
+  runDetailFromApi,
+  runSummaryDetail,
+  weekRange,
+  type Banner,
   type RoutineDrawerState,
-  type RoutineRow,
   type RoutinesState,
   type RoutinesView,
+  type WeekChip,
 } from './data'
-import { NewRoutineDrawer, RoutineDrawer, RunDetailDrawer, RunOutputDrawer } from './Drawers'
+import { NewRoutineDrawer, RoutineDrawer, RunDetailDrawer, RunOutputDrawer, type NewRoutineData, type RoutineSavePatch } from './Drawers'
 import { EmptyState } from './EmptyState'
 import { ListView, SuggestionCard } from './ListView'
-import { AppliedToast, DeleteConfirm, FailurePopover, RowMenu, type Anchor } from './Overlays'
+import { AppliedToast, DeleteConfirm, FailurePopover, RowMenu, type Anchor, type FailureInfo } from './Overlays'
 import { Field, SecondaryButton, Segmented } from './ui'
 import { ChiefBanner, WeekView } from './WeekView'
+import { pickHelperForArea, useHelperLookup } from './useHelperLookup'
 
 const VIEWS = ['Week', 'List'] as const
 
-/** Derive a week-range label relative to the base label. */
-function weekLabel(offset: number): string {
-  if (offset === 0) return WEEK_LABEL
-  // Parse "Oct 19 – 25" style: advance by offset weeks.
-  const base = new Date('2024-10-19') // anchor date for WEEK_LABEL
-  const start = new Date(base)
-  start.setDate(base.getDate() + offset * 7)
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-  const fmt = (d: Date) =>
-    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${fmt(start)} – ${end.getDate()}`
-}
-
-const AGENT_IDS = Object.keys(AGENTS) as string[]
+const errMsg = (e: unknown, fallback: string) => (e instanceof Error && e.message ? `${fallback}: ${e.message}` : fallback)
 
 function RoutinesTopbar({
   view,
   onView,
   empty,
   onNew,
-  weekOffset,
+  weekLabel,
   onPrevWeek,
   onToday,
   onNextWeek,
   agentFilter,
   onAgentFilter,
+  agents,
 }: {
   view: RoutinesView
   onView: (v: RoutinesView) => void
   empty: boolean
   onNew: () => void
-  weekOffset: number
+  weekLabel: string
   onPrevWeek: () => void
   onToday: () => void
   onNextWeek: () => void
   agentFilter: string | null
   onAgentFilter: (id: string | null) => void
+  agents: { id: string; name: string }[]
 }) {
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const agentBtnRef = useRef<HTMLButtonElement>(null)
@@ -94,13 +97,13 @@ function RoutinesTopbar({
     return () => document.removeEventListener('mousedown', handler)
   }, [agentMenuOpen])
 
-  const filterLabel = agentFilter ? (AGENTS[agentFilter]?.name ?? 'All agents') : 'All agents'
+  const filterLabel = agentFilter ? (agents.find((a) => a.id === agentFilter)?.name ?? 'All agents') : 'All agents'
 
   return (
     <Topbar
       icon={CalendarSync}
       title="Routines"
-      meta={weekLabel(weekOffset)}
+      meta={weekLabel}
       actions={
         <div className="flex items-center gap-[8px]">
           {!empty && (
@@ -131,7 +134,7 @@ function RoutinesTopbar({
                 aria-label="Filter by agent"
                 className="absolute left-0 top-full z-50 mt-[4px] w-[180px] rounded-lg bg-surface p-[4px] shadow-[0_8px_20px_#0C0A0914] outline-1 -outline-offset-1 outline-line-strong"
               >
-                {[{ id: null, name: 'All agents' }, ...AGENT_IDS.map((id) => ({ id, name: AGENTS[id].name }))].map((opt) => {
+                {[{ id: null as string | null, name: 'All agents' }, ...agents].map((opt) => {
                   const sel = agentFilter === opt.id
                   return (
                     <button
@@ -170,71 +173,86 @@ const anchorOf = (el: Element): Anchor => {
   return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
 }
 
-/** Navigation for the routines board — differs between office and chat mounts. */
+/** Navigation for the routines board. */
 interface RoutinesNav {
-  openRoutine: (id: string, state?: RoutineDrawerState) => void
+  openRoutine: (id: string, state?: RoutineDrawerState, runId?: string) => void
   closeDrawer: () => void
 }
 
 interface BoardProps {
-  /** Route-specific navigation (office vs. chat). */
   nav: RoutinesNav
   /** Drawer for this routine (detail route). */
   routineId?: string
   drawerState?: RoutineDrawerState
+  /** Run shown by the running / output drawer states (`?run=`). */
+  runId?: string
+}
+
+/** Builds the Chief banner from real failures, suggestions and the next run. */
+function bannerFor(
+  routines: Routine[],
+  helperCount: number,
+  failures: WeekChip[],
+  suggestions: RoutineSuggestion[],
+  applied: boolean,
+  nameOf: (routineId: string) => string,
+  errorOf: (chip: WeekChip) => string | null,
+): Banner {
+  const active = routines.filter((r) => r.enabled && !r.paused && r.nextAt)
+  const next = [...active].sort((a, b) => (a.nextAt ?? '').localeCompare(b.nextAt ?? ''))[0]
+  const nextText = next ? `Next: ${next.name}, ${fmtDayTime(next.nextAt)}` : 'Nothing scheduled'
+  if (failures.length > 0) {
+    const f = failures[failures.length - 1]
+    const why = errorOf(f)
+    return {
+      tone: 'bad',
+      title: `${failures.length} routine run${failures.length === 1 ? '' : 's'} failed this week`,
+      desc: [nameOf(f.routineId), fmtShort(f.at), why].filter(Boolean).join(' · '),
+      review: suggestions.length > 0,
+    }
+  }
+  if (applied && suggestions.length === 0) {
+    return { tone: 'ok', title: 'Schedule updated — no clashes left', desc: nextText, review: false }
+  }
+  const sug = suggestions.length
+  return {
+    tone: 'info',
+    title: `Chief keeps ${routines.length} routine${routines.length === 1 ? '' : 's'} running across ${helperCount} agent${helperCount === 1 ? '' : 's'}`,
+    desc: sug ? `${nextText} · ${sug} suggestion${sug === 1 ? '' : 's'} from Chief` : nextText,
+    review: sug > 0,
+  }
 }
 
 /**
  * Routines board: Week (I5rrK) / List (VUmu8) + every interactive state.
  *  - `?view=week|list`
- *  - `?state=empty|failed|applied|menu|delete|new|clash`
- *  - `…/routines/$routineId?state=running|paused|output|reassign` opens the routine drawer over the list.
- *
- * Mounted in both Office (`/office/routines`) and Chat (`/chat/$channelId/routines`);
- * the `nav` prop carries the mode-specific routing.
+ *  - `?state=empty|new|clash` (+ `/routines/$id?state=delete|running|paused|output|reassign&run=…`)
  */
-function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
+function RoutinesBoard({ nav, routineId, drawerState, runId }: BoardProps) {
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { view?: string; state?: string }
   const initialState = (search.state as RoutinesState | undefined) ?? null
+  const { helpers, info } = useHelperLookup()
 
   const defaultView: RoutinesView =
     routineId || initialState === 'menu' || initialState === 'delete' || initialState === 'new' || initialState === 'clash'
       ? 'list'
       : 'week'
   const [view, setView] = useState<RoutinesView>((search.view as RoutinesView) || defaultView)
-  const [empty, setEmpty] = useState(initialState === 'empty')
-  const [applied, setApplied] = useState(initialState === 'applied')
-  const [toast, setToast] = useState(initialState === 'applied')
-  const [suggestion, setSuggestion] = useState(initialState !== 'applied')
-  const [failed] = useState(initialState === 'failed')
-  const [failAnchor, setFailAnchor] = useState<Anchor | null>(null)
+  const [forceEmpty, setForceEmpty] = useState(initialState === 'empty')
+  const [applied, setApplied] = useState(false)
+  const [toast, setToast] = useState<{ title: string; body: string } | null>(null)
+  const [failure, setFailure] = useState<{ anchor: Anchor; chip: WeekChip } | null>(null)
   const [menu, setMenu] = useState<{ id: string; anchor: Anchor } | null>(null)
-  const [deleting, setDeleting] = useState<string | null>(initialState === 'delete' ? 'morning-brief' : null)
-  const [creating, setCreating] = useState<null | 'new' | 'clash'>(
-    initialState === 'new' ? 'new' : initialState === 'clash' ? 'clash' : null,
-  )
+  const [deleting, setDeleting] = useState<string | null>(initialState === 'delete' && routineId ? routineId : null)
+  const [creating, setCreating] = useState(initialState === 'new' || initialState === 'clash')
   const [weekOffset, setWeekOffset] = useState(0)
   const [agentFilter, setAgentFilter] = useState<string | null>(null)
-  const [runOpen, setRunOpen] = useState<{ row: RoutineRow; index: number } | null>(null)
+  const [runOpen, setRunOpen] = useState<{ routineId: string; runId: string; name: string } | null>(null)
+  const [settingUp, setSettingUp] = useState(false)
   const drawer: RoutineDrawerState = drawerState ?? 'detail'
 
   const rootRef = useRef<HTMLDivElement>(null)
-
-  // Screenshot-able states that need an on-screen anchor.
-  useEffect(() => {
-    const root = rootRef.current
-    if (!root) return
-    if (initialState === 'menu') {
-      const btn = root.querySelector('[aria-label="More actions for Morning brief"]')
-      if (btn) setMenu({ id: 'morning-brief', anchor: anchorOf(btn) })
-    }
-    if (initialState === 'failed') {
-      const chip = root.querySelector('[data-failed-run]')
-      if (chip) setFailAnchor(anchorOf(chip))
-    }
-  }, [initialState])
-
   const open = nav.openRoutine
   const closeDrawer = nav.closeDrawer
 
@@ -244,83 +262,195 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   const updateRoutine = useUpdateRoutine()
   const deleteRoutine = useDeleteRoutine()
   const skipRoutineNext = useSkipRoutineNext()
+  const cancelJob = useCancelJob()
+  const feedback = useRoutineRunFeedback()
+  const resend = useResendRoutineRun()
+  const applySuggestion = useApplyRoutineSuggestion()
+  const dismissSuggestion = useDismissRoutineSuggestion()
 
   const { data: routinesData = [], isLoading, isError } = useRoutines()
-  const groups = routinesToGroups(routinesData)
+  const { data: suggestions = [] } = useRoutineSuggestions()
+  const range = useMemo(() => weekRange(weekOffset), [weekOffset])
+  const { data: schedule } = useRoutineSchedule(range.start.toISOString(), range.end.toISOString())
 
-  // Fetch the detail-pane routine from the repo; fall back gracefully if not found.
+  const filtered = agentFilter ? routinesData.filter((r) => r.helperId === agentFilter) : routinesData
+  const groups = routinesToGroups(filtered)
+  const routineCount = (helperId: string) => routinesData.filter((r) => r.helperId === helperId).length
+  const routineNameById = (id: string) => routinesData.find((r) => r.id === id)?.name ?? 'Routine'
+
+  const scheduleItems = (schedule?.items ?? []).filter((i) => !agentFilter || i.helperId === agentFilter)
+  const lanes = buildLanes(scheduleItems, range, routineCount)
+  const failedChips = lanes.flatMap((l) => l.chips.filter((c) => c.failed))
+
+  // Agents that own routines (topbar filter).
+  const agents = [...new Set(routinesData.map((r) => r.helperId))].map((id) => ({ id, name: info(id).name }))
+
+  // Fetch the detail-pane routine from the repo.
   const { data: rawRoutine } = useRoutine(routineId ?? '')
-  const routine = routineId && rawRoutine ? routineToDetail(rawRoutine) : null
+  const routine = routineId && rawRoutine ? routineToDetail(rawRoutine, info(rawRoutine.helperId).name) : null
 
-  // Look up a routine name from live data, falling back to the id itself.
-  const routineNameById = (id: string) => routinesData.find(r => r.id === id)?.name ?? id
+  // Run shown in the running / output states: `?run=` or the latest run.
+  const activeRunId = runId ?? routine?.latestRunId ?? null
+  const { data: activeRun, isLoading: activeRunLoading } = useRoutineRun(
+    routine && (drawer === 'running' || drawer === 'output') ? routine.id : null,
+    activeRunId,
+  )
+  const { data: openRunDetail } = useRoutineRun(runOpen?.routineId ?? null, runOpen?.runId ?? null)
 
-  // ── Derived state ───────────────────────────────────────────────────────────
   // Show empty state when: forced by ?state=empty OR the repo returned no routines.
-  const showEmpty = empty || (!isLoading && !isError && routinesData.length === 0)
+  const showEmpty = forceEmpty || (!isLoading && !isError && routinesData.length === 0)
 
-  const banner = failed ? BANNERS.failed : applied ? BANNERS.applied : BANNERS.default
-
-  // ── Run now — calls the backend command before transitioning to running state
-  const handleRunNow = async () => {
-    if (routine) {
-      try {
-        await commands.runRoutineNow(routine.id)
-      } catch {
-        // UI still transitions to the running state view; error is silently swallowed
-      }
-      open(routine.id, 'running')
-    }
+  const errorOfChip = (chip: WeekChip) => {
+    const r = routinesData.find((x) => x.id === chip.routineId)
+    return r?.runs?.find((x) => x.id === chip.runId)?.error ?? null
   }
+  const banner = bannerFor(routinesData, new Set(routinesData.map((r) => r.helperId)).size, failedChips, suggestions, applied, routineNameById, errorOfChip)
+  const setByYou = routinesData.filter((r) => !r.managedByChief).length
 
-  // Fire-and-forget run (used by the failure-popover Retry, where there is no
-  // open routine detail — the failed row carries its own routine id).
-  const runNowById = async (id: string) => {
+  // ── Run now ─────────────────────────────────────────────────────────────────
+  const runNow = async (id: string) => {
     try {
-      await commands.runRoutineNow(id)
-    } catch {
-      // best-effort
+      const res = await commands.runRoutineNow(id)
+      open(id, 'running', res.runId)
+    } catch (e) {
+      notify(errMsg(e, 'Couldn’t start the run'))
     }
-    notify('Re-running now…')
   }
 
   // ── Create / save / delete / skip handlers ────────────────────────────────────
-  // Map the New routine drawer's "when" string to freq + at (best-effort parse).
-  const handleCreate = (data: { prompt: string; when: string; helperId: string }) => {
-    const [dayPart = '', timePart = ''] = data.when.split('·').map((s) => s.trim())
-    const freq = /mon|tue|wed|thu|fri|weekday/i.test(dayPart)
-      ? /weekday/i.test(dayPart) ? 'Weekdays' : 'Weekly'
-      : /daily|every day/i.test(dayPart) ? 'Daily' : 'Weekly'
+  const handleCreate = (data: NewRoutineData) => {
     createRoutine.mutate(
       {
         helperId: data.helperId,
-        name: data.prompt.slice(0, 60),
+        name: data.name,
         instructions: data.prompt,
-        freq,
-        at: timePart || '09:00',
+        freq: data.freq,
+        at: data.at,
+        days: data.days,
+        monthly: data.monthly,
+        timezone: data.timezone,
+        allowChiefShift: data.allowChiefShift,
       },
-      { onSuccess: () => notify('Routine created') },
+      {
+        onSuccess: () => {
+          notify('Routine created')
+          setCreating(false)
+          setForceEmpty(false)
+        },
+        onError: (e) => notify(errMsg(e, 'Couldn’t create the routine')),
+      },
     )
-    setCreating(null)
   }
 
-  const handleSave = (patch: { instructions: string; freq: string; at: string; helperId: string }) => {
+  const handleSetUp = async (ids: string[]) => {
+    const picked = TEMPLATES.filter((t) => ids.includes(t.id))
+    if (helpers.length === 0) {
+      notify('Add a helper first — routines need someone to run them')
+      return
+    }
+    setSettingUp(true)
+    const timezone = browserTimeZone()
+    let ok = 0
+    for (const t of picked) {
+      const h = pickHelperForArea(helpers, t.area)
+      if (!h) continue
+      try {
+        await createRoutine.mutateAsync({
+          helperId: h.id,
+          name: t.name,
+          instructions: t.instructions,
+          freq: t.freq,
+          at: t.at,
+          days: t.days ?? [],
+          timezone,
+        })
+        ok += 1
+      } catch {
+        // keep going; reported below
+      }
+    }
+    setSettingUp(false)
+    setForceEmpty(false)
+    notify(ok === picked.length ? `${ok} routines set up` : `${ok} of ${picked.length} routines set up`)
+  }
+
+  const handleSave = (patch: RoutineSavePatch) => {
     if (!routine) return
     updateRoutine.mutate(
-      { id: routine.id, input: { instructions: patch.instructions, freq: patch.freq, at: patch.at, helperId: patch.helperId } },
-      { onSuccess: () => notify('Routine updated') },
+      { id: routine.id, input: patch },
+      {
+        onSuccess: () => {
+          notify('Routine updated')
+          closeDrawer()
+        },
+        onError: (e) => notify(errMsg(e, 'Couldn’t save the routine')),
+      },
     )
-    closeDrawer()
+  }
+
+  const setPaused = (id: string, paused: boolean, then?: () => void) => {
+    updateRoutine.mutate(
+      { id, input: { paused } },
+      {
+        onSuccess: () => {
+          notify(paused ? 'Routine paused' : 'Routine resumed')
+          then?.()
+        },
+        onError: (e) => notify(errMsg(e, paused ? 'Couldn’t pause' : 'Couldn’t resume')),
+      },
+    )
   }
 
   const handleDelete = (id: string) => {
-    deleteRoutine.mutate(id, { onSuccess: () => notify('Routine deleted') })
+    deleteRoutine.mutate(id, {
+      onSuccess: () => {
+        notify('Routine deleted')
+        if (routineId === id) closeDrawer()
+      },
+      onError: (e) => notify(errMsg(e, 'Couldn’t delete the routine')),
+    })
     setDeleting(null)
   }
 
   const handleSkip = (id: string) => {
-    skipRoutineNext.mutate(id, { onSuccess: () => notify('Skipped next run') })
+    skipRoutineNext.mutate(id, {
+      onSuccess: (res) => notify(res.nextAt ? `Skipped — next run ${fmtDayTime(res.nextAt)}` : 'Skipped next run'),
+      onError: (e) => notify(errMsg(e, 'Couldn’t skip')),
+    })
   }
+
+  const handleApply = (s: RoutineSuggestion) => {
+    applySuggestion.mutate(s.id, {
+      onSuccess: () => {
+        setApplied(true)
+        setToast({
+          title: s.kind === 'failing' ? 'Routine paused' : `${s.moves.length} routine${s.moves.length === 1 ? '' : 's'} moved`,
+          body: s.moves.map((m) => `${m.name} → ${m.to}`).join(' · '),
+        })
+        setView('week')
+      },
+      onError: (e) => notify(errMsg(e, 'Couldn’t apply the suggestion')),
+    })
+  }
+
+  const avgCost = (helperId: string) => {
+    const runs = routinesData.filter((r) => r.helperId === helperId).flatMap((r) => r.runs ?? []).filter((x) => x.outcome === 'ok' && x.costCredits > 0)
+    return runs.length ? Math.round(runs.reduce((s, x) => s + x.costCredits, 0) / runs.length) : null
+  }
+
+  const failureInfo = (chip: WeekChip): FailureInfo => {
+    const r = routinesData.find((x) => x.id === chip.routineId)
+    const why = errorOfChip(chip) ?? 'The run hit an error. Open it to see the steps and logs.'
+    return {
+      title: `${r?.name ?? 'Routine'} failed`,
+      meta: fmtShort(chip.at),
+      why,
+      area: info(r?.helperId ?? '').area,
+      actionLabel: /connect|expired|token|auth|credential/i.test(why) ? 'Check connectors' : 'View run',
+    }
+  }
+
+  const menuRoutine = menu ? routinesData.find((r) => r.id === menu.id) : undefined
 
   return (
     <div ref={rootRef} className="relative flex min-h-0 w-full flex-1 flex-col">
@@ -328,20 +458,21 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
         view={view}
         onView={setView}
         empty={showEmpty}
-        onNew={() => setCreating('new')}
-        weekOffset={weekOffset}
+        onNew={() => setCreating(true)}
+        weekLabel={range.label}
         onPrevWeek={() => setWeekOffset((o) => o - 1)}
         onToday={() => setWeekOffset(0)}
         onNextWeek={() => setWeekOffset((o) => o + 1)}
         agentFilter={agentFilter}
         onAgentFilter={setAgentFilter}
+        agents={agents}
       />
       {isError ? (
         <div role="alert" className="flex min-h-0 w-full flex-1 items-center justify-center p-[24px] text-[14px] text-bad">
           Failed to load routines. Please refresh.
         </div>
       ) : showEmpty ? (
-        <EmptyState onScratch={() => setCreating('new')} onSetUp={() => setEmpty(false)} />
+        <EmptyState onScratch={() => setCreating(true)} onSetUp={(ids) => void handleSetUp(ids)} busy={settingUp} />
       ) : (
         <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[24px] py-[18px]">
           {isLoading && routinesData.length === 0 && (
@@ -351,56 +482,65 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
             <>
               <ChiefBanner banner={banner} onReview={() => setView('list')} />
               <WeekView
-                lanes={weekLanes(applied)}
-                failed={failed}
+                lanes={lanes}
+                range={range}
+                setByYou={setByYou}
+                timeZone={browserTimeZone()}
                 onOpen={(id) => open(id)}
-                onFailed={() => {
-                  const chip = rootRef.current?.querySelector('[data-failed-run]')
-                  if (chip) setFailAnchor(anchorOf(chip))
-                }}
+                onFailed={(chip, el) => setFailure({ anchor: anchorOf(el), chip })}
               />
             </>
           ) : (
             <>
-              {suggestion && (
+              {suggestions[0] && (
                 <SuggestionCard
-                  onApply={() => {
-                    setApplied(true)
-                    setSuggestion(false)
-                    setToast(true)
-                    setView('week')
-                  }}
-                  onDismiss={() => setSuggestion(false)}
+                  suggestion={suggestions[0]}
+                  busy={applySuggestion.isPending}
+                  onApply={() => handleApply(suggestions[0])}
+                  onDismiss={() =>
+                    dismissSuggestion.mutate(suggestions[0].id, {
+                      onError: (e) => notify(errMsg(e, 'Couldn’t dismiss')),
+                    })
+                  }
                 />
               )}
               <ListView
                 groups={groups}
-                compact={!!routine || !!creating || !!runOpen}
-                firstNameOverride={routine && routineId !== 'morning-brief' ? routine.name : drawer === 'output' ? 'Morning brief · Fri 23' : undefined}
+                compact={!!routine || creating || !!runOpen}
                 menuFor={menu?.id}
                 onOpen={(id) => open(id)}
-                onOpenRun={(row, index) => setRunOpen({ row, index })}
+                onOpenRun={(row, index) => {
+                  const ref = row.runRefs[index]
+                  if (ref) setRunOpen({ routineId: row.id, runId: ref.id, name: row.name })
+                }}
                 onMenu={(id, el) => setMenu(menu?.id === id ? null : { id, anchor: anchorOf(el) })}
+                onToggle={(id, on) => setPaused(id, !on)}
               />
             </>
           )}
         </div>
       )}
 
-      {toast && <AppliedToast onClose={() => setToast(false)} />}
+      {toast && <AppliedToast title={toast.title} body={toast.body} onClose={() => setToast(null)} />}
 
-      {failAnchor && (
+      {failure && (
         <FailurePopover
-          anchor={failAnchor}
-          onClose={() => setFailAnchor(null)}
-          onReconnect={() => {
-            setFailAnchor(null)
-            void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } } as never)
+          anchor={failure.anchor}
+          failure={failureInfo(failure.chip)}
+          onClose={() => setFailure(null)}
+          onAction={() => {
+            const f = failure
+            setFailure(null)
+            if (failureInfo(f.chip).actionLabel === 'Check connectors') {
+              void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } } as never)
+            } else if (f.chip.runId) {
+              setRunOpen({ routineId: f.chip.routineId, runId: f.chip.runId, name: routineNameById(f.chip.routineId) })
+            }
           }}
           onRetry={() => {
-            setFailAnchor(null)
-            // The failure popover is tied to the morning-brief fixture row.
-            void runNowById(routine?.id ?? 'morning-brief')
+            const id = failure.chip.routineId
+            setFailure(null)
+            void runNow(id)
           }}
         />
       )}
@@ -409,9 +549,10 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
         <RowMenu
           anchor={menu.anchor}
           title={routineNameById(menu.id)}
+          skipHint={menuRoutine?.nextAt ? fmtDayDate(menuRoutine.nextAt) : undefined}
           onClose={() => setMenu(null)}
           onEdit={() => open(menu.id)}
-          onRun={() => open(menu.id, 'running')}
+          onRun={() => void runNow(menu.id)}
           onSkip={() => {
             handleSkip(menu.id)
             setMenu(null)
@@ -427,28 +568,46 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
           onPause={() => {
             const id = deleting
             setDeleting(null)
-            open(id, 'paused')
+            setPaused(id, true, () => open(id, 'paused'))
           }}
           onDelete={() => handleDelete(deleting)}
         />
       )}
 
-      {creating && <NewRoutineDrawer clash={creating === 'clash'} onClose={() => setCreating(null)} onCreate={handleCreate} />}
+      {creating && (
+        <NewRoutineDrawer
+          onClose={() => setCreating(false)}
+          onCreate={handleCreate}
+          avgCost={avgCost}
+          busy={createRoutine.isPending}
+        />
+      )}
 
       {runOpen && (
         <RunDetailDrawer
-          detail={runDetail(runOpen.row, runOpen.index)}
-          routineName={runOpen.row.name}
+          detail={
+            openRunDetail
+              ? runDetailFromApi(openRunDetail)
+              : (() => {
+                  const r = routinesData.find((x) => x.id === runOpen.routineId)
+                  const ref = r?.runs?.find((x) => x.id === runOpen.runId)
+                  return ref ? runSummaryDetail(ref, r!.helperId) : runSummaryDetail(
+                    { id: runOpen.runId, routineId: runOpen.routineId, jobId: null, at: null, outcome: 'ok', duration: null, costCredits: 0, trigger: null, error: null, feedback: null },
+                    r?.helperId ?? '',
+                  )
+                })()
+          }
+          routineName={runOpen.name}
           onClose={() => setRunOpen(null)}
           onOpenRoutine={() => {
-            const id = runOpen.row.id
+            const id = runOpen.routineId
             setRunOpen(null)
             open(id)
           }}
           onRerun={() => {
-            const id = runOpen.row.id
+            const id = runOpen.routineId
             setRunOpen(null)
-            open(id, 'running')
+            void runNow(id)
           }}
         />
       )}
@@ -456,22 +615,66 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
       {routine &&
         (drawer === 'output' ? (
           <RunOutputDrawer
+            detail={activeRun}
+            loading={activeRunLoading}
             onClose={closeDrawer}
             onOpenRoutine={() => open(routine.id)}
-            onResend={() => { void runNowById(routine.id) }}
+            onResend={() => {
+              if (!activeRun) return
+              resend.mutate(activeRun.run.id, {
+                onSuccess: (res) => notify(res.message || (res.resent ? 'Sent again' : 'Ran again')),
+                onError: (e) => notify(errMsg(e, 'Couldn’t re-send')),
+              })
+            }}
             onDiscuss={() => void navigate({ to: '/chat' } as never)}
+            onVote={(vote) => {
+              if (!activeRun) return
+              feedback.mutate(
+                { runId: activeRun.run.id, vote },
+                {
+                  onSuccess: () => notify(vote ? 'Thanks — Chief will use this' : 'Feedback cleared'),
+                  onError: (e) => notify(errMsg(e, 'Couldn’t save feedback')),
+                },
+              )
+            }}
           />
         ) : (
           <RoutineDrawer
+            key={`${routine.id}-${drawer}`}
             routine={routine}
             state={drawer}
+            run={activeRun}
+            routineCount={routineCount}
             onClose={closeDrawer}
-            onRunNow={handleRunNow}
-            onPause={() => open(routine.id, 'paused')}
-            onResume={() => open(routine.id)}
-            onStop={() => open(routine.id)}
+            onRunNow={() => void runNow(routine.id)}
+            onPause={() => setPaused(routine.id, true, () => open(routine.id, 'paused'))}
+            onPauseUntil={(date) =>
+              updateRoutine.mutate(
+                { id: routine.id, input: { pausedUntil: new Date(`${date}T00:00:00`).toISOString() } },
+                {
+                  onSuccess: () => notify(`Paused until ${date}`),
+                  onError: (e) => notify(errMsg(e, 'Couldn’t set the date')),
+                },
+              )
+            }
+            onResume={() => setPaused(routine.id, false, () => open(routine.id))}
+            onStop={() => {
+              const jobId = activeRun?.job?.id ?? routine.latestJobId
+              if (!jobId) {
+                open(routine.id)
+                return
+              }
+              cancelJob.mutate(jobId, {
+                onSuccess: () => {
+                  notify('Run stopped')
+                  open(routine.id)
+                },
+                onError: (e) => notify(errMsg(e, 'Couldn’t stop the run')),
+              })
+            }}
             onSave={handleSave}
-            onOpenRun={() => open(routine.id, 'output')}
+            onOpenRun={(rid) => setRunOpen({ routineId: routine.id, runId: rid, name: routine.name })}
+            onSeeOutput={() => open(routine.id, 'output', activeRun?.run.id)}
           />
         ))}
     </div>
@@ -482,11 +685,14 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
 function useRoutinesNav(): RoutinesNav {
   const navigate = useNavigate()
   return {
-    openRoutine: (id, state) =>
+    openRoutine: (id, state, runId) =>
       void navigate({
         to: '/routines/$routineId',
         params: { routineId: id },
-        search: state && state !== 'detail' ? { state } : {},
+        search: {
+          ...(state && state !== 'detail' ? { state } : {}),
+          ...(runId ? { run: runId } : {}),
+        },
       } as never),
     closeDrawer: () => void navigate({ to: '/routines', search: { view: 'list' } } as never),
   }
@@ -504,7 +710,7 @@ export function RoutinesRoute() {
 /** Routines · Detail — pen xuAoe (+ a2xdN, oTi8l, SHLKI, H4Cdpf, rljUL). */
 export function RoutineDetailRoute() {
   const { routineId } = useParams({ strict: false }) as { routineId: string }
-  const { state } = useSearch({ strict: false }) as { state?: string }
+  const { state, run } = useSearch({ strict: false }) as { state?: string; run?: string }
   const nav = useRoutinesNav()
-  return <RoutinesBoard key="board" nav={nav} routineId={routineId} drawerState={drawerStateFrom(state)} />
+  return <RoutinesBoard key="board" nav={nav} routineId={routineId} drawerState={drawerStateFrom(state)} runId={run} />
 }

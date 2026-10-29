@@ -72,6 +72,20 @@ export interface Goal {
   title: string
   /** 0–100 */
   progress: number
+  // ── sweep/goals-routines (optional; set by the backend) ──
+  /** Derived by Chief/system unless the user overrode it (statusSetBy='user'). */
+  status?: GoalStatus
+  target?: string
+  /** Due date, ISO `YYYY-MM-DD` (or a free-form label from older goals). */
+  due?: string
+  measuredBy?: string
+  /** Helpers assigned to the goal. */
+  helperIds?: string[]
+  /** Reporting period, e.g. "2026-Q4". */
+  period?: string
+  /** The goal's chat session (created once on first open). */
+  sessionId?: string
+  statusSetBy?: 'user' | 'system'
 }
 
 export interface Folder {
@@ -367,6 +381,15 @@ export interface Routine {
   lastAt: string | null
   goalIds: string[]
   createdBy: string
+  // ── sweep/goals-routines (optional; set by the backend) ──
+  /** ISO time a paused routine resumes automatically. */
+  pausedUntil?: string | null
+  /** Chief may shift it up to an hour to avoid clashes. */
+  allowChiefShift?: boolean
+  skipHolidays?: boolean
+  askBeforeSending?: boolean
+  /** List: the last 8 runs (oldest → newest). Detail: the last 20 (newest first). */
+  runs?: RoutineRunSummary[]
 }
 
 // ── Knowledge Base ────────────────────────────────────────────────────────────
@@ -661,4 +684,118 @@ export interface HandbookFileDetail extends HandbookFile {
 export interface HandbookIndex {
   files: HandbookFile[]
   openSuggestions: number
+
+// ── sweep/goals-routines ──────────────────────────────────────────────────────
+
+export type GoalStatus = 'on_track' | 'at_risk' | 'blocked' | 'needs_you' | 'done'
+
+/** GET /v1/goals/{id} — the goal plus the work Chief planned for it. */
+export interface GoalDetail {
+  goal: Goal
+  jobs: Array<{
+    id: string
+    origin: string
+    status: string
+    helperId: string
+    brief: string
+    parentJobId: string | null
+    goalId: string | null
+  }>
+  proposals: Array<{ id: string; jobId: string; type: string; status: string; title: string; risk?: string | null }>
+
+export type RoutineRunOutcome = 'ok' | 'fail' | 'skip' | 'running'
+
+export interface RoutineRunSummary {
+  id: string
+  routineId: string
+  jobId: string | null
+  /** ISO time the run fired. */
+  at: string | null
+  outcome: RoutineRunOutcome
+  /** Seconds. */
+  duration: number | null
+  costCredits: number
+  trigger: 'schedule' | 'manual' | 'resend' | null
+  error: string | null
+  feedback: 'up' | 'down' | null
+
+/** GET /v1/routines/{id}/runs/{run_id}. */
+export interface RoutineRunDetail {
+  run: RoutineRunSummary
+  routine: { id: string; name: string; helperId: string; helperName: string; sendsTo: unknown[] }
+  job: {
+    id: string
+    status: string
+    error: string | null
+    attempts: number
+    costCredits: number
+    tokensIn: number
+    tokensOut: number
+    startedAt: string | null
+    endedAt: string | null
+  } | null
+  /** True while the job is queued/running — poll. */
+  running: boolean
+  steps: Array<{ at: string | null; text: string; error: boolean }>
+  logs: Array<{ at: string | null; level: 'info' | 'warn' | 'error'; text: string }>
+  output: { headline: string; bodyMd: string; lines: string[] } | null
+  sources: unknown[]
+  delivery: { sendsTo: unknown[]; delivered: boolean; note: string | null }
+
+/** One expanded slot of GET /v1/routines/schedule. */
+export interface RoutineScheduleItem {
+  routineId: string
+  helperId: string
+  /** ISO fire time. */
+  at: string
+  status: 'scheduled' | 'paused' | 'missed' | 'ok' | 'fail' | 'skip' | 'running'
+  runId: string | null
+  trigger: string
+
+export interface RoutineSchedule {
+  from: string
+  to: string
+  items: RoutineScheduleItem[]
+
+export interface RoutineClash {
+  routineId: string
+  helperId: string
+  at: string
+  cadence: string
+  when: string
+
+export interface RoutineSlot {
+  freq: string
+  at: string
+  days: number[]
+  monthly: string | null
+  label: string
+  nextAt: string | null
+  recommended: boolean
+  reason: string
+
+/** POST /v1/routines/preview. */
+export interface RoutinePreview {
+  nextAt: string | null
+  nextDates: string[]
+  label: string
+  clashes: RoutineClash[]
+  suggestedSlots: RoutineSlot[]
+
+export interface RoutineSuggestionMove {
+  routineId: string
+  helperId: string
+  helperName: string
+  from: string
+  to: string
+  fromAt: string
+  toAt: string | null
+
+/** GET /v1/routines/suggestions — deterministic Chief suggestions. */
+export interface RoutineSuggestion {
+  id: string
+  kind: 'clash' | 'failing'
+  desc: string
+  moves: RoutineSuggestionMove[]
+  note: string
 }

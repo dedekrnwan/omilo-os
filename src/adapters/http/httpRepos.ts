@@ -50,6 +50,20 @@ import type {
   Lesson,
 } from '../../core/domain/types'
 import type { RawChannel } from './commands'
+// ── sweep/goals-routines ──
+import {
+  mapGoalDetail,
+  mapRunDetail,
+  mapSchedule,
+  mapSuggestion,
+  routineExtras,
+  type RawGoalDetail,
+  type RawRoutineExtras,
+  type RawRoutineRun,
+  type RawRunDetail,
+  type RawSchedule,
+  type RawSuggestion,
+} from './routineMappers'
 
 // ── snake_case → camelCase mappers ────────────────────────────────────────────
 // The legacy endpoints (channels, sessions, inbox, …) return camelCase already.
@@ -395,7 +409,7 @@ function mapRoutine(r: RawRoutine): Routine {
 }
 
 // GET /v1/routines/{id} returns {routine: RoutineRow, runs: []}
-type RawRoutineDetail = { routine: RawRoutine; runs: unknown[] }
+type RawRoutineDetail = { routine: RawRoutine & RawRoutineExtras; runs: RawRoutineRun[] }
 
 // KbSource: GET /v1/knowledge/sources → [{id, kind, ref, title, chunks, created_at, …}]
 type RawKbSource = {
@@ -519,6 +533,11 @@ export function createHttpRepos(
       listByChannel: (channelId: Id) =>
         get<Goal[]>(`/v1/channels/${channelId}/goals`),
       listAll: () => get<Goal[]>('/v1/goals'),
+      // ── sweep/goals-routines ──
+      get: async (id: Id) => {
+        const raw = await getOrNull<RawGoalDetail>(`/v1/goals/${id}`)
+        return raw ? mapGoalDetail(raw) : null
+      },
     },
 
     sessions: {
@@ -653,19 +672,29 @@ export function createHttpRepos(
     routines: {
       list: async () => {
         const res = await apiFetch(`${baseUrl}/v1/routines`, getToken)
-        const raw = await res.json() as RawRoutine[]
-        return raw.map(mapRoutine)
+        const raw = await res.json() as (RawRoutine & RawRoutineExtras)[]
+        return raw.map((r) => ({ ...mapRoutine(r), ...routineExtras(r) }))
       },
       get: async (id: Id) => {
         try {
           const res = await apiFetch(`${baseUrl}/v1/routines/${id}`, getToken)
           const raw = await res.json() as RawRoutineDetail
-          return mapRoutine(raw.routine)
+          return { ...mapRoutine(raw.routine), ...routineExtras(raw.routine, raw.runs) }
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) return null
           throw err
         }
       },
+      // ── sweep/goals-routines ──
+      schedule: async (from: string, to: string) => {
+        const qs = new URLSearchParams({ from, to }).toString()
+        return mapSchedule(await get<RawSchedule>(`/v1/routines/schedule?${qs}`))
+      },
+      run: async (routineId: Id, runId: Id) => {
+        const raw = await getOrNull<RawRunDetail>(`/v1/routines/${routineId}/runs/${runId}`)
+        return raw ? mapRunDetail(raw) : null
+      },
+      suggestions: async () => (await get<RawSuggestion[]>('/v1/routines/suggestions')).map(mapSuggestion),
     },
 
     knowledge: {

@@ -75,8 +75,8 @@ describe('/routines smoke test', () => {
     const routinesNavLink = await screen.findByRole('button', { name: 'Routines' })
     expect(routinesNavLink).toHaveAttribute('aria-current', 'true')
 
-    // The week view is the default; the first chip label "Morning brief · weekdays" renders.
-    expect(screen.getByText('Morning brief · weekdays')).toBeInTheDocument()
+    // The week view is the default; the mock "Morning brief" (daily) renders as a week-long chip.
+    expect(await screen.findByText('Morning brief · every day')).toBeInTheDocument()
 
     // Not-found guard
     expect(screen.queryByTestId('not-found')).not.toBeInTheDocument()

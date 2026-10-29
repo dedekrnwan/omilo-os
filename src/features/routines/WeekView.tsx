@@ -1,7 +1,8 @@
-import { CalendarCheck, CircleX, Moon, Sparkles, User } from 'lucide-react'
+import { CalendarCheck, CircleX, Globe, Sparkles, User } from 'lucide-react'
 import { Button } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
-import { AGENTS, FAILED_RUN, TODAY_INDEX, WEEK_DAYS, colorOf, type Banner, type WeekChip, type WeekLane } from './data'
+import { colorOfArea, type Banner, type HelperInfo, type WeekChip, type WeekLane, type WeekRange } from './data'
+import { useHelperLookup } from './useHelperLookup'
 
 const AGENT_COL = 150
 /** Absolute x of a day column start, as CSS: 150px + (100% − 150px) · i/7 */
@@ -39,8 +40,8 @@ export function ChiefBanner({ banner, onReview }: { banner: Banner; onReview?: (
   )
 }
 
-function Chip({ chip, agentId, onOpen }: { chip: WeekChip; agentId: string; onOpen: (id: string) => void }) {
-  const c = colorOf(agentId)
+function Chip({ chip, agent, onOpen }: { chip: WeekChip; agent: HelperInfo; onOpen: (id: string) => void }) {
+  const c = colorOfArea(agent.area)
   return (
     <button
       type="button"
@@ -64,17 +65,18 @@ function Chip({ chip, agentId, onOpen }: { chip: WeekChip; agentId: string; onOp
 function Lane({
   lane,
   last,
-  failed,
+  todayIndex,
   onOpen,
   onFailed,
 }: {
   lane: WeekLane
   last: boolean
-  failed: boolean
+  todayIndex: number
   onOpen: (id: string) => void
-  onFailed?: () => void
+  onFailed?: (chip: WeekChip, el: HTMLElement) => void
 }) {
-  const agent = AGENTS[lane.agentId]
+  const { info } = useHelperLookup()
+  const agent = info(lane.agentId)
   return (
     <div
       role="group"
@@ -82,10 +84,12 @@ function Lane({
       className={`relative w-full shrink-0 ${last ? '' : 'border-b border-line'}`}
       style={{ height: lane.height }}
     >
-      <div
-        className="absolute top-0 bg-[#EEF2FF80]"
-        style={{ left: colX(TODAY_INDEX), width: colW(1), height: '100%' }}
-      />
+      {todayIndex >= 0 && (
+        <div
+          className="absolute top-0 bg-[#EEF2FF80]"
+          style={{ left: colX(todayIndex), width: colW(1), height: '100%' }}
+        />
+      )}
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="absolute top-0 h-full w-px bg-[#F0EFED]" style={{ left: colX(i) }} />
       ))}
@@ -96,25 +100,27 @@ function Lane({
           <span className="text-[11px] text-muted">{lane.count} routines</span>
         </div>
       </div>
-      {lane.chips.map((chip) => (
-        <Chip key={chip.id} chip={chip} agentId={lane.agentId} onOpen={onOpen} />
-      ))}
-      {failed && (
-        <button
-          type="button"
-          data-failed-run
-          aria-label="Invoice chaser failed — details"
-          onClick={onFailed}
-          className="absolute flex h-[24px] items-center gap-[6px] rounded-sm bg-[#FEE2E2] px-[8px] outline-1 -outline-offset-1 outline-[#FCA5A5]"
-          style={{
-            left: `calc(${colX(FAILED_RUN.day)} + 4px)`,
-            width: `calc(${colW(1)} - 8px)`,
-            top: 8 + FAILED_RUN.row * 28,
-          }}
-        >
-          <CircleX size={12} aria-hidden className="text-bad" />
-          <span className="text-[11px] font-semibold whitespace-nowrap text-bad">{FAILED_RUN.label}</span>
-        </button>
+      {lane.chips.map((chip) =>
+        chip.failed ? (
+          <button
+            key={chip.id}
+            type="button"
+            data-failed-run
+            aria-label={`Run at ${chip.time} failed — details`}
+            onClick={(e) => onFailed?.(chip, e.currentTarget)}
+            className="absolute flex h-[24px] items-center gap-[6px] rounded-sm bg-[#FEE2E2] px-[8px] outline-1 -outline-offset-1 outline-[#FCA5A5]"
+            style={{
+              left: `calc(${colX(chip.day)} + 4px)`,
+              width: `calc(${colW(1)} - 8px)`,
+              top: 8 + chip.row * 28,
+            }}
+          >
+            <CircleX size={12} aria-hidden className="text-bad" />
+            <span className="text-[11px] font-semibold whitespace-nowrap text-bad">{chip.time} Failed</span>
+          </button>
+        ) : (
+          <Chip key={chip.id} chip={chip} agent={agent} onOpen={onOpen} />
+        ),
       )}
     </div>
   )
@@ -123,14 +129,19 @@ function Lane({
 /** pen `Week Grid` (fxjD6) + `Legend` (VFDxP). */
 export function WeekView({
   lanes,
-  failed = false,
+  range,
+  setByYou,
+  timeZone,
   onOpen,
   onFailed,
 }: {
   lanes: WeekLane[]
-  failed?: boolean
+  range: WeekRange
+  /** How many routines the user set themselves (legend). */
+  setByYou: number
+  timeZone: string
   onOpen: (id: string) => void
-  onFailed?: () => void
+  onFailed?: (chip: WeekChip, el: HTMLElement) => void
 }) {
   return (
     <>
@@ -140,10 +151,12 @@ export function WeekView({
         className="flex w-full shrink-0 flex-col overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong"
       >
         <div className="relative h-[36px] w-full shrink-0 border-b border-line bg-soft">
-          <div className="absolute top-0 h-full bg-[#EEF2FF]" style={{ left: colX(TODAY_INDEX), width: colW(1) }} />
+          {range.todayIndex >= 0 && (
+            <div className="absolute top-0 h-full bg-[#EEF2FF]" style={{ left: colX(range.todayIndex), width: colW(1) }} />
+          )}
           <span className="absolute top-[11px] left-[14px] text-[10.5px] font-medium tracking-[0.8px] text-faint">AGENT</span>
-          {WEEK_DAYS.map((d, i) => {
-            const today = i === TODAY_INDEX
+          {range.days.map((d, i) => {
+            const today = i === range.todayIndex
             return (
               <span
                 key={d}
@@ -157,12 +170,15 @@ export function WeekView({
             )
           })}
         </div>
+        {lanes.length === 0 && (
+          <div className="px-[14px] py-[18px] text-[12.5px] text-muted">Nothing scheduled this week.</div>
+        )}
         {lanes.map((lane, i) => (
           <Lane
             key={lane.agentId}
             lane={lane}
             last={i === lanes.length - 1}
-            failed={failed && lane.agentId === FAILED_RUN.agentId}
+            todayIndex={range.todayIndex}
             onOpen={onOpen}
             onFailed={onFailed}
           />
@@ -171,8 +187,8 @@ export function WeekView({
       <div className="flex shrink-0 items-center gap-[16px]">
         {[
           { icon: CalendarCheck, t: 'Set by Chief' },
-          { icon: User, t: 'Set by you · 3' },
-          { icon: Moon, t: 'Quiet hours 21:00–08:00 respected' },
+          { icon: User, t: `Set by you · ${setByYou}` },
+          { icon: Globe, t: `Times in ${timeZone}` },
         ].map(({ icon: I, t }) => (
           <span key={t} className="flex items-center gap-[6px]">
             <I size={13} aria-hidden className="text-muted" />

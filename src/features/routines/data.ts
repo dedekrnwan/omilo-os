@@ -1,8 +1,14 @@
 /**
- * Mock data for Office · Routines (pen diQBZ / I5rrK / VUmu8 / xuAoe + states).
- * Copy and numbers are taken verbatim from omilo-v2.pen.
+ * Office · Routines (pen diQBZ / I5rrK / VUmu8 / xuAoe + states) — view types
+ * and pure helpers. All data comes from the repos/commands ports; nothing in
+ * here is fixture data except the starter TEMPLATES offered on the empty state.
  */
-import type { HelperArea } from '../../core/domain/types'
+import type {
+  HelperArea,
+  RoutineRunDetail,
+  RoutineRunSummary,
+  RoutineScheduleItem,
+} from '../../core/domain/types'
 import { helperColor } from '../../ui/tokens'
 
 export type RoutinesView = 'week' | 'list'
@@ -17,32 +23,128 @@ export type RoutinesState =
   | 'new' // F4RGvz
   | 'clash' // oY6x7
 
-/** Drawer states of a routine, reachable with `/office/routines/$routineId?state=`. */
+/** Drawer states of a routine, reachable with `/routines/$routineId?state=`. */
 export type RoutineDrawerState = 'detail' | 'running' | 'paused' | 'output' | 'reassign'
 
-export interface Agent {
+/** A helper as the routines screens need it (name + mascot area). */
+export interface HelperInfo {
   id: string
   name: string
   area: HelperArea
 }
 
-export const AGENTS: Record<string, Agent> = {
-  chief: { id: 'chief', name: 'Chief', area: 'brand' },
-  dev: { id: 'dev', name: 'Dev', area: 'dev' },
-  ops: { id: 'ops', name: 'Ops', area: 'ops' },
-  growth: { id: 'growth', name: 'Growth', area: 'marketing' },
-  finance: { id: 'finance', name: 'Finance', area: 'finance' },
-  support: { id: 'support', name: 'Support', area: 'support' },
+const AREAS: HelperArea[] = ['brand', 'ops', 'dev', 'support', 'finance', 'marketing', 'sales', 'retro']
+export const asArea = (a: string | undefined): HelperArea =>
+  (AREAS as string[]).includes(a ?? '') ? (a as HelperArea) : 'ops'
+
+export const colorOfArea = (area: HelperArea) => helperColor[area] ?? helperColor.ops
+
+// ── Dates ─────────────────────────────────────────────────────────────────────
+
+const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const p2 = (n: number) => String(n).padStart(2, '0')
+
+export const browserTimeZone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
 }
 
-export const colorOf = (agentId: string) => helperColor[AGENTS[agentId].area]
+const parse = (iso: string | null | undefined): Date | null => {
+  if (!iso) return null
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? null : d
+}
 
-// ── Week view (I5rrK) ────────────────────────────────────────────────────────
+/** "Mon 07:30" */
+export function fmtDayTime(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${WD[d.getDay()]} ${p2(d.getHours())}:${p2(d.getMinutes())}` : '—'
+}
 
-export const WEEK_LABEL = 'Oct 19 – 25'
-export const WEEK_DAYS = ['MON 19', 'TUE 20', 'WED 21', 'THU 22', 'FRI 23', 'SAT 24', 'SUN 25']
-/** Index of today (Sat 24) in WEEK_DAYS. */
-export const TODAY_INDEX = 5
+/** "Mon 27" */
+export function fmtDayDate(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${WD[d.getDay()]} ${d.getDate()}` : '—'
+}
+
+/** "Fri 23 · 07:30" */
+export function fmtShort(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${WD[d.getDay()]} ${d.getDate()} · ${p2(d.getHours())}:${p2(d.getMinutes())}` : '—'
+}
+
+/** "Fri 23 Oct, 07:30" */
+export function fmtLong(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${WD[d.getDay()]} ${d.getDate()} ${MO[d.getMonth()]}, ${p2(d.getHours())}:${p2(d.getMinutes())}` : '—'
+}
+
+/** "Mon, Nov 3" */
+export function fmtMonthDay(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${WD[d.getDay()]}, ${MO[d.getMonth()]} ${d.getDate()}` : '—'
+}
+
+/** "07:30:12" */
+export function fmtClock(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}` : '—'
+}
+
+/** 110 → "1m 50s" */
+export function fmtDuration(secs: number | null | undefined): string {
+  if (secs == null) return '—'
+  if (secs < 60) return `${secs}s`
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`
+}
+
+export const fmtCredits = (c: number | null | undefined) => (c == null ? '—' : `${c} credit${c === 1 ? '' : 's'}`)
+
+/** Local yyyy-mm-dd for <input type="date">. */
+export function toDateInput(iso: string | null | undefined): string {
+  const d = parse(iso)
+  return d ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}` : ''
+}
+
+// ── Week ──────────────────────────────────────────────────────────────────────
+
+export interface WeekRange {
+  /** Monday 00:00 local */
+  start: Date
+  /** next Monday 00:00 local */
+  end: Date
+  /** "Oct 19 – 25" */
+  label: string
+  /** "MON 19" … "SUN 25" */
+  days: string[]
+  /** 0..6 when today is in the week, else -1 */
+  todayIndex: number
+}
+
+export function weekRange(offset: number, now = new Date()): WeekRange {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7) + offset * 7)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  const last = new Date(end)
+  last.setDate(end.getDate() - 1)
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return `${WD[d.getDay()].toUpperCase()} ${d.getDate()}`
+  })
+  const label =
+    start.getMonth() === last.getMonth()
+      ? `${MO[start.getMonth()]} ${start.getDate()} – ${last.getDate()}`
+      : `${MO[start.getMonth()]} ${start.getDate()} – ${MO[last.getMonth()]} ${last.getDate()}`
+  const todayIndex = now >= start && now < end ? (now.getDay() + 6) % 7 : -1
+  return { start, end, label, days, todayIndex }
+}
 
 export interface WeekChip {
   id: string
@@ -55,6 +157,11 @@ export interface WeekChip {
   span: number
   /** Stack row inside the lane (0 = top) */
   row: number
+  /** Failed run (red chip) */
+  failed?: boolean
+  runId?: string | null
+  /** ISO time of the slot */
+  at: string
 }
 
 export interface WeekLane {
@@ -64,104 +171,98 @@ export interface WeekLane {
   chips: WeekChip[]
 }
 
-export function weekLanes(applied = false): WeekLane[] {
-  return [
-    {
-      agentId: 'chief',
-      count: 4,
-      height: 72,
-      chips: [
-        { id: 'c1', routineId: 'morning-brief', time: '07:30', label: 'Morning brief · weekdays', day: 0, span: 5, row: 0 },
-        { id: 'c2', routineId: 'goal-check-ins', time: '09:00', label: 'Check-in', day: 0, span: 1, row: 1 },
-        { id: 'c3', routineId: 'goal-check-ins', time: '09:00', label: 'Check-in', day: 3, span: 1, row: 1 },
-        { id: 'c4', routineId: 'weekly-retro', time: '16:00', label: 'Retro', day: 4, span: 1, row: 1 },
-      ],
-    },
-    {
-      agentId: 'dev',
-      count: 2,
-      height: 72,
-      chips: [
-        { id: 'd1', routineId: 'nightly-build', time: '01:00', label: 'Nightly build check · weekdays', day: 0, span: 5, row: 0 },
-        { id: 'd2', routineId: 'dependency-updates', time: '10:00', label: 'Deps update', day: applied ? 1 : 0, span: 1, row: 1 },
-      ],
-    },
-    {
-      agentId: 'ops',
-      count: 2,
-      height: 72,
-      chips: [
-        { id: 'o1', routineId: 'on-call-digest', time: '08:00', label: 'On-call digest · every day', day: 0, span: 7, row: 0 },
-        { id: 'o2', routineId: 'backup-check', time: '03:00', label: 'Backups', day: 6, span: 1, row: 1 },
-      ],
-    },
-    {
-      agentId: 'growth',
-      count: 3,
-      height: 98,
-      chips: [
-        { id: 'g1', routineId: 'instagram-report', time: applied ? '11:00' : '08:00', label: 'IG report', day: 0, span: 1, row: 1 },
-        { id: 'g2', routineId: 'social-calendar', time: '09:30', label: 'Social plan', day: 0, span: 1, row: 2 },
-        { id: 'g3', routineId: 'ad-spend-review', time: '14:00', label: 'Ad review', day: 2, span: 1, row: 1 },
-      ],
-    },
-    {
-      agentId: 'finance',
-      count: 2,
-      height: 72,
-      chips: [
-        { id: 'f1', routineId: 'invoice-chaser', time: '10:00', label: 'Invoice chaser · weekdays', day: 0, span: 5, row: 0 },
-        { id: 'f2', routineId: 'payout-reconcile', time: '15:00', label: 'Reconcile', day: 4, span: 1, row: 1 },
-      ],
-    },
-    {
-      agentId: 'support',
-      count: 1,
-      height: 72,
-      chips: [
-        { id: 's1', routineId: 'ticket-triage', time: 'Every 2h', label: 'Ticket triage · 08–20', day: 0, span: 5, row: 0 },
-      ],
-    },
-  ]
+const dayIndex = (d: Date, start: Date) => Math.floor((d.getTime() - start.getTime()) / 86_400_000)
+
+/**
+ * Group schedule slots into helper lanes. Consecutive days of the same routine
+ * at the same time collapse into one spanning chip ("Morning brief · weekdays").
+ */
+export function buildLanes(
+  items: RoutineScheduleItem[],
+  range: WeekRange,
+  routineCount: (helperId: string) => number,
+): WeekLane[] {
+  const byHelper = new Map<string, RoutineScheduleItem[]>()
+  for (const it of items) {
+    if (!byHelper.has(it.helperId)) byHelper.set(it.helperId, [])
+    byHelper.get(it.helperId)!.push(it)
+  }
+  const lanes: WeekLane[] = []
+  for (const [helperId, its] of byHelper) {
+    const chips: Omit<WeekChip, 'row'>[] = []
+    const byRoutine = new Map<string, RoutineScheduleItem[]>()
+    for (const it of its) {
+      if (!byRoutine.has(it.routineId)) byRoutine.set(it.routineId, [])
+      byRoutine.get(it.routineId)!.push(it)
+    }
+    for (const [routineId, rs] of byRoutine) {
+      const sorted = [...rs].sort((a, b) => a.at.localeCompare(b.at))
+      let run: { first: RoutineScheduleItem; day: number; span: number; time: string } | null = null
+      const flush = () => {
+        if (!run) return
+        const label =
+          run.span >= 7 ? `${run.first.name} · every day` : run.span >= 5 ? `${run.first.name} · weekdays` : run.first.name
+        chips.push({
+          id: `${routineId}-${run.day}`,
+          routineId,
+          time: run.time,
+          label,
+          day: run.day,
+          span: run.span,
+          at: run.first.at,
+          runId: run.first.runId,
+        })
+        run = null
+      }
+      for (const it of sorted) {
+        const d = new Date(it.at)
+        const day = dayIndex(d, range.start)
+        if (day < 0 || day > 6) continue
+        const time = `${p2(d.getHours())}:${p2(d.getMinutes())}`
+        if (it.status === 'fail') {
+          flush()
+          chips.push({ id: `${routineId}-${day}-fail`, routineId, time, label: 'Failed', day, span: 1, failed: true, runId: it.runId, at: it.at })
+          continue
+        }
+        if (run && run.time === time && run.day + run.span === day && it.trigger === 'schedule') {
+          run.span += 1
+        } else {
+          flush()
+          run = { first: it, day, span: 1, time }
+        }
+      }
+      flush()
+    }
+    // Greedy stacking: first row with no overlap.
+    const rows: Array<Array<[number, number]>> = []
+    const placed: WeekChip[] = chips
+      .sort((a, b) => b.span - a.span || a.day - b.day || a.time.localeCompare(b.time))
+      .map((c) => {
+        let row = rows.findIndex((occ) => occ.every(([s, e]) => c.day + c.span <= s || c.day >= e))
+        if (row < 0) {
+          rows.push([])
+          row = rows.length - 1
+        }
+        rows[row].push([c.day, c.day + c.span])
+        return { ...c, row }
+      })
+    lanes.push({
+      agentId: helperId,
+      count: routineCount(helperId),
+      height: Math.max(72, 16 + rows.length * 28),
+      chips: placed,
+    })
+  }
+  return lanes
 }
 
-/** l6KQtK: the failed Invoice chaser run on Fri 23. */
-export const FAILED_RUN = {
-  agentId: 'finance',
-  day: 4,
-  row: 0,
-  label: '10:00 Failed',
-  title: 'Invoice chaser failed',
-  meta: 'Fri 23 · 10:00 · after 2 retries',
-  why: 'The Xero connection expired, so 3 overdue invoices weren’t chased. Nothing was sent.',
-}
+// ── Banners ───────────────────────────────────────────────────────────────────
 
 export interface Banner {
   tone: 'info' | 'bad' | 'ok'
   title: string
   desc: string
   review: boolean
-}
-
-export const BANNERS: Record<'default' | 'failed' | 'applied', Banner> = {
-  default: {
-    tone: 'info',
-    title: 'Chief keeps 15 routines running across 6 agents',
-    desc: 'Next: Morning brief, Mon 07:30 · 1 suggestion to spread Monday’s load',
-    review: true,
-  },
-  failed: {
-    tone: 'bad',
-    title: '1 routine failed this week',
-    desc: 'Invoice chaser · Fri 10:00 · Xero connection expired',
-    review: true,
-  },
-  applied: {
-    tone: 'ok',
-    title: 'Monday is spread out — no clashes this week',
-    desc: 'Next: Morning brief, Mon 07:30',
-    review: false,
-  },
 }
 
 // ── List view (VUmu8) ────────────────────────────────────────────────────────
@@ -174,8 +275,12 @@ export interface RoutineRow {
   agentId: string
   when: string
   next: string
+  /** ISO next fire (for the skip-next hint) */
+  nextAt?: string | null
   paused?: boolean
   runs: RunResult[]
+  /** Run summaries aligned with `runs` (null where there is no run). */
+  runRefs: (RoutineRunSummary | null)[]
   by: 'chief' | 'you'
 }
 
@@ -184,65 +289,6 @@ export interface RoutineGroup {
   count: number
   rows: RoutineRow[]
 }
-
-const ok8: RunResult[] = ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']
-
-export const LIST_GROUPS: RoutineGroup[] = [
-  {
-    agentId: 'chief',
-    count: 3,
-    rows: [
-      { id: 'morning-brief', name: 'Morning brief', agentId: 'chief', when: 'Weekdays · 07:30', next: 'Mon 07:30', runs: ok8, by: 'chief' },
-      { id: 'goal-check-ins', name: 'Goal check-ins', agentId: 'chief', when: 'Mon & Thu · 09:00', next: 'Mon 09:00', runs: ok8, by: 'you' },
-      {
-        id: 'weekly-retro',
-        name: 'Weekly retro',
-        agentId: 'chief',
-        when: 'Fridays · 16:00',
-        next: 'Fri 16:00',
-        runs: ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'skip', 'ok'],
-        by: 'chief',
-      },
-    ],
-  },
-  {
-    agentId: 'ops',
-    count: 2,
-    rows: [
-      {
-        id: 'on-call-digest',
-        name: 'On-call digest',
-        agentId: 'ops',
-        when: 'Every day · 08:00',
-        next: 'Mon 08:00',
-        runs: ['ok', 'ok', 'ok', 'ok', 'fail', 'ok', 'ok', 'ok'],
-        by: 'chief',
-      },
-      { id: 'backup-check', name: 'Backup check', agentId: 'ops', when: 'Sundays · 03:00', next: 'Sun 03:00', runs: ok8, by: 'chief' },
-    ],
-  },
-  {
-    agentId: 'growth',
-    count: 2,
-    rows: [
-      { id: 'instagram-report', name: 'Instagram report', agentId: 'growth', when: 'Mondays · 08:00', next: 'Mon 08:00', runs: ok8, by: 'chief' },
-      {
-        id: 'ad-spend-review',
-        name: 'Ad spend review',
-        agentId: 'growth',
-        when: 'Wednesdays · 14:00',
-        next: 'Paused',
-        paused: true,
-        runs: ['none', 'none', 'none', 'none', 'none', 'none', 'ok', 'ok'],
-        by: 'you',
-      },
-    ],
-  },
-]
-
-export const LIST_MORE = { text: 'Dev 2 · Finance 2 · Support 1', link: 'Show all 15' }
-
-// ── Last-8 run detail (hover tooltip + focused run drawer) ────────────────────
 
 export const RUN_STATUS: Record<RunResult, string> = { ok: 'Success', fail: 'Failed', skip: 'Skipped', none: 'No run' }
 
@@ -278,212 +324,109 @@ export interface RunDetail {
   logs: RunLog[]
 }
 
-const RUN_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const RUN_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-/** Sat 24 Oct 2026 — the latest day of WEEK_LABEL. Runs count back from here. */
-const runAnchor = () => new Date(2026, 9, 24)
+const TRIGGER: Record<string, string> = { schedule: 'Schedule', manual: 'You (Run now)', resend: 'Re-send' }
 
-const runTime = (when: string) => when.match(/\d{1,2}:\d{2}/)?.[0] ?? '08:00'
+const asResult = (o: string | undefined): RunResult => (o === 'fail' ? 'fail' : o === 'skip' ? 'skip' : o === 'ok' || o === 'running' ? 'ok' : 'none')
 
-/** 8 believable run dates for a cadence, oldest first (index 0 = leftmost bar). */
-function runDates(when: string): Date[] {
-  const w = when.toLowerCase()
-  const weekdaysOnly = w.includes('weekdays')
-  const step = w.includes('every') || w.includes('weekdays') || w.includes('daily') ? 1 : w.includes('&') ? 3 : 7
-  const out: Date[] = []
-  const d = runAnchor()
-  while (out.length < 8) {
-    if (!weekdaysOnly || (d.getDay() !== 0 && d.getDay() !== 6)) out.push(new Date(d))
-    d.setDate(d.getDate() - step)
-  }
-  return out.reverse()
-}
-
-/** HH:MM + offset seconds → "HH:MM:SS". */
-function clock(hhmm: string, secs: number): string {
-  const [h, m] = hhmm.split(':').map(Number)
-  const total = h * 3600 + m * 60 + secs
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(Math.floor(total / 3600) % 24)}:${p(Math.floor((total % 3600) / 60))}:${p(total % 60)}`
-}
-
-const RUN_OUTCOME: Record<string, string> = {
-  'morning-brief': '5 bullets · 1 risk flagged',
-  'goal-check-ins': '4 goals reviewed · 2 nudges',
-  'weekly-retro': '3 wins · 2 follow-ups',
-  'on-call-digest': '14 incidents · 0 paging',
-  'backup-check': 'All 6 backups verified',
-  'instagram-report': '12 posts · reach +8%',
-  'ad-spend-review': 'Spend on track · 1 flag',
-}
-
-const RUN_OUTPUT_LINES: Record<string, string[]> = {
-  'morning-brief': [
-    'Summarised 4 goals and 3 Inbox items.',
-    'Flagged the Postgres 16 upgrade as at risk.',
-    'Delivered to WhatsApp and #General.',
-  ],
-  'on-call-digest': [
-    'Pulled 14 open incidents from the last 24h.',
-    'Grouped by service — none needed paging.',
-    'Posted the digest to #ops.',
-  ],
-  'backup-check': ['Checked all 6 nightly backups.', 'Restored each to a scratch volume and verified.', 'No action needed.'],
-  'instagram-report': ['Rolled up 12 posts from the past week.', 'Reach up 8%, saves up 14%.', 'Top post: the referral teaser reel.'],
-}
-
-const SKIP_REASON: Record<string, string> = {
-  'weekly-retro': 'a public holiday',
-  'ad-spend-review': 'the routine was paused',
-}
-
-/** Builds the full detail for the i-th bar (left→right) of a routine row. */
-export function runDetail(row: RoutineRow, i: number): RunDetail {
-  const result = row.runs[i] ?? 'none'
-  const date = runDates(row.when)[i]
-  const time = runTime(row.when)
-  const day = `${RUN_WD[date.getDay()]} ${date.getDate()}`
-  const whenShort = `${day} · ${time}`
-  const whenLong = `${day} ${RUN_MO[date.getMonth()]}, ${time}`
-  const base = {
+/** Tooltip-level detail from a run summary (no extra fetch). */
+export function runSummaryDetail(run: RoutineRunSummary, agentId: string): RunDetail {
+  const result = asResult(run.outcome)
+  return {
     result,
     status: RUN_STATUS[result],
-    whenShort,
-    whenLong,
-    agentId: row.agentId,
-    triggeredBy: 'Schedule' as const,
+    whenShort: fmtShort(run.at),
+    whenLong: fmtLong(run.at),
+    agentId,
+    duration: fmtDuration(run.duration),
+    triggeredBy: TRIGGER[run.trigger ?? 'schedule'] ?? 'Schedule',
+    cost: fmtCredits(run.costCredits),
+    attempts: '—',
+    outcome: result === 'skip' ? `Skipped — ${run.error ?? 'nothing to do'}` : result === 'fail' ? 'Failed' : 'Completed',
+    ...(result === 'fail' ? { error: run.error ?? 'The run failed.' } : {}),
+    steps: [],
+    logs: [],
   }
+}
 
-  if (result === 'fail') {
-    if (row.id === 'on-call-digest')
-      return {
-        ...base,
-        duration: '12s',
-        cost: '$0.004',
-        attempts: '3 / 3',
-        outcome: 'Failed — PagerDuty unreachable',
-        error: 'Couldn’t reach PagerDuty — the API timed out after 3 retries. No digest was sent.',
-        steps: [
-          { t: clock(time, 0), text: 'Run started · schedule trigger' },
-          { t: clock(time, 1), text: 'Fetched 14 open incidents from source' },
-          { t: clock(time, 12), text: 'PagerDuty API timeout — gave up after retry 3', error: true },
-        ],
-        logs: [
-          { text: `${clock(time, 1)} INFO  fetch incidents ok (14)` },
-          { text: `${clock(time, 4)} WARN  pagerduty retry 1/3`, level: 'warn' },
-          { text: `${clock(time, 8)} WARN  pagerduty retry 2/3`, level: 'warn' },
-          { text: `${clock(time, 12)} ERROR ETIMEDOUT api.pagerduty.com`, level: 'error' },
-          { text: `${clock(time, 12)} ERROR run aborted`, level: 'error' },
-        ],
-      }
-    return {
-      ...base,
-      duration: '8s',
-      cost: '$0.002',
-      attempts: '2 / 2',
-      outcome: 'Failed — aborted after retries',
-      error: 'The run hit an error and was aborted after 2 retries. Nothing was sent.',
-      steps: [
-        { t: clock(time, 0), text: 'Run started · schedule trigger' },
-        { t: clock(time, 2), text: 'Working…' },
-        { t: clock(time, 8), text: 'Unrecoverable error — run aborted', error: true },
-      ],
-      logs: [
-        { text: `${clock(time, 3)} WARN  retry 1/2`, level: 'warn' },
-        { text: `${clock(time, 8)} ERROR run aborted`, level: 'error' },
-      ],
-    }
-  }
-
-  if (result === 'skip') {
-    const reason = SKIP_REASON[row.id] ?? 'there was nothing to do'
-    return {
-      ...base,
-      duration: '—',
-      cost: '$0.00',
-      attempts: '—',
-      outcome: `Skipped — ${reason}`,
-      steps: [
-        { t: clock(time, 0), text: 'Run started · schedule trigger' },
-        { t: clock(time, 1), text: `Skipped — ${reason}` },
-      ],
-      logs: [{ text: `${clock(time, 1)} INFO  skipped: ${reason}` }],
-    }
-  }
-
-  if (result === 'none')
-    return { ...base, duration: '—', cost: '$0.00', attempts: '—', outcome: 'No run yet', steps: [], logs: [] }
-
-  // Success.
-  const outcome = RUN_OUTCOME[row.id] ?? 'Completed on schedule'
+/** Full drawer detail from GET /v1/routines/{id}/runs/{runId}. */
+export function runDetailFromApi(d: RoutineRunDetail): RunDetail {
+  const base = runSummaryDetail(d.run, d.routine.helperId)
   return {
     ...base,
-    duration: '1m 50s',
-    cost: '$0.009',
-    attempts: '1 / 1',
-    outcome,
-    output: RUN_OUTPUT_LINES[row.id] ?? ['Completed on schedule.', outcome],
-    steps: [
-      { t: clock(time, 0), text: 'Run started · schedule trigger' },
-      { t: clock(time, 2), text: `${AGENTS[row.agentId].name} read the sources` },
-      { t: clock(time, 110), text: `Produced output — ${outcome}` },
-      { t: clock(time, 112), text: 'Delivered to WhatsApp & chat' },
-    ],
-    logs: [
-      { text: `${clock(time, 1)} INFO  read sources ok` },
-      { text: `${clock(time, 4)} INFO  generating output` },
-      { text: `${clock(time, 110)} INFO  output ready` },
-      { text: `${clock(time, 112)} INFO  delivered ok` },
-    ],
+    attempts: d.job ? `${d.job.attempts}` : '—',
+    cost: fmtCredits(d.job?.costCredits ?? d.run.costCredits),
+    outcome: d.output?.headline ?? base.outcome,
+    ...(base.result === 'fail' ? { error: d.job?.error ?? d.run.error ?? 'The run failed.' } : {}),
+    ...(base.result === 'ok' && d.output ? { output: d.output.lines.length ? d.output.lines : [d.output.headline] } : {}),
+    steps: d.steps.map((s) => ({ t: fmtClock(s.at), text: s.text, error: s.error })),
+    logs: d.logs.map((l) => ({
+      text: `${fmtClock(l.at)} ${l.level.toUpperCase().padEnd(5)} ${l.text}`,
+      level: l.level === 'info' ? undefined : l.level,
+    })),
   }
 }
 
-export const SUGGESTION = {
-  title: 'Monday morning is crowded',
-  desc: '4 routines start between 08:00 and 10:00. Spreading them keeps Ops free for incidents.',
-  moves: [
-    { name: 'Instagram report', agentId: 'growth', area: 'Growth', from: 'Mon 08:00', to: 'Mon 11:00' },
-    { name: 'Dependency updates', agentId: 'dev', area: 'Dev', from: 'Mon 10:00', to: 'Tue 10:00' },
-  ],
-  note: 'Chief never moves routines you set yourself.',
-}
-
-export const APPLIED_TOAST = {
-  title: '2 routines moved',
-  body: 'Instagram report → Mon 11:00 · Dependency updates → Tue 10:00 · Undo',
+/** Pad to 8 bars, oldest → newest (left → right). */
+export function lastEight(runs: RoutineRunSummary[] | undefined): { results: RunResult[]; refs: (RoutineRunSummary | null)[] } {
+  const last = (runs ?? []).slice(-8)
+  const pad = 8 - last.length
+  return {
+    results: [...Array<RunResult>(pad).fill('none'), ...last.map((r) => asResult(r.outcome))],
+    refs: [...Array<null>(pad).fill(null), ...last],
+  }
 }
 
 // ── Empty state (diQBZ) ──────────────────────────────────────────────────────
 
+/** Starter routines Chief offers on the empty state (product copy, not demo data). */
 export interface Template {
   id: string
   name: string
-  agentId: string
+  /** Preferred helper area; falls back to Chief. */
+  area: HelperArea
+  freq: 'daily' | 'weekdays' | 'weekly' | 'monthly'
+  at: string
+  days?: number[]
   when: string
+  instructions: string
   checked: boolean
 }
 
 export const TEMPLATES: Template[] = [
-  { id: 't1', name: 'Morning brief', agentId: 'chief', when: 'Chief · Weekdays · 07:30', checked: true },
-  { id: 't2', name: 'Weekly retro', agentId: 'chief', when: 'Chief · Fridays · 16:00', checked: true },
-  { id: 't3', name: 'On-call digest', agentId: 'ops', when: 'Ops · Every day · 08:00', checked: true },
-  { id: 't4', name: 'Invoice chaser', agentId: 'finance', when: 'Finance · Weekdays · 10:00', checked: true },
-  { id: 't5', name: 'Social calendar', agentId: 'growth', when: 'Growth · Mondays · 09:30', checked: false },
-  { id: 't6', name: 'Backup check', agentId: 'ops', when: 'Ops · Sundays · 03:00', checked: false },
+  { id: 't1', name: 'Morning brief', area: 'brand', freq: 'weekdays', at: '07:30', when: 'Weekdays · 07:30', checked: true,
+    instructions: 'Summarise what moved yesterday across goals, flag anything at risk, and list today’s decisions. Max 5 bullets.' },
+  { id: 't2', name: 'Weekly retro', area: 'brand', freq: 'weekly', days: [4], at: '16:00', when: 'Fridays · 16:00', checked: true,
+    instructions: 'Review the week: wins, misses and follow-ups for next week.' },
+  { id: 't3', name: 'On-call digest', area: 'ops', freq: 'daily', at: '08:00', when: 'Every day · 08:00', checked: true,
+    instructions: 'Summarise open incidents and alerts from the last 24 hours.' },
+  { id: 't4', name: 'Invoice chaser', area: 'finance', freq: 'weekdays', at: '10:00', when: 'Weekdays · 10:00', checked: true,
+    instructions: 'Check overdue invoices and draft polite reminders.' },
+  { id: 't5', name: 'Social calendar', area: 'marketing', freq: 'weekly', days: [0], at: '09:30', when: 'Mondays · 09:30', checked: false,
+    instructions: 'Draft this week’s social posts and schedule.' },
+  { id: 't6', name: 'Backup check', area: 'ops', freq: 'weekly', days: [6], at: '03:00', when: 'Sundays · 03:00', checked: false,
+    instructions: 'Verify last night’s backups completed and can be restored.' },
 ]
-
-export const COMPANY_NAME = 'Sahabat Warga'
 
 // ── Routine detail (xuAoe and states) ────────────────────────────────────────
 
 export type Frequency = 'Daily' | 'Weekdays' | 'Weekly' | 'Monthly'
 export const FREQUENCIES: Frequency[] = ['Daily', 'Weekdays', 'Weekly', 'Monthly']
 
+/** UI label → API value. */
+export const freqToApi = (f: Frequency) => f.toLowerCase() as 'daily' | 'weekdays' | 'weekly' | 'monthly'
+
 export interface PastRun {
+  id: string
   when: string
   outcome: string
   duration: string
   skipped?: boolean
+  failed?: boolean
+}
+
+export interface SendTarget {
+  icon: 'message-circle' | 'hash'
+  label: string
 }
 
 export interface RoutineDetail {
@@ -495,149 +438,26 @@ export interface RoutineDetail {
   at: string
   zone: string
   instructions: string
-  sendsTo: { icon: 'message-circle' | 'hash'; label: string }[]
+  sendsTo: SendTarget[]
   nextRun: string
+  nextAt: string | null
   lastRun: string
   cost: string
   runs: PastRun[]
   /** Weekly days selected (0 = Mon) */
   days?: number[]
   monthly?: 'date' | 'last-working-day'
-  nextDates?: string
   managedByChief: boolean
-}
-
-const MORNING_BRIEF: RoutineDetail = {
-  id: 'morning-brief',
-  name: 'Morning brief',
-  agentId: 'chief',
-  subtitle: 'Chief · weekdays at 07:30 · managed by Chief',
-  frequency: 'Weekdays',
-  at: '07:30',
-  zone: 'Asia/Jakarta',
-  instructions:
-    'Summarise what moved yesterday across goals, flag anything at risk, and list today’s decisions. Max 5 bullets.',
-  sendsTo: [
-    { icon: 'message-circle', label: 'WhatsApp · you' },
-    { icon: 'hash', label: '#General chat' },
-  ],
-  nextRun: 'Mon 07:30',
-  lastRun: 'Fri · 1m 50s',
-  cost: '~$0.01 a run',
-  runs: [
-    { when: 'Fri 23 · 07:30', outcome: '5 bullets · 1 risk flagged', duration: '1m 50s' },
-    { when: 'Thu 22 · 07:30', outcome: '4 bullets', duration: '1m 32s' },
-    { when: 'Wed 21 · 07:30', outcome: 'Skipped — you were on leave', duration: '—', skipped: true },
-  ],
-  managedByChief: true,
-}
-
-export const ROUTINES: Record<string, RoutineDetail> = {
-  'morning-brief': MORNING_BRIEF,
-  'goal-check-ins': {
-    ...MORNING_BRIEF,
-    id: 'goal-check-ins',
-    name: 'Goal check-ins',
-    subtitle: 'Chief · Mondays & Thursdays at 09:00 · set by you',
-    frequency: 'Weekly',
-    at: '09:00',
-    days: [0, 3],
-    nextRun: 'Mon 09:00',
-    nextDates: 'Next: Mon 27 · Thu 30 · Mon Nov 3',
-    managedByChief: false,
-  },
-  'monthly-cost-review': {
-    ...MORNING_BRIEF,
-    id: 'monthly-cost-review',
-    name: 'Monthly cost review',
-    agentId: 'ops',
-    subtitle: 'Ops · last working day at 09:00 · managed by Chief',
-    frequency: 'Monthly',
-    at: '09:00',
-    monthly: 'last-working-day',
-    nextDates: 'Next: Fri Oct 30 · Fri Nov 27 · Thu Dec 31',
-  },
-}
-
-export function routineById(id: string): RoutineDetail {
-  if (ROUTINES[id]) return ROUTINES[id]
-  for (const g of LIST_GROUPS) {
-    const r = g.rows.find((x) => x.id === id)
-    if (r)
-      return {
-        ...MORNING_BRIEF,
-        id: r.id,
-        name: r.name,
-        agentId: r.agentId,
-        subtitle: `${AGENTS[r.agentId].name} · ${r.when.toLowerCase().replace(' · ', ' at ')}`,
-        nextRun: r.next,
-      }
-  }
-  return MORNING_BRIEF
-}
-
-export const RUNNING = {
-  title: 'Running now · step 2 of 3',
-  elapsed: '0:41',
-  progress: 270 / 408,
-  steps: [
-    { label: 'Read yesterday’s goals & Inbox', status: 'done' as const },
-    { label: 'Writing 5 bullets…', status: 'active' as const },
-    { label: 'Send to WhatsApp & #General', status: 'todo' as const },
-  ],
-}
-
-export const PAUSED = {
-  subtitle: 'Chief · weekdays at 07:30 · paused',
-  title: 'Paused until Mon, Nov 3',
-  desc: 'You paused it Oct 24 · 6 runs will be skipped',
-  until: 'Until Mon, Nov 3',
-}
-
-export const RUN_OUTPUT = {
-  title: 'Morning brief · Fri 23',
-  subtitle: 'Ran 07:30 · 1m 50s · $0.009 · by Chief',
-  delivery: 'WhatsApp · read 07:41  ·  #General',
-  greeting: 'Good morning, Mas Dede ☀️',
-  bullets: [
-    'Passkeys: web + iOS on staging; Android slipping 2 days.',
-    'Referral launch: ad budget approved, first payouts Friday.',
-    'At risk: Postgres 16 upgrade — 20%, due Nov 30.',
-    'Decide today: shift launch comms to Nov 26?',
-    'Invoice chaser failed — Xero needs reconnecting.',
-  ],
-  sources: [
-    { icon: 'target' as const, label: '4 goals' },
-    { icon: 'inbox' as const, label: '3 Inbox items' },
-    { icon: 'workflow' as const, label: '6 flow runs' },
-  ],
-}
-
-export const REASSIGN_OPTIONS = [
-  { agentId: 'chief', desc: '4 routines · Mon & Thu free at 09:00', selected: true, pick: false },
-  { agentId: 'ops', desc: '3 routines · reads the same goals', selected: false, pick: true },
-  { agentId: 'growth', desc: '3 routines · busy Mon morning', selected: false, pick: false },
-]
-
-// ── New routine (F4RGvz / oY6x7) ─────────────────────────────────────────────
-
-export const NEW_ROUTINE = {
-  prompt:
-    'Every Friday afternoon, check which invoices are overdue and send me a short summary on WhatsApp.',
-  who: 'finance',
-  when: 'Fridays · 15:30',
-  why: 'Right after Payout reconcile at 15:00',
-  sendsTo: 'WhatsApp · you',
-  cost: '~$0.01 a run',
-  free: 'No clashes — Finance is free 15:30–16:00',
-  clash: 'Fridays 15:00–15:30 clashes with Payout reconcile',
-  slots: [
-    { title: 'Fridays · 15:30 — recommended', desc: 'Right after Payout reconcile, uses its fresh numbers', recommended: true },
-    { title: 'Fridays · 11:00', desc: 'Earlier, before the weekend rush', recommended: false },
-    { title: 'Mondays · 09:00', desc: 'Start the week with the overdue list', recommended: false },
-  ],
+  paused: boolean
+  pausedUntil: string | null
+  allowChiefShift: boolean
+  skipHolidays: boolean
+  askBeforeSending: boolean
+  /** Latest run id (newest), for the running/output states. */
+  latestRunId: string | null
+  latestJobId: string | null
 }
 
 export const DELETE_COPY = {
-  body: 'Chief stops sending it from Monday. Past runs and outputs stay in the activity log. You can’t undo this — pause it instead if you might want it back.',
+  body: 'Chief stops running it. Past runs and outputs stay in the activity log. You can’t undo this — pause it instead if you might want it back.',
 }

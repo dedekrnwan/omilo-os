@@ -41,6 +41,19 @@ import type {
 } from '../../core/domain/types'
 import { mapDoc, mapHandbookDetail, mapHandbookSuggestion, mapLesson } from './httpRepos'
 import type { RawDoc, RawHandbookDetail, RawHandbookSuggestion, RawLesson } from './httpRepos'
+// ── sweep/goals-routines ──
+import type { RoutinePreview, RoutineRunSummary } from '../../core/domain/types'
+import {
+  goalExtras,
+  mapPreview,
+  mapRoutineRun,
+  routineExtras,
+  unwrapGoal,
+  unwrapRoutine,
+  type RawPreview,
+  type RawRoutineExtras,
+  type RawRoutineRun,
+} from './routineMappers'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -289,12 +302,15 @@ type RawGoal = {
   channelId?: string
 }
 
-function mapGoal(r: RawGoal): Goal {
+function mapGoal(raw: RawGoal | { goal: RawGoal }): Goal {
+  // Write endpoints respond `{goal: …}` (sweep/goals-routines fix: unwrap).
+  const r = unwrapGoal(raw)
   return {
     id: r.id,
     channelId: (r.channel_id ?? r.channelId) ?? '',
     title: r.title,
     progress: r.progress ?? 0,
+    ...goalExtras(r as unknown as Record<string, unknown>),
   }
 }
 
@@ -321,8 +337,11 @@ type RawRoutine = {
   created_by: string
 }
 
-function mapRoutine(r: RawRoutine): Routine {
+function mapRoutine(raw: RawRoutine | { routine: RawRoutine }): Routine {
+  // Write endpoints respond `{routine: …}` (sweep/goals-routines fix: unwrap).
+  const r = unwrapRoutine(raw) as RawRoutine & RawRoutineExtras
   return {
+    ...routineExtras(r),
     id: r.id,
     companyId: r.company_id,
     helperId: r.helper_id,
@@ -520,6 +539,12 @@ export interface CreateGoalInput {
   target: string
   due?: string
   autonomyOverride?: string
+  // ── sweep/goals-routines ──
+  measuredBy?: string
+  helperIds?: string[]
+  period?: string
+  /** Let Chief draft key results (plan + delegate). Defaults to true server-side. */
+  draftKeyResults?: boolean
 }
 
 export interface UpdateGoalInput {
@@ -528,6 +553,10 @@ export interface UpdateGoalInput {
   due?: string
   status?: string
   channelId?: string
+  // ── sweep/goals-routines ──
+  measuredBy?: string
+  helperIds?: string[]
+  period?: string
 }
 
 export interface CreateRoutineInput {
@@ -542,6 +571,10 @@ export interface CreateRoutineInput {
   sendsTo?: unknown[]
   goalIds?: string[]
   subtitle?: string
+  // ── sweep/goals-routines ──
+  allowChiefShift?: boolean
+  skipHolidays?: boolean
+  askBeforeSending?: boolean
 }
 
 export interface UpdateRoutineInput {
@@ -558,6 +591,12 @@ export interface UpdateRoutineInput {
   days?: number[]
   monthly?: string | null
   timezone?: string
+  // ── sweep/goals-routines ──
+  /** ISO time to auto-resume; '' clears it. Setting it also pauses. */
+  pausedUntil?: string
+  allowChiefShift?: boolean
+  skipHolidays?: boolean
+  askBeforeSending?: boolean
 }
 
 export interface CreateFlowInput {
@@ -683,7 +722,7 @@ export interface Commands {
   /** POST /v1/flows/{id}/test-run {sample?} → FlowRun */
   testRunFlow(id: string, input?: Record<string, unknown>): Promise<unknown>
   /** POST /v1/routines/{id}/run-now → {job_id} */
-  runRoutineNow(id: string): Promise<{ jobId: string }>
+  runRoutineNow(id: string): Promise<{ jobId: string; runId?: string }>
   /** POST /v1/goals/{id}/replan → {job_id} */
   replanGoal(id: string): Promise<{ jobId: string }>
   /** POST /v1/skills/{id}/publish → Proposal */
@@ -814,6 +853,39 @@ export interface SuggestHandbookEditInput {
   file: string
   text: string
   proposedContent?: string
+  // ── sweep/goals-routines ──
+  /** POST /v1/jobs/{id}/cancel → {jobId,status} (409 when already finished). */
+  cancelJob(jobId: string): Promise<{ jobId: string; status: string }>
+  /** POST /v1/routines/runs/{id}/feedback {vote} → run. */
+  routineRunFeedback(runId: string, vote: 'up' | 'down' | null): Promise<RoutineRunSummary>
+  /** POST /v1/routines/runs/{id}/resend → re-delivers, or re-runs when delivery isn't wired. */
+  resendRoutineRun(runId: string): Promise<ResendRoutineRunResult>
+  /** POST /v1/routines/preview → next fires, clashes, open slots. */
+  previewRoutine(input: PreviewRoutineInput): Promise<RoutinePreview>
+  /** POST /v1/routines/suggestions/{id}/apply → ids of routines changed. */
+  applyRoutineSuggestion(id: string): Promise<{ applied: string[] }>
+  /** POST /v1/routines/suggestions/{id}/dismiss. */
+  dismissRoutineSuggestion(id: string): Promise<void>
+  /** POST /v1/goals/{id}/session → the goal's session (created once, reused). */
+  openGoalSession(goalId: string): Promise<Session>
+
+// ── sweep/goals-routines ──
+export interface PreviewRoutineInput {
+  freq: string
+  at: string
+  days?: number[]
+  monthly?: string | null
+  timezone?: string
+  helperId?: string
+  /** The routine being edited (excluded from clash checks). */
+  excludeId?: string
+
+export interface ResendRoutineRunResult {
+  /** True when the output was re-delivered; false when the routine re-ran instead. */
+  resent: boolean
+  jobId: string | null
+  runId: string | null
+  message: string
 }
 
 /**
@@ -1122,9 +1194,9 @@ export function createCommands(
      * POST /v1/routines/{id}/run-now → {job_id}.
      * Returns {jobId} mapped from job_id.
      */
-    async runRoutineNow(id: string): Promise<{ jobId: string }> {
-      const raw = await post<{ job_id: string }>(`/v1/routines/${id}/run-now`, {})
-      return { jobId: raw.job_id }
+    async runRoutineNow(id: string): Promise<{ jobId: string; runId?: string }> {
+      const raw = await post<{ job_id: string; run_id?: string }>(`/v1/routines/${id}/run-now`, {})
+      return raw.run_id ? { jobId: raw.job_id, runId: raw.run_id } : { jobId: raw.job_id }
     },
 
     /**
@@ -1155,6 +1227,10 @@ export function createCommands(
       }
       if (input.due !== undefined) body.due = input.due
       if (input.autonomyOverride !== undefined) body.autonomy_override = input.autonomyOverride
+      if (input.measuredBy !== undefined) body.measured_by = input.measuredBy
+      if (input.helperIds !== undefined) body.helper_ids = input.helperIds
+      if (input.period !== undefined) body.period = input.period
+      if (input.draftKeyResults !== undefined) body.draft_key_results = input.draftKeyResults
       const raw = await post<RawGoal>('/v1/goals', body)
       return mapGoal(raw)
     },
@@ -1167,6 +1243,9 @@ export function createCommands(
       if (input.due !== undefined) body.due = input.due
       if (input.status !== undefined) body.status = input.status
       if (input.channelId !== undefined) body.channel_id = input.channelId
+      if (input.measuredBy !== undefined) body.measured_by = input.measuredBy
+      if (input.helperIds !== undefined) body.helper_ids = input.helperIds
+      if (input.period !== undefined) body.period = input.period
       const raw = await patch<RawGoal>(`/v1/goals/${id}`, body)
       return mapGoal(raw)
     },
@@ -1193,6 +1272,9 @@ export function createCommands(
       if (input.sendsTo !== undefined) body.sends_to = input.sendsTo
       if (input.goalIds !== undefined) body.goal_ids = input.goalIds
       if (input.subtitle !== undefined) body.subtitle = input.subtitle
+      if (input.allowChiefShift !== undefined) body.allow_chief_shift = input.allowChiefShift
+      if (input.skipHolidays !== undefined) body.skip_holidays = input.skipHolidays
+      if (input.askBeforeSending !== undefined) body.ask_before_sending = input.askBeforeSending
       const raw = await post<RawRoutine>('/v1/routines', body)
       return mapRoutine(raw)
     },
@@ -1213,6 +1295,10 @@ export function createCommands(
       if (input.days !== undefined) body.days = input.days
       if (input.monthly !== undefined) body.monthly = input.monthly
       if (input.timezone !== undefined) body.timezone = input.timezone
+      if (input.pausedUntil !== undefined) body.paused_until = input.pausedUntil
+      if (input.allowChiefShift !== undefined) body.allow_chief_shift = input.allowChiefShift
+      if (input.skipHolidays !== undefined) body.skip_holidays = input.skipHolidays
+      if (input.askBeforeSending !== undefined) body.ask_before_sending = input.askBeforeSending
       const raw = await patch<RawRoutine>(`/v1/routines/${id}`, body)
       return mapRoutine(raw)
     },
@@ -1439,6 +1525,40 @@ export function createCommands(
     },
     async dismissHandbookSuggestion(id: string): Promise<HandbookSuggestion> {
       return mapHandbookSuggestion(await post<RawHandbookSuggestion>(`/v1/handbook/suggestions/${encodeURIComponent(id)}/dismiss`, {}))
+    // ── sweep/goals-routines ──
+    async cancelJob(jobId: string) {
+      const raw = await post<{ job_id: string; status: string }>(`/v1/jobs/${jobId}/cancel`, {})
+      return { jobId: raw.job_id, status: raw.status }
+
+    async routineRunFeedback(runId: string, vote: 'up' | 'down' | null) {
+      const raw = await post<{ run: RawRoutineRun }>(`/v1/routines/runs/${runId}/feedback`, { vote })
+      return mapRoutineRun(raw.run)
+
+    async resendRoutineRun(runId: string) {
+      const raw = await post<{ resent: boolean; job_id?: string; run_id?: string; message: string }>(
+        `/v1/routines/runs/${runId}/resend`,
+        {},
+      )
+      return { resent: raw.resent, jobId: raw.job_id ?? null, runId: raw.run_id ?? null, message: raw.message }
+
+    async previewRoutine(input: PreviewRoutineInput) {
+      const body: Record<string, unknown> = { freq: input.freq, at: input.at }
+      if (input.days !== undefined) body.days = input.days
+      if (input.monthly !== undefined) body.monthly = input.monthly
+      if (input.timezone !== undefined) body.timezone = input.timezone
+      if (input.helperId !== undefined) body.helper_id = input.helperId
+      if (input.excludeId !== undefined) body.exclude_id = input.excludeId
+      return mapPreview(await post<RawPreview>('/v1/routines/preview', body))
+
+    async applyRoutineSuggestion(id: string) {
+      const raw = await post<{ applied: string[] }>(`/v1/routines/suggestions/${id}/apply`, {})
+      return { applied: raw.applied ?? [] }
+
+    async dismissRoutineSuggestion(id: string) {
+      await post<unknown>(`/v1/routines/suggestions/${id}/dismiss`, {})
+
+    async openGoalSession(goalId: string) {
+      return post<Session>(`/v1/goals/${goalId}/session`, {})
     },
   }
 }

@@ -3,7 +3,8 @@ import { Archive, CircleCheck, Pencil, Play, RotateCcw, SkipForward, X } from 'l
 import { IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
-import { APPLIED_TOAST, DELETE_COPY, FAILED_RUN } from './data'
+import type { HelperArea } from '../../core/domain/types'
+import { DELETE_COPY } from './data'
 import { Chip, PrimaryButton, Scrim, SecondaryButton } from './ui'
 
 function useDismiss(onClose: () => void, ref: React.RefObject<HTMLElement | null>) {
@@ -37,9 +38,12 @@ export function RowMenu({
   onRun,
   onSkip,
   onDelete,
+  skipHint,
 }: {
   anchor: Anchor
   title: string
+  /** Day of the run that Skip would drop, e.g. "Mon 27". */
+  skipHint?: string
   onClose: () => void
   onEdit: () => void
   onRun: () => void
@@ -74,7 +78,7 @@ export function RowMenu({
       </div>
       {item('Edit', onEdit, Pencil)}
       {item('Run now', onRun, Play, 'R')}
-      {item('Skip next run', onSkip, SkipForward, 'Mon')}
+      {item('Skip next run', onSkip, SkipForward, skipHint)}
       <MenuSeparatorLine />
       {item('Delete routine', onDelete, Archive, undefined, true)}
     </div>
@@ -131,30 +135,51 @@ export function DeleteConfirm({ name, onPause, onDelete, onClose }: { name: stri
   )
 }
 
+export interface FailureInfo {
+  title: string
+  meta: string
+  why: string
+  area: HelperArea
+  /** Primary action label, e.g. "Check connectors" or "View run". */
+  actionLabel: string
+}
+
 /** pen `Failure Popover` (YtxGi in l6KQtK): 320 wide, under the failed chip. */
-export function FailurePopover({ anchor, onClose, onReconnect, onRetry }: { anchor: Anchor; onClose: () => void; onReconnect: () => void; onRetry: () => void }) {
+export function FailurePopover({
+  anchor,
+  failure,
+  onClose,
+  onAction,
+  onRetry,
+}: {
+  anchor: Anchor
+  failure: FailureInfo
+  onClose: () => void
+  onAction: () => void
+  onRetry: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   useDismiss(onClose, ref)
   return (
     <div
       ref={ref}
       role="dialog"
-      aria-label={FAILED_RUN.title}
+      aria-label={failure.title}
       className="fixed z-50 flex w-[320px] flex-col gap-[10px] rounded-lg bg-surface p-[14px] shadow-[0_12px_28px_#0C0A0924] outline-1 -outline-offset-1"
-      style={{ top: anchor.bottom + 8, left: anchor.left - 149, outlineColor: '#FECACA' }}
+      style={{ top: anchor.bottom + 8, left: Math.max(8, anchor.left - 149), outlineColor: '#FECACA' }}
     >
       <div className="flex w-full items-center gap-[8px]">
-        <Mascot size={20} radius={6} area="finance" />
+        <Mascot size={20} radius={6} area={failure.area} />
         <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-          <span className="text-[13px] font-semibold text-ink">{FAILED_RUN.title}</span>
-          <span className="text-[11.5px] text-muted">{FAILED_RUN.meta}</span>
+          <span className="text-[13px] font-semibold text-ink">{failure.title}</span>
+          <span className="text-[11.5px] text-muted">{failure.meta}</span>
         </div>
         <Chip tone="bad" label="Failed" />
       </div>
-      <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{FAILED_RUN.why}</p>
+      <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{failure.why}</p>
       <div className="flex w-full gap-[6px]">
-        <PrimaryButton height={30} fontSize={12.5} className="flex-1" onClick={onReconnect}>
-          Reconnect Xero
+        <PrimaryButton height={30} fontSize={12.5} className="flex-1" onClick={onAction}>
+          {failure.actionLabel}
         </PrimaryButton>
         <SecondaryButton height={30} fontSize={12.5} icon={RotateCcw} className="flex-1" onClick={onRetry}>
           Retry now
@@ -165,7 +190,7 @@ export function FailurePopover({ anchor, onClose, onReconnect, onRetry }: { anch
 }
 
 /** pen `Toast` (LZRbW instance in FcmwG): 380 wide, centred at the bottom of the inset. */
-export function AppliedToast({ onClose }: { onClose: () => void }) {
+export function AppliedToast({ title, body, onClose }: { title: string; body: string; onClose: () => void }) {
   return (
     <div
       role="status"
@@ -173,8 +198,8 @@ export function AppliedToast({ onClose }: { onClose: () => void }) {
     >
       <CircleCheck size={18} aria-hidden className="shrink-0 text-ok" />
       <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <span className="text-[14px] font-medium text-ink">{APPLIED_TOAST.title}</span>
-        <span className="text-[13px] leading-[1.45] text-muted">{APPLIED_TOAST.body}</span>
+        <span className="text-[14px] font-medium text-ink">{title}</span>
+        <span className="text-[13px] leading-[1.45] text-muted">{body}</span>
       </div>
       <IconButton icon={X} size={14} aria-label="Dismiss" onClick={onClose} />
     </div>

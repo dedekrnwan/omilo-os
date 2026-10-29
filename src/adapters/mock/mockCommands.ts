@@ -61,6 +61,18 @@ import {
   routines,
   walletSettings,
 } from './fixtures'
+// ── sweep/goals-routines ──
+import type { PreviewRoutineInput } from '../http/commands'
+import {
+  dismissed,
+  mockGoalSession,
+  mockPreview,
+  mockRecompute,
+  mockRunNow,
+  mockRuns,
+  mockSkip,
+  mockSuggestions,
+} from './routinesMock'
 
 let seq = 0
 function nextId(prefix: string): string {
@@ -267,8 +279,9 @@ export function createMockCommands(): Commands {
     testRunFlow(id: string, _input?: Record<string, unknown>): Promise<unknown> {
       return Promise.resolve({ id: nextId('frn'), flowId: id, status: 'done' })
     },
-    runRoutineNow(_id: string): Promise<{ jobId: string }> {
-      return Promise.resolve({ jobId: nextId('job') })
+    runRoutineNow(id: string): Promise<{ jobId: string; runId?: string }> {
+      const run = mockRunNow(id)
+      return Promise.resolve({ jobId: run.jobId ?? nextId('job'), runId: run.id })
     },
     replanGoal(_id: string): Promise<{ jobId: string }> {
       return Promise.resolve({ jobId: nextId('job') })
@@ -284,6 +297,12 @@ export function createMockCommands(): Commands {
         channelId: input.channelId,
         title: input.title,
         progress: 0,
+        status: 'on_track',
+        ...(input.target ? { target: input.target } : {}),
+        ...(input.due ? { due: input.due } : {}),
+        ...(input.measuredBy ? { measuredBy: input.measuredBy } : {}),
+        ...(input.helperIds ? { helperIds: input.helperIds } : {}),
+        ...(input.period ? { period: input.period } : {}),
       }
       goals.push(goal)
       return Promise.resolve(goal)
@@ -293,6 +312,15 @@ export function createMockCommands(): Commands {
       if (g) {
         if (input.title !== undefined) g.title = input.title
         if (input.channelId !== undefined) g.channelId = input.channelId
+        if (input.target !== undefined) g.target = input.target
+        if (input.due !== undefined) g.due = input.due
+        if (input.measuredBy !== undefined) g.measuredBy = input.measuredBy
+        if (input.helperIds !== undefined) g.helperIds = input.helperIds
+        if (input.period !== undefined) g.period = input.period
+        if (input.status !== undefined) {
+          if (input.status === 'auto') { g.statusSetBy = undefined; g.status = 'on_track' }
+          else { g.status = input.status as Goal['status']; g.statusSetBy = 'user' }
+        }
       }
       return Promise.resolve(g ?? { id, channelId: input.channelId ?? '', title: input.title ?? '', progress: 0 })
     },
@@ -325,7 +353,13 @@ export function createMockCommands(): Commands {
         lastAt: null,
         goalIds: input.goalIds ?? [],
         createdBy: 'operator',
+        allowChiefShift: input.allowChiefShift ?? true,
+        skipHolidays: input.skipHolidays ?? false,
+        askBeforeSending: input.askBeforeSending ?? false,
+        pausedUntil: null,
+        runs: [],
       }
+      mockRecompute(routine)
       routines.push(routine)
       return Promise.resolve(routine)
     },
@@ -345,6 +379,17 @@ export function createMockCommands(): Commands {
         if (input.days !== undefined) r.days = input.days
         if (input.monthly !== undefined) r.monthly = input.monthly
         if (input.timezone !== undefined) r.timezone = input.timezone
+        if (input.allowChiefShift !== undefined) r.allowChiefShift = input.allowChiefShift
+        if (input.skipHolidays !== undefined) r.skipHolidays = input.skipHolidays
+        if (input.askBeforeSending !== undefined) r.askBeforeSending = input.askBeforeSending
+        if (input.pausedUntil !== undefined) {
+          r.pausedUntil = input.pausedUntil || null
+          if (input.pausedUntil) r.paused = true
+        }
+        if (input.paused === false) r.pausedUntil = null
+        if (input.freq !== undefined || input.at !== undefined || input.days !== undefined || input.monthly !== undefined) {
+          mockRecompute(r)
+        }
       }
       return Promise.resolve(r ?? routines[0])
     },
@@ -354,9 +399,7 @@ export function createMockCommands(): Commands {
       return Promise.resolve()
     },
     skipRoutineNext(id: string): Promise<{ nextAt: string | null }> {
-      const r = routines.find(x => x.id === id)
-      const nextAt = r?.nextAt ?? null
-      return Promise.resolve({ nextAt })
+      return Promise.resolve({ nextAt: mockSkip(id) })
     },
 
     // ── P2 Flow commands ────────────────────────────────────────────────────────────
@@ -513,5 +556,50 @@ export function createMockCommands(): Commands {
     suggestHandbookEdit: mockDocsCommands.suggestHandbookEdit,
     acceptHandbookSuggestion: mockDocsCommands.acceptHandbookSuggestion,
     dismissHandbookSuggestion: mockDocsCommands.dismissHandbookSuggestion,
+    // ── sweep/goals-routines ──
+    cancelJob(jobId: string) {
+      return Promise.resolve({ jobId, status: 'cancelled' })
+    },
+    routineRunFeedback(runId: string, vote: 'up' | 'down' | null) {
+      const run = Object.values(mockRuns).flat().find((x) => x.id === runId)
+      if (run) run.feedback = vote
+      return Promise.resolve(run ?? {
+        id: runId, routineId: '', jobId: null, at: null, outcome: 'ok' as const, duration: null,
+        costCredits: 0, trigger: null, error: null, feedback: vote,
+      })
+    },
+    resendRoutineRun(runId: string) {
+      const run = Object.values(mockRuns).flat().find((x) => x.id === runId)
+      const again = run ? mockRunNow(run.routineId, 'resend') : null
+      return Promise.resolve({
+        resent: false,
+        jobId: again?.jobId ?? null,
+        runId: again?.id ?? null,
+        message: 'Delivery isn’t connected yet, so the routine ran again instead.',
+      })
+    },
+    previewRoutine(input: PreviewRoutineInput) {
+      return Promise.resolve(mockPreview(input))
+    },
+    applyRoutineSuggestion(id: string) {
+      const sug = mockSuggestions().find((s) => s.id === id)
+      const applied: string[] = []
+      for (const mv of sug?.moves ?? []) {
+        const r = routines.find((x) => x.id === mv.routineId)
+        if (!r) continue
+        if (sug?.kind === 'failing') r.paused = true
+        else if (mv.toAt) { r.at = mv.toAt; mockRecompute(r) }
+        applied.push(r.id)
+      }
+      dismissed.add(id)
+      return Promise.resolve({ applied })
+    },
+    dismissRoutineSuggestion(id: string) {
+      dismissed.add(id)
+      return Promise.resolve()
+    },
+    openGoalSession(goalId: string) {
+      return Promise.resolve(mockGoalSession(goalId))
+    },
   }
 }

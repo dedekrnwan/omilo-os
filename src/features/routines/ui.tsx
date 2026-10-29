@@ -4,6 +4,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Check, ChevronDown } from 'lucide-react'
+import { useSession } from '../../app/session'
 
 /** pen `Switch/On` (y1lHE) / `Switch/Off` (o4QgH): 32×18 · r9 · p2 · knob 14. */
 export function Switch({
@@ -258,11 +259,12 @@ export function Scrim({ onClick }: { onClick?: () => void }) {
  */
 export { Drawer } from '../../ui/ds/Drawer'
 
-/** "You" avatar used in the BY column: 16 · #57534E · white "D" 8/700. */
+/** "You" avatar used in the BY column: 16 · #57534E · white initial 8/700. */
 export function YouAvatar() {
+  const initial = (useSession((s) => s.user?.name) ?? 'You').trim().charAt(0).toUpperCase() || 'Y'
   return (
     <span className="flex size-[16px] shrink-0 items-center justify-center rounded-full bg-[#57534E] text-[8px] font-bold text-white">
-      D
+      {initial}
     </span>
   )
 }

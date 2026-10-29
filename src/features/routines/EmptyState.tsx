@@ -1,12 +1,22 @@
 import { useState } from 'react'
 import { Repeat, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { AGENTS, TEMPLATES } from './data'
+import { TEMPLATES, asArea } from './data'
 import { Checkbox, PrimaryButton, SecondaryButton } from './ui'
 import { useSession } from '../../app/session'
+import { pickHelperForArea, useHelperLookup } from './useHelperLookup'
 
 /** pen `Office · Routines · Empty` (diQBZ) — Chief offers starter routines. */
-export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSetUp: (ids: string[]) => void }) {
+export function EmptyState({
+  onScratch,
+  onSetUp,
+  busy = false,
+}: {
+  onScratch: () => void
+  onSetUp: (ids: string[]) => void
+  busy?: boolean
+}) {
+  const { helpers } = useHelperLookup()
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [checked, setChecked] = useState(() => new Set(TEMPLATES.filter((t) => t.checked).map((t) => t.id)))
   const toggle = (id: string) =>
@@ -32,7 +42,6 @@ export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSe
             <div key={i} className="flex w-full gap-[10px]">
               {row.map((t) => {
                 const on = checked.has(t.id)
-                const agent = AGENTS[t.agentId]
                 return (
                   <button
                     key={t.id}
@@ -44,13 +53,15 @@ export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSe
                     }`}
                   >
                     <span className="flex w-full items-center gap-[8px]">
-                      <Mascot size={22} radius={6} area={agent.area} />
+                      <Mascot size={22} radius={6} area={asArea(pickHelperForArea(helpers, t.area)?.area ?? t.area)} />
                       <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">{t.name}</span>
                       <Checkbox checked={on} />
                     </span>
                     <span className="flex items-center gap-[5px]">
                       <Repeat size={12} aria-hidden className="text-muted" />
-                      <span className="text-[12px] text-muted">{t.when}</span>
+                      <span className="text-[12px] text-muted">
+                        {[pickHelperForArea(helpers, t.area)?.name, t.when].filter(Boolean).join(' · ')}
+                      </span>
                     </span>
                   </button>
                 )
@@ -60,7 +71,7 @@ export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSe
         </div>
         <div className="flex items-center gap-[8px]">
           <SecondaryButton onClick={onScratch}>Start from scratch</SecondaryButton>
-          <PrimaryButton icon={Sparkles} disabled={checked.size === 0} onClick={() => onSetUp([...checked])}>
+          <PrimaryButton icon={Sparkles} disabled={checked.size === 0 || busy} onClick={() => onSetUp([...checked])}>
             Let Chief set up {checked.size} routines
           </PrimaryButton>
         </div>

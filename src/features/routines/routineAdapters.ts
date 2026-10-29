@@ -1,135 +1,162 @@
 /**
- * Pure adapter functions: map backend `Routine` domain type to the rich UI
- * display types used by ListView, Drawers, and WeekView.
- *
- * The backend `Routine` shape (P8-T1) is flat and does not yet expose:
- *   - sendsTo   (TODO: backend will expose delivery channels)
- *   - runs      (TODO: backend will expose run history)
- *   - nextRun   (TODO: backend will expose human-readable next-run label)
- *   - lastRun   (TODO: backend will expose human-readable last-run label)
- *   - cost      (TODO: backend will expose per-run cost estimate)
- *
- * Each stub is marked with a comment so they are easy to replace when the
- * backend adds the field.
+ * Pure adapters: backend `Routine` (+ its runs) → the view shapes used by
+ * ListView, Drawers and WeekView.
  */
-
 import type { Routine } from '../../core/domain/types'
-import type { Frequency, RoutineDetail, RoutineGroup, RoutineRow, RunResult } from './data'
-
-// ── helpers ───────────────────────────────────────────────────────────────────
+import {
+  fmtCredits,
+  fmtDayTime,
+  fmtDuration,
+  fmtShort,
+  lastEight,
+  type Frequency,
+  type PastRun,
+  type RoutineDetail,
+  type RoutineGroup,
+  type RoutineRow,
+  type SendTarget,
+} from './data'
 
 /** Map a backend freq string to the UI Frequency type. */
-function mapFreq(freq: string): Frequency {
+export function mapFreq(freq: string): Frequency {
   const f = freq.toLowerCase()
-  if (f === 'daily') return 'Daily'
   if (f === 'weekdays') return 'Weekdays'
   if (f === 'weekly') return 'Weekly'
   if (f === 'monthly') return 'Monthly'
-  // Capitalise first letter as fallback
-  return (freq.charAt(0).toUpperCase() + freq.slice(1)) as Frequency
+  return 'Daily'
 }
 
-/** Format an ISO timestamp to a short human label like "Mon 07:30". */
-function formatAt(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]
-  const h = String(d.getHours()).padStart(2, '0')
-  const m = String(d.getMinutes()).padStart(2, '0')
-  return `${wd} ${h}:${m}`
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAY_PLURAL = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays']
+
+/** "Weekdays · 07:30", "Mon & Thu · 09:00", "Last working day · 09:00" */
+export function cadenceLabel(r: Pick<Routine, 'freq' | 'at' | 'days' | 'monthly'>): string {
+  const f = mapFreq(r.freq)
+  if (f === 'Daily') return `Every day · ${r.at}`
+  if (f === 'Weekdays') return `Weekdays · ${r.at}`
+  if (f === 'Monthly') {
+    return (r.monthly ?? '').replace('-', '_') === 'last_working_day'
+      ? `Last working day · ${r.at}`
+      : `Monthly · ${r.at}`
+  }
+  const days = [...new Set(r.days.length ? r.days : [0])].sort()
+  if (days.length === 1) return `${DAY_PLURAL[days[0]]} · ${r.at}`
+  return `${days.map((d) => DAY_NAMES[d]).join(' & ')} · ${r.at}`
+}
+
+/** sends_to entries are free-form JSON: {channel,id} | {kind,label} | string. */
+export function sendTargets(sendsTo: unknown[]): SendTarget[] {
+  return sendsTo.map((s) => {
+    if (typeof s === 'string') return { icon: s.startsWith('#') ? 'hash' : 'message-circle', label: s }
+    const o = (s ?? {}) as Record<string, unknown>
+    const label = String(o.label ?? o.name ?? o.channel ?? o.kind ?? 'Destination')
+    const channel = String(o.channel ?? o.kind ?? '')
+    const pretty = channel === 'whatsapp' ? 'WhatsApp' : channel === 'chat' || channel === 'area' ? `#${o.name ?? label}` : label
+    return { icon: pretty.startsWith('#') ? 'hash' : 'message-circle', label: o.label ? label : pretty }
+  })
+}
+
+function pastRuns(r: Routine): PastRun[] {
+  // Detail endpoint returns newest first; list rows are oldest → newest.
+  const runs = [...(r.runs ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+  return runs.slice(0, 5).map((run) => ({
+    id: run.id,
+    when: fmtShort(run.at),
+    outcome:
+      run.outcome === 'skip'
+        ? `Skipped — ${run.error ?? 'nothing to do'}`
+        : run.outcome === 'fail'
+          ? `Failed — ${run.error ?? 'see run'}`
+          : run.outcome === 'running'
+            ? 'Running…'
+            : `Done · ${fmtCredits(run.costCredits)}`,
+    duration: fmtDuration(run.duration),
+    skipped: run.outcome === 'skip',
+    failed: run.outcome === 'fail',
+  }))
+}
+
+function avgCost(r: Routine): string {
+  const paid = (r.runs ?? []).filter((x) => x.outcome === 'ok' && x.costCredits > 0)
+  if (paid.length === 0) return '—'
+  const avg = Math.round(paid.reduce((s, x) => s + x.costCredits, 0) / paid.length)
+  return `~${fmtCredits(avg)} a run`
+}
+
+function lastRunLabel(r: Routine): string {
+  const runs = [...(r.runs ?? [])].filter((x) => x.outcome !== 'skip').sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+  const last = runs[0]
+  if (!last) return r.lastAt ? fmtDayTime(r.lastAt) : '—'
+  const day = fmtDayTime(last.at).split(' ')[0]
+  return last.duration != null ? `${day} · ${fmtDuration(last.duration)}` : day
 }
 
 /**
- * Produce 8 stub run results for a routine.
- * TODO: replace with real run history from the backend when that endpoint exists.
- *
- * The stubs use a pattern that keeps the bar UI functional (clickable buttons)
- * and mirrors the fixture data so existing UI tests remain valid.
+ * Map a backend `Routine` to the `RoutineDetail` shape expected by `RoutineDrawer`.
+ * `helperName` builds the subtitle when the backend has none.
  */
-function stubRuns(r: Routine): RunResult[] {
-  if (!r.enabled || r.paused) {
-    // Paused/disabled: show some prior ok runs, then nones
-    return ['ok', 'ok', 'ok', 'none', 'none', 'none', 'none', 'none']
-  }
-  // Per-id stubs that mirror the pen fixture so existing UI snapshot tests hold.
-  // When backend exposes run history these are replaced by real data.
-  const idStubs: Record<string, RunResult[]> = {
-    'on-call-digest': ['ok', 'ok', 'ok', 'ok', 'fail', 'ok', 'ok', 'ok'],
-    'weekly-retro':   ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'skip', 'ok'],
-  }
-  return idStubs[r.id] ?? ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'ok']
-}
-
-// ── public adapters ───────────────────────────────────────────────────────────
-
-/**
- * Map a backend `Routine` to the `RoutineDetail` shape expected by `RoutineDrawer`
- * and `RoutineDetailRoute`.
- */
-export function routineToDetail(r: Routine): RoutineDetail {
+export function routineToDetail(r: Routine, helperName = 'Helper'): RoutineDetail {
+  const sorted = [...(r.runs ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+  const latest = sorted.find((x) => x.jobId) ?? sorted[0]
   return {
     id: r.id,
     name: r.name,
     agentId: r.helperId,
-    subtitle: r.subtitle,
+    subtitle:
+      r.subtitle ||
+      `${helperName} · ${cadenceLabel(r).toLowerCase().replace(' · ', ' at ')} · ${r.managedByChief ? 'managed by Chief' : 'set by you'}`,
     frequency: mapFreq(r.freq),
     at: r.at,
     zone: r.timezone,
     instructions: r.instructions,
-    // TODO: backend will expose delivery channels
-    sendsTo: [],
-    // TODO: backend will expose human-readable next-run label
-    nextRun: r.paused ? 'Paused' : formatAt(r.nextAt),
-    // TODO: backend will expose human-readable last-run label
-    lastRun: r.lastAt ? formatAt(r.lastAt) : '—',
-    // TODO: backend will expose per-run cost estimate
-    cost: '—',
-    // TODO: backend will expose run history
-    runs: [],
+    sendsTo: sendTargets(r.sendsTo ?? []),
+    nextRun: r.paused ? 'Paused' : fmtDayTime(r.nextAt),
+    nextAt: r.nextAt,
+    lastRun: lastRunLabel(r),
+    cost: avgCost(r),
+    runs: pastRuns(r),
     days: r.days.length > 0 ? r.days : undefined,
-    monthly: (r.monthly as RoutineDetail['monthly']) ?? undefined,
+    monthly: r.monthly ? ((r.monthly.replace(/_/g, '-') as RoutineDetail['monthly'])) : undefined,
     managedByChief: r.managedByChief,
+    paused: r.paused,
+    pausedUntil: r.pausedUntil ?? null,
+    allowChiefShift: r.allowChiefShift ?? true,
+    skipHolidays: r.skipHolidays ?? false,
+    askBeforeSending: r.askBeforeSending ?? false,
+    latestRunId: latest?.id ?? null,
+    latestJobId: latest?.jobId ?? null,
   }
 }
 
-/**
- * Map a backend `Routine` to the `RoutineRow` shape expected by `ListView`.
- */
+/** Map a backend `Routine` to the `RoutineRow` shape expected by `ListView`. */
 export function routineToRow(r: Routine): RoutineRow {
+  const { results, refs } = lastEight(
+    [...(r.runs ?? [])].sort((a, b) => (a.at ?? '').localeCompare(b.at ?? '')),
+  )
   return {
     id: r.id,
     name: r.name,
     agentId: r.helperId,
-    when: `${mapFreq(r.freq)} · ${r.at}`,
-    next: r.paused ? 'Paused' : formatAt(r.nextAt),
+    when: cadenceLabel(r),
+    next: r.paused ? 'Paused' : fmtDayTime(r.nextAt),
+    nextAt: r.nextAt,
     paused: r.paused,
-    // TODO: backend will expose run history; stub 8 bars for now
-    runs: stubRuns(r),
+    runs: results,
+    runRefs: refs,
     by: r.managedByChief ? 'chief' : 'you',
   }
 }
 
-/**
- * Group a list of backend `Routine`s into the `RoutineGroup[]` shape expected
- * by `ListView`.  Groups by `helperId`; order follows first occurrence.
- */
+/** Group routines by `helperId`; order follows first occurrence. */
 export function routinesToGroups(routines: Routine[]): RoutineGroup[] {
   const order: string[] = []
   const map = new Map<string, RoutineRow[]>()
-
   for (const r of routines) {
-    const key = r.helperId
-    if (!map.has(key)) {
-      order.push(key)
-      map.set(key, [])
+    if (!map.has(r.helperId)) {
+      order.push(r.helperId)
+      map.set(r.helperId, [])
     }
-    map.get(key)!.push(routineToRow(r))
+    map.get(r.helperId)!.push(routineToRow(r))
   }
-
-  return order.map(agentId => ({
-    agentId,
-    count: map.get(agentId)!.length,
-    rows: map.get(agentId)!,
-  }))
+  return order.map((agentId) => ({ agentId, count: map.get(agentId)!.length, rows: map.get(agentId)! }))
 }

@@ -27,6 +27,8 @@ import {
 } from './fixtures'
 // ── sweep/docs ──
 import { mockDocsRepos } from './docsMock'
+// ── sweep/goals-routines ──
+import { mockGoalDetail, mockRunDetail, mockSchedule, mockSuggestions } from './routinesMock'
 
 export function createMockRepos(): Repos {
   return {
@@ -45,6 +47,8 @@ export function createMockRepos(): Repos {
       listByChannel: (channelId: Id) =>
         Promise.resolve(goals.filter(g => g.channelId === channelId)),
       listAll: () => Promise.resolve([...goals]),
+      // ── sweep/goals-routines ──
+      get: (id: Id) => Promise.resolve(mockGoalDetail(id)),
     },
 
     sessions: {
@@ -127,6 +131,10 @@ export function createMockRepos(): Repos {
     routines: {
       list: () => Promise.resolve([...routines]),
       get: (id: Id) => Promise.resolve(routines.find(r => r.id === id) ?? null),
+      // ── sweep/goals-routines ──
+      schedule: (from: string, to: string) => Promise.resolve(mockSchedule(from, to)),
+      run: (routineId: Id, runId: Id) => Promise.resolve(mockRunDetail(routineId, runId)),
+      suggestions: () => Promise.resolve(mockSuggestions()),
     },
 
     knowledge: {

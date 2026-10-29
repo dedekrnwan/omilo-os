@@ -11,6 +11,7 @@ import type {
   FlowRun,
   Folder,
   Goal,
+  GoalDetail,
   Helper,
   HelperStat,
   Id,
@@ -20,6 +21,9 @@ import type {
   Message,
   Piece,
   Routine,
+  RoutineRunDetail,
+  RoutineSchedule,
+  RoutineSuggestion,
   Session,
   Skill,
   InboxItem,
@@ -42,6 +46,9 @@ export interface GoalRepo {
   listByChannel(channelId: Id): Promise<Goal[]>
   /** Every goal across all areas (for the "All areas" view). */
   listAll(): Promise<Goal[]>
+  // ── sweep/goals-routines ── (optional so hand-rolled test stubs stay valid)
+  /** GET /v1/goals/{id} → goal + planned jobs + proposals. */
+  get?(id: Id): Promise<GoalDetail | null>
 }
 
 export interface SessionRepo {
@@ -105,6 +112,13 @@ export interface FlowRepo {
 export interface RoutineRepo {
   list(): Promise<Routine[]>
   get(id: Id): Promise<Routine | null>
+  // ── sweep/goals-routines ── (optional so hand-rolled test stubs stay valid)
+  /** GET /v1/routines/schedule?from&to — cron expanded server-side + past runs. */
+  schedule?(from: string, to: string): Promise<RoutineSchedule>
+  /** GET /v1/routines/{id}/runs/{runId} — steps, logs, output, delivery. */
+  run?(routineId: Id, runId: Id): Promise<RoutineRunDetail | null>
+  /** GET /v1/routines/suggestions — Chief's deterministic suggestions. */
+  suggestions?(): Promise<RoutineSuggestion[]>
 }
 
 export interface KnowledgeRepo {
