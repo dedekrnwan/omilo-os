@@ -13,13 +13,19 @@ The control-panel "Safety & limits" page saves to ``company.settings.safety``:
 ``adjust_verdict`` runs AFTER ``engine.autonomy.decide``.  It only ever makes
 the gate stricter, except the explicit "auto-approve spending under" rule,
 which lets small spends through (never under Strict, never past the cap).
-Toggles that were never saved don't apply, so companies that haven't visited
-the page keep the plain autonomy matrix.
+"No delete" defaults to ON until a company saves it off; the always-wait
+toggles and money limits apply once saved.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+
+
+# Defaults for toggles that were never saved.  "No delete" holds even under
+# YOLO (the page says so); the always-wait toggles only bite once saved, so
+# YOLO keeps "posting, sending, deploying go" until someone turns them on.
+TOGGLE_DEFAULTS = {"noDelete": True}
 
 _PUBLIC = ("post", "social", "tweet", "instagram", "facebook", "tiktok", "linkedin", "website", "public", "publish")
 _MESSAGE = ("message", "email", "whatsapp", "sms", "send", "reply", "dm")
@@ -87,8 +93,9 @@ def adjust_verdict(
     spend_today_idr: int = 0,
 ) -> tuple[str, str | None]:
     """Return (verdict, reason) after applying the company's safety settings."""
-    if verdict == "refused" or not safety:
+    if verdict == "refused":
         return verdict, None
+    safety = {**TOGGLE_DEFAULTS, **(safety or {})}
     cats = categories(proposal_type)
     if not cats:
         return verdict, None
@@ -178,8 +185,6 @@ def gate(
 ) -> str:
     """Apply company safety to a decided verdict; log auto-approved spends."""
     safety = company_safety(company)
-    if not safety:
-        return verdict
     company_id = getattr(company, "id", "")
     today = spend_today_idr(db, company_id) if "spend" in categories(proposal_type) else 0
     new, _reason = adjust_verdict(

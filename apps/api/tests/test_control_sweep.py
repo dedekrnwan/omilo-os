@@ -442,8 +442,10 @@ def test_company_safety_adjusts_verdicts():
     assert a("needs_owner", "spend", arguments={"amount_idr": 150_000}, eff="strict") == "needs_owner"
     assert a("allowed", "spend", arguments={"amount_idr": 150_000}, spend_today_idr=1_900_000) == "needs_owner"
     assert a("allowed", "skill_publish") == "allowed"  # internal review flow untouched
-    # Never-saved settings change nothing.
+    # Never-saved: no-delete holds by default; always-wait toggles need saving.
+    assert adjust_verdict("allowed", effective="yolo", proposal_type="delete_file", safety={})[0] == "needs_owner"
     assert adjust_verdict("allowed", effective="yolo", proposal_type="deploy", safety={})[0] == "allowed"
+    assert adjust_verdict("allowed", effective="yolo", proposal_type="delete_file", safety={"noDelete": False})[0] == "allowed"
 
 
 def test_role_model_and_budgets():
