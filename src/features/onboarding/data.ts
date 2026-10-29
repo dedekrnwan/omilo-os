@@ -140,64 +140,7 @@ export const AI_MODES: Record<AIMode, AIModeCopy> = {
 
 // ── Step 3 · Get to know you ─────────────────────────────────────────────────
 
-export interface LearnedNote {
-  id: string
-  state: 'done' | 'writing' | 'next' | 'todo'
-  text?: string
-}
-
-// Fresh workspace: nothing has been captured yet. The seven topics start as a
-// checklist Chief will fill in from your answers — no pre-filled demo content.
-export const LEARNED: LearnedNote[] = [
-  { id: 'company', state: 'next' },
-  { id: 'customers', state: 'todo' },
-  { id: 'goals', state: 'todo' },
-  { id: 'offer', state: 'todo' },
-  { id: 'rules', state: 'todo' },
-  { id: 'systems', state: 'todo' },
-  { id: 'voice', state: 'todo' },
-]
-
-export const INTERVIEW = {
-  // {company} is replaced with the real workspace name at render time.
-  q1: 'What would make the next 3 months a win for {company}?',
-  ideas1: ['More paying customers', 'Ship a key launch', 'Less manual work'],
-  hint1: 'Not sure? Pick one to start, or tell me in your own words.',
-}
-
 // ── Step 4 · Check ───────────────────────────────────────────────────────────
-
-export interface CheckNote {
-  id: string
-  content: string
-  kpi?: string
-  suggested?: string
-}
-
-export const CHECK_NOTES: CheckNote[] = [
-  {
-    id: 'company',
-    content:
-      'Community app that connects RT/\u200BRW neighbourhoods in Jabodetabek with residents and local services. 2 founders, 3 developers.',
-  },
-  {
-    id: 'customers',
-    content: 'RT heads who run the neighbourhood, and residents who pay dues and request services.',
-  },
-  {
-    id: 'goals',
-    content: '• 100 paying neighbourhoods by December\n• Cut manual support chats in half',
-    kpi: 'Also becomes a KPI: paying neighbourhoods, 0 → 100',
-  },
-  { id: 'offer', content: 'Rp 150.000 per neighbourhood a month. First month free.' },
-  {
-    id: 'rules',
-    content: "Never message residents without the RT's OK. Never promise refunds.",
-    suggested: 'I suggested these two. Check them.',
-  },
-  { id: 'systems', content: 'WhatsApp Business, Google Sheets for dues, the sahabat-warga code folder.' },
-  { id: 'voice', content: 'Warm, simple Bahasa. Calls people “Bapak/Ibu”. No jargon.' },
-]
 
 // ── Step 5 · Your team ───────────────────────────────────────────────────────
 
@@ -212,55 +155,6 @@ export interface TeamHelper {
   on: boolean
 }
 
-export const TEAM_HELPERS: TeamHelper[] = [
-  {
-    id: 'chief',
-    name: 'Chief of Staff',
-    area: 'brand',
-    role: 'runs the team',
-    description: 'Writes your morning brief, routes every request, and runs the weekly retro.',
-    reason: 'Every team needs one',
-    badge: 'always',
-    on: true,
-  },
-  {
-    id: 'builder',
-    name: 'Builder',
-    area: 'dev',
-    role: 'engineering',
-    description: 'Builds and checks the sahabat-warga backend, one task at a time.',
-    reason: 'You have a code folder and 3 developers',
-    on: true,
-  },
-  {
-    id: 'grower',
-    name: 'Grower',
-    area: 'ops',
-    role: 'growth',
-    description: 'Weekly growth review and campaigns to win new neighbourhoods.',
-    reason: 'Goal: 100 paying neighbourhoods by December',
-    on: true,
-  },
-  {
-    id: 'support',
-    name: 'Support',
-    area: 'support',
-    role: 'customer support',
-    description: 'Answers residents on WhatsApp in your voice; anything unusual comes to you.',
-    reason: 'Goal: cut support chats in half',
-    badge: 'suggested',
-    on: true,
-  },
-  {
-    id: 'finance',
-    name: 'Finance',
-    area: 'finance',
-    role: 'money',
-    description: 'Matches dues to payments each week and flags late neighbourhoods.',
-    reason: 'You track dues in Google Sheets',
-    on: false,
-  },
-]
 
 // ── Step 6 · Team ready (first Inbox) ────────────────────────────────────────
 

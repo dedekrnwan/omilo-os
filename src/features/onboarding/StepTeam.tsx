@@ -1,8 +1,10 @@
 /** Onboarding 5 · Your team (pen V7szb). */
-import { useState } from 'react'
-import { ArrowLeft, Lightbulb, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, Lightbulb, Loader2, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { TEAM_HELPERS } from './data'
+import type { TeamHelper } from './data'
+import { planTeam } from './interviewApi'
+import { notify } from '../../ui/ds/Toaster'
 import { ChipInfo, ChipNeutral, PrimaryButton, QuietButton, Stroke, Switch, WizardCard } from './parts'
 import { useSession } from '../../app/session'
 
@@ -11,26 +13,52 @@ export function StepTeam({
   onNext,
 }: {
   onBack: () => void
-  onNext: (selectedHelperIds: string[]) => void
+  onNext: (selected: TeamHelper[]) => void
 }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  const [on, setOn] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(TEAM_HELPERS.map((h) => [h.id, h.on])),
-  )
-  const selectedIds = TEAM_HELPERS.filter((h) => on[h.id]).map((h) => h.id)
-  const count = selectedIds.length
+  // Chief always joins (already created with the company); the rest is planned
+  // from the interview notes (POST /v1/onboarding/team-plan).
+  const [helpers, setHelpers] = useState<TeamHelper[] | null>(null)
+  const [by, setBy] = useState<'ai' | 'rules'>('rules')
+  const [on, setOn] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    planTeam()
+      .then((plan) => {
+        const list: TeamHelper[] = [
+          { id: 'chief', name: 'Chief of Staff', area: 'brand', role: 'runs the team',
+            description: 'Writes your morning brief, routes every request, and runs the weekly retro.',
+            reason: 'Every team needs one', badge: 'always', on: true },
+          ...plan.helpers.map((h) => ({ id: h.id, name: h.name, area: h.area, role: h.role, description: h.description,
+            reason: h.reason, on: h.on, badge: h.on ? undefined : ('suggested' as const) })),
+        ]
+        setHelpers(list)
+        setBy(plan.by)
+        setOn(Object.fromEntries(list.map((h) => [h.id, h.on])))
+      })
+      .catch((e) => {
+        notify(e instanceof Error ? e.message : 'Couldn’t plan the team')
+        setHelpers([])
+      })
+  }, [])
+  const selected = (helpers ?? []).filter((h) => on[h.id])
+  const count = selected.length
 
   return (
     <WizardCard className="flex-col gap-[18px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
       <div className="flex w-full flex-col gap-[4px]">
         <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">Your team for {companyName}</h1>
         <p className="w-full text-[14px] text-muted">
-          Picked from your goals. After you create them, each helper proposes its own job, and nothing runs until you
-          approve it in Inbox.
+          {by === 'ai' ? 'Picked by Chief from what you told it.' : 'Picked from your notes.'} After you create them, each
+          helper proposes its own job, and nothing runs until you approve it in Inbox.
         </p>
       </div>
+      {helpers === null && (
+        <p className="flex items-center gap-[8px] text-[13px] text-muted">
+          <Loader2 size={14} aria-hidden className="animate-spin" /> Chief is picking your team…
+        </p>
+      )}
       <ul className="flex w-full flex-col gap-[10px]">
-        {TEAM_HELPERS.map((h) => {
+        {(helpers ?? []).map((h) => {
           const enabled = on[h.id]
           return (
             <li
@@ -69,7 +97,7 @@ export function StepTeam({
         </QuietButton>
         <span className="h-px flex-1" />
         <span className="text-[12px] text-muted">{count} helpers · they sleep until they have work</span>
-        <PrimaryButton icon={Sparkles} onClick={() => onNext(selectedIds)}>
+        <PrimaryButton icon={Sparkles} onClick={() => onNext(selected)}>
           Create my team
         </PrimaryButton>
       </div>

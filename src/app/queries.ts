@@ -1389,7 +1389,16 @@ export function useDismissChiefNudge() {
 export function useStartChat() {
     mutationFn: async ({ input, text }: { input: import('../adapters/http/commands').CreateSessionInput; text?: string }) => {
       const session = await commands.createSession(input)
-      if (text && text.trim()) await commands.sendMessage(session.id, text.trim(), { model: input.model })
+      if (text && text.trim()) {
+        // Live: the thread page streams the first message (SSE) so the owner
+        // watches the answer arrive. Mock: send it here as before.
+        if (import.meta.env.VITE_USE_HTTP === '1') {
+          const { queueFirstMessage } = await import('./chatStream')
+          queueFirstMessage(session.id, text.trim(), input.model)
+        } else {
+          await commands.sendMessage(session.id, text.trim(), { model: input.model })
+        }
+      }
       return session
     onSuccess: (session) => {
       void qc.invalidateQueries({ queryKey: ['folders'] })

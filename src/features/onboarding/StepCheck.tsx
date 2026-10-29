@@ -1,24 +1,49 @@
 /** Onboarding 4 · Check (pen M1ZiO). */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { CHECK_NOTES, KNOWLEDGE_NOTES } from './data'
-import type { CheckNote } from './data'
+import { KNOWLEDGE_NOTES } from './data'
+import { getInterview, saveNote, TOPIC_IDS } from './interviewApi'
+import type { InterviewView, TopicId } from './interviewApi'
+import { notify } from '../../ui/ds/Toaster'
 import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
 import { useSession } from '../../app/session'
 
 function NoteCard({
-  note,
+  id,
   content,
-  onChange,
+  onSave,
 }: {
-  note: CheckNote
+  id: TopicId | 'extra'
   content: string
-  onChange: (content: string) => void
+  onSave: (content: string) => Promise<void>
 }) {
-  const meta = KNOWLEDGE_NOTES.find((k) => k.id === note.id)
-  const label = meta?.label ?? note.id
+  const meta = KNOWLEDGE_NOTES.find((k) => k.id === id)
+  const label = meta?.label ?? 'Something I missed'
   const [editing, setEditing] = useState(content.trim() === '')
+  const [draft, setDraft] = useState(content)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (!editing) setDraft(content)
+  }, [content, editing])
+  const toggle = async () => {
+    if (!editing) {
+      setEditing(true)
+      return
+    }
+    if (draft.trim() !== content.trim()) {
+      setSaving(true)
+      try {
+        await onSave(draft)
+      } catch (e) {
+        notify(e instanceof Error ? e.message : 'Couldn’t save the note')
+        setSaving(false)
+        return
+      }
+      setSaving(false)
+    }
+    setEditing(draft.trim() === '')
+  }
   return (
     <article className="relative flex min-w-0 flex-1 flex-col gap-[8px] self-start rounded-md bg-surface p-[14px]">
       <div className="flex w-full items-center gap-[8px]">
@@ -28,8 +53,9 @@ function NoteCard({
         <button
           type="button"
           aria-label={editing ? `Save ${label}` : `Edit ${label}`}
-          className="text-muted hover:text-ink"
-          onClick={() => setEditing((v) => !v)}
+          className="text-muted hover:text-ink disabled:opacity-50"
+          disabled={saving}
+          onClick={() => void toggle()}
         >
           {editing ? <Check size={14} aria-hidden /> : <Pencil size={14} aria-hidden />}
         </button>
@@ -37,24 +63,21 @@ function NoteCard({
       {editing ? (
         <textarea
           aria-label={`${label} note`}
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Add a note…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() !== content.trim()) void toggle()
+          }}
+          placeholder={meta ? `Add a note about ${meta.meta}…` : 'Add a note…'}
           className="min-h-[72px] w-full resize-none rounded-base bg-surface px-[10px] py-[8px] text-[13px] leading-[1.5] text-ink outline-1 -outline-offset-1 outline-line-strong"
         />
       ) : (
         <p className="w-full text-[13px] leading-[1.5] whitespace-pre-line text-ink-2">{content}</p>
       )}
-      {note.kpi && (
-        <div className="flex w-full gap-[8px] pt-[2px]">
-          <span aria-hidden className="mt-[4px] size-[7px] shrink-0 rounded-full bg-helper-brand" />
-          <span className="min-w-0 flex-1 text-[12px] text-muted">{note.kpi}</span>
-        </div>
-      )}
-      {note.suggested && (
+      {!content.trim() && !editing && (
         <div className="flex items-center gap-[6px]">
           <TriangleAlert size={12} aria-hidden className="text-warn" />
-          <span className="text-[11px] font-medium text-warn">{note.suggested}</span>
+          <span className="text-[11px] font-medium text-warn">We didn't get to this yet</span>
         </div>
       )}
       <Stroke />
@@ -64,19 +87,23 @@ function NoteCard({
 
 export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  // Editable copy of each note's content, keyed by id, plus any added notes.
-  const [notes, setNotes] = useState<CheckNote[]>(CHECK_NOTES)
-  const [contents, setContents] = useState<Record<string, string>>(() =>
-    Object.fromEntries(CHECK_NOTES.map((n) => [n.id, n.content])),
-  )
-  const setContent = (id: string, content: string) =>
-    setContents((prev) => ({ ...prev, [id]: content }))
-  const addNote = () => {
-    const id = `custom-${notes.length}`
-    setNotes((prev) => [...prev, { id, content: '' }])
-    setContent(id, '')
+  const [view, setView] = useState<InterviewView | null>(null)
+  const [showExtra, setShowExtra] = useState(false)
+  useEffect(() => {
+    getInterview()
+      .then((v) => {
+        setView(v)
+        if (v.notes.extra?.trim()) setShowExtra(true)
+      })
+      .catch((e) => notify(e instanceof Error ? e.message : 'Couldn’t load the notes'))
+  }, [])
+  const save = (id: TopicId | 'extra') => async (content: string) => {
+    setView(await saveNote(id, content))
   }
-  const rows = [notes.slice(0, 4), notes.slice(4)]
+  const ids: (TopicId | 'extra')[] = [...TOPIC_IDS, ...(showExtra ? (['extra'] as const) : [])]
+  const rows = [ids.slice(0, 4), ids.slice(4)]
+  const answers = view?.history.filter((h) => h.role === 'owner').length ?? 0
+  const filled = view ? TOPIC_IDS.filter((t) => view.notes[t]?.trim()).length : 0
   return (
     <WizardCard className="flex-col gap-[18px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
       <div className="flex w-full items-center gap-[14px]">
@@ -91,38 +118,39 @@ export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () =
           </p>
         </div>
       </div>
-      <div className="flex w-full flex-col gap-[12px]">
-        {rows.map((row, i) => (
-          <div key={i} className="flex w-full gap-[12px]">
-            {row.map((n) => (
-              <NoteCard
-                key={n.id}
-                note={n}
-                content={contents[n.id] ?? n.content}
-                onChange={(c) => setContent(n.id, c)}
-              />
-            ))}
-            {i === 1 && (
-              <button
-                type="button"
-                onClick={addNote}
-                className="relative flex h-[128px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-md p-[14px] text-muted hover:bg-soft"
-              >
-                <Plus size={18} aria-hidden />
-                <span className="text-[13px]">Add something I missed</span>
-                <Stroke color="var(--color-wire-strong)" />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {view === null ? (
+        <p className="text-[13px] text-muted">Loading your notes…</p>
+      ) : (
+        <div className="flex w-full flex-col gap-[12px]">
+          {rows.map((row, i) => (
+            <div key={i} className="flex w-full flex-col gap-[12px] sm:flex-row">
+              {row.map((id) => (
+                <NoteCard key={id} id={id} content={view.notes[id] ?? ''} onSave={save(id)} />
+              ))}
+              {i === 1 && !showExtra && (
+                <button
+                  type="button"
+                  onClick={() => setShowExtra(true)}
+                  className="relative flex h-[128px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-md p-[14px] text-muted hover:bg-soft"
+                >
+                  <Plus size={18} aria-hidden />
+                  <span className="text-[13px]">Add something I missed</span>
+                  <Stroke color="var(--color-wire-strong)" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="w-full flex-1" />
       <div className="flex w-full items-center gap-[10px]">
         <QuietButton icon={ArrowLeft} onClick={onBack}>
           Back to our chat
         </QuietButton>
         <span className="h-px flex-1" />
-        <span className="text-[12px] text-muted">Took 9 minutes · 23 answers</span>
+        <span className="text-[12px] text-muted">
+          {filled} of 7 notes · {answers} {answers === 1 ? 'answer' : 'answers'}
+        </span>
         <PrimaryButton icon={ArrowRight} onClick={onNext}>
           Looks right, build my team
         </PrimaryButton>

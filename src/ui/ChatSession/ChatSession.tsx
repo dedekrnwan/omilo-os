@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle, PanelRight, ScrollText, ShieldCheck, Target, UserPlus, X } from 'lucide-react'
-import type { HelperArea, Message, Model, SessionParticipant } from '../../core/domain/types'
+import type { HelperArea, Message, MessageAuthor, Model, SessionParticipant } from '../../core/domain/types'
 import {
   useChannel,
   useChannelFolders,
@@ -16,8 +15,7 @@ import {
   useUpdateSession,
 } from '../../app/queries'
 import { useCommands } from '../../app/CommandsProvider'
-import { openChatSocket } from '../../adapters/http/chatSocket'
-import { platform } from '../../platform'
+import { takeFirstMessage, useChatStream } from '../../app/chatStream'
 import { notify } from '../ds/Toaster'
 import { usePickerSource } from './usePickerSource'
 import { Button, IconButton } from '../ds/Button'
@@ -267,110 +265,58 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   // Active socket handle — guards against concurrent sockets (approach a: deny new send while in-flight)
   const socketRef = useRef<{ close(): void } | null>(null)
 
-  const queryClient = useQueryClient()
 
-  // ── HTTP commands + WS socket (env-gated) ────────────────────────────────
-  // In live mode (VITE_USE_HTTP=1): the send path opens a WS, streams frames,
-  // appends message_saved messages, and clears sending state on job_done/failed.
-  // If the socket errors or closes early the UI falls back to POST+refetch.
-  // In mock mode (default): the existing behaviour is preserved exactly.
+  // ── Live turns stream over SSE (VITE_USE_HTTP=1) ─────────────────────────
+  // POST /v1/sessions/{id}/messages/stream: the owner's message comes back
+  // saved, then the reply arrives word by word into a live bubble, then the
+  // saved reply replaces it. Mock mode keeps the static thread.
   const isLiveMode = import.meta.env.VITE_USE_HTTP === '1'
+  const streamTurn = useChatStream()
+  const [live, setLive] = useState<{ author: MessageAuthor; text: string; activity: string | null } | null>(null)
 
-  const { baseUrl, getToken } = useMemo(() => {
-    if (!isLiveMode) return { baseUrl: '', getToken: () => null }
-    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-    const tok = () => platform.tokenStorage.getToken()
-    return { baseUrl: base, getToken: tok }
-  }, [isLiveMode])
-
-  // Fallback: POST + refetch (called when socket errors / closes before job_done)
-  const runFallback = useCallback(async (text: string) => {
-    try {
-      await commands.sendMessage(sessionId, text, { model: selectedModel.id })
-      // Invalidate the messages query so useMessages refetches the saved message
-      await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
-    } catch {
-      // Fallback also failed — best effort, nothing more to do
-    }
-    setIsSending(false)
-    setSendNotice('Message sent via fallback — response may take a moment.')
-  }, [commands, sessionId, queryClient, selectedModel])
-
-  const handleSend = useCallback((text: string) => {
+  const handleSend = useCallback((text: string, model?: string) => {
     if (!isLiveMode) return
-
-    // Guard (a): if a send is already in-flight, deny the new send.
-    // The composer disables send during isSending; this enforces it at the logic layer too.
-    if (isSending) return
-
-    // Content-free: no message text sent to telemetry
-    capture('message_sent', {})
-
+    if (socketRef.current) return // one turn at a time
+    capture('message_sent', {}) // content-free
+    const ctrl = new AbortController()
+    socketRef.current = { close: () => ctrl.abort() }
     setIsSending(true)
     setSendNotice(null)
-    setStreamedMessages([])
-
-    let jobDone = false
-    let fallbackDone = false
-
-    const socket = openChatSocket(sessionId, getToken, baseUrl, {
-      onRunEvent: (_kind, _data) => {
-        // Optional: could surface run_event progress in UI; for now no-op
+    const first = session?.participants?.[0] ?? CHIEF
+    setLive({ author: { kind: 'helper', name: first.name, area: first.area }, text: '', activity: null })
+    const append = (m: Message) =>
+      setStreamedMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
+    void streamTurn(sessionId, text, {
+      model: model ?? selectedModel.id,
+      signal: ctrl.signal,
+      onUser: append,
+      onHelper: (author) => setLive((l) => (l ? { ...l, author } : l)),
+      onActivity: (label) => setLive((l) => (l ? { ...l, activity: label } : l)),
+      onText: (delta) => setLive((l) => (l ? { ...l, text: l.text + delta, activity: null } : l)),
+      onDone: (m) => {
+        if (m) append(m)
       },
-      onMessageSaved: (message) => {
-        // Append every message_saved (assistant OR user echo) to the thread
-        // Defensive dedup: backend currently does not echo the user message, but
-        // guard here in case a future backend version sends a user message_saved.
-        setStreamedMessages(prev => {
-          const alreadyPresent = prev.some(m => m.id === message.id)
-          return alreadyPresent ? prev : [...prev, message]
-        })
+      onError: (error, m) => {
+        if (m) append(m)
+        setSendNotice(error)
       },
-      onJobDone: (_jobId) => {
-        jobDone = true
-        socketRef.current = null
-        setIsSending(false)
-        // Invalidate to merge streamed messages with the server state
-        void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
-        void queryClient.invalidateQueries({ queryKey: ['sessionResults', sessionId] })
-        socket.close()
-      },
-      onJobFailed: (_jobId) => {
-        jobDone = true
-        socketRef.current = null
-        setIsSending(false)
-        void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
-        socket.close()
-      },
-      onError: (_ev) => {
-        if (!jobDone && !fallbackDone) {
-          fallbackDone = true
-          socketRef.current = null
-          void runFallback(text)
-          socket.close()
-        }
-      },
-      onClose: (_ev) => {
-        // Socket closed before job_done — branch on close code.
-        if (!jobDone) {
-          socketRef.current = null
-          if (_ev.code === 4401) {
-            // Auth failure: the fallback POST would also 401.
-            // Clear spinner and surface a non-blocking auth error notice.
-            setIsSending(false)
-            setSendNotice('Session expired — please sign in again.')
-          } else if (!fallbackDone) {
-            // Transient drop: fall back to POST+refetch (only if onError didn't already).
-            fallbackDone = true
-            void runFallback(text)
-          }
-        }
-      },
+    }).finally(() => {
+      socketRef.current = null
+      setLive(null)
+      setIsSending(false)
     })
+  }, [isLiveMode, sessionId, selectedModel, streamTurn, session])
 
-    socketRef.current = socket
-    socket.send(text, { model: selectedModel.id })
-  }, [isLiveMode, isSending, sessionId, getToken, baseUrl, queryClient, runFallback, selectedModel])
+  // A chat started from /chat: send its first message here so it streams.
+  useEffect(() => {
+    if (!isLiveMode) return
+    const first = takeFirstMessage(sessionId)
+    if (first) handleSend(first.text, first.model)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // Leaving the chat mid-answer doesn't cancel the turn: the server finishes and
+  // saves the reply in the background, and the thread shows it when you return.
 
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -711,6 +657,15 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             const combined = [
               ...serverMsgs,
               ...streamedMessages.filter(m => !serverIds.has(m.id)),
+              ...(live
+                ? [{
+                    id: 'live-reply',
+                    sessionId,
+                    author: live.author,
+                    content: live.text || `_${live.activity ?? 'Thinking…'}_`,
+                    createdAt: new Date().toISOString(),
+                  } satisfies Message]
+                : []),
             ]
             if (combined.length === 0) {
               return (
@@ -741,7 +696,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
       {/* Composer area */}
       <div className="flex shrink-0 flex-col items-center gap-[8px] pt-[4px] pb-[13px]">
         <div className={col}>
-          {/* Non-blocking fallback notice (shown when WS fell back to POST) */}
+          {/* Non-blocking notice: the AI couldn't answer / the answer was cut off */}
           {sendNotice && (
             <div
               role="status"

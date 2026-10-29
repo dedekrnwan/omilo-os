@@ -1,0 +1,173 @@
+/**
+ * Onboarding interview client (steps "Get to know you", "Check", "Your team").
+ *
+ * Live mode talks to the API:
+ *   GET  /v1/onboarding/interview          state
+ *   POST /v1/onboarding/interview/stream   one turn, SSE (activity · text · note · done · error)
+ *   PUT  /v1/onboarding/notes/{topic}      edit a note
+ *   POST /v1/onboarding/team-plan          the helpers that fit
+ * Mock mode runs a small offline practice interview so the screens still work.
+ */
+import { apiFetch } from '../../adapters/http/client'
+import { postSse } from '../../adapters/http/sse'
+import { platform } from '../../platform'
+import type { HelperArea } from '../../core/domain/types'
+
+export type TopicId = 'company' | 'customers' | 'goals' | 'offer' | 'rules' | 'systems' | 'voice'
+export const TOPIC_IDS: TopicId[] = ['company', 'customers', 'goals', 'offer', 'rules', 'systems', 'voice']
+
+export interface InterviewEntry {
+  role: 'owner' | 'ai'
+  text: string
+  options?: string[]
+}
+
+export interface InterviewView {
+  history: InterviewEntry[]
+  topic: TopicId | 'finish' | null
+  notes: Partial<Record<TopicId | 'extra', string>>
+  coverage: { id: TopicId; label: string; done: boolean }[]
+  options: string[]
+  website: string
+  ai: { label: string; practice: boolean }
+}
+
+export interface TurnHandlers {
+  onText?: (delta: string) => void
+  onActivity?: (label: string) => void
+  onNote?: (topic: TopicId, content: string) => void
+  onDone?: (view: InterviewView) => void
+  onError?: (message: string) => void
+}
+
+export interface PlannedHelper {
+  id: string
+  base: string
+  name: string
+  area: HelperArea
+  role: string
+  description: string
+  reason: string
+  on: boolean
+}
+
+const live = () => import.meta.env.VITE_USE_HTTP === '1'
+const base = () => import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+const token = () => platform.tokenStorage.getToken()
+
+export async function getInterview(): Promise<InterviewView> {
+  if (!live()) return mock.view()
+  const res = await apiFetch(`${base()}/v1/onboarding/interview`, token)
+  return (await res.json()) as InterviewView
+}
+
+export async function interviewTurn(
+  body: { message?: string; website?: string; restart?: boolean },
+  h: TurnHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!live()) return mock.turn(body.message ?? '', h)
+  let finished = false
+  try {
+    await postSse(
+      `${base()}/v1/onboarding/interview/stream`,
+      body,
+      token,
+      (event, data) => {
+        const d = (data ?? {}) as Record<string, unknown>
+        if (event === 'text') h.onText?.(String(d.delta ?? ''))
+        else if (event === 'activity') h.onActivity?.(String(d.label ?? ''))
+        else if (event === 'note') h.onNote?.(d.topic as TopicId, String(d.content ?? ''))
+        else if (event === 'done') {
+          finished = true
+          h.onDone?.(d as unknown as InterviewView)
+        } else if (event === 'error') {
+          finished = true
+          h.onError?.(String(d.message ?? 'Chief couldn’t answer'))
+        }
+      },
+      signal,
+    )
+    if (!finished) h.onError?.('The answer was cut off — try again.')
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') return
+    h.onError?.(e instanceof Error ? e.message : 'Couldn’t reach Omilo')
+  }
+}
+
+export async function saveNote(topic: TopicId | 'extra', content: string): Promise<InterviewView> {
+  if (!live()) return mock.save(topic, content)
+  const res = await apiFetch(`${base()}/v1/onboarding/notes/${topic}`, token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  return (await res.json()) as InterviewView
+}
+
+export async function planTeam(): Promise<{ helpers: PlannedHelper[]; by: 'ai' | 'rules' }> {
+  if (!live()) return { helpers: mock.team(), by: 'rules' }
+  const res = await apiFetch(`${base()}/v1/onboarding/team-plan`, token, { method: 'POST' })
+  return (await res.json()) as { helpers: PlannedHelper[]; by: 'ai' | 'rules' }
+}
+
+/** Read a small text file the owner attached, to share it with Chief. */
+export async function readTextFile(file: File): Promise<string | null> {
+  const ok = /\.(txt|md|markdown|csv|json|html?)$/i.test(file.name) || file.type.startsWith('text/')
+  if (!ok || file.size > 1_000_000) return null
+  return (await file.text()).slice(0, 12000)
+}
+
+// ── offline practice interview (mock mode) ───────────────────────────────────
+
+const LABELS: Record<TopicId, string> = {
+  company: 'Company', customers: 'Customers', goals: 'Goals', offer: 'Offer', rules: 'Rules', systems: 'Systems', voice: 'Voice',
+}
+const ASK: Record<TopicId, string> = {
+  company: 'What does your company do, and who’s on the team?',
+  customers: 'Who are your customers?',
+  goals: 'What would make the next 3 months a win?',
+  offer: 'What do you sell, and for how much?',
+  rules: 'What should your helpers never do without asking you?',
+  systems: 'Which tools do you run the business on?',
+  voice: 'How should your helpers sound when they write for you?',
+}
+
+const mock = (() => {
+  let state: InterviewView = {
+    history: [], topic: 'company', notes: {}, coverage: [], options: [], website: '',
+    ai: { label: 'Practice mode', practice: true },
+  }
+  const cov = () => TOPIC_IDS.map((id) => ({ id, label: LABELS[id], done: Boolean(state.notes[id]?.trim()) }))
+  const view = (): InterviewView => ({ ...state, coverage: cov() })
+  return {
+    view: async () => view(),
+    save: async (topic: TopicId | 'extra', content: string) => {
+      state = { ...state, notes: { ...state.notes, [topic]: content } }
+      return view()
+    },
+    turn: async (message: string, h: TurnHandlers) => {
+      const asked = state.topic && state.topic !== 'finish' ? state.topic : 'company'
+      const history = [...state.history]
+      if (message.trim()) {
+        history.push({ role: 'owner', text: message.trim() })
+        state = { ...state, notes: { ...state.notes, [asked]: message.trim() } }
+        h.onNote?.(asked, message.trim())
+      }
+      const next = message.trim()
+        ? TOPIC_IDS.find((t) => !state.notes[t]?.trim()) ?? 'finish'
+        : asked
+      const reply = next === 'finish' ? 'Thank you — that’s everything I need.' : (message.trim() ? 'Got it. ' : 'Hi! I’m Chief. ') + ASK[next]
+      h.onText?.(reply)
+      history.push({ role: 'ai', text: reply, options: [] })
+      state = { ...state, history, topic: next }
+      h.onDone?.(view())
+    },
+    team: (): PlannedHelper[] => [
+      { id: 'grower', base: 'grower', name: 'Grower', area: 'marketing', role: 'growth & marketing',
+        description: 'Content, campaigns and a weekly growth review.', reason: 'Growth and content', on: true },
+      { id: 'support', base: 'support', name: 'Support', area: 'support', role: 'customer support',
+        description: 'Answers customers in your voice; anything unusual comes to you.', reason: 'Customers reach you on chat', on: true },
+    ],
+  }
+})()

@@ -12,7 +12,7 @@ import { StepCheck } from './StepCheck'
 import { StepTeam } from './StepTeam'
 import type { AiSelection } from './StepYourAI'
 import { StepInbox } from './StepInbox'
-import { TEAM_HELPERS } from './data'
+import type { TeamHelper } from './data'
 import { capture } from '../../telemetry'
 import { isMockMode } from '../../app/useAuth'
 import { createCommands } from '../../adapters/http/commands'
@@ -73,17 +73,16 @@ export function OnboardingRoute() {
     setStep(next)
   }
 
-  async function completeOnboarding(selectedHelperIds?: string[]) {
+  async function completeOnboarding(selectedHelpers?: TeamHelper[]) {
     capture('onboarding_completed', { aiMode: aiSelection?.mode })
 
     if (!isMockMode()) {
       const commands = createCommands(BASE_URL, getToken)
 
-      // Create the helpers the owner picked on StepTeam. Non-fatal per helper so
-      // one failure doesn't block finishing onboarding.
-      const picked = (selectedHelperIds ?? [])
-        .map((id) => TEAM_HELPERS.find((h) => h.id === id))
-        .filter((h): h is (typeof TEAM_HELPERS)[number] => !!h)
+      // Create the helpers the owner picked on StepTeam. The Chief already exists
+      // (created with the company), so it is never created twice. Non-fatal per
+      // helper so one failure doesn't block finishing onboarding.
+      const picked = (selectedHelpers ?? []).filter((h) => h.id !== 'chief')
       if (typeof commands.createHelper === 'function') {
         for (const h of picked) {
           try {
@@ -91,8 +90,8 @@ export function OnboardingRoute() {
               name: h.name,
               area: h.area,
               role: h.role,
-              jobDescription: h.description,
-              isChief: h.id === 'chief',
+              jobDescription: h.reason ? `${h.description}\n\nWhy: ${h.reason}` : h.description,
+              isChief: false,
             })
           } catch {
             // Non-fatal: a helper can be hired later from the Team screen.

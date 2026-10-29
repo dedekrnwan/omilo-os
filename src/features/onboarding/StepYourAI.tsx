@@ -19,21 +19,15 @@ import { AI_MODES } from './data'
 import type { AIMode, AIOption } from './data'
 import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, StepEyebrow, WizardCard } from './parts'
 import { capture } from '../../telemetry'
-import { useAiAccounts } from '../../app/queries'
-import { createCommands } from '../../adapters/http/commands'
-import { platform } from '../../platform'
+import { useAiAccounts, useUpdateCompanySettings } from '../../app/queries'
+import { useCommands } from '../../app/CommandsProvider'
+import { useQueryClient } from '@tanstack/react-query'
+import { isMockMode } from '../../app/useAuth'
 import type { AiAccount } from '../../core/domain/types'
 import { DetectedHarnesses } from '../../ui/ds/DetectedHarnesses'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const BASE_URL =
-  (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ??
-  'http://localhost:8000'
-
-function getToken(): string | null {
-  return platform.tokenStorage.getToken()
-}
 
 // ── harness labels for display ────────────────────────────────────────────────
 
@@ -349,6 +343,34 @@ export function StepYourAI({
 
   // Live AI accounts from the backend (or mock repo in mock mode)
   const { data: aiAccounts, isLoading: accountsLoading } = useAiAccounts()
+  const commands = useCommands()
+  const qc = useQueryClient()
+  const updateSettings = useUpdateCompanySettings()
+  const [checking, setChecking] = useState(false)
+
+  /** Prove the picked AI really answers (one tiny call), save it as the company's AI, then move on. */
+  async function confirmAccount(accountId: string | null) {
+    if (!accountId || isMockMode()) {
+      onNext({ mode, accountId })
+      return
+    }
+    setChecking(true)
+    setConnectError(null)
+    try {
+      const res = (await commands.testAiAccount(accountId)) as { ok?: boolean; detail?: string } | undefined
+      if (res && res.ok === false) {
+        setConnectError(res.detail ?? 'This AI didn’t answer. Check the key or the sign-in and try again.')
+        return
+      }
+      await updateSettings.mutateAsync({ aiEngine: { defaultAccountId: accountId } })
+      void qc.invalidateQueries({ queryKey: ['aiAccounts'] })
+      onNext({ mode, accountId })
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Couldn’t check this AI. Try again.')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   // Merge newly-connected account (optimistic) with the live list so it appears
   // immediately without waiting for a refetch.
@@ -365,7 +387,7 @@ export function StepYourAI({
 
   /** Connect a detected local harness as a keyless "session" account. */
   async function handleConnectHarness(harnessId: string, name: string) {
-    const acc = await createCommands(BASE_URL, getToken).createAiAccount({
+    const acc = await commands.createAiAccount({
       harness: harnessId,
       name,
       tokenEnc: '',
@@ -404,7 +426,7 @@ export function StepYourAI({
         key.length > 8
           ? `${key.slice(0, 6)}...${key.slice(-4)}`
           : '...****'
-      const acc = await createCommands(BASE_URL, getToken).createAiAccount({
+      const acc = await commands.createAiAccount({
         harness,
         name,
         tokenEnc: key,
@@ -549,6 +571,9 @@ export function StepYourAI({
         <div className="w-px flex-1" />
 
         {/* Footer */}
+        {connectError && selfHostPick === 'existing' && mode === 'self-host' && (
+          <p role="alert" className="w-full text-[13px] text-bad">{connectError}</p>
+        )}
         <div className="flex w-full items-center gap-[10px]">
           <QuietButton icon={ArrowLeft} onClick={onBack}>
             Back
@@ -567,14 +592,12 @@ export function StepYourAI({
           <PrimaryButton
             icon={ArrowRight}
             onClick={() =>
-              onNext(
-                mode === 'cloud'
-                  ? { mode, cloudPick }
-                  : { mode, accountId: existingAccountId },
-              )
+              mode === 'cloud'
+                ? onNext({ mode, cloudPick })
+                : void confirmAccount(existingAccountId ?? displayAccounts[0]?.id ?? null)
             }
           >
-            {copy.cta}
+            {checking ? 'Checking your AI…' : copy.cta}
           </PrimaryButton>
         </div>
       </div>

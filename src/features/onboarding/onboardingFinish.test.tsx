@@ -150,7 +150,7 @@ describe('onboarding finish', () => {
     await user.click(yourAiNext)
 
     // Know You → Profile (skip topic)
-    const skipBtn = await screen.findByRole('button', { name: /skip this topic/i })
+    const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
 
     // StepProfile is now shown — fill it and submit
@@ -202,7 +202,7 @@ describe('onboarding finish', () => {
     const yourAiNext = await screen.findByRole('button', { name: /connect and continue|continue/i })
     await user.click(yourAiNext)
 
-    const skipBtn = await screen.findByRole('button', { name: /skip this topic/i })
+    const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
@@ -239,7 +239,7 @@ describe('onboarding finish', () => {
     await user.click(startBtn)
     const yourAiNext = await screen.findByRole('button', { name: /connect and continue|continue/i })
     await user.click(yourAiNext)
-    const skipBtn = await screen.findByRole('button', { name: /skip this topic/i })
+    const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
     await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
     await fillAndSubmitProfile(user)

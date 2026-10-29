@@ -22,7 +22,6 @@ import type { ChiefNudge, Message, Model, Session } from '../../core/domain/type
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL, MODELS } from '../../ui/ChatSession/ModelMenu'
 import { usePickerSource } from '../../ui/ChatSession/usePickerSource'
-import { useCommands } from '../../app/CommandsProvider'
 import {
   useChiefNudges,
   useChiefThreads,
@@ -32,6 +31,7 @@ import {
   useMessages,
   useStartChat,
 } from '../../app/queries'
+import { useChatStream } from '../../app/chatStream'
 import { notify } from '../../ui/ds/Toaster'
 import { useFabHidden } from './fabStore'
 import { QUICK_PROMPTS, THREADS_NOTE } from './data'
@@ -427,11 +427,13 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
   /** Thread on screen; null = latest thread, 'new' = a fresh chat. */
   const [activeThread, setActiveThread] = useState<string | null>(null)
   const [pending, setPending] = useState<ChiefMessage | null>(null)
+  // The reply as it streams in (SSE); '' = Chief is thinking, null = idle.
+  const [liveReply, setLiveReply] = useState<string | null>(null)
+  const streamTurn = useChatStream()
   const [seen, setSeen] = useState(false)
   const isOpen = state === 'open' || state === 'full' || state === 'threads'
 
   const queryClient = useQueryClient()
-  const commands = useCommands()
   const startChat = useStartChat()
   const deleteSession = useDeleteSession()
   const dismissNudge = useDismissChiefNudge()
@@ -443,8 +445,12 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
   const { data: rawMessages = [], isLoading: messagesLoading } = useMessages(threadId ?? '')
   const messages = useMemo(() => {
     const list = threadId ? rawMessages.map(toChiefMessage) : []
-    return pending && !list.some((m) => m.text === pending.text && m.kind === 'user') ? [...list, pending] : list
-  }, [rawMessages, threadId, pending])
+    const withPending =
+      pending && !list.some((m) => m.text === pending.text && m.kind === 'user') ? [...list, pending] : list
+    return liveReply
+      ? [...withPending, { id: 'live-reply', kind: 'chief' as const, text: liveReply, time: clock(new Date().toISOString()) }]
+      : withPending
+  }, [rawMessages, threadId, pending, liveReply])
   const pickerSource = usePickerSource(null)
 
   // ⌘/Ctrl-J toggles; Esc closes.
@@ -523,23 +529,33 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
     const now = new Date().toISOString()
     setPending({ id: `pending-${now}`, kind: 'user', text, time: clock(now), pending: true })
     if (state === 'threads') setState('open')
+    let sessionId = target
     try {
-      if (target) {
-        await commands.sendMessage(target, text, { model: model.id })
-        await queryClient.invalidateQueries({ queryKey: ['messages', target] })
-        void queryClient.invalidateQueries({ queryKey: ['sessions', 'chief'] })
-      } else {
+      if (!sessionId) {
         const session = await startChat.mutateAsync({
           input: { kind: 'chief_private', title: titleFrom(text), model: model.id },
-          text,
         })
+        sessionId = session.id
         setActiveThread(session.id)
-        await queryClient.invalidateQueries({ queryKey: ['messages', session.id] })
       }
+      setLiveReply('')
+      let failed = false
+      await streamTurn(sessionId, text, {
+        model: model.id,
+        onText: (delta) => setLiveReply((r) => (r ?? '') + delta),
+        onError: (error) => {
+          failed = true
+          notify(error)
+        },
+      })
+      await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+      void queryClient.invalidateQueries({ queryKey: ['sessions', 'chief'] })
+      if (failed && !sessionId) setDraft(text)
     } catch {
       notify('Couldn’t reach Chief — try again')
       setDraft(text)
     } finally {
+      setLiveReply(null)
       setPending(null)
     }
   }
@@ -581,7 +597,8 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
 
   const full = state === 'full'
   const showThreads = state === 'threads'
-  const busy = pending !== null
+  const busy = pending !== null || liveReply !== null
+  const thinking = busy && !liveReply // the dots show until the first words arrive
 
   const panel = (
     <section
@@ -646,7 +663,7 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
             messages={messages}
             wide={full}
             dayLabel={dayLabel(rawMessages[0]?.createdAt)}
-            thinking={busy}
+            thinking={thinking}
             loading={Boolean(threadId) && messagesLoading}
           />
           <Suggestions onPick={setDraft} />

@@ -3,7 +3,7 @@
  *
  * Strategy:
  *   - Render via ReposProvider + QueryClientProvider (mirrors SectionAiAccounts.test.tsx).
- *   - Mock createCommands so we can spy on createAiAccount without a real backend.
+ *   - Provide mock Commands (CommandsProvider) with createAiAccount spied.
  *   - Verify existing accounts are shown from the mock repo.
  *   - Verify the API key form calls createAiAccount with correct args.
  *   - Verify onNext / onBack props are called correctly.
@@ -16,15 +16,9 @@ import { ReposProvider } from '../../app/ReposProvider'
 import type { Repos } from '../../core/ports/repos'
 import type { AiAccount } from '../../core/domain/types'
 
-// ── mock createCommands ────────────────────────────────────────────────────────
+// ── commands: the mock commands with createAiAccount spied (via CommandsProvider) ──
 
 const mockCreateAiAccount = vi.fn()
-
-vi.mock('../../adapters/http/commands', () => ({
-  createCommands: () => ({
-    createAiAccount: mockCreateAiAccount,
-  }),
-}))
 
 // ── mock @tanstack/react-router useNavigate (not needed in self-host mode) ────
 
@@ -35,6 +29,8 @@ vi.mock('@tanstack/react-router', () => ({
 // ── import after mocks ────────────────────────────────────────────────────────
 
 import { StepYourAI } from './StepYourAI'
+import { CommandsProvider } from '../../app/CommandsProvider'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -129,7 +125,9 @@ function renderStep(
   return render(
     <QueryClientProvider client={queryClient}>
       <ReposProvider repos={repos}>
-        <StepYourAI onBack={props.onBack ?? vi.fn()} onNext={props.onNext ?? vi.fn()} />
+        <CommandsProvider commands={{ ...createMockCommands(), createAiAccount: mockCreateAiAccount }}>
+          <StepYourAI onBack={props.onBack ?? vi.fn()} onNext={props.onNext ?? vi.fn()} />
+        </CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>,
   )
