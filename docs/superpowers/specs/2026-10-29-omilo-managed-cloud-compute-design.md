@@ -297,6 +297,33 @@ dev server) — those restart; their files are on the volume.
   remote) to limit exfiltration.
 - **Credits hold** placed at job start, settled on completion (existing billing semantics).
 
+### 10.1 Knowledge & pgvector isolation (docs / knowledge / artifacts)
+
+Already isolated per company — this layers onto the compute design, it isn't new:
+
+- **Docs** (`memory_doc`) and **knowledge** (`kb_source`, `kb_chunk` — chunks hold the embeddings)
+  are **tenant tables: `company_id` + FORCE RLS** (migration 0006). Access is via `get_knowledge_db`
+  → `get_tenant_db` (company GUC set, RLS-scoped). So docs/knowledge are DB-enforced per company.
+- **Artifacts** (job output files) are **not** in the DB — they live on the **per-company compute
+  volume**, isolated by the compute design (§6.1 / §9). No shared artifact store.
+- **Embeddings:** `kb_chunk.embedding = Vector(256)` with a **global HNSW** cosine index; today one
+  shared table, per-company via RLS.
+
+**pgvector strategy + the scale caveat:** a *global* HNSW index with a *selective* `company_id`
+filter degrades recall as tenants grow (ANN returns global top-K, RLS then filters to one company →
+too-few/zero hits). Fine at pilot scale; plan the fix for scale:
+
+- **Scale path:** per-company vector index — **partition `kb_chunk` by `company_id`** (native
+  Postgres partitioning → per-partition HNSW; least disruptive) or schema/DB-per-company. Similarity
+  search then hits only the company's partition (correct filtered search + stronger isolation).
+- **Store seam:** `knowledge_database_url` (**P11a**) routes knowledge to a **dedicated pgvector
+  store** — how **cloud knowledge** becomes its own store and how **dmg/self-host** uses a **local**
+  pgvector. ⚠️ **RLS on that separate engine is not yet implemented (P11b TODO)** — finishing it
+  (RLS or per-company DB/schema on the KB engine) is a prerequisite for shipping the separate store.
+- **Editions:** cloud knowledge = our pgvector, per-company (RLS now → partition at scale);
+  local knowledge (dmg/self-host) = a local pgvector via the seam, single-tenant (trivially isolated)
+  once P11b is finished.
+
 ---
 
 ## 11. Connectors & the `omilo` CLI (answers "split repos or one repo?")
