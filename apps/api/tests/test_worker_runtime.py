@@ -224,9 +224,17 @@ async def test_worker_reconnects_with_backoff():
             await ws.close()
             return
 
-        # Second connection: consume register then signal success
+        # Second connection: read the first frame and assert it is a register
+        # frame — proving the worker re-registers on reconnect, not just that it
+        # opened a new socket.
         try:
-            await asyncio.wait_for(ws.recv(), timeout=5.0)
+            raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            reg_frame = decode(raw)
+            assert isinstance(reg_frame, RegisterFrame), (
+                f"Expected RegisterFrame on reconnect, got {type(reg_frame).__name__}"
+            )
+            assert reg_frame.role == "worker"
+            assert reg_frame.worker_id == _WORKER_ID
         except Exception:
             pass
         second_connected.set()

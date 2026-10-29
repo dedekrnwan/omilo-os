@@ -135,6 +135,9 @@ class WorkerRuntime:
         self.executor = executor if executor is not None else StubExecutor()
         self._backoff = backoff
         self.volume_base = volume_base or tempfile.gettempdir()
+        # Tracks in-flight job tasks so Python doesn't warn about abandoned tasks
+        # on loop teardown.  Each task removes itself via add_done_callback.
+        self._jobs: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -219,8 +222,12 @@ class WorkerRuntime:
             await ws.send(encode(PongFrame()))
 
         elif ftype == "start_job":
-            assert isinstance(frame, StartJobFrame)
-            asyncio.create_task(self._run_job(ws, frame))
+            if not isinstance(frame, StartJobFrame):
+                logger.warning("WorkerRuntime: got start_job frame of unexpected type %s", type(frame))
+                return
+            task = asyncio.create_task(self._run_job(ws, frame))
+            self._jobs.add(task)
+            task.add_done_callback(self._jobs.discard)
 
         else:
             logger.debug("WorkerRuntime: ignoring frame type=%s", ftype)
@@ -294,4 +301,6 @@ class WorkerRuntime:
                     encode(JobErrorFrame(job_id=job_id, error=str(exc)))
                 )
             except Exception:
+                # Socket already closed (mid-job drop).  The relay will detect
+                # the disconnect via heartbeat-drop + lease-reap and handle it.
                 pass
