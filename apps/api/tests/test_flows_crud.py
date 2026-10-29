@@ -695,3 +695,62 @@ class TestTenancyIsolation:
             headers={"Authorization": f"Bearer {token_b}", "X-Company-Id": company_b_id},
         )
         assert pub_resp.status_code == 404, pub_resp.text
+
+
+# ---------------------------------------------------------------------------
+# Task 1.3: DELETE /v1/flows/{id}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteFlow:
+    @pytest.mark.asyncio
+    async def test_delete_flow_removes_it(self, async_client, tenant_a):
+        """DELETE /v1/flows/{id} → 204; subsequent GET → 404."""
+        company_a_id, _ = tenant_a
+        token = await _get_token_for_company(async_client, company_a_id)
+        headers = {"Authorization": f"Bearer {token}", "X-Company-Id": company_a_id}
+
+        create_resp = await async_client.post(
+            "/v1/flows",
+            json={
+                "title": "To delete",
+                "trigger": _VALID_TRIGGER,
+                "nodes": _NODES,
+                "edges": _EDGES,
+            },
+            headers=headers,
+        )
+        assert create_resp.status_code == 200, create_resp.text
+        flow_id = create_resp.json()["id"]
+
+        del_resp = await async_client.delete(f"/v1/flows/{flow_id}", headers=headers)
+        assert del_resp.status_code == 204, del_resp.text
+
+        get_resp = await async_client.get(f"/v1/flows/{flow_id}", headers=headers)
+        assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_delete_flow_cross_tenant_404(self, async_client, tenant_a, tenant_b):
+        """Company B cannot delete company A's flow (404 via RLS)."""
+        company_a_id, _ = tenant_a
+        company_b_id, _ = tenant_b
+        token_a = await _get_token_for_company(async_client, company_a_id)
+        token_b = await _get_token_for_company(async_client, company_b_id)
+
+        create_resp = await async_client.post(
+            "/v1/flows",
+            json={
+                "title": "A's flow",
+                "trigger": _VALID_TRIGGER,
+                "nodes": _NODES,
+                "edges": _EDGES,
+            },
+            headers={"Authorization": f"Bearer {token_a}", "X-Company-Id": company_a_id},
+        )
+        flow_id = create_resp.json()["id"]
+
+        del_resp = await async_client.delete(
+            f"/v1/flows/{flow_id}",
+            headers={"Authorization": f"Bearer {token_b}", "X-Company-Id": company_b_id},
+        )
+        assert del_resp.status_code == 404, del_resp.text

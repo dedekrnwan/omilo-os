@@ -294,6 +294,31 @@ def patch_flow(
 
 
 # ---------------------------------------------------------------------------
+# DELETE /v1/flows/{id}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/flows/{flow_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_flow(
+    flow_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> None:
+    """Hard-delete a Flow and its FlowRuns. 404 for another tenant's flow (RLS).
+
+    FlowRun.flow_id has no FK cascade, so we delete the run history explicitly
+    in the same transaction to avoid orphaned rows.
+    """
+    flow = db.query(Flow).filter(Flow.id == flow_id).first()
+    if flow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
+
+    db.query(FlowRun).filter(FlowRun.flow_id == flow_id).delete(synchronize_session=False)
+    db.delete(flow)
+    db.flush()
+
+
+# ---------------------------------------------------------------------------
 # POST /v1/flows/{id}/publish
 # ---------------------------------------------------------------------------
 
