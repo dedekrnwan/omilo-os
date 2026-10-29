@@ -31,6 +31,20 @@ export function SectionSkills({ onDialog }: Props) {
       .catch(() => notify(`Failed to publish "${name}"`))
   }
 
+  /**
+   * Enable/disable toggle. The backend exposes no direct skill-status write — a
+   * skill goes live through the publish workflow — so turning a draft "on" fires
+   * a publish request, and an already-active skill honestly reflects state with
+   * a hint that disabling goes through publish review.
+   */
+  function handleToggle(skill: Skill) {
+    if (skill.status === 'active') {
+      notify(`"${skill.name}" is live — manage it through the publish workflow`)
+      return
+    }
+    handlePublish(skill.id, skill.name)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
@@ -93,7 +107,7 @@ export function SectionSkills({ onDialog }: Props) {
                     <span className="text-[13px] font-semibold text-ink">{s.name}</span>
                   </div>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <Toggle on={s.status === 'active'} />
+                    <Toggle on={s.status === 'active'} onClick={() => handleToggle(s)} label={`Enable ${s.name}`} />
                   </span>
                 </div>
                 {s.bodyMd && <p className="text-[12px] text-muted">{s.bodyMd}</p>}

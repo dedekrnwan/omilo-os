@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ShieldCheck, Zap } from 'lucide-react'
 import {
   Breadcrumb,
@@ -12,6 +12,9 @@ import {
   Toggle,
   TextInput,
 } from '../legacyShared'
+import { useSectionSave } from '../ControlPanelShared'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 type AutonomyMode = 'strict' | 'ask' | 'yolo'
 
@@ -76,24 +79,50 @@ const INITIAL = {
 }
 
 export function SectionSafety() {
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
+
   const [autonomy, setAutonomy] = useState<AutonomyMode>(INITIAL.autonomy)
   const [postPublicly, setPostPublicly] = useState(INITIAL.postPublicly)
   const [messageCustomers, setMessageCustomers] = useState(INITIAL.messageCustomers)
   const [deployProd, setDeployProd] = useState(INITIAL.deployProd)
   const [noDelete, setNoDelete] = useState(INITIAL.noDelete)
-  const [dirty, setDirty] = useState(false)
 
-  const mark = () => setDirty(true)
+  async function persist() {
+    await updateSettings.mutateAsync({
+      safety: {
+        autonomy,
+        postPublicly,
+        messageCustomers,
+        deployProd,
+        noDelete,
+      },
+    })
+    notify('Safety settings saved')
+  }
 
-  function handleSave() { setDirty(false) }
-  function handleDiscard() {
+  function reset() {
     setAutonomy(INITIAL.autonomy)
     setPostPublicly(INITIAL.postPublicly)
     setMessageCustomers(INITIAL.messageCustomers)
     setDeployProd(INITIAL.deployProd)
     setNoDelete(INITIAL.noDelete)
-    setDirty(false)
   }
+
+  const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
+
+  // Hydrate from persisted settings when they arrive (unless the user is editing).
+  useEffect(() => {
+    if (dirty) return
+    const s = settings?.safety as Record<string, unknown> | undefined
+    if (!s) return
+    if (s.autonomy === 'strict' || s.autonomy === 'ask' || s.autonomy === 'yolo') setAutonomy(s.autonomy)
+    if (typeof s.postPublicly === 'boolean') setPostPublicly(s.postPublicly)
+    if (typeof s.messageCustomers === 'boolean') setMessageCustomers(s.messageCustomers)
+    if (typeof s.deployProd === 'boolean') setDeployProd(s.deployProd)
+    if (typeof s.noDelete === 'boolean') setNoDelete(s.noDelete)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -194,7 +223,7 @@ export function SectionSafety() {
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
+      <SaveBar dirty={dirty} saving={saving} error={error} saved={saved} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

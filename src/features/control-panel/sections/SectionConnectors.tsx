@@ -31,8 +31,9 @@ function statusLabel(status: string): string {
 
 // ── ⋯ menu for a connected connector row ─────────────────────────────────────
 
-function ConnectorMoreMenu({ connector, onDisconnect }: {
+function ConnectorMoreMenu({ connector, onReconnect, onDisconnect }: {
   connector: Connector
+  onReconnect: () => void
   onDisconnect: () => void
 }) {
   return (
@@ -48,7 +49,7 @@ function ConnectorMoreMenu({ connector, onDisconnect }: {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
-          <DropdownMenu.Item className={menuItemClass} onSelect={() => notify(`Reconnecting ${connector.label}…`)}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onReconnect}>
             <MenuItemBody icon={RefreshCw} label="Reconnect" />
           </DropdownMenu.Item>
           <MenuSeparatorLine />
@@ -97,6 +98,17 @@ export function SectionConnectors({ onDialog }: Props) {
       notify(`${disconnectTarget.label} disconnected`)
     } catch {
       notify('Disconnect failed')
+    }
+  }
+
+  async function handleReconnect(connector: Connector) {
+    // Re-run the connect/install path for the piece to refresh auth.
+    try {
+      await getCommands().installConnector(connector.pieceId)
+      await queryClient.invalidateQueries({ queryKey: ['connectors'] })
+      notify(`${connector.label} reconnected`)
+    } catch {
+      notify('Reconnect failed')
     }
   }
 
@@ -162,6 +174,7 @@ export function SectionConnectors({ onDialog }: Props) {
                     />
                     <ConnectorMoreMenu
                       connector={c}
+                      onReconnect={() => void handleReconnect(c)}
                       onDisconnect={() => setDisconnectTarget(c)}
                     />
                   </div>

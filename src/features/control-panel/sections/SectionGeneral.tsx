@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BookOpen, Globe, Languages } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useDirtyState } from '../ControlPanelShared'
+import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useSectionSave } from '../ControlPanelShared'
 import type { SectionProps } from '../ControlPanel'
 import { useUIStore } from '../../../app/store'
 import { COMPANIES } from '../../../app/companies'
@@ -10,6 +10,9 @@ import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
 import { useCompanyLook } from '../../../ui/ds/looks'
 import { LookPicker } from '../../../ui/ds/LookPicker'
 import { useSession } from '../../../app/session'
+import { useCommands } from '../../../app/CommandsProvider'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 const INITIAL_GENERAL = {
   name: '',
@@ -30,16 +33,54 @@ export function SectionGeneral({ onDialog }: SectionProps) {
   const look = useCompanyLook(company)
   const { setLook, resetLook } = useAppearance()
   const sessionCompanyName = useSession((s) => s.company?.name) ?? ''
+  const commands = useCommands()
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
 
-  const [general, setGeneral] = useState(() => ({ ...INITIAL_GENERAL, name: sessionCompanyName }))
-  const { dirty, markDirty, save, discard } = useDirtyState(() => setGeneral({ ...INITIAL_GENERAL, name: sessionCompanyName }))
+  const baseline = useCallback(
+    () => ({
+      ...INITIAL_GENERAL,
+      name: sessionCompanyName,
+      about: typeof settings?.about === 'string' ? settings.about : INITIAL_GENERAL.about,
+      language: typeof settings?.language === 'string' ? settings.language : INITIAL_GENERAL.language,
+      hours:
+        settings?.hours && typeof (settings.hours as { label?: unknown }).label === 'string'
+          ? ((settings.hours as { label: string }).label)
+          : INITIAL_GENERAL.hours,
+    }),
+    [sessionCompanyName, settings],
+  )
+
+  const [general, setGeneral] = useState(baseline)
+
+  async function persist() {
+    // Company name + timezone live on the company profile (PATCH /v1/company).
+    await commands.updateCompanyProfile({ name: general.name, timezone: general.timezone })
+    // about / language / hours live in free-form company settings.
+    await updateSettings.mutateAsync({
+      about: general.about,
+      language: general.language,
+      hours: { label: general.hours },
+    })
+    notify('General settings saved')
+  }
+
+  const { dirty, saving, error, saved, markDirty, save, discard } = useSectionSave(persist, () => setGeneral(baseline()))
+
+  // Reload the editable fields whenever the persisted settings arrive/change,
+  // as long as the user hasn't started editing.
+  useEffect(() => {
+    if (!dirty) setGeneral(baseline())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseline])
+
   const edit = (key: keyof typeof INITIAL_GENERAL) => (v: string) => {
     setGeneral((prev) => ({ ...prev, [key]: v }))
     markDirty()
   }
 
   return (
-    <PageShell crumb="General" saveBar dirty={dirty} onSave={save} onDiscard={discard}>
+    <PageShell crumb="General" saveBar dirty={dirty} saving={saving} error={error} saved={saved} onSave={save} onDiscard={discard}>
       <PageHeader title="General" sub="Your company’s name, language and hours. Every agent is told these." />
 
       <Group title="Company">

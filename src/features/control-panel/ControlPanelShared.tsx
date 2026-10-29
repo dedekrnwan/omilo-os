@@ -24,6 +24,54 @@ export function useDirtyState(reset?: () => void) {
   return { dirty, markDirty, save, discard }
 }
 
+/**
+ * Section save hook: owns the dirty flag plus the real save lifecycle
+ * (saving / error / "Saved") so a SaveBar can reflect the backend round-trip.
+ *
+ * `persist` performs the actual mutation(s). On success the dirty flag clears
+ * and a transient "Saved" flashes; on failure the error surfaces in the bar
+ * and the dirty flag stays so the user can retry.
+ */
+export function useSectionSave(
+  persist: () => Promise<void>,
+  reset?: () => void,
+) {
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  const markDirty = useCallback(() => {
+    setDirty(true)
+    setSaved(false)
+    setError(null)
+  }, [])
+
+  const save = useCallback(async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await persist()
+      setDirty(false)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Could not save changes')
+    } finally {
+      setSaving(false)
+    }
+  }, [persist])
+
+  const discard = useCallback(() => {
+    reset?.()
+    setDirty(false)
+    setError(null)
+    setSaved(false)
+  }, [reset])
+
+  return { dirty, saving, error, saved, markDirty, save, discard }
+}
+
 /*
  * Control-panel primitives, mirroring the pen components used by every
  * `Control panel · …` screen in omilo-v2.pen. Strokes never take layout space
@@ -297,6 +345,9 @@ export function PageShell({
   dirty,
   onSave,
   onDiscard,
+  saving,
+  error,
+  saved,
   width = 860,
   pad = '20px 0 16px 0',
 }: {
@@ -309,6 +360,12 @@ export function PageShell({
   dirty?: boolean
   onSave?: () => void
   onDiscard?: () => void
+  /** Save mutation in flight. */
+  saving?: boolean
+  /** Error message to surface on save failure. */
+  error?: string | null
+  /** Briefly true after a successful save. */
+  saved?: boolean
   width?: number
   pad?: string
 }) {
@@ -320,7 +377,7 @@ export function PageShell({
           {children}
         </div>
       </div>
-      {saveBar && <SaveBar dirty={dirty} onSave={onSave} onDiscard={onDiscard} />}
+      {saveBar && <SaveBar dirty={dirty} onSave={onSave} onDiscard={onDiscard} saving={saving} error={error} saved={saved} />}
     </>
   )
 }
@@ -443,18 +500,38 @@ export function SaveBar({
   dirty = false,
   onSave,
   onDiscard,
+  saving = false,
+  error = null,
+  saved = false,
 }: {
   dirty?: boolean
   onSave?: () => void
   onDiscard?: () => void
+  /** True while the save mutation is in flight. */
+  saving?: boolean
+  /** Error message to surface when a save fails. */
+  error?: string | null
+  /** True briefly after a successful save (clean + "Saved"). */
+  saved?: boolean
 }) {
+  const status = error
+    ? error
+    : saving
+      ? 'Saving…'
+      : dirty
+        ? 'Unsaved changes'
+        : saved
+          ? 'Saved'
+          : 'No unsaved changes'
   return (
     <div className={`flex w-full shrink-0 items-center gap-[8px] px-[20px] py-[10px] ${lineTop}`}>
-      <span className="min-w-0 flex-1 text-[12px] text-muted">
-        {dirty ? 'Unsaved changes' : 'No unsaved changes'}
+      <span className={`min-w-0 flex-1 text-[12px] ${error ? 'text-bad' : saved ? 'text-ok' : 'text-muted'}`}>
+        {status}
       </span>
-      <PenButton disabled={!dirty} onClick={onDiscard}>Discard</PenButton>
-      <PenButton variant="primary" disabled={!dirty} onClick={onSave}>Save changes</PenButton>
+      <PenButton disabled={!dirty || saving} onClick={onDiscard}>Discard</PenButton>
+      <PenButton variant="primary" disabled={!dirty || saving} onClick={onSave}>
+        {saving ? 'Saving…' : 'Save changes'}
+      </PenButton>
     </div>
   )
 }

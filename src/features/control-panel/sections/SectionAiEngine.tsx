@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Breadcrumb,
   RowDivider,
@@ -12,7 +12,10 @@ import {
   TextInput,
   Toggle,
 } from '../legacyShared'
+import { useSectionSave } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 
 const ROLES = [
   {
@@ -45,18 +48,58 @@ const INITIAL = {
   autoCompact: true,
 }
 
+const DEFAULT_KEEP = ['Decisions', 'Pinned messages', 'Files']
+
 export function SectionAiEngine() {
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
+
   const [warnAt80, setWarnAt80] = useState(INITIAL.warnAt80)
   const [askOverDollar, setAskOverDollar] = useState(INITIAL.askOverDollar)
   const [fallback, setFallback] = useState(INITIAL.fallback)
   const [autoCompact, setAutoCompact] = useState(INITIAL.autoCompact)
   const [showContextMeter, setShowContextMeter] = useState(true)
-  const [alwaysKeep, setAlwaysKeep] = useState<Set<string>>(() => new Set(['Decisions', 'Pinned messages', 'Files']))
-  const [dirty, setDirty] = useState(false)
+  const [alwaysKeep, setAlwaysKeep] = useState<Set<string>>(() => new Set(DEFAULT_KEEP))
 
-  const mark = () => setDirty(true)
+  async function persist() {
+    await updateSettings.mutateAsync({
+      aiEngine: {
+        warnAt80,
+        askOverDollar,
+        fallback,
+        autoCompact,
+        showContextMeter,
+        alwaysKeep: [...alwaysKeep],
+      },
+    })
+    notify('AI engine settings saved')
+  }
 
-  function handleSave() { setDirty(false) }
+  function reset() {
+    setWarnAt80(INITIAL.warnAt80)
+    setAskOverDollar(INITIAL.askOverDollar)
+    setFallback(INITIAL.fallback)
+    setAutoCompact(INITIAL.autoCompact)
+    setShowContextMeter(true)
+    setAlwaysKeep(new Set(DEFAULT_KEEP))
+  }
+
+  const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
+
+  // Hydrate from persisted settings when they arrive (unless the user is editing).
+  useEffect(() => {
+    if (dirty) return
+    const e = settings?.aiEngine as Record<string, unknown> | undefined
+    if (!e) return
+    if (typeof e.warnAt80 === 'boolean') setWarnAt80(e.warnAt80)
+    if (typeof e.askOverDollar === 'boolean') setAskOverDollar(e.askOverDollar)
+    if (typeof e.fallback === 'boolean') setFallback(e.fallback)
+    if (typeof e.autoCompact === 'boolean') setAutoCompact(e.autoCompact)
+    if (typeof e.showContextMeter === 'boolean') setShowContextMeter(e.showContextMeter)
+    if (Array.isArray(e.alwaysKeep)) setAlwaysKeep(new Set(e.alwaysKeep as string[]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
+
   function toggleAlwaysKeep(label: string) {
     setAlwaysKeep((prev) => {
       const next = new Set(prev)
@@ -65,16 +108,6 @@ export function SectionAiEngine() {
       return next
     })
     mark()
-  }
-
-  function handleDiscard() {
-    setWarnAt80(INITIAL.warnAt80)
-    setAskOverDollar(INITIAL.askOverDollar)
-    setFallback(INITIAL.fallback)
-    setAutoCompact(INITIAL.autoCompact)
-    setShowContextMeter(true)
-    setAlwaysKeep(new Set(['Decisions', 'Pinned messages', 'Files']))
-    setDirty(false)
   }
 
   return (
@@ -191,7 +224,7 @@ export function SectionAiEngine() {
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
+      <SaveBar dirty={dirty} saving={saving} error={error} saved={saved} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }
