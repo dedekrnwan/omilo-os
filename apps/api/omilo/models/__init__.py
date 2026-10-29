@@ -14,7 +14,7 @@ from omilo.models.routines import Routine, RoutineRun  # noqa: F401
 from omilo.models.flows import Flow, FlowRun  # noqa: F401
 from omilo.models.toolcall import ToolCall  # noqa: F401
 from omilo.models.knowledge import KbSource, KbChunk  # noqa: F401
-from omilo.models.memory import MemoryDoc  # noqa: F401
+from omilo.models.memory import HandbookSuggestion, Lesson, MemoryDoc, MemoryDocVersion  # noqa: F401
 from omilo.models.skills import Skill  # noqa: F401
 from omilo.models.improvement import Improvement  # noqa: F401
 from omilo.models.billing import Plan, CreditLedger, Subscription, Invoice  # noqa: F401

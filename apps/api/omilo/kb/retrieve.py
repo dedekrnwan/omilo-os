@@ -38,6 +38,7 @@ def recall(
     *,
     kinds: list[str] | None = None,
     k: int = 8,
+    exclude_kinds: list[str] | tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid FTS + vector recall with RRF fusion.
 
@@ -47,6 +48,8 @@ def recall(
     query: Natural-language query string.
     kinds: Optional list of KbKind strings to restrict retrieval.
     k:     Number of top results to return.
+    exclude_kinds: Optional KbKinds to skip (e.g. agent memory while the
+           company's Knowledge toggle is off).
 
     Returns
     -------
@@ -60,10 +63,10 @@ def recall(
     qvec: list[float] = embedder.embed([query])[0]
 
     # ── FTS leg ───────────────────────────────────────────────────────────────
-    fts_ids: list[str] = _run_fts_leg(db, query, kinds=kinds, limit=_LEG_LIMIT)
+    fts_ids: list[str] = _run_fts_leg(db, query, kinds=kinds, limit=_LEG_LIMIT, exclude=exclude_kinds)
 
     # ── Vector leg ────────────────────────────────────────────────────────────
-    vec_ids: list[str] = _run_vector_leg(db, qvec, kinds=kinds, limit=_LEG_LIMIT)
+    vec_ids: list[str] = _run_vector_leg(db, qvec, kinds=kinds, limit=_LEG_LIMIT, exclude=exclude_kinds)
 
     if not fts_ids and not vec_ids:
         return []
@@ -113,6 +116,7 @@ def _run_fts_leg(
     *,
     kinds: list[str] | None,
     limit: int,
+    exclude: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     """Run the FTS leg and return chunk IDs in rank order (best first)."""
     try:
@@ -138,6 +142,13 @@ def _run_fts_leg(
                 .limit(limit)
             )
 
+        if exclude:
+            stmt = stmt.where(
+                KbChunk.source_id.not_in(
+                    select(KbSource.id).where(KbSource.kind.in_(list(exclude)))
+                )
+            )
+
         rows = db.execute(stmt).fetchall()
         return [r[0] for r in rows]
     except Exception:
@@ -151,6 +162,7 @@ def _run_vector_leg(
     *,
     kinds: list[str] | None,
     limit: int,
+    exclude: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     """Run the vector (cosine) leg and return chunk IDs in distance order (closest first)."""
     try:
@@ -171,6 +183,13 @@ def _run_vector_leg(
                 )
                 .order_by(KbChunk.embedding.cosine_distance(qvec))
                 .limit(limit)
+            )
+
+        if exclude:
+            stmt = stmt.where(
+                KbChunk.source_id.not_in(
+                    select(KbSource.id).where(KbSource.kind.in_(list(exclude)))
+                )
             )
 
         rows = db.execute(stmt).fetchall()

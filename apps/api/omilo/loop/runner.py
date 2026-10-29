@@ -502,8 +502,12 @@ def _assemble_memory(db: Session, brief: str, k: int = 3) -> str:
         return ""
     try:
         from omilo.kb.retrieve import recall
+        from omilo.memory.docs import AGENT_MEMORY_KINDS, knowledge_enabled
 
-        results = recall(db, brief, k=k)
+        # Agent memory (lessons, helper notes) is only recalled while the
+        # company's Knowledge toggle is on; docs/handbook/uploads always are.
+        exclude = None if knowledge_enabled(db) else AGENT_MEMORY_KINDS
+        results = recall(db, brief, k=k, exclude_kinds=exclude)
         if not results:
             return ""
 

@@ -149,6 +149,14 @@ def create_app() -> FastAPI:
 
     notify_hooks.install()
 
+    # ── sweep/docs ──
+    from omilo.api.handbook import router as handbook_router
+    from omilo.api.lessons import router as lessons_router
+
+    app.include_router(handbook_router, prefix="/v1")
+    app.include_router(lessons_router, prefix="/v1")
+    # ── end sweep/docs ──
+
     return app
 
 

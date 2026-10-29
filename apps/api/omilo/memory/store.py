@@ -132,6 +132,19 @@ def add_lesson(
     db.flush()
 
     _kb_index_doc(db, doc, helper_id)
+
+    # Mirror the lesson as a reviewable Lesson row (Docs · Knowledge review card).
+    from omilo.learning.lessons import FROM_LESSONS_MD, record_lesson
+
+    record_lesson(
+        db,
+        text=text,
+        helper_id=helper_id,
+        tag="lesson",
+        source=source or "Learned from a decision",
+        status="review",
+        created_by=FROM_LESSONS_MD,
+    )
     return doc
 
 
