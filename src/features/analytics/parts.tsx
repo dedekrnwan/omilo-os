@@ -187,16 +187,22 @@ export function Tabs({ value, onChange }: { value: TabId; onChange: (t: TabId) =
 const RANGES = ['7 days', '30 days', '90 days'] as const
 const ALL_HELPERS_LABEL = 'All helpers'
 
+export const ALL_HELPERS = ALL_HELPERS_LABEL
+
 export function Toolbar({
   range,
   onRange,
   helperNames = [],
+  helperFilter = ALL_HELPERS_LABEL,
+  onHelperFilter,
 }: {
   range: string
   onRange: (r: string) => void
   helperNames?: string[]
+  /** Controlled selected helper name (or 'All helpers'). */
+  helperFilter?: string
+  onHelperFilter?: (name: string) => void
 }) {
-  const [helperFilter, setHelperFilter] = useState<string>(ALL_HELPERS_LABEL)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -239,7 +245,7 @@ export function Toolbar({
                 type="button"
                 role="option"
                 aria-selected={helperFilter === name}
-                onClick={() => { setHelperFilter(name); setMenuOpen(false) }}
+                onClick={() => { onHelperFilter?.(name); setMenuOpen(false) }}
                 className={`flex w-full items-center px-[12px] py-[7px] text-left text-[13px] hover:bg-soft ${
                   helperFilter === name ? 'font-medium text-ink' : 'text-ink-2'
                 }`}

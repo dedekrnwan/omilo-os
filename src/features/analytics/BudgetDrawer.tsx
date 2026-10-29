@@ -3,6 +3,8 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Wallet, X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
+import { useUpdateWallet } from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
 import type { HelperStat } from './data'
 import { BigButton, Switch } from './parts'
 
@@ -35,6 +37,40 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const [threshold, setThreshold] = useState('80%')
   const [mode, setMode] = useState('pause')
   const [askBig, setAskBig] = useState(true)
+  const updateWallet = useUpdateWallet()
+
+  const save = () => {
+    const thresholdPct = Number(threshold.replace('%', '')) || 80
+    const limit = Number(amount) || suggested
+    updateWallet.mutate(
+      {
+        autoTopupEnabled: askBig,
+        // Budget ($) → credits (1$ ≈ 1 credit here) kept at the chosen alert threshold.
+        autoTopupThresholdCredits: Math.round((limit * thresholdPct) / 100),
+        autoTopupPack: `$${limit}`,
+      },
+      {
+        onSuccess: () => {
+          notify(`Budget saved for ${helper.name}`)
+          onClose()
+        },
+        onError: () => notify("Couldn't save the budget"),
+      },
+    )
+  }
+
+  const removeBudget = () => {
+    updateWallet.mutate(
+      { autoTopupEnabled: false, autoTopupThresholdCredits: 0, autoTopupPack: null },
+      {
+        onSuccess: () => {
+          notify(`Budget removed for ${helper.name}`)
+          onClose()
+        },
+        onError: () => notify("Couldn't remove the budget"),
+      },
+    )
+  }
   return (
     <Dialog.Content
       aria-describedby={undefined}
@@ -151,15 +187,15 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
       </div>
 
       <footer className="flex w-full items-center gap-[8px] bg-soft px-[20px] py-[14px] shadow-[inset_0_1px_0_var(--color-line)]">
-        <BigButton kind="quiet" onClick={onClose}>
+        <BigButton kind="quiet" onClick={removeBudget}>
           Remove budget
         </BigButton>
         <div className="h-px min-w-0 flex-1" />
         <BigButton kind="secondary" onClick={onClose}>
           Cancel
         </BigButton>
-        <BigButton kind="primary" onClick={onClose}>
-          Save budget
+        <BigButton kind="primary" onClick={save}>
+          {updateWallet.isPending ? 'Saving…' : 'Save budget'}
         </BigButton>
       </footer>
     </Dialog.Content>

@@ -6,7 +6,7 @@ import type { AnalyticsStat, HelperStat as DomainHelperStat } from '../../core/d
 import { useAnalyticsOverview, useAnalyticsHelpers } from '../../app/queries'
 import { BudgetDrawer, BudgetToast } from './BudgetDrawer'
 import type { BarChart, ChipTone, HelperStatus, Stat } from './data'
-import { PageHeader, Tabs, Toolbar } from './parts'
+import { ALL_HELPERS, PageHeader, Tabs, Toolbar } from './parts'
 import type { TabId } from './parts'
 import { ActivityTab, HelpersTab, LoopsTab, OverviewTab, ReliabilityTab } from './tabs'
 
@@ -135,9 +135,14 @@ export function AnalyticsPage({
   const overviewQ = useAnalyticsOverview(range)
   const helpersQ = useAnalyticsHelpers(range)
 
+  const [helperFilter, setHelperFilter] = useState(ALL_HELPERS)
+
   const isError = overviewQ.isError || helpersQ.isError
   const stats = (overviewQ.data?.stats ?? []).map(toDisplayStat)
-  const rows = (helpersQ.data ?? []).map(toDomainRow)
+  const allRows = (helpersQ.data ?? []).map(toDomainRow)
+  // Apply the toolbar helper filter so the overview/helpers lists genuinely narrow.
+  const rows =
+    helperFilter === ALL_HELPERS ? allRows : allRows.filter((r) => r.name === helperFilter)
   const helpersSub = rows.length === 0 ? '' : `${rows.length} helper${rows.length === 1 ? '' : 's'}`
 
   // BudgetDrawer state — P5d, left unchanged
@@ -157,7 +162,13 @@ export function AnalyticsPage({
         <div className="flex w-full flex-col gap-[16px] px-[24px] py-[20px]">
           <PageHeader title={title} sub={sub} />
           <Tabs value={tab} onChange={setTab} />
-          <Toolbar range={range} onRange={setRange} helperNames={rows.map((r) => r.name)} />
+          <Toolbar
+            range={range}
+            onRange={setRange}
+            helperNames={allRows.map((r) => r.name)}
+            helperFilter={helperFilter}
+            onHelperFilter={setHelperFilter}
+          />
 
           {isError && (
             <div className="flex w-full items-center justify-center rounded-lg bg-bad-tint p-[24px] text-[14px] text-bad outline-1 -outline-offset-1 outline-bad-line">

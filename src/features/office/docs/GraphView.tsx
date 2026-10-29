@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { ArrowUpRight, Brain, Check, EyeOff, FileText, Link2, Search, Sparkles, Target } from 'lucide-react'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { copyText } from '../../../ui/ds/ItemMenu'
@@ -50,6 +51,7 @@ export function GraphView({
   onAskChief: (about: string) => void
   showFilters?: boolean
 }) {
+  const navigate = useNavigate()
   const [selected, setSelected] = useState<string | null>('passkey')
   const [query, setQuery] = useState('')
   const [areas, setAreas] = useState<Record<DocArea, boolean>>({ engineering: true, marketing: true, business: true, general: true })
@@ -82,7 +84,7 @@ export function GraphView({
       n.docId && { label: 'Open note', icon: ArrowUpRight, onSelect: () => onOpenNote(n.docId!) },
       { label: 'Ask Chief about this', icon: Sparkles, onSelect: () => onAskChief(n.label) },
       { label: 'Show only its links', icon: Link2, onSelect: () => setSelected(n.id) },
-      n.kind === 'goal' && { label: 'Open goal', icon: Target, onSelect: () => notify('Goals open from the Goals page') },
+      n.kind === 'goal' && { label: 'Open goal', icon: Target, onSelect: () => void navigate({ to: '/goals' }) },
       { type: 'separator' },
       { label: 'Copy link', icon: Link2, onSelect: () => { copyText(`${location.origin}/docs/${n.docId ?? n.id}`); notify('Link copied') } },
       {
