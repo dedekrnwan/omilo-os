@@ -125,6 +125,29 @@ flowchart TB
 > Connection direction: the worker initiates the relay connection outbound (NAT-friendly). Arrows
 > above show logical data flow, not who dials whom.
 
+### 6.1 The "Computer" concept (the compute plane, as a product feature)
+
+A **Computer** is Omilo's first-class name for a registered compute target that runs the Omilo
+runtime — the harnesses (Claude Code, Codex, …) plus the agent executor and the Orca-style job
+orchestration. **One abstraction, three kinds:**
+
+| Kind | What it is | How it's attached | Availability |
+|------|-----------|-------------------|--------------|
+| **Local** | The machine the `.dmg` runs on | Automatic (self-host) | Up while the app runs |
+| **BYO remote** | The user's own VM/VPS | `npx omilo --connect machine` ("omilo computer connect") → device-pairing → outbound relay | Up while the user keeps it running; **can disconnect** |
+| **Managed** | A pod Omilo hosts | **Auto-provisioned** by the cloud on subscribe / first job | **Always available** (pool-backed); **can't be disconnected** by the user |
+
+There is a **Computers** surface in the UI: connected computers, online/offline, capacity, and which
+Computer an agent's work runs on. A Computer is a Computer regardless of who owns it — the same
+runtime and job protocol apply to a laptop, a user's VM, or our pod.
+
+**Clients vs Computers (why mobile needs the cloud):** web / desktop / mobile are **pure clients**
+with no compute. They never talk to a Computer directly (BYO Computers sit behind NAT). Every client
+— **especially mobile** — reads job state from the **Cloud** and sends commands the Cloud **relays**
+down to the Computer. Consequence: a **fully-offline self-host with no cloud cannot be driven from
+mobile** — remote control from a phone *requires* the cloud relay. (Desktop on the same machine/LAN
+can still drive a local Computer offline.)
+
 ---
 
 ## 7. Managed compute: scheduler + worker pool (answers "1 VPS → pool?")
@@ -158,6 +181,16 @@ flowchart TB
   **persistent volume** into it. The sandbox is disposable; the volume is durable.
 - **Concurrency** (parallel agents) is capped per company by plan — this is a billing lever, and
   on day one it's also bounded by what the single VPS can hold.
+
+**How a managed company gets mapped to compute (no manual connect):** unlike BYO (where the user
+runs `omilo --connect machine`), a managed company is given a **managed Computer record**
+automatically — created on subscribe or first job. That record owns the company's **persistent
+volume** and is what the scheduler places onto a pool host per job (capacity + volume affinity).
+Because the sandbox is ephemeral and the volume/record persist, the managed Computer is
+**re-mappable to any host** and is **always available** from the user's view — the cloud spins a
+sandbox on demand; there's nothing for the user to keep online and nothing they can disconnect.
+(This is the key BYO-vs-managed difference: BYO availability = "is the user's machine on?"; managed
+availability = "does the pool have a free host?", which the scheduler/queue handle.)
 
 **Phasing (so v1 is small):**
 
