@@ -10,7 +10,7 @@ Adds (all nullable / additive):
   - proposal.params         jsonb        — action params (amended on approve, flow_id…)
 
 Revision ID: 0023_inbox_flows_inbox_state
-Revises: 0022_flow_settings
+Revises: 0023_goals_routines_fields
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_inbox_flows_inbox_state"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0023_goals_routines_fields"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

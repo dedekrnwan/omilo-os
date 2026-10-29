@@ -15,7 +15,7 @@ Adds:
   - user_session  GLOBAL (queried by user/session id on the privileged plane)
 
 Revision ID: 0023_control_schema
-Revises: 0022_flow_settings
+Revises: 0023_chat_workspace
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
@@ -25,7 +25,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_control_schema"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0023_chat_workspace"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

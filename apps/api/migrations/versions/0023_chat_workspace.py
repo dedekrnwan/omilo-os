@@ -9,7 +9,7 @@ Adds:
   - chief_nudge_state  — per-user dismiss/snooze of derived Chief nudges (tenant, RLS)
 
 Revision ID: 0023_chat_workspace
-Revises: 0022_flow_settings
+Revises: 0023_team_analytics_helpers
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_chat_workspace"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0023_team_analytics_helpers"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -32,6 +32,13 @@ from omilo.tenancy.deps import get_context, require_role
 # Tenant tables (every table carrying a company_id) — wiped on company delete.
 # DB-level FKs among these are CASCADE/SET NULL, so delete order is safe.
 _TENANT_TABLES = (
+    # sweep: child tables first (FKs into helper / folder / memory_doc)
+    "helper_channel",
+    "folder_file",
+    "chief_nudge_state",
+    "memory_doc_version",
+    "handbook_suggestion",
+    "lesson",
     "connector",
     "email_log",
     "credit_ledger",

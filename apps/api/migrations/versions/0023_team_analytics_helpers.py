@@ -16,7 +16,7 @@ Creates TENANT table helper_channel (grants + FORCE RLS + tenant_isolation):
   integration confirms the binding).
 
 Revision ID: 0023_team_analytics_helpers
-Revises: 0022_flow_settings
+Revises: 0024_inbox_flows_flow_versions
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
@@ -26,7 +26,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_team_analytics_helpers"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0024_inbox_flows_flow_versions"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

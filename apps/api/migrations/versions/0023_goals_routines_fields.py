@@ -21,7 +21,7 @@ Adds (all additive / nullable or defaulted):
     - feedback  text — 'up' | 'down' (Was this useful?)
 
 Revision ID: 0023_goals_routines_fields
-Revises: 0022_flow_settings
+Revises: 0023_docs_memory_meta
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
@@ -31,7 +31,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_goals_routines_fields"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0023_docs_memory_meta"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
