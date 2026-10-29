@@ -24,6 +24,7 @@ from omilo.models.connectors import Connector  # noqa: F401
 from omilo.models.helper_access import HelperAccess  # noqa: F401
 from omilo.models.auth_codes import AuthCode, Invite  # noqa: F401
 from omilo.models.notify import EmailLog, WaitlistEntry  # noqa: F401
+from omilo.models.compute import ComputeWorker, ComputeJob  # noqa: F401
 
 __all__ = [
     "Company",
@@ -65,4 +66,6 @@ __all__ = [
     "Invite",
     "EmailLog",
     "WaitlistEntry",
+    "ComputeWorker",
+    "ComputeJob",
 ]
