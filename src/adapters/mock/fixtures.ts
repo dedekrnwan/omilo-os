@@ -960,3 +960,161 @@ export const mockActivity: ActivityEntry[] = [
   { id: 'job:a4', at: iso(4 * 60), kind: 'done', helperId: 'h-chief', who: 'Chief', area: 'brand', what: 'finished Morning brief', meta: 'routine · 12 cr' },
   { id: 'job:a5', at: iso(20 * 60), kind: 'failed', helperId: 'h-dev', who: 'Dev', area: 'dev', what: "couldn't finish Weekly latency report", meta: 'routine · Grafana query timed out' },
 ]
+// ── sweep/control ──
+// Demo content for the control panel in mock mode (was inlined in the
+// feature components). HTTP mode reads all of this from the backend.
+  AccountInfo,
+  AuditEvent,
+  CompanyDetail,
+  CreditPack,
+  DataExport,
+  Invite,
+  Invoice,
+  LedgerEntry,
+  ManagedChannel,
+  McpServer,
+  Payment,
+  SeatSummary,
+  SignInSession,
+  StorageSummary,
+  UserPreferences,
+} from '../../core/domain/controlPanel'
+
+/** Cloud tiers (Starter / Team / Business) — the control-panel plan catalog. */
+billingPlans.push(
+  {
+    id: 'plan_starter', tier: 'starter', name: 'Starter',
+    monthlyPriceUsd: 30, monthlyPriceIdr: 500_000, yearlyPriceUsd: 300, yearlyPriceIdr: 5_000_000,
+    includedCredits: 6_000, seats: 2, trialDays: 14, maxSeats: 2, maxHelpers: 2, seatPriceIdr: null,
+    features: ['2 people · no extra seats', '2 helpers', '1 channel per helper', 'Rp 300 rb AI spend included', 'Community support'],
+    badge: null,
+  {
+    id: 'plan_team', tier: 'team', name: 'Team',
+    monthlyPriceUsd: 120, monthlyPriceIdr: 2_000_000, yearlyPriceUsd: 1_200, yearlyPriceIdr: 20_000_000,
+    includedCredits: 40_000, seats: 5, trialDays: 14, maxSeats: 15, maxHelpers: 6, seatPriceIdr: 150_000,
+    features: ['5 people · add seats up to 15', '6 helpers', 'All channels', 'Rp 2 jt AI spend included', 'Bring your own AI key', 'Email support'],
+    badge: null,
+  {
+    id: 'plan_business', tier: 'business', name: 'Business',
+    monthlyPriceUsd: 360, monthlyPriceIdr: 6_000_000, yearlyPriceUsd: 3_600, yearlyPriceIdr: 60_000_000,
+    includedCredits: 120_000, seats: 20, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: 150_000,
+    features: ['20 people · add more any time', 'Unlimited helpers', 'MCP servers & custom skills', 'Rp 6 jt AI spend included', 'SSO and audit log', 'Priority WhatsApp support'],
+    badge: 'For growing estates',
+)
+billingSubscription.planId = 'plan_team'
+billingSubscription.planName = 'Team'
+
+export const companyDetail: CompanyDetail = {
+  id: 'cmp-mock', name: 'Sahabat Warga', timezone: 'Asia/Jakarta', logoUrl: null, planId: 'plan_team',
+  currency: 'IDR', autonomyDefault: 'ask', picRole: null, industry: 'Property',
+
+export const seatSummary: SeatSummary = {
+  selfHosted: false, planId: 'plan_team', planName: 'Team', included: 5, total: 5, max: 15, available: 0,
+  seatPriceIdr: 150_000, canAdd: true, used: 4, pending: 1, viewers: 0, billingInterval: 'monthly',
+  periodEnd: '2026-11-30T00:00:00Z',
+
+export const creditPacks: CreditPack[] = [
+  { id: '2000', credits: 2_000, amountIdr: 100_000, label: '2,000 credits', sub: 'About 3 weeks · small team', badge: null },
+  { id: '5000', credits: 5_000, amountIdr: 238_000, label: '5,000 credits', sub: 'About 2 months · most popular', badge: 'Save 6%' },
+  { id: '20000', credits: 20_000, amountIdr: 800_000, label: '20,000 credits', sub: 'For busy teams', badge: 'Save 22%' },
+
+export const invites: Invite[] = [
+  {
+    id: 'inv-andi', email: 'andi@saga.co.id', role: 'member', channelIds: ['ch-engineering'],
+    channelNames: ['Engineering'], expiresAt: '2026-11-01T00:00:00Z', createdAt: '2026-10-23T09:00:00Z',
+    invitedBy: 'Dede Kurniawan',
+
+/** Channel access per member (null = all channels) + presence. */
+Object.assign(members[0], { channels: null, lastSeenAt: '2026-10-29T10:40:00Z' })
+Object.assign(members[1], { channels: null, lastSeenAt: '2026-10-29T08:40:00Z' })
+Object.assign(members[2], { channels: ['ch-engineering', 'ch-general'], channelNames: ['Engineering', 'General'], lastSeenAt: '2026-10-29T10:44:00Z' })
+Object.assign(members[3], { channels: ['ch-marketing', 'ch-general'], channelNames: ['Marketing', 'General'], lastSeenAt: '2026-10-28T15:00:00Z' })
+
+export const managedChannels: ManagedChannel[] = [
+  {
+    id: 'ch-general', name: 'General', accent: 'general', icon: null, purpose: null, isDefault: true,
+    contextScope: 'isolated', chatCount: 41, goalCount: 3,
+    helpers: [{ id: 'h-chief', name: 'Chief', area: 'brand', isChief: true }, { id: 'h-dev', name: 'Dev', area: 'dev', isChief: false }],
+    helperCount: 2, peopleCount: null, archived: false, archivedAt: null, muted: false,
+  {
+    id: 'ch-engineering', name: 'Engineering', accent: 'dev', icon: null, purpose: null, isDefault: false,
+    contextScope: 'isolated', chatCount: 24, goalCount: 2,
+    helpers: [{ id: 'h-dev', name: 'Dev', area: 'dev', isChief: false }],
+    helperCount: 1, peopleCount: 3, archived: false, archivedAt: null, muted: false,
+  {
+    id: 'ch-marketing', name: 'Marketing', accent: 'marketing', icon: null, purpose: null, isDefault: false,
+    contextScope: 'isolated_general', chatCount: 19, goalCount: 1,
+    helpers: [{ id: 'h-growth', name: 'Growth', area: 'marketing', isChief: false }],
+    helperCount: 1, peopleCount: 3, archived: false, archivedAt: null, muted: false,
+  {
+    id: 'ch-business', name: 'Business', accent: 'sales', icon: null, purpose: null, isDefault: false,
+    contextScope: 'isolated', chatCount: 9, goalCount: 0, helpers: [], helperCount: 0, peopleCount: 2,
+    archived: false, archivedAt: null, muted: false,
+  {
+    id: 'ch-launch-2025', name: 'Launch 2025', accent: 'marketing', icon: null, purpose: null, isDefault: false,
+    contextScope: 'isolated', chatCount: 62, goalCount: 0, helpers: [], helperCount: 0, peopleCount: null,
+    archived: true, archivedAt: '2026-03-03T00:00:00Z', muted: false,
+
+export const auditEvents: AuditEvent[] = [
+  { id: 'aud-7', at: '2026-10-29T10:44:00Z', actorType: 'agent', actorId: 'h-chief', actorName: 'Chief', actorArea: 'ops', type: 'approvals', action: 'asked you to approve', target: '3 tasks · Passwordless login', channel: 'Engineering' },
+  { id: 'aud-6', at: '2026-10-29T10:43:00Z', actorType: 'agent', actorId: 'h-dev', actorName: 'Dev', actorArea: 'dev', type: 'helpers', action: 'drafted', target: 'Passkey rollout — v1', channel: 'Engineering' },
+  { id: 'aud-5', at: '2026-10-29T09:12:00Z', actorType: 'person', actorId: 'usr-dk', actorName: 'Dede Kurniawan', actorArea: null, type: 'approvals', action: 'approved', target: 'Rp 4,8 jt referral ad budget', channel: 'Marketing' },
+  { id: 'aud-4', at: '2026-10-29T08:31:00Z', actorType: 'agent', actorId: 'h-dev', actorName: 'Ops', actorArea: 'ops', type: 'helpers', action: 'ran flow', target: 'Deploy failure triage · #214', channel: 'Engineering' },
+  { id: 'aud-3', at: '2026-10-28T17:02:00Z', actorType: 'person', actorId: 'usr-ra', actorName: 'Rina Ayu', actorArea: null, type: 'settings', action: 'changed', target: 'Safety & limits', channel: null },
+  { id: 'aud-2', at: '2026-10-28T16:20:00Z', actorType: 'agent', actorId: 'h-chief', actorName: 'Finance', actorArea: 'finance', type: 'helpers', action: 'sent', target: 'October close summary', channel: 'Business' },
+  { id: 'aud-1', at: '2026-10-28T11:05:00Z', actorType: 'person', actorId: 'usr-dk', actorName: 'Dede Kurniawan', actorArea: null, type: 'approvals', action: 'declined', target: 'Post to Instagram', channel: 'Marketing' },
+
+const GB = 1024 ** 3
+export const storageSummary: StorageSummary = {
+  usedBytes: Math.round(3.7 * GB),
+  quotaBytes: 10 * GB,
+  segments: [
+    { key: 'chats', label: 'Chats', bytes: Math.round(2.1 * GB) },
+    { key: 'docs', label: 'Docs', bytes: Math.round(1.2 * GB) },
+    { key: 'run_logs', label: 'Run logs', bytes: Math.round(0.34 * GB) },
+    { key: 'knowledge', label: 'Knowledge', bytes: Math.round(0.038 * GB) },
+    { key: 'other', label: 'Other', bytes: Math.round(0.022 * GB) },
+
+export const dataExports: DataExport[] = [
+  {
+    id: 'exp-oct', status: 'ready', filename: 'omilo-export-20261002-0900.zip', sizeBytes: Math.round(3.4 * GB),
+    summary: { channel: 4, session: 92, message: 1840, memory_doc: 51, flow: 7 }, error: null,
+    createdAt: '2026-10-02T09:00:00Z', expiresAt: '2026-11-03T09:00:00Z',
+
+export const accountInfo: AccountInfo = {
+  id: 'usr-dk', email: 'dede@saga.co.id', name: 'Dede Kurniawan', avatarUrl: null, role: 'owner',
+  companyName: 'Sahabat Warga', twoFactorEnabled: true, emailVerified: true, googleLinked: true,
+
+export const userPreferences: UserPreferences = {
+  nickname: 'Mas Dede',
+  language: 'Bahasa Indonesia',
+  notifications: { weekends: false, quietHours: { from: '21:00', to: '08:00' } },
+
+export const signInSessions: SignInSession[] = [
+  { id: 'usn-mac', label: 'Chrome · Mac', kind: 'desktop', method: 'google', ip: '103.10.0.1', createdAt: '2026-10-20T08:00:00Z', lastSeenAt: '2026-10-29T10:44:00Z', current: true },
+  { id: 'usn-iphone', label: 'Safari · iPhone', kind: 'mobile', method: 'password', ip: '103.10.0.2', createdAt: '2026-10-25T08:00:00Z', lastSeenAt: '2026-10-29T08:40:00Z', current: false },
+  { id: 'usn-cli', label: 'Command line', kind: 'cli', method: 'password', ip: null, createdAt: '2026-10-02T08:00:00Z', lastSeenAt: '2026-10-28T12:00:00Z', current: false },
+
+export const mcpServers: McpServer[] = [
+  {
+    id: 'mcs-warga', name: 'sahabat-db', kind: 'remote', url: 'https://mcp.sahabatwarga.id/mcp', authType: 'bearer',
+    tokenHint: 'xb-1…31Yu', status: 'connected', error: null, enabled: true, createdAt: '2026-10-12T00:00:00Z',
+    tools: [
+      { name: 'find_resident', description: 'Look up a resident by unit or phone', level: 'read' },
+      { name: 'create_visitor_pass', description: 'New guest QR pass', level: 'ask' },
+      { name: 'log_complaint', description: 'Save a complaint ticket', level: 'ask' },
+      { name: 'delete_resident', description: 'Remove a resident record', level: 'blocked' },
+
+export const invoices: Invoice[] = [
+  { id: 'inv-oct', amount: 2_000_000, currency: 'IDR', status: 'paid', period: '2026-10', provider: 'doit', createdAt: '2026-10-01T00:00:00Z' },
+  { id: 'inv-sep', amount: 2_000_000, currency: 'IDR', status: 'paid', period: '2026-09', provider: 'doit', createdAt: '2026-09-01T00:00:00Z' },
+
+export const ledgerEntries: LedgerEntry[] = [
+  { id: 'cl-3', delta: 5_000, reason: 'topup', creditsCharged: 0, createdAt: '2026-10-21T09:00:00Z', helperId: null, balanceAfter: 5_650 },
+  { id: 'cl-2', delta: -350, reason: 'job', creditsCharged: 350, createdAt: '2026-10-20T09:00:00Z', helperId: 'h-dev', balanceAfter: 650 },
+  { id: 'cl-1', delta: 40_000, reason: 'subscription_grant', creditsCharged: 0, createdAt: '2026-10-01T00:00:00Z', helperId: null, balanceAfter: 41_000 },
+
+export const payments: Payment[] = [
+  { id: 'pay-seats', kind: 'seats', status: 'pending', credits: 0, amountIdr: 77_000, hostedUrl: 'https://checkout.mayar.id/demo', planId: 'plan_team', createdAt: '2026-10-29T10:00:00Z' },
+
+export const telemetryState = { optedOut: false }

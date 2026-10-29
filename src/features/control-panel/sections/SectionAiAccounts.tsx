@@ -5,13 +5,17 @@
  */
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { KeyRound, Plus, RefreshCw } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { Ellipsis, KeyRound, Pause, Pencil, Play, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
+import { Dialog } from '../../../ui/ds/Dialog'
+import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 import { HARNESS_BY_ID } from '../harnesses'
 import type { HarnessId } from '../harnesses'
-import { useAiAccounts, useCheckAiAccounts, useTestAiAccount } from '../../../app/queries'
+import { useAiAccounts, useCheckAiAccounts, useTestAiAccount, useUpdateAiAccount } from '../../../app/queries'
+import type { AiAccount } from '../../../core/domain/types'
 import { useCommands } from '../../../app/CommandsProvider'
 import { notify } from '../../../ui/ds/Toaster'
 import { HarnessLogo } from '../../../ui/ds/harnessLogos'
@@ -27,6 +31,7 @@ function statusColor(status: string): 'info' | 'ok' | 'warn' | 'bad' | 'neutral'
   if (status === 'near_limit' || status === 'cooling') return 'warn'
   if (status === 'error') return 'bad'
   if (status === 'ready') return 'ok'
+  if (status === 'paused') return 'neutral'
   return 'info'
 }
 
@@ -35,7 +40,71 @@ function statusLabel(status: string): string {
   if (status === 'near_limit') return 'Near limit'
   if (status === 'cooling') return 'Cooling'
   if (status === 'error') return 'Error'
+  if (status === 'paused') return 'Paused'
   return status
+}
+
+/** Provider-key accounts (not pooled CLI harnesses) display their provider name. */
+const PROVIDER_NAMES: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter' }
+
+function AccountMenu({ account, onRename, onTogglePause }: { account: AiAccount; onRename: () => void; onTogglePause: () => void }) {
+  const paused = account.status === 'paused'
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" aria-label={`${account.name} options`} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover">
+          <Ellipsis size={14} aria-hidden />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onRename}>
+            <MenuItemBody icon={Pencil} label="Rename" />
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItemClass} onSelect={onTogglePause}>
+            <MenuItemBody icon={paused ? Play : Pause} label={paused ? 'Resume' : 'Pause'} />
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+function RenameDialog({ account, onClose }: { account: AiAccount; onClose: () => void }) {
+  const update = useUpdateAiAccount()
+  const [name, setName] = useState(account.name)
+  async function save() {
+    try {
+      await update.mutateAsync({ id: account.id, input: { name: name.trim() } })
+      notify('Account renamed')
+      onClose()
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not rename account')
+    }
+  }
+  return (
+    <Dialog
+      open
+      onOpenChange={(v) => { if (!v) onClose() }}
+      title="Rename account"
+      width={400}
+      footer={
+        <>
+          <span className="flex-1" />
+          <Button variant="secondary" style={{ height: 32 }} onClick={onClose}>Cancel</Button>
+          <Button variant="primary" style={{ height: 32 }} disabled={!name.trim() || update.isPending} onClick={() => void save()}>Save</Button>
+        </>
+      }
+    >
+      <input
+        aria-label="Account name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) void save() }}
+        className="h-[34px] w-full rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none focus:border-ink"
+      />
+    </Dialog>
+  )
 }
 
 function formatLastUsed(iso: string | null | undefined): string {
@@ -54,6 +123,18 @@ export function SectionAiAccounts({ onDialog }: Props) {
   const commands = useCommands()
   const qc = useQueryClient()
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<AiAccount | null>(null)
+  const updateAccount = useUpdateAiAccount()
+
+  async function togglePause(a: AiAccount) {
+    const next = a.status === 'paused' ? 'ready' : 'paused'
+    try {
+      await updateAccount.mutateAsync({ id: a.id, input: { status: next } })
+      notify(next === 'paused' ? `${a.name} paused — jobs skip it` : `${a.name} is back in the pool`)
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not update account')
+    }
+  }
 
   const connectedHarnessIds = new Set((accounts ?? []).map((a) => a.harness))
 
@@ -177,9 +258,14 @@ export function SectionAiAccounts({ onDialog }: Props) {
                 <h2 className="text-[15px] font-semibold text-ink">Account pool</h2>
                 <p className="text-[12px] text-muted">Subscription seats every agent shares — jobs move to the next ready account on a limit.</p>
               </div>
-              <Button variant="secondary" height={28} icon={Plus} onClick={() => onDialog('add-harness')}>
-                Add account
-              </Button>
+              <div className="flex items-center gap-[6px]">
+                <Button variant="secondary" height={28} icon={KeyRound} onClick={() => onDialog('connect-key')}>
+                  Add API key
+                </Button>
+                <Button variant="secondary" height={28} icon={Plus} onClick={() => onDialog('add-harness')}>
+                  Add account
+                </Button>
+              </div>
             </div>
             <div className="mb-[24px] overflow-hidden rounded-lg border border-line-strong bg-surface">
               <div className={`grid ${GRID} items-center border-b border-line bg-soft px-[16px] py-[8px] text-[11px] font-medium uppercase tracking-[0.8px] text-faint`}>
@@ -191,7 +277,7 @@ export function SectionAiAccounts({ onDialog }: Props) {
                 <span />
               </div>
               {accounts.map((a, i) => {
-                const harness = HARNESS_BY_ID[a.harness as HarnessId] ?? HARNESS_BY_ID['claude-code']
+                const harness = HARNESS_BY_ID[a.harness as HarnessId] ?? null
                 return (
                   <div
                     key={a.id}
@@ -200,9 +286,9 @@ export function SectionAiAccounts({ onDialog }: Props) {
                     {/* Harness */}
                     <div className="flex items-center gap-[8px]">
                       <span className="flex size-[24px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">
-                        <HarnessLogo id={harness.id} size={15} />
+                        {harness ? <HarnessLogo id={harness.id} size={15} /> : <KeyRound size={13} className="text-muted" aria-hidden />}
                       </span>
-                      <span className="truncate text-[12.5px] font-medium text-ink">{harness.name}</span>
+                      <span className="truncate text-[12.5px] font-medium text-ink">{harness?.name ?? PROVIDER_NAMES[a.harness] ?? a.harness}</span>
                     </div>
                     {/* Account */}
                     <div className="flex items-center gap-[8px]">
@@ -233,6 +319,7 @@ export function SectionAiAccounts({ onDialog }: Props) {
                       <Button variant="secondary" height={28} disabled={testingId === a.id} onClick={() => void handleTest(a.id)}>
                         {testingId === a.id ? 'Testing…' : 'Test'}
                       </Button>
+                      <AccountMenu account={a} onRename={() => setRenaming(a)} onTogglePause={() => void togglePause(a)} />
                     </div>
                   </div>
                 )
@@ -241,6 +328,7 @@ export function SectionAiAccounts({ onDialog }: Props) {
           </>
         )}
       </SectionPane>
+      {renaming && <RenameDialog account={renaming} onClose={() => setRenaming(null)} />}
     </div>
   )
 }

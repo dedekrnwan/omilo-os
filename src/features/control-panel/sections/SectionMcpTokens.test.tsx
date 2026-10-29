@@ -9,6 +9,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
+import { CommandsProvider } from '../../../app/CommandsProvider'
+import { createMockCommands } from '../../../adapters/mock/mockCommands'
 import type { Repos } from '../../../core/ports/repos'
 import type { McpToken } from '../../../core/domain/types'
 
@@ -19,12 +21,6 @@ const RAW_SECRET = 'omilo-mcp-secret-abc123xyz'
 const mockMintMcpToken = vi.fn()
 const mockRevokeMcpToken = vi.fn()
 
-vi.mock('../../../adapters/http/commands', () => ({
-  createCommands: () => ({
-    mintMcpToken: mockMintMcpToken,
-    revokeMcpToken: mockRevokeMcpToken,
-  }),
-}))
 
 import { SectionMcpTokens } from './SectionMcpTokens'
 
@@ -66,7 +62,7 @@ function makeRepos(overrides?: Partial<Repos>): Repos {
     knowledge: { sources: vi.fn().mockResolvedValue([]), list: vi.fn().mockResolvedValue([]) },
     analytics: { overview: vi.fn().mockResolvedValue({ stats: [], series: [] }), helpers: vi.fn().mockResolvedValue([]) },
     skills: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
-    helpers: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
+    helpers: { list: vi.fn().mockResolvedValue([{ id: 'h-chief', name: 'Chief', area: 'ops', isChief: true }]), get: vi.fn().mockResolvedValue(null) },
     members: { list: vi.fn().mockResolvedValue([]) },
     ...overrides,
   }
@@ -79,7 +75,9 @@ function renderSection(repos: Repos) {
   return render(
     <QueryClientProvider client={queryClient}>
       <ReposProvider repos={repos}>
+        <CommandsProvider commands={{ ...createMockCommands(), mintMcpToken: mockMintMcpToken, revokeMcpToken: mockRevokeMcpToken }}>
         <SectionMcpTokens />
+        </CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>,
   )

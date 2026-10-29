@@ -14,45 +14,55 @@ import {
 } from '../legacyShared'
 import { useSectionSave } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
-import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { useCompanySettings, useHelpers, useSubscription, useUpdateCompanySettings, useUsage } from '../../../app/queries'
 import { notify } from '../../../ui/ds/Toaster'
+import { shortDate } from '../format'
 
-const ROLES = [
-  {
-    area: 'ops' as const,
-    role: 'Chief',
-    desc: 'Plans, decides and talks with you.',
-    budget: '$50 / 41 tokens',
-    model: 'Opus 5.5',
-  },
-  {
-    area: 'dev' as const,
-    role: 'Agents',
-    desc: 'Dev, Ops, Growth, Sales, Finance',
-    budget: '$11 / 94 tokens',
-    model: 'Sonnet 5.5',
-  },
-  {
-    area: 'marketing' as const,
-    role: 'Quick steps',
-    desc: 'Classify, extract and summarise in flows.',
-    budget: '$0.60 / 60 tokens',
-    model: 'Haiku 5.5',
-  },
+type RoleKey = 'chief' | 'agents' | 'quick'
+
+const ROLES: { key: RoleKey; area: 'ops' | 'dev' | 'marketing'; role: string; desc: string; model: string }[] = [
+  { key: 'chief', area: 'ops', role: 'Chief', desc: 'Plans, decides and talks with you.', model: 'Opus 5.5' },
+  { key: 'agents', area: 'dev', role: 'Agents', desc: 'Dev, Ops, Growth, Sales, Finance', model: 'Sonnet 5.5' },
+  { key: 'quick', area: 'marketing', role: 'Quick steps', desc: 'Classify, extract and summarise in flows.', model: 'Haiku 5.5' },
 ]
+
+const MODELS = ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5', 'GPT 4.1', 'GPT 4.1 mini', 'Gemini 2.5 Pro', 'Gemini 2.5 Flash']
+const COMPACT_AT = ['70% full', '80% full', '85% full', '90% full', '95% full']
+
+type RoleState = Record<RoleKey, { model: string; budget: string }>
+
+const INITIAL_ROLES: RoleState = {
+  chief: { model: 'Opus 5.5', budget: '' },
+  agents: { model: 'Sonnet 5.5', budget: '' },
+  quick: { model: 'Haiku 5.5', budget: '' },
+}
 
 const INITIAL = {
   warnAt80: true,
   askOverDollar: true,
   fallback: false,
   autoCompact: true,
+  monthlyBudget: '',
+  compactAt: '85% full',
 }
+
+const toCredits = (v: string): number | null => {
+  const n = parseInt(v.replace(/[^0-9]/g, ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+const fmtCredits = (n: number) => n.toLocaleString()
 
 const DEFAULT_KEEP = ['Decisions', 'Pinned messages', 'Files']
 
 export function SectionAiEngine() {
   const { data: settings } = useCompanySettings()
   const updateSettings = useUpdateCompanySettings()
+  const { data: usage } = useUsage()
+  const { data: subscription } = useSubscription()
+  const { data: helpers = [] } = useHelpers()
+  const [roles, setRoles] = useState<RoleState>(INITIAL_ROLES)
+  const [monthlyBudget, setMonthlyBudget] = useState(INITIAL.monthlyBudget)
+  const [compactAt, setCompactAt] = useState(INITIAL.compactAt)
 
   const [warnAt80, setWarnAt80] = useState(INITIAL.warnAt80)
   const [askOverDollar, setAskOverDollar] = useState(INITIAL.askOverDollar)
@@ -70,6 +80,13 @@ export function SectionAiEngine() {
         autoCompact,
         showContextMeter,
         alwaysKeep: [...alwaysKeep],
+        compactAt,
+        // Read by the runtime: per-role model routing + monthly budgets
+        // (omilo/engine/routing.py, billing/balance.py).
+        monthlyBudgetCredits: toCredits(monthlyBudget),
+        roles: Object.fromEntries(
+          ROLES.map((r) => [r.key, { model: roles[r.key].model, budgetCredits: toCredits(roles[r.key].budget) }]),
+        ),
       },
     })
     notify('AI engine settings saved')
@@ -82,6 +99,9 @@ export function SectionAiEngine() {
     setAutoCompact(INITIAL.autoCompact)
     setShowContextMeter(true)
     setAlwaysKeep(new Set(DEFAULT_KEEP))
+    setRoles(INITIAL_ROLES)
+    setMonthlyBudget(INITIAL.monthlyBudget)
+    setCompactAt(INITIAL.compactAt)
   }
 
   const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
@@ -97,8 +117,39 @@ export function SectionAiEngine() {
     if (typeof e.autoCompact === 'boolean') setAutoCompact(e.autoCompact)
     if (typeof e.showContextMeter === 'boolean') setShowContextMeter(e.showContextMeter)
     if (Array.isArray(e.alwaysKeep)) setAlwaysKeep(new Set(e.alwaysKeep as string[]))
+    if (typeof e.compactAt === 'string') setCompactAt(e.compactAt)
+    if (typeof e.monthlyBudgetCredits === 'number') setMonthlyBudget(fmtCredits(e.monthlyBudgetCredits))
+    const r = e.roles as Partial<Record<RoleKey, { model?: unknown; budgetCredits?: unknown }>> | undefined
+    if (r && typeof r === 'object') {
+      setRoles((prev) => {
+        const next = { ...prev }
+        for (const k of Object.keys(prev) as RoleKey[]) {
+          const v = r[k]
+          if (!v) continue
+          next[k] = {
+            model: typeof v.model === 'string' ? v.model : prev[k].model,
+            budget: typeof v.budgetCredits === 'number' ? fmtCredits(v.budgetCredits) : '',
+          }
+        }
+        return next
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
+
+  // This month's spend split by role (credits), against the monthly budget.
+  const chiefIds = new Set(helpers.filter((h) => h.isChief).map((h) => h.id))
+  const usedCredits = usage?.usedThisPeriod ?? 0
+  const chiefCredits = (usage?.byHelper ?? []).filter((b) => chiefIds.has(b.helperId)).reduce((n, b) => n + b.credits, 0)
+  const agentCredits = Math.max(0, usedCredits - chiefCredits)
+  const budgetCredits = toCredits(monthlyBudget)
+  const scale = Math.max(budgetCredits ?? 0, usedCredits, 1)
+  const pct = (n: number) => Math.min(100, Math.round((n / scale) * 100))
+
+  function editRole(key: RoleKey, patch: Partial<{ model: string; budget: string }>) {
+    setRoles((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+    mark()
+  }
 
   function toggleAlwaysKeep(label: string) {
     setAlwaysKeep((prev) => {
@@ -122,26 +173,26 @@ export function SectionAiEngine() {
 
         {/* This month stats */}
         <div className="mb-[24px] flex items-end gap-[8px]">
-          <span className="text-[36px] font-semibold text-ink leading-none">$182</span>
-          <span className="mb-[4px] text-[13px] text-muted">of $400 budget</span>
+          <span className="text-[36px] font-semibold text-ink leading-none">{usedCredits.toLocaleString()}</span>
+          <span className="mb-[4px] text-[13px] text-muted">
+            credits{budgetCredits ? ` of ${budgetCredits.toLocaleString()} budget` : ' this month'}
+          </span>
           <div className="ml-auto flex items-center gap-[16px] text-[12px] text-muted">
-            <span>Runs 1,284</span>
-            <span>Avg a run $0.014</span>
-            <span>Renews Nov 1</span>
+            <span>Balance {(usage?.balance ?? 0).toLocaleString()}</span>
+            <span>{usage?.byHelper.length ?? 0} helpers active</span>
+            {subscription?.currentPeriodEnd && <span>Renews {shortDate(subscription.currentPeriodEnd)}</span>}
           </div>
         </div>
         {/* Mini usage bar */}
         <div className="mb-[4px] h-[6px] overflow-hidden rounded-full bg-line-strong">
           <div className="flex h-full">
-            <div className="h-full bg-[#6366F1]" style={{ width: '35%' }} />
-            <div className="h-full bg-[#0EA5E9]" style={{ width: '28%' }} />
-            <div className="h-full bg-[#14B8A6]" style={{ width: '10%' }} />
+            <div className="h-full bg-[#6366F1]" style={{ width: `${pct(chiefCredits)}%` }} />
+            <div className="h-full bg-[#0EA5E9]" style={{ width: `${pct(agentCredits)}%` }} />
           </div>
         </div>
         <div className="mb-[24px] flex gap-[12px] text-[11.5px] text-muted">
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#6366F1]" />Chief $88</span>
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#0EA5E9]" />Agents $76</span>
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#14B8A6]" />Quick steps $18</span>
+          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#6366F1]" />Chief {chiefCredits.toLocaleString()}</span>
+          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#0EA5E9]" />Agents {agentCredits.toLocaleString()}</span>
         </div>
 
         {/* Models by role */}
@@ -155,8 +206,19 @@ export function SectionAiEngine() {
                 <span className="text-[13px] font-semibold text-ink">{r.role}</span>
                 <span className="text-[12px] text-muted">{r.desc}</span>
               </div>
-              <span className="text-[12px] text-muted">{r.budget}</span>
-              <SelectField value={r.model} />
+              <TextInput
+                aria-label={`${r.role} monthly budget (credits)`}
+                value={roles[r.key].budget}
+                placeholder="No cap"
+                width={110}
+                onChange={(v) => editRole(r.key, { budget: v })}
+              />
+              <SelectField
+                aria-label={`${r.role} model`}
+                value={roles[r.key].model}
+                options={MODELS}
+                onChange={(v) => editRole(r.key, { model: v })}
+              />
             </div>
           ))}
         </div>
@@ -164,11 +226,20 @@ export function SectionAiEngine() {
         {/* Budget & limits */}
         <SubHeading label="Budget & limits" />
         <SettingCardRows>
-          <SettingRow label="Monthly budget" desc="AI must pause when it's reached. Connectors and aoks keep running.">
-            <TextInput value="$ 400" width={120} />
+          <SettingRow label="Monthly budget" desc="AI pauses when it's reached (credits). Connectors and flows keep running.">
+            <TextInput
+              aria-label="Monthly budget (credits)"
+              value={monthlyBudget}
+              placeholder="No cap"
+              width={120}
+              onChange={(v) => { setMonthlyBudget(v); mark() }}
+            />
           </SettingRow>
           <RowDivider />
-          <SettingRow label="Warn me at 80%" desc="WhatsApp + inbox when this month passes $320.">
+          <SettingRow
+            label="Warn me at 80%"
+            desc={budgetCredits ? `WhatsApp + inbox when this month passes ${Math.round(budgetCredits * 0.8).toLocaleString()} credits.` : 'WhatsApp + inbox when this month passes 80% of the budget.'}
+          >
             <Toggle on={warnAt80} onClick={() => { setWarnAt80((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
@@ -192,7 +263,7 @@ export function SectionAiEngine() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Compact when the chat is" desc="Percent of the model's window. Opus 5.5 = 200k, GPT 4.1 = 410k.">
-            <SelectField value="85% full" width={140} />
+            <SelectField aria-label="Compact when the chat is" value={compactAt} options={COMPACT_AT} width={140} onChange={(v) => { setCompactAt(v); mark() }} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Always keep word-for-word" desc="Never summarises, even after compacting.">

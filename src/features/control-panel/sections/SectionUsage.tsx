@@ -5,10 +5,33 @@
  * Empty state when usedThisPeriod === 0 and byHelper is empty.
  * Error state when the query rejects.
  */
-import { Breadcrumb, SectionPane } from '../legacyShared'
+import { Breadcrumb, SectionPane, Toggle } from '../legacyShared'
 import type { DialogKind } from '../legacyTypes'
 import { Button } from '../../../ui/ds/Button'
-import { useUsage, useSubscription } from '../../../app/queries'
+import {
+  useCreditPacks,
+  useHelpers,
+  useInvoices,
+  useLedger,
+  usePlans,
+  useSubscription,
+  useUpdateWallet,
+  useUsage,
+  useWallet,
+} from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
+import { errorMessage, formatIdr, shortDate } from '../format'
+
+const LEDGER_REASON: Record<string, string> = {
+  job: 'AI work',
+  topup: 'Top-up',
+  subscription_grant: 'Plan credits',
+  trial_grant: 'Trial credits',
+  refund: 'Refund',
+}
+
+const money = (amount: number, currency: string) =>
+  currency === 'IDR' ? formatIdr(amount) : `${currency} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 
 interface Props {
   onDialog: (d: DialogKind) => void
@@ -17,6 +40,31 @@ interface Props {
 export function SectionUsage({ onDialog }: Props) {
   const { data: usage, isError, isLoading } = useUsage()
   const { data: subscription } = useSubscription()
+  const { data: plans = [] } = usePlans()
+  const { data: helpers = [] } = useHelpers()
+  const { data: invoices = [] } = useInvoices()
+  const { data: ledger = [] } = useLedger()
+  const { data: wallet } = useWallet()
+  const { data: packs = [] } = useCreditPacks()
+  const updateWallet = useUpdateWallet()
+
+  const planName = subscription?.planName ?? plans.find((p) => p.id === subscription?.planId)?.name ?? subscription?.planId
+  const helperName = (id: string) => helpers.find((h) => h.id === id)?.name ?? id
+  const autoPack = packs.find((p) => p.id === wallet?.autoTopupPack) ?? packs.find((p) => p.id === '5000')
+
+  async function toggleAutoTopup() {
+    if (!wallet) return
+    try {
+      await updateWallet.mutateAsync({
+        autoTopupEnabled: !wallet.autoTopupEnabled,
+        autoTopupThresholdCredits: wallet.autoTopupThresholdCredits || 500,
+        autoTopupPack: wallet.autoTopupPack ?? autoPack?.id ?? '5000',
+      })
+      notify(wallet.autoTopupEnabled ? 'Auto top-up off' : 'Auto top-up on')
+    } catch (e) {
+      notify(errorMessage(e, 'Could not update auto top-up'))
+    }
+  }
 
   const isEmpty = !isLoading && !isError && usage &&
     usage.usedThisPeriod === 0 && usage.byHelper.length === 0
@@ -25,9 +73,12 @@ export function SectionUsage({ onDialog }: Props) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
         <Breadcrumb section="Usage & billing" />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-[8px]">
           <Button variant="secondary" height={28} onClick={() => onDialog('change-plan')}>
             Change plan
+          </Button>
+          <Button variant="primary" height={28} onClick={() => onDialog('buy-credits')}>
+            Buy credits
           </Button>
         </div>
       </div>
@@ -42,7 +93,7 @@ export function SectionUsage({ onDialog }: Props) {
             <div className="flex items-center justify-between gap-[12px]">
               <div className="flex flex-col gap-[2px]">
                 <p className="text-[13px] font-medium text-ink">
-                  {subscription.planId} · {subscription.billingInterval}
+                  {planName ?? 'No plan'} · {subscription.billingInterval}
                 </p>
                 {subscription.isTrial ? (
                   <p className="text-[12px] text-warn">
@@ -120,7 +171,7 @@ export function SectionUsage({ onDialog }: Props) {
                         key={row.helperId}
                         className={`flex items-center gap-[12px] px-[16px] py-[10px] ${i < usage.byHelper.length - 1 ? 'border-b border-line' : ''}`}
                       >
-                        <span className="min-w-[120px] text-[13px] font-medium text-ink">{row.helperId}</span>
+                        <span className="min-w-[120px] text-[13px] font-medium text-ink">{helperName(row.helperId)}</span>
                         <div className="flex flex-1 items-center gap-[8px]">
                           <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-line-strong">
                             <div className="h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
@@ -172,6 +223,55 @@ export function SectionUsage({ onDialog }: Props) {
                 </p>
               </div>
             )}
+          </>
+        )}
+        {/* Auto top-up */}
+        {wallet && (
+          <div className="mt-[24px] flex items-center gap-[10px] rounded-lg border border-line-strong bg-surface px-[16px] py-[12px]">
+            <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+              <p className="text-[13px] font-medium text-ink">Auto top-up</p>
+              <p className="text-[12px] text-muted">
+                When credits drop below {(wallet.autoTopupThresholdCredits || 500).toLocaleString()}, buy {(autoPack?.credits ?? 5000).toLocaleString()} more automatically.
+              </p>
+            </div>
+            <Toggle on={wallet.autoTopupEnabled} label="Auto top-up" onClick={() => void toggleAutoTopup()} />
+          </div>
+        )}
+
+        {/* Credit history */}
+        {ledger.length > 0 && (
+          <>
+            <p className="mt-[24px] mb-[10px] text-[13px] font-medium text-ink">Credit history</p>
+            <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
+              {ledger.slice(0, 10).map((l, i) => (
+                <div key={l.id} className={`flex items-center gap-[12px] px-[16px] py-[8px] ${i < Math.min(ledger.length, 10) - 1 ? 'border-b border-line' : ''}`}>
+                  <span className="w-[56px] text-[12px] text-muted">{shortDate(l.createdAt)}</span>
+                  <span className="min-w-0 flex-1 text-[12.5px] text-ink">
+                    {LEDGER_REASON[l.reason] ?? l.reason}
+                    {l.helperId ? ` · ${helperName(l.helperId)}` : ''}
+                  </span>
+                  <span className={`font-mono text-[12px] ${l.delta >= 0 ? 'text-ok' : 'text-ink-2'}`}>
+                    {l.delta >= 0 ? '+' : ''}{l.delta.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Invoices */}
+        {invoices.length > 0 && (
+          <>
+            <p className="mt-[24px] mb-[10px] text-[13px] font-medium text-ink">Invoices</p>
+            <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
+              {invoices.map((inv, i) => (
+                <div key={inv.id} className={`flex items-center gap-[12px] px-[16px] py-[8px] ${i < invoices.length - 1 ? 'border-b border-line' : ''}`}>
+                  <span className="w-[72px] text-[12px] text-muted">{inv.period}</span>
+                  <span className="min-w-0 flex-1 text-[12.5px] capitalize text-ink">{inv.status}</span>
+                  <span className="font-mono text-[12px] text-ink">{money(inv.amount, inv.currency)}</span>
+                </div>
+              ))}
+            </div>
           </>
         )}
       </SectionPane>

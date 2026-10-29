@@ -308,3 +308,64 @@ export interface ChatRepo {
   /** GET /v1/sessions/{id}/results */
   sessionResults(id: Id): Promise<SessionResults>
 }
+
+// ── sweep/control ──
+import type {
+  AccountInfo,
+  AuditPage,
+  AuditQuery,
+  CompanyDetail,
+  CreditPack,
+  DataExport,
+  Invite,
+  Invoice,
+  LedgerEntry,
+  ManagedChannel,
+  McpServer,
+  Payment,
+  SeatSummary,
+  SignInSession,
+  StorageSummary,
+  UserPreferences,
+} from '../domain/controlPanel'
+
+/** Control-panel reads (company detail, seats, invites, audit, data, account…). */
+export interface ControlPanelRepo {
+  /** GET /v1/company — profile incl. timezone + logo. */
+  company(): Promise<CompanyDetail>
+  /** GET /v1/billing/seats */
+  seats(): Promise<SeatSummary>
+  /** GET /v1/billing/packs */
+  packs(): Promise<CreditPack[]>
+  /** GET /v1/billing/invoices */
+  invoices(): Promise<Invoice[]>
+  /** GET /v1/billing/ledger */
+  ledger(): Promise<LedgerEntry[]>
+  /** GET /v1/wallet/payments/{id} */
+  payment(id: string): Promise<Payment | null>
+  /** GET /v1/auth/invites — open invites. */
+  invites(): Promise<Invite[]>
+  /** GET /v1/channels/manage — incl. archived, with counts. */
+  channels(): Promise<ManagedChannel[]>
+  /** GET /v1/audit */
+  audit(query?: AuditQuery): Promise<AuditPage>
+  /** GET /v1/data/storage */
+  storage(): Promise<StorageSummary>
+  /** GET /v1/data/exports */
+  exports(): Promise<DataExport[]>
+  /** GET /v1/me/account */
+  account(): Promise<AccountInfo>
+  /** GET /v1/me/preferences */
+  preferences(): Promise<UserPreferences>
+  /** GET /v1/me/sessions */
+  sessions(): Promise<SignInSession[]>
+  /** GET /v1/mcp-servers */
+  mcpServers(): Promise<McpServer[]>
+  /** GET /v1/telemetry-config → opted_out */
+  telemetryOptedOut(): Promise<boolean>
+}
+
+// Optional so hand-built test Repos objects (which list every field) keep compiling.
+export interface Repos {
+  controlPanel?: ControlPanelRepo
+}

@@ -48,6 +48,7 @@ import { useSession } from '../app/session'
 import { useAuth } from '../app/useAuth'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Company } from '../core/domain/session'
+import { useCompanyDetail } from '../app/queries'
 
 // ── Companies ─────────────────────────────────────────────────────────────────
 
@@ -809,6 +810,8 @@ export function Rail() {
   const [addCompanyOpen, setAddCompanyOpen] = useState(false)
 
   const { companies, company: activeCompany, applySignIn } = useSession()
+  // Uploaded company logo (Control panel › General) for the active company.
+  const activeLogo = useCompanyDetail().data?.logoUrl ?? null
   const { adapter } = useAuth()
   const qc = useQueryClient()
 
@@ -854,7 +857,7 @@ export function Rail() {
         {companies.map((c, i) => (
           <CompanyTile
             key={c.id}
-            company={toCompanyDefaults(c, i)}
+            company={{ ...toCompanyDefaults(c, i), image: c.id === activeCompany?.id ? activeLogo : null }}
             active={c.id === activeCompany?.id}
             onClick={() => void selectCompany(c.id)}
           />

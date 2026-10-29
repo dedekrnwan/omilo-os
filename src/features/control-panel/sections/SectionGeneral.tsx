@@ -1,29 +1,51 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Globe, Languages } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, useSectionSave } from '../ControlPanelShared'
 import type { SectionProps } from '../ControlPanel'
-import { useUIStore } from '../../../app/store'
-import { COMPANIES } from '../../../app/companies'
-import { useAppearance } from '../../../app/appearance'
 import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
-import { useCompanyLook } from '../../../ui/ds/looks'
-import { LookPicker } from '../../../ui/ds/LookPicker'
 import { useSession } from '../../../app/session'
 import { useCommands } from '../../../app/CommandsProvider'
 import { useCompanySettings, useHandbook, useUpdateCompanySettings } from '../../../app/queries'
+import { useCompanyDetail, useCompanySettings, useUpdateCompanyProfile, useUpdateCompanySettings, useUploadCompanyLogo } from '../../../app/queries'
 import { notify } from '../../../ui/ds/Toaster'
+import { errorMessage, fileToDataUrl } from '../format'
 
 const INITIAL_GENERAL = {
   name: '',
-  about: 'SaaS for RT/RW neighborhoods',
-  timezone: 'Asia/Jakarta (UTC+7)',
+  about: '',
+  timezone: 'Asia/Jakarta',
   language: 'Bahasa Indonesia',
   hours: '08:00 – 21:00',
 }
 
-const TIMEZONES = ['Asia/Jakarta (UTC+7)', 'Asia/Singapore (UTC+8)', 'Asia/Kuala_Lumpur (UTC+8)', 'Australia/Sydney (UTC+11)', 'Europe/London (UTC+0)', 'America/New_York (UTC-5)']
+/** IANA zones offered in the picker (the company column stores the IANA id). */
+const TIMEZONE_IDS = [
+  'Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura', 'Asia/Singapore', 'Asia/Kuala_Lumpur', 'Asia/Bangkok',
+  'Asia/Ho_Chi_Minh', 'Asia/Manila', 'Australia/Sydney', 'Europe/London', 'America/New_York', 'UTC',
+]
 const LANGUAGES = ['Bahasa Indonesia', 'English', 'Bahasa Melayu', 'Tiếng Việt', 'ไทย', '中文']
+
+function utcOffset(tz: string): string {
+  try {
+    const part = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName')?.value
+    return part ? part.replace('GMT', 'UTC') : 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+const tzLabel = (tz: string) => `${tz} (${utcOffset(tz)})`
+const tzFromLabel = (label: string) => label.replace(/\s*\(UTC.*\)$/, '')
+
+function localTime(tz: string): string | null {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(new Date())
+  } catch {
+    return null
+  }
+}
 
 /** pen xVE7r · Control panel · General */
 export function SectionGeneral({ onDialog }: SectionProps) {
@@ -35,13 +57,39 @@ export function SectionGeneral({ onDialog }: SectionProps) {
   const sessionCompanyName = useSession((s) => s.company?.name) ?? ''
   const { data: handbook } = useHandbook()
   const commands = useCommands()
+  const sessionCompany = useSession((s) => s.company)
+  const sessionCompanyName = sessionCompany?.name ?? ''
+  const updateProfile = useUpdateCompanyProfile()
   const { data: settings } = useCompanySettings()
+  const { data: detail } = useCompanyDetail()
   const updateSettings = useUpdateCompanySettings()
+  const uploadLogo = useUploadCompanyLogo()
+  const logoInput = useRef<HTMLInputElement>(null)
+  const logoCompany = {
+    id: sessionCompany?.id ?? 'company',
+    name: detail?.name ?? sessionCompanyName,
+    initial: (detail?.name ?? sessionCompanyName)[0]?.toUpperCase() ?? '?',
+    color: '#EB6834',
+    image: detail?.logoUrl ?? null,
+  }
+
+  async function handleLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      await uploadLogo.mutateAsync(await fileToDataUrl(file))
+      notify('Logo updated')
+    } catch (err) {
+      notify(errorMessage(err, 'Could not upload the logo'))
+    }
+  }
 
   const baseline = useCallback(
     () => ({
       ...INITIAL_GENERAL,
-      name: sessionCompanyName,
+      name: detail?.name ?? sessionCompanyName,
+      timezone: detail?.timezone ?? INITIAL_GENERAL.timezone,
       about: typeof settings?.about === 'string' ? settings.about : INITIAL_GENERAL.about,
       language: typeof settings?.language === 'string' ? settings.language : INITIAL_GENERAL.language,
       hours:
@@ -49,14 +97,14 @@ export function SectionGeneral({ onDialog }: SectionProps) {
           ? ((settings.hours as { label: string }).label)
           : INITIAL_GENERAL.hours,
     }),
-    [sessionCompanyName, settings],
+    [sessionCompanyName, settings, detail],
   )
 
   const [general, setGeneral] = useState(baseline)
 
   async function persist() {
     // Company name + timezone live on the company profile (PATCH /v1/company).
-    await commands.updateCompanyProfile({ name: general.name, timezone: general.timezone })
+    await updateProfile.mutateAsync({ name: general.name, timezone: general.timezone })
     // about / language / hours live in free-form company settings.
     await updateSettings.mutateAsync({
       about: general.about,
@@ -87,23 +135,17 @@ export function SectionGeneral({ onDialog }: SectionProps) {
       <Group title="Company">
         <Box>
           <Row title="Logo" desc="Shown in the rail and on anything agents send.">
-            <CompanyLogo company={company} size={36} radius={10} fontSize={15} className="font-bold" />
-            <LookPicker
-              kind="company"
-              side="bottom"
-              title={`${company.name} logo`}
-              value={{ color: look.color, initial: look.initial, image: look.image }}
-              onChange={(patch) => setLook('companies', company.id, patch)}
-              onReset={() => resetLook('companies', company.id)}
-            >
-              <PenButton>{look.image ? 'Change' : 'Upload'}</PenButton>
-            </LookPicker>
+            <CompanyLogo company={logoCompany} size={36} radius={10} fontSize={15} className="font-bold" />
+            <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="hidden" aria-label="Upload logo" onChange={(e) => void handleLogo(e)} />
+            <PenButton disabled={uploadLogo.isPending} onClick={() => logoInput.current?.click()}>
+              {uploadLogo.isPending ? 'Uploading…' : detail?.logoUrl ? 'Change' : 'Upload'}
+            </PenButton>
           </Row>
           <Row title="Company name" desc="Told to every agent and used in messages.">
             <Field width={240} value={general.name} onChange={edit('name')} />
           </Row>
           <Row title="What you do" desc="One line agents use to explain the company." last>
-            <Field width={300} value={general.about} onChange={edit('about')} />
+            <Field width={300} value={general.about} placeholder="e.g. SaaS for RT/RW neighborhoods" onChange={edit('about')} />
           </Row>
         </Box>
       </Group>
@@ -122,8 +164,18 @@ export function SectionGeneral({ onDialog }: SectionProps) {
 
       <Group title="Language & hours" desc="Agents only message people and run deploys inside work hours.">
         <Box>
-          <Row title="Time zone" desc="Schedules and the weekly retro run in this zone. It’s 12:38 there now.">
-            <Field width={240} icon={Globe} value={general.timezone} onChange={edit('timezone')} select options={TIMEZONES} />
+          <Row
+            title="Time zone"
+            desc={`Schedules and the weekly retro run in this zone.${localTime(general.timezone) ? ` It’s ${localTime(general.timezone)} there now.` : ''}`}
+          >
+            <Field
+              width={240}
+              icon={Globe}
+              value={tzLabel(general.timezone)}
+              onChange={(v) => edit('timezone')(tzFromLabel(v))}
+              select
+              options={(TIMEZONE_IDS.includes(general.timezone) ? TIMEZONE_IDS : [general.timezone, ...TIMEZONE_IDS]).map(tzLabel)}
+            />
           </Row>
           <Row title="Agent language" desc="Agents reply in this language unless you write in another.">
             <Field width={240} icon={Languages} value={general.language} onChange={edit('language')} select options={LANGUAGES} />

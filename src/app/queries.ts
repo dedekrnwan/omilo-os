@@ -1387,3 +1387,226 @@ export function useStartChat() {
       void qc.invalidateQueries({ queryKey: ['messages', session.id] })
   })
 }
+// ── sweep/control ──
+// Control-panel reads + mutations. Reads go through repos.controlPanel (HTTP
+// or mock); it is optional on Repos so hand-built test repos keep compiling —
+// a missing repo surfaces as a query error (sections render their error state).
+
+import type { AuditQuery, UserPreferences } from '../core/domain/controlPanel'
+import type { ControlPanelRepo } from '../core/ports/repos'
+  CreateMcpServerFromOpenApiInput,
+  CreateMcpServerInput,
+  CreateSkillInput,
+  UpdateAiAccountInput,
+  UpdateChannelInput,
+  UpdateMemberInput,
+  UpdateSkillInput,
+
+function cp(repos: ReturnType<typeof useRepos>): ControlPanelRepo {
+  if (!repos.controlPanel) throw new Error('Control panel data is unavailable.')
+  return repos.controlPanel
+
+export function useCompanyDetail() {
+  return useQuery({ queryKey: ['companyDetail'], queryFn: () => cp(repos).company() })
+
+export function useSeats() {
+  return useQuery({ queryKey: ['seats'], queryFn: () => cp(repos).seats() })
+
+export function useCreditPacks() {
+  return useQuery({ queryKey: ['creditPacks'], queryFn: () => cp(repos).packs(), staleTime: 300_000 })
+
+export function useInvoices() {
+  return useQuery({ queryKey: ['invoices'], queryFn: () => cp(repos).invoices() })
+
+export function useLedger() {
+  return useQuery({ queryKey: ['ledger'], queryFn: () => cp(repos).ledger() })
+
+/** Poll a pending payment (hosted checkout) until it settles. */
+export function usePayment(id: string | null) {
+    queryKey: ['payment', id],
+    queryFn: () => cp(repos).payment(id as string),
+    refetchInterval: (q) => (q.state.data && q.state.data.status !== 'pending' ? false : 5_000),
+
+export function useWallet() {
+  return useQuery({ queryKey: ['wallet'], queryFn: () => repos.wallet.get() })
+
+export function useInvites() {
+  return useQuery({ queryKey: ['invites'], queryFn: () => cp(repos).invites() })
+
+export function useManagedChannels() {
+  return useQuery({ queryKey: ['managedChannels'], queryFn: () => cp(repos).channels() })
+
+export function useAuditLog(query: AuditQuery) {
+  return useQuery({ queryKey: ['audit', query], queryFn: () => cp(repos).audit(query) })
+
+export function useStorage() {
+  return useQuery({ queryKey: ['storage'], queryFn: () => cp(repos).storage() })
+
+export function useDataExports() {
+  return useQuery({ queryKey: ['dataExports'], queryFn: () => cp(repos).exports() })
+
+export function useAccount() {
+  return useQuery({ queryKey: ['account'], queryFn: () => cp(repos).account() })
+
+export function usePreferences() {
+  return useQuery({ queryKey: ['preferences'], queryFn: () => cp(repos).preferences() })
+
+export function useSignInSessions() {
+  return useQuery({ queryKey: ['signInSessions'], queryFn: () => cp(repos).sessions() })
+
+export function useMcpServers() {
+  return useQuery({ queryKey: ['mcpServers'], queryFn: () => cp(repos).mcpServers() })
+
+export function useTelemetryOptedOut() {
+  return useQuery({ queryKey: ['telemetryOptedOut'], queryFn: () => cp(repos).telemetryOptedOut() })
+
+/** Small helper: a mutation that invalidates the given query keys on success. */
+function useInvalidatingMutation<TVars, TResult>(
+  fn: (vars: TVars) => Promise<TResult>,
+  keys: string[][],
+) {
+    mutationFn: fn,
+      for (const k of keys) void qc.invalidateQueries({ queryKey: k })
+
+export function useUploadCompanyLogo() {
+  const c = useCommands()
+  return useInvalidatingMutation((dataUrl: string) => c.uploadCompanyLogo(dataUrl), [['companyDetail']])
+
+export function useUpdateMember() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, input }: { id: string; input: UpdateMemberInput }) => c.updateMember(id, input),
+    [['members'], ['seats'], ['managedChannels']],
+  )
+
+export function useRevokeInvite() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.revokeInvite(id), [['invites'], ['seats']])
+
+export function useResendInvite() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.resendInvite(id), [['invites']])
+
+export function useBuySeats() {
+  const c = useCommands()
+  return useInvalidatingMutation((count: number) => c.buySeats(count), [['seats'], ['billingSubscription']])
+
+export function useUpdateChannel() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, input }: { id: string; input: UpdateChannelInput }) => c.updateChannel(id, input),
+    [['managedChannels'], ['channels']],
+  )
+
+export function useDeleteChannel() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.deleteChannel(id), [['managedChannels'], ['channels']])
+
+export function useUpdateAiAccount() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, input }: { id: string; input: UpdateAiAccountInput }) => c.updateAiAccount(id, input),
+    [['aiAccounts']],
+  )
+
+export function useReauthConnector() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.reauthConnector(id), [['connectors']])
+
+export function useCreateMcpServer() {
+  const c = useCommands()
+  return useInvalidatingMutation((input: CreateMcpServerInput) => c.createMcpServer(input), [['mcpServers']])
+
+export function useCreateMcpServerFromOpenApi() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    (input: CreateMcpServerFromOpenApiInput) => c.createMcpServerFromOpenApi(input),
+    [['mcpServers']],
+  )
+
+export function useDeleteMcpServer() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.deleteMcpServer(id), [['mcpServers']])
+
+export function useCreateSkill() {
+  const c = useCommands()
+  return useInvalidatingMutation((input: CreateSkillInput) => c.createSkill(input), [['skills']])
+
+export function useUpdateSkill() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, input }: { id: string; input: UpdateSkillInput }) => c.updateSkill(id, input),
+    [['skills']],
+  )
+
+export function usePublishSkill() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.publishSkill(id), [['skills'], ['inbox']])
+
+export function useUpdatePreferences() {
+  const c = useCommands()
+  return useInvalidatingMutation((patch: UserPreferences) => c.updatePreferences(patch), [['preferences']])
+
+export function useSetTwoFactor() {
+  const c = useCommands()
+  return useInvalidatingMutation((enabled: boolean) => c.setTwoFactor(enabled), [['account']])
+
+export function useRevokeSession() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.revokeSession(id), [['signInSessions']])
+
+export function useUploadAvatar() {
+  const c = useCommands()
+  return useInvalidatingMutation((dataUrl: string) => c.uploadAvatar(dataUrl), [['account'], ['members']])
+
+export function useCreateDataExport() {
+  const c = useCommands()
+  return useInvalidatingMutation(() => c.createDataExport(), [['dataExports'], ['storage']])
+
+export function useSetTelemetryOptOut() {
+  const c = useCommands()
+  return useInvalidatingMutation((optedOut: boolean) => c.setTelemetryOptOut(optedOut), [['telemetryOptedOut']])
+
+export function useInstallConnector() {
+  const c = useCommands()
+  return useInvalidatingMutation((pieceId: string) => c.installConnector(pieceId), [['connectors']])
+
+export function useUpdateConnector() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, enabled }: { id: string; enabled: boolean }) => c.updateConnector(id, { enabled }),
+    [['connectors']],
+  )
+
+export function useConnectorCredentials() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    ({ id, fields }: { id: string; fields: Record<string, string> }) => c.connectorCredentials(id, fields),
+    [['connectors']],
+  )
+
+export function useDisconnectConnector() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.disconnectConnector(id), [['connectors']])
+
+export function useRefreshMarketplace() {
+  const c = useCommands()
+  return useInvalidatingMutation(() => c.refreshMarketplace(), [['marketplace']])
+
+export function useMintMcpToken() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    (input: { label: string; helperId: string; scopes: string[] }) => c.mintMcpToken(input),
+    [['mcpTokens']],
+  )
+
+export function useRevokeMcpToken() {
+  const c = useCommands()
+  return useInvalidatingMutation((id: string) => c.revokeMcpToken(id), [['mcpTokens']])
+
+export function useUpdateCompanyProfile() {
+  const c = useCommands()
+  return useInvalidatingMutation(
+    (input: Parameters<ReturnType<typeof useCommands>['updateCompanyProfile']>[0]) => c.updateCompanyProfile(input),
+    [['companyDetail']],
+  )

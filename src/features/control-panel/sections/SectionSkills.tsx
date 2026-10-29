@@ -6,11 +6,27 @@ import { Segmented } from '../../team/ui'
 import { DialogWriteSkill } from '../dialogs/DialogWriteSkill'
 import type { DialogKind } from '../legacyTypes'
 import { notify } from '../../../ui/ds/Toaster'
-import { useSkills } from '../../../app/queries'
-import { getCommands } from './getCommands'
+import { useHelpers, usePublishSkill, useSkills, useUpdateSkill } from '../../../app/queries'
 import type { Skill } from '../../../core/domain/types'
+import { errorMessage } from '../format'
 
-const SKILL_FILTERS = ['All', 'active', 'draft'] as const
+const SKILL_FILTERS = ['All', 'active', 'draft', 'disabled'] as const
+
+/** Starter playbooks — open the editor pre-filled. */
+const STARTERS: { name: string; body: string }[] = [
+  {
+    name: 'Refund policy',
+    body: '# When a customer asks for a refund\n1. Find the order and check it is within 14 days.\n2. If it is, refund in full and confirm by email.\n3. If not, offer store credit and explain why.\n# Never\n4. Refund more than the order total.',
+  },
+  {
+    name: 'Onboarding guide',
+    body: '# When someone new joins\n1. Send the welcome message with the handbook link.\n2. Add them to their channels.\n3. Book a 15-minute intro with their lead.\n4. Check in after their first week.',
+  },
+  {
+    name: 'House voice',
+    body: '# How we write\n1. Short sentences, plain words.\n2. Warm, never pushy. Use the customer’s name.\n3. Bahasa Indonesia unless they write in English.\n# Never\n4. Use slang or emoji in complaints.',
+  },
+]
 type SkillFilter = (typeof SKILL_FILTERS)[number]
 
 interface Props {
@@ -19,30 +35,39 @@ interface Props {
 
 export function SectionSkills({ onDialog }: Props) {
   const { data: skills = [], isLoading, isError } = useSkills()
+  const { data: helpers = [] } = useHelpers()
+  const publish = usePublishSkill()
+  const updateSkill = useUpdateSkill()
   const [filter, setFilter] = useState<SkillFilter>('All')
   const [editing, setEditing] = useState<Skill | null>(null)
+  const [starter, setStarter] = useState<{ name: string; body: string } | null>(null)
 
   const shown = filter === 'All' ? skills : skills.filter((s) => s.status === filter)
+  const helperName = (id: string) => helpers.find((h) => h.id === id)?.name
 
   function handlePublish(id: string, name: string) {
-    getCommands()
-      .publishSkill(id)
-      .then(() => notify(`Skill "${name}" publish requested`))
-      .catch(() => notify(`Failed to publish "${name}"`))
+    publish
+      .mutateAsync(id)
+      .then(() => notify(`"${name}" sent for review — approve it in your inbox`))
+      .catch((e) => notify(errorMessage(e, `Failed to publish "${name}"`)))
   }
 
   /**
-   * Enable/disable toggle. The backend exposes no direct skill-status write — a
-   * skill goes live through the publish workflow — so turning a draft "on" fires
-   * a publish request, and an already-active skill honestly reflects state with
-   * a hint that disabling goes through publish review.
+   * On/off toggle: a live skill turns off (helpers stop seeing it) and back on
+   * via PATCH /skills/{id}; a draft goes live through publish review.
    */
-  function handleToggle(skill: Skill) {
-    if (skill.status === 'active') {
-      notify(`"${skill.name}" is live — manage it through the publish workflow`)
+  async function handleToggle(skill: Skill) {
+    if (skill.status === 'draft') {
+      handlePublish(skill.id, skill.name)
       return
     }
-    handlePublish(skill.id, skill.name)
+    const next = skill.status === 'active' ? 'disabled' : 'active'
+    try {
+      await updateSkill.mutateAsync({ id: skill.id, input: { status: next } })
+      notify(next === 'disabled' ? `"${skill.name}" turned off` : `"${skill.name}" turned on`)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not update the skill'))
+    }
   }
 
   return (
@@ -104,13 +129,21 @@ export function SectionSkills({ onDialog }: Props) {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-[6px]">
                     <span className="text-[15px]">📋</span>
-                    <span className="text-[13px] font-semibold text-ink">{s.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(s)}
+                      className="text-left text-[13px] font-semibold text-ink hover:underline"
+                      aria-label={`Edit ${s.name}`}
+                    >
+                      {s.name}
+                    </button>
                   </div>
                   <span onClick={(e) => e.stopPropagation()}>
-                    <Toggle on={s.status === 'active'} onClick={() => handleToggle(s)} label={`Enable ${s.name}`} />
+                    <Toggle on={s.status === 'active'} onClick={() => void handleToggle(s)} label={`Enable ${s.name}`} />
                   </span>
                 </div>
-                {s.bodyMd && <p className="text-[12px] text-muted">{s.bodyMd}</p>}
+                {s.bodyMd && <p className="line-clamp-3 whitespace-pre-line text-[12px] text-muted">{s.bodyMd}</p>}
+                {helperName(s.helperId) && <p className="text-[11.5px] text-faint">Used by {helperName(s.helperId)}</p>}
                 <div className="flex items-center gap-[6px]">
                   <span className={`rounded-pill border px-[6px] py-[1px] text-[10.5px] ${
                     s.status === 'active'
@@ -139,14 +172,14 @@ export function SectionSkills({ onDialog }: Props) {
         {/* Starters */}
         <div className="mt-[20px] flex items-center gap-[8px] flex-wrap">
           <span className="text-[12px] text-muted">Starters</span>
-          {['+ Refund policy', '+ Onboarding guide', '+ House voice'].map((s) => (
+          {STARTERS.map((st) => (
             <button
-              key={s}
+              key={st.name}
               type="button"
-              onClick={() => notify(`Starter added: ${s.replace(/^\+\s*/, '')}`)}
+              onClick={() => setStarter(st)}
               className="rounded-pill border border-line-strong bg-surface px-[8px] py-[3px] text-[12px] text-link hover:bg-soft"
             >
-              {s}
+              + {st.name}
             </button>
           ))}
         </div>
@@ -154,10 +187,11 @@ export function SectionSkills({ onDialog }: Props) {
 
       {editing && (
         <DialogWriteSkill
-          skill={{ name: editing.name, desc: editing.bodyMd ?? '' }}
+          skill={{ id: editing.id, name: editing.name, desc: editing.bodyMd ?? '', helperId: editing.helperId, status: editing.status }}
           onClose={() => setEditing(null)}
         />
       )}
+      {starter && <DialogWriteSkill starter={starter} onClose={() => setStarter(null)} />}
     </div>
   )
 }

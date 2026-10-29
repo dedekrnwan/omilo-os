@@ -32,6 +32,7 @@ import { DialogBuyCredits } from './dialogs/DialogBuyCredits'
 import { DIALOG_KINDS } from './types'
 import type { ControlPanelSection, DialogKind, PageVariant } from './types'
 import type { DialogKind as LegacyDialogKind } from './legacyTypes'
+import type { PendingPayment } from './dialogs/DialogPayMayar'
 
 export interface SectionProps {
   onDialog: (d: DialogKind) => void
@@ -73,16 +74,32 @@ function SectionContent({ section, ...p }: SectionProps & { section: ControlPane
   }
 }
 
-function DialogOverlay({ dialog, onClose, onDialog }: { dialog: DialogKind; onClose: () => void; onDialog: (d: DialogKind) => void }) {
+function DialogOverlay({
+  dialog,
+  onClose,
+  onDialog,
+  payment,
+  onPayment,
+}: {
+  dialog: DialogKind
+  onClose: () => void
+  onDialog: (d: DialogKind) => void
+  payment: PendingPayment | null
+  onPayment: (p: PendingPayment) => void
+}) {
+  const startPayment = (p: PendingPayment) => {
+    onPayment(p)
+    onDialog('pay-mayar')
+  }
   switch (dialog) {
     case 'delete-workspace': return <DialogDeleteWorkspace onClose={onClose} />
-    case 'invite':           return <DialogInvite onClose={onClose} />
-    case 'seats-full':       return <DialogInvite onClose={onClose} seatsFull />
-    case 'add-seats':        return <DialogAddSeats onClose={onClose} onPay={() => onDialog('pay-mayar')} />
-    case 'pay-mayar':        return <DialogPayMayar onClose={onClose} />
-    case 'plan-max':         return <DialogPlanMax onClose={onClose} />
+    case 'invite':           return <DialogInvite onClose={onClose} onDialog={onDialog} onPayment={startPayment} />
+    case 'seats-full':       return <DialogInvite onClose={onClose} onDialog={onDialog} onPayment={startPayment} seatsFull />
+    case 'add-seats':        return <DialogAddSeats onClose={onClose} onPay={startPayment} />
+    case 'pay-mayar':        return <DialogPayMayar onClose={onClose} payment={payment} />
+    case 'plan-max':         return <DialogPlanMax onClose={onClose} onDialog={onDialog} />
     case 'connect-key':      return <DialogConnectKey onClose={onClose} />
-    case 'add-harness':      return <DialogAddHarness onClose={onClose} />
+    case 'add-harness':      return <DialogAddHarness onClose={onClose} onDialog={onDialog} />
     case 'add-mcp':          return <DialogAddMcp onClose={onClose} />
     case 'build-oas':        return <DialogAddMcp onClose={onClose} mode="oas" />
     case 'write-skill':      return <DialogWriteSkill onClose={onClose} />
@@ -103,6 +120,7 @@ export function ControlPanel({ section: initialSection = 'general', onSection, d
   const [section, setSection] = useState<ControlPanelSection>(initialSection)
   const [dialog, setDialog] = useState<DialogKind>(initialDialog)
   const [variant, setVariant] = useState<PageVariant>(initialVariant)
+  const [payment, setPayment] = useState<PendingPayment | null>(null)
 
   function handleSection(s: ControlPanelSection) {
     setSection(s)
@@ -116,7 +134,7 @@ export function ControlPanel({ section: initialSection = 'general', onSection, d
       <Inset label="Control panel">
         <SectionContent section={section} onDialog={setDialog} variant={variant} onVariant={setVariant} />
       </Inset>
-      <DialogOverlay dialog={dialog} onClose={() => setDialog(null)} onDialog={setDialog} />
+      <DialogOverlay dialog={dialog} onClose={() => setDialog(null)} onDialog={setDialog} payment={payment} onPayment={setPayment} />
     </>
   )
 }

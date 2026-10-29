@@ -1,12 +1,19 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Check, ExternalLink, Shield } from 'lucide-react'
 import { Modal } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 import { HARNESSES } from '../harnesses'
 import type { HarnessId } from '../harnesses'
+import { useCommands } from '../../../app/CommandsProvider'
+import { useAiAccounts, useHarnessDetect } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
+import type { DialogKind } from '../types'
+import { errorMessage } from '../format'
 
 interface Props {
   onClose: () => void
+  onDialog?: (d: DialogKind) => void
 }
 
 /**
@@ -14,9 +21,41 @@ interface Props {
  * *subscriptions* (Claude Code, Codex, Copilot, …) rather than per-token API
  * keys — pick a harness, then sign in to add a seat agents can share.
  */
-export function DialogAddHarness({ onClose }: Props) {
+export function DialogAddHarness({ onClose, onDialog }: Props) {
   const [selected, setSelected] = useState<HarnessId>('claude-code')
   const picked = HARNESSES.find((h) => h.id === selected)!
+  const commands = useCommands()
+  const qc = useQueryClient()
+  const { data: accounts = [] } = useAiAccounts()
+  const { data: detected = [] } = useHarnessDetect()
+  const [adding, setAdding] = useState(false)
+  const probe = detected.find((d) => d.id === selected)
+
+  /**
+   * Pool the subscription: register a keyless "session" account for the
+   * harness. The harness CLI on the Omilo host must be signed in to this
+   * subscription (detected sign-ins are shown below the list).
+   */
+  async function handleAdd() {
+    setAdding(true)
+    try {
+      const n = accounts.filter((a) => a.harness === picked.id).length
+      await commands.createAiAccount({
+        harness: picked.id,
+        name: n === 0 ? picked.name : `${picked.name} ${n + 1}`,
+        tokenEnc: '',
+        tokenHint: probe?.signedIn ? 'Signed-in session' : 'Subscription',
+        tag: 'session',
+      })
+      await qc.invalidateQueries({ queryKey: ['aiAccounts'] })
+      notify(`${picked.name} added to the pool`)
+      onClose()
+    } catch (e) {
+      notify(errorMessage(e, 'Could not add account'))
+    } finally {
+      setAdding(false)
+    }
+  }
 
   return (
     <Modal
@@ -30,7 +69,9 @@ export function DialogAddHarness({ onClose }: Props) {
             <Shield size={13} aria-hidden /> We never see your password.
           </span>
           <Button variant="secondary" height={30} onClick={onClose}>Cancel</Button>
-          <Button variant="primary" height={30} icon={ExternalLink}>Sign in with {picked.name}</Button>
+          <Button variant="primary" height={30} icon={ExternalLink} disabled={adding} onClick={() => void handleAdd()}>
+            {adding ? 'Adding…' : `Add ${picked.name}`}
+          </Button>
         </>
       }
     >
@@ -67,10 +108,17 @@ export function DialogAddHarness({ onClose }: Props) {
         <div className="flex flex-col gap-[6px] rounded-lg bg-soft px-[12px] py-[10px]">
           <p className="text-[12.5px] font-medium text-ink">How pooling works</p>
           <p className="text-[12px] text-muted">
-            A browser window opens to sign in with {picked.name}. The account joins the pool and runs
-            jobs alongside the others — if it hits its rate-limit window, the next ready account takes over.
+            {probe?.signedIn
+              ? `${picked.name} is signed in on this computer (${probe.detail}). Adding it pools that session.`
+              : `Sign in to ${picked.name} with its CLI on the machine running Omilo, then add it here.`}{' '}
+            The account runs jobs alongside the others — if it hits its rate-limit window, the next ready account takes over.
           </p>
         </div>
+        {onDialog && (
+          <button type="button" className="self-start text-[12.5px] text-link hover:underline" onClick={() => onDialog('connect-key')}>
+            Use a provider API key instead
+          </button>
+        )}
       </div>
     </Modal>
   )

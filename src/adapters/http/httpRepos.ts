@@ -70,6 +70,18 @@ import {
   type RawSchedule,
   type RawSuggestion,
 } from './routineMappers'
+// ── sweep/control ──
+import type { ControlPanelRepo } from '../../core/ports/repos'
+import type {
+  AuditQuery,
+  CompanyDetail,
+  DataExport,
+  Invite,
+  ManagedChannel,
+  McpServer,
+  Payment,
+  UserPreferences,
+} from '../../core/domain/controlPanel'
 
 // ── snake_case → camelCase mappers ────────────────────────────────────────────
 // The legacy endpoints (channels, sessions, inbox, …) return camelCase already.
@@ -89,6 +101,11 @@ type RawBillingPlan = {
   included_credits: number
   seats: number
   trial_days: number
+  max_seats?: number | null
+  max_helpers?: number | null
+  seat_price_idr?: number | null
+  features?: string[]
+  badge?: string | null
 }
 
 function mapBillingPlan(r: RawBillingPlan): BillingPlan {
@@ -103,13 +120,21 @@ function mapBillingPlan(r: RawBillingPlan): BillingPlan {
     includedCredits: r.included_credits,
     seats: r.seats,
     trialDays: r.trial_days,
+    maxSeats: r.max_seats,
+    maxHelpers: r.max_helpers,
+    seatPriceIdr: r.seat_price_idr,
+    features: r.features,
+    badge: r.badge,
   }
 }
 
 type RawBillingSubscription = {
-  plan_id: string
+  plan_id?: string
+  /** GET /v1/billing/subscription returns the plan object + period_end. */
+  plan?: { id: string; name: string } | null
+  period_end?: string | null
   status: string
-  current_period_end: string | null
+  current_period_end?: string | null
   seats: number
   billing_interval: 'monthly' | 'yearly'
   is_trial: boolean
@@ -119,9 +144,10 @@ type RawBillingSubscription = {
 
 function mapBillingSubscription(r: RawBillingSubscription): BillingSubscription {
   return {
-    planId: r.plan_id,
+    planId: r.plan_id ?? r.plan?.id ?? '',
+    planName: r.plan?.name,
     status: r.status,
-    currentPeriodEnd: r.current_period_end,
+    currentPeriodEnd: r.current_period_end ?? r.period_end ?? null,
     seats: r.seats,
     billingInterval: r.billing_interval,
     isTrial: r.is_trial,
@@ -234,6 +260,7 @@ type RawConnector = {
   source: string
   status: string
   enabled: boolean
+  auth?: { type: string; provider?: string | null; fields: string[] }
 }
 
 function mapConnector(r: RawConnector): Connector {
@@ -244,6 +271,7 @@ function mapConnector(r: RawConnector): Connector {
     source: r.source,
     status: r.status,
     enabled: r.enabled,
+    ...(r.auth ? { auth: { type: r.auth.type, provider: r.auth.provider ?? null, fields: r.auth.fields } } : {}),
   }
 }
 
@@ -279,6 +307,10 @@ type RawMember = {
   name: string
   email: string
   role: string
+  channels?: string[] | null
+  channel_names?: string[] | null
+  last_seen_at?: string | null
+  avatar_url?: string | null
 }
 
 function mapMember(r: RawMember): CompanyMember {
@@ -288,6 +320,10 @@ function mapMember(r: RawMember): CompanyMember {
     name: r.name,
     email: r.email,
     role: r.role,
+    channels: r.channels ?? null,
+    channelNames: r.channel_names ?? null,
+    lastSeenAt: r.last_seen_at ?? null,
+    avatarUrl: r.avatar_url ?? null,
   }
 }
 
@@ -577,6 +613,8 @@ export function createHttpRepos(
         try {
           const res = await apiFetch(`${baseUrl}/v1/billing/subscription`, getToken)
           const raw = await res.json() as RawBillingSubscription
+          // No active subscription → the backend returns all-null fields.
+          if (!raw.status && !raw.plan && !raw.plan_id) return null
           return mapBillingSubscription(raw)
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) return null
@@ -877,6 +915,171 @@ export function createHttpRepos(
       sessionShares: (id: Id) => get<Shares>(`/v1/sessions/${id}/shares`),
       sessionResults: (id: Id) => get<SessionResults>(`/v1/sessions/${id}/results`),
     },
+    // ── sweep/control ──
+    controlPanel: createHttpControlPanelRepo(baseUrl, getToken),
+  }
+}
+
+
+// ── sweep/control ──
+// Control-panel reads. snake_case → camelCase mapping lives here.
+
+type RawCompanyDetail = {
+  id: string; name: string; timezone?: string; logo_url?: string | null; plan_id?: string | null
+  currency?: string; autonomy_default?: string; pic_role?: string | null; industry?: string | null
+}
+type RawSeats = {
+  self_hosted: boolean; plan_id: string | null; plan_name: string | null; included: number | null
+  total: number | null; max: number | null; available: number | null; seat_price_idr: number | null
+  can_add: boolean; used: number; pending: number; viewers: number
+  billing_interval?: 'monthly' | 'yearly'; period_end?: string | null
+}
+type RawInvite = {
+  id: string; email: string; role: string; channel_ids?: string[] | null; channel_names?: string[] | null
+  expires_at: string; created_at?: string | null; invited_by?: string | null
+}
+type RawManagedChannel = {
+  id: string; name: string; accent: string; icon: string | null; purpose: string | null; is_default: boolean
+  context_scope: string; chat_count: number; goal_count: number
+  helpers: { id: string; name: string; area: string; is_chief: boolean }[]
+  helper_count: number; people_count: number | null; archived: boolean; archived_at: string | null; muted: boolean
+}
+type RawAuditEvent = {
+  id: string; at: string; actor_type: string; actor_id: string | null; actor_name: string
+  actor_area: string | null; type: string; action: string; target: string; channel: string | null
+}
+type RawExport = {
+  id: string; status: string; filename: string; size_bytes: number; summary: Record<string, number>
+  error: string | null; created_at: string | null; expires_at: string | null
+}
+type RawSession = {
+  id: string; label: string; kind: string; method: string | null; ip: string | null
+  created_at: string | null; last_seen_at: string | null; current: boolean
+}
+type RawPayment = {
+  id: string; kind: string; status: string; credits: number; amount_idr: number
+  hosted_url: string | null; plan_id: string | null; created_at: string | null
+}
+
+export type RawMcpServer = {
+  id: string; name: string; kind: string; url: string | null; auth_type: string; token_hint: string | null
+  status: string; error: string | null; tools: { name: string; description: string; level: string }[]
+  enabled: boolean; created_at: string | null
+}
+
+export function mapMcpServer(r: RawMcpServer): McpServer {
+  return {
+    id: r.id, name: r.name, kind: r.kind, url: r.url, authType: r.auth_type, tokenHint: r.token_hint,
+    status: r.status, error: r.error, tools: r.tools ?? [], enabled: r.enabled, createdAt: r.created_at,
+  }
+}
+
+export function mapManagedChannel(r: RawManagedChannel): ManagedChannel {
+  return {
+    id: r.id, name: r.name, accent: r.accent, icon: r.icon, purpose: r.purpose, isDefault: r.is_default,
+    contextScope: r.context_scope, chatCount: r.chat_count, goalCount: r.goal_count,
+    helpers: (r.helpers ?? []).map((h) => ({ id: h.id, name: h.name, area: h.area, isChief: h.is_chief })),
+    helperCount: r.helper_count, peopleCount: r.people_count, archived: r.archived,
+    archivedAt: r.archived_at, muted: r.muted,
+  }
+}
+
+export function mapInvite(r: RawInvite): Invite {
+  return {
+    id: r.id, email: r.email, role: r.role, channelIds: r.channel_ids ?? null,
+    channelNames: r.channel_names ?? null, expiresAt: r.expires_at, createdAt: r.created_at ?? null,
+    invitedBy: r.invited_by ?? null,
+  }
+}
+
+export function mapCompanyDetail(r: RawCompanyDetail): CompanyDetail {
+  return {
+    id: r.id, name: r.name, timezone: r.timezone ?? 'UTC', logoUrl: r.logo_url ?? null,
+    planId: r.plan_id ?? null, currency: r.currency ?? 'IDR', autonomyDefault: r.autonomy_default ?? 'ask',
+    picRole: r.pic_role ?? null, industry: r.industry ?? null,
+  }
+}
+
+export function mapPayment(r: RawPayment): Payment {
+  return {
+    id: r.id, kind: r.kind, status: r.status, credits: r.credits, amountIdr: r.amount_idr,
+    hostedUrl: r.hosted_url, planId: r.plan_id, createdAt: r.created_at,
+  }
+}
+
+function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | null): ControlPanelRepo {
+  async function get<T>(path: string): Promise<T> {
+    const res = await apiFetch(`${baseUrl}${path}`, getToken)
+    return res.json() as Promise<T>
+  }
+  return {
+    company: async () => mapCompanyDetail(await get<RawCompanyDetail>('/v1/company')),
+    seats: async () => {
+      const r = await get<RawSeats>('/v1/billing/seats')
+      return {
+        selfHosted: r.self_hosted, planId: r.plan_id, planName: r.plan_name, included: r.included,
+        total: r.total, max: r.max, available: r.available, seatPriceIdr: r.seat_price_idr,
+        canAdd: r.can_add, used: r.used, pending: r.pending, viewers: r.viewers,
+        billingInterval: r.billing_interval, periodEnd: r.period_end ?? null,
+      }
+    packs: async () => {
+      const raw = await get<{ id: string; credits: number; amount_idr: number; label: string; sub: string; badge: string | null }[]>('/v1/billing/packs')
+      return raw.map((p) => ({ id: p.id, credits: p.credits, amountIdr: p.amount_idr, label: p.label, sub: p.sub, badge: p.badge }))
+    invoices: async () => {
+      const raw = await get<{ id: string; amount: number; currency: string; status: string; period: string; provider: string; created_at: string | null }[]>('/v1/billing/invoices')
+      return raw.map((i) => ({ id: i.id, amount: i.amount, currency: i.currency, status: i.status, period: i.period, provider: i.provider, createdAt: i.created_at }))
+    ledger: async () => {
+      const raw = await get<{ id: string; delta: number; reason: string; credits_charged: number; created_at: string; helper_id: string | null; balance_after: number }[]>('/v1/billing/ledger')
+      return raw.map((l) => ({ id: l.id, delta: l.delta, reason: l.reason, creditsCharged: l.credits_charged, createdAt: l.created_at, helperId: l.helper_id, balanceAfter: l.balance_after }))
+    payment: async (id: string) => {
+      try {
+        return mapPayment(await get<RawPayment>(`/v1/wallet/payments/${id}`))
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null
+        throw err
+      }
+    invites: async () => (await get<RawInvite[]>('/v1/auth/invites')).map(mapInvite),
+    channels: async () => (await get<RawManagedChannel[]>('/v1/channels/manage')).map(mapManagedChannel),
+    audit: async (q?: AuditQuery) => {
+      const params = new URLSearchParams()
+      if (q?.type) params.set('type', q.type)
+      if (q?.actor) params.set('actor', q.actor)
+      if (q?.days) params.set('days', String(q.days))
+      if (q?.cursor) params.set('cursor', q.cursor)
+      if (q?.limit) params.set('limit', String(q.limit))
+      const qs = params.toString()
+      const raw = await get<{ events: RawAuditEvent[]; next_cursor: string | null }>(`/v1/audit${qs ? `?${qs}` : ''}`)
+      return {
+        events: raw.events.map((e) => ({
+          id: e.id, at: e.at, actorType: e.actor_type, actorId: e.actor_id, actorName: e.actor_name,
+          actorArea: e.actor_area, type: e.type, action: e.action, target: e.target, channel: e.channel,
+        })),
+        nextCursor: raw.next_cursor,
+      }
+    storage: async () => {
+      const r = await get<{ used_bytes: number; quota_bytes: number | null; segments: { key: string; label: string; bytes: number }[] }>('/v1/data/storage')
+      return { usedBytes: r.used_bytes, quotaBytes: r.quota_bytes, segments: r.segments }
+    exports: async () => (await get<RawExport[]>('/v1/data/exports')).map(mapExport),
+    account: async () => {
+      const r = await get<{ id: string; email: string; name: string; avatar_url: string | null; role: string | null; company_name: string | null; two_factor_enabled: boolean; email_verified: boolean; google_linked: boolean }>('/v1/me/account')
+      return {
+        id: r.id, email: r.email, name: r.name, avatarUrl: r.avatar_url, role: r.role, companyName: r.company_name,
+        twoFactorEnabled: r.two_factor_enabled, emailVerified: r.email_verified, googleLinked: r.google_linked,
+      }
+    preferences: () => get<UserPreferences>('/v1/me/preferences'),
+    sessions: async () => (await get<RawSession[]>('/v1/me/sessions')).map((s) => ({
+      id: s.id, label: s.label, kind: s.kind, method: s.method, ip: s.ip, createdAt: s.created_at,
+      lastSeenAt: s.last_seen_at, current: s.current,
+    })),
+    mcpServers: async () => (await get<RawMcpServer[]>('/v1/mcp-servers')).map(mapMcpServer),
+    telemetryOptedOut: async () => (await get<{ opted_out?: boolean }>('/v1/telemetry-config')).opted_out ?? false,
+  }
+}
+
+export function mapExport(r: RawExport): DataExport {
+  return {
+    id: r.id, status: r.status, filename: r.filename, sizeBytes: r.size_bytes, summary: r.summary ?? {},
+    error: r.error, createdAt: r.created_at, expiresAt: r.expires_at,
   }
 }
 

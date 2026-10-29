@@ -25,10 +25,12 @@ describe('SectionAccount · Devices & tokens', () => {
     const user = userEvent.setup()
     const { container } = renderAccount()
 
-    // The three entries render.
-    expect(screen.getByText('MacBook Pro · Jakarta')).toBeInTheDocument()
-    expect(screen.getByText('iPhone 16 · WhatsApp linked')).toBeInTheDocument()
-    expect(screen.getByText('CLI token "omilo-cli"')).toBeInTheDocument()
+    // The three sign-in sessions (GET /v1/me/sessions; mock fixture) render.
+    expect(await screen.findByText('Chrome · Mac')).toBeInTheDocument()
+    expect(screen.getByText('Safari · iPhone')).toBeInTheDocument()
+    expect(screen.getByText('Command line')).toBeInTheDocument()
+    // The current device can't be signed out from here.
+    expect(screen.getByText('This device · active now')).toBeInTheDocument()
 
     // No stray emoji / placeholder glyphs left in the markup.
     expect(container.textContent).not.toMatch(/💻|^>$/m)
@@ -37,7 +39,7 @@ describe('SectionAccount · Devices & tokens', () => {
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
     const revoke = screen.getByRole('button', { name: 'Revoke' })
     await user.click(revoke)
-    expect(screen.queryByText('CLI token "omilo-cli"')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Command line')).not.toBeInTheDocument())
   })
 })
 
@@ -50,6 +52,8 @@ describe('SectionAccount · Profile name save', () => {
     renderAccount(commands)
 
     const nameInput = screen.getByLabelText('Name')
+    // Wait for the account to hydrate before editing.
+    await waitFor(() => expect(nameInput).not.toHaveValue(''))
     await user.clear(nameInput)
     await user.type(nameInput, 'New Name')
 

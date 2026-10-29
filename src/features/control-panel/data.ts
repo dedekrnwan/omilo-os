@@ -48,7 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'ai-engine', label: 'AI engine', icon: Cpu },
       { id: 'ai-accounts', label: 'AI accounts', icon: KeyRound },
-      { id: 'knowledge', label: 'Knowledge', icon: Brain, badge: 'Off' },
+      { id: 'knowledge', label: 'Knowledge', icon: Brain },
     ],
   },
   {
@@ -75,11 +75,3 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ]
-
-/** Team people, as on the pen Members table and avatar stacks. */
-export const PEOPLE = [
-  { initials: 'DK', name: 'Dede Kurniawan', email: 'dede@saga.co.id', seen: 'active you', channels: 'All channels', role: 'Owner', color: '#57534E' },
-  { initials: 'RA', name: 'Rina Ayu', email: 'rina@saga.co.id', seen: 'active 2h ago', channels: 'All channels', role: 'Admin', color: '#0EA5E9' },
-  { initials: 'BY', name: 'Bayu Pratama', email: 'bayu@saga.co.id', seen: 'active now', channels: 'Engineering, General', role: 'Member', color: '#14B8A6' },
-  { initials: 'SN', name: 'Sari Nur', email: 'sari@saga.co.id', seen: 'active Yesterday', channels: 'Marketing, General', role: 'Member', color: '#F97316' },
-] as const

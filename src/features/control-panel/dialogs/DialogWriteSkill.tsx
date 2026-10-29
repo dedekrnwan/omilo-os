@@ -1,77 +1,107 @@
+import { useEffect, useState } from 'react'
 import { Button } from '../../../ui/ds/Button'
 import { Modal, SelectField, TextInput } from '../legacyShared'
+import { useCreateSkill, useHelpers, usePublishSkill, useSkill, useUpdateSkill } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
+import { errorMessage } from '../format'
 
 interface Props {
   onClose: () => void
   /** When set, the dialog opens in edit mode pre-filled with this skill. */
-  skill?: { name: string; desc: string }
+  skill?: { id?: string; name: string; desc: string; helperId?: string; status?: string }
+  /** Starter template (name + steps) for a new skill. */
+  starter?: { name: string; body: string }
 }
 
-export function DialogWriteSkill({ onClose, skill }: Props) {
-  const editing = !!skill
+const PLACEHOLDER = `# When a resident asks for a guest pass
+1. Ask for guest name, date and plate number.
+2. Create the pass.
+3. Send the QR to the resident on WhatsApp.
+# Never
+4. Make passes for more than 3 days.`
+
+export function DialogWriteSkill({ onClose, skill, starter }: Props) {
+  const editing = !!skill?.id
+  const { data: helpers = [] } = useHelpers()
+  const createSkill = useCreateSkill()
+  const updateSkill = useUpdateSkill()
+  const publishSkill = usePublishSkill()
+  const [name, setName] = useState(skill?.name ?? starter?.name ?? '')
+  const [body, setBody] = useState(skill?.desc ?? starter?.body ?? '')
+  const [helperId, setHelperId] = useState(skill?.helperId ?? '')
+  // List rows carry no body — load the full skill when editing.
+  const { data: full, isLoading: loadingFull } = useSkill(skill?.id ?? '')
+  const [touched, setTouched] = useState(false)
+  useEffect(() => {
+    if (!touched && full?.bodyMd) setBody(full.bodyMd)
+  }, [full, touched])
+  const helper = helpers.find((h) => h.id === helperId) ?? helpers.find((h) => h.isChief) ?? helpers[0]
+  const busy = createSkill.isPending || updateSkill.isPending || publishSkill.isPending
+  const valid = !!name.trim() && !!body.trim() && !!helper && !(editing && loadingFull)
+
+  async function save(publish: boolean) {
+    if (!helper) return
+    try {
+      const saved = editing && skill?.id
+        ? await updateSkill.mutateAsync({ id: skill.id, input: { name: name.trim(), bodyMd: body, helperId: helper.id } })
+        : await createSkill.mutateAsync({ helperId: helper.id, name: name.trim(), bodyMd: body })
+      if (publish && saved.status !== 'active') {
+        await publishSkill.mutateAsync(saved.id)
+        notify(`"${saved.name}" sent for review — approve it in your inbox`)
+      } else {
+        notify(editing ? 'Skill saved' : 'Draft saved')
+      }
+      onClose()
+    } catch (e) {
+      notify(errorMessage(e, 'Could not save the skill'))
+    }
+  }
+
   return (
     <Modal
       title={editing ? 'Edit skill' : 'Write a skill'}
-      subtitle={skill?.desc ?? 'A skill is a short playbook any helper can run. Write it in plain words.'}
+      subtitle="A skill is a short playbook any helper can run. Write it in plain words."
       width={560}
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="text-[12.5px] text-muted hover:underline">Draft with Chief</button>
           <div className="flex-1" />
-          <Button variant="secondary" height={30} onClick={onClose}>Save draft</Button>
-          <Button variant="primary" height={30} onClick={onClose}>{editing ? 'Save skill' : 'Publish skill'}</Button>
+          <Button variant="secondary" height={30} disabled={!valid || busy} onClick={() => void save(false)}>
+            {editing ? 'Save' : 'Save draft'}
+          </Button>
+          {skill?.status !== 'active' && (
+            <Button variant="primary" height={30} disabled={!valid || busy} onClick={() => void save(true)}>
+              Publish skill
+            </Button>
+          )}
         </>
       }
     >
       <div className="flex flex-col gap-[14px]">
         <div>
           <p className="mb-[6px] text-[12px] font-medium text-muted">Name</p>
-          <TextInput value={skill?.name ?? 'Visitor pass'} className="w-full min-w-0" />
+          <TextInput aria-label="Skill name" value={name} placeholder="Visitor pass" onChange={setName} className="w-full min-w-0" />
         </div>
-        <div className="grid grid-cols-2 gap-[10px]">
-          <div>
-            <p className="mb-[6px] text-[12px] font-medium text-muted">Who can use it</p>
-            <SelectField value="Support, Ops" />
-          </div>
-          <div>
-            <p className="mb-[6px] text-[12px] font-medium text-muted">Runs</p>
-            <SelectField value="Ask each time" />
-          </div>
+        <div>
+          <p className="mb-[6px] text-[12px] font-medium text-muted">Who uses it</p>
+          <SelectField
+            aria-label="Who uses it"
+            value={helper?.name ?? 'No helpers yet'}
+            options={helpers.map((h) => h.name)}
+            onChange={(v) => setHelperId(helpers.find((h) => h.name === v)?.id ?? '')}
+          />
         </div>
         <div>
           <p className="mb-[6px] text-[12px] font-medium text-muted">Steps</p>
-          <div className="flex flex-col gap-[4px] rounded-base border border-line-strong bg-soft p-[10px]">
-            {[
-              '# When a resident asks for a guest pass',
-              '1. Ask for guest name, date and plate number.',
-              '2. Create a pass in sahabat-db (create_visitor_pass).',
-              '3. Send the QR to the resident on WhatsApp.',
-              '4. Tell the security post in #security.',
-              '# Never',
-              '5. Make passes for more than 3 days.',
-            ].map((line, i) => (
-              <p key={i} className={`font-mono text-[12.5px] ${line.startsWith('#') ? 'text-muted' : 'text-ink'}`}>
-                {!line.startsWith('#') ? `${line}` : line}
-              </p>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="mb-[6px] text-[12px] font-medium text-muted">Tools it may use</p>
-          <div className="flex flex-wrap gap-[6px]">
-            {['sahabat-db', 'WhatsApp Business', 'Google Drive'].map((t) => (
-              <span key={t} className="flex items-center gap-[4px] rounded-pill border border-line-strong bg-surface px-[8px] py-[3px] text-[12px] text-ink">
-                {t}
-              </span>
-            ))}
-          </div>
-        </div>
-        {/* Dry run result */}
-        <div className="flex items-center gap-[8px] rounded-lg border border-ok-line bg-ok-tint px-[12px] py-[8px]">
-          <span className="text-ok text-[13px]">✓</span>
-          <span className="text-[12.5px] font-medium text-ok">Dry run passed · 4 steps, no messages sent</span>
-          <button type="button" className="ml-auto text-[12px] text-link hover:underline">Run again</button>
+          <textarea
+            aria-label="Steps"
+            value={body}
+            onChange={(e) => { setBody(e.target.value); setTouched(true) }}
+            placeholder={PLACEHOLDER}
+            rows={9}
+            className="w-full rounded-base border border-line-strong bg-soft p-[10px] font-mono text-[12.5px] text-ink outline-none focus:border-ink"
+          />
+          <p className="mt-[4px] text-[11.5px] text-muted">Publishing sends it to your inbox for review before helpers use it.</p>
         </div>
       </div>
     </Modal>

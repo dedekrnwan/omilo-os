@@ -6,6 +6,8 @@ import { useSession } from '../../../app/session'
 import { useCommands } from '../../../app/CommandsProvider'
 import { useAuth } from '../../../app/useAuth'
 import { notify } from '../../../ui/ds/Toaster'
+import { useCreateDataExport, useHelpers, useManagedChannels } from '../../../app/queries'
+import { errorMessage, saveBlob } from '../format'
 
 /** pen JS6gc · General · Delete workspace */
 export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
@@ -14,6 +16,20 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
   const { signOut } = useAuth()
   const [confirm, setConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const { data: helpers = [] } = useHelpers()
+  const { data: channels = [] } = useManagedChannels()
+  const createExport = useCreateDataExport()
+  const chats = channels.reduce((n, c) => n + c.chatCount, 0)
+
+  async function exportFirst() {
+    try {
+      const e = await createExport.mutateAsync()
+      if (e.status !== 'ready') throw new Error(e.error ?? 'Export failed')
+      saveBlob(await commands.downloadDataExport(e.id), e.filename || 'omilo-export.zip')
+    } catch (err) {
+      notify(errorMessage(err, 'Could not export your data'))
+    }
+  }
   const canDelete = confirm.trim() === workspaceName && !deleting
 
   async function handleDelete() {
@@ -39,7 +55,8 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
         <Mascot helper size={44} radius={12} area="brand" mood="sad" still />
         <h2 className="m-0 font-serif text-[22px] font-medium text-ink">Delete {workspaceName}?</h2>
         <p className="m-0 text-[13.5px] leading-[1.55] text-ink-2">
-          All 6 helpers stop, every channel disconnects and 1.204 chats, goals, flows and docs are deleted after 14 days. Billing ends today.
+          {helpers.length > 0 ? `All ${helpers.length} helper${helpers.length === 1 ? '' : 's'} stop` : 'Every helper stops'}, every channel disconnects and{' '}
+          {chats > 0 ? `${chats.toLocaleString('id-ID')} chats, ` : ''}goals, flows and docs are deleted. Billing ends today.
         </p>
         <Field
           label={`Type "${workspaceName}" to confirm`}
@@ -47,9 +64,9 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
           placeholder={workspaceName}
           onChange={setConfirm}
         />
-        <button type="button" className="flex w-full items-center gap-[8px] text-left">
+        <button type="button" className="flex w-full items-center gap-[8px] text-left" disabled={createExport.isPending} onClick={() => void exportFirst()}>
           <Download size={13} aria-hidden className="text-muted" />
-          <span className="text-[12.5px] text-link">Export everything first</span>
+          <span className="text-[12.5px] text-link">{createExport.isPending ? 'Exporting…' : 'Export everything first'}</span>
         </button>
         <div className="flex w-full gap-[8px] pt-[6px]">
           <PenButton h={40} fs={13} className="flex-1" onClick={onClose}>Keep workspace</PenButton>

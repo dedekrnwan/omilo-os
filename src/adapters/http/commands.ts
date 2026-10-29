@@ -58,6 +58,17 @@ import {
 // ── sweep/inbox-flows ──
 import type { FlowRun } from '../../core/domain/types'
 import { mapFlowRunSweep } from './httpRepos'
+// ── sweep/control ──
+import type { Skill } from '../../core/domain/types'
+  AuditQuery,
+  CompanyDetail,
+  DataExport,
+  ManagedChannel,
+  McpServer,
+  UserPreferences,
+} from '../../core/domain/controlPanel'
+import type { RawMcpServer } from './httpRepos'
+import { mapCompanyDetail, mapExport, mapManagedChannel, mapMcpServer } from './httpRepos'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -947,6 +958,57 @@ export interface ResendRoutineRunResult {
   updateArea(id: string, input: UpdateAreaInput): Promise<Channel>
   /** POST /v1/chief/nudges/{id}/dismiss {snooze_until?} */
   dismissChiefNudge(id: string, snoozeUntil?: string): Promise<void>
+  // ── sweep/control ──
+  /** POST /v1/company/logo {data_url} → company detail. */
+  uploadCompanyLogo(dataUrl: string): Promise<CompanyDetail>
+  /** DELETE /v1/company/logo */
+  removeCompanyLogo(): Promise<CompanyDetail>
+  /** PATCH /v1/members/{id} {role?, channels?, all_channels?} */
+  updateMember(id: string, input: UpdateMemberInput): Promise<CompanyMember>
+  /** DELETE /v1/auth/invites/{id} */
+  revokeInvite(id: string): Promise<void>
+  /** POST /v1/auth/invites/{id}/resend */
+  resendInvite(id: string): Promise<void>
+  /** POST /v1/billing/seats {count} → Manual {seats} | Doit {payment_id, hosted_url}. */
+  buySeats(count: number): Promise<BuySeatsResult>
+  /** PATCH /v1/channels/{id} {archived?, muted?, …} */
+  updateChannel(id: string, input: UpdateChannelInput): Promise<ManagedChannel>
+  /** DELETE /v1/channels/{id} */
+  deleteChannel(id: string): Promise<void>
+  /** PATCH /v1/ai-accounts/{id} {name?, tag?, status?} */
+  updateAiAccount(id: string, input: UpdateAiAccountInput): Promise<AiAccount>
+  /** POST /v1/connectors/{id}/reauth → connector (status needs_auth) + auth descriptor. */
+  reauthConnector(id: string): Promise<Connector>
+  /** POST /v1/marketplace/refresh — re-index the catalog. */
+  refreshMarketplace(): Promise<unknown>
+  /** POST /v1/mcp-servers {name, url, token?} */
+  createMcpServer(input: CreateMcpServerInput): Promise<McpServer>
+  /** POST /v1/mcp-servers/from-openapi {name, spec?, spec_url?} */
+  createMcpServerFromOpenApi(input: CreateMcpServerFromOpenApiInput): Promise<McpServer>
+  /** POST /v1/mcp-servers/{id}/refresh */
+  refreshMcpServer(id: string): Promise<McpServer>
+  /** DELETE /v1/mcp-servers/{id} */
+  deleteMcpServer(id: string): Promise<void>
+  /** POST /v1/skills {helper_id, name, body_md} → Skill (draft). */
+  createSkill(input: CreateSkillInput): Promise<Skill>
+  /** PATCH /v1/skills/{id} {status?, name?, body_md?, helper_id?} */
+  updateSkill(id: string, input: UpdateSkillInput): Promise<Skill>
+  /** POST /v1/telemetry-config {opted_out} */
+  setTelemetryOptOut(optedOut: boolean): Promise<void>
+  /** PATCH /v1/me/preferences (deep-merged, per user). */
+  updatePreferences(patch: UserPreferences): Promise<UserPreferences>
+  /** POST /v1/auth/two-factor/enable | disable */
+  setTwoFactor(enabled: boolean): Promise<void>
+  /** DELETE /v1/me/sessions/{id} — sign that device out. */
+  revokeSession(id: string): Promise<void>
+  /** POST /v1/me/avatar {data_url} */
+  uploadAvatar(dataUrl: string): Promise<{ avatarUrl: string }>
+  /** POST /v1/data/exports — build a zip of the company's data now. */
+  createDataExport(): Promise<DataExport>
+  /** GET /v1/data/exports/{id}/download → zip blob. */
+  downloadDataExport(id: string): Promise<Blob>
+  /** GET /v1/audit.csv → csv blob. */
+  downloadAuditCsv(query?: AuditQuery): Promise<Blob>
 }
 
 /**
@@ -1749,6 +1811,78 @@ export function createCommands(
         `${baseUrl}/v1/chief/nudges/${encodeURIComponent(id)}/dismiss`,
         postJson(body),
       if (res.status !== 204) await res.text()
+    // ── sweep/control ──
+    async uploadCompanyLogo(dataUrl: string): Promise<CompanyDetail> {
+      return mapCompanyDetail(await post('/v1/company/logo', { data_url: dataUrl }))
+    async removeCompanyLogo(): Promise<CompanyDetail> {
+      const res = await apiFetch(`${baseUrl}/v1/company/logo`, getToken, deleteReq())
+      return mapCompanyDetail(await res.json())
+    async updateMember(id: string, input: UpdateMemberInput): Promise<CompanyMember> {
+      if (input.role !== undefined) body.role = input.role
+      if (input.channels !== undefined) body.channels = input.channels
+      if (input.allChannels !== undefined) body.all_channels = input.allChannels
+      const raw = await patch<RawMember & { channels?: string[] | null; channel_names?: string[] | null; last_seen_at?: string | null }>(`/v1/members/${id}`, body)
+      return { ...mapMember(raw), channels: raw.channels ?? null, channelNames: raw.channel_names ?? null, lastSeenAt: raw.last_seen_at ?? null }
+    async revokeInvite(id: string): Promise<void> {
+      await del(`/v1/auth/invites/${id}`)
+    async resendInvite(id: string): Promise<void> {
+      await post(`/v1/auth/invites/${id}/resend`, {})
+    async buySeats(count: number): Promise<BuySeatsResult> {
+      const r = await post<{ status: string; seats?: number; hosted_url?: string | null; payment_id?: string; amount_idr: number }>('/v1/billing/seats', { count })
+      return { status: r.status, seats: r.seats ?? null, hostedUrl: r.hosted_url ?? null, paymentId: r.payment_id ?? null, amountIdr: r.amount_idr }
+    async updateChannel(id: string, input: UpdateChannelInput): Promise<ManagedChannel> {
+      if (input.muted !== undefined) body.muted = input.muted
+      return mapManagedChannel(await patch(`/v1/channels/${id}`, body))
+    async deleteChannel(id: string): Promise<void> {
+      await del(`/v1/channels/${id}`)
+    async updateAiAccount(id: string, input: UpdateAiAccountInput): Promise<AiAccount> {
+      return mapAiAccount(await patch<RawAiAccount>(`/v1/ai-accounts/${id}`, input))
+    async reauthConnector(id: string): Promise<Connector> {
+      const raw = await post<RawConnector & { auth?: { type: string; provider?: string | null; fields: string[] } }>(`/v1/connectors/${id}/reauth`, {})
+      return { ...mapConnector(raw), ...(raw.auth ? { auth: { type: raw.auth.type, provider: raw.auth.provider ?? null, fields: raw.auth.fields } } : {}) }
+    async refreshMarketplace(): Promise<unknown> {
+      return post('/v1/marketplace/refresh', {})
+    async createMcpServer(input: CreateMcpServerInput): Promise<McpServer> {
+      return mapMcpServer(await post<RawMcpServer>('/v1/mcp-servers', { name: input.name, url: input.url, token: input.token ?? null }))
+    async createMcpServerFromOpenApi(input: CreateMcpServerFromOpenApiInput): Promise<McpServer> {
+      const body: Record<string, unknown> = { name: input.name }
+      if (input.spec !== undefined) body.spec = input.spec
+      if (input.specUrl !== undefined) body.spec_url = input.specUrl
+      return mapMcpServer(await post<RawMcpServer>('/v1/mcp-servers/from-openapi', body))
+    async refreshMcpServer(id: string): Promise<McpServer> {
+      return mapMcpServer(await post<RawMcpServer>(`/v1/mcp-servers/${id}/refresh`, {}))
+    async deleteMcpServer(id: string): Promise<void> {
+      await del(`/v1/mcp-servers/${id}`)
+    async createSkill(input: CreateSkillInput): Promise<Skill> {
+      return post<Skill>('/v1/skills', { helper_id: input.helperId, name: input.name, body_md: input.bodyMd })
+    async updateSkill(id: string, input: UpdateSkillInput): Promise<Skill> {
+      if (input.status !== undefined) body.status = input.status
+      if (input.bodyMd !== undefined) body.body_md = input.bodyMd
+      return patch<Skill>(`/v1/skills/${id}`, body)
+    async setTelemetryOptOut(optedOut: boolean): Promise<void> {
+      await post('/v1/telemetry-config', { opted_out: optedOut })
+    async updatePreferences(p: UserPreferences): Promise<UserPreferences> {
+      return patch<UserPreferences>('/v1/me/preferences', p)
+    async setTwoFactor(enabled: boolean): Promise<void> {
+      await post(`/v1/auth/two-factor/${enabled ? 'enable' : 'disable'}`, {})
+    async revokeSession(id: string): Promise<void> {
+      await del(`/v1/me/sessions/${id}`)
+    async uploadAvatar(dataUrl: string): Promise<{ avatarUrl: string }> {
+      const r = await post<{ avatar_url: string }>('/v1/me/avatar', { data_url: dataUrl })
+      return { avatarUrl: r.avatar_url }
+    async createDataExport(): Promise<DataExport> {
+      return mapExport(await post('/v1/data/exports', {}))
+    async downloadDataExport(id: string): Promise<Blob> {
+      const res = await apiFetch(`${baseUrl}/v1/data/exports/${id}/download`, getToken, { method: 'GET', headers: { Accept: 'application/zip' } })
+      return res.blob()
+    async downloadAuditCsv(q?: AuditQuery): Promise<Blob> {
+      const params = new URLSearchParams()
+      if (q?.type) params.set('type', q.type)
+      if (q?.actor) params.set('actor', q.actor)
+      if (q?.days) params.set('days', String(q.days))
+      const qs = params.toString()
+      const res = await apiFetch(`${baseUrl}/v1/audit.csv${qs ? `?${qs}` : ''}`, getToken, { method: 'GET', headers: { Accept: 'text/csv' } })
+      return res.blob()
     },
   }
 }
@@ -1921,4 +2055,41 @@ export interface UpdateAreaInput {
   /** null resets to the accent default. */
   icon?: string | null
   color?: string | null
+// ── sweep/control ──
+export interface UpdateMemberInput {
+  role?: string
+  /** Channel ids; use allChannels to grant every channel. */
+  allChannels?: boolean
+
+export interface BuySeatsResult {
+  seats: number | null
+  hostedUrl: string | null
+  paymentId: string | null
+  amountIdr: number
+
+export interface UpdateChannelInput {
+  muted?: boolean
+
+export interface UpdateAiAccountInput {
+  tag?: string
+  /** 'paused' takes the account out of the pool; 'ready' puts it back. */
+  status?: string
+
+export interface CreateMcpServerInput {
+  url: string
+  token?: string
+
+export interface CreateMcpServerFromOpenApiInput {
+  /** The OpenAPI document as JSON/YAML text (or parsed object). */
+  spec?: string | Record<string, unknown>
+  specUrl?: string
+
+export interface CreateSkillInput {
+  helperId: string
+  bodyMd: string
+
+export interface UpdateSkillInput {
+  status?: 'active' | 'disabled' | 'draft'
+  bodyMd?: string
+  helperId?: string
 }

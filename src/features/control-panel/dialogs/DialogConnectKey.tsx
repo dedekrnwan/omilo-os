@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ChevronDown, CircleHelp, Key } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { CircleHelp, Key } from 'lucide-react'
 import { Modal, TextInput } from '../legacyShared'
 import { Button } from '../../../ui/ds/Button'
 import { useCommands } from '../../../app/CommandsProvider'
@@ -18,6 +19,14 @@ const PROVIDER_HARNESS: Record<string, string> = {
   OpenRouter: 'openrouter',
 }
 
+/** Where each provider issues API keys. */
+const KEY_HELP: Record<string, string> = {
+  Anthropic: 'https://console.anthropic.com/settings/keys',
+  OpenAI: 'https://platform.openai.com/api-keys',
+  Google: 'https://aistudio.google.com/app/apikey',
+  OpenRouter: 'https://openrouter.ai/keys',
+}
+
 /** Mask a key to a short hint for display (never stores the full key in the hint). */
 function keyHint(key: string): string {
   const trimmed = key.trim()
@@ -27,8 +36,9 @@ function keyHint(key: string): string {
 
 export function DialogConnectKey({ onClose }: Props) {
   const commands = useCommands()
+  const qc = useQueryClient()
   const [provider, setProvider] = useState('Anthropic')
-  const [label, setLabel] = useState('Saga · production')
+  const [label, setLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -49,6 +59,7 @@ export function DialogConnectKey({ onClose }: Props) {
         tokenEnc: apiKey.trim(),
         tokenHint: keyHint(apiKey),
       })
+      await qc.invalidateQueries({ queryKey: ['aiAccounts'] })
       notify('AI account connected')
       onClose()
     } catch (e) {
@@ -66,7 +77,11 @@ export function DialogConnectKey({ onClose }: Props) {
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="flex items-center gap-[4px] text-[12px] text-muted hover:underline">
+          <button
+            type="button"
+            className="flex items-center gap-[4px] text-[12px] text-muted hover:underline"
+            onClick={() => window.open(KEY_HELP[provider], '_blank', 'noopener')}
+          >
             <CircleHelp size={12} aria-hidden /> Where do I find my key?
           </button>
           <div className="flex-1" />
@@ -102,7 +117,7 @@ export function DialogConnectKey({ onClose }: Props) {
         {/* Label */}
         <div>
           <p className="mb-[6px] text-[12px] font-medium text-muted">Label</p>
-          <TextInput aria-label="Label" value={label} onChange={setLabel} className="w-full min-w-0" />
+          <TextInput aria-label="Label" value={label} placeholder={`${provider} · production`} onChange={setLabel} className="w-full min-w-0" />
         </div>
 
         {/* API Key */}
@@ -124,20 +139,6 @@ export function DialogConnectKey({ onClose }: Props) {
           <p className="mt-[4px] text-[11.5px] text-muted">Stored encrypted. You can rotate or remove it anytime.</p>
         </div>
 
-        {/* Monthly limit */}
-        <div>
-          <p className="mb-[6px] text-[12px] font-medium text-muted">Monthly limit</p>
-          <div className="flex items-center gap-[6px] h-[34px] rounded-base border border-line-strong bg-soft px-[12px]">
-            <span className="flex-1 text-[13px] text-ink">Rp 2.000.000 · then pause and ask</span>
-            <ChevronDown size={14} className="text-muted" aria-hidden />
-          </div>
-        </div>
-
-        {/* Success state */}
-        <div className="flex flex-col gap-[6px] rounded-lg border border-ok-line bg-ok-tint px-[12px] py-[10px]">
-          <p className="text-[12.5px] font-semibold text-ok">✓ Key works · 3 models available</p>
-          <p className="text-[12px] text-ok/80">Opus 5.5 · Sonnet 5.5 · Haiku 5.5</p>
-        </div>
       </div>
     </Modal>
   )

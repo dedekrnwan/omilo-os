@@ -19,28 +19,52 @@ import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 import { useAuth } from '../../../app/useAuth'
 import { useSession } from '../../../app/session'
-import { useCommands } from '../../../app/CommandsProvider'
-import { useCompanySettings, useUpdateCompanySettings, useUpdateMe } from '../../../app/queries'
+import {
+  useAccount,
+  usePreferences,
+  useRevokeSession,
+  useSetTelemetryOptOut,
+  useSetTwoFactor,
+  useSignInSessions,
+  useTelemetryOptedOut,
+  useUpdateMe,
+  useUpdatePreferences,
+  useUploadAvatar,
+} from '../../../app/queries'
+import type { SignInSession } from '../../../core/domain/controlPanel'
+import { errorMessage, fileToDataUrl, initialsOf, lastSeenLabel } from '../format'
 
-const DEVICES_INIT = [
-  { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
-  { name: 'iPhone 16 · WhatsApp linked', desc: 'Last active 2h ago', icon: Smartphone, canSignOut: true, isCli: false },
-  { name: 'CLI token "omilo-cli"', desc: 'Created Oct 2 · used yesterday', icon: Terminal, canSignOut: true, isCli: true },
-]
-
-const PROFILE_INITIAL = { name: 'Dede Kurniawan', nickname: 'Mas Dede', language: 'Bahasa Indonesia' }
+const PROFILE_INITIAL = { name: '', nickname: '', language: 'Bahasa Indonesia' }
 const PROFILE_LANGUAGES = ['Bahasa Indonesia', 'English', 'Bahasa Melayu', 'Tiếng Việt', 'ไทย', '中文']
+
+const DEVICE_ICON = { desktop: Monitor, mobile: Smartphone, cli: Terminal } as const
+
+function sessionDesc(s: SignInSession): string {
+  if (s.current) return 'This device · active now'
+  const seen = lastSeenLabel(s.lastSeenAt)
+  const via = s.method === 'google' ? ' · Google' : ''
+  return seen ? `${seen.replace(/^active /, 'Last active ')}${via}` : `Signed in${via}`
+}
 
 export function SectionAccount() {
   const { signOut } = useAuth()
+  const sessionUser = useSession((s) => s.user)
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  const userName = useSession((s) => s.user?.name)
-  const commands = useCommands()
-  const { data: settings } = useCompanySettings()
-  const updateSettings = useUpdateCompanySettings()
+  const { data: account } = useAccount()
+  const { data: prefs } = usePreferences()
+  const { data: sessions = [], isLoading: sessionsLoading } = useSignInSessions()
+  const { data: optedOut } = useTelemetryOptedOut()
   const updateMe = useUpdateMe()
-  const [devices, setDevices] = useState(DEVICES_INIT)
+  const updatePrefs = useUpdatePreferences()
+  const setTwoFactor = useSetTwoFactor()
+  const revokeSession = useRevokeSession()
+  const uploadAvatar = useUploadAvatar()
+  const setOptOut = useSetTelemetryOptOut()
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  const userName = account?.name ?? sessionUser?.name ?? ''
+  const email = account?.email ?? sessionUser?.email ?? ''
+  const roleLabel = (account?.role ?? 'member').replace(/^\w/, (c: string) => c.toUpperCase())
 
   // Editable profile fields with a real save lifecycle.
   const [profile, setProfile] = useState(PROFILE_INITIAL)
@@ -48,13 +72,11 @@ export function SectionAccount() {
   async function persistProfile() {
     // Name is the real user name (PATCH /v1/me) — the Rail/avatar read it from
     // the session, which this mutation refreshes on success.
-    await updateMe.mutateAsync({ name: profile.name })
-    // "Agents call you" maps to the company PIC role column (PATCH /v1/company);
-    // nickname + personal language persist in free-form company settings.
-    await commands.updateCompanyProfile({ picRole: profile.nickname })
-    await updateSettings.mutateAsync({
-      profile: { nickname: profile.nickname, language: profile.language },
-    })
+    if (profile.name.trim() && profile.name !== userName) {
+      await updateMe.mutateAsync({ name: profile.name })
+    }
+    // Nickname + interface language are personal (PATCH /v1/me/preferences).
+    await updatePrefs.mutateAsync({ nickname: profile.nickname, language: profile.language })
     notify('Profile saved')
   }
 
@@ -73,54 +95,56 @@ export function SectionAccount() {
     markProfileDirty()
   }
 
-  // Hydrate the Name from the real session user, and nickname/language from
-  // persisted company settings, when they arrive (unless editing).
+  // Hydrate from the user + personal preferences when they arrive (unless editing).
   useEffect(() => {
     if (profileDirty) return
-    const p = settings?.profile as Record<string, unknown> | undefined
     setProfile((prev) => ({
-      name: typeof userName === 'string' && userName ? userName : prev.name,
-      nickname: typeof p?.nickname === 'string' ? p.nickname : prev.nickname,
-      language: typeof p?.language === 'string' ? p.language : prev.language,
+      name: userName || prev.name,
+      nickname: typeof prefs?.nickname === 'string' ? prefs.nickname : prev.nickname,
+      language: typeof prefs?.language === 'string' ? prefs.language : prev.language,
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings, userName])
-  // Telemetry opt-out: local state only; backend persistence happens via POST
-  // /v1/telemetry-config in a full integration, but the toggle wires the client-side
-  // opt-out immediately so capture() becomes a no-op.
-  const [analyticsOptedOut, setAnalyticsOptedOut] = useState(false)
+  }, [prefs, userName])
 
-  function handleAnalyticsToggle() {
-    const next = !analyticsOptedOut
-    setAnalyticsOptedOut(next)
-    if (next) {
-      telemetryOptOut()
-    } else {
-      telemetryOptIn()
+  async function handleAnalyticsToggle() {
+    const next = !optedOut
+    if (next) telemetryOptOut()
+    else telemetryOptIn()
+    try {
+      await setOptOut.mutateAsync(next)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not save your analytics choice'))
     }
-    // Best-effort: persist preference to the backend (fire-and-forget)
-    void fetch(
-      `${(import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'}/v1/telemetry-config`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opted_out: next }),
-      },
-    ).catch(() => {/* swallow — opt-out is applied locally regardless */})
   }
 
-  function handleSignOut(name: string, isCli: boolean) {
-    setDevices((prev) => prev.filter((d) => d.name !== name))
-    notify(isCli ? `Revoked ${name}` : `Signed out of ${name}`)
+  async function handleTwoFactor() {
+    const next = !account?.twoFactorEnabled
+    try {
+      await setTwoFactor.mutateAsync(next)
+      notify(next ? 'Two-step verification on — we’ll email a code when you sign in' : 'Two-step verification off')
+    } catch (e) {
+      notify(errorMessage(e, 'Could not change two-step verification'))
+    }
   }
 
-  function handleChangePhoto() {
-    photoInputRef.current?.click()
+  async function handleSignOutDevice(s: SignInSession) {
+    try {
+      await revokeSession.mutateAsync(s.id)
+      notify(s.kind === 'cli' ? `Revoked ${s.label}` : `Signed out of ${s.label}`)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not sign that device out'))
+    }
   }
 
-  function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files?.[0]) {
+  async function handlePhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      await uploadAvatar.mutateAsync(await fileToDataUrl(file))
       notify('Photo updated')
+    } catch (err) {
+      notify(errorMessage(err, 'Could not update your photo'))
     }
   }
 
@@ -142,15 +166,17 @@ export function SectionAccount() {
         {/* Avatar card */}
         <SettingCard>
           <div className="flex items-center gap-[14px] px-[16px] py-[14px]">
-            <span className="flex size-[44px] shrink-0 items-center justify-center rounded-full bg-[#FED7AA] text-[15px] font-semibold text-[#9A3412]">
-              DK
+            <span className="flex size-[44px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#FED7AA] text-[15px] font-semibold text-[#9A3412]">
+              {account?.avatarUrl ? <img src={account.avatarUrl} alt="" className="size-full object-cover" /> : initialsOf(userName || email || '?')}
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-              <span className="text-[15px] font-semibold text-ink">Dede Kurniawan</span>
-              <span className="text-[12px] text-muted">dede@saga.co.id · Owner of {companyName}</span>
+              <span className="text-[15px] font-semibold text-ink">{userName}</span>
+              <span className="text-[12px] text-muted">{email} · {roleLabel} of {account?.companyName ?? companyName}</span>
             </div>
-            <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
-            <Button variant="secondary" height={28} onClick={handleChangePhoto}>Change photo</Button>
+            <input ref={photoInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" aria-label="Upload photo" onChange={(e) => void handlePhotoSelected(e)} />
+            <Button variant="secondary" height={28} disabled={uploadAvatar.isPending} onClick={() => photoInputRef.current?.click()}>
+              {uploadAvatar.isPending ? 'Uploading…' : 'Change photo'}
+            </Button>
           </div>
         </SettingCard>
 
@@ -164,7 +190,7 @@ export function SectionAccount() {
           </SettingRow>
           <RowDivider />
           <SettingRow label="Agents call you" desc="Chief learned this in onboarding.">
-            <TextInput aria-label="Agents call you" value={profile.nickname} onChange={editProfile('nickname')} />
+            <TextInput aria-label="Agents call you" value={profile.nickname} placeholder={userName.split(' ')[0] ?? ''} onChange={editProfile('nickname')} />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Your language" desc="Interface language, just for you.">
@@ -186,12 +212,20 @@ export function SectionAccount() {
         {/* Sign-in & security */}
         <SubHeading label="Sign-in & security" />
         <SettingCardRows>
-          <SettingRow label="Google" desc="dede@saga.co.id">
-            <span className="rounded-pill bg-ok-tint px-[10px] py-[3px] text-[12px] font-medium text-ok">Connected</span>
+          <SettingRow label="Google" desc={email}>
+            {account?.googleLinked ? (
+              <span className="rounded-pill bg-ok-tint px-[10px] py-[3px] text-[12px] font-medium text-ok">Connected</span>
+            ) : (
+              <span className="rounded-pill bg-soft px-[10px] py-[3px] text-[12px] font-medium text-muted">Not used yet</span>
+            )}
           </SettingRow>
           <RowDivider />
-          <SettingRow label="Two-step verification" desc="Authenticator app · required for owners.">
-            <Toggle on />
+          <SettingRow label="Two-step verification" desc="A code is emailed to you at every password sign-in.">
+            <Toggle
+              on={!!account?.twoFactorEnabled}
+              label="Two-step verification"
+              onClick={() => void handleTwoFactor()}
+            />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Sign out" desc="Sign out of Omilo on this device.">
@@ -206,25 +240,32 @@ export function SectionAccount() {
         {/* Devices & tokens */}
         <SubHeading label="Devices & tokens" />
         <div className="overflow-hidden rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface">
-          {devices.map((d, i) => (
-            <div
-              key={d.name}
-              className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < devices.length - 1 ? 'border-b border-line' : ''}`}
-            >
-              <span className="flex size-[28px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong bg-soft text-muted">
-                <d.icon size={15} aria-hidden />
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-                <span className="text-[13px] font-medium text-ink">{d.name}</span>
-                <span className="text-[12px] text-muted">{d.desc}</span>
+          {sessionsLoading && <p className="px-[16px] py-[12px] text-[13px] text-muted">Loading devices…</p>}
+          {!sessionsLoading && sessions.length === 0 && (
+            <p className="px-[16px] py-[12px] text-[13px] text-muted">No other devices are signed in.</p>
+          )}
+          {sessions.map((d, i) => {
+            const Icon = DEVICE_ICON[d.kind as keyof typeof DEVICE_ICON] ?? Monitor
+            return (
+              <div
+                key={d.id}
+                className={`flex items-center gap-[12px] px-[16px] py-[12px] ${i < sessions.length - 1 ? 'border-b border-line' : ''}`}
+              >
+                <span className="flex size-[28px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong bg-soft text-muted">
+                  <Icon size={15} aria-hidden />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
+                  <span className="text-[13px] font-medium text-ink">{d.label}</span>
+                  <span className="text-[12px] text-muted">{sessionDesc(d)}</span>
+                </div>
+                {!d.current && (
+                  <Button variant="secondary" height={28} disabled={revokeSession.isPending} onClick={() => void handleSignOutDevice(d)}>
+                    {d.kind === 'cli' ? 'Revoke' : 'Sign out'}
+                  </Button>
+                )}
               </div>
-              {d.canSignOut && (
-                <Button variant="secondary" height={28} onClick={() => handleSignOut(d.name, d.isCli)}>
-                  {d.isCli ? 'Revoke' : 'Sign out'}
-                </Button>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <Rule />
@@ -237,8 +278,8 @@ export function SectionAccount() {
             desc="Sends content-free counts (e.g. messages sent, features used) to help improve Omilo. No message text, keys, or names are ever collected."
           >
             <Toggle
-              on={!analyticsOptedOut}
-              onClick={handleAnalyticsToggle}
+              on={!optedOut}
+              onClick={() => void handleAnalyticsToggle()}
               label="Share usage analytics"
             />
           </SettingRow>

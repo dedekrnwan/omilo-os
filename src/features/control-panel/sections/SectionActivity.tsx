@@ -1,22 +1,30 @@
+import { useState } from 'react'
 import { Download } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { Breadcrumb, SectionPane } from '../legacyShared'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { useCommands } from '../../../app/CommandsProvider'
+import { useAuditLog } from '../../../app/queries'
+import type { AuditEvent, AuditQuery } from '../../../core/domain/controlPanel'
+import type { HelperArea } from '../../../core/domain/types'
+import { notify } from '../../../ui/ds/Toaster'
+import { errorMessage, initialsOf, saveBlob } from '../format'
 
-const FILTERS = ['All', 'Agents', 'People', 'Approvals', 'Settings']
-
-const EVENTS = [
-  { time: '10:44', actor: 'Chief', actorType: 'agent' as const, area: 'ops', verb: 'asked you to approve', target: '3 tasks - Passwordless login', channel: 'Engineering' },
-  { time: '10:43', actor: 'Dev', actorType: 'agent' as const, area: 'dev', verb: 'drafted', target: 'Passkey rollout — v1', channel: 'Engineering' },
-  { time: '09:12', actor: 'Dede', actorType: 'person' as const, area: null, verb: 'approved', target: '$4,800 referral ad budget', channel: 'Marketing' },
-  { time: '08:31', actor: 'Ops', actorType: 'agent' as const, area: 'ops', verb: 'ran flow', target: 'Deploy failure triage - #214', channel: 'Engineering' },
+const FILTERS: { label: string; query: Pick<AuditQuery, 'type' | 'actor'> }[] = [
+  { label: 'All', query: {} },
+  { label: 'Agents', query: { actor: 'agent' } },
+  { label: 'People', query: { actor: 'person' } },
+  { label: 'Approvals', query: { type: 'approvals' } },
+  { label: 'Settings', query: { type: 'settings' } },
 ]
 
-const EVENTS_YESTERDAY = [
-  { time: '17:02', actor: 'Rina', actorType: 'person' as const, area: null, verb: 'changed', target: 'Safety & limits → spend cap Rp 2jt', channel: 'Settings', isSettings: true },
-  { time: '16:20', actor: 'Finance', actorType: 'agent' as const, area: 'finance', verb: 'sent', target: 'October close summary', channel: 'Business' },
-  { time: '11:05', actor: 'Growth', actorType: 'agent' as const, area: 'marketing', verb: 'was declined', target: 'Post to Instagram', channel: 'Marketing' },
+const RANGES = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
 ]
+
+const PAGE = 100
 
 function PersonAvatar({ initials }: { initials: string }) {
   return (
@@ -26,47 +34,85 @@ function PersonAvatar({ initials }: { initials: string }) {
   )
 }
 
-function EventRow({
-  time,
-  actor,
-  actorType,
-  area,
-  verb,
-  target,
-  channel,
-  isSettings,
-}: typeof EVENTS[0] & { isSettings?: boolean }) {
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function EventRow({ e }: { e: AuditEvent }) {
+  const isSettings = e.type === 'settings'
+  const time = new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+  const tag = e.channel ?? (isSettings ? 'Settings' : e.type.charAt(0).toUpperCase() + e.type.slice(1))
   return (
     <div className="flex items-center gap-[10px] px-[16px] py-[10px] border-b border-line last:border-b-0">
       <span className="w-[36px] text-[12px] text-muted">{time}</span>
-      {actorType === 'agent' && area ? (
-        <Mascot helper size={20} radius={0} area={area as any} tile={false} />
+      {e.actorType === 'agent' && e.actorArea ? (
+        <Mascot helper size={20} radius={0} area={e.actorArea as HelperArea} tile={false} />
       ) : (
-        <PersonAvatar initials={actor.slice(0, 2).toUpperCase()} />
+        <PersonAvatar initials={initialsOf(e.actorName || '?')} />
       )}
       <p className="min-w-0 flex-1 text-[12.5px] text-ink">
-        <span className="font-medium">{actor}</span>
-        {' '}{verb}{' '}
-        <span className="text-ink-2">{target}</span>
+        <span className="font-medium">{e.actorName || 'Someone'}</span>
+        {' '}{e.action}{' '}
+        <span className="text-ink-2">{e.target}</span>
       </p>
       <span className={`rounded-pill px-[8px] py-[1px] text-[11px] ${isSettings ? 'text-muted' : 'text-muted border border-line-strong bg-soft'}`}>
         {isSettings ? (
           <span className="flex items-center gap-[4px]">
-            <span>⚙</span> {channel}
+            <span>⚙</span> {tag}
           </span>
-        ) : channel}
+        ) : tag}
       </span>
     </div>
   )
 }
 
 export function SectionActivity() {
+  const commands = useCommands()
+  const [filter, setFilter] = useState(0)
+  const [range, setRange] = useState(0)
+  const [limit, setLimit] = useState(PAGE)
+  const [exporting, setExporting] = useState(false)
+  const query: AuditQuery = { ...FILTERS[filter].query, days: RANGES[range].days, limit }
+  const { data, isLoading, isError, isFetching } = useAuditLog(query)
+  const events = data?.events ?? []
+
+  // Group by calendar day (events arrive newest first).
+  const groups: { label: string; events: AuditEvent[] }[] = []
+  for (const e of events) {
+    const label = dayLabel(e.at)
+    const last = groups[groups.length - 1]
+    if (last && last.label === label) last.events.push(e)
+    else groups.push({ label, events: [e] })
+  }
+
+  async function exportCsv() {
+    setExporting(true)
+    try {
+      const { limit: _ignored, ...q } = query
+      void _ignored
+      const blob = await commands.downloadAuditCsv(q)
+      saveBlob(blob, `omilo-activity-${new Date().toISOString().slice(0, 10)}.csv`)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not export the activity log'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-[44px] shrink-0 items-center border-b border-line px-[24px]">
         <Breadcrumb section="Activity log" />
         <div className="ml-auto">
-          <Button variant="secondary" height={28} icon={Download}>Export CSV</Button>
+          <Button variant="secondary" height={28} icon={Download} disabled={exporting} onClick={() => void exportCsv()}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </Button>
         </div>
       </div>
 
@@ -79,39 +125,63 @@ export function SectionActivity() {
           <div className="flex gap-[4px]">
             {FILTERS.map((f, i) => (
               <button
-                key={f}
+                key={f.label}
                 type="button"
+                aria-pressed={i === filter}
+                onClick={() => { setFilter(i); setLimit(PAGE) }}
                 className={`rounded-pill px-[10px] py-[4px] text-[12px] transition-colors ${
-                  i === 0 ? 'bg-ink text-white' : 'text-muted hover:text-ink hover:bg-hover'
+                  i === filter ? 'bg-ink text-white' : 'text-muted hover:text-ink hover:bg-hover'
                 }`}
               >
-                {f}
+                {f.label}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-[6px] rounded-btn border border-line-strong bg-surface px-[10px] py-[4px]">
+          <label className="relative flex items-center gap-[6px] rounded-btn border border-line-strong bg-surface px-[10px] py-[4px]">
             <span className="text-[13px]">📅</span>
-            <span className="text-[12px] text-ink">Last 7 days</span>
-            <svg width="12" height="12" viewBox="0 0 12 12" className="text-muted" aria-hidden>
+            <select
+              aria-label="Date range"
+              value={range}
+              onChange={(e) => { setRange(Number(e.target.value)); setLimit(PAGE) }}
+              className="cursor-pointer appearance-none bg-transparent pr-[16px] text-[12px] text-ink outline-none"
+            >
+              {RANGES.map((r, i) => (
+                <option key={r.label} value={i}>{r.label}</option>
+              ))}
+            </select>
+            <svg width="12" height="12" viewBox="0 0 12 12" className="pointer-events-none absolute right-[10px] text-muted" aria-hidden>
               <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-          </div>
+          </label>
         </div>
 
         {/* Events */}
-        <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
-          {/* Today */}
-          <div className="border-b border-line bg-soft px-[16px] py-[8px]">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.8px] text-faint">Today</span>
+        {isLoading && <p className="text-[13px] text-muted">Loading activity…</p>}
+        {isError && <p className="text-[13px] text-muted">Could not load the activity log. Please try again.</p>}
+        {!isLoading && !isError && events.length === 0 && (
+          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
+            <p className="text-[13px] text-muted">Nothing here yet for {RANGES[range].label.toLowerCase()}.</p>
           </div>
-          {EVENTS.map((e) => <EventRow key={`${e.time}-${e.actor}`} {...e} />)}
-
-          {/* Yesterday */}
-          <div className="border-b border-line border-t bg-soft px-[16px] py-[8px]">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.8px] text-faint">Yesterday</span>
+        )}
+        {groups.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">
+            {groups.map((g, gi) => (
+              <div key={g.label}>
+                <div className={`border-b border-line bg-soft px-[16px] py-[8px] ${gi > 0 ? 'border-t' : ''}`}>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.8px] text-faint">{g.label}</span>
+                </div>
+                {g.events.map((e) => <EventRow key={e.id} e={e} />)}
+              </div>
+            ))}
           </div>
-          {EVENTS_YESTERDAY.map((e) => <EventRow key={`${e.time}-${e.actor}`} {...e} isSettings={e.isSettings} />)}
-        </div>
+        )}
+        {data?.nextCursor && (
+          <div className="mt-[12px] flex justify-center">
+            <Button variant="secondary" height={28} disabled={isFetching || limit >= 200} onClick={() => setLimit((l) => Math.min(l + PAGE, 200))}>
+              {isFetching ? 'Loading…' : 'Show more'}
+            </Button>
+          </div>
+        )}
       </SectionPane>
     </div>
   )

@@ -175,7 +175,43 @@ export function StatusBadge({ label, color }: { label: string; color: 'ok' | 'wa
 
 // ── Select (visual-only) ──────────────────────────────────────────────────────
 
-export function SelectField({ value, width }: { value: string; width?: number }) {
+export function SelectField({
+  value,
+  width,
+  options,
+  onChange,
+  'aria-label': ariaLabel,
+}: {
+  value: string
+  width?: number
+  /** With onChange: render a real (styled) select over these options. */
+  options?: string[]
+  onChange?: (value: string) => void
+  'aria-label'?: string
+}) {
+  if (onChange) {
+    const opts = options && options.length ? options : [value]
+    return (
+      <span
+        style={width !== undefined ? { width, minWidth: width } : undefined}
+        className={`relative flex h-[34px] ${width === undefined ? 'min-w-[200px]' : ''} items-center rounded-base border border-line-strong bg-soft text-[13px] text-ink focus-within:border-ink`}
+      >
+        <select
+          aria-label={ariaLabel}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-full w-full cursor-pointer appearance-none bg-transparent pr-[28px] pl-[12px] outline-none"
+        >
+          {(opts.includes(value) ? opts : [value, ...opts]).map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+        <svg width="12" height="12" viewBox="0 0 12 12" className="pointer-events-none absolute right-[12px] text-muted" aria-hidden>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    )
+  }
   return (
     <button
       type="button"

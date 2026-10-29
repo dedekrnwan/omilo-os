@@ -6,6 +6,7 @@ import { BackToApp } from '../shell/BackToApp'
 import { NAV_GROUPS } from './data'
 import type { ControlPanelSection } from './types'
 import { useSession } from '../../app/session'
+import { useCompanySettings } from '../../app/queries'
 
 interface Props {
   section: ControlPanelSection
@@ -22,6 +23,9 @@ export function ControlPanelSidebar({ section, onSection, workspace }: Props) {
   const sessionCompanyName = useSession((s) => s.company?.name) ?? 'your company'
   const resolvedWorkspace = workspace ?? sessionCompanyName
   const [query, setQuery] = useState('')
+  // Knowledge shows an "Off" badge only when it has actually been turned off.
+  const { data: settings } = useCompanySettings()
+  const knowledgeOff = (settings?.knowledge as { knowledgeOn?: unknown } | undefined)?.knowledgeOn === false
   const q = query.trim().toLowerCase()
   const groups = q
     ? NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => i.label.toLowerCase().includes(q)) })).filter(
@@ -61,7 +65,7 @@ export function ControlPanelSidebar({ section, onSection, workspace }: Props) {
                 key={item.id}
                 icon={item.icon}
                 label={item.label}
-                count={item.badge}
+                count={item.id === 'knowledge' ? (knowledgeOff ? 'Off' : undefined) : item.badge}
                 active={section === item.id}
                 onClick={() => onSection(item.id)}
               />

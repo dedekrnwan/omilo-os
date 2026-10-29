@@ -62,6 +62,19 @@ import {
   members,
   routines,
   walletSettings,
+  // ── sweep/control ──
+  accountInfo,
+  auditEvents,
+  companyDetail,
+  dataExports,
+  invites,
+  managedChannels,
+  mcpServers,
+  seatSummary,
+  signInSessions,
+  skills,
+  telemetryState,
+  userPreferences,
 } from './fixtures'
 // ── sweep/goals-routines ──
 import type { PreviewRoutineInput } from '../http/commands'
@@ -91,6 +104,25 @@ import { flowRuns, inboxItems } from './fixtures'
   mockUpdateProposal,
   rememberGraph,
 } from './sweepInboxFlows'
+import type { Skill } from '../../core/domain/types'
+import type {
+  AuditQuery,
+  CompanyDetail,
+  DataExport,
+  ManagedChannel,
+  McpServer,
+  UserPreferences,
+} from '../../core/domain/controlPanel'
+import type {
+  BuySeatsResult,
+  CreateMcpServerFromOpenApiInput,
+  CreateMcpServerInput,
+  CreateSkillInput,
+  UpdateAiAccountInput,
+  UpdateChannelInput,
+  UpdateMemberInput,
+  UpdateSkillInput,
+} from '../http/commands'
 
 let seq = 0
 function nextId(prefix: string): string {
@@ -782,5 +814,128 @@ function sweepApplyHelperUpdate(h: Helper, input: UpdateHelperInput): void {
     h.behavior = merged
     // ── sweep/chat ──
     ...createChatMockCommands(),
+    // ── sweep/control ──
+    uploadCompanyLogo(dataUrl: string): Promise<CompanyDetail> {
+      companyDetail.logoUrl = dataUrl
+      return Promise.resolve({ ...companyDetail })
+    removeCompanyLogo(): Promise<CompanyDetail> {
+      companyDetail.logoUrl = null
+      return Promise.resolve({ ...companyDetail })
+    updateMember(id: string, input: UpdateMemberInput): Promise<CompanyMember> {
+      const m = members.find((x) => x.id === id)
+      if (!m) return Promise.reject(new Error('Member not found.'))
+      if (input.role !== undefined) m.role = input.role
+      if (input.allChannels) {
+        m.channels = null
+        m.channelNames = null
+      } else if (input.channels !== undefined) {
+        m.channels = input.channels.length ? [...input.channels] : null
+        m.channelNames = m.channels ? m.channels.map((c) => managedChannels.find((ch) => ch.id === c)?.name ?? c) : null
+      return Promise.resolve({ ...m })
+    revokeInvite(id: string): Promise<void> {
+      const i = invites.findIndex((x) => x.id === id)
+      if (i >= 0) invites.splice(i, 1)
+    resendInvite(_id: string): Promise<void> {
+    buySeats(count: number): Promise<BuySeatsResult> {
+      seatSummary.total = (seatSummary.total ?? 0) + count
+      return Promise.resolve({ status: 'active', seats: seatSummary.total, hostedUrl: null, paymentId: null, amountIdr: count * 150_000 })
+    updateChannel(id: string, input: UpdateChannelInput): Promise<ManagedChannel> {
+      const c = managedChannels.find((x) => x.id === id)
+      if (!c) return Promise.reject(new Error('Not found.'))
+      if (input.archived !== undefined) {
+        if (c.isDefault && input.archived) return Promise.reject(new Error("The default channel can't be archived."))
+        c.archived = input.archived
+        c.archivedAt = input.archived ? new Date().toISOString() : null
+      if (input.muted !== undefined) c.muted = input.muted
+      if (input.name !== undefined) c.name = input.name
+      if (input.purpose !== undefined) c.purpose = input.purpose
+      return Promise.resolve({ ...c })
+    deleteChannel(id: string): Promise<void> {
+      const i = managedChannels.findIndex((x) => x.id === id)
+      if (i >= 0 && managedChannels[i].isDefault) return Promise.reject(new Error("The default channel can't be removed."))
+      if (i >= 0) managedChannels.splice(i, 1)
+      const j = channels.findIndex((x) => x.id === id)
+      if (j >= 0) channels.splice(j, 1)
+    updateAiAccount(id: string, input: UpdateAiAccountInput): Promise<AiAccount> {
+      const a = aiAccounts.find((x) => x.id === id)
+      if (!a) return Promise.reject(new Error('Account not found.'))
+      if (input.name !== undefined) a.name = input.name
+      if (input.tag !== undefined) a.tag = input.tag
+      if (input.status !== undefined) a.status = input.status
+      return Promise.resolve({ ...a })
+    reauthConnector(id: string): Promise<Connector> {
+      const c = connectors.find((x) => x.id === id)
+      if (!c) return Promise.reject(new Error('Connector not found.'))
+      c.status = 'needs_auth'
+      return Promise.resolve({ ...c, auth: c.auth ?? { type: 'api_key', provider: null, fields: ['api_key'] } })
+    refreshMarketplace(): Promise<unknown> {
+      return Promise.resolve({ indexed: 0 })
+    createMcpServer(input: CreateMcpServerInput): Promise<McpServer> {
+      const server: McpServer = {
+        id: nextId('mcs'), name: input.name, kind: 'remote', url: input.url,
+        authType: input.token ? 'bearer' : 'none', tokenHint: input.token ? `${input.token.slice(0, 4)}…` : null,
+        status: 'connected', error: null, enabled: true, createdAt: new Date().toISOString(),
+        tools: [{ name: 'echo', description: 'Echo a message back', level: 'read' }],
+      mcpServers.unshift(server)
+      return Promise.resolve(server)
+    createMcpServerFromOpenApi(input: CreateMcpServerFromOpenApiInput): Promise<McpServer> {
+      const server: McpServer = {
+        id: nextId('mcs'), name: input.name, kind: 'openapi', url: null, authType: 'none', tokenHint: null,
+        status: 'connected', error: null, enabled: true, createdAt: new Date().toISOString(),
+        tools: [
+          { name: 'list_items', description: 'GET /items', level: 'read' },
+          { name: 'create_item', description: 'POST /items', level: 'ask' },
+        ],
+      mcpServers.unshift(server)
+      return Promise.resolve(server)
+    refreshMcpServer(id: string): Promise<McpServer> {
+      const s = mcpServers.find((x) => x.id === id)
+      return s ? Promise.resolve({ ...s }) : Promise.reject(new Error('MCP server not found.'))
+    deleteMcpServer(id: string): Promise<void> {
+      const i = mcpServers.findIndex((x) => x.id === id)
+      if (i >= 0) mcpServers.splice(i, 1)
+    createSkill(input: CreateSkillInput): Promise<Skill> {
+      const skill: Skill = {
+        id: nextId('skl'), name: input.name, status: 'draft', version: 1, helperId: input.helperId,
+        usageCount: 0, bodyMd: input.bodyMd,
+      skills.unshift(skill)
+      return Promise.resolve(skill)
+    updateSkill(id: string, input: UpdateSkillInput): Promise<Skill> {
+      const sk = skills.find((x) => x.id === id)
+      if (!sk) return Promise.reject(new Error('Skill not found.'))
+      if (input.status === 'active' && sk.status === 'draft') {
+        return Promise.reject(new Error('Drafts go live through publish review. Publish it instead.'))
+      if (input.status !== undefined) sk.status = input.status
+      if (input.name !== undefined) sk.name = input.name
+      if (input.bodyMd !== undefined) sk.bodyMd = input.bodyMd
+      if (input.helperId !== undefined) sk.helperId = input.helperId
+      return Promise.resolve({ ...sk })
+    setTelemetryOptOut(optedOut: boolean): Promise<void> {
+      telemetryState.optedOut = optedOut
+    updatePreferences(p: UserPreferences): Promise<UserPreferences> {
+      Object.assign(userPreferences, deepMerge(userPreferences as Record<string, unknown>, p as Record<string, unknown>))
+      return Promise.resolve(JSON.parse(JSON.stringify(userPreferences)) as UserPreferences)
+    setTwoFactor(enabled: boolean): Promise<void> {
+      accountInfo.twoFactorEnabled = enabled
+    revokeSession(id: string): Promise<void> {
+      const i = signInSessions.findIndex((x) => x.id === id)
+      if (i >= 0) signInSessions.splice(i, 1)
+    uploadAvatar(dataUrl: string): Promise<{ avatarUrl: string }> {
+      accountInfo.avatarUrl = dataUrl
+      return Promise.resolve({ avatarUrl: dataUrl })
+    createDataExport(): Promise<DataExport> {
+      const now = new Date()
+      const exp: DataExport = {
+        id: nextId('exp'), status: 'ready', filename: `omilo-export-${now.toISOString().slice(0, 10)}.zip`,
+        sizeBytes: 48_000, summary: { channel: channels.length, member: members.length }, error: null,
+        createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 7 * 86_400_000).toISOString(),
+      dataExports.unshift(exp)
+      return Promise.resolve(exp)
+    downloadDataExport(_id: string): Promise<Blob> {
+      return Promise.resolve(new Blob([JSON.stringify({ channels, members }, null, 2)], { type: 'application/zip' }))
+    downloadAuditCsv(_query?: AuditQuery): Promise<Blob> {
+      const lines = ['time,actor,actor_type,type,action,target,channel']
+      for (const e of auditEvents) lines.push([e.at, e.actorName, e.actorType, e.type, e.action, e.target, e.channel ?? ''].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      return Promise.resolve(new Blob([lines.join('\n')], { type: 'text/csv' }))
   }
 }

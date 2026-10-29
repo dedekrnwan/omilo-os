@@ -24,6 +24,23 @@ import {
   skills,
   helpers,
   members,
+  // ── sweep/control ──
+  accountInfo,
+  auditEvents,
+  companyDetail,
+  creditPacks,
+  dataExports,
+  invites,
+  invoices,
+  ledgerEntries,
+  managedChannels,
+  mcpServers,
+  payments,
+  seatSummary,
+  signInSessions,
+  storageSummary,
+  telemetryState,
+  userPreferences,
 } from './fixtures'
 // ── sweep/docs ──
 import { mockDocsRepos } from './docsMock'
@@ -32,6 +49,7 @@ import { mockGoalDetail, mockRunDetail, mockSchedule, mockSuggestions } from './
 // ── sweep/inbox-flows ──
 import { mockFlowSuggestions, mockFlowVersions, mockProposals, withFlowExtras } from './sweepInboxFlows'
 import * as chatMock from './chatMock' // sweep/chat
+import type { AuditQuery } from '../../core/domain/controlPanel'
 
 export function createMockRepos(): Repos {
   return {
@@ -344,6 +362,41 @@ function sweepMockActivity(q: ActivityQuery): ActivityPage {
       folderShares: (id: Id) => Promise.resolve({ members: [...(chatMock.folderShares[id] ?? [])] }),
       sessionShares: (id: Id) => Promise.resolve(chatMock.getSessionShares(id)),
       sessionResults: (id: Id) => Promise.resolve(chatMock.getSessionResults(id)),
+    // ── sweep/control ──
+    controlPanel: {
+      company: () => Promise.resolve({ ...companyDetail }),
+      seats: () => {
+        const used = members.filter((m) => m.role !== 'viewer').length
+        const pending = invites.filter((i) => i.role !== 'viewer').length
+        const total = seatSummary.total ?? 0
+        return Promise.resolve({
+          ...seatSummary,
+          used,
+          pending,
+          viewers: members.length - used,
+          available: Math.max(0, total - used - pending),
+        })
+      packs: () => Promise.resolve([...creditPacks]),
+      invoices: () => Promise.resolve([...invoices]),
+      ledger: () => Promise.resolve([...ledgerEntries]),
+      payment: (id: string) => Promise.resolve(payments.find((p) => p.id === id) ?? null),
+      invites: () => Promise.resolve([...invites]),
+      channels: () => Promise.resolve(managedChannels.map((c) => ({ ...c }))),
+      audit: (q?: AuditQuery) => {
+        let rows = [...auditEvents]
+        if (q?.type) {
+          const types = q.type.split(',')
+          rows = rows.filter((e) => types.includes(e.type))
+        }
+        if (q?.actor) rows = rows.filter((e) => e.actorType === q.actor)
+        return Promise.resolve({ events: rows, nextCursor: null })
+      storage: () => Promise.resolve({ ...storageSummary }),
+      exports: () => Promise.resolve([...dataExports]),
+      account: () => Promise.resolve({ ...accountInfo }),
+      preferences: () => Promise.resolve(JSON.parse(JSON.stringify(userPreferences)) as typeof userPreferences),
+      sessions: () => Promise.resolve([...signInSessions]),
+      mcpServers: () => Promise.resolve([...mcpServers]),
+      telemetryOptedOut: () => Promise.resolve(telemetryState.optedOut),
     },
   }
 }

@@ -11,6 +11,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
+import { CommandsProvider } from '../../../app/CommandsProvider'
+import { createMockCommands } from '../../../adapters/mock/mockCommands'
 import type { Repos } from '../../../core/ports/repos'
 import type { Skill } from '../../../core/domain/types'
 
@@ -18,32 +20,6 @@ import type { Skill } from '../../../core/domain/types'
 
 const mockPublishSkill = vi.fn()
 
-vi.mock('../../../adapters/http/commands', () => ({
-  createCommands: () => ({
-    publishSkill: mockPublishSkill,
-    createSession: vi.fn(),
-    sendMessage: vi.fn(),
-    approveProposal: vi.fn(),
-    rejectProposal: vi.fn(),
-    requestChanges: vi.fn(),
-    mintMcpToken: vi.fn(),
-    revokeMcpToken: vi.fn(),
-    installConnector: vi.fn(),
-    updateConnector: vi.fn(),
-    connectorCredentials: vi.fn(),
-    disconnectConnector: vi.fn(),
-    createArea: vi.fn(),
-    updateWallet: vi.fn(),
-    topup: vi.fn(),
-    changePlan: vi.fn(),
-    updateCompanyProfile: vi.fn(),
-    publishFlow: vi.fn(),
-    runFlow: vi.fn(),
-    testRunFlow: vi.fn(),
-    runRoutineNow: vi.fn(),
-    replanGoal: vi.fn(),
-  }),
-}))
 
 import { SectionSkills } from './SectionSkills'
 
@@ -100,7 +76,9 @@ function renderSection(repos: Repos) {
   return render(
     <QueryClientProvider client={queryClient}>
       <ReposProvider repos={repos}>
+        <CommandsProvider commands={{ ...createMockCommands(), publishSkill: mockPublishSkill }}>
         <SectionSkills onDialog={() => {}} />
+        </CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>,
   )

@@ -17,6 +17,7 @@ import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queri
 import { useSession } from '../../../app/session'
 import { useCommands } from '../../../app/CommandsProvider'
 import { notify } from '../../../ui/ds/Toaster'
+import { formatIdr, parseIdr } from '../format'
 
 type AutonomyMode = 'strict' | 'ask' | 'yolo'
 
@@ -78,6 +79,8 @@ const INITIAL = {
   messageCustomers: true,
   deployProd: true,
   noDelete: true,
+  autoApproveUnder: 'Rp 200.000',
+  dailyCap: 'Rp 2.000.000',
 }
 
 export function SectionSafety() {
@@ -93,6 +96,8 @@ export function SectionSafety() {
   const [messageCustomers, setMessageCustomers] = useState(INITIAL.messageCustomers)
   const [deployProd, setDeployProd] = useState(INITIAL.deployProd)
   const [noDelete, setNoDelete] = useState(INITIAL.noDelete)
+  const [autoApproveUnder, setAutoApproveUnder] = useState(INITIAL.autoApproveUnder)
+  const [dailyCap, setDailyCap] = useState(INITIAL.dailyCap)
 
   async function persist() {
     // Autonomy → company.autonomy_default (PATCH /v1/company); the real column.
@@ -104,6 +109,9 @@ export function SectionSafety() {
         messageCustomers,
         deployProd,
         noDelete,
+        // Enforced by the gate (omilo/engine/company_safety.py); null clears.
+        autoApproveUnderIdr: parseIdr(autoApproveUnder),
+        dailySpendCapIdr: parseIdr(dailyCap),
       },
     })
     notify('Safety settings saved')
@@ -115,6 +123,8 @@ export function SectionSafety() {
     setMessageCustomers(INITIAL.messageCustomers)
     setDeployProd(INITIAL.deployProd)
     setNoDelete(INITIAL.noDelete)
+    setAutoApproveUnder(INITIAL.autoApproveUnder)
+    setDailyCap(INITIAL.dailyCap)
   }
 
   const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
@@ -137,6 +147,8 @@ export function SectionSafety() {
     if (typeof s.messageCustomers === 'boolean') setMessageCustomers(s.messageCustomers)
     if (typeof s.deployProd === 'boolean') setDeployProd(s.deployProd)
     if (typeof s.noDelete === 'boolean') setNoDelete(s.noDelete)
+    if ('autoApproveUnderIdr' in s) setAutoApproveUnder(typeof s.autoApproveUnderIdr === 'number' ? formatIdr(s.autoApproveUnderIdr) : '')
+    if ('dailySpendCapIdr' in s) setDailyCap(typeof s.dailySpendCapIdr === 'number' ? formatIdr(s.dailySpendCapIdr) : '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
@@ -220,11 +232,23 @@ export function SectionSafety() {
         <SubHeading label="Money" />
         <SettingCardRows>
           <SettingRow label="Auto-approve spending under" desc="Ads, refunds and purchases below this go through.">
-            <TextInput value="Rp 200.000" className="min-w-[140px]" />
+            <TextInput
+              aria-label="Auto-approve spending under"
+              value={autoApproveUnder}
+              placeholder="Off"
+              onChange={(v) => { setAutoApproveUnder(v); mark() }}
+              className="min-w-[140px]"
+            />
           </SettingRow>
           <RowDivider />
           <SettingRow label="Daily spend cap" desc="Agents stop spending for the day when it's reached.">
-            <TextInput value="Rp 2.000.000" className="min-w-[140px]" />
+            <TextInput
+              aria-label="Daily spend cap"
+              value={dailyCap}
+              placeholder="No cap"
+              onChange={(v) => { setDailyCap(v); mark() }}
+              className="min-w-[140px]"
+            />
           </SettingRow>
         </SettingCardRows>
 

@@ -198,6 +198,13 @@ export interface BillingPlan {
   includedCredits: number
   seats: number
   trialDays: number
+  /** sweep/control — seat/helper limits + marketing bullets (null = unlimited). */
+  maxSeats?: number | null
+  maxHelpers?: number | null
+  /** Rp per extra seat per month; null = no extra seats on this plan. */
+  seatPriceIdr?: number | null
+  features?: string[]
+  badge?: string | null
 }
 
 export interface BillingSubscription {
@@ -209,6 +216,8 @@ export interface BillingSubscription {
   isTrial: boolean
   trialEndsAt: string | null
   trialDaysLeft: number
+  /** sweep/control — display name of the plan (e.g. "Team"). */
+  planName?: string
 }
 
 // ── Billing / Usage ───────────────────────────────────────────────────────────
@@ -312,6 +321,8 @@ export interface Connector {
   status: string
   /** Whether the connector is active for helpers. */
   enabled: boolean
+  /** sweep/control — how to (re)authenticate: credentials form fields. */
+  auth?: { type: string; provider: string | null; fields: string[] }
 }
 
 // ── MCP Tokens ────────────────────────────────────────────────────────────────
@@ -492,6 +503,11 @@ export interface CompanyMember {
   name: string
   email: string
   role: string
+  /** sweep/control — channel ids (null/undefined = all channels). */
+  channels?: string[] | null
+  channelNames?: string[] | null
+  lastSeenAt?: string | null
+  avatarUrl?: string | null
 }
 
 // ── Company settings (free-form JSONB) ─────────────────────────────────────────

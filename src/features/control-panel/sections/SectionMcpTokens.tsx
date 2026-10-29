@@ -15,9 +15,8 @@ import { ConfirmDialog } from '../../../ui/ds/ConfirmDialog'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
 import { notify } from '../../../ui/ds/Toaster'
-import { useMcpTokens } from '../../../app/queries'
+import { useHelpers, useMcpTokens, useMintMcpToken, useRevokeMcpToken } from '../../../app/queries'
 import type { McpToken } from '../../../core/domain/types'
-import { getCommands } from './getCommands'
 import { capture } from '../../../telemetry'
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -72,7 +71,11 @@ function MintDialog({
   onOpenChange: (v: boolean) => void
   onMinted: (secret: string) => void
 }) {
+  const { data: helpers = [] } = useHelpers()
+  const mint = useMintMcpToken()
+  const defaultHelper = helpers.find((h) => h.isChief)?.id ?? helpers[0]?.id ?? ''
   const [form, setForm] = useState<MintForm>({ label: '', helperId: '', scopes: [] })
+  const helperId = form.helperId || defaultHelper
   const [minting, setMinting] = useState(false)
   const [phase, setPhase] = useState<MintDialogPhase>('form')
   const [secret, setSecret] = useState('')
@@ -99,12 +102,12 @@ function MintDialog({
   }
 
   async function handleCreate() {
-    if (!form.label.trim()) return
+    if (!form.label.trim() || !helperId) return
     setMinting(true)
     try {
-      const result = await getCommands().mintMcpToken({
+      const result = await mint.mutateAsync({
         label: form.label.trim(),
-        helperId: form.helperId || 'h-chief',
+        helperId,
         scopes: form.scopes.length > 0 ? form.scopes : ['identity'],
       })
       setSecret(result.token)
@@ -138,7 +141,7 @@ function MintDialog({
             <Button variant="secondary" style={{ height: 32 }} onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
-            <Button variant="primary" style={{ height: 32 }} disabled={!form.label.trim() || minting} onClick={handleCreate}>
+            <Button variant="primary" style={{ height: 32 }} disabled={!form.label.trim() || !helperId || minting} onClick={handleCreate}>
               Create
             </Button>
           </>
@@ -175,15 +178,18 @@ function MintDialog({
             <label htmlFor="mint-helper" className="text-[12.5px] font-medium text-ink">
               Helper (acting as)
             </label>
-            <input
+            <select
               id="mint-helper"
               aria-label="Helper ID"
-              type="text"
-              placeholder="h-chief"
-              value={form.helperId}
+              value={helperId}
               onChange={(e) => setForm((f) => ({ ...f, helperId: e.target.value }))}
               className="h-[34px] rounded-base border border-line-strong bg-soft px-[12px] text-[13px] text-ink outline-none focus:border-ink"
-            />
+            >
+              {helpers.length === 0 && <option value="">No helpers yet</option>}
+              {helpers.map((h) => (
+                <option key={h.id} value={h.id}>{h.name}{h.isChief ? ' (Chief)' : ''}</option>
+              ))}
+            </select>
           </div>
 
           {/* Scopes */}
@@ -244,6 +250,9 @@ function MintDialog({
 export function SectionMcpTokens() {
   const queryClient = useQueryClient()
   const { data: tokens, isError } = useMcpTokens()
+  const { data: helpers = [] } = useHelpers()
+  const revoke = useRevokeMcpToken()
+  const helperName = (id: string) => helpers.find((h) => h.id === id)?.name ?? id
 
   const [mintOpen, setMintOpen] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<McpToken | null>(null)
@@ -255,8 +264,7 @@ export function SectionMcpTokens() {
   async function handleRevoke() {
     if (!revokeTarget) return
     try {
-      await getCommands().revokeMcpToken(revokeTarget.id)
-      await queryClient.invalidateQueries({ queryKey: ['mcpTokens'] })
+      await revoke.mutateAsync(revokeTarget.id)
       notify(`Token "${revokeTarget.label}" revoked`)
     } catch {
       notify('Revoke failed')
@@ -316,7 +324,7 @@ export function SectionMcpTokens() {
                     <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
                       <span className="text-[13px] font-semibold text-ink">{token.label}</span>
                       <span className="text-[12px] text-muted">
-                        {token.helperId}
+                        {helperName(token.helperId)}
                         {token.scopes.length > 0 && ` · ${token.scopes.join(', ')}`}
                         {token.lastUsedAt && ` · last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
                       </span>

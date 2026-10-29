@@ -80,6 +80,8 @@ export interface CompanyDefaults {
   name: string
   initial: string
   color: string
+  /** Server-side logo (data: URL) — used when there's no local override. */
+  image?: string | null
 }
 
 /** A company's logo: uploaded image, or initials on a colour tile. */
@@ -88,6 +90,6 @@ export function useCompanyLook(c: CompanyDefaults) {
   return {
     color: look?.color ?? c.color,
     initial: look?.initial || c.initial,
-    image: look?.image,
+    image: look?.image ?? c.image ?? undefined,
   }
 }

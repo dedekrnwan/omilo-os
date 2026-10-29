@@ -16,7 +16,7 @@ import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 import { usePush } from '../../../app/push'
 import { useUIStore } from '../../../app/store'
-import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { usePreferences, useUpdatePreferences } from '../../../app/queries'
 
 type Channel = 'app' | 'whatsapp' | 'email' | 'push'
 
@@ -153,18 +153,24 @@ function PushCard() {
   )
 }
 
+const QUIET_INITIAL = { from: '21:00', to: '08:00' }
+
 export function SectionNotifications() {
-  const { data: settings } = useCompanySettings()
-  const updateSettings = useUpdateCompanySettings()
+  // Personal: saved per user (GET/PATCH /v1/me/preferences), not company-wide.
+  const { data: prefs } = usePreferences()
+  const updatePrefs = useUpdatePreferences()
 
   const [notifs, setNotifs] = useState<NotifState>(INITIAL_NOTIFICATIONS)
   const [weekends, setWeekends] = useState(false)
+  const [quietOn, setQuietOn] = useState(true)
+  const [quiet, setQuiet] = useState(QUIET_INITIAL)
 
   async function persist() {
-    await updateSettings.mutateAsync({
+    await updatePrefs.mutateAsync({
       notifications: {
         matrix: notifs.map((n) => ({ label: n.label, channels: n.channels })),
         weekends,
+        quietHours: quietOn ? quiet : null,
       },
     })
     notify('Notification settings saved')
@@ -173,6 +179,8 @@ export function SectionNotifications() {
   function reset() {
     setNotifs(INITIAL_NOTIFICATIONS)
     setWeekends(false)
+    setQuietOn(true)
+    setQuiet(QUIET_INITIAL)
   }
 
   const { dirty, saving, error, saved, markDirty, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
@@ -180,9 +188,18 @@ export function SectionNotifications() {
   // Hydrate from persisted settings when they arrive (unless the user is editing).
   useEffect(() => {
     if (dirty) return
-    const n = settings?.notifications as { matrix?: unknown; weekends?: unknown } | undefined
+    const n = prefs?.notifications as { matrix?: unknown; weekends?: unknown; quietHours?: unknown } | undefined
     if (!n) return
     if (typeof n.weekends === 'boolean') setWeekends(n.weekends)
+    if (n.quietHours === null) setQuietOn(false)
+    else if (n.quietHours && typeof n.quietHours === 'object') {
+      const q = n.quietHours as { from?: unknown; to?: unknown }
+      setQuietOn(true)
+      setQuiet({
+        from: typeof q.from === 'string' ? q.from : QUIET_INITIAL.from,
+        to: typeof q.to === 'string' ? q.to : QUIET_INITIAL.to,
+      })
+    }
     if (Array.isArray(n.matrix)) {
       setNotifs((prev) =>
         prev.map((row) => {
@@ -194,7 +211,7 @@ export function SectionNotifications() {
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings])
+  }, [prefs])
 
   function toggleChannel(rowIdx: number, ch: Channel) {
     setNotifs((prev) => {
@@ -260,8 +277,29 @@ export function SectionNotifications() {
         {/* Quiet hours */}
         <SubHeading label="Quiet hours" />
         <SettingCardRows>
-          <SettingRow label="Don't notify me" desc="Only P0 incidents get through.">
-            <TextInput value="21:00 – 08:00" className="min-w-[140px]" />
+          <SettingRow label="Don't notify me" desc={quietOn ? 'Only P0 incidents get through.' : 'Off — everything reaches you any time.'}>
+            <div className="flex items-center gap-[8px]">
+              {quietOn && (
+                <>
+                  <TextInput
+                    type="time"
+                    aria-label="Quiet hours start"
+                    value={quiet.from}
+                    width={110}
+                    onChange={(v) => { setQuiet((q) => ({ ...q, from: v })); markDirty() }}
+                  />
+                  <span className="text-[12px] text-muted">–</span>
+                  <TextInput
+                    type="time"
+                    aria-label="Quiet hours end"
+                    value={quiet.to}
+                    width={110}
+                    onChange={(v) => { setQuiet((q) => ({ ...q, to: v })); markDirty() }}
+                  />
+                </>
+              )}
+              <Toggle on={quietOn} label="Quiet hours" onClick={() => { setQuietOn((v) => !v); markDirty() }} />
+            </div>
           </SettingRow>
           <RowDivider />
           <SettingRow label="Weekends" desc="Hold everything except P0 until Monday 08:00.">

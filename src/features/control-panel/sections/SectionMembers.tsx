@@ -1,29 +1,26 @@
 import { useState, useMemo } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Crown, Ellipsis, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
-import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
+import { Crown, Ellipsis, Mail, Pencil, Plus, RotateCw, Server, Trash2, UserPlus } from 'lucide-react'
+import { Chip, DialogCard, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import { ConfirmDialog } from '../../../ui/ds/ConfirmDialog'
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
-import { useChangeMemberRole, useMembers, useRemoveMember } from '../../../app/queries'
+import {
+  useChangeMemberRole,
+  useInvites,
+  useMembers,
+  useRemoveMember,
+  useResendInvite,
+  useRevokeInvite,
+  useSeats,
+  useUpdateMember,
+} from '../../../app/queries'
 import type { CompanyMember } from '../../../core/domain/types'
+import type { Invite } from '../../../core/domain/controlPanel'
 import { useSession } from '../../../app/session'
-
-/** Derive display initials from a name string. */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
-
-/** Deterministic color from a string (cycles through a palette). */
-const PALETTE = ['#57534E', '#0EA5E9', '#14B8A6', '#F97316', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B']
-function memberColor(id: string): string {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return PALETTE[h % PALETTE.length]
-}
+import { ChannelPicker } from '../ChannelPicker'
+import { colorFor as memberColor, errorMessage, formatIdrShort, initialsOf as initials, lastSeenLabel } from '../format'
 
 const ROLES = [
   { r: 'Owner', d: 'Everything, including billing and deleting the company.' },
@@ -92,32 +89,102 @@ function MemberMoreMenu({ name, onEdit, onRemove }: { name: string; onEdit: () =
   )
 }
 
-type PersonRow = { id: string; email: string; name: string; initials: string; color: string; channels: string; role: string; seen: string }
+type PersonRow = {
+  id: string
+  userId: string
+  email: string
+  name: string
+  initials: string
+  color: string
+  channels: string
+  channelIds: string[]
+  role: string
+  seen: string
+}
 
 /** Map a CompanyMember to a PersonRow for display. */
-function toPersonRow(m: CompanyMember): PersonRow {
+function toPersonRow(m: CompanyMember, meId?: string): PersonRow {
   return {
     id: m.id,
+    userId: m.userId,
     email: m.email,
     name: m.name,
     initials: initials(m.name),
     color: memberColor(m.id),
-    channels: 'All channels',
+    channels: m.channelNames?.length ? m.channelNames.join(', ') : 'All channels',
+    channelIds: m.channels ?? [],
     role: m.role.charAt(0).toUpperCase() + m.role.slice(1),
-    seen: '',
+    seen: m.userId === meId ? 'active you' : lastSeenLabel(m.lastSeenAt),
   }
+}
+
+/** Edit a member: role (non-owners) + the channels they work in. */
+function EditMemberDialog({ person, onClose }: { person: PersonRow; onClose: () => void }) {
+  const updateMember = useUpdateMember()
+  const [role, setRole] = useState(person.role)
+  const [channelIds, setChannelIds] = useState<string[]>(person.channelIds)
+  const isOwner = person.role === 'Owner'
+
+  async function save() {
+    try {
+      await updateMember.mutateAsync({
+        id: person.id,
+        input: {
+          ...(isOwner || role === person.role ? {} : { role: role.toLowerCase() }),
+          ...(channelIds.length ? { channels: channelIds } : { allChannels: true }),
+        },
+      })
+      notify(`${person.name} updated`)
+      onClose()
+    } catch (e) {
+      notify(errorMessage(e, 'Could not update member'))
+    }
+  }
+
+  return (
+    <DialogCard
+      width={440}
+      icon={Pencil}
+      title={`Edit ${person.name}`}
+      sub={person.email}
+      onClose={onClose}
+      footer={
+        <>
+          <PenButton fs={13} onClick={onClose}>Cancel</PenButton>
+          <div className="h-px flex-1" />
+          <PenButton variant="primary" fs={13} disabled={updateMember.isPending} onClick={() => void save()}>
+            {updateMember.isPending ? 'Saving…' : 'Save'}
+          </PenButton>
+        </>
+      }
+    >
+      {isOwner ? (
+        <Field label="Role" value="Owner" />
+      ) : (
+        <Field label="Role" value={role} onChange={setRole} options={[...ROLE_OPTIONS]} select />
+      )}
+      <ChannelPicker value={channelIds} onChange={setChannelIds} className="w-full" />
+      <span className="text-[12px] text-muted">Members only see chats, goals and flows in their channels.</span>
+    </DialogCard>
+  )
 }
 
 /** pen ZDdLD · Members & roles — and X16ZX · Self-hosted (variant). */
 export function SectionMembers({ onDialog, variant }: SectionProps) {
-  const selfHosted = variant === 'self-hosted'
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
+  const meId = useSession((s) => s.user?.id)
   const { data: fetchedMembers, isLoading, isError } = useMembers()
+  const { data: seats } = useSeats()
+  const { data: invites = [] } = useInvites()
+  const revokeInvite = useRevokeInvite()
+  const resendInvite = useResendInvite()
+  const selfHosted = variant === 'self-hosted' || (variant !== 'cloud' && !!seats?.selfHosted)
+  const [editing, setEditing] = useState<PersonRow | null>(null)
 
   // Convert API members to PersonRow; fall back to empty while loading
   const apiRows = useMemo<PersonRow[]>(
-    () => (fetchedMembers ?? []).map(toPersonRow),
-    [fetchedMembers],
+    () => (fetchedMembers ?? []).map((m) => toPersonRow(m, meId)),
+    [fetchedMembers, meId],
   )
 
   const changeRoleMutation = useChangeMemberRole()
@@ -149,9 +216,38 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
     }
   }
 
-  function handleEdit(name: string) {
-    notify(`Editing ${name}…`)
+  async function handleRevokeInvite(inv: Invite) {
+    try {
+      await revokeInvite.mutateAsync(inv.id)
+      notify(`Invite for ${inv.email} revoked`)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not revoke invite'))
+    }
   }
+
+  async function handleResendInvite(inv: Invite) {
+    try {
+      await resendInvite.mutateAsync(inv.id)
+      notify(`Invite re-sent to ${inv.email}`)
+    } catch (e) {
+      notify(errorMessage(e, 'Could not resend invite'))
+    }
+  }
+
+  /** Seats-full → Seats full / Plan max dialog; otherwise the plain invite. */
+  function openInvite() {
+    if (selfHosted || !seats || (seats.available ?? 1) > 0) return onDialog('invite')
+    const atMax = seats.max != null && (seats.total ?? 0) >= seats.max
+    onDialog(atMax || !seats.canAdd ? 'plan-max' : 'seats-full')
+  }
+
+  // Seat bar: people · pending invites · free seats.
+  const used = seats?.used ?? members.filter((m) => m.role !== 'Viewer').length
+  const pendingSeats = seats?.pending ?? 0
+  const totalSeats = seats?.total ?? 0
+  const freeSeats = Math.max(0, totalSeats - used - pendingSeats)
+  const seatsFull = !selfHosted && !!seats && freeSeats === 0
+  const viewerCount = seats?.viewers ?? members.filter((m) => m.role === 'Viewer').length
 
   async function confirmRemove() {
     if (!removeTarget) return
@@ -188,7 +284,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
         title="Members & roles"
         sub={`People in ${companyName} and what they can approve.`}
         actions={
-          <PenButton variant="primary" icon={UserPlus} onClick={() => onDialog(selfHosted ? 'invite' : 'seats-full')}>
+          <PenButton variant="primary" icon={UserPlus} onClick={openInvite}>
             Invite people
           </PenButton>
         }
@@ -197,7 +293,9 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
       <div className="flex w-full items-center gap-[20px] rounded-lg bg-soft px-[16px] py-[14px] outline-1 -outline-offset-1 outline-line-strong">
         {selfHosted ? (
           <div className="flex min-w-0 flex-1 items-center gap-[8px]">
-            <span className="text-[13px] font-semibold text-ink">4 people, 1 invite · unlimited seats</span>
+            <span className="text-[13px] font-semibold text-ink">
+              {members.length} {members.length === 1 ? 'person' : 'people'}, {invites.length} invite{invites.length === 1 ? '' : 's'} · unlimited seats
+            </span>
             <Chip tone="ok" icon={Server}>Self-hosted · free</Chip>
             <div className="h-px flex-1" />
             <span className="text-[12px] text-muted">Free — invite as many people as you like</span>
@@ -206,28 +304,41 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
           <>
             <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
               <div className="flex w-full items-center gap-[8px]">
-                <span className="text-[13px] font-semibold text-ink">5 of 5 seats</span>
-                <Chip tone="warn">Full</Chip>
+                <span className="text-[13px] font-semibold text-ink">{used + pendingSeats} of {totalSeats} seats</span>
+                {seatsFull && <Chip tone="warn">Full</Chip>}
                 <div className="h-px flex-1" />
-                <span className="text-[12px] text-muted">Team plan · 5 included, up to 15</span>
+                <span className="text-[12px] text-muted">
+                  {seats?.planName ?? 'No'} plan · {seats?.included ?? 0} included{seats?.max != null ? `, up to ${seats.max}` : seats?.canAdd ? ', add more any time' : ''}
+                </span>
               </div>
               <div className="flex h-[6px] w-full gap-[3px]">
-                {[0, 1, 2, 3].map((i) => (
-                  <span key={i} className="h-[6px] flex-1 rounded-[3px] bg-ink" />
+                {Array.from({ length: Math.min(used, 40) }, (_, i) => (
+                  <span key={`u${i}`} className="h-[6px] flex-1 rounded-[3px] bg-ink" />
                 ))}
-                <span className="h-[6px] flex-1 rounded-[3px] bg-spark" />
+                {Array.from({ length: Math.min(pendingSeats, 40) }, (_, i) => (
+                  <span key={`p${i}`} className="h-[6px] flex-1 rounded-[3px] bg-spark" />
+                ))}
+                {Array.from({ length: Math.min(freeSeats, 40) }, (_, i) => (
+                  <span key={`f${i}`} className="h-[6px] flex-1 rounded-[3px] bg-wire-strong" />
+                ))}
               </div>
               <div className="flex items-center gap-[14px]">
-                <Legend color="var(--color-ink)" label="4 people" />
-                <Legend color="var(--color-spark)" label="1 pending invite (holds a seat)" />
-                <Legend color="var(--color-wire-strong)" label="Viewers are free · 0 of 20" />
+                <Legend color="var(--color-ink)" label={`${used} ${used === 1 ? 'person' : 'people'}`} />
+                {pendingSeats > 0 && (
+                  <Legend color="var(--color-spark)" label={`${pendingSeats} pending invite${pendingSeats === 1 ? '' : 's'} (holds a seat)`} />
+                )}
+                <Legend color="var(--color-wire-strong)" label={`Viewers are free · ${viewerCount}`} />
               </div>
             </div>
-            <span className="h-[44px] w-px shrink-0 bg-line-strong" />
-            <div className="flex flex-col items-end gap-[6px]">
-              <PenButton h={30} fs={13} icon={Plus} onClick={() => onDialog('add-seats')}>Add seats</PenButton>
-              <span className="text-[11.5px] text-muted">Rp 150 rb / seat / month</span>
-            </div>
+            {seats?.canAdd && (
+              <>
+                <span className="h-[44px] w-px shrink-0 bg-line-strong" />
+                <div className="flex flex-col items-end gap-[6px]">
+                  <PenButton h={30} fs={13} icon={Plus} onClick={() => onDialog('add-seats')}>Add seats</PenButton>
+                  <span className="text-[11.5px] text-muted">{formatIdrShort(seats.seatPriceIdr)} / seat / month</span>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -258,12 +369,48 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
             </div>
             <MemberMoreMenu
               name={p.name}
-              onEdit={() => handleEdit(p.name)}
+              onEdit={() => setEditing(p)}
               onRemove={() => setRemoveTarget(p)}
             />
           </div>
         ))}
+        {invites.map((inv) => (
+          <div key={inv.id} className={`flex w-full items-center gap-[14px] px-[14px] py-[10px] ${lineBottom}`}>
+            <div className="flex min-w-0 flex-1 items-center gap-[10px]">
+              <span className="flex size-[28px] shrink-0 items-center justify-center rounded-full bg-soft outline-1 -outline-offset-1 outline-line-strong">
+                <Mail size={13} aria-hidden className="text-muted" />
+              </span>
+              <div className="flex min-w-0 flex-col gap-px">
+                <span className="truncate text-[13px] font-medium text-ink">{inv.email}</span>
+                <span className="text-[11.5px] text-muted">Invite pending{inv.invitedBy ? ` · from ${inv.invitedBy}` : ''}</span>
+              </div>
+            </div>
+            <span className="w-[190px] text-[12px] text-ink-2">{inv.channelNames?.length ? inv.channelNames.join(', ') : 'All channels'}</span>
+            <div className="flex w-[150px] items-center gap-[6px]">
+              <Chip tone="warn">{inv.role.charAt(0).toUpperCase() + inv.role.slice(1)}</Chip>
+            </div>
+            <DropdownMenu.Root modal={false}>
+              <DropdownMenu.Trigger asChild>
+                <button type="button" aria-label={`${inv.email} invite options`} className="flex size-[28px] shrink-0 items-center justify-center rounded-sm text-muted hover:bg-hover">
+                  <Ellipsis size={16} aria-hidden />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content side="bottom" align="end" sideOffset={4} className={`z-50 w-[200px] ${menuSurface}`}>
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => void handleResendInvite(inv)}>
+                    <MenuItemBody icon={RotateCw} label="Resend invite" />
+                  </DropdownMenu.Item>
+                  <MenuSeparatorLine />
+                  <DropdownMenu.Item className={menuItemClass} onSelect={() => void handleRevokeInvite(inv)}>
+                    <MenuItemBody icon={Trash2} label="Revoke" danger />
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
+        ))}
       </div>
+      {editing && <EditMemberDialog person={editing} onClose={() => setEditing(null)} />}
 
       <Group title="What each role can do">
         <div className="flex w-full gap-[10px]">
