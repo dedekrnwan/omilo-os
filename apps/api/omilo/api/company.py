@@ -16,10 +16,11 @@ Spec: P5d Task 1b (profile), P13 (onboarding gate).
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.auth.router import CompanyOut, _company_out
 from omilo.db import SessionLocal
@@ -98,6 +99,72 @@ def patch_company(
 
             # Snapshot fields before session closes (expire_on_commit default).
             return _company_out(company)
+
+
+# ---------------------------------------------------------------------------
+# GET + PATCH /v1/company/settings — free-form tenant-scoped settings
+# ---------------------------------------------------------------------------
+
+
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge ``patch`` into ``base`` and return a new dict.
+
+    Nested dicts are merged key-by-key (so a partial PATCH to one nested key
+    does not clobber its siblings); non-dict values overwrite.
+    """
+    result = dict(base)
+    for key, value in patch.items():
+        if (
+            key in result
+            and isinstance(result[key], dict)
+            and isinstance(value, dict)
+        ):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+@router.get("/company/settings")
+def get_company_settings(
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Return the authed company's free-form settings object ({} by default)."""
+    with SessionLocal() as session:
+        company = session.get(Company, ctx.company_id)
+        if company is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Company not found.",
+            )
+        return dict(company.settings or {})
+
+
+@router.patch("/company/settings")
+def patch_company_settings(
+    body: dict[str, Any],
+    _guard: None = Depends(require_role("owner", "admin")),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Deep-merge the posted partial into company.settings. Owner/admin only.
+
+    Returns the full merged settings object.
+    """
+    with SessionLocal() as session:
+        with session.begin():
+            company = session.get(Company, ctx.company_id)
+            if company is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Company not found.",
+                )
+
+            merged = _deep_merge(dict(company.settings or {}), body or {})
+            company.settings = merged
+            # JSONB mutation via reassignment is tracked, but flag to be safe.
+            flag_modified(company, "settings")
+            session.flush()
+            return dict(merged)
 
 
 # ---------------------------------------------------------------------------

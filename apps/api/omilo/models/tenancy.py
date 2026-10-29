@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omilo.db import Base
@@ -52,6 +53,13 @@ class Company(IdMixin, TimestampMixin, Base):
     # P13 onboarding gate — set when the company completes onboarding wizard
     onboarded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # Free-form, tenant-scoped workspace settings (control-panel sections:
+    # safety / notifications / ai_engine / knowledge / about / language / hours).
+    # Deep-merged on PATCH; see omilo.api.company.
+    settings: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
     )
 
 
