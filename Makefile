@@ -10,7 +10,7 @@
 SHELL := /bin/bash
 .PHONY: dev dev-api dev-web _api db db-stop db-logs test build image \
         up up-cloud up-runtime connect down logs \
-        migrate seed register desktop desktop-dev
+        migrate seed index register desktop desktop-dev
 
 # ── Python / venv detection ───────────────────────────────────────────────────
 # Prefer the virtualenv binary; fall back to a system Python 3.11+.
@@ -46,8 +46,8 @@ venv: $(VENV_BIN)/python
 # through the Vite proxy (vite.config.ts) so it is a wired full stack (no CORS).
 # Use `make dev-api` or `make dev-web` to run just one side.
 dev: db
-	@echo "→ DB up. Migrating + seeding, then API (:8000) + web (:5173). Ctrl-C stops both."
-	@$(MAKE) --no-print-directory migrate seed
+	@echo "→ DB up. Migrating + seeding + indexing pieces, then API (:8000) + web (:5173). Ctrl-C stops both."
+	@$(MAKE) --no-print-directory migrate seed index
 	@command -v npm >/dev/null 2>&1 || { echo "npm is required for the web dev server."; exit 1; }
 	@test -d node_modules || npm install --no-audit --no-fund
 	@trap 'kill 0' INT TERM; \
@@ -163,3 +163,7 @@ migrate: venv
 
 seed: venv
 	cd apps/api && $(VENV_BIN)/omilo-seed
+
+# ── index: upsert the global pieces catalog (connectors + MCP) ───────────────
+index: venv
+	cd apps/api && $(VENV_BIN)/omilo-index

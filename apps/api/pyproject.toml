@@ -37,6 +37,7 @@ dev = [
 omilo-api = "omilo.main:run"
 omilo-migrate = "omilo.cli:migrate"
 omilo-seed = "omilo.cli:seed"
+omilo-index = "omilo.cli:index"
 omilo-register = "omilo.control.register:main"
 omilo-connect = "omilo.control.upgrade:main"
 omilo-notify = "omilo.notify.digest:main"

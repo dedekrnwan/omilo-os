@@ -7,5 +7,10 @@ set -eu
 echo "[omilo] Running migrations..."
 omilo-migrate
 
+# Index the global pieces catalog (connectors + MCP). Idempotent; best-effort so
+# a transient indexing issue never blocks the API from starting.
+echo "[omilo] Indexing pieces catalog..."
+omilo-index || echo "[omilo] WARN: pieces indexing failed; marketplace may be empty until re-run"
+
 echo "[omilo] Starting API (mode: ${OMILO_MODE:-cloud})..."
 exec omilo-api
