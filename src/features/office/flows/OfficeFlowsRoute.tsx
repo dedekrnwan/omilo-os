@@ -14,7 +14,7 @@ import type { FlowCard } from './boardStore'
 import type { Flow } from '../../../core/domain/types'
 import { officeRunRow, runsStats, sortRunsByStartedDesc } from './runsAdapter'
 import { useNavigate } from '@tanstack/react-router'
-import { useAllFlowRuns, useArea, useFlows } from '../../../app/queries'
+import { useAllFlowRuns, useArea, useAreas, useFlows, useCreateFlow, useDeleteFlow, useDuplicateFlow } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
@@ -34,7 +34,9 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
   const navigate = useNavigate()
   const enabled = useFlowStore((st) => st.flows[card.id]?.enabled) ?? card.enabled
   const { setEnabled, startTest } = useFlowStore()
-  const { remove, restore, duplicate } = useFlowBoard()
+  const { remove, restore } = useFlowBoard()
+  const duplicateFlow = useDuplicateFlow()
+  const deleteFlow = useDeleteFlow()
   const go = (to: '/flows/$flowId/canvas' | '/flows/$flowId/runs' | '/flows/$flowId/settings') =>
     void navigate({ to, params: { flowId: card.id } })
 
@@ -54,10 +56,38 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
     enabled
       ? { label: 'Pause flow', icon: Pause, onSelect: () => { setEnabled(card.id, false); notify(`${card.title} paused`, () => setEnabled(card.id, true)) } }
       : { label: 'Turn on', icon: Power, onSelect: () => { setEnabled(card.id, true); notify(`${card.title} is on`) } },
-    { label: 'Duplicate', icon: Copy, onSelect: () => { const c = duplicate(card); notify(`Made “${c.title}”`) } },
+    {
+      label: 'Duplicate',
+      icon: Copy,
+      onSelect: () =>
+        duplicateFlow.mutate(
+          {
+            title: card.title,
+            trigger: card.trigger ?? { kind: 'manual', spec: {} },
+            nodes: card.nodes ?? [],
+            edges: card.edges ?? [],
+            areas: card.areas ?? [],
+            channelIds: card.channelIds,
+          },
+          { onSuccess: (c) => notify(`Made “${c.title}”`) },
+        ),
+    },
     { label: 'Copy link', icon: Link, onSelect: () => { copyText(`${location.origin}/flows/${card.id}/canvas`); notify('Link copied') } },
     { type: 'separator' },
-    { label: 'Delete flow', icon: Trash2, danger: true, onSelect: () => { remove(card.id); notify('Flow deleted', () => restore(card.id)) } },
+    {
+      label: 'Delete flow',
+      icon: Trash2,
+      danger: true,
+      onSelect: () => {
+        // Optimistically hide the card, then delete on the backend. Undo restores
+        // the local view (a full re-delete would be needed to re-apply server-side).
+        remove(card.id)
+        deleteFlow.mutate(card.id, {
+          onSuccess: () => notify('Flow deleted', () => restore(card.id)),
+          onError: () => restore(card.id),
+        })
+      },
+    },
   ]
 
   return (
@@ -421,10 +451,19 @@ function RunsTab({ flows }: { flows: Flow[] }) {
 
 // ── NewFlowDialog ─────────────────────────────────────────────────────────────
 
+/** Typed inputs from the "Describe it" form, passed up to create the flow. */
+export interface NewFlowDraft {
+  description: string
+  areaId: string
+  runsAs: string
+}
+
 interface NewFlowDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onDraft?: () => void
+  /** Available areas for the Area select. */
+  areas: Array<{ id: string; name: string }>
+  onDraft?: (draft: NewFlowDraft) => void
   /** Start an empty flow (no Chief draft). */
   onBlank?: () => void
 }
@@ -437,15 +476,19 @@ const NEW_FLOW_MODES: Array<{ id: NewFlowMode; label: string }> = [
   { id: 'template', label: 'From a template' },
 ]
 
-function NewFlowDialog({ open, onOpenChange, onDraft, onBlank }: NewFlowDialogProps) {
+const RUNS_AS_OPTIONS = ['Growth', 'Ops', 'Dev'] as const
+
+function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowDialogProps) {
   const [mode, setMode] = useState<NewFlowMode>('describe')
   const [description, setDescription] = useState(
     "Every Friday 16:00, pull this week's Stripe payouts, match them to referral signups, and send me a summary on WhatsApp. Ask me before paying anyone over Rp 5jt."
   )
+  const [areaId, setAreaId] = useState(areas[0]?.id ?? '')
+  const [runsAs, setRunsAs] = useState<string>(RUNS_AS_OPTIONS[0])
 
   if (!open) return null
   const close = () => onOpenChange(false)
-  const draft = () => { close(); onDraft?.() }
+  const draft = () => { close(); onDraft?.({ description: description.trim(), areaId, runsAs }) }
   const blank = () => { close(); onBlank?.() }
 
   return (
@@ -518,24 +561,34 @@ function NewFlowDialog({ open, onOpenChange, onDraft, onBlank }: NewFlowDialogPr
           {/* Area + Runs as */}
           <div className="grid w-full shrink-0 grid-cols-2 gap-[10px]">
             <div className="flex flex-col gap-[5px]">
-              <label className="text-[12px] font-medium text-ink-2">Area</label>
+              <label className="text-[12px] font-medium text-ink-2" htmlFor="new-flow-area">Area</label>
               <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
                 <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
-                <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
-                  <option>Marketing</option>
-                  <option>Engineering</option>
-                  <option>Business</option>
+                <select
+                  id="new-flow-area"
+                  value={areaId}
+                  onChange={(e) => setAreaId(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none"
+                >
+                  {areas.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
             <div className="flex flex-col gap-[5px]">
-              <label className="text-[12px] font-medium text-ink-2">Runs as</label>
+              <label className="text-[12px] font-medium text-ink-2" htmlFor="new-flow-runs-as">Runs as</label>
               <div className="flex items-center gap-[6px] rounded-base bg-soft px-[10px] py-[7px] outline-1 -outline-offset-1 outline-line-strong">
                 <span className="size-[8px] shrink-0 rounded-full bg-helper-marketing" aria-hidden />
-                <select className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none">
-                  <option>Growth</option>
-                  <option>Ops</option>
-                  <option>Dev</option>
+                <select
+                  id="new-flow-runs-as"
+                  value={runsAs}
+                  onChange={(e) => setRunsAs(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none"
+                >
+                  {RUNS_AS_OPTIONS.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -584,6 +637,8 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
   const { data: area } = useArea(areaId ?? '')
   const areaName = areaId ? area?.name ?? '' : null
   const { data: liveFlows = [], isLoading: flowsLoading, isError: flowsError } = useFlows()
+  const { data: allAreas = [] } = useAreas()
+  const createFlow = useCreateFlow()
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
   const [dialogOpen, setDialogOpen] = useState(false)
   const navigate = useNavigate()
@@ -603,6 +658,28 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
 
   function goToDraft(sourceId?: string) {
     navigate({ to: '/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
+  }
+
+  // "Describe it" → create a real flow with the typed description/area/runs-as,
+  // then open its canvas. Falls back to the local draft route on error.
+  function createFromDraft(draft: NewFlowDraft) {
+    const title = draft.description.split(/[.\n]/)[0]?.slice(0, 60) || 'New flow'
+    createFlow.mutate(
+      {
+        title,
+        trigger: { kind: 'manual', spec: { description: draft.description, runsAs: draft.runsAs } },
+        nodes: [],
+        edges: [],
+        areas: draft.areaId ? [draft.areaId] : [],
+      },
+      {
+        onSuccess: (flow) => {
+          notify('Flow drafted')
+          navigate({ to: '/flows/$flowId/canvas', params: { flowId: flow.id } })
+        },
+        onError: () => goToDraft(),
+      },
+    )
   }
 
   function goToBlank() {
@@ -650,18 +727,20 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         {activeTab === 'Suggested' && (
           <SuggestedTab
             onCreateFlow={(id) => goToDraft(id)}
-            onPreview={(_id) => {
-              // Suggested flows don't have a canvas yet — notify for now.
-              // TODO: navigate to draft preview once backend suggested-flows endpoint exists.
-              notify('Preview')
-            }}
+            onPreview={(id) => goToDraft(id)}
           />
         )}
         {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToDraft(id)} />}
         {activeTab === 'Runs'      && <RunsTab flows={liveFlows} />}
       </div>
 
-      <NewFlowDialog open={dialogOpen} onOpenChange={setDialogOpen} onDraft={() => goToDraft()} onBlank={goToBlank} />
+      <NewFlowDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        areas={allAreas}
+        onDraft={createFromDraft}
+        onBlank={goToBlank}
+      />
     </>
   )
 }

@@ -260,7 +260,8 @@ function AiBody({ flowId, node }: { flowId: string; node: FlowNode }) {
 
 function TriggerBody({ flowId, node }: { flowId: string; node: FlowNode }) {
   const { updateNode } = useFlowStore()
-  const [branch, setBranch] = useState('main')
+  const branch = (node.config?.branch as string | undefined) ?? 'main'
+  const setBranch = (v: string) => updateNode(flowId, node.id, { config: { ...node.config, branch: v } })
   return (
     <>
       <Section label="App">
@@ -339,10 +340,14 @@ function IfBody({ flowId, node }: { flowId: string; node: FlowNode }) {
   )
 }
 
-function ApprovalBody() {
-  const [wait, setWait] = useState('1 hour')
-  const [where, setWhere] = useState({ inbox: true, whatsapp: false })
-  const [timeout, setTimeoutPolicy] = useState('remind')
+function ApprovalBody({ flowId, node }: { flowId: string; node: FlowNode }) {
+  const { updateNode } = useFlowStore()
+  const cfg = node.config ?? {}
+  const wait = (cfg.wait as string | undefined) ?? '1 hour'
+  const inbox = (cfg.inbox as boolean | undefined) ?? true
+  const whatsapp = (cfg.whatsapp as boolean | undefined) ?? false
+  const timeout = (cfg.onTimeout as string | undefined) ?? 'remind'
+  const patch = (p: Record<string, unknown>) => updateNode(flowId, node.id, { config: { ...cfg, ...p } })
   return (
     <>
       <Section label="Who approves">
@@ -354,18 +359,18 @@ function ApprovalBody() {
       </Section>
       <Section label="Ask in">
         <div className="flex flex-col">
-          <MiniSwitch label="Inbox" on={where.inbox} onChange={(inbox) => setWhere((w) => ({ ...w, inbox }))} />
-          <MiniSwitch label="WhatsApp" on={where.whatsapp} onChange={(whatsapp) => setWhere((w) => ({ ...w, whatsapp }))} />
+          <MiniSwitch label="Inbox" on={inbox} onChange={(v) => patch({ inbox: v })} />
+          <MiniSwitch label="WhatsApp" on={whatsapp} onChange={(v) => patch({ whatsapp: v })} />
         </div>
       </Section>
       <Section label="Wait up to">
-        <Select label="Wait up to" value={wait} onChange={setWait} options={['15 minutes', '1 hour', '4 hours', '1 day'].map((n) => ({ id: n, name: n }))} />
+        <Select label="Wait up to" value={wait} onChange={(v) => patch({ wait: v })} options={['15 minutes', '1 hour', '4 hours', '1 day'].map((n) => ({ id: n, name: n }))} />
       </Section>
       <Section label="If nobody answers">
         <Select
           label="If nobody answers"
           value={timeout}
-          onChange={setTimeoutPolicy}
+          onChange={(v) => patch({ onTimeout: v })}
           options={[
             { id: 'remind', name: 'Remind me, then wait again' },
             { id: 'skip', name: 'Skip this branch' },
@@ -377,16 +382,19 @@ function ApprovalBody() {
   )
 }
 
-function ConnectorBody({ node }: { node: FlowNode }) {
-  const [channel, setChannel] = useState(node.app === 'slack' ? '#oncall' : '#engineering')
-  const [action, setAction] = useState<'send' | 'thread'>('send')
+function ConnectorBody({ flowId, node }: { flowId: string; node: FlowNode }) {
+  const { updateNode } = useFlowStore()
+  const cfg = node.config ?? {}
+  const channel = (cfg.channel as string | undefined) ?? (node.app === 'slack' ? '#oncall' : '#engineering')
+  const action = (cfg.action as 'send' | 'thread' | undefined) ?? 'send'
+  const patch = (p: Record<string, unknown>) => updateNode(flowId, node.id, { config: { ...cfg, ...p } })
   return (
     <>
       <Section label="Action">
-        <Select label="Action" value={action} onChange={setAction} options={[{ id: 'send', name: 'Send a message' }, { id: 'thread', name: 'Reply in thread' }]} />
+        <Select label="Action" value={action} onChange={(v) => patch({ action: v })} options={[{ id: 'send', name: 'Send a message' }, { id: 'thread', name: 'Reply in thread' }]} />
       </Section>
       <Section label="Channel">
-        <TextInput label="Channel" value={channel} onChange={setChannel} />
+        <TextInput label="Channel" value={channel} onChange={(v) => patch({ channel: v })} />
       </Section>
       <Section label="Message" hint="type / for inputs">
         <div className="rounded-base bg-surface px-[10px] pt-[8px] pb-[9px] text-[12.5px] leading-[22px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong">
@@ -474,8 +482,8 @@ export function Inspector({ flowId }: { flowId: string }) {
         {node.kind === 'ai' && <AiBody flowId={flowId} node={node} />}
         {node.kind === 'trigger' && <TriggerBody flowId={flowId} node={node} />}
         {node.kind === 'if' && <IfBody flowId={flowId} node={node} />}
-        {node.kind === 'approval' && <ApprovalBody />}
-        {node.kind === 'connector' && <ConnectorBody node={node} />}
+        {node.kind === 'approval' && <ApprovalBody flowId={flowId} node={node} />}
+        {node.kind === 'connector' && <ConnectorBody flowId={flowId} node={node} />}
 
         {testing === 'done' && (
           <div role="status" className="flex flex-col gap-[6px] rounded-base bg-ok-tint p-[10px] outline-1 -outline-offset-1 outline-ok-line">

@@ -23,6 +23,8 @@ export interface FlowNode {
   app?: 'github' | 'slack' | 'chat' | 'inbox'
   /** Last-run result shown top-right: "12m ago", "8.4s", "waits" */
   last?: string
+  /** Per-kind inspector settings (trigger branch, approval wait, connector channel…). */
+  config?: Record<string, unknown>
 }
 
 export const NODE_W = 260

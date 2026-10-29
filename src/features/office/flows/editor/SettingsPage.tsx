@@ -5,7 +5,8 @@ import { Bell, Check, Plus, X, ChevronsUpDown, Copy, Gauge, History, Pause, Play
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { HelperArea } from '../../../../core/domain/types'
-import { useChannels } from '../../../../app/queries'
+import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow } from '../../../../app/queries'
+import { notify } from '../../../../ui/ds/Toaster'
 import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
 import { AreaTile } from '../../../shell/LookControls'
@@ -136,7 +137,23 @@ export function FlowSettingsPage() {
   const f = useFlow(flowId)
   const st = useFlowStore()
   const { data: areas = [] } = useChannels()
+  const { data: liveFlow } = useFlowQuery(flowId)
+  const deleteFlow = useDeleteFlow()
+  const duplicateFlow = useDuplicateFlow()
   const v = f.settings
+
+  // Build a CreateFlowInput from the live flow (falls back to the editor graph
+  // so duplicate still works offline / before the GET resolves).
+  function duplicateBody() {
+    return {
+      title: v.name,
+      trigger: liveFlow?.trigger ?? { kind: 'manual', spec: {} },
+      nodes: liveFlow?.nodes ?? f.graph.nodes,
+      edges: liveFlow?.edges ?? f.graph.edges,
+      areas: liveFlow?.areas ?? (v.areaId ? [v.areaId] : []),
+      channelIds: liveFlow?.channelIds,
+    }
+  }
   const set = (p: Partial<FlowSettings>) => st.setSettings(flowId, p)
   const dirty = JSON.stringify(v) !== JSON.stringify(f.savedSettings)
   const [active, setActive] = useState('general')
@@ -459,7 +476,18 @@ export function FlowSettingsPage() {
                       </PenButton>
                     </Row>
                     <Row title="Duplicate" desc="A copy starts as an unpublished draft.">
-                      <PenButton h={30} fs={13} px={11} icon={copied ? Check : Copy} iconSize={14} onClick={() => setCopied(true)}>
+                      <PenButton
+                        h={30}
+                        fs={13}
+                        px={11}
+                        icon={copied ? Check : Copy}
+                        iconSize={14}
+                        onClick={() =>
+                          duplicateFlow.mutate(duplicateBody(), {
+                            onSuccess: () => { setCopied(true); notify('Copied to drafts') },
+                          })
+                        }
+                      >
                         {copied ? 'Copied to drafts' : 'Duplicate'}
                       </PenButton>
                     </Row>
@@ -488,7 +516,18 @@ export function FlowSettingsPage() {
             footer={
               <>
                 <PenButton onClick={() => setConfirmDelete(false)}>Keep it</PenButton>
-                <PenButton variant="danger-solid" onClick={() => void navigate({ to: '/flows' })}>
+                <PenButton
+                  variant="danger-solid"
+                  onClick={() =>
+                    deleteFlow.mutate(flowId, {
+                      onSuccess: () => {
+                        setConfirmDelete(false)
+                        notify('Flow deleted')
+                        void navigate({ to: '/flows' })
+                      },
+                    })
+                  }
+                >
                   Delete flow
                 </PenButton>
               </>
