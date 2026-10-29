@@ -30,6 +30,7 @@ Design decisions:
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -83,21 +84,14 @@ def run_flow(
         trigger_summary=trigger_summary,
         started_by=started_by,
         job_ids=[],
+        steps=[],
         started_at=datetime.now(timezone.utc),
     )
     db.add(run)
     db.flush()
 
     # ── 2. Build lookup structures ───────────────────────────────────────────
-    nodes: list[dict[str, Any]] = flow.nodes if isinstance(flow.nodes, list) else []
-    edges: list[dict[str, Any]] = flow.edges if isinstance(flow.edges, list) else []
-
-    nodes_by_id: dict[str, dict] = {n["id"]: n for n in nodes if "id" in n}
-    out_edges: dict[str, list[dict]] = {}
-    for edge in edges:
-        src = edge.get("from")
-        if src:
-            out_edges.setdefault(src, []).append(edge)
+    nodes, nodes_by_id, out_edges = _graph(flow)
 
     # ── 3. Find the trigger node ─────────────────────────────────────────────
     trigger_node = next(
@@ -107,15 +101,41 @@ def run_flow(
         run.status = "failed"
         run.waiting_for = "no trigger node"
         run.ended_at = datetime.now(timezone.utc)
-        db.flush()
+        _finish(db, run)
         return run
 
     # ── 4. Walk the graph ────────────────────────────────────────────────────
-    current_id: str | None = trigger_node["id"]
-    visited: set[str] = set()
-    max_steps = max(len(nodes) + 1, 1)
+    _walk(db, run, flow, trigger_node["id"], nodes_by_id, out_edges, {"last_output": ""}, test, set())
+    return run
+
+
+def _graph(flow: Flow) -> tuple[list[dict], dict[str, dict], dict[str, list[dict]]]:
+    nodes: list[dict[str, Any]] = flow.nodes if isinstance(flow.nodes, list) else []
+    edges: list[dict[str, Any]] = flow.edges if isinstance(flow.edges, list) else []
+    nodes_by_id: dict[str, dict] = {n["id"]: n for n in nodes if isinstance(n, dict) and "id" in n}
+    out_edges: dict[str, list[dict]] = {}
+    for edge in edges:
+        src = edge.get("from") if isinstance(edge, dict) else None
+        if src:
+            out_edges.setdefault(src, []).append(edge)
+    return nodes, nodes_by_id, out_edges
+
+
+def _walk(
+    db: Session,
+    run: FlowRun,
+    flow: Flow,
+    start_id: str | None,
+    nodes_by_id: dict[str, dict],
+    out_edges: dict[str, list[dict]],
+    context: dict[str, Any],
+    test: bool,
+    visited: set[str],
+) -> None:
+    """Walk from ``start_id`` until the end of the graph or an approval pause."""
+    current_id: str | None = start_id
+    max_steps = max(len(nodes_by_id) + 1, 1)
     steps = 0
-    context: dict[str, Any] = {"last_output": ""}
 
     while current_id is not None and steps < max_steps:
         if current_id in visited:
@@ -127,22 +147,139 @@ def run_flow(
         if node is None:
             break  # dangling edge reference — treat as end
 
+        started = time.monotonic()
+        jobs_before = len(run.job_ids or [])
+        context.pop("step_note", None)
         result = _dispatch_node(db, run, flow, node, out_edges, context, test)
+        _log_step(run, node, context, test, result, started, jobs_before)
 
         if result is _PAUSE:
-            return run  # approval pause — status already set to needs_you
+            db.flush()
+            return  # approval pause — status already set to needs_you
 
         current_id = result  # type: ignore[assignment]
 
     # ── 5. End of walk ───────────────────────────────────────────────────────
     # Only mark "done" if the walk didn't already set a terminal status
     # (e.g. "failed" from _handle_ai_step when no helper exists).
-    # "needs_you" never reaches here — _handle_approval returns _PAUSE which
-    # exits early above — but the guard is correct to include it anyway.
     if run.status == "running":
         run.status = "done"
         run.ended_at = datetime.now(timezone.utc)
-        db.flush()
+    _finish(db, run)
+
+
+# ---------------------------------------------------------------------------
+# sweep/inbox-flows: step log, resume, cost/duration
+# ---------------------------------------------------------------------------
+
+
+def _log_step(
+    run: FlowRun,
+    node: dict[str, Any],
+    context: dict[str, Any],
+    test: bool,
+    result: Any,
+    started: float,
+    jobs_before: int,
+) -> None:
+    kind = node.get("kind", "")
+    entry: dict[str, Any] = {
+        "node_id": node.get("id", ""),
+        "kind": kind,
+        "label": node.get("label") or node.get("title") or kind,
+        "status": "done",
+        "duration_ms": int((time.monotonic() - started) * 1000),
+    }
+    new_jobs = (run.job_ids or [])[jobs_before:]
+    if kind == "ai_step":
+        if run.status == "failed":
+            entry["status"] = "failed"
+            entry["note"] = run.waiting_for or "failed"
+        else:
+            entry["output"] = {"result": context.get("last_output", "")}
+            if new_jobs:
+                entry["job_id"] = new_jobs[-1]
+    elif kind == "connector" and test:
+        entry["status"] = "skipped"
+        entry["note"] = "Skipped in test"
+    elif kind == "condition":
+        entry["note"] = context.get("step_note", "")
+    elif kind == "approval":
+        if result is _PAUSE:
+            entry["status"] = "waiting"
+            entry["note"] = node.get("sublabel") or "Waiting for your approval"
+        elif test:
+            entry["note"] = "Would wait for you"
+    run.steps = list(run.steps or []) + [entry]
+
+
+def _finish(db: Session, run: FlowRun) -> None:
+    """Fill duration (seconds) + cost (sum of the run's jobs) once a run ends."""
+    if run.ended_at and run.started_at:
+        run.duration = max(0, int((run.ended_at - run.started_at).total_seconds()))
+    if run.job_ids:
+        from omilo.models.execution import Job
+
+        jobs = db.query(Job).filter(Job.id.in_(list(run.job_ids))).all()
+        run.cost_credits = sum(int(j.cost_credits or 0) for j in jobs)
+    db.flush()
+
+
+def resume_run(db: Session, flow: Flow, run: FlowRun, *, approved: bool) -> FlowRun:
+    """Resume a run parked at an approval node (status=needs_you).
+
+    approved=True  → the approval step is marked done and the walk continues
+                     from the approval node's next edge.
+    approved=False → the approval step is marked declined, the run ends as
+                     ``declined`` and nothing after it runs.
+    The linked decision InboxItem is resolved either way.
+    """
+    node_id = run.waiting_for
+    steps = list(run.steps or [])
+    for st in steps:
+        if st.get("node_id") == node_id and st.get("status") == "waiting":
+            st["status"] = "done" if approved else "declined"
+            st["note"] = "You approved" if approved else "You declined"
+    run.steps = steps
+
+    for item in db.query(InboxItem).filter(InboxItem.meta == f"flow_run:{run.id}").all():
+        item.status = "done"
+
+    if not approved:
+        run.status = "declined"
+        run.waiting_for = None
+        run.ended_at = datetime.now(timezone.utc)
+        _finish(db, run)
+        return run
+
+    _nodes, nodes_by_id, out_edges = _graph(flow)
+    last_output = ""
+    for st in steps:
+        out = st.get("output") or {}
+        if isinstance(out, dict) and out.get("result") is not None:
+            last_output = str(out["result"])
+    visited = {str(st.get("node_id")) for st in steps}
+    run.status = "running"
+    run.waiting_for = None
+    db.flush()
+    _walk(db, run, flow, _first_next(out_edges, node_id or ""), nodes_by_id, out_edges,
+          {"last_output": last_output}, False, visited)
+    return run
+
+
+def cancel_run(db: Session, run: FlowRun) -> FlowRun:
+    """Cancel a running / waiting run; its decision InboxItem is resolved."""
+    steps = list(run.steps or [])
+    for st in steps:
+        if st.get("status") == "waiting":
+            st["status"] = "cancelled"
+    run.steps = steps
+    for item in db.query(InboxItem).filter(InboxItem.meta == f"flow_run:{run.id}").all():
+        item.status = "done"
+    run.status = "cancelled"
+    run.waiting_for = None
+    run.ended_at = datetime.now(timezone.utc)
+    _finish(db, run)
     return run
 
 
@@ -284,6 +421,7 @@ def _handle_condition(
     last_output = context.get("last_output", "")
     matched = keyword.lower() in last_output.lower()
     target_label = "Yes" if matched else "No"
+    context["step_note"] = target_label
 
     candidates = out_edges.get(node_id, [])
     for edge in candidates:
@@ -338,7 +476,7 @@ def _handle_approval(
         asker=helper_name,
         asker_area=helper_area,
         needs_you=True,
-        proposals={"flow_run_id": run.id, "node_id": node_id},
+        proposals=[{"flow_id": flow.id, "flow_run_id": run.id, "node_id": node_id}],
         actions=[
             {"label": "Approve", "primary": True},
             {"label": "Reject"},

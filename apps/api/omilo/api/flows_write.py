@@ -31,7 +31,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.models.approvals import Proposal, ProposalRevision
 from omilo.models.base import prefixed_id
-from omilo.models.flows import Flow, FlowRun
+from omilo.models.flows import Flow, FlowRun, FlowVersion
 from omilo.models.inbox import InboxItem
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
@@ -180,6 +180,7 @@ def _run_to_dict(run: FlowRun) -> dict[str, Any]:
         "duration": run.duration,
         "waiting_for": run.waiting_for,
         "job_ids": run.job_ids,
+        "steps": run.steps or [],
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "ended_at": run.ended_at.isoformat() if run.ended_at else None,
     }
@@ -218,7 +219,27 @@ def list_flows(
 ) -> list[dict[str, Any]]:
     """List all Flows for this company (RLS scoped). Returns FlowCard[]."""
     flows = db.query(Flow).order_by(Flow.created_at.desc()).all()
-    return [_flow_card(f) for f in flows]
+    stats = _run_stats(db, [f.id for f in flows])
+    return [{**_flow_card(f), **_card_extras(f, stats.get(f.id))} for f in flows]
+
+
+# ── sweep/inbox-flows: GET /v1/flows/suggestions (before /flows/{id}) ─────────
+
+
+@router.get("/flows/suggestions", status_code=status.HTTP_200_OK)
+def flow_suggestions(
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> list[dict[str, Any]]:
+    """Deterministic flow suggestions from installed connectors + routines.
+
+    Each installed connector whose slug matches the catalog yields its
+    suggestion; each enabled routine yields "Turn <routine> into a flow".
+    Suggestions whose title already exists as a flow are dropped.
+    """
+    from omilo.flows.suggestions import build_suggestions
+
+    return build_suggestions(db)
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +277,7 @@ def create_flow(
     )
     db.add(flow)
     db.flush()
+    _snapshot(db, flow, note="First version", created_by="operator")
     return _flow_to_dict(flow)
 
 
@@ -274,7 +296,8 @@ def get_flow(
     flow = db.query(Flow).filter(Flow.id == flow_id).first()
     if flow is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
-    return _flow_to_dict(flow)
+    stats = _run_stats(db, [flow.id]).get(flow.id)
+    return {**_flow_to_dict(flow), **_card_extras(flow, stats), **_detail_extras(db, flow)}
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +370,7 @@ def delete_flow(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
 
     db.query(FlowRun).filter(FlowRun.flow_id == flow_id).delete(synchronize_session=False)
+    db.query(FlowVersion).filter(FlowVersion.flow_id == flow_id).delete(synchronize_session=False)
     db.delete(flow)
     db.flush()
 
@@ -436,6 +460,10 @@ def publish_flow(
     db.add(proposal)
     db.flush()
 
+    # sweep/inbox-flows: snapshot the graph being published; approval marks it live.
+    snap = _snapshot(db, flow, note="Published", created_by="operator")
+    proposal.params = {"flow_id": flow.id, "version": snap.version}
+
     # Attach proposal to the job for later resolution.
     job.proposal_id = proposal.id
     db.flush()
@@ -470,7 +498,7 @@ def publish_flow(
         asker=chief.name,
         asker_area=chief.area,
         needs_you=True,
-        proposals={"proposal_id": proposal.id, "type": "flow_publish", "risk": "medium"},
+        proposals=[{"proposal_id": proposal.id, "type": "flow_publish", "risk": "medium"}],
         actions=[
             {"label": "Approve", "primary": True},
             {"label": "Reject"},
@@ -574,3 +602,276 @@ def run_flow_now(
 
     run = run_flow(db, flow, trigger_summary="manual", started_by="operator", test=False)
     return _run_to_dict(run)
+
+
+
+# ---------------------------------------------------------------------------
+# ── sweep/inbox-flows ──
+# ---------------------------------------------------------------------------
+
+
+def _run_stats(db: Session, flow_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Per flow: last run + daily run counts for the last 7 days (oldest → today)."""
+    from datetime import datetime, timedelta, timezone
+
+    if not flow_ids:
+        return {}
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    since = datetime.combine(today - timedelta(days=6), datetime.min.time(), tzinfo=timezone.utc)
+    out: dict[str, dict[str, Any]] = {fid: {"last": None, "days": [0] * 7} for fid in flow_ids}
+    runs = (
+        db.query(FlowRun)
+        .filter(FlowRun.flow_id.in_(flow_ids))
+        .order_by(FlowRun.created_at.desc())
+        .all()
+    )
+    for r in runs:
+        st = out[r.flow_id]
+        if st["last"] is None:
+            st["last"] = r
+        at = r.started_at or r.created_at
+        if at and at >= since:
+            idx = 6 - (today - at.astimezone(timezone.utc).date()).days
+            if 0 <= idx < 7:
+                st["days"][idx] += 1
+    return out
+
+
+def _node_app(node: dict[str, Any]) -> str:
+    cfg = node.get("config") if isinstance(node.get("config"), dict) else {}
+    ui = cfg.get("ui") if isinstance(cfg.get("ui"), dict) else {}
+    for key in ("app", "source"):
+        val = ui.get(key) or cfg.get(key)
+        if val:
+            return str(val).lower()
+    return str(cfg.get("name") or node.get("kind") or "").lower()
+
+
+def _card_extras(flow: Flow, stats: dict[str, Any] | None) -> dict[str, Any]:
+    nodes = flow.nodes if isinstance(flow.nodes, list) else []
+    apps = [
+        _node_app(n) for n in nodes
+        if isinstance(n, dict) and n.get("kind") in ("trigger", "connector", "approval")
+    ]
+    last = stats["last"] if stats else None
+    return {
+        "trigger_kind": (flow.trigger or {}).get("kind"),
+        "apps": apps,
+        "ai_steps": sum(1 for n in nodes if isinstance(n, dict) and n.get("kind") == "ai_step"),
+        "runs_7d": stats["days"] if stats else [0] * 7,
+        "last_run": _run_to_dict(last) if last is not None else None,
+    }
+
+
+def _detail_extras(db: Session, flow: Flow) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    spent = sum(
+        int(r.cost_credits or 0)
+        for r in db.query(FlowRun)
+        .filter(FlowRun.flow_id == flow.id, FlowRun.created_at >= month_start)
+        .all()
+    )
+    pending = (
+        db.query(Proposal)
+        .filter(Proposal.type == "flow_publish", Proposal.status.in_(("pending", "changes_requested")))
+        .filter(Proposal.params["flow_id"].as_string() == flow.id)
+        .order_by(Proposal.created_at.desc())
+        .first()
+    )
+    live = (
+        db.query(FlowVersion)
+        .filter(FlowVersion.flow_id == flow.id, FlowVersion.status == "live")
+        .order_by(FlowVersion.version.desc())
+        .first()
+    )
+    if pending is not None:
+        publish_state = "pending"
+    elif live is not None and live.version == flow.version:
+        publish_state = "live"
+    else:
+        publish_state = "draft"
+    return {
+        "spent_this_month_credits": spent,
+        "publish_state": publish_state,
+        "pending_proposal_id": pending.id if pending is not None else None,
+        "published_version": live.version if live is not None else None,
+    }
+
+
+def _snapshot(db: Session, flow: Flow, *, note: str, created_by: str) -> FlowVersion:
+    """Record the flow's current graph as FlowVersion ``flow.version`` (upsert)."""
+    existing = (
+        db.query(FlowVersion)
+        .filter(FlowVersion.flow_id == flow.id, FlowVersion.version == flow.version)
+        .first()
+    )
+    if existing is not None and existing.status != "live":
+        existing.nodes = flow.nodes
+        existing.edges = flow.edges
+        existing.trigger = flow.trigger
+        existing.title = flow.title
+        existing.note = note
+        db.flush()
+        return existing
+    if existing is not None:
+        return existing
+    snap = FlowVersion(
+        id=prefixed_id("flv"),
+        company_id=flow.company_id,
+        flow_id=flow.id,
+        version=flow.version or 1,
+        title=flow.title,
+        note=note,
+        trigger=flow.trigger or {},
+        nodes=flow.nodes or [],
+        edges=flow.edges or [],
+        status="pending",
+        created_by=created_by,
+    )
+    db.add(snap)
+    db.flush()
+    return snap
+
+
+def _version_to_dict(v: FlowVersion) -> dict[str, Any]:
+    return {
+        "id": v.id,
+        "flow_id": v.flow_id,
+        "version": v.version,
+        "title": v.title,
+        "note": v.note,
+        "status": v.status,
+        "created_by": v.created_by,
+        "node_count": len(v.nodes) if isinstance(v.nodes, list) else 0,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    }
+
+
+def _flow_or_404(db: Session, flow_id: str) -> Flow:
+    flow = db.query(Flow).filter(Flow.id == flow_id).first()
+    if flow is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found.")
+    return flow
+
+
+def _run_or_404(db: Session, flow_id: str, run_id: str) -> FlowRun:
+    run = db.query(FlowRun).filter(FlowRun.id == run_id, FlowRun.flow_id == flow_id).first()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found.")
+    return run
+
+
+@router.get("/flows/{flow_id}/runs/{run_id}", status_code=status.HTTP_200_OK)
+def get_flow_run(
+    flow_id: str,
+    run_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """One FlowRun with its per-step log (``steps``)."""
+    _flow_or_404(db, flow_id)
+    return _run_to_dict(_run_or_404(db, flow_id, run_id))
+
+
+class DecideRunBody(BaseModel):
+    approve: bool = True
+    note: Optional[str] = None
+
+
+@router.post("/flows/{flow_id}/runs/{run_id}/approve", status_code=status.HTTP_200_OK)
+def approve_flow_run(
+    flow_id: str,
+    run_id: str,
+    body: DecideRunBody = DecideRunBody(),
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Approve (or decline with approve=false) a run waiting at an approval step."""
+    flow = _flow_or_404(db, flow_id)
+    run = _run_or_404(db, flow_id, run_id)
+    if run.status != "needs_you":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This run is not waiting for you.")
+    from omilo.flows.engine import resume_run
+
+    return _run_to_dict(resume_run(db, flow, run, approved=body.approve))
+
+
+@router.post("/flows/{flow_id}/runs/{run_id}/retry", status_code=status.HTTP_200_OK)
+def retry_flow_run(
+    flow_id: str,
+    run_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Start a fresh run of the flow (failed/cancelled runs only); returns the new run."""
+    flow = _flow_or_404(db, flow_id)
+    run = _run_or_404(db, flow_id, run_id)
+    if run.status not in ("failed", "cancelled", "declined"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only failed runs can be retried.")
+    from omilo.flows.engine import run_flow
+
+    new = run_flow(db, flow, trigger_summary=f"retry of {run.id}", started_by="operator", test=False)
+    return _run_to_dict(new)
+
+
+@router.post("/flows/{flow_id}/runs/{run_id}/cancel", status_code=status.HTTP_200_OK)
+def cancel_flow_run(
+    flow_id: str,
+    run_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Cancel a running / waiting run."""
+    _flow_or_404(db, flow_id)
+    run = _run_or_404(db, flow_id, run_id)
+    if run.status not in ("running", "needs_you"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This run already ended.")
+    from omilo.flows.engine import cancel_run
+
+    return _run_to_dict(cancel_run(db, run))
+
+
+@router.get("/flows/{flow_id}/versions", status_code=status.HTTP_200_OK)
+def list_flow_versions(
+    flow_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> list[dict[str, Any]]:
+    """Version history (newest first)."""
+    _flow_or_404(db, flow_id)
+    rows = (
+        db.query(FlowVersion)
+        .filter(FlowVersion.flow_id == flow_id)
+        .order_by(FlowVersion.version.desc(), FlowVersion.created_at.desc())
+        .all()
+    )
+    return [_version_to_dict(v) for v in rows]
+
+
+@router.post("/flows/{flow_id}/versions/{version}/restore", status_code=status.HTTP_200_OK)
+def restore_flow_version(
+    flow_id: str,
+    version: int,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Put a past version's graph back on the canvas (as unpublished changes)."""
+    flow = _flow_or_404(db, flow_id)
+    snap = (
+        db.query(FlowVersion)
+        .filter(FlowVersion.flow_id == flow_id, FlowVersion.version == version)
+        .first()
+    )
+    if snap is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    flow.nodes = snap.nodes
+    flow.edges = snap.edges
+    flow.trigger = snap.trigger or flow.trigger
+    flow.version = (flow.version or 1) + 1
+    db.flush()
+    _snapshot(db, flow, note=f"Restored from v{version}", created_by="operator")
+    return _flow_to_dict(flow)

@@ -53,6 +53,12 @@ class Proposal(IdMixin, TimestampMixin, Base):
     execution_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # result: jsonb outcome of the execution
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # ── sweep/inbox-flows ──
+    # assignee / due: edited from the inbox "Review one by one" dialog
+    assignee: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # params: action parameters (amended on approve; flow_id/version for flow_publish)
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ProposalRevision(Base):

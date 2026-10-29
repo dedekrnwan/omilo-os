@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -183,6 +183,9 @@ class InboxItemDTO(BaseModel):
     compact: Optional[bool] = None           # → compact?
     progress: Optional[dict[str, Any]] = None  # → progress?
     meta: Optional[str] = None               # → meta?
+    # ── sweep/inbox-flows ──
+    read_at: Optional[datetime] = None       # → readAt?
+    updated_at: Optional[datetime] = None    # → updatedAt?
 
     @field_serializer("created_at")
     def serialize_created_at(self, value: datetime, _info: Any) -> str:
@@ -192,3 +195,50 @@ class InboxItemDTO(BaseModel):
 # ── sweep/goals-routines ──
 # GoalDTO gained optional fields (status/target/due/measuredBy/helperIds/
 # period/sessionId/statusSetBy) — see the Goal section above.
+    # ── sweep/inbox-flows ──
+    @field_serializer("read_at", "updated_at")
+    def serialize_opt_dt(self, value: Optional[datetime], _info: Any) -> Optional[str]:
+        return value.isoformat() if value else None
+
+    @field_validator("proposals", mode="before")
+    @classmethod
+    def _proposals_as_list(cls, value: Any) -> Any:
+        # Writers (runner / flows / skills / mcp) store a single dict
+        # {proposal_id, type, risk}; the contract is a list.
+        if isinstance(value, dict):
+            return [value]
+        return value
+
+    @model_validator(mode="after")
+    def _normalise_proposals(self) -> "InboxItemDTO":
+        if self.proposals:
+            self.proposals = [
+                normalise_inbox_proposal(p, self) for p in self.proposals if isinstance(p, dict)
+            ]
+        return self
+
+
+# ── sweep/inbox-flows ──
+
+_PROPOSAL_KEY_MAP = {
+    "proposal_id": "proposalId",
+    "flow_id": "flowId",
+    "flow_run_id": "flowRunId",
+    "node_id": "nodeId",
+}
+
+
+def normalise_inbox_proposal(entry: dict[str, Any], item: Any) -> dict[str, Any]:
+    """Normalise one ``proposals`` entry to the TS InboxProposal shape.
+
+    Output: {who, area, text, due, proposalId?, type?, risk?, flowId?, flowRunId?, nodeId?}
+    — ``who``/``area``/``text`` default to the item's asker / askerArea / title.
+    """
+    out: dict[str, Any] = {}
+    for key, value in entry.items():
+        out[_PROPOSAL_KEY_MAP.get(key, key)] = value
+    out.setdefault("who", getattr(item, "asker", ""))
+    out.setdefault("area", getattr(item, "asker_area", ""))
+    out.setdefault("text", getattr(item, "title", ""))
+    out.setdefault("due", "")
+    return {k: v for k, v in out.items() if v is not None}

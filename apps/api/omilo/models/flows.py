@@ -65,3 +65,26 @@ class FlowRun(IdMixin, TimestampMixin, Base):
     job_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="[]")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ── sweep/inbox-flows ──
+    # steps: per-step log [{node_id, kind, label, status, duration_ms, output?, note?}]
+    steps: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]", default=list)
+
+
+class FlowVersion(IdMixin, TimestampMixin, Base):
+    """Snapshot of a Flow's graph (taken on create / publish / restore). Tenant table.
+
+    id prefix: flv_   status: pending|live|superseded
+    """
+
+    __tablename__ = "flow_version"
+
+    company_id: Mapped[str] = mapped_column(nullable=False, index=True)
+    flow_id: Mapped[str] = mapped_column(nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(nullable=False, server_default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    trigger: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    nodes: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    edges: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    status: Mapped[str] = mapped_column(nullable=False, server_default="pending")
+    created_by: Mapped[str] = mapped_column(nullable=False, server_default="operator")

@@ -11,7 +11,7 @@ from omilo.models.agents import Helper  # noqa: F401
 from omilo.models.execution import Job, Report, RunEvent  # noqa: F401
 from omilo.models.approvals import Proposal, ProposalRevision, SafetyLimit  # noqa: F401
 from omilo.models.routines import Routine, RoutineRun  # noqa: F401
-from omilo.models.flows import Flow, FlowRun  # noqa: F401
+from omilo.models.flows import Flow, FlowRun, FlowVersion  # noqa: F401
 from omilo.models.toolcall import ToolCall  # noqa: F401
 from omilo.models.knowledge import KbSource, KbChunk  # noqa: F401
 from omilo.models.memory import HandbookSuggestion, Lesson, MemoryDoc, MemoryDocVersion  # noqa: F401

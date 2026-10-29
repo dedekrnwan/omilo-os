@@ -589,7 +589,7 @@ class TestPublishFlow:
                 db.query(InboxItem)
                 .filter_by(company_id=company_id, kind="decision")
                 .filter(
-                    InboxItem.proposals["proposal_id"].as_string() == proposal["id"]
+                    InboxItem.proposal_id == proposal["id"]
                 )
                 .first()
             )

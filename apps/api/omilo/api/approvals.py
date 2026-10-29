@@ -52,6 +52,17 @@ _404 = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 class ApproveBody(BaseModel):
     note: str | None = None
+    # sweep/inbox-flows: amended action params (e.g. a changed budget amount)
+    params: dict[str, Any] | None = None
+
+
+class PatchProposalBody(BaseModel):
+    assignee: str | None = None
+    due: str | None = None
+
+
+class UndoBody(BaseModel):
+    note: str | None = None
 
 
 class RejectBody(BaseModel):
@@ -84,6 +95,9 @@ def _proposal_to_dict(proposal: Proposal) -> dict[str, Any]:
         "execution_job_id": proposal.execution_job_id,
         "result": proposal.result,
         "created_at": proposal.created_at.isoformat() if proposal.created_at else None,
+        "assignee": proposal.assignee,
+        "due": proposal.due,
+        "params": proposal.params,
     }
 
 
@@ -133,19 +147,21 @@ def _resolve_decision_inbox_item(db: Session, proposal: Proposal) -> None:
     """Find the linked decision InboxItem and mark it done."""
     # Find the decision inbox item linked to this proposal (company-scoped via RLS).
     # The InboxItem created by the runner stores proposals JSONB with proposal_id.
-    item = (
+    for item in _decision_items(db, proposal):
+        if item.status != "done":
+            item.status = "done"
+    db.flush()
+
+
+def _decision_items(db: Session, proposal: Proposal) -> list[InboxItem]:
+    """All decision InboxItems linked to *proposal* (proposal_id column)."""
+    db.flush()  # make sure freshly-added items have proposal_id derived
+    return (
         db.query(InboxItem)
         .filter_by(company_id=proposal.company_id, kind="decision")
-        .filter(InboxItem.status != "done")
-        .filter(
-            # proposals column is JSONB — filter by the stored proposal_id
-            InboxItem.proposals["proposal_id"].as_string() == proposal.id
-        )
-        .first()
+        .filter(InboxItem.proposal_id == proposal.id)
+        .all()
     )
-    if item is not None:
-        item.status = "done"
-        db.flush()
 
 
 def _create_execution_job(
@@ -242,15 +258,23 @@ def approve_proposal(
     proposal.decided_by = f"operator:{ctx.user_id}"
     proposal.decided_at = now
     proposal.decision_note = body.note
+    if body.params:
+        proposal.params = {**(proposal.params or {}), **body.params}
     db.flush()
 
     # Create execution Job (fake P1)
     exec_job = _create_execution_job(db, proposal, ctx)
 
-    # Mark proposal done with result
+    # Mark proposal done with result. ``simulated``: the P1 executor performs no
+    # external side effect, so the decision can still be undone (see /undo).
     proposal.status = "done"
     proposal.execution_job_id = exec_job.id
-    proposal.result = {"executed": True}
+    result: dict[str, Any] = {"executed": True, "simulated": True}
+    if proposal.params:
+        result["params"] = proposal.params
+    if proposal.type == "flow_publish":
+        result.update(_apply_flow_publish(db, proposal))
+    proposal.result = result
     db.flush()
 
     # Resolve original waiting Job → done
@@ -404,3 +428,126 @@ def request_changes(
         "proposal": _proposal_to_dict(proposal),
         "revisions": [_revision_to_dict(r) for r in revisions],
     }
+
+
+# ---------------------------------------------------------------------------
+# ── sweep/inbox-flows ──
+# ---------------------------------------------------------------------------
+
+UNDO_WINDOW_SECONDS = 5 * 60
+
+
+def _apply_flow_publish(db: Session, proposal: Proposal) -> dict[str, Any]:
+    """Approving a flow_publish proposal publishes the flow + marks its version live."""
+    from omilo.models.flows import Flow, FlowVersion
+
+    params = proposal.params or {}
+    flow = db.query(Flow).filter(Flow.id == params.get("flow_id")).first() if params.get("flow_id") else None
+    if flow is None:
+        return {}
+    prev = {"prev_status": flow.status, "prev_enabled": flow.enabled}
+    flow.status = "published"
+    flow.enabled = True
+    version = params.get("version")
+    if version is not None:
+        for v in db.query(FlowVersion).filter(FlowVersion.flow_id == flow.id).all():
+            if v.version == version:
+                v.status = "live"
+            elif v.status == "live":
+                v.status = "superseded"
+    db.flush()
+    return prev
+
+
+def _revert_flow_publish(db: Session, proposal: Proposal) -> None:
+    from omilo.models.flows import Flow, FlowVersion
+
+    params = proposal.params or {}
+    result = proposal.result or {}
+    flow = db.query(Flow).filter(Flow.id == params.get("flow_id")).first() if params.get("flow_id") else None
+    if flow is None:
+        return
+    flow.status = result.get("prev_status", "draft")
+    flow.enabled = bool(result.get("prev_enabled", False))
+    version = params.get("version")
+    if version is not None:
+        for v in db.query(FlowVersion).filter(FlowVersion.flow_id == flow.id).all():
+            if v.version == version:
+                v.status = "pending"
+    db.flush()
+
+
+@router.patch("/proposals/{proposal_id}")
+def patch_proposal(
+    proposal_id: str,
+    body: PatchProposalBody,
+    db: Session = Depends(get_tenant_db),
+) -> dict:
+    """Set the proposal's assignee and/or due date (inbox review dialog)."""
+    proposal = _get_proposal_or_404(db, proposal_id)
+    fields = body.model_fields_set
+    if "assignee" in fields:
+        proposal.assignee = body.assignee or None
+    if "due" in fields:
+        proposal.due = body.due or None
+    db.flush()
+    return {"proposal": _proposal_to_dict(proposal)}
+
+
+@router.post("/proposals/{proposal_id}/undo")
+def undo_approve(
+    proposal_id: str,
+    body: UndoBody = UndoBody(),
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict:
+    """Undo an approval while its execution hasn't really started.
+
+    Allowed only when the proposal was approved less than 5 minutes ago AND the
+    execution Job is still queued, or the execution was simulated (P1 fake
+    executor — no external side effect happened). Otherwise 409.
+
+    Reverts: proposal → pending (decision cleared), execution Job → cancelled,
+    original Job → waiting, decision InboxItem → pending. flow_publish proposals
+    also put the flow back to its previous status.
+    """
+    proposal = _get_proposal_or_404(db, proposal_id)
+    if proposal.status not in ("approved", "executing", "done") or not proposal.decided_at:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nothing to undo.")
+
+    now = datetime.now(timezone.utc)
+    if (now - proposal.decided_at).total_seconds() > UNDO_WINDOW_SECONDS:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The undo window has passed.")
+
+    exec_job = db.get(Job, proposal.execution_job_id) if proposal.execution_job_id else None
+    simulated = bool((proposal.result or {}).get("simulated"))
+    if exec_job is not None and exec_job.status != "queued" and not simulated:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already started — can't undo.")
+
+    if proposal.type == "flow_publish":
+        _revert_flow_publish(db, proposal)
+
+    if exec_job is not None:
+        exec_job.status = "cancelled"
+        exec_job.ended_at = now
+    orig = db.query(Job).filter_by(proposal_id=proposal.id, status="done").filter(Job.origin != "execution").first()
+    if orig is not None:
+        orig.status = "waiting"
+        orig.ended_at = None
+
+    proposal.status = "pending"
+    proposal.decided_by = None
+    proposal.decided_at = None
+    proposal.decision_note = body.note
+    proposal.execution_job_id = None
+    proposal.result = None
+    for item in _decision_items(db, proposal):
+        item.status = "pending"
+    db.flush()
+
+    _broker_publish(proposal.company_id, {
+        "type": "inbox.created",
+        "id": proposal.id,
+        "data": {"proposal_id": proposal.id, "undone": True},
+    })
+    return {"proposal": _proposal_to_dict(proposal)}

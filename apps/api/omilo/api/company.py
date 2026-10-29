@@ -37,6 +37,7 @@ _TENANT_TABLES = (
     "credit_ledger",
     "doit_payment",
     "flow_run",
+    "flow_version",  # sweep/inbox-flows
     "flow",
     "goal",
     "harness_account",
