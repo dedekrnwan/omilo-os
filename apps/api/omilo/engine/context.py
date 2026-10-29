@@ -31,6 +31,11 @@ class TaskContext:
     goal_delivery: bool = False
     memory: str = ""
     emit: Callable[[dict], None] = field(default=_noop_emit)
+    # sweep/team-analytics: the helper's standing instructions (job description +
+    # Behavior tab settings), meant for the system prompt of real engines.
+    instructions: str = ""
+    # Per-task spend cap in credits from the Behavior tab (None = no cap).
+    spend_cap_credits: int | None = None
 
 
 @dataclass

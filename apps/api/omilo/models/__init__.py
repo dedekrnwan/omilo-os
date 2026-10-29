@@ -66,3 +66,8 @@ __all__ = [
     "EmailLog",
     "WaitlistEntry",
 ]
+
+# ── sweep/team-analytics ──
+from omilo.models.helper_channel import HelperChannel  # noqa: F401,E402
+
+__all__.append("HelperChannel")

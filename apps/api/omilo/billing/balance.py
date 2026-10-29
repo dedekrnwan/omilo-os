@@ -298,12 +298,21 @@ def check_can_start_job(
     # ── 1. Already paused ────────────────────────────────────────────────────
     if getattr(helper, "status", "active") == "paused":
         return False, "helper_paused"
+    if getattr(helper, "status", "active") == "retired":  # sweep/team-analytics: let go
+        return False, "helper_retired"
 
     # ── 2. Per-helper monthly budget ─────────────────────────────────────────
     budget = getattr(helper, "budget_credits_month", None)
     if budget is not None:
         mtd = _helper_mtd_credits(db, company.id, helper.id)
         if mtd >= budget:
+            # sweep/team-analytics: one-off "Allow one more job" override.
+            allow = getattr(helper, "budget_allow_jobs", 0) or 0
+            if allow > 0:
+                helper.budget_allow_jobs = allow - 1
+                db.flush()
+                budget = None  # fall through to the credit checks below
+        if budget is not None and mtd >= budget:
             # Pause the helper
             helper.status = "paused"
             db.flush()
