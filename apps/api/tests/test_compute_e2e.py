@@ -11,11 +11,12 @@ Tests
      server on an ephemeral port via a real WebSocket.
    - Wait until the worker is online in the DB.
    - POST /v1/compute/jobs {spec:{steps:[...]}} via httpx.
-   - Poll DB until the job reaches status='done'.
+   - Stream the real SSE HTTP endpoint (/v1/stream?token=...) until job.done.
+   - Assert all 3 step events arrived in seq order, then job.done.
    - Assert artifact is set and worker in_use returned to 0.
-   - Assert SSE broker received ordered step events ending in job.done.
 
 2. test_no_worker_queues
+   - Assert no ComputeWorker is online for the company (deterministic, no sleep).
    - POST /v1/compute/jobs with NO worker connected → job stays 'queued'.
    - Connect a WorkerRuntime → poll until job becomes 'dispatched'/'done'.
 
@@ -25,11 +26,12 @@ This is the preferred real-e2e path (not the TestClient fallback).
 The uvicorn server runs in a background thread (with its own asyncio event
 loop, as uvicorn.Server.run() starts one internally). The WorkerRuntime runs
 in a separate asyncio task inside the test's own event loop. httpx.AsyncClient
-is used for HTTP calls.
+is used for HTTP calls and real SSE streaming.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import socket
 import threading
 import time
@@ -40,11 +42,9 @@ import httpx
 import pytest
 import uvicorn
 
-from omilo.compute.relay import registry as global_registry
 from omilo.db import SessionLocal
 from omilo.main import create_app
 from omilo.models.compute import ComputeJob, ComputeWorker
-from omilo.realtime.events import broker
 from omilo.worker.executor import StubExecutor
 from omilo.worker.runtime import WorkerRuntime
 from tests.utils import run_alembic
@@ -119,83 +119,71 @@ def _get_worker(worker_id: str) -> ComputeWorker | None:
         return w
 
 
+def _has_online_worker(company_id: str) -> bool:
+    """Return True if any ComputeWorker is online for this company."""
+    with SessionLocal() as session:
+        count = (
+            session.query(ComputeWorker)
+            .filter_by(company_id=company_id, status="online")
+            .count()
+        )
+        return count > 0
+
+
 # ---------------------------------------------------------------------------
-# Broker capture — collect SSE events during the test
+# SSE streaming helper — collect events from the real HTTP SSE endpoint
 # ---------------------------------------------------------------------------
 
 
-class BrokerCapture:
-    """Subscribe to the in-process broker and collect events into a list.
+async def _collect_sse_events(
+    base_url: str,
+    token: str,
+    *,
+    until_job_done_id: str,
+    timeout: float = 15.0,
+) -> list[dict]:
+    """Stream GET /v1/stream?token=<token> and collect events until job.done.
 
-    Runs a subscriber on a background asyncio event loop in a new thread so it
-    coexists with the test's own event loop and the uvicorn server's loop.
+    Opens a real HTTP SSE connection through the uvicorn TCP stack — no
+    in-process event loop sharing. Collects all events and returns when a
+    ``job.done`` event for ``until_job_done_id`` arrives or ``timeout``
+    elapses.
 
-    Usage::
-
-        with BrokerCapture(company_id) as cap:
-            # ... trigger job ...
-            pass  # wait for events via poll
-        events = cap.events
+    Each SSE frame is ``data: {json}``; this parser ignores comments and
+    empty lines, and yields the parsed JSON dicts.
     """
+    sse_url = f"{base_url}/v1/stream"
+    collected: list[dict] = []
 
-    def __init__(self, company_id: str, *, max_events: int = 50, drain_timeout: float = 2.0):
-        self.company_id = company_id
-        self.max_events = max_events
-        self.drain_timeout = drain_timeout
-        self.events: list[dict] = []
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._started = threading.Event()
-
-    def __enter__(self) -> "BrokerCapture":
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
-        self._thread.start()
-        self._started.wait(timeout=5.0)
-        return self
-
-    def __exit__(self, *_) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=5.0)
-
-    def _run_loop(self) -> None:
-        async def _collect() -> None:
-            sub = broker.subscribe(self.company_id)
-            self._started.set()
-            try:
-                async for ev in sub:
-                    self.events.append(ev)
-                    if len(self.events) >= self.max_events:
-                        break
-                    if self._stop.is_set():
-                        break
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-            finally:
-                await sub.aclose()
-
-        async def _watchdog() -> None:
-            while not self._stop.is_set():
-                await asyncio.sleep(0.05)
-            await asyncio.sleep(self.drain_timeout)
-
-        async def _main() -> None:
-            collect_task = asyncio.create_task(_collect())
-            watchdog_task = asyncio.create_task(_watchdog())
-            done, pending = await asyncio.wait(
-                {collect_task, watchdog_task},
-                return_when=asyncio.FIRST_COMPLETED,
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout + 5.0)) as sse_client:
+        async with sse_client.stream(
+            "GET", sse_url, params={"token": token}
+        ) as response:
+            assert response.status_code == 200, (
+                f"SSE endpoint returned {response.status_code}: {await response.aread()}"
             )
-            for t in pending:
-                t.cancel()
-                try:
-                    await t
-                except (asyncio.CancelledError, Exception):
-                    pass
 
-        asyncio.run(_main())
+            deadline = time.monotonic() + timeout
+            async for line in response.aiter_lines():
+                # SSE frame lines start with "data: "
+                if line.startswith("data: "):
+                    raw = line[6:]
+                    try:
+                        ev = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    collected.append(ev)
+                    # Stop once we receive job.done for our specific job
+                    if (
+                        ev.get("type") == "job.done"
+                        and ev.get("job_id") == until_job_done_id
+                    ):
+                        return collected
+                # Enforce timeout even if no done event arrives
+                if time.monotonic() > deadline:
+                    break
+
+    return collected
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +282,13 @@ async def _zero_backoff() -> AsyncGenerator[float, None]:
 
 @pytest.mark.asyncio
 async def test_job_e2e_stub(live_server):
-    """Full round-trip: pair worker → connect → submit job → done → SSE steps in order."""
+    """Full round-trip: pair worker → connect → submit job → SSE stream until done."""
     base_url = live_server["base_url"]
     port = live_server["port"]
     relay_url = f"ws://127.0.0.1:{port}/v1/compute/relay"
 
     worker_task: asyncio.Task | None = None
+    sse_task: asyncio.Task | None = None
 
     async with httpx.AsyncClient(base_url=base_url) as client:
         # 1. Seed a company + owner
@@ -337,37 +326,58 @@ async def test_job_e2e_stub(live_server):
             online = await _apoll(_worker_online, timeout=10.0)
             assert online, f"Worker {worker_id} did not come online within 10 s"
 
-            # 4. Subscribe to SSE broker BEFORE submitting the job
+            # 4. POST /v1/compute/jobs BEFORE opening the SSE stream so we have
+            #    a job_id to filter on.
             steps_from_spec = ["echo e2e step 1", "echo e2e step 2", "echo e2e step 3"]
-            with BrokerCapture(company_id, max_events=30, drain_timeout=3.0) as cap:
+            job_resp = await client.post(
+                "/v1/compute/jobs",
+                json={"spec": {"steps": steps_from_spec}},
+                headers=_auth(token),
+            )
+            assert job_resp.status_code == 200, f"create_job failed: {job_resp.text}"
+            job_id = job_resp.json()["id"]
 
-                # 5. POST /v1/compute/jobs
-                job_resp = await client.post(
-                    "/v1/compute/jobs",
-                    json={"spec": {"steps": steps_from_spec}},
-                    headers=_auth(token),
+            # 5. Open the real SSE HTTP stream and collect events until job.done
+            #    This runs concurrently via asyncio.create_task so the test loop
+            #    can also poll the DB for the done condition.
+            sse_events: list[dict] = []
+
+            async def _stream():
+                nonlocal sse_events
+                sse_events = await _collect_sse_events(
+                    base_url,
+                    token,
+                    until_job_done_id=job_id,
+                    timeout=20.0,
                 )
-                assert job_resp.status_code == 200, f"create_job failed: {job_resp.text}"
-                job_id = job_resp.json()["id"]
 
-                # 6. Poll DB until job is 'done'
-                def _job_done():
-                    j = _get_job(job_id)
-                    return j is not None and j.status == "done"
+            sse_task = asyncio.create_task(_stream())
 
-                done = await _apoll(_job_done, timeout=15.0)
-                if not done:
-                    _j = _get_job(job_id)
-                    _final_status = _j.status if _j else "None"
-                    assert False, (
-                        f"Job {job_id} did not reach status='done' within 15 s. "
-                        f"Final status: {_final_status!r}"
-                    )
+            # 6. Poll DB until job is 'done' (independent of SSE)
+            def _job_done():
+                j = _get_job(job_id)
+                return j is not None and j.status == "done"
 
-                # Give broker a moment to deliver remaining events
-                await asyncio.sleep(0.3)
+            done = await _apoll(_job_done, timeout=15.0)
+            if not done:
+                _j = _get_job(job_id)
+                _final_status = _j.status if _j else "None"
+                assert False, (
+                    f"Job {job_id} did not reach status='done' within 15 s. "
+                    f"Final status: {_final_status!r}"
+                )
 
-            # 7. Assert artifact is set
+            # 7. Wait for the SSE collector to finish (it should stop on job.done)
+            try:
+                await asyncio.wait_for(sse_task, timeout=10.0)
+            except asyncio.TimeoutError:
+                sse_task.cancel()
+                try:
+                    await sse_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            # 8. Assert artifact is set
             job_row = _get_job(job_id)
             assert job_row is not None
             assert job_row.status == "done", f"Expected 'done', got {job_row.status!r}"
@@ -375,7 +385,7 @@ async def test_job_e2e_stub(live_server):
                 f"Expected artifact to be set, got {job_row.artifact!r}"
             )
 
-            # 8. Assert worker's in_use returned to 0
+            # 9. Assert worker's in_use returned to 0
             def _in_use_zero():
                 w = _get_worker(worker_id)
                 return w is not None and w.in_use == 0
@@ -388,16 +398,17 @@ async def test_job_e2e_stub(live_server):
                     f"Worker in_use did not return to 0. Current in_use: {_in_use_val}"
                 )
 
-            # 9. Assert SSE events carried ordered steps ending in job.done
-            step_events = [e for e in cap.events if e.get("type") == "job.step"]
-            done_events = [e for e in cap.events if e.get("type") == "job.done"]
+            # 10. Assert SSE events: all 3 step events in seq order, then job.done
+            step_events = [e for e in sse_events if e.get("type") == "job.step"]
+            done_events = [e for e in sse_events if e.get("type") == "job.done"]
 
-            # Must have at least one step event and exactly one done event
-            assert len(step_events) >= 1, (
-                f"Expected at least 1 job.step SSE event, got: {cap.events}"
+            # Must have exactly 3 step events (one per spec step)
+            assert len(step_events) == len(steps_from_spec), (
+                f"Expected {len(steps_from_spec)} job.step SSE events, "
+                f"got {len(step_events)}: {sse_events}"
             )
             assert len(done_events) >= 1, (
-                f"Expected at least 1 job.done SSE event, got: {cap.events}"
+                f"Expected at least 1 job.done SSE event, got: {sse_events}"
             )
 
             # Verify steps are in order by seq
@@ -407,6 +418,10 @@ async def test_job_e2e_stub(live_server):
             )
             # seq should start at 0
             assert seqs[0] == 0, f"First step seq must be 0, got {seqs[0]}"
+            # seq should be consecutive 0..N-1
+            assert seqs == list(range(len(steps_from_spec))), (
+                f"Expected seqs {list(range(len(steps_from_spec)))}, got {seqs}"
+            )
 
             # The 'done' event should report the right job
             assert done_events[0].get("job_id") == job_id, (
@@ -414,10 +429,16 @@ async def test_job_e2e_stub(live_server):
             )
 
             # No secrets in any SSE event
-            for ev in cap.events:
+            for ev in sse_events:
                 assert "secrets" not in ev, f"'secrets' key in SSE event: {ev}"
 
         finally:
+            if sse_task is not None and not sse_task.done():
+                sse_task.cancel()
+                try:
+                    await sse_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             if worker_task is not None and not worker_task.done():
                 worker_task.cancel()
                 try:
@@ -455,7 +476,14 @@ async def test_no_worker_queues(live_server):
         worker_id = pair_body["worker_id"]
         worker_token = pair_body["token"]
 
-        # 3. Submit a job BEFORE any worker is connected — it must stay 'queued'
+        # 3. Verify deterministically that no online worker exists for this company.
+        #    The worker was just paired (status != 'online') and never connected, so
+        #    this must be false before we submit the job.
+        assert not _has_online_worker(company_id), (
+            "Expected no online worker for the fresh company before submitting the job"
+        )
+
+        # 4. Submit a job — no worker is online, so dispatch must leave it 'queued'.
         job_resp = await client.post(
             "/v1/compute/jobs",
             json={"spec": {"steps": ["echo queued-test"]}},
@@ -464,17 +492,16 @@ async def test_no_worker_queues(live_server):
         assert job_resp.status_code == 200, f"create_job failed: {job_resp.text}"
         job_id = job_resp.json()["id"]
 
-        # The job response may already be 'queued' or might reflect an attempt;
-        # poll to confirm it is 'queued' (no worker is connected at this point)
-        # Give a short window (2 s) and assert it is queued, NOT done
-        await asyncio.sleep(0.2)  # brief pause so dispatch has time to find no worker
+        # 5. Assert the job is 'queued' — deterministic because we confirmed no
+        #    online worker exists.  Read straight from the DB (no sleep needed).
         job_initial = _get_job(job_id)
         assert job_initial is not None
         assert job_initial.status == "queued", (
-            f"Expected job to be 'queued' with no worker, got {job_initial.status!r}"
+            f"Expected job to be 'queued' with no online worker, "
+            f"got {job_initial.status!r}"
         )
 
-        # 4. Now connect the WorkerRuntime
+        # 6. Now connect the WorkerRuntime
         runtime = WorkerRuntime(
             relay_url=relay_url,
             token=worker_token,
@@ -487,7 +514,7 @@ async def test_no_worker_queues(live_server):
         worker_task = asyncio.create_task(runtime.run())
 
         try:
-            # 5. Wait until the worker is online
+            # 7. Wait until the worker is online
             def _worker_online():
                 w = _get_worker(worker_id)
                 return w is not None and w.status == "online"
@@ -495,7 +522,7 @@ async def test_no_worker_queues(live_server):
             online = await _apoll(_worker_online, timeout=10.0)
             assert online, f"Worker {worker_id} did not come online within 10 s"
 
-            # 6. Poll until the job transitions to 'dispatched' or 'done'
+            # 8. Poll until the job transitions to 'dispatched' or 'done'
             def _job_progressed():
                 j = _get_job(job_id)
                 return j is not None and j.status in ("dispatched", "done")
@@ -509,7 +536,7 @@ async def test_no_worker_queues(live_server):
                     f"Status: {_status!r}"
                 )
 
-            # 7. Wait for the job to fully complete ('done')
+            # 9. Wait for the job to fully complete ('done')
             def _job_done():
                 j = _get_job(job_id)
                 return j is not None and j.status == "done"
