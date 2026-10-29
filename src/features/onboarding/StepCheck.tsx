@@ -78,7 +78,7 @@ export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () =
   }
   const rows = [notes.slice(0, 4), notes.slice(4)]
   return (
-    <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
+    <WizardCard className="flex-col gap-[18px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
       <div className="flex w-full items-center gap-[14px]">
         <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">

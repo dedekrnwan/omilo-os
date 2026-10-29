@@ -9,20 +9,20 @@ export function StepWelcome({ onNext }: { onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   return (
     <WizardCard>
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-[22px] p-[56px]">
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-[22px] p-[24px] sm:p-[40px] lg:min-h-0 lg:overflow-y-auto lg:p-[56px]">
         <div className="flex items-end">
           <Mascot helper area="brand" size={56} radius={16} title="Chief of Staff" />
           <Mascot helper area="dev" size={44} radius={12} title="Builder" className="-ml-[8px]" />
           <Mascot helper area="ops" size={44} radius={12} title="Grower" className="-ml-[8px]" />
         </div>
-        <h1 className="font-display text-[40px] leading-[1.1] font-semibold tracking-[-0.8px] text-ink">
+        <h1 className="font-display text-[28px] leading-[1.1] font-semibold tracking-[-0.8px] text-ink sm:text-[40px]">
           Let's build your AI team
         </h1>
-        <p className="w-[460px] text-[16px] leading-[1.6] text-ink-2">
+        <p className="w-full max-w-[460px] text-[16px] leading-[1.6] text-ink-2">
           I'm Chief of Staff. I'll ask about {companyName} the way a good advisor would: one question at a time,
           with ideas when you're not sure. Then I'll suggest a team that fits.
         </p>
-        <ol className="flex w-[460px] flex-col gap-[10px]">
+        <ol className="flex w-full max-w-[460px] flex-col gap-[10px]">
           {WELCOME_STEPS.map((s) => (
             <li key={s.n} className="flex w-full items-center gap-[12px]">
               <span
@@ -45,8 +45,7 @@ export function StepWelcome({ onNext }: { onNext: () => void }) {
       </div>
 
       <aside
-        className="flex w-[440px] shrink-0 flex-col justify-center gap-[14px] bg-soft px-[36px] py-[40px]"
-        style={{ boxShadow: 'inset 1px 0 0 var(--color-line)' }}
+        className="flex w-full shrink-0 flex-col justify-center gap-[14px] border-t border-[var(--color-line)] bg-soft px-[24px] py-[28px] sm:px-[36px] lg:w-[440px] lg:border-t-0 lg:border-l lg:py-[40px]"
       >
         <h2 className="text-[11px] font-semibold tracking-[1px] text-muted">WHAT YOUR TEAM WILL KNOW</h2>
         <p className="w-full text-[13px] leading-[1.5] text-ink-2">

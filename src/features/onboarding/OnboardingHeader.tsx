@@ -65,14 +65,29 @@ export function OnboardingHeader({ step }: { step: OnboardingStep }) {
   const showSteps = step !== 'welcome' && step !== 'inbox'
   const navigate = useNavigate()
   const companyName = useSession((s) => s.company?.name ?? 'your workspace')
+  const stepIdx = STEPS.findIndex((s) => s.id === step)
   return (
-    <header className="flex h-[60px] w-full shrink-0 items-center gap-[10px] px-[24px]">
+    <header className="flex h-[60px] w-full shrink-0 items-center gap-[10px] px-[16px] sm:px-[24px]">
       <Mascot size={26} radius={7} prop="spark" title="Omilo" />
       <span className="font-display text-[15px] font-semibold text-ink">Omilo</span>
-      <span className="text-[13px] text-muted">· Setting up {companyName}</span>
-      <div className="flex min-w-0 flex-1 justify-center">{showSteps && <StepIndicator current={step} />}</div>
-      <div className="flex items-center gap-[12px]">
-        <span className="text-[12px] text-muted">Saved as you go</span>
+      <span className="hidden min-w-0 truncate text-[13px] text-muted sm:inline">· Setting up {companyName}</span>
+      <div className="flex min-w-0 flex-1 justify-center">
+        {showSteps && (
+          <>
+            {/* Full stepper on wide screens; a compact counter on narrow ones. */}
+            <div className="hidden lg:block">
+              <StepIndicator current={step} />
+            </div>
+            {stepIdx >= 0 && (
+              <span className="text-[12px] font-medium text-muted lg:hidden">
+                Step {stepIdx + 1} of {STEPS.length}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+      <div className="flex items-center gap-[8px] sm:gap-[12px]">
+        <span className="hidden text-[12px] text-muted sm:inline">Saved as you go</span>
         <QuietButton icon={LogOut} onClick={() => navigate({ to: '/auth/sign-in' })}>
           Log out
         </QuietButton>

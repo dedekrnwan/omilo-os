@@ -53,7 +53,7 @@ function LearnedPanel({
   return (
     <aside
       aria-label="What I've learned"
-      className="relative flex h-full w-[400px] shrink-0 flex-col overflow-hidden rounded-lg bg-surface"
+      className="relative flex w-full shrink-0 flex-col overflow-hidden rounded-lg bg-surface lg:h-full lg:w-[400px]"
     >
       <div className="flex w-full items-center gap-[8px] px-[18px] py-[14px]" style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}>
         <h2 className="text-[14px] font-semibold text-ink">What I've learned</h2>
@@ -138,8 +138,8 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
     setDraft('')
   }
   return (
-    <div className="flex min-h-0 w-full flex-1 gap-[16px] px-[24px] pt-[8px] pb-[24px]">
-      <section aria-label="Interview" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface">
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[16px] pt-[8px] pb-[16px] sm:px-[24px] sm:pb-[24px] lg:flex-row lg:overflow-hidden">
+      <section aria-label="Interview" className="relative flex min-h-[460px] min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface lg:h-full lg:min-h-0">
         <div className="flex w-full items-center gap-[12px] px-[24px] py-[14px]" style={{ boxShadow: 'inset 0 -1px 0 var(--color-line)' }}>
           <h2 className="text-[14px] font-semibold text-ink">Topic 3 of 7 · Goals</h2>
           <span
@@ -160,7 +160,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
           <QuietButton icon={Pause} onClick={() => void navigate({ to: '/inbox' })}>Finish later</QuietButton>
         </div>
 
-        <div className="flex min-h-0 w-full flex-1 flex-col justify-end gap-[16px] px-[48px] py-[20px]">
+        <div className="flex min-h-0 w-full flex-1 flex-col justify-end gap-[16px] px-[20px] py-[16px] sm:px-[48px] sm:py-[20px]">
           <div className="flex w-full items-center gap-[10px]">
             <span className="h-px flex-1 bg-line" />
             <span className="relative flex items-center gap-[6px] rounded-pill bg-soft px-[10px] py-[4px]">
@@ -174,7 +174,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
             <p className="text-[12px] text-muted">{INTERVIEW.hint1}</p>
           </ChiefSays>
           <div className="flex w-full justify-end">
-            <div className="relative w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
+            <div className="relative max-w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
               <p className="w-full text-[14px] leading-[1.55] text-ink">{INTERVIEW.answer}</p>
               <Stroke color="var(--color-line)" />
             </div>
@@ -187,7 +187,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
           </ChiefSays>
         </div>
 
-        <div className="w-full px-[48px] pb-[20px]">
+        <div className="w-full px-[20px] pb-[16px] sm:px-[48px] sm:pb-[20px]">
           <form
             onSubmit={(e) => {
               e.preventDefault()

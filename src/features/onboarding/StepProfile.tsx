@@ -30,7 +30,7 @@ const CURRENCIES = ['IDR', 'USD', 'SGD', 'MYR'] as const
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
   return (
-    <label htmlFor={htmlFor} className="shrink-0 w-[140px] text-[13px] font-medium text-ink-2">
+    <label htmlFor={htmlFor} className="w-[108px] shrink-0 text-[13px] font-medium text-ink-2 sm:w-[140px]">
       {children}
     </label>
   )
@@ -137,7 +137,7 @@ export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; o
   }
 
   return (
-    <WizardCard className="flex-col gap-[24px] px-[40px] py-[32px]">
+    <WizardCard className="flex-col gap-[24px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
       {/* Header — mirrors StepCheck's Mascot + title pattern */}
       <div className="flex w-full items-center gap-[14px]">
         <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />

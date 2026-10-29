@@ -21,7 +21,7 @@ export function StepTeam({
   const count = selectedIds.length
 
   return (
-    <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
+    <WizardCard className="flex-col gap-[18px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
       <div className="flex w-full flex-col gap-[4px]">
         <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">Your team for {companyName}</h1>
         <p className="w-full text-[14px] text-muted">

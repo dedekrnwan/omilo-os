@@ -144,12 +144,18 @@ export function Stroke({ color = 'var(--color-line-strong)', width = 1 }: { colo
   )
 }
 
-/** The centred 1120×720 card (radius 12, 1px line-strong, shadow 0 12 40). */
+/**
+ * The centred wizard card. On desktop (lg+) it's a fixed 1120×720 two-column
+ * panel whose columns scroll internally. Below lg the two columns STACK and the
+ * card grows to its content and scrolls as one — so a long step (e.g. the AI
+ * step with many detected harnesses) is never clipped on a narrow or short
+ * viewport.
+ */
 export function WizardCard({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className="flex min-h-0 w-full flex-1 items-center justify-center px-[24px] pt-[8px] pb-[24px]">
+    <div className="flex min-h-0 w-full flex-1 items-center justify-center px-[16px] pt-[8px] pb-[16px] sm:px-[24px] sm:pb-[24px]">
       <section
-        className={`relative flex h-[720px] max-h-full w-[1120px] max-w-full overflow-hidden rounded-lg bg-surface ${className}`}
+        className={`relative flex min-h-0 w-[1120px] max-h-full max-w-full flex-col overflow-y-auto overscroll-contain rounded-lg bg-surface lg:h-[720px] lg:flex-row lg:overflow-hidden ${className}`}
         style={{ boxShadow: '0 12px 40px #0C0A0914' }}
       >
         {children}

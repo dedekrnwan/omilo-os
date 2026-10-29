@@ -239,7 +239,7 @@ export function StepInbox() {
               working.
             </p>
           </div>
-          <div className="flex w-full items-start gap-[20px]">
+          <div className="flex w-full flex-col items-start gap-[20px] lg:flex-row">
             <div className="flex min-w-0 flex-1 flex-col gap-[16px]">
               <section
                 aria-label="Your team is ready"
@@ -333,7 +333,7 @@ export function StepInbox() {
               </div>
             </div>
 
-            <aside className="flex w-[320px] shrink-0 flex-col gap-[12px]">
+            <aside className="flex w-full shrink-0 flex-col gap-[12px] lg:w-[320px]">
               <GettingStarted />
               <div className="relative flex w-full gap-[10px] rounded-lg bg-soft px-[14px] py-[12px]">
                 <MessageCircle

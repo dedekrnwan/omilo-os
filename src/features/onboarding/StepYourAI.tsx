@@ -426,12 +426,12 @@ export function StepYourAI({
 
   return (
     <WizardCard>
-      <div className="flex min-w-0 flex-1 flex-col gap-[16px] px-[48px] py-[44px]">
+      <div className="flex min-w-0 flex-1 flex-col gap-[16px] px-[24px] py-[28px] sm:px-[48px] sm:py-[44px] lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center gap-[10px]">
           <Mascot helper area="brand" size={24} radius={7} title="Chief of Staff" />
           <span className="text-[12px] text-muted">Step 1 of 4</span>
         </div>
-        <h1 className="font-display text-[30px] font-semibold tracking-[-0.5px] text-ink">
+        <h1 className="font-display text-[24px] font-semibold tracking-[-0.5px] text-ink sm:text-[30px]">
           {copy.title}
         </h1>
         <p className="w-full text-[15px] leading-[1.55] text-ink-2">{copy.lead}</p>
@@ -583,10 +583,9 @@ export function StepYourAI({
         </div>
       </div>
 
-      {/* "Good to know" aside */}
+      {/* "Good to know" aside — stacks below the form (full width) under lg. */}
       <aside
-        className="flex w-[360px] shrink-0 flex-col gap-[18px] bg-soft px-[32px] py-[44px]"
-        style={{ boxShadow: 'inset 1px 0 0 var(--color-line)' }}
+        className="flex w-full shrink-0 flex-col gap-[18px] border-t border-[var(--color-line)] bg-soft px-[24px] py-[28px] sm:px-[32px] lg:w-[360px] lg:border-t-0 lg:border-l lg:py-[44px]"
       >
         <h2 className="text-[11px] font-semibold tracking-[1px] text-muted">GOOD TO KNOW</h2>
         {copy.good.map((g) => (
