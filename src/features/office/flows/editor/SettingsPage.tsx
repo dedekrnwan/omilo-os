@@ -5,7 +5,7 @@ import { Bell, Check, Plus, X, ChevronsUpDown, Copy, Gauge, History, Pause, Play
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { HelperArea } from '../../../../core/domain/types'
-import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow } from '../../../../app/queries'
+import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow, useUpdateFlow } from '../../../../app/queries'
 import { notify } from '../../../../ui/ds/Toaster'
 import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
@@ -140,7 +140,20 @@ export function FlowSettingsPage() {
   const { data: liveFlow } = useFlowQuery(flowId)
   const deleteFlow = useDeleteFlow()
   const duplicateFlow = useDuplicateFlow()
+  const updateFlow = useUpdateFlow()
   const v = f.settings
+
+  // Save persists the fields the backend has columns for (title, areas, enabled)
+  // via PATCH /v1/flows/{id}. The rest of this form (budget, approvals, quiet
+  // hours, notifications) has no backend column yet, so those stay store-local
+  // until the flow schema gains them.
+  function saveSettings() {
+    st.saveSettings(flowId)
+    updateFlow.mutate({
+      id: flowId,
+      input: { title: v.name, areas: v.areaId ? [v.areaId] : [], enabled: f.enabled },
+    })
+  }
 
   // Build a CreateFlowInput from the live flow (falls back to the editor graph
   // so duplicate still works offline / before the GET resolves).
@@ -502,7 +515,7 @@ export function FlowSettingsPage() {
             </div>
           </div>
         </div>
-        {dirty && <SaveBar dirty onSave={() => st.saveSettings(flowId)} onDiscard={() => st.discardSettings(flowId)} />}
+        {dirty && <SaveBar dirty onSave={saveSettings} onDiscard={() => st.discardSettings(flowId)} />}
       </div>
 
       {confirmDelete && (
