@@ -279,3 +279,37 @@ async def test_verify_worker_token_roundtrip(async_client, owner):
     # Bogus token → None
     bogus = verify_worker_token("not-a-real-token")
     assert bogus is None, "verify_worker_token must return None for an unknown token"
+
+
+@pytest.mark.asyncio
+async def test_verify_worker_token_detached_scalar_access(async_client, owner):
+    """After verify_worker_token returns, scalar columns are readable (object is detached).
+
+    The returned ComputeWorker has no active session, but scalar columns
+    (id, company_id) are already loaded and must remain accessible after the
+    call completes. This pins that expunge() was applied and relational
+    lazy-loading is NOT attempted (which would raise DetachedInstanceError).
+    """
+    from omilo.api.compute import verify_worker_token
+
+    # Pair a worker
+    pair_resp = await async_client.post(
+        "/v1/compute/workers/pair",
+        json={"capacity": 3},
+        headers=_auth(owner["token"]),
+    )
+    assert pair_resp.status_code == 200, pair_resp.text
+    body = pair_resp.json()
+    worker_id = body["worker_id"]
+    raw_token = body["token"]
+
+    # Call verify_worker_token and read scalars AFTER it returns (no open session)
+    worker = verify_worker_token(raw_token)
+    assert worker is not None
+
+    # These scalar reads must succeed without raising DetachedInstanceError
+    assert worker.id == worker_id
+    assert worker.company_id == owner["company_id"]
+    assert worker.status == "offline"
+    assert worker.capacity == 3
+    assert worker.in_use == 0

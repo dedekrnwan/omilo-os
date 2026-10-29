@@ -157,12 +157,17 @@ def verify_worker_token(token: str) -> ComputeWorker | None:
     SessionLocal directly (the superuser `omilo` role, no SET LOCAL ROLE).
     The company_id is read from the returned row.
 
-    Returns the ComputeWorker ORM row, or None if no matching row is found.
+    Returns the ComputeWorker ORM row (detached, with scalars preloaded), or
+    None if no matching row is found. Scalar columns (id, company_id, etc.) are
+    safe to read after the session is closed; do NOT access relationships.
     """
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     with SessionLocal() as session:
-        return (
+        worker = (
             session.query(ComputeWorker)
             .filter_by(token_hash=token_hash)
             .first()
         )
+        if worker is not None:
+            session.expunge(worker)
+        return worker
