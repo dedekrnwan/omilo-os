@@ -44,9 +44,20 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from omilo.api.compute import verify_worker_token
-from omilo.compute.protocol import PingFrame, PongFrame, RegisterFrame, decode, encode
+from omilo.compute.protocol import (
+    JobDoneFrame,
+    JobErrorFrame,
+    JobStatusFrame,
+    JobStepFrame,
+    PingFrame,
+    PongFrame,
+    RegisterFrame,
+    decode,
+    encode,
+)
 from omilo.db import SessionLocal
 from omilo.models.compute import ComputeJob, ComputeWorker
+from omilo.realtime.events import broker
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +190,365 @@ def _drop_worker(worker_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Status frame DB helpers — synchronous, for asyncio.to_thread()
+# ---------------------------------------------------------------------------
+
+
+def _handle_job_step_db(job_id: str, company_id: str) -> ComputeJob | None:
+    """Transition job to 'running' and renew lease. Returns updated job or None.
+
+    Security: only updates jobs whose company_id matches the worker's company_id.
+    Lease renewal prevents the reaper from killing a long-running job mid-flight.
+    """
+    from datetime import timedelta
+
+    from omilo.compute.dispatch import LEASE_S
+
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        with session.begin():
+            job = session.get(ComputeJob, job_id)
+            if job is None:
+                logger.warning("_handle_job_step_db: job %s not found", job_id)
+                return None
+            if job.company_id != company_id:
+                logger.warning(
+                    "_handle_job_step_db: cross-company attempt (job %s company=%s, "
+                    "worker company=%s) — ignoring",
+                    job_id,
+                    job.company_id,
+                    company_id,
+                )
+                return None
+
+            # Transition to running if not already terminal
+            if job.status not in ("done", "error"):
+                job.status = "running"
+                # Renew lease so a long-running job isn't reaped mid-flight
+                job.lease_expires_at = now + timedelta(seconds=LEASE_S)
+
+            # Return a detached snapshot for SSE publishing (outside session)
+            session.flush()
+            return ComputeJob(
+                id=job.id,
+                company_id=job.company_id,
+                worker_id=job.worker_id,
+                status=job.status,
+                spec=job.spec,
+                lease_expires_at=job.lease_expires_at,
+                result=job.result,
+                artifact=job.artifact,
+                error=job.error,
+            )
+
+
+def _handle_job_done_db(
+    job_id: str,
+    company_id: str,
+    result: dict | None,
+    artifact: str | None,
+) -> ComputeJob | None:
+    """Settle job as 'done'. Idempotent — no-op if already terminal.
+
+    Security: only updates jobs whose company_id matches the worker's company_id.
+    Secrets are NEVER stored here — result is written as-is from the worker but
+    the 'secrets' key is explicitly stripped before persisting and publishing.
+
+    Returns the updated job snapshot, or None on security/not-found rejection.
+    Returns a job snapshot with already-terminal status if it was already done/error
+    (the caller detects idempotency by checking the returned status vs 'done').
+    """
+    with SessionLocal() as session:
+        with session.begin():
+            job = session.get(ComputeJob, job_id)
+            if job is None:
+                logger.warning("_handle_job_done_db: job %s not found", job_id)
+                return None
+            if job.company_id != company_id:
+                logger.warning(
+                    "_handle_job_done_db: cross-company attempt (job %s company=%s, "
+                    "worker company=%s) — ignoring",
+                    job_id,
+                    job.company_id,
+                    company_id,
+                )
+                return None
+
+            was_terminal = job.status in ("done", "error")
+
+            if was_terminal:
+                # Idempotent replay — job is already settled, nothing to update.
+                # Return None to signal the caller to skip SSE publish.
+                return None
+
+            # Strip 'secrets' from result before persisting (security invariant)
+            safe_result: dict | None = None
+            if result is not None:
+                safe_result = {k: v for k, v in result.items() if k != "secrets"}
+            job.status = "done"
+            job.result = safe_result
+            job.artifact = artifact
+
+            session.flush()
+            return ComputeJob(
+                id=job.id,
+                company_id=job.company_id,
+                worker_id=job.worker_id,
+                status=job.status,
+                spec=job.spec,
+                lease_expires_at=job.lease_expires_at,
+                result=job.result,
+                artifact=job.artifact,
+                error=job.error,
+            )
+
+
+def _handle_job_error_db(job_id: str, company_id: str, error: str) -> ComputeJob | None:
+    """Settle job as 'error'. Idempotent — no-op if already terminal.
+
+    Security: only updates jobs whose company_id matches the worker's company_id.
+    Returns the updated job snapshot, or None on security/not-found rejection.
+    """
+    with SessionLocal() as session:
+        with session.begin():
+            job = session.get(ComputeJob, job_id)
+            if job is None:
+                logger.warning("_handle_job_error_db: job %s not found", job_id)
+                return None
+            if job.company_id != company_id:
+                logger.warning(
+                    "_handle_job_error_db: cross-company attempt (job %s company=%s, "
+                    "worker company=%s) — ignoring",
+                    job_id,
+                    job.company_id,
+                    company_id,
+                )
+                return None
+
+            was_terminal = job.status in ("done", "error")
+
+            if was_terminal:
+                # Idempotent replay — job is already settled.
+                # Return None to signal the caller to skip SSE publish.
+                return None
+
+            job.status = "error"
+            job.error = error
+
+            session.flush()
+            return ComputeJob(
+                id=job.id,
+                company_id=job.company_id,
+                worker_id=job.worker_id,
+                status=job.status,
+                spec=job.spec,
+                lease_expires_at=job.lease_expires_at,
+                result=job.result,
+                artifact=job.artifact,
+                error=job.error,
+            )
+
+
+def _handle_job_status_db(
+    job_id: str,
+    company_id: str,
+    state: str,
+    detail: str | None,
+) -> ComputeJob | None:
+    """Handle a job_status frame: transition to 'running' and renew lease.
+
+    Behaviour mirrors job_step: if the job is not yet terminal, mark it running
+    and renew the lease. Returns the updated snapshot, or None on rejection.
+    """
+    # job_status is treated like job_step for DB purposes: keep alive + running
+    return _handle_job_step_db(job_id, company_id)
+
+
+# ---------------------------------------------------------------------------
+# SSE publish helpers — sanitize before broadcasting
+# ---------------------------------------------------------------------------
+
+
+def _publish_job_step(company_id: str, job_id: str, seq: int, stream: str, line: str) -> None:
+    """Publish a job.step event to the company's SSE stream.
+
+    Never includes 'secrets'. Called from a thread via asyncio.to_thread.
+    """
+    event: dict = {
+        "type": "job.step",
+        "job_id": job_id,
+        "seq": seq,
+        "stream": stream,
+        "line": line,
+        # Explicit: 'secrets' is NEVER included.
+    }
+    broker.publish(company_id, event)
+
+
+def _publish_job_status(
+    company_id: str,
+    job_id: str,
+    state: str,
+    detail: str | None,
+) -> None:
+    """Publish a job.status event to the company's SSE stream."""
+    event: dict = {
+        "type": "job.status",
+        "job_id": job_id,
+        "state": state,
+    }
+    if detail is not None:
+        event["detail"] = detail
+    broker.publish(company_id, event)
+
+
+def _publish_job_done(
+    company_id: str,
+    job_id: str,
+    result: dict | None,
+    artifact: str | None,
+) -> None:
+    """Publish a job.done event to the company's SSE stream.
+
+    'result' here is already sanitized (secrets stripped) before this call.
+    """
+    event: dict = {
+        "type": "job.done",
+        "job_id": job_id,
+        "ok": True,
+        "result": result,
+        "artifact": artifact,
+        # Explicit: 'secrets' is NEVER included.
+    }
+    broker.publish(company_id, event)
+
+
+def _publish_job_error(company_id: str, job_id: str, error: str) -> None:
+    """Publish a job.error event to the company's SSE stream."""
+    event: dict = {
+        "type": "job.error",
+        "job_id": job_id,
+        "error": error,
+        # Explicit: 'secrets' is NEVER included.
+    }
+    broker.publish(company_id, event)
+
+
+# ---------------------------------------------------------------------------
+# Async status frame dispatcher — called from the receive loop
+# ---------------------------------------------------------------------------
+
+
+async def _dispatch_status_frame(
+    frame: JobStepFrame | JobStatusFrame | JobDoneFrame | JobErrorFrame,
+    *,
+    worker_company_id: str,
+    worker_id: str,
+) -> None:
+    """Handle a status frame received from a worker.
+
+    Steps for each frame type:
+    1. Load + guard the job (company isolation — worker may only report on its
+       own company's jobs).
+    2. Update job state in DB (offloaded to thread).
+    3. On terminal (done/error): call release(job) to free the capacity slot.
+    4. Publish a sanitized event to the company's SSE stream.
+
+    Idempotency: duplicate terminal frames (same job_id, already done/error)
+    are detected by the DB helper returning a job with a terminal status that
+    was already set. In that case, we skip SSE publish (no-op).
+    """
+    from omilo.compute.dispatch import release
+
+    if isinstance(frame, JobStepFrame):
+        updated = await asyncio.to_thread(
+            _handle_job_step_db, frame.job_id, worker_company_id
+        )
+        if updated is None:
+            return  # Security reject or not found
+
+        await asyncio.to_thread(
+            _publish_job_step,
+            worker_company_id,
+            frame.job_id,
+            frame.seq,
+            frame.stream,
+            frame.line,
+        )
+
+    elif isinstance(frame, JobStatusFrame):
+        updated = await asyncio.to_thread(
+            _handle_job_status_db,
+            frame.job_id,
+            worker_company_id,
+            frame.state,
+            frame.detail,
+        )
+        if updated is None:
+            return
+
+        await asyncio.to_thread(
+            _publish_job_status,
+            worker_company_id,
+            frame.job_id,
+            frame.state,
+            frame.detail,
+        )
+
+    elif isinstance(frame, JobDoneFrame):
+        # _handle_job_done_db returns None if the job was already terminal
+        # (idempotent replay — do not publish a second SSE event or double-release).
+        updated = await asyncio.to_thread(
+            _handle_job_done_db,
+            frame.job_id,
+            worker_company_id,
+            frame.result,
+            frame.artifact,
+        )
+        if updated is None:
+            return  # Security reject, not found, or already terminal (idempotent)
+
+        await asyncio.to_thread(
+            _publish_job_done,
+            worker_company_id,
+            frame.job_id,
+            updated.result,  # already sanitized (secrets stripped) by DB helper
+            updated.artifact,
+        )
+        # Release capacity slot (terminal)
+        try:
+            await release(updated)
+        except Exception:
+            logger.exception(
+                "_dispatch_status_frame: release failed for job %s", frame.job_id
+            )
+
+    elif isinstance(frame, JobErrorFrame):
+        updated = await asyncio.to_thread(
+            _handle_job_error_db,
+            frame.job_id,
+            worker_company_id,
+            frame.error,
+        )
+        if updated is None:
+            return  # Security reject, not found, or already terminal
+
+        await asyncio.to_thread(
+            _publish_job_error,
+            worker_company_id,
+            frame.job_id,
+            frame.error,
+        )
+        # Release capacity slot (terminal)
+        try:
+            await release(updated)
+        except Exception:
+            logger.exception(
+                "_dispatch_status_frame: release failed for job %s", frame.job_id
+            )
+
+
+# ---------------------------------------------------------------------------
 # WebSocket handler (async, injectable seam for heartbeat testing)
 # ---------------------------------------------------------------------------
 
@@ -295,6 +665,7 @@ async def worker_relay_handler(
     last_pong_at: float = _SENTINEL   # updated whenever a pong is received
     last_ping_sent_at: float = _SENTINEL  # updated when each ping is sent
 
+
     async def _heartbeat_loop() -> None:
         nonlocal last_pong_at, last_ping_sent_at
         while True:
@@ -340,7 +711,30 @@ async def worker_relay_handler(
 
                 if isinstance(frame, PongFrame):
                     last_pong_at = now()
-                # Other frame types (job_step, job_done, etc.) are ignored for now.
+
+                elif isinstance(
+                    frame,
+                    (JobStepFrame, JobStatusFrame, JobDoneFrame, JobErrorFrame),
+                ):
+                    # Dispatch status frames inline (awaited) so that:
+                    # 1. DB persistence completes before the next frame is read.
+                    # 2. The finally block's _drop_worker never races with an
+                    #    in-progress status write.
+                    # DB writes inside _dispatch_status_frame are already
+                    # offloaded to asyncio.to_thread, so the event loop stays
+                    # responsive while the thread pool handles the DB work.
+                    try:
+                        await _dispatch_status_frame(
+                            frame,
+                            worker_company_id=company_id,
+                            worker_id=worker_id,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Worker %s: error dispatching status frame: %s",
+                            worker_id,
+                            exc,
+                        )
 
         except WebSocketDisconnect:
             pass
