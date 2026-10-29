@@ -368,8 +368,10 @@ async def test_patch_other_company_account_returns_404(async_client, company_a, 
 
 
 @pytest.mark.asyncio
-async def test_test_account_returns_ok_stub(async_client, company_a):
-    """POST /v1/ai-accounts/{id}/test returns {ok:true} without making real calls."""
+async def test_test_account_reports_unusable_account(async_client, company_a):
+    """POST /v1/ai-accounts/{id}/test makes a real check now (tests/test_ai_engine.py
+    covers a working key); an account with no key that isn't a local sign-in is
+    reported as unusable, without any network call."""
     token, company_id = company_a
 
     acc = _seed_harness_account(company_id, label="TestProbe", status="ready")
@@ -380,8 +382,7 @@ async def test_test_account_returns_ok_stub(async_client, company_a):
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data.get("ok") is True
-    assert "status" in data
+    assert data.get("ok") is False and "status" in data and data.get("detail")
 
 
 @pytest.mark.asyncio

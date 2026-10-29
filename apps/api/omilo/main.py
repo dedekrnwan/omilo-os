@@ -18,6 +18,8 @@ from omilo.api.channels import router as channels_router
 from omilo.mcp.server import router as mcp_router
 from omilo.mcp.external import router as mcp_external_router
 from omilo.api.chat_write import router as chat_write_router
+from omilo.api.chat_stream import router as chat_stream_router
+from omilo.api.onboarding_interview import router as onboarding_interview_router
 from omilo.api.folders import router as folders_router
 from omilo.api.goals import router as goals_router
 from omilo.api.goals_write import router as goals_write_router
@@ -86,6 +88,8 @@ def create_app() -> FastAPI:
     # Repos-parity read endpoints (Task 7)
     app.include_router(channels_router, prefix="/v1")
     app.include_router(chat_write_router, prefix="/v1")
+    app.include_router(chat_stream_router, prefix="/v1")
+    app.include_router(onboarding_interview_router, prefix="/v1")
     app.include_router(folders_router, prefix="/v1")
     app.include_router(goals_router, prefix="/v1")
     app.include_router(goals_write_router, prefix="/v1")

@@ -1,0 +1,157 @@
+"""Onboarding interview endpoints (step "Get to know you", "Check" and "Your team").
+
+    GET  /v1/onboarding/interview          → {history, topic, notes, coverage, ai}
+    POST /v1/onboarding/interview/stream   → SSE turn  {message, website?, restart?}
+         events: activity {label} · text {delta} · note {topic, content}
+                 done {history, topic, notes, coverage, options, ai} · error {message}
+    PUT  /v1/onboarding/notes/{topic}      → edit one note (Check step)  {content}
+    POST /v1/onboarding/team-plan          → {helpers: [...], by: ai|rules}
+
+State is kept in ``company.settings["onboarding"]`` (see omilo.interview).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm.attributes import flag_modified
+
+from omilo import interview as I
+from omilo.ai import AiError
+from omilo.ai.config import AiConfig, resolve
+from omilo.db import SessionLocal, set_company
+from omilo.models.tenancy import Company
+from omilo.tenancy.context import RequestContext
+from omilo.tenancy.deps import get_context
+
+log = logging.getLogger(__name__)
+router = APIRouter(tags=["onboarding-interview"])
+
+
+class TurnBody(BaseModel):
+    message: str = ""
+    website: str | None = None
+    restart: bool = False
+
+
+class NoteBody(BaseModel):
+    content: str
+
+
+def _sse(event: str, data: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+def _load(ctx: RequestContext) -> tuple[dict, str, AiConfig]:
+    with SessionLocal() as db, db.begin():
+        db.execute(text("SET LOCAL ROLE omilo_app"))
+        set_company(db, ctx.company_id)
+        company = db.get(Company, ctx.company_id)
+        if company is None:
+            raise HTTPException(status_code=404, detail="Company not found.")
+        st = ((company.settings or {}).get("onboarding") or {})
+        state = {**I.empty_state(), **{k: v for k, v in st.items() if k in ("interview", "notes", "website")}}
+        state["interview"] = {**I.empty_state()["interview"], **(state.get("interview") or {})}
+        cfg = resolve(db, ctx.company_id, None, tier="balanced")
+        return state, company.name, cfg
+
+
+def _save(ctx: RequestContext, state: dict) -> None:
+    with SessionLocal() as db, db.begin():
+        db.execute(text("SET LOCAL ROLE omilo_app"))
+        set_company(db, ctx.company_id)
+        company = db.get(Company, ctx.company_id)
+        settings = dict(company.settings or {})
+        ob = dict(settings.get("onboarding") or {})
+        ob.update({"interview": state["interview"], "notes": state["notes"], "website": state.get("website") or ""})
+        settings["onboarding"] = ob
+        company.settings = settings
+        flag_modified(company, "settings")
+
+
+def _view(state: dict, cfg: AiConfig, options: list[str] | None = None) -> dict:
+    return {"history": state["interview"]["history"], "topic": state["interview"].get("topic"),
+            "notes": state["notes"], "coverage": I.coverage(state["notes"]), "options": options or [],
+            "website": state.get("website") or "",
+            "ai": {"label": cfg.label, "practice": cfg.is_fake}}
+
+
+@router.get("/onboarding/interview")
+async def get_interview(ctx: RequestContext = Depends(get_context)) -> dict:
+    state, _name, cfg = await asyncio.to_thread(_load, ctx)
+    return _view(state, cfg)
+
+
+@router.post("/onboarding/interview/stream")
+async def interview_stream(body: TurnBody, request: Request, ctx: RequestContext = Depends(get_context)):
+    state, company_name, cfg = await asyncio.to_thread(_load, ctx)
+    if body.restart:
+        state = {**I.empty_state(), "notes": state["notes"]}  # keep notes already written
+    message = body.message.strip()[:4000]
+    website = (body.website or "").strip() or (I.find_url(message) if message and not cfg.is_fake else None)
+
+    async def gen():
+        hist = state["interview"]["history"]
+        if not message and not website and hist and hist[-1]["role"] == "ai":
+            yield _sse("done", _view(state, cfg, hist[-1].get("options")))  # reopened: show where we were
+            return
+        final: dict = {}
+        try:
+            async for ev in I.stream_turn(cfg, company_name, state, message, website=website):
+                if ev["type"] == "text":
+                    yield _sse("text", {"delta": ev["delta"]})
+                elif ev["type"] == "activity":
+                    yield _sse("activity", {"label": ev["label"]})
+                elif ev["type"] == "note":
+                    yield _sse("note", {"topic": ev["topic"], "content": ev["content"]})
+                elif ev["type"] == "final":
+                    final = ev
+        except AiError as e:
+            yield _sse("error", {"message": str(e)})
+            return
+        except Exception as e:  # noqa: BLE001
+            log.exception("interview turn failed")
+            yield _sse("error", {"message": f"Something went wrong: {str(e)[:200]}"})
+            return
+        if message or website:
+            hist.append({"role": "owner", "text": message or f"Read {website}"})
+        ai_entry: dict[str, Any] = {"role": "ai", "text": final["reply"], "options": final.get("options") or []}
+        if final.get("practice"):
+            ai_entry["topic"] = final["topic"]
+        hist.append(ai_entry)
+        state["interview"] = {"history": hist[-80:], "topic": final["topic"]}
+        state["notes"] = final["notes"]
+        if website:
+            state["website"] = website
+        await asyncio.to_thread(_save, ctx, state)
+        yield _sse("done", _view(state, cfg, final.get("options")))
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.put("/onboarding/notes/{topic}")
+async def put_note(topic: str, body: NoteBody, ctx: RequestContext = Depends(get_context)) -> dict:
+    if topic not in (*I.TOPIC_IDS, "extra"):  # "extra": "Add something I missed" on the Check step
+        raise HTTPException(status_code=404, detail="Unknown topic.")
+    state, _name, cfg = await asyncio.to_thread(_load, ctx)
+    content = body.content.strip()[:2000]
+    if content:
+        state["notes"][topic] = content
+    else:
+        state["notes"].pop(topic, None)
+    await asyncio.to_thread(_save, ctx, state)
+    return _view(state, cfg)
+
+
+@router.post("/onboarding/team-plan")
+async def team_plan(ctx: RequestContext = Depends(get_context)) -> dict:
+    state, company_name, cfg = await asyncio.to_thread(_load, ctx)
+    plan = await I.plan_team(cfg, company_name, state["notes"])
+    return plan

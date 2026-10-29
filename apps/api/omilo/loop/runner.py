@@ -312,10 +312,38 @@ def run_job(
     job.engine_type = engine_cfg.get("type", "fake")
     db.flush()
 
-    engine = get_engine(engine_cfg)
+    # The company's connected AI (onboarding "Your AI" / Control panel → AI
+    # accounts) runs every helper that has no explicit engine. Practice mode
+    # (fake) only when nothing is connected.
+    engine = None
+    if (engine_cfg or {}).get("type", "fake") in ("fake", "auto", "", None) or (engine_cfg or {}).get("account_id"):
+        from omilo.ai.config import resolve as _resolve_ai
+        from omilo.engine.real import RealEngine
+
+        _ai = _resolve_ai(db, job.company_id, helper)
+        if not _ai.is_fake:
+            if (engine_cfg or {}).get("model"):
+                _ai = _ai.with_model(engine_cfg["model"])
+            engine = RealEngine(_ai, helper=helper, company=company)
+            job.engine_type = engine.engine_type
+    if engine is None:
+        engine = get_engine(engine_cfg)
 
     # ── d. Run the engine ─────────────────────────────────────────────────────
     result: EngineResult = engine.run(ctx)
+
+    if result.error and not result.text:
+        job.status = "failed"
+        job.error = result.error[:2000]
+        job.ended_at = datetime.now(timezone.utc)
+        db.flush()
+        _broker_publish(job.company_id, {
+            "type": "job.failed",
+            "id": job.id,
+            "data": {"job_id": job.id, "error": job.error},
+        })
+        _emit_job_completed_telemetry(job)
+        return job
 
     # Record usage
     job.tokens_in = (job.tokens_in or 0) + result.tokens_in
@@ -400,7 +428,7 @@ def run_job(
                 helper_id=job.helper_id,
                 type=action_type,
                 risk=risk,
-                title=f"Approve: {action_type}",
+                title=(str(action.get("title") or "").strip() or f"Approve: {action_type}"),
                 body_md=_action_body_md(action),
                 status="pending",
                 current_revision=1,

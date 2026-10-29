@@ -121,14 +121,22 @@ def create_ai_account(
     ctx: RequestContext = Depends(get_context),
     db: Session = Depends(get_tenant_db),
 ) -> dict[str, Any]:
-    """Create a new HarnessAccount for the active company."""
+    """Create a new HarnessAccount for the active company.
+
+    The key is encrypted at rest (omilo.ai.secrets); the hint is derived here,
+    so the raw key never comes back. The first account becomes the company's
+    default AI unless one is already chosen.
+    """
+    from omilo.ai.secrets import encrypt, hint
+
+    raw_key = (body.token_enc or "").strip()
     acc = HarnessAccount(
         id=prefixed_id("acc"),
         company_id=ctx.company_id,
         harness=body.harness,
         label=body.name,
-        token_enc=body.token_enc,
-        token_hint=body.token_hint,
+        token_enc=encrypt(raw_key),
+        token_hint=hint(raw_key),  # "Local session" for keyless sign-ins
         tag=body.tag,                # tag stored in dedicated tag column
         status="ready",
         pct_window=0,
@@ -137,6 +145,7 @@ def create_ai_account(
     )
     db.add(acc)
     db.flush()
+    _ensure_default_account(db, ctx.company_id, acc.id)
     from omilo import audit  # sweep/control
 
     audit.record_ctx(ctx, type="settings", action="connected AI account", target=acc.label)
@@ -178,15 +187,54 @@ def test_ai_account(
     account_id: str,
     db: Session = Depends(get_tenant_db),
 ) -> dict[str, Any]:
-    """Offline probe: return a stub response without making any real CLI call."""
+    """Prove the account works: one tiny real call ("reply OK").
+
+    Returns {ok, status, detail}. A failing key is marked status='error' so the
+    resolver skips it; a working one goes back to 'ready'.
+    """
+    from omilo.ai import AiError, complete, run_sync
+    from omilo.ai.config import from_account
+
     acc = db.get(HarnessAccount, account_id)
     if acc is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Account {account_id!r} not found.",
         )
-    # Structural stub: no subprocess, no network call
-    return {"ok": True, "status": acc.status}
+    cfg = from_account(acc)
+    if cfg is None:
+        return {"ok": False, "status": acc.status, "detail": "This account has no key and isn't a local sign-in."}
+    try:
+        done = run_sync(lambda: complete(cfg.with_model(None), "Reply with the single word OK.",
+                                         [{"role": "user", "content": "Say OK"}], max_tokens=16, timeout=60))
+        ok = bool(str(done.get("text") or "").strip())
+        detail = f"{cfg.label} answered" if ok else f"{cfg.label} answered with nothing"
+    except AiError as e:
+        ok, detail = False, str(e)
+    acc.status = "ready" if ok else "error"
+    db.flush()
+    return {"ok": ok, "status": acc.status, "detail": detail}
+
+
+def _ensure_default_account(db: Session, company_id: str, account_id: str) -> None:
+    """The first connected AI becomes the company default (settings.aiEngine.defaultAccountId)."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from omilo.models.tenancy import Company
+
+    company = db.get(Company, company_id)
+    if company is None:
+        return
+    settings = dict(company.settings or {})
+    engine = dict(settings.get("aiEngine") or {})
+    current = engine.get("defaultAccountId")
+    if current and db.get(HarnessAccount, current) is not None:
+        return
+    engine["defaultAccountId"] = account_id
+    settings["aiEngine"] = engine
+    company.settings = settings
+    flag_modified(company, "settings")
+    db.flush()
 
 
 # ---------------------------------------------------------------------------
