@@ -35,6 +35,7 @@ export function useSession(id: Id) {
   return useQuery({
     queryKey: ['session', id],
     queryFn: () => repos.sessions.get(id),
+    enabled: !!id,
   })
 }
 
@@ -59,6 +60,7 @@ export function useInboxItem(id: Id) {
   return useQuery({
     queryKey: ['inboxItem', id],
     queryFn: () => repos.inbox.get(id),
+    enabled: !!id,
   })
 }
 
@@ -185,6 +187,7 @@ export function useFlow(id: Id) {
   return useQuery({
     queryKey: ['flow', id],
     queryFn: () => repos.flows.get(id),
+    enabled: !!id,
   })
 }
 
@@ -230,6 +233,7 @@ export function useRoutine(id: Id) {
   return useQuery({
     queryKey: ['routine', id],
     queryFn: () => repos.routines.get(id),
+    enabled: !!id,
   })
 }
 
@@ -278,6 +282,7 @@ export function useSkill(id: Id) {
   return useQuery({
     queryKey: ['skill', id],
     queryFn: () => repos.skills.get(id),
+    enabled: !!id,
   })
 }
 
@@ -294,6 +299,7 @@ export function useHelper(id: Id) {
   return useQuery({
     queryKey: ['helper', id],
     queryFn: () => repos.helpers.get(id),
+    enabled: !!id,
   })
 }
 
