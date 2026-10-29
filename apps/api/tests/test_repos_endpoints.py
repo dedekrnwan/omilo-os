@@ -484,23 +484,35 @@ async def test_inbox_get_not_found(async_client, seeded_company):
 
 @pytest.mark.asyncio
 async def test_empty_company_list_endpoints_return_empty_arrays(async_client, empty_company):
-    """A brand-new company with no seeded data returns [] for all list endpoints."""
+    """A brand-new company returns [] for list endpoints that aren't bootstrap-seeded.
+
+    Sign-up now seeds a default "General" area + a Chief Helper, so /v1/channels
+    returns that single default area (not []); everything else is still empty.
+    """
     token = empty_company
     headers = _auth(token)
 
-    endpoints = [
-        "/v1/channels",
+    # These remain empty for a fresh company (no bootstrap seeding).
+    empty_endpoints = [
         "/v1/folders",
         "/v1/goals",
         "/v1/sessions",
         "/v1/inbox",
     ]
-    for endpoint in endpoints:
+    for endpoint in empty_endpoints:
         resp = await async_client.get(endpoint, headers=headers)
         assert resp.status_code == 200, f"{endpoint} returned {resp.status_code}: {resp.text}"
         data = resp.json()
         assert isinstance(data, list), f"{endpoint} returned non-list: {data}"
         assert data == [], f"{endpoint} expected [], got {data}"
+
+    # /v1/channels is seeded with exactly one default area on sign-up.
+    ch_resp = await async_client.get("/v1/channels", headers=headers)
+    assert ch_resp.status_code == 200, ch_resp.text
+    channels = ch_resp.json()
+    assert isinstance(channels, list)
+    assert len(channels) == 1, f"expected the single seeded default area, got {channels}"
+    assert channels[0].get("isDefault") is True
 
 
 # ---------------------------------------------------------------------------

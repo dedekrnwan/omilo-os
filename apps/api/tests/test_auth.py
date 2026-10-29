@@ -157,6 +157,121 @@ async def test_duplicate_email_returns_409(async_client):
 
 
 @pytest.mark.asyncio
+async def test_sign_up_seeds_default_area_and_chief(async_client):
+    """A fresh sign-up seeds a default area + a Chief Helper (Task A).
+
+    After sign-up: GET /v1/channels returns >= 1 with a default area, and the
+    company has an is_chief helper — so goal-create works without a 409.
+    """
+    email = f"seed_{uuid.uuid4().hex[:8]}@test.example"
+    sign_up = await async_client.post(
+        "/v1/auth/sign-up",
+        json={"email": email, "name": "Seed User", "password": "seedP4ss!"},
+    )
+    assert sign_up.status_code == 201, sign_up.text
+    token = sign_up.json()["session"]["access"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Default area present.
+    channels = await async_client.get("/v1/channels", headers=headers)
+    assert channels.status_code == 200, channels.text
+    rows = channels.json()
+    assert len(rows) >= 1, "sign-up must seed at least one channel"
+    assert any(c.get("isDefault") for c in rows), f"a default channel is required: {rows}"
+    channel_id = rows[0]["id"]
+
+    # Chief helper present.
+    helpers = await async_client.get("/v1/helpers", headers=headers)
+    assert helpers.status_code == 200, helpers.text
+    hrows = helpers.json()
+    assert any(h.get("isChief") for h in hrows), f"a Chief helper is required: {hrows}"
+
+
+@pytest.mark.asyncio
+async def test_sign_up_then_goal_create_succeeds(async_client):
+    """After sign-up, POST /v1/goals succeeds (no 409 "No Chief Helper") (Task A)."""
+    email = f"goal_{uuid.uuid4().hex[:8]}@test.example"
+    sign_up = await async_client.post(
+        "/v1/auth/sign-up",
+        json={"email": email, "name": "Goal User", "password": "goalP4ss!"},
+    )
+    assert sign_up.status_code == 201, sign_up.text
+    token = sign_up.json()["session"]["access"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    channels = await async_client.get("/v1/channels", headers=headers)
+    channel_id = channels.json()[0]["id"]
+
+    goal = await async_client.post(
+        "/v1/goals",
+        headers=headers,
+        json={"channel_id": channel_id, "title": "Ship it", "target": "Ship the thing"},
+    )
+    assert goal.status_code == 200, goal.text
+    assert goal.json()["goal"]["id"]
+
+
+@pytest.mark.asyncio
+async def test_patch_me_updates_name(async_client):
+    """PATCH /v1/me {name} updates the user's name and round-trips via GET /me (Task B)."""
+    email = f"patchme_{uuid.uuid4().hex[:8]}@test.example"
+    sign_up = await async_client.post(
+        "/v1/auth/sign-up",
+        json={"email": email, "name": "Old Name", "password": "nameP4ss!"},
+    )
+    assert sign_up.status_code == 201, sign_up.text
+    token = sign_up.json()["session"]["access"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    patched = await async_client.patch(
+        "/v1/me", headers=headers, json={"name": "New Name"}
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["user"]["name"] == "New Name"
+    assert patched.json()["user"]["email"] == email
+
+    me = await async_client.get("/v1/me", headers=headers)
+    assert me.json()["user"]["name"] == "New Name"
+
+
+@pytest.mark.asyncio
+async def test_sign_in_remember_issues_long_lived_token(async_client):
+    """sign-in with remember=true yields a token with a ~30d exp vs the short default (Task E)."""
+    import jwt
+
+    from omilo.config import get_settings
+
+    email = f"remember_{uuid.uuid4().hex[:8]}@test.example"
+    await async_client.post(
+        "/v1/auth/sign-up",
+        json={"email": email, "name": "Remember User", "password": "rememberP4ss!"},
+    )
+
+    default_resp = await async_client.post(
+        "/v1/auth/sign-in", json={"email": email, "password": "rememberP4ss!"}
+    )
+    remember_resp = await async_client.post(
+        "/v1/auth/sign-in",
+        json={"email": email, "password": "rememberP4ss!", "remember": True},
+    )
+    assert default_resp.status_code == 200, default_resp.text
+    assert remember_resp.status_code == 200, remember_resp.text
+
+    secret = get_settings().jwt_secret
+    default_exp = jwt.decode(
+        default_resp.json()["session"]["access"], secret, algorithms=["HS256"]
+    )["exp"]
+    remember_exp = jwt.decode(
+        remember_resp.json()["session"]["access"], secret, algorithms=["HS256"]
+    )["exp"]
+
+    # Remember token lives far longer than the default (at least ~25 days further out).
+    assert remember_exp - default_exp > 25 * 24 * 3600, (
+        f"remember token exp not extended: default={default_exp} remember={remember_exp}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_me_with_misconfigured_control_plane_returns_503(monkeypatch):
     """P6-T1: NotConfiguredError from get_control_plane() must yield 503, not 500.
 

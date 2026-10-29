@@ -33,6 +33,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from jwt.exceptions import PyJWTError
 
+from omilo.auth.bootstrap import seed_new_company
 from omilo.auth.passwords import hash_password
 from omilo.auth.tokens import make_access_token
 from omilo.config import get_settings
@@ -174,6 +175,11 @@ def _upsert_user(email: str, name: str) -> tuple[User, Company, str]:
                 role="owner",
             )
             session.add(member)
+
+            # Seed default area + Chief Helper (mirrors password sign-up) so a
+            # Google-created workspace can create goals / chat / publish flows
+            # without a 409 "No Chief Helper found".
+            seed_new_company(session, company.id)
             # Objects are still accessible after commit (expire_on_commit=False).
 
     return user, company, "owner"

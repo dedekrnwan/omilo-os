@@ -46,7 +46,12 @@ def _b64url_uint(n: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def make_access_token(user_id: str, company_id: str, role: str) -> tuple[str, datetime]:
+def make_access_token(
+    user_id: str,
+    company_id: str,
+    role: str,
+    ttl_s: int | None = None,
+) -> tuple[str, datetime]:
     """Sign and return (token, expires_at) for the given user/company/role.
 
     When OMILO_JWT_PRIVATE_KEY is configured → signs with RS256 (kid header set).
@@ -56,13 +61,17 @@ def make_access_token(user_id: str, company_id: str, role: str) -> tuple[str, da
         user_id:    The user's id (sub claim).
         company_id: The active company (cmp claim).
         role:       The member's role in that company.
+        ttl_s:      Optional access-token lifetime in seconds. Defaults to
+                    ``Settings.jwt_access_ttl_s`` (the short session TTL). Pass a
+                    larger value for "keep me signed in" (e.g. 30 days).
 
     Returns:
         (access_token, expires_at) — expires_at is a UTC-aware datetime.
     """
     settings = get_settings()
     now = datetime.now(tz=timezone.utc)
-    expires_at = now + timedelta(seconds=settings.jwt_access_ttl_s)
+    ttl = settings.jwt_access_ttl_s if ttl_s is None else ttl_s
+    expires_at = now + timedelta(seconds=ttl)
     payload = {
         "sub": user_id,
         "cmp": company_id,

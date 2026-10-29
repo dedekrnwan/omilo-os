@@ -391,7 +391,19 @@ class TestNoHelper:
         body = await _sign_up(async_client, name="No-Helper User")
         token = body["session"]["access"]
 
-        # No helper seeded for this company
+        # Sign-up now seeds a default Chief + area. To exercise the genuine
+        # "no helper" branch, remove every helper for this company first.
+        me = await async_client.get("/v1/me", headers=_auth(token))
+        company_id = me.json()["company"]["id"]
+        from omilo.db import SessionLocal
+        from omilo.models.agents import Helper
+
+        with SessionLocal() as _sess:
+            with _sess.begin():
+                _sess.query(Helper).filter(
+                    Helper.company_id == company_id
+                ).delete(synchronize_session=False)
+
         sess_resp = await async_client.post(
             "/v1/sessions", json={}, headers=_auth(token)
         )

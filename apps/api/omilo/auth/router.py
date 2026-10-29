@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from omilo.auth import codes, emails
+from omilo.auth.bootstrap import seed_new_company
 from omilo.auth.deps import get_current_user
 from omilo.auth.passwords import hash_password, verify_password
 from omilo.auth.tokens import make_access_token
@@ -45,9 +46,14 @@ class SignUpRequest(BaseModel):
     password: str
 
 
+# "Keep me signed in" issues a token with a 30-day TTL instead of the short default.
+REMEMBER_TTL_SECONDS = 30 * 24 * 3600
+
+
 class SignInRequest(BaseModel):
     email: str
     password: str
+    remember: bool = False
 
 
 class UserOut(BaseModel):
@@ -101,6 +107,10 @@ class MeResponse(BaseModel):
 
 class SwitchCompanyRequest(BaseModel):
     company_id: str
+
+
+class UpdateMeRequest(BaseModel):
+    name: str | None = None
 
 
 # ── Email-based flow schemas (verify / code sign-in / reset / 2FA / invite) ────
@@ -197,13 +207,17 @@ def _company_out(company: Company) -> CompanyOut:
 
 
 def _build_sign_in_response(
-    session: Session, user: User, active_company_id: str | None = None
+    session: Session,
+    user: User,
+    active_company_id: str | None = None,
+    remember: bool = False,
 ) -> SignInResponse:
     """Build the full sign-in payload (token + companies) for *user*.
 
     Shared by password sign-in, magic-code sign-in, two-factor verify, password
     reset, and invite accept.  ``active_company_id`` pins which company the issued
-    token is scoped to (defaults to the user's first membership).
+    token is scoped to (defaults to the user's first membership).  ``remember``
+    issues a long-lived (30-day) token instead of the short default.
     """
     members = session.query(Member).filter_by(user_id=user.id).all()
     companies: list[CompanyOut] = []
@@ -223,7 +237,10 @@ def _build_sign_in_response(
             detail="Account has no workspace.",
         )
 
-    token, expires_at = make_access_token(user.id, active.company_id, active.role)
+    ttl_s = REMEMBER_TTL_SECONDS if remember else None
+    token, expires_at = make_access_token(
+        user.id, active.company_id, active.role, ttl_s=ttl_s
+    )
     return SignInResponse(
         user=_user_out(user),
         session=SessionOut(access=token, expires_at=expires_at),
@@ -288,6 +305,11 @@ def sign_up(body: SignUpRequest) -> SignUpResponse:
                 )
                 session.add(member)
 
+                # Seed the workspace: a default "General" area + a Chief Helper
+                # so goal-create / chat / flow-publish work out of the box
+                # (otherwise POST /v1/goals returns 409 "No Chief Helper found").
+                seed_new_company(session, company.id)
+
         except IntegrityError:
             # Concurrent duplicate slipped past the pre-flight check; return 409
             # instead of propagating a 500 Internal Server Error.
@@ -344,7 +366,7 @@ def sign_in(body: SignInRequest) -> SignInResponse | TwoFactorChallenge:
             emails.send_two_factor_code(user.email, code)
             return TwoFactorChallenge(email=user.email)
 
-        return _build_sign_in_response(session, user)
+        return _build_sign_in_response(session, user, remember=body.remember)
 
 
 # ---------------------------------------------------------------------------
@@ -780,3 +802,57 @@ def me(current_user: User = Depends(get_current_user)) -> MeResponse:
         company=_company_out(company),
         companies=all_companies,
     )
+
+
+@me_router.patch("/me", response_model=MeResponse)
+def update_me(
+    body: UpdateMeRequest,
+    current_user: User = Depends(get_current_user),
+) -> MeResponse:
+    """Update the authenticated user's own profile (currently: name).
+
+    Self-service — any authed user may update their own ``User.name`` (a global,
+    non-tenant column).  Returns the same shape as GET /me so the frontend can
+    reuse its session hydration.
+    """
+    claims = current_user._jwt_claims  # type: ignore[attr-defined]
+    company_id: str = claims["cmp"]
+    role: str = claims["role"]
+
+    with SessionLocal() as session:
+        user = session.get(User, current_user.id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        if body.name is not None:
+            name = body.name.strip()
+            if not name:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Name must not be empty.",
+                )
+            user.name = name
+        session.commit()
+
+        company = session.get(Company, company_id)
+        if company is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Active company not found.",
+            )
+
+        members = session.query(Member).filter_by(user_id=user.id).all()
+        all_companies: list[CompanyOut] = []
+        for m in members:
+            cmp = session.get(Company, m.company_id)
+            if cmp:
+                all_companies.append(_company_out(cmp))
+
+        return MeResponse(
+            user=_user_out(user),
+            member=MemberOut(role=role),
+            company=_company_out(company),
+            companies=all_companies,
+        )
