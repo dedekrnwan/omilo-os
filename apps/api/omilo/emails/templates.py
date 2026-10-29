@@ -60,7 +60,8 @@ def _owner_footer(company: str, links: Links) -> Footer:
     if links.unsubscribe:
         out.append(("Unsubscribe", links.unsubscribe))
     out.append(("Open Omilo", links.app))
-    return Footer(f"You're getting this because you own the {company} workspace in Omilo.", out)
+    what = company if company.lower().endswith("workspace") else f"the {company} workspace"
+    return Footer(f"You're getting this because you own {what} in Omilo.", out)
 
 
 def _finish(subject: str, preheader: str, from_name: str, card_html: str, footer: Footer,
@@ -222,10 +223,16 @@ def _facts(facts: Sequence[Fact]) -> str:
     return soft_panel(divided(rows, padding="9px 0", last_rule=False), padding="6px 16px")
 
 
+def _nothing_sent(counterparty: str | None) -> str:
+    return (f"Nothing is sent to {counterparty} until you approve." if counterparty
+            else "Nothing happens until you approve.")
+
+
 def render_approval(*, helper: str, helper_name: str, company: str, kind: str, waiting_since: str,
                     question: str, reasoning: str, facts: Sequence[Fact], approve_url: str,
-                    reject_url: str, adjust_url: str, counterparty: str, links: Links,
-                    expires_hours: int = 72) -> RenderedEmail:
+                    reject_url: str, adjust_url: str, counterparty: str | None, links: Links,
+                    expires_hours: int = 72, adjust_lead: str = "Want a different number?",
+                    adjust_label: str = "Adjust in Omilo →") -> RenderedEmail:
     subject = f"{helper_name} needs your approval"
     who = hrow([
         (mascot(helper, 40), "", 'width="40"'),
@@ -239,14 +246,13 @@ def render_approval(*, helper: str, helper_name: str, company: str, kind: str, w
         paragraph(e(reasoning)),
         _facts(facts) if facts else "",
         actions([Button("Approve", approve_url), Button("Reject", reject_url, primary=False)], fill=True),
-        hrow([f'<span style="{font(SANS, 13, 400, MUTED, 16)}">Want a different number?</span>',
-              text_link("Adjust in Omilo →", adjust_url)], gap=6),
+        hrow([f'<span style="{font(SANS, 13, 400, MUTED, 16)}">{e(adjust_lead)}</span>',
+              text_link(adjust_label, adjust_url)], gap=6),
         signoff(helper, helper_name, f"Helper at {company}"),
     ])
     note = hrow([(icon("shield", 16), "", 'width="16"'),
                  f'<div style="{font(SANS, 12, 400, MUTED, 18)}">One-tap buttons are signed for your '
-                 f'account and expire in {expires_hours} hours. Nothing is sent to {e(counterparty)} '
-                 "until you approve.</div>"], gap=10)
+                 f'account and expire in {expires_hours} hours. {e(_nothing_sent(counterparty))}</div>'], gap=10)
     c = card([
         Section(who, padding="28px 32px 20px", rule_below=HAIRLINE),
         Section(body, padding="28px 32px 32px"),
@@ -262,9 +268,9 @@ def render_approval(*, helper: str, helper_name: str, company: str, kind: str, w
 
 Approve: {approve_url}
 Reject:  {reject_url}
-Want a different number? Adjust in Omilo: {adjust_url}
+{adjust_lead} {adjust_label.rstrip(" →")}: {adjust_url}
 
-One-tap links are signed for your account and expire in {expires_hours} hours. Nothing is sent to {counterparty} until you approve.
+One-tap links are signed for your account and expire in {expires_hours} hours. {_nothing_sent(counterparty)}
 
 — {helper_name}, helper at {company}"""
     return _finish(subject, question, f"{helper_name} via Omilo", c,

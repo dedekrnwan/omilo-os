@@ -43,7 +43,18 @@ def create_app() -> FastAPI:
     from omilo.config import get_settings
     from fastapi.middleware.cors import CORSMiddleware
 
-    app = FastAPI(title="Omilo API", version="0.1.0")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        # Weekly-digest loop runs with the real server (lifespan isn't run by
+        # the in-process test client).
+        from omilo import notify
+
+        notify.start_loop()
+        yield
+
+    app = FastAPI(title="Omilo API", version="0.1.0", lifespan=_lifespan)
 
     # CORS — allow the configured browser origins. Without this, a trailing-slash
     # redirect (e.g. /v1/channels/ → /v1/channels) resolves to the API's absolute
@@ -101,6 +112,11 @@ def create_app() -> FastAPI:
     app.include_router(connectors_router, prefix="/v1")
     # Approvals write path (Task 7 P1)
     app.include_router(approvals_router, prefix="/v1")
+    # Notification emails: one-tap approve/reject links + public waitlist
+    from omilo.api.one_tap import router as one_tap_router
+    from omilo.api.waitlist import router as waitlist_router
+    app.include_router(one_tap_router, prefix="/v1")
+    app.include_router(waitlist_router, prefix="/v1")
     # Retro / scorecard + Improvement (Task 7 P3)
     app.include_router(retro_router, prefix="/v1")
     # MCP server (Task 7 P2: Role-2 per-agent native platform tools)
@@ -127,6 +143,11 @@ def create_app() -> FastAPI:
     if normalized_mode != "hybrid":
         from omilo.api.control import router as control_router
         app.include_router(control_router)
+
+    # Notification emails: commit hooks (approval / alert / welcome).
+    from omilo.notify import hooks as notify_hooks
+
+    notify_hooks.install()
 
     return app
 

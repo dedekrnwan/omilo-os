@@ -33,6 +33,7 @@ from omilo.tenancy.deps import get_context, require_role
 # DB-level FKs among these are CASCADE/SET NULL, so delete order is safe.
 _TENANT_TABLES = (
     "connector",
+    "email_log",
     "credit_ledger",
     "doit_payment",
     "flow_run",

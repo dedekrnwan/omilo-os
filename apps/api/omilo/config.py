@@ -113,6 +113,15 @@ class Settings(BaseSettings):
     # straight to the API origin (bypassing the dev proxy), and the packaged
     # desktop/web clients are a different origin than the API in prod.
     cors_origins: str = "http://localhost:5173,http://localhost:1420,tauri://localhost"
+    # site_url: the public marketing site (waitlist email "See how it works").
+    site_url: str = "https://omilo.saga.co.id"
+
+    # Notification emails (omilo.notify): approval, alert, welcome, waitlist,
+    # weekly digest.  notify_enabled=false turns all of them off; notify_loop
+    # runs due digests every 5 min inside the API (needs SMTP_HOST) — set it
+    # false and run `omilo-notify` from cron instead if you prefer.
+    notify_enabled: bool = True
+    notify_loop: bool = True
 
     # ---------------------------------------------------------------------------
     # SMTP / transactional email (control-plane feature).

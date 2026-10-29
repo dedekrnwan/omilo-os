@@ -37,7 +37,7 @@ const INITIAL_NOTIFICATIONS: {
   { label: 'Budget warning', desc: 'AI spend passed 80%', channels: { app: true, whatsapp: true, email: true, push: true } },
   { label: 'Agent finished a task', desc: 'Done items in inbox', channels: { app: true, whatsapp: false, email: false, push: false } },
   { label: 'Mentions in chat', desc: 'Someone @mentions you', channels: { app: true, whatsapp: false, email: false, push: true } },
-  { label: 'Weekly brief', desc: "Chief's Friday summary", channels: { app: false, whatsapp: true, email: true, push: false } },
+  { label: 'Weekly brief', desc: "Chief's Monday summary", channels: { app: false, whatsapp: true, email: true, push: false } },
 ]
 
 function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => void }) {
