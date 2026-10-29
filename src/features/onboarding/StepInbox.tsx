@@ -4,7 +4,6 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { notify } from "../../ui/ds/Toaster";
 import {
   CalendarSync,
   ChartLine,
@@ -328,7 +327,7 @@ export function StepInbox() {
                     onDismiss={() =>
                       setDismissed((d) => ({ ...d, [j.id]: true }))
                     }
-                    onEdit={() => notify(`Editing "${j.title}"`)}
+                    onEdit={() => void navigate({ to: '/inbox' })}
                   />
                 ))}
               </div>

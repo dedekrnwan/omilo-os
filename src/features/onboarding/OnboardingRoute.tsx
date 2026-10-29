@@ -10,7 +10,9 @@ import { StepProfile } from './StepProfile'
 import type { ProfileData } from './StepProfile'
 import { StepCheck } from './StepCheck'
 import { StepTeam } from './StepTeam'
+import type { AiSelection } from './StepYourAI'
 import { StepInbox } from './StepInbox'
+import { TEAM_HELPERS } from './data'
 import { capture } from '../../telemetry'
 import { isMockMode } from '../../app/useAuth'
 import { createCommands } from '../../adapters/http/commands'
@@ -56,6 +58,7 @@ export function OnboardingRoute() {
   const [step, setStep] = useState<OnboardingStep>(initial)
   const initialMode: AIMode = search.mode === 'cloud' ? 'cloud' : 'self-host'
   const [profileData, setProfileData] = useState<ProfileData | null>(null)
+  const [aiSelection, setAiSelection] = useState<AiSelection | null>(null)
 
   // Redirect already-onboarded users immediately (before rendering the wizard).
   useEffect(() => {
@@ -70,11 +73,32 @@ export function OnboardingRoute() {
     setStep(next)
   }
 
-  async function completeOnboarding() {
-    capture('onboarding_completed', {})
+  async function completeOnboarding(selectedHelperIds?: string[]) {
+    capture('onboarding_completed', { aiMode: aiSelection?.mode })
 
     if (!isMockMode()) {
       const commands = createCommands(BASE_URL, getToken)
+
+      // Create the helpers the owner picked on StepTeam. Non-fatal per helper so
+      // one failure doesn't block finishing onboarding.
+      const picked = (selectedHelperIds ?? [])
+        .map((id) => TEAM_HELPERS.find((h) => h.id === id))
+        .filter((h): h is (typeof TEAM_HELPERS)[number] => !!h)
+      if (typeof commands.createHelper === 'function') {
+        for (const h of picked) {
+          try {
+            await commands.createHelper({
+              name: h.name,
+              area: h.area,
+              role: h.role,
+              jobDescription: h.description,
+              isChief: h.id === 'chief',
+            })
+          } catch {
+            // Non-fatal: a helper can be hired later from the Team screen.
+          }
+        }
+      }
 
       // Persist profile to backend (non-fatal — profile can be updated later in settings).
       if (profileData) {
@@ -121,7 +145,14 @@ export function OnboardingRoute() {
           <OnboardingHeader step={step} />
           {step === 'welcome' && <StepWelcome onNext={() => goToStep('your-ai')} />}
           {step === 'your-ai' && (
-            <StepYourAI initialMode={initialMode} onBack={() => goToStep('welcome')} onNext={() => goToStep('know-you')} />
+            <StepYourAI
+              initialMode={initialMode}
+              onBack={() => goToStep('welcome')}
+              onNext={(selection) => {
+                if (selection) setAiSelection(selection)
+                goToStep('know-you')
+              }}
+            />
           )}
           {step === 'know-you' && <StepKnowYou onNext={() => goToStep('profile')} />}
           {step === 'profile' && (
@@ -131,7 +162,12 @@ export function OnboardingRoute() {
             />
           )}
           {step === 'check' && <StepCheck onBack={() => goToStep('profile')} onNext={() => goToStep('team')} />}
-          {step === 'team' && <StepTeam onBack={() => goToStep('check')} onNext={() => void completeOnboarding()} />}
+          {step === 'team' && (
+            <StepTeam
+              onBack={() => goToStep('check')}
+              onNext={(selectedHelperIds) => void completeOnboarding(selectedHelperIds)}
+            />
+          )}
         </>
       )}
     </div>
