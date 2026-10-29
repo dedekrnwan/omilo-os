@@ -234,7 +234,7 @@ async function bearerFetch(
 // ── Adapter factory ───────────────────────────────────────────────────────────
 
 export interface AuthAdapter {
-  signIn(email: string, password: string): Promise<SignInResult | TwoFactorChallenge>
+  signIn(email: string, password: string, remember?: boolean): Promise<SignInResult | TwoFactorChallenge>
   signUp(name: string, email: string, password: string): Promise<SignInResult>
   me(): Promise<MeResult>
   switchCompany(companyId: string): Promise<SignInResult>
@@ -299,9 +299,14 @@ export function createAuthAdapter(
      * POST /auth/sign-in — TOKENLESS.
      * Stores the returned access token, UNLESS 2FA is required — then returns a
      * TwoFactorChallenge and stores nothing (the token comes from /two-factor/verify).
+     *
+     * `remember` → the backend issues a 30-day token when true (vs. the default
+     * short-lived session).
      */
-    async signIn(email: string, password: string): Promise<SignInResult | TwoFactorChallenge> {
-      const res = await jsonPost('/v1/auth/sign-in', { email, password })
+    async signIn(email: string, password: string, remember?: boolean): Promise<SignInResult | TwoFactorChallenge> {
+      const body: Record<string, unknown> = { email, password }
+      if (remember !== undefined) body.remember = remember
+      const res = await jsonPost('/v1/auth/sign-in', body)
       const raw = (await res.json()) as RawSignInResponse & { two_factor_required?: boolean; email?: string }
       if (raw.two_factor_required) {
         return { twoFactorRequired: true, email: raw.email ?? email }

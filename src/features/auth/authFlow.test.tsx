@@ -138,8 +138,9 @@ describe('SignInPage — real adapter wiring', () => {
     const btn = screen.getByRole('button', { name: 'Sign in' })
     await user.click(btn)
 
-    // adapter.signIn called with credentials
-    await waitFor(() => expect(fakeAdapter.signIn).toHaveBeenCalledWith('test@omilo.app', 'correct-pass'))
+    // adapter.signIn called with credentials + the keep-signed-in flag
+    // (the "Keep me signed in for 30 days" checkbox defaults to checked).
+    await waitFor(() => expect(fakeAdapter.signIn).toHaveBeenCalledWith('test@omilo.app', 'correct-pass', true))
     // applySignIn called with the result
     await waitFor(() => expect(fakeApplySignIn).toHaveBeenCalledWith(SIGN_IN_RESULT))
     // Navigated away from sign-in

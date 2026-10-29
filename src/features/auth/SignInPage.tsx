@@ -55,7 +55,7 @@ export function SignInPage() {
     setError(null)
     setLoading(true)
     try {
-      const result = await adapter.signIn(email, password)
+      const result = await adapter.signIn(email, password, keepSignedIn)
       if (isTwoFactorChallenge(result)) {
         // 2FA on: a code was emailed — finish on the two-step page.
         setFlowEmail(result.email)

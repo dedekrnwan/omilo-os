@@ -104,6 +104,36 @@ describe('signIn', () => {
     expect(result.companies).toHaveLength(0)
     expect(result.company).toBeNull()
   })
+
+  test('sends remember:true in the body when keep-signed-in is checked', async () => {
+    const stub = makeFetch({
+      user: { id: 'u1', email: 'a@b.com', name: 'Alice' },
+      session: { access: 'tok-remember' },
+      companies: [],
+    })
+    vi.stubGlobal('fetch', stub)
+
+    const adapter = createAuthAdapter(BASE, makeTokenStorage())
+    await adapter.signIn('a@b.com', 'secret', true)
+
+    const [, init] = stub.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'a@b.com', password: 'secret', remember: true })
+  })
+
+  test('omits remember from the body when not passed', async () => {
+    const stub = makeFetch({
+      user: { id: 'u1', email: 'a@b.com', name: 'Alice' },
+      session: { access: 'tok' },
+      companies: [],
+    })
+    vi.stubGlobal('fetch', stub)
+
+    const adapter = createAuthAdapter(BASE, makeTokenStorage())
+    await adapter.signIn('a@b.com', 'secret')
+
+    const [, init] = stub.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'a@b.com', password: 'secret' })
+  })
 })
 
 // ── signUp ────────────────────────────────────────────────────────────────────
