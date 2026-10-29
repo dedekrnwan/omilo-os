@@ -240,38 +240,48 @@ async def worker_relay_handler(
 
     try:
         # Run in executor so we don't block the event loop on the DB round-trip
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _mark_worker_online, worker_id)
     except Exception as exc:
         logger.warning("Worker %s: failed to mark online in DB: %s", worker_id, exc)
 
     # ── 5. Heartbeat loop + message loop (concurrent tasks) ──────────────────
-    last_pong_at = now()
+    # last_pong_at tracks the last received pong (monotonic time).
+    # last_ping_sent_at tracks when the most recent ping was dispatched.
+    # Dead-peer detection: after waiting `interval` for a pong, the worker is
+    # dead if no pong has arrived SINCE the ping was sent, i.e.
+    #   last_pong_at < last_ping_sent_at  AND  now() - last_ping_sent_at >= interval
+    # This bounds detection to ≤ 2×interval from death:
+    #   ≤ 1 interval until next ping + 1 interval awaiting pong.
+    _SENTINEL = float("-inf")
+    last_pong_at: float = _SENTINEL   # updated whenever a pong is received
+    last_ping_sent_at: float = _SENTINEL  # updated when each ping is sent
 
     async def _heartbeat_loop() -> None:
-        nonlocal last_pong_at
+        nonlocal last_pong_at, last_ping_sent_at
         while True:
-            # Wait one heartbeat interval (the injectable `sleep` seam)
+            # Wait one heartbeat interval before sending the first/next ping
             await sleep(heartbeat_interval)
 
-            # Send ping
+            # Record when we send the ping, then send it
+            last_ping_sent_at = now()
             try:
                 await websocket.send_text(encode(PingFrame()))
             except Exception:
                 return  # Connection gone — outer loop will handle cleanup
 
-            # Wait another interval for the pong to arrive
+            # Wait one interval for the pong to arrive
             await sleep(heartbeat_interval)
 
-            # Check: did we receive a pong since the ping was sent?
-            # last_pong_at is updated by the receive loop whenever a pong arrives.
-            elapsed = now() - last_pong_at
-            if elapsed > 2 * heartbeat_interval:
+            # Dead-peer check: if no pong has arrived since we sent this ping,
+            # and at least `interval` seconds have elapsed since we sent it,
+            # the peer is considered dead.  Detection window ≤ 2×interval.
+            if last_pong_at < last_ping_sent_at and now() - last_ping_sent_at >= heartbeat_interval:
                 logger.info(
-                    "Worker %s: missed pong (elapsed=%.2fs > 2×%.2fs). Dropping.",
+                    "Worker %s: missed pong (last_pong_at=%.3f < last_ping_sent_at=%.3f). Dropping.",
                     worker_id,
-                    elapsed,
-                    heartbeat_interval,
+                    last_pong_at,
+                    last_ping_sent_at,
                 )
                 # Drop — close will stop the receive loop too
                 try:
@@ -318,10 +328,10 @@ async def worker_relay_handler(
         logger.debug("Worker %s: handler error: %s", worker_id, exc)
     finally:
         # ── 6. Drop: remove from registry + mark offline in DB ────────────
-        # Run synchronously in the finally block — we must not lose this work.
-        # The DB call is fast (one UPDATE + one SELECT + UPDATE batch).
+        # Run in a thread pool so the DB round-trip doesn't block the event
+        # loop, matching how _mark_worker_online is already offloaded.
         try:
-            _drop_worker(worker_id)
+            await asyncio.to_thread(_drop_worker, worker_id)
         except Exception as exc:
             logger.warning("Worker %s: drop failed: %s", worker_id, exc)
 

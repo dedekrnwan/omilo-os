@@ -13,9 +13,9 @@ Tests:
 
 3. test_missing_pong_marks_offline_and_errors_inflight
    Register a worker; seed a dispatched ComputeJob for the same company /
-   worker; use the injected heartbeat seam (short interval + fake clock that
-   never advances past 2×interval + manual advance) to drive a missed pong;
-   verify: worker is marked offline in the DB, job is marked error, in_use = 0.
+   worker; use the injected heartbeat seam (short interval via kwarg, NOT a
+   module-global patch) to drive a missed pong; verify: worker is marked
+   offline in the DB, job is marked error, in_use = 0.
 """
 from __future__ import annotations
 
@@ -25,9 +25,11 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from omilo.compute.relay import registry, worker_relay_handler
 from omilo.db import SessionLocal
 from omilo.main import create_app
 from omilo.models.base import prefixed_id
@@ -47,6 +49,34 @@ def ensure_schema():
         f"alembic upgrade head failed:\n{result.stdout}\n{result.stderr}"
     )
     yield
+
+
+# ---------------------------------------------------------------------------
+# Poll helpers — deterministic, no fixed sleeps
+# ---------------------------------------------------------------------------
+
+
+def _poll(condition_fn, *, timeout: float = 5.0, step: float = 0.02) -> bool:
+    """Poll `condition_fn()` until it returns truthy or `timeout` elapses.
+
+    Returns True if the condition was satisfied, False on timeout.
+    Replaces fragile fixed `time.sleep()` calls in tests.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition_fn():
+            return True
+        time.sleep(step)
+    return False
+
+
+def _poll_worker_status(worker_id: str, status: str, timeout: float = 5.0) -> bool:
+    """Poll DB until worker.status == `status` or timeout. Returns success bool."""
+    def _check():
+        with SessionLocal() as session:
+            w = session.get(ComputeWorker, worker_id)
+            return w is not None and w.status == status
+    return _poll(_check, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +183,6 @@ class TestWorkerRegistersWithValidToken:
         worker_id = pair["worker_id"]
         raw_token = pair["token"]
 
-        from omilo.compute.relay import registry
-
         with client.websocket_connect(
             f"/v1/compute/relay?token={raw_token}"
         ) as ws:
@@ -166,7 +194,7 @@ class TestWorkerRegistersWithValidToken:
                 "company_id": company_id,
                 "capacity": 2,
             }))
-            # Allow the server to process the register frame
+            # Allow the server to process the register frame.
             # The server doesn't send a response to register — just marks online.
             # We verify via DB.
 
@@ -185,8 +213,6 @@ class TestWorkerRegistersWithValidToken:
         worker_id = pair["worker_id"]
         raw_token = pair["token"]
 
-        from omilo.compute.relay import registry
-
         connected_seen = False
 
         with client.websocket_connect(
@@ -199,16 +225,20 @@ class TestWorkerRegistersWithValidToken:
                 "company_id": company_id,
                 "capacity": 3,
             }))
-            # In a sync TestClient the WS handler runs in a thread; give it a
-            # moment to process the frame before we check the registry.
-            import time as _time
-            _time.sleep(0.05)
-
-            conns = registry.by_company(company_id)
-            if any(c.worker_id == worker_id for c in conns):
+            # Poll until the server processes the register frame and adds the
+            # worker to the registry (deterministic, no fixed sleep).
+            appeared = _poll(
+                lambda: any(c.worker_id == worker_id for c in registry.by_company(company_id)),
+                timeout=5.0,
+            )
+            if appeared:
                 connected_seen = True
 
-        # After disconnect, dropped from registry
+        # After disconnect, dropped from registry (poll to avoid race).
+        _poll(
+            lambda: not any(c.worker_id == worker_id for c in registry.by_company(company_id)),
+            timeout=5.0,
+        )
         conns_after = registry.by_company(company_id)
         assert not any(c.worker_id == worker_id for c in conns_after), (
             "Worker should be removed from registry after disconnect"
@@ -223,10 +253,10 @@ class TestWorkerRegistersWithValidToken:
 
 class TestBadTokenCloses:
     def test_bad_token_closes(self, relay_setup):
-        """Invalid token → connection closed (WebSocketDisconnect or 4401), no frame."""
+        """Invalid token → connection closed with WebSocketDisconnect, no frame."""
         client, owner_token, company_id = relay_setup
 
-        with pytest.raises((WebSocketDisconnect, Exception)):
+        with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(
                 "/v1/compute/relay?token=totally_bogus_token"
             ) as ws:
@@ -247,81 +277,92 @@ class TestBadTokenCloses:
 # ---------------------------------------------------------------------------
 
 
+def _make_heartbeat_test_app(raw_token_ref: list, heartbeat_interval: float) -> FastAPI:
+    """Build a minimal FastAPI app with a WS route that calls worker_relay_handler
+    with a short injectable heartbeat_interval — does NOT mutate any module global.
+
+    raw_token_ref is a mutable list so the caller can set [raw_token] after
+    the fixture has paired the worker.
+    """
+    app = FastAPI()
+
+    @app.websocket("/v1/compute/relay")
+    async def _relay(ws: WebSocket) -> None:  # type: ignore[override]
+        await worker_relay_handler(ws, heartbeat_interval=heartbeat_interval)
+
+    return app
+
+
 class TestMissingPongMarksOfflineAndErrorsInflight:
     def test_missing_pong_marks_offline_and_errors_inflight(self, relay_setup):
         """Heartbeat miss → worker offline, dispatched/running jobs → error, in_use=0.
 
-        Injectable seam: temporarily patch HEARTBEAT_S to 0.05 s on the relay
-        module so the production ws_worker_relay route uses a tiny interval.
-        The worker never sends a pong, so after 2 × 0.05 s = 0.1 s the server
-        detects a missed pong, drops the worker, and errors inflight jobs.
-
-        No real sleeping is needed beyond the 0.1 s the server itself takes to
-        detect the miss — well within the 5 s test budget.
+        Injectable seam: a dedicated test app calls worker_relay_handler with
+        heartbeat_interval=0.05 via the kwarg — NO module-global patch.
+        Detection window: ≤ 2 × 0.05 s = 100 ms from the missed pong.
+        All waits use poll-until-condition with a 5 s budget — no fixed sleeps.
         """
         import threading
-        import time as _time
-        import omilo.compute.relay as relay_mod
 
+        # Use relay_setup only for pairing (DB + auth); the WS connection
+        # goes to a separate test app with the short interval.
         client, owner_token, company_id = relay_setup
 
         pair = _pair_worker(client, owner_token, capacity=2)
         worker_id = pair["worker_id"]
         raw_token = pair["token"]
 
-        # Seed in-flight jobs before patching (seeding is synchronous)
+        # Seed in-flight jobs
         dispatched_job_id = _seed_dispatched_job(company_id, worker_id)
         running_job_id = _seed_running_job(company_id, worker_id)
 
-        # Patch HEARTBEAT_S to a tiny value so the test completes in ~0.1 s.
-        _orig = relay_mod.HEARTBEAT_S
-        relay_mod.HEARTBEAT_S = 0.05
-        try:
-            disconnect_event = threading.Event()
+        # Build a fresh test app that drives handler with short interval via kwarg.
+        INTERVAL = 0.05  # seconds
+        test_app = _make_heartbeat_test_app([], heartbeat_interval=INTERVAL)
+        hb_client = TestClient(test_app, raise_server_exceptions=False)
 
-            def _run_ws():
-                try:
-                    # Use the relay_setup's client — it has the real route with
-                    # the patched HEARTBEAT_S.
-                    with client.websocket_connect(
-                        f"/v1/compute/relay?token={raw_token}"
-                    ) as ws:
-                        ws.send_text(json.dumps({
-                            "type": "register",
-                            "role": "worker",
-                            "worker_id": worker_id,
-                            "company_id": company_id,
-                            "capacity": 2,
-                        }))
-                        # Do NOT send pong — simulate missing heartbeat response.
-                        # Drain receive until server closes us (ping then close).
-                        try:
-                            for _ in range(50):
-                                ws.receive_text()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-                finally:
-                    disconnect_event.set()
+        disconnect_event = threading.Event()
 
-            ws_thread = threading.Thread(target=_run_ws, daemon=True)
-            ws_thread.start()
+        def _run_ws():
+            try:
+                with hb_client.websocket_connect(
+                    f"/v1/compute/relay?token={raw_token}"
+                ) as ws:
+                    ws.send_text(json.dumps({
+                        "type": "register",
+                        "role": "worker",
+                        "worker_id": worker_id,
+                        "company_id": company_id,
+                        "capacity": 2,
+                    }))
+                    # Do NOT send pong — simulate missing heartbeat response.
+                    # Drain receive until server closes us.
+                    try:
+                        for _ in range(100):
+                            ws.receive_text()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            finally:
+                disconnect_event.set()
 
-            # Server takes ~0.1 s to detect the missed pong. Give 5 s budget.
-            finished = disconnect_event.wait(timeout=5.0)
-            ws_thread.join(timeout=5.0)
-        finally:
-            relay_mod.HEARTBEAT_S = _orig
+        ws_thread = threading.Thread(target=_run_ws, daemon=True)
+        ws_thread.start()
+
+        # Server detects the missed pong within 2 × INTERVAL = 100 ms.
+        # Give 5 s budget for the thread to finish.
+        finished = disconnect_event.wait(timeout=5.0)
+        ws_thread.join(timeout=5.0)
 
         assert finished, (
             "WS thread did not finish within 5 s — heartbeat may not have fired"
         )
 
-        # Allow a short window for the server's synchronous `_drop_worker`
-        # call to complete (it runs in the server's anyio thread after the
-        # client receives the close frame).
-        _time.sleep(0.3)
+        # Poll DB until worker is offline (replaces fixed sleep).
+        # Detection must complete within 2×INTERVAL after death; we allow 5 s.
+        went_offline = _poll_worker_status(worker_id, "offline", timeout=5.0)
+        assert went_offline, "Worker did not go offline within 5 s after heartbeat miss"
 
         # Verify DB state: worker offline, in_use=0
         worker_row = _get_worker_from_db(worker_id)
@@ -333,16 +374,18 @@ class TestMissingPongMarksOfflineAndErrorsInflight:
             f"Expected worker in_use=0, got {worker_row.in_use}"
         )
 
-        # Dispatched job → error
-        dispatched_job = _get_job_from_db(dispatched_job_id)
-        assert dispatched_job is not None
-        assert dispatched_job.status == "error", (
-            f"Expected dispatched job status='error', got {dispatched_job.status!r}"
+        # Dispatched job → error (poll until consistent)
+        def _dispatched_errored():
+            j = _get_job_from_db(dispatched_job_id)
+            return j is not None and j.status == "error"
+        assert _poll(_dispatched_errored, timeout=5.0), (
+            f"Dispatched job did not reach status='error' within 5 s"
         )
 
-        # Running job → error
-        running_job = _get_job_from_db(running_job_id)
-        assert running_job is not None
-        assert running_job.status == "error", (
-            f"Expected running job status='error', got {running_job.status!r}"
+        # Running job → error (poll until consistent)
+        def _running_errored():
+            j = _get_job_from_db(running_job_id)
+            return j is not None and j.status == "error"
+        assert _poll(_running_errored, timeout=5.0), (
+            f"Running job did not reach status='error' within 5 s"
         )
