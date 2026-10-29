@@ -798,4 +798,79 @@ export interface RoutineSuggestion {
   desc: string
   moves: RoutineSuggestionMove[]
   note: string
+// ── sweep/inbox-flows ──
+// Interface merging: extends the declarations above without reordering them.
+
+export interface InboxProposal {
+  /** Linked Proposal (approve / reject / request changes / undo). */
+  proposalId?: string
+  /** Proposal type, e.g. flow_publish, send, skill_publish. */
+  type?: string
+  risk?: string
+  /** Proposal status (pending | done | rejected | …), when linked. */
+  status?: string
+  /** Flow-run approvals: the run parked at an approval step. */
+  flowId?: string
+  flowRunId?: string
+  nodeId?: string
+
+export interface InboxItem {
+  /** ISO time the operator read the item; absent = unread. */
+  readAt?: string
+  /** ISO time of the last status change (drives "Done today"). */
+  updatedAt?: string
+
+/** One step of a flow run's log (GET /v1/flows/{id}/runs/{run_id}). */
+export interface FlowRunStep {
+  nodeId: string
+  /** Engine kind: trigger | ai_step | condition | approval | connector */
+  /** done | waiting | failed | skipped | declined | cancelled */
+  durationMs: number
+  output?: Record<string, unknown>
+  note?: string
+
+export interface FlowRun {
+  /** Per-step log (present on run detail, and on list rows from the API). */
+  steps?: FlowRunStep[]
+
+export interface Flow {
+  triggerKind?: string | null
+  /** App ids of the trigger / connector / approval steps, in order. */
+  apps?: string[]
+  aiSteps?: number
+  /** Runs per day for the last 7 days (oldest → today). */
+  runs7d?: number[]
+  lastRun?: FlowRun | null
+  /** Detail only. */
+  spentThisMonthCredits?: number
+  publishState?: 'draft' | 'pending' | 'live'
+  pendingProposalId?: string | null
+  publishedVersion?: number | null
+
+/** GET /v1/flows/{id}/versions row. */
+export interface FlowVersionInfo {
+  flowId: string
+  /** pending | live | superseded */
+  nodeCount: number
+
+/** GET /v1/flows/suggestions row. */
+export interface FlowSuggestion {
+  sub: string
+  hint: string
+  area: string
+  runsAs: string
+  helperArea: HelperArea
+  count: number
+  source: 'connector' | 'routine'
+  draft: { title: string; trigger: { kind: string; spec: Record<string, unknown> }; nodes: unknown[]; edges: unknown[] }
+
+/** GET /v1/proposals/{id}. */
+export interface ProposalDetail {
+  type: string
+  risk: string
+  bodyMd: string
+  assignee: string | null
+  due: string | null
+  params: Record<string, unknown> | null
+  revisions: { n: number; author: string; summary: string; bodyMd: string; at: string | null }[]
 }

@@ -927,5 +927,106 @@ export function useRoutinePreview(input: import('../adapters/http/commands').Pre
     queryFn: () => commands.previewRoutine(input!),
     enabled: !!input && /^\d{1,2}:\d{2}$/.test(input.at),
     staleTime: 10_000,
+// ── sweep/inbox-flows ──
+
+/** Everything an inbox decision / flow approval can change. */
+function invalidateDecisions(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ['inbox'] })
+  void qc.invalidateQueries({ queryKey: ['inboxItem'] })
+  void qc.invalidateQueries({ queryKey: ['proposal'] })
+  void qc.invalidateQueries({ queryKey: ['flows'] })
+  void qc.invalidateQueries({ queryKey: ['flow'] })
+  void qc.invalidateQueries({ queryKey: ['flowRuns'] })
+  void qc.invalidateQueries({ queryKey: ['flowRun'] })
+  void qc.invalidateQueries({ queryKey: ['flowVersions'] })
+
+export function useMarkInboxRead() {
+    mutationFn: (id: Id) => commands.markInboxRead(id),
+      void qc.invalidateQueries({ queryKey: ['inbox'] })
+
+export function useMarkAllInboxRead() {
+    mutationFn: (before?: string) => commands.markAllInboxRead(before),
+      void qc.invalidateQueries({ queryKey: ['inbox'] })
+
+export function useProposal(id: Id | undefined) {
+    queryKey: ['proposal', id],
+    queryFn: () => repos.proposals?.get(id!) ?? Promise.resolve(null),
+
+export function useUpdateProposal() {
+    mutationFn: ({ id, input }: { id: Id; input: { assignee?: string | null; due?: string | null } }) =>
+      commands.updateProposal(id, input),
+    onSuccess: () => invalidateDecisions(qc),
+
+export type ProposalDecision =
+  | { kind: 'approve'; proposalId: Id; note?: string; params?: Record<string, unknown> }
+  | { kind: 'reject'; proposalId: Id; note: string }
+  | { kind: 'changes'; proposalId: Id; note: string }
+  | { kind: 'undo'; proposalId: Id }
+  | { kind: 'flowRun'; flowId: Id; runId: Id; approve: boolean }
+
+/** Approve / reject / request changes / undo a proposal, or decide a waiting flow run. */
+export function useDecide() {
+    mutationFn: async (d: ProposalDecision): Promise<unknown> => {
+      switch (d.kind) {
+        case 'approve':
+          return d.params
+            ? commands.approveProposalAmended(d.proposalId, d.params, d.note)
+            : commands.approveProposal(d.proposalId, d.note)
+        case 'reject':
+          return commands.rejectProposal(d.proposalId, d.note)
+        case 'changes':
+          return commands.requestChanges(d.proposalId, d.note)
+        case 'undo':
+          return commands.undoApproval(d.proposalId)
+        case 'flowRun':
+          return commands.decideFlowRun(d.flowId, d.runId, d.approve)
+      }
+    onSettled: () => invalidateDecisions(qc),
+
+export function useFlowRun(flowId: Id, runId: Id | undefined, opts: { poll?: boolean } = {}) {
+    queryKey: ['flowRun', flowId, runId],
+    queryFn: () => repos.flows.run?.(flowId, runId!) ?? Promise.resolve(null),
+    enabled: !!runId,
+    refetchInterval: (q) => {
+      const st = (q.state.data as { status?: string } | null | undefined)?.status
+      return opts.poll && st === 'running' ? 1000 : false
+
+export function useFlowVersions(flowId: Id) {
+    queryKey: ['flowVersions', flowId],
+    queryFn: () => repos.flows.versions?.(flowId) ?? Promise.resolve([]),
+
+export function useFlowSuggestions() {
+    queryKey: ['flowSuggestions'],
+    queryFn: () => repos.flows.suggestions?.() ?? Promise.resolve([]),
+
+export type FlowRunAction =
+  | { kind: 'run'; flowId: Id }
+  | { kind: 'test'; flowId: Id }
+  | { kind: 'retry'; flowId: Id; runId: Id }
+  | { kind: 'cancel'; flowId: Id; runId: Id }
+  | { kind: 'decide'; flowId: Id; runId: Id; approve: boolean }
+
+/** Start / test / retry / cancel / approve a flow run → the affected run's id. */
+export function useFlowRunAction() {
+    mutationFn: async (a: FlowRunAction): Promise<{ id: Id; status: string }> => {
+      const run = (await (a.kind === 'run'
+        ? commands.runFlow(a.flowId)
+        : a.kind === 'test'
+          ? commands.testRunFlow(a.flowId)
+          : a.kind === 'retry'
+            ? commands.retryFlowRun(a.flowId, a.runId)
+            : a.kind === 'cancel'
+              ? commands.cancelFlowRun(a.flowId, a.runId)
+              : commands.decideFlowRun(a.flowId, a.runId, a.approve))) as { id: Id; status: string }
+      return { id: run.id, status: run.status }
+    onSettled: () => invalidateDecisions(qc),
+
+export function usePublishFlow() {
+    mutationFn: (id: Id) => commands.publishFlow(id) as Promise<{ id?: Id }>,
+    onSettled: () => invalidateDecisions(qc),
+
+export function useRestoreFlowVersion() {
+    mutationFn: ({ flowId, version }: { flowId: Id; version: number }) => commands.restoreFlowVersion(flowId, version),
+    onSettled: () => invalidateDecisions(qc),
   })
 }

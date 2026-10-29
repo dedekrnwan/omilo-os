@@ -1,24 +1,38 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { ArrowRight, ArrowUpRight, CalendarSync, Check, ChevronRight, CircleCheck, Inbox, ListFilter, Reply } from 'lucide-react'
+import { ArrowUpRight, Check, ChevronRight, CircleCheck, CircleX, Inbox, ListFilter, Reply } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import type React from 'react'
-import type { Channel, InboxItem } from '../../core/domain/types'
-import { useChannels, useInbox, useInboxItem } from '../../app/queries'
+import type { Channel, HelperArea, InboxItem } from '../../core/domain/types'
+import { useChannels, useDecide, useHelpers, useInbox, useInboxItem, useProposal, useRoutines } from '../../app/queries'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { AreaChip } from '../../ui/ds/AreaChip'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
+import { MoreMenu } from '../../ui/ds/ItemMenu'
 import { Mascot } from '../../ui/ds/Mascot'
+import { notify } from '../../ui/ds/Toaster'
 import { useUIStore } from '../../app/store'
 import type { AreaFilter } from '../shell/area'
 import { InboxReviewDialog } from './InboxReviewDialog'
 import type { ReviewResult } from './InboxReviewDialog'
 import { InboxChangeAmountDialog } from './InboxChangeAmountDialog'
-import { APPROVED_TOAST, BUDGET, ROUTINE_SUGGESTION } from './data'
+import { amountOf, daysOf, decisionsFor, isDecidable, isToday, linkedEntries, runAll } from './decisions'
 import { Toast } from './ui'
 
-/** Next scheduled routine under "Running now" (routines aren't wired yet). */
-const nextRoutine = { area: 'brand' as const, text: 'Thursday check-in · 09:00' }
+/** Next scheduled routine for the "Running now" footer (earliest enabled nextAt). */
+function useNextRoutine(): { area: HelperArea; text: string } | null {
+  const { data: routines = [] } = useRoutines()
+  const { data: helpers = [] } = useHelpers()
+  const next = routines
+    .filter((r) => r.enabled && !r.paused && r.nextAt)
+    .sort((a, b) => (a.nextAt! < b.nextAt! ? -1 : 1))[0]
+  if (!next) return null
+  const when = new Date(next.nextAt!)
+  const day = when.toLocaleDateString('en-US', { weekday: 'long' })
+  const time = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const area = (helpers.find((h) => h.id === next.helperId)?.area ?? 'brand') as HelperArea
+  return { area, text: `${next.name} · ${day} ${time}` }
+}
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -103,28 +117,34 @@ function DecisionCard({
   channel,
   onOpen,
   onApprove,
+  onReject,
   onReviewOneByOne,
   onChangeAmount,
   approvedText,
   onUndo,
+  busy,
 }: {
   item: InboxItem
   channel?: Channel
   onOpen: () => void
   onApprove: () => void
+  onReject: () => void
   onReviewOneByOne: () => void
   onChangeAmount: () => void
   /** Set once approved: the green banner replaces the action row. */
   approvedText?: string
   onUndo: () => void
+  busy?: boolean
 }) {
   function handlerFor(label: string) {
     const l = label.toLowerCase()
     if (l.startsWith('approve')) return onApprove
+    if (l.startsWith('reject') || l.startsWith('decline')) return onReject
     if (l.startsWith('review')) return onReviewOneByOne
     if (l.startsWith('change')) return onChangeAmount
-    return onOpen // Reply → open the thread
+    return onOpen // Reply / Request changes → open the thread
   }
+  const many = (item.proposals?.length ?? 0) > 1
 
   return (
     <article
@@ -138,11 +158,11 @@ function DecisionCard({
         <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{item.summary}</p>
       </div>
 
-      {item.proposals && item.proposals.length > 0 && (
+      {many && item.proposals && (
         <ul className="m-0 flex w-full list-none flex-col rounded-md bg-soft p-0 outline-1 -outline-offset-1 outline-line">
           {item.proposals.map((p, i) => (
             <li
-              key={p.text}
+              key={p.proposalId ?? p.text}
               className={`flex items-center gap-[10px] px-[12px] py-[9px] ${
                 i < item.proposals!.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
               }`}
@@ -167,6 +187,7 @@ function DecisionCard({
               height={28}
               variant={a.primary ? 'primary' : 'secondary'}
               icon={a.icon === 'check' ? Check : a.icon === 'reply' ? Reply : undefined}
+              disabled={busy}
               onClick={handlerFor(a.label)}
             >
               {a.label}
@@ -175,76 +196,6 @@ function DecisionCard({
           <span className="h-px flex-1" />
           {item.reassurance && <span className="text-[12px] text-muted">{item.reassurance}</span>}
           <OpenLink title={item.title} onOpen={onOpen} />
-        </div>
-      )}
-    </article>
-  )
-}
-
-/** Chief's routine suggestion (pen BoenW `Decision · Spread Monday routines`). */
-function RoutineSuggestionCard({
-  applied,
-  onApply,
-  onUndo,
-  onSee,
-  onDismiss,
-}: {
-  applied: boolean
-  onApply: () => void
-  onUndo: () => void
-  onSee: () => void
-  onDismiss: () => void
-}) {
-  const s = ROUTINE_SUGGESTION
-  return (
-    <article
-      aria-label={s.title}
-      className="flex w-full flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong"
-    >
-      <CardTop
-        area="brand"
-        who={s.asker}
-        when={s.askedAgo}
-        chip={
-          <span className="inline-flex h-[22px] items-center gap-[4px] rounded-sm bg-soft px-[8px] outline-1 -outline-offset-1 outline-line-strong">
-            <CalendarSync size={12} aria-hidden className="text-ink-2" />
-            <span className="text-[12px] font-medium text-ink-2">Routines</span>
-          </span>
-        }
-      />
-      <div className="flex w-full flex-col gap-[4px]">
-        <h3 className="m-0 text-[14.5px] font-semibold text-ink">{s.title}</h3>
-        <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{s.summary}</p>
-      </div>
-      <ul className="m-0 flex w-full list-none flex-col rounded-md bg-soft p-0 outline-1 -outline-offset-1 outline-line">
-        {s.moves.map((m, i) => (
-          <li
-            key={m.name}
-            className={`flex items-center gap-[10px] px-[12px] py-[9px] ${
-              i < s.moves.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
-            }`}
-          >
-            <Mascot size={18} radius={5} area={m.area} />
-            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{m.name}</span>
-            <span className="text-[12px] text-faint">{m.from}</span>
-            <ArrowRight size={12} aria-hidden className="text-faint" />
-            <span className="text-[12px] font-semibold text-ink">{m.to}</span>
-          </li>
-        ))}
-      </ul>
-      {applied ? (
-        <ApprovedBanner text="Applied · 2 routines moved" onUndo={onUndo} />
-      ) : (
-        <div className="flex w-full items-center gap-[6px]">
-          <Button height={28} variant="primary" icon={Check} onClick={onApply}>
-            Apply both
-          </Button>
-          <Button height={28} variant="secondary" icon={CalendarSync} onClick={onSee}>
-            See in Routines
-          </Button>
-          <Button height={28} variant="secondary" onClick={onDismiss}>
-            Not now
-          </Button>
         </div>
       )}
     </article>
@@ -281,6 +232,7 @@ function CompactRow({
 }
 
 function RunningCard({ items }: { items: InboxItem[] }) {
+  const nextRoutine = useNextRoutine()
   return (
     <div className="flex w-full flex-col gap-[12px] rounded-lg outline-1 -outline-offset-1 outline-line bg-soft p-[14px]">
       {items.map((r) => {
@@ -301,11 +253,13 @@ function RunningCard({ items }: { items: InboxItem[] }) {
           </div>
         )
       })}
-      <div className="flex items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] pt-[8px]">
-        <span className="text-[12px] text-muted">Next</span>
-        <Mascot size={16} radius={4} area={nextRoutine.area} />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{nextRoutine.text}</span>
-      </div>
+      {nextRoutine && (
+        <div className="flex items-center gap-[8px] shadow-[inset_0_1px_0_var(--color-line)] pt-[8px]">
+          <span className="text-[12px] text-muted">Next</span>
+          <Mascot size={16} radius={4} area={nextRoutine.area} />
+          <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{nextRoutine.text}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -329,65 +283,105 @@ function DoneCard({ item }: { item: InboxItem }) {
 /** "Done today" shows the latest cards; the rest live behind "See all activity". */
 const DONE_PREVIEW = 2
 
-/** Screenshot-able states: `?state=review|approved|amount|routine`. */
-type InboxState = 'review' | 'approved' | 'amount' | 'routine'
+/** Screenshot-able states: `?state=review|amount`. */
+type InboxState = 'review' | 'amount'
 
 function readState(): InboxState | undefined {
   if (typeof window === 'undefined') return undefined
   const v = new URLSearchParams(window.location.search).get('state')
-  return v === 'review' || v === 'approved' || v === 'amount' || v === 'routine' ? v : undefined
+  return v === 'review' || v === 'amount' ? v : undefined
 }
 
-function approvedTextFor(item: InboxItem, results: ReviewResult[]) {
-  if (!item.proposals?.length) {
-    const amount = /\$[\d,]+/.exec(item.actions?.find((a) => a.primary)?.label ?? '')?.[0]
-    return `You approved ${amount ?? 'this'} · ${item.asker} started`
+function fmt(n: number) {
+  return `$${n.toLocaleString('en-US')}`
+}
+
+function approvedTextFor(item: InboxItem, results: ReviewResult[], amount?: number) {
+  if ((item.proposals?.length ?? 0) <= 1) {
+    const value = amount ?? amountOf(item)
+    return `You approved ${value != null ? fmt(value) : 'this'} · ${item.asker} started`
   }
   const ok = results.filter((r) => r.decision === 'approved')
-  const who = [...new Set(ok.map((r) => item.proposals![r.proposalIndex].who))]
+  const who = [...new Set(ok.map((r) => item.proposals![r.proposalIndex]?.who).filter(Boolean))]
   const n = ok.length
   return `You approved ${n} task${n === 1 ? '' : 's'}${who.length ? ` · ${who.join(' and ')} started` : ''}`
 }
 
+/** Toast after approving: what was approved and who goes ahead. */
+function approvedToast(item: InboxItem, results: ReviewResult[], amount?: number) {
+  const ok = results.filter((r) => r.decision === 'approved')
+  if ((item.proposals?.length ?? 0) > 1) {
+    const who = [...new Set(ok.map((r) => item.proposals![r.proposalIndex]?.who).filter(Boolean))]
+    return {
+      title: `${ok.length} task${ok.length === 1 ? '' : 's'} approved`,
+      body: who.length ? `${who.join(' and ')} ${who.length === 1 ? 'starts' : 'start'} now.` : undefined,
+    }
+  }
+  if (amount != null) return { title: `${fmt(amount)} approved`, body: `${item.asker} goes ahead with ${fmt(amount)}.` }
+  return { title: `${item.title.replace(/^Approve /, '')} approved`, body: `${item.asker} started.` }
+}
+
+interface Approved {
+  results: ReviewResult[]
+  amount?: number
+}
+
+function AreaFilterButton({ label, channels }: { label: string; channels: Channel[] }) {
+  const setArea = useUIStore((s) => s.setArea)
+  return (
+    <MoreMenu
+      label="Filter by area"
+      trigger={
+        <Button variant="secondary" height={28} icon={ListFilter} aria-label={`Filter by area: ${label}`}>
+          {label}
+        </Button>
+      }
+      items={[
+        { label: 'All areas', onSelect: () => setArea(null) },
+        { type: 'separator' },
+        ...channels.map((c) => ({ label: c.name, onSelect: () => setArea(c.id) })),
+      ]}
+    />
+  )
+}
+
 function InboxList({ area }: { area: AreaFilter }) {
   const navigate = useNavigate()
-  const { data: all = [], isLoading } = useInbox()
+  const { data: all = [], isLoading, isError } = useInbox()
   const { data: channels = [] } = useChannels()
+  const decide = useDecide()
   const channelOf = (id: string) => channels.find((c) => c.id === id)
   const [initial] = useState(readState)
 
+  // ── Interactive state ──────────────────────────────────────────────────────
+  const [approved, setApproved] = useState<Record<string, Approved>>({})
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const [changing, setChanging] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ title: string; body?: string } | null>(null)
+
   const items = area ? all.filter((i) => i.channelId === area) : all
-  const pending = items.filter((i) => i.status === 'pending')
+  // Approved cards stay in place (green banner + Undo) until you leave the page.
+  const pending = items.filter((i) => i.status === 'pending' || approved[i.id])
   const cards = pending.filter((i) => !i.compact)
-  const rows = pending.filter((i) => i.compact)
+  const rows = pending.filter((i) => i.compact && !approved[i.id])
   const running = items.filter((i) => i.status === 'running')
-  const done = items.filter((i) => i.status === 'done')
+  const done = items
+    .filter((i) => i.status === 'done' && !approved[i.id] && isToday(i.updatedAt ?? i.createdAt))
+    .sort((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? 1 : -1))
   const open = (item: InboxItem) =>
     void navigate({ to: '/inbox/$itemId', params: { itemId: item.id } })
   const areaName = area ? channelOf(area)?.name : undefined
-  const multi = cards.find((c) => c.proposals?.length)
+  const multi = cards.find((c) => (c.proposals?.length ?? 0) > 1)
   const budget = cards.find((c) => c.actions?.some((a) => a.label.toLowerCase().startsWith('change')))
 
-  // ── Interactive state ──────────────────────────────────────────────────────
-  const [approved, setApproved] = useState<Record<string, ReviewResult[]>>({})
-  const [reviewing, setReviewing] = useState<string | null>(null)
-  const [changing, setChanging] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ title: string; body?: string } | null>(null)
-  const [suggestion, setSuggestion] = useState<'open' | 'applied' | 'hidden'>(
-    initial === 'routine' ? 'open' : 'hidden',
-  )
-
-  // Seed the requested design state once the mock items are loaded.
+  // Seed the requested design state once the items are loaded.
   const [seeded, setSeeded] = useState(false)
   useEffect(() => {
     if (seeded || isLoading) return
     setSeeded(true)
     if (initial === 'review' && multi) setReviewing(multi.id)
     if (initial === 'amount' && budget) setChanging(budget.id)
-    if (initial === 'approved' && multi) {
-      setApproved({ [multi.id]: multi.proposals!.map((_, i) => ({ proposalIndex: i, decision: 'approved' })) })
-      setToast(APPROVED_TOAST)
-    }
   }, [seeded, isLoading, initial, multi, budget])
 
   useEffect(() => {
@@ -396,44 +390,67 @@ function InboxList({ area }: { area: AreaFilter }) {
     return () => clearTimeout(t)
   }, [toast])
 
-  function markApproved(item: InboxItem, results: ReviewResult[]) {
+  function markApproved(item: InboxItem, results: ReviewResult[], amount?: number) {
     if (!results.some((r) => r.decision === 'approved')) return
-    setApproved((prev) => ({ ...prev, [item.id]: results }))
-    const n = results.filter((r) => r.decision === 'approved').length
-    setToast(
-      item.proposals?.length
-        ? n === item.proposals.length && item.id === multi?.id
-          ? APPROVED_TOAST
-          : { title: `${n} task${n === 1 ? '' : 's'} approved` }
-        : { title: `${item.title.replace(/^Approve /, '')} approved` },
-    )
+    setApproved((prev) => ({ ...prev, [item.id]: { results, amount } }))
+    setToast(approvedToast(item, results, amount))
   }
 
-  function undo(id: string) {
-    setApproved((prev) => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
-    setToast(null)
+  async function approveAll(item: InboxItem) {
+    if (!isDecidable(item)) return open(item)
+    setBusy(item.id)
+    try {
+      await runAll(decisionsFor(item, 'approve'), (d) => decide.mutateAsync(d))
+      markApproved(item, (item.proposals ?? [{}]).map((_, i) => ({ proposalIndex: i, decision: 'approved' as const })))
+    } catch {
+      notify('Could not approve — try again')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function rejectAll(item: InboxItem) {
+    if (!isDecidable(item)) return open(item)
+    setBusy(item.id)
+    try {
+      await runAll(decisionsFor(item, 'reject'), (d) => decide.mutateAsync(d))
+      notify(`Rejected · ${item.asker} won’t go ahead`)
+    } catch {
+      notify('Could not reject — try again')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function undo(item: InboxItem) {
+    const ids = linkedEntries(item).map((p) => p.proposalId).filter((x): x is string => !!x)
+    try {
+      await runAll(ids.map((proposalId) => ({ kind: 'undo' as const, proposalId })), (d) => decide.mutateAsync(d))
+      setApproved((prev) => {
+        const next = { ...prev }
+        delete next[item.id]
+        return next
+      })
+      setToast(null)
+      notify('Approval undone')
+    } catch {
+      notify('Too late to undo — it already started')
+    }
   }
 
   const reviewingItem = cards.find((c) => c.id === reviewing)
   const changingItem = cards.find((c) => c.id === changing)
-  const needsCount =
-    pending.filter((i) => !approved[i.id]).length + (suggestion === 'open' ? 1 : 0)
+  const needsCount = pending.filter((i) => !approved[i.id]).length
+  const asked = changingItem ? amountOf(changingItem) ?? 0 : 0
+  const days = changingItem ? daysOf(changingItem) : null
 
   return (
     <>
       <Topbar
         icon={Inbox}
         title="Inbox"
-        meta={`${pending.length} need you`}
-        actions={
-          <Button variant="secondary" height={28} icon={ListFilter}>
-            {areaName ?? 'All areas'}
-          </Button>
-        }
+        meta={`${needsCount} need you`}
+        actions={<AreaFilterButton label={areaName ?? 'All areas'} channels={channels} />}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-[24px] py-[20px]">
         <header className="flex flex-col gap-[4px]">
@@ -443,45 +460,36 @@ function InboxList({ area }: { area: AreaFilter }) {
           </p>
         </header>
 
-        {isLoading ? null : items.length === 0 ? (
+        {isLoading ? null : isError ? (
+          <p role="alert" className="m-0 text-[13px] text-muted">
+            Could not load the inbox. Please refresh to try again.
+          </p>
+        ) : items.length === 0 ? (
           <p className="m-0 text-[13px] text-muted">No items in this area yet.</p>
         ) : (
           <div className="flex w-full gap-[20px]">
             <section aria-label="Needs you" className="flex min-w-0 flex-1 flex-col gap-[10px]">
               <SectionTitle title="Needs you" count={needsCount} />
-              {suggestion !== 'hidden' && (
-                <RoutineSuggestionCard
-                  applied={suggestion === 'applied'}
-                  onApply={() => {
-                    setSuggestion('applied')
-                    setToast({ title: 'Routines moved', body: 'Instagram report → Mon 11:00 · Dependency updates → Tue 10:00.' })
-                  }}
-                  onUndo={() => {
-                    setSuggestion('open')
-                    setToast(null)
-                  }}
-                  onSee={() => void navigate({ to: '/routines' })}
-                  onDismiss={() => setSuggestion('hidden')}
-                />
+              {/* TODO(sweep/routines): Chief's routine suggestion card (pen BoenW) renders
+                  from GET /v1/routines/suggestions once that endpoint lands. */}
+              {cards.length === 0 && rows.length === 0 && (
+                <p className="m-0 text-[13px] text-muted">Nothing needs you right now.</p>
               )}
               {cards.map((item) => {
-                const results = approved[item.id]
+                const a = approved[item.id]
                 return (
                   <DecisionCard
                     key={item.id}
                     item={item}
                     channel={channelOf(item.channelId)}
                     onOpen={() => open(item)}
-                    onApprove={() =>
-                      markApproved(
-                        item,
-                        (item.proposals ?? [{}]).map((_, i) => ({ proposalIndex: i, decision: 'approved' as const })),
-                      )
-                    }
+                    onApprove={() => void approveAll(item)}
+                    onReject={() => void rejectAll(item)}
                     onReviewOneByOne={() => setReviewing(item.id)}
                     onChangeAmount={() => setChanging(item.id)}
-                    approvedText={results ? approvedTextFor(item, results) : undefined}
-                    onUndo={() => undo(item.id)}
+                    approvedText={a ? approvedTextFor(item, a.results, a.amount) : undefined}
+                    onUndo={() => void undo(item)}
+                    busy={busy === item.id}
                   />
                 )
               })}
@@ -531,7 +539,12 @@ function InboxList({ area }: { area: AreaFilter }) {
         <InboxReviewDialog
           open
           item={reviewingItem}
-          initialStep={initial === 'review' ? 1 : 0}
+          onDecide={async (index, decision) => {
+            const entry = reviewingItem.proposals?.[index]
+            if (!entry || decision === 'skipped') return
+            const ds = decisionsFor(reviewingItem, decision === 'approved' ? 'approve' : 'reject', { only: [entry] })
+            await runAll(ds, (d) => decide.mutateAsync(d))
+          }}
           onClose={(results) => {
             markApproved(reviewingItem, results)
             setReviewing(null)
@@ -543,17 +556,21 @@ function InboxList({ area }: { area: AreaFilter }) {
         <InboxChangeAmountDialog
           open
           asker={changingItem.asker}
-          asked={BUDGET.asked}
-          options={BUDGET.options}
-          defaultAmount={BUDGET.defaultAmount}
-          runFor={BUDGET.runFor}
-          dailyCap={BUDGET.dailyCap}
-          defaultNote={BUDGET.note}
+          forecastArea={changingItem.askerArea}
+          asked={asked}
+          options={[Math.round(asked / 3 / 100) * 100, Math.round((asked * 5) / 8 / 100) * 100, asked].filter((v, i, arr) => v > 0 && arr.indexOf(v) === i)}
+          defaultAmount={Math.round((asked * 5) / 8 / 100) * 100 || asked}
+          days={days}
           onClose={() => setChanging(null)}
-          onApprove={(amount) => {
-            setApproved((prev) => ({ ...prev, [changingItem.id]: [{ proposalIndex: 0, decision: 'approved' }] }))
-            setToast({ title: `$${amount.toLocaleString('en-US')} budget approved`, body: `${changingItem.asker} starts the referral ads.` })
-            setChanging(null)
+          onApprove={async (amount, note) => {
+            const item = changingItem
+            try {
+              await runAll(decisionsFor(item, 'approve', { params: { amount }, note: note || undefined }), (d) => decide.mutateAsync(d))
+              markApproved(item, [{ proposalIndex: 0, decision: 'approved' }], amount)
+              setChanging(null)
+            } catch {
+              notify('Could not approve — try again')
+            }
           }}
         />
       )}
@@ -573,7 +590,70 @@ function InboxList({ area }: { area: AreaFilter }) {
   )
 }
 
-// ── Item → shared ChatSession ─────────────────────────────────────────────────
+// ── Item → shared ChatSession (or the decision itself when it has no thread) ──
+
+/** A decision raised outside a chat (flow publish, flow-run approval): no thread to open. */
+function DecisionDetail({ item }: { item: InboxItem }) {
+  const navigate = useNavigate()
+  const decide = useDecide()
+  const entry = linkedEntries(item)[0]
+  const { data: proposal } = useProposal(entry?.proposalId)
+  const [state, setState] = useState<'idle' | 'busy'>('idle')
+  const decided = item.status === 'done'
+
+  async function act(kind: 'approve' | 'reject') {
+    setState('busy')
+    try {
+      await runAll(decisionsFor(item, kind), (d) => decide.mutateAsync(d))
+      notify(kind === 'approve' ? 'Approved' : 'Rejected')
+    } catch {
+      notify('Could not save your decision — try again')
+    } finally {
+      setState('idle')
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[24px] py-[20px]">
+      <article aria-label={item.title} className="mx-auto flex w-full max-w-[680px] flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong">
+        <CardTop area={item.askerArea} who={item.asker} when={item.askedAgo} />
+        <div className="flex w-full flex-col gap-[4px]">
+          <h1 className="m-0 text-[14.5px] font-semibold text-ink">{item.title}</h1>
+          <p className="m-0 text-[13px] leading-[1.5] whitespace-pre-line text-ink-2">
+            {(proposal?.bodyMd ?? item.summary).replace(/\*\*/g, '')}
+          </p>
+        </div>
+        {proposal && (
+          <span className="text-[12px] text-muted">
+            {proposal.type.replace(/_/g, ' ')} · {proposal.risk} risk · revision {Math.max(1, proposal.revisions.length)}
+          </span>
+        )}
+        {decided ? (
+          <div className="flex w-full items-center gap-[8px] rounded-base bg-ok-tint px-[12px] py-[8px] outline-1 -outline-offset-1 outline-ok-line">
+            <CircleCheck size={14} aria-hidden className="shrink-0 text-ok" />
+            <span className="text-[12.5px] font-medium text-ok">Decided</span>
+          </div>
+        ) : (
+          <div className="flex w-full items-center gap-[6px]">
+            <Button height={28} icon={Check} disabled={state === 'busy' || !entry} onClick={() => void act('approve')}>
+              Approve
+            </Button>
+            <Button height={28} variant="secondary" icon={CircleX} disabled={state === 'busy' || !entry} onClick={() => void act('reject')}>
+              Reject
+            </Button>
+            <span className="h-px flex-1" />
+            {entry?.flowId && (
+              <OpenLink
+                title="flow"
+                onOpen={() => void navigate({ to: '/flows/$flowId/runs', params: { flowId: entry.flowId! } })}
+              />
+            )}
+          </div>
+        )}
+      </article>
+    </div>
+  )
+}
 
 function InboxItemView({ itemId }: { itemId: string }) {
   const { data: item, isLoading } = useInboxItem(itemId)
@@ -586,6 +666,8 @@ function InboxItemView({ itemId }: { itemId: string }) {
       </div>
     )
   }
+  // Decisions raised outside a chat (flow publish / flow-run approvals) carry no session.
+  if (!item.sessionId) return <DecisionDetail item={item} />
   // Keystone: resolve item → sessionId → render the same ChatSession primitive
   return <ChatSession key={item.sessionId} sessionId={item.sessionId} />
 }

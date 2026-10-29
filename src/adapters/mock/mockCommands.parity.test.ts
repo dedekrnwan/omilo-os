@@ -83,6 +83,16 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'applyRoutineSuggestion',
   'dismissRoutineSuggestion',
   'openGoalSession',
+  // ── sweep/inbox-flows ──
+  'markInboxRead',
+  'markAllInboxRead',
+  'updateProposal',
+  'approveProposalAmended',
+  'undoApproval',
+  'decideFlowRun',
+  'retryFlowRun',
+  'cancelFlowRun',
+  'restoreFlowVersion',
 ]
 
 describe('mock-mode parity', () => {

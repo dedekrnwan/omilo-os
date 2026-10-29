@@ -35,6 +35,11 @@ import type {
   InboxItem,
   UsageSummary,
   WalletSettings,
+  // ── sweep/inbox-flows ──
+  FlowSuggestion,
+  FlowVersionInfo,
+  HelperArea,
+  ProposalDetail,
 } from '../../core/domain/types'
 import type { Repos } from '../../core/ports/repos'
 import { apiFetch, ApiError } from './client'
@@ -649,14 +654,14 @@ export function createHttpRepos(
     flows: {
       list: async () => {
         const res = await apiFetch(`${baseUrl}/v1/flows`, getToken)
-        const raw = await res.json() as RawFlow[]
-        return raw.map(mapFlow)
+        const raw = await res.json() as RawFlowSweep[]
+        return raw.map(mapFlowSweep)
       },
       get: async (id: Id) => {
         try {
           const res = await apiFetch(`${baseUrl}/v1/flows/${id}`, getToken)
-          const raw = await res.json() as RawFlow
-          return mapFlow(raw)
+          const raw = await res.json() as RawFlowSweep
+          return mapFlowSweep(raw)
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) return null
           throw err
@@ -664,8 +669,21 @@ export function createHttpRepos(
       },
       runs: async (id: Id) => {
         const res = await apiFetch(`${baseUrl}/v1/flows/${id}/runs`, getToken)
-        const raw = await res.json() as RawFlowRun[]
-        return raw.map(mapFlowRun)
+        const raw = await res.json() as RawFlowRunSweep[]
+        return raw.map(mapFlowRunSweep)
+      },
+      // ── sweep/inbox-flows ──
+      run: async (id: Id, runId: Id) => {
+        const raw = await getOrNull<RawFlowRunSweep>(`/v1/flows/${id}/runs/${runId}`)
+        return raw ? mapFlowRunSweep(raw) : null
+      },
+      versions: async (id: Id) => {
+        const raw = await get<RawFlowVersion[]>(`/v1/flows/${id}/versions`)
+        return raw.map(mapFlowVersion)
+      },
+      suggestions: async () => {
+        const raw = await get<RawFlowSuggestion[]>('/v1/flows/suggestions')
+        return raw.map(mapFlowSuggestion)
       },
     },
 
@@ -810,6 +828,10 @@ export function createHttpRepos(
         if (params?.status) qs.set('status', params.status)
         const raw = await get<RawHandbookSuggestion[]>(`/v1/handbook/suggestions?${qs.toString()}`)
         return raw.map(mapHandbookSuggestion)
+    // ── sweep/inbox-flows ──
+    proposals: {
+        const raw = await getOrNull<RawProposalDetail>(`/v1/proposals/${id}`)
+        return raw ? mapProposalDetail(raw) : null
       },
     },
   }
@@ -890,6 +912,69 @@ export function mapLesson(r: RawLesson): Lesson {
     source: r.source,
     status: r.status,
     createdBy: r.created_by,
+// ── sweep/inbox-flows ──
+
+type RawFlowRunStep = {
+  node_id: string
+  label: string
+  status: string
+  duration_ms?: number
+  output?: Record<string, unknown>
+  note?: string
+
+type RawFlowRunSweep = RawFlowRun & { steps?: RawFlowRunStep[] }
+
+type RawFlowSweep = RawFlow & {
+  settings?: Record<string, unknown>
+  trigger_kind?: string | null
+  apps?: string[]
+  ai_steps?: number
+  runs_7d?: number[]
+  last_run?: RawFlowRunSweep | null
+  spent_this_month_credits?: number
+  publish_state?: 'draft' | 'pending' | 'live'
+  pending_proposal_id?: string | null
+  published_version?: number | null
+
+export function mapFlowRunSweep(r: RawFlowRunSweep): FlowRun {
+  const run = mapFlowRun(r)
+  if (r.steps) {
+    run.steps = r.steps.map((st) => ({
+      nodeId: st.node_id,
+      kind: st.kind,
+      label: st.label,
+      status: st.status,
+      durationMs: st.duration_ms ?? 0,
+      output: st.output,
+      note: st.note,
+    }))
+  return run
+
+export function mapFlowSweep(r: RawFlowSweep): Flow {
+  const f: Flow = mapFlow(r)
+  if (r.settings !== undefined) f.settings = r.settings
+  if (r.trigger_kind !== undefined) f.triggerKind = r.trigger_kind
+  if (r.apps !== undefined) f.apps = r.apps
+  if (r.ai_steps !== undefined) f.aiSteps = r.ai_steps
+  if (r.runs_7d !== undefined) f.runs7d = r.runs_7d
+  if (r.last_run !== undefined) f.lastRun = r.last_run ? mapFlowRunSweep(r.last_run) : null
+  if (r.spent_this_month_credits !== undefined) f.spentThisMonthCredits = r.spent_this_month_credits
+  if (r.publish_state !== undefined) f.publishState = r.publish_state
+  if (r.pending_proposal_id !== undefined) f.pendingProposalId = r.pending_proposal_id
+  if (r.published_version !== undefined) f.publishedVersion = r.published_version
+  return f
+
+type RawFlowVersion = {
+  flow_id: string
+  note: string
+  status: string
+  node_count: number
+
+function mapFlowVersion(r: RawFlowVersion): FlowVersionInfo {
+    flowId: r.flow_id,
+    version: r.version,
+    note: r.note,
+    nodeCount: r.node_count,
     createdAt: r.created_at,
   }
 }
@@ -962,5 +1047,40 @@ export function mapHandbookDetail(r: RawHandbookDetail): HandbookFileDetail {
     content: r.content,
     versions: (r.versions ?? []).map((v) => ({ version: v.version, updatedBy: v.updated_by, note: v.note, createdAt: v.created_at })),
     suggestions: (r.suggestions ?? []).map(mapHandbookSuggestion),
+type RawFlowSuggestion = Omit<FlowSuggestion, 'runsAs' | 'helperArea'> & { runs_as: string; helper_area: HelperArea }
+
+function mapFlowSuggestion(r: RawFlowSuggestion): FlowSuggestion {
+  const { runs_as, helper_area, ...rest } = r
+  return { ...rest, runsAs: runs_as, helperArea: helper_area }
+
+type RawProposalDetail = {
+  proposal: {
+    id: string
+    type: string
+    risk: string
+    title: string
+    body_md: string
+    status: string
+    helper_id: string
+    assignee?: string | null
+    due?: string | null
+    params?: Record<string, unknown> | null
+    created_at: string | null
+  revisions: { n: number; author: string; summary: string; body_md: string; at: string | null }[]
+
+export function mapProposalDetail(r: RawProposalDetail): ProposalDetail {
+  const p = r.proposal
+    id: p.id,
+    type: p.type,
+    risk: p.risk,
+    title: p.title,
+    bodyMd: p.body_md,
+    status: p.status,
+    helperId: p.helper_id,
+    assignee: p.assignee ?? null,
+    due: p.due ?? null,
+    params: p.params ?? null,
+    createdAt: p.created_at,
+    revisions: (r.revisions ?? []).map((v) => ({ n: v.n, author: v.author, summary: v.summary, bodyMd: v.body_md, at: v.at })),
   }
 }

@@ -20,12 +20,12 @@ export interface InboxChangeAmountDialogProps {
   /** Quick-pick amounts (dollars). */
   options: readonly number[]
   defaultAmount: number
-  runFor: string
-  dailyCap: string
-  /** Pre-filled note (visual default). */
+  /** Campaign length in days (parsed from the request), when known. */
+  days?: number | null
+  /** Pre-filled note. */
   defaultNote?: string
   onClose: () => void
-  onApprove: (amount: number, note: string) => void
+  onApprove: (amount: number, note: string) => void | Promise<void>
 }
 
 function fmt(n: number) {
@@ -44,18 +44,17 @@ export function InboxChangeAmountDialog({
   asked,
   options,
   defaultAmount,
-  runFor,
-  dailyCap,
+  days,
   defaultNote = '',
   onClose,
   onApprove,
 }: InboxChangeAmountDialogProps) {
   const [amount, setAmount] = useState(defaultAmount)
   const [note, setNote] = useState(defaultNote)
-  // Rough visual forecast, anchored on the design's numbers ($3,000 → ~62% · ~140 referrals).
-  const full = amount >= asked
-  const reach = full ? 100 : Math.round((62 * amount) / 3000)
-  const referrals = full ? 220 : Math.round((140 * amount) / 3000)
+  const [saving, setSaving] = useState(false)
+  const share = asked > 0 ? Math.round((amount / asked) * 100) : 100
+  const runFor = days ? `${days} days` : 'As requested'
+  const dailyCap = days ? fmt(Math.round(amount / days)) : '—'
 
   return (
     <OfficeDialog
@@ -64,14 +63,26 @@ export function InboxChangeAmountDialog({
       width={480}
       icon={Wallet}
       title="Change the ad budget"
-      sub={`${asker} asked for ${fmt(asked)} over ${runFor} for the referral launch.`}
+      sub={`${asker} asked for ${fmt(asked)}${days ? ` over ${days} days` : ''}.`}
       footer={
         <>
           <Btn32 variant="secondary" onClick={onClose}>
             Cancel
           </Btn32>
           <span className="h-px flex-1" />
-          <Btn32 variant="primary" icon={Check} onClick={() => onApprove(amount, note)}>
+          <Btn32
+            variant="primary"
+            icon={Check}
+            disabled={saving || amount <= 0}
+            onClick={async () => {
+              setSaving(true)
+              try {
+                await onApprove(amount, note)
+              } finally {
+                setSaving(false)
+              }
+            }}
+          >
             Approve {fmt(amount)}
           </Btn32>
         </>
@@ -110,11 +121,10 @@ export function InboxChangeAmountDialog({
         <Mascot size={24} radius={7} area={forecastArea} helper />
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
           <span className="text-[12.5px] font-semibold text-ink">
-            {asker}: at {fmt(amount)} we reach ~{reach}% of the audience
+            {asker}: {amount >= asked ? `${fmt(amount)} is the full ask` : `${fmt(amount)} is ${share}% of what I asked for`}
           </span>
           <p className="m-0 text-[12.5px] leading-[1.45] text-ink-2">
-            Expected ~{referrals} referrals instead of ~220. I'll stop early if cost per
-            referral goes above $25.
+            I'll spend up to {fmt(amount)}{days ? ` over ${days} days (about ${dailyCap} a day)` : ''} and stop at the cap.
           </p>
         </div>
       </div>

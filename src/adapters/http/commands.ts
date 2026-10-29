@@ -54,6 +54,9 @@ import {
   type RawRoutineExtras,
   type RawRoutineRun,
 } from './routineMappers'
+// ── sweep/inbox-flows ──
+import type { FlowRun } from '../../core/domain/types'
+import { mapFlowRunSweep } from './httpRepos'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -886,6 +889,25 @@ export interface ResendRoutineRunResult {
   jobId: string | null
   runId: string | null
   message: string
+  // ── sweep/inbox-flows ──
+  /** POST /v1/inbox/{id}/read → marks one inbox item read. */
+  markInboxRead(id: string): Promise<void>
+  /** POST /v1/inbox/read-all {before?} → {updated}. */
+  markAllInboxRead(before?: string): Promise<{ updated: number }>
+  /** PATCH /v1/proposals/{id} {assignee?,due?}. */
+  updateProposal(id: string, input: UpdateProposalInput): Promise<void>
+  /** POST /v1/proposals/{id}/approve {note?,params} — approve with amended params. */
+  approveProposalAmended(id: string, params: Record<string, unknown>, note?: string): Promise<{ executionJobId: string }>
+  /** POST /v1/proposals/{id}/undo — 409 once execution started / window passed. */
+  undoApproval(id: string): Promise<void>
+  /** POST /v1/flows/{id}/runs/{runId}/approve {approve} → FlowRun. */
+  decideFlowRun(flowId: string, runId: string, approve: boolean): Promise<FlowRun>
+  /** POST /v1/flows/{id}/runs/{runId}/retry → the new FlowRun. */
+  retryFlowRun(flowId: string, runId: string): Promise<FlowRun>
+  /** POST /v1/flows/{id}/runs/{runId}/cancel → FlowRun. */
+  cancelFlowRun(flowId: string, runId: string): Promise<FlowRun>
+  /** POST /v1/flows/{id}/versions/{v}/restore → Flow. */
+  restoreFlowVersion(flowId: string, version: number): Promise<Flow>
 }
 
 /**
@@ -1559,6 +1581,37 @@ export function createCommands(
 
     async openGoalSession(goalId: string) {
       return post<Session>(`/v1/goals/${goalId}/session`, {})
+    // ── sweep/inbox-flows ──
+    async markInboxRead(id: string): Promise<void> {
+      await post(`/v1/inbox/${id}/read`, {})
+    async markAllInboxRead(before?: string): Promise<{ updated: number }> {
+      return post<{ updated: number }>('/v1/inbox/read-all', before ? { before } : {})
+    async updateProposal(id: string, input: UpdateProposalInput): Promise<void> {
+      await patch(`/v1/proposals/${id}`, input)
+    async approveProposalAmended(id: string, params: Record<string, unknown>, note?: string): Promise<{ executionJobId: string }> {
+      const body: Record<string, unknown> = { params }
+      if (note) body.note = note
+      const raw = await post<{ execution_job_id: string }>(`/v1/proposals/${id}/approve`, body)
+      return { executionJobId: raw.execution_job_id }
+    async undoApproval(id: string): Promise<void> {
+      await post(`/v1/proposals/${id}/undo`, {})
+    async decideFlowRun(flowId: string, runId: string, approve: boolean): Promise<FlowRun> {
+      return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/approve`, { approve }))
+    async retryFlowRun(flowId: string, runId: string): Promise<FlowRun> {
+      return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/retry`, {}))
+    async cancelFlowRun(flowId: string, runId: string): Promise<FlowRun> {
+      return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/cancel`, {}))
+    async restoreFlowVersion(flowId: string, version: number): Promise<Flow> {
+      return mapFlow(await post<RawFlow>(`/v1/flows/${flowId}/versions/${version}/restore`, {}))
     },
   }
+}
+
+// ── sweep/inbox-flows ──
+
+type RawRunSweep = Parameters<typeof mapFlowRunSweep>[0]
+
+export interface UpdateProposalInput {
+  assignee?: string | null
+  due?: string | null
 }

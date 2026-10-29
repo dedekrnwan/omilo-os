@@ -29,6 +29,10 @@ import type {
   InboxItem,
   UsageSummary,
   WalletSettings,
+  // ── sweep/inbox-flows ──
+  FlowSuggestion,
+  FlowVersionInfo,
+  ProposalDetail,
 } from '../domain/types'
 
 export interface ChannelRepo {
@@ -107,6 +111,15 @@ export interface FlowRepo {
   list(): Promise<Flow[]>
   get(id: Id): Promise<Flow | null>
   runs(id: Id): Promise<FlowRun[]>
+  // ── sweep/inbox-flows ──
+  // Optional so hand-rolled test repos elsewhere keep type-checking; both real
+  // adapters (http + mock) implement them and hooks fall back when absent.
+  /** GET /v1/flows/{id}/runs/{runId} — one run with its per-step log. */
+  run?(id: Id, runId: Id): Promise<FlowRun | null>
+  /** GET /v1/flows/{id}/versions — version history (newest first). */
+  versions?(id: Id): Promise<FlowVersionInfo[]>
+  /** GET /v1/flows/suggestions — deterministic suggestions. */
+  suggestions?(): Promise<FlowSuggestion[]>
 }
 
 export interface RoutineRepo {
@@ -214,4 +227,12 @@ export interface HandbookRepo {
   file(name: string): Promise<HandbookFileDetail | null>
   /** GET /v1/handbook/suggestions?file=&status= */
   suggestions(params?: { file?: string; status?: string }): Promise<HandbookSuggestion[]>
+  // ── sweep/inbox-flows ── (optional: see FlowRepo note)
+  proposals?: ProposalRepo
+
+// ── sweep/inbox-flows ──
+
+export interface ProposalRepo {
+  /** GET /v1/proposals/{id} → proposal + revisions (null on 404). */
+  get(id: Id): Promise<ProposalDetail | null>
 }

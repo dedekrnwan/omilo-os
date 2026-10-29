@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -188,16 +188,29 @@ describe('NotificationsRoute — live mock repo data', () => {
     expect(await screen.findByText(/Chief wrote the morning brief/)).toBeInTheDocument()
   })
 
-  test('resolving a decision removes it from the list', async () => {
-    renderNotifications([DECISION_ITEM])
+  test('resolving a linked decision approves the proposal and removes it from the list', async () => {
+    const linked: InboxItem = {
+      ...DECISION_ITEM,
+      proposals: [{ who: 'Growth', area: 'marketing', text: 'Launch plan', due: '', proposalId: 'prp-ad-budget' }],
+    }
+    renderNotifications([linked])
     await screen.findByRole('article', { name: /Approve the launch plan/ })
 
     // Click the "Approve" button on the decision card
     const approveBtn = screen.getByRole('button', { name: 'Approve' })
     fireEvent.click(approveBtn)
 
-    // Card must be gone
-    expect(screen.queryByRole('article', { name: /Approve the launch plan/ })).not.toBeInTheDocument()
+    // Card must be gone once the approval is saved
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: /Approve the launch plan/ })).not.toBeInTheDocument(),
+    )
+  })
+
+  test('unread dots follow the server read state', async () => {
+    renderNotifications([UPDATE_ITEM, { ...MENTION_ITEM, readAt: new Date().toISOString() }])
+    await screen.findByText(/Chief wrote the morning brief/)
+    // Only the unread update shows a dot
+    expect(screen.getAllByLabelText('unread')).toHaveLength(1)
   })
 })
 

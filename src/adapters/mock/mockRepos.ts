@@ -29,6 +29,8 @@ import {
 import { mockDocsRepos } from './docsMock'
 // ── sweep/goals-routines ──
 import { mockGoalDetail, mockRunDetail, mockSchedule, mockSuggestions } from './routinesMock'
+// ── sweep/inbox-flows ──
+import { mockFlowSuggestions, mockFlowVersions, mockProposals, withFlowExtras } from './sweepInboxFlows'
 
 export function createMockRepos(): Repos {
   return {
@@ -123,9 +125,19 @@ export function createMockRepos(): Repos {
     },
 
     flows: {
-      list: () => Promise.resolve([...flows]),
-      get: (id: Id) => Promise.resolve(flows.find(f => f.id === id) ?? null),
+      list: () => Promise.resolve(flows.map(withFlowExtras)),
+      get: (id: Id) => {
+        const f = flows.find(x => x.id === id)
+        return Promise.resolve(f ? withFlowExtras(f) : null)
+      },
       runs: (id: Id) => Promise.resolve(flowRuns.filter(r => r.flowId === id)),
+      // ── sweep/inbox-flows ──
+      run: (id: Id, runId: Id) => Promise.resolve(flowRuns.find(r => r.flowId === id && r.id === runId) ?? null),
+      versions: (id: Id) => Promise.resolve([...(mockFlowVersions[id] ?? [])]),
+      suggestions: () => {
+        const titles = new Set(flows.map(f => f.title.toLowerCase()))
+        return Promise.resolve(mockFlowSuggestions.filter(s => !titles.has(s.draft.title.toLowerCase())))
+      },
     },
 
     routines: {
@@ -173,5 +185,12 @@ export function createMockRepos(): Repos {
     docs: mockDocsRepos.docs,
     lessons: mockDocsRepos.lessons,
     handbook: mockDocsRepos.handbook,
+    // ── sweep/inbox-flows ──
+    proposals: {
+      get: (id: Id) => {
+        const p = mockProposals[id]
+        return Promise.resolve(p ? { ...p } : null)
+      },
+    },
   }
 }

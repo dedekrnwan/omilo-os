@@ -4,16 +4,12 @@
  */
 
 import { useRef, useState } from 'react'
-import { ArrowLeft, Calendar, Check, GitBranch, Link, ListChecks, Timer, UserRound, X } from 'lucide-react'
+import { ArrowLeft, Calendar, Check, GitBranch, Link, ListChecks, ShieldCheck, Timer, UserRound, X } from 'lucide-react'
 import type { InboxItem } from '../../core/domain/types'
+import { useMembers, useProposal, useUpdateProposal } from '../../app/queries'
 import { Mascot } from '../../ui/ds/Mascot'
 import { notify } from '../../ui/ds/Toaster'
-import { PROPOSAL_DETAILS } from './data'
 import { Btn32, OfficeDialog } from './ui'
-
-// ── Mock helpers ───────────────────────────────────────────────────────────────
-
-const MOCK_MEMBERS = ['Dede', 'Ari', 'Budi', 'Sari', 'Chief']
 
 /** Tiny inline date-picker popover anchored to the "Change due date" button. */
 function DueDatePopover({
@@ -71,6 +67,7 @@ function AssigneePopover({
   onSelect: (name: string) => void
   onClose: () => void
 }) {
+  const { data: members = [], isLoading } = useMembers()
   if (!anchor) return null
   return (
     <>
@@ -80,14 +77,16 @@ function AssigneePopover({
         style={{ top: anchor.bottom + 6, left: anchor.left }}
       >
         <p className="px-[10px] py-[4px] text-[10.5px] font-medium tracking-[0.6px] text-faint uppercase">Assign to</p>
-        {MOCK_MEMBERS.map((name) => (
+        {isLoading && <p className="m-0 px-[10px] py-[6px] text-[12.5px] text-muted">Loading…</p>}
+        {!isLoading && members.length === 0 && <p className="m-0 px-[10px] py-[6px] text-[12.5px] text-muted">No members yet</p>}
+        {members.map((m) => (
           <button
-            key={name}
+            key={m.id}
             type="button"
-            onClick={() => { onSelect(name); onClose() }}
+            onClick={() => { onSelect(m.name); onClose() }}
             className="flex w-full items-center gap-[8px] px-[10px] py-[6px] text-[13px] text-ink-2 hover:bg-hover"
           >
-            {name}
+            {m.name}
           </button>
         ))}
       </div>
@@ -105,11 +104,21 @@ export interface InboxReviewDialogProps {
   item: InboxItem
   /** Start on this proposal (0-based). */
   initialStep?: number
+  /** Persist one decision (approve / reject); skip does nothing. Rejects on failure. */
+  onDecide: (proposalIndex: number, decision: ReviewResult['decision']) => Promise<void>
   /** Called when the user finishes reviewing all proposals (or closes). */
   onClose: (results: ReviewResult[]) => void
 }
 
-const DETAIL_ICON = { 'git-branch': GitBranch, timer: Timer, link: Link }
+/** Detail rows from the proposal's params (branch, estimate, blockers…). */
+function detailRows(params: Record<string, unknown> | null | undefined, risk?: string) {
+  const rows: { icon: typeof GitBranch; text: string }[] = []
+  if (params?.branch) rows.push({ icon: GitBranch, text: `New branch ${String(params.branch)}` })
+  if (params?.estimate) rows.push({ icon: Timer, text: String(params.estimate) })
+  if (params?.blocks) rows.push({ icon: Link, text: `Blocks: ${String(params.blocks)}` })
+  if (risk) rows.push({ icon: ShieldCheck, text: `${risk[0].toUpperCase()}${risk.slice(1)} risk` })
+  return rows
+}
 
 /** "Passkey rollout plan" from the item summary’s “…” quote, if any. */
 function sourceOf(item: InboxItem) {
@@ -117,7 +126,7 @@ function sourceOf(item: InboxItem) {
   return m ? m[1] : item.title
 }
 
-export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: InboxReviewDialogProps) {
+export function InboxReviewDialog({ open, item, initialStep = 0, onDecide, onClose }: InboxReviewDialogProps) {
   const proposals = item.proposals ?? []
   const [step, setStep] = useState(initialStep)
   const [results, setResults] = useState<ReviewResult[]>(() =>
@@ -130,17 +139,42 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
   // assignee popover
   const [assigneeAnchor, setAssigneeAnchor] = useState<DOMRect | null>(null)
   const assigneeWrapRef = useRef<HTMLSpanElement>(null)
-
-  if (proposals.length === 0) return null
+  const [saving, setSaving] = useState(false)
   const current = proposals[step]
-  const detail = PROPOSAL_DETAILS[current.text]
-  const isLast = step === proposals.length - 1
+  const { data: detail } = useProposal(current?.proposalId)
+  const updateProposal = useUpdateProposal()
 
-  function record(decision: ReviewResult['decision']) {
+  if (proposals.length === 0 || !current) return null
+  const isLast = step === proposals.length - 1
+  const rows = detailRows(detail?.params, detail?.risk)
+  const due = dueDate || detail?.due || current.due
+
+  async function record(decision: ReviewResult['decision']) {
+    setSaving(true)
+    try {
+      await onDecide(step, decision)
+    } catch {
+      notify('Could not save that decision — try again')
+      setSaving(false)
+      return
+    }
+    setSaving(false)
     const next = [...results.filter((r) => r.proposalIndex !== step), { proposalIndex: step, decision }]
     setResults(next)
+    setDueDate('')
     if (isLast) onClose(next)
     else setStep((s) => s + 1)
+  }
+
+  function saveProposal(input: { assignee?: string; due?: string }, done: string) {
+    if (!current.proposalId) {
+      notify('This task can’t be changed here')
+      return
+    }
+    updateProposal.mutate(
+      { id: current.proposalId, input },
+      { onSuccess: () => notify(done), onError: () => notify('Could not save — try again') },
+    )
   }
 
   return (
@@ -157,13 +191,13 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
             Back
           </Btn32>
           <span className="h-px flex-1" />
-          <Btn32 variant="quiet" onClick={() => record('skipped')}>
+          <Btn32 variant="quiet" disabled={saving} onClick={() => void record('skipped')}>
             Skip
           </Btn32>
-          <Btn32 variant="danger" icon={X} onClick={() => record('rejected')}>
+          <Btn32 variant="danger" icon={X} disabled={saving} onClick={() => void record('rejected')}>
             Reject
           </Btn32>
-          <Btn32 variant="primary" icon={Check} onClick={() => record('approved')}>
+          <Btn32 variant="primary" icon={Check} disabled={saving} onClick={() => void record('approved')}>
             {isLast ? 'Approve & finish' : 'Approve & next'}
           </Btn32>
         </>
@@ -172,7 +206,7 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
       <div className="flex w-full gap-[6px]" aria-label={`Step ${step + 1} of ${proposals.length}`}>
         {proposals.map((p, i) => (
           <span
-            key={p.text}
+            key={p.proposalId ?? `${i}-${p.text}`}
             className={`h-[4px] flex-1 rounded-pill ${i < step ? 'bg-ok' : i === step ? 'bg-ink' : 'bg-line'}`}
           />
         ))}
@@ -184,26 +218,21 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
           <div className="flex min-w-0 flex-1 flex-col gap-px">
             <h3 className="m-0 text-[15px] font-semibold text-ink">{current.text}</h3>
             <span className="text-[12.5px] text-muted">
-              {current.who}
-              {detail ? ` · ${detail.areaName}` : ''} · due {current.due}
+              {detail?.assignee ?? current.who}
+              {due ? ` · due ${due}` : ''}
             </span>
           </div>
         </div>
-        {detail && (
-          <>
-            <p className="m-0 text-[13.5px] leading-[1.55] text-ink-2">{detail.desc}</p>
-            <ul className="m-0 flex list-none flex-col gap-[6px] rounded-base bg-soft px-[12px] py-[10px]">
-              {detail.details.map((d) => {
-                const Icon = DETAIL_ICON[d.icon]
-                return (
-                  <li key={d.text} className="flex items-center gap-[8px]">
-                    <Icon size={13} aria-hidden className="text-muted" />
-                    <span className="text-[12.5px] text-ink-2">{d.text}</span>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
+        {detail?.bodyMd && <p className="m-0 text-[13.5px] leading-[1.55] whitespace-pre-line text-ink-2">{detail.bodyMd.replace(/\*\*/g, '')}</p>}
+        {rows.length > 0 && (
+          <ul className="m-0 flex list-none flex-col gap-[6px] rounded-base bg-soft px-[12px] py-[10px]">
+            {rows.map((d) => (
+              <li key={d.text} className="flex items-center gap-[8px]">
+                <d.icon size={13} aria-hidden className="text-muted" />
+                <span className="text-[12.5px] text-ink-2">{d.text}</span>
+              </li>
+            ))}
+          </ul>
         )}
         <div className="flex w-full gap-[8px]">
           <span ref={calendarWrapRef}>
@@ -236,16 +265,16 @@ export function InboxReviewDialog({ open, item, initialStep = 0, onClose }: Inbo
       {/* Popovers */}
       <DueDatePopover
         anchor={dateAnchor}
-        current={dueDate || current.due}
+        current={due}
         onConfirm={(d) => {
           setDueDate(d)
-          notify('Due date updated')
+          saveProposal({ due: d }, 'Due date updated')
         }}
         onClose={() => setDateAnchor(null)}
       />
       <AssigneePopover
         anchor={assigneeAnchor}
-        onSelect={(name) => notify(`Assigned to ${name}`)}
+        onSelect={(name) => saveProposal({ assignee: name }, `Assigned to ${name}`)}
         onClose={() => setAssigneeAnchor(null)}
       />
     </OfficeDialog>

@@ -9,8 +9,9 @@ import type { Decision, Notif, NotifGroup, NotifFilter } from './data'
 import { notify } from '../../ui/ds/Toaster'
 import { usePush } from '../../app/push'
 import { useUIStore } from '../../app/store'
-import { useInbox } from '../../app/queries'
+import { useDecide, useInbox, useMarkAllInboxRead, useMarkInboxRead } from '../../app/queries'
 import { inboxToDisplay } from './inboxAdapter'
+import { decisionsFor, isDecidable, runAll } from '../office/decisions'
 
 /**
  * Prompt to turn on real desktop/browser push — shown until the user grants
@@ -70,7 +71,7 @@ function GroupLabel({ label }: { label: string }) {
 }
 
 /** Full decision card with coloured left border, body, and action buttons. */
-function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: (id: string, label: string) => void }) {
+function DecisionCard({ decision, onResolve, busy }: { decision: Decision; onResolve: (id: string, label: string) => void; busy?: boolean }) {
   return (
     <article
       aria-label={decision.title}
@@ -89,7 +90,7 @@ function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: 
           {decision.tag}
         </span>
         {/* unread dot */}
-        <span className="ml-auto size-[7px] shrink-0 rounded-full bg-[#F97316]" aria-hidden />
+        {decision.unread !== false && <span className="ml-auto size-[7px] shrink-0 rounded-full bg-[#F97316]" aria-hidden />}
       </div>
 
       {/* Body */}
@@ -105,6 +106,7 @@ function DecisionCard({ decision, onResolve }: { decision: Decision; onResolve: 
             key={a.label}
             height={28}
             variant={a.primary ? 'primary' : 'secondary'}
+            disabled={busy}
             onClick={() => onResolve(decision.id, a.label)}
           >
             {a.label}
@@ -184,40 +186,67 @@ export function NotificationsRoute() {
   // ── Live data via useInbox ─────────────────────────────────────────────────
   const { data: inboxItems = [], isLoading, isError } = useInbox()
 
-  // Local state for resolved decisions (removed from view after action)
+  const decide = useDecide()
+  const markRead = useMarkInboxRead()
+  const markAll = useMarkAllInboxRead()
+
+  // Decisions you just resolved stay hidden while the inbox refetches.
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set())
-  // Local state for read status override (mark all read)
-  const [readIds, setReadIds] = useState<Set<string>>(new Set())
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   // Active items = inbox minus those the user has already resolved
   const activeItems = inboxItems.filter((i) => !resolvedIds.has(i.id))
 
   // Apply sidebar filter to get the display shapes
-  const { decisions, groups: filteredGroups } = inboxToDisplay(activeItems, filter)
-
-  // Apply read overrides (mark-all-read mutates local state, not server)
-  const groups = filteredGroups.map((g) => ({
-    ...g,
-    items: g.items.map((n) => (readIds.has(n.id) ? { ...n, unread: false } : n)),
-  }))
+  const { decisions, groups } = inboxToDisplay(activeItems, filter)
 
   const totalDecisions = decisions.length
   const totalUnread = groups.flatMap((g) => g.items).filter((n) => n.unread).length
 
-  function resolveDecision(id: string, label: string) {
-    setResolvedIds((prev) => new Set([...prev, id]))
-    notify(`${label} — decision resolved`)
+  function openItem(id: string) {
+    const item = inboxItems.find((i) => i.id === id)
+    if (!item) return
+    if (!item.readAt) markRead.mutate(item.id)
+    if (item.sessionId) void navigate({ to: '/chat/$sessionId', params: { sessionId: item.sessionId } })
+    else void navigate({ to: '/inbox/$itemId', params: { itemId: item.id } })
+  }
+
+  async function resolveDecision(id: string, label: string) {
+    const item = inboxItems.find((i) => i.id === id)
+    if (!item) return
+    const l = label.toLowerCase()
+    const kind = l.startsWith('approve')
+      ? 'approve'
+      : l.startsWith('reject') || l.startsWith('decline')
+        ? 'reject'
+        : l.startsWith('request') || l.includes('changes')
+          ? 'changes'
+          : null
+    // Anything else ("Review", "Compare drafts", "Later"…) — or a decision with
+    // no linked proposal — opens the conversation where it was raised.
+    if (!kind || !isDecidable(item)) return openItem(id)
+    setBusyId(id)
+    try {
+      await runAll(decisionsFor(item, kind), (d) => decide.mutateAsync(d))
+      if (!item.readAt) markRead.mutate(item.id)
+      setResolvedIds((prev) => new Set([...prev, id]))
+      notify(kind === 'approve' ? `Approved · ${item.asker} goes ahead` : kind === 'reject' ? 'Rejected' : `Asked ${item.asker} for changes`)
+    } catch {
+      notify('Could not save your decision — try again')
+    } finally {
+      setBusyId(null)
+    }
   }
 
   function markAllRead() {
-    // Mark all notif rows across all groups (unfiltered) as read
-    const { groups: allGroups } = inboxToDisplay(activeItems, 'all')
-    const allNotifIds = allGroups.flatMap((g) => g.items.map((n) => n.id))
-    setReadIds((prev) => new Set([...prev, ...allNotifIds]))
+    markAll.mutate(new Date().toISOString(), {
+      onSuccess: (r) => notify(r.updated ? `Marked ${r.updated} as read` : 'Everything is already read'),
+      onError: () => notify('Could not mark as read — try again'),
+    })
   }
 
-  function handleRowClick(_notif: Notif) {
-    void navigate({ to: '/chat' })
+  function handleRowClick(notif: Notif) {
+    openItem(notif.id)
   }
 
   // ── Empty / error states ───────────────────────────────────────────────────
@@ -295,7 +324,7 @@ export function NotificationsRoute() {
             <section aria-label="Needs you" className="flex flex-col gap-[8px] pb-[24px]">
               <NeedsYouLabel count={decisions.length} />
               {decisions.map((d) => (
-                <DecisionCard key={d.id} decision={d} onResolve={resolveDecision} />
+                <DecisionCard key={d.id} decision={d} busy={busyId === d.id} onResolve={(id, label) => void resolveDecision(id, label)} />
               ))}
             </section>
           )}

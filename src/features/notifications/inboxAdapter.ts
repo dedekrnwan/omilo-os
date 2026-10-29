@@ -71,12 +71,12 @@ export function itemToDecision(item: InboxItem): Decision {
     title: item.title,
     body: item.summary,
     actions,
+    unread: !item.readAt,
   }
 }
 
 /** Map a non-decision InboxItem (or compact decision) to the Notif display shape. */
 export function itemToNotif(item: InboxItem): Notif {
-  const hasMention = item.kind === 'mention' || item.title.includes('@') || item.summary.includes('@')
   return {
     id: item.id,
     senderName: item.asker,
@@ -85,8 +85,8 @@ export function itemToNotif(item: InboxItem): Notif {
     tag: tagFromChannelId(item.channelId),
     title: item.title,
     preview: item.summary || undefined,
-    // Treat pending/mention items as unread; done/running as read
-    unread: item.status === 'pending' || hasMention,
+    // Read state comes from the server (POST /v1/inbox/{id}/read, /read-all).
+    unread: !item.readAt,
   }
 }
 

@@ -73,6 +73,22 @@ import {
   mockSkip,
   mockSuggestions,
 } from './routinesMock'
+// ── sweep/inbox-flows ──
+import type { FlowRun } from '../../core/domain/types'
+import type { UpdateProposalInput } from '../http/commands'
+import { flowRuns, inboxItems } from './fixtures'
+  applyMockFlowPublish,
+  graphAt,
+  mockDecide,
+  mockMarkAllRead,
+  mockMarkRead,
+  mockPublishProposal,
+  mockRun,
+  mockSnapshot,
+  mockUndo,
+  mockUpdateProposal,
+  rememberGraph,
+} from './sweepInboxFlows'
 
 let seq = 0
 function nextId(prefix: string): string {
@@ -130,13 +146,17 @@ export function createMockCommands(): Commands {
       }
       return Promise.resolve({ message, jobId: nextId('job') })
     },
-    approveProposal(_proposalId: string, _note?: string): Promise<{ executionJobId: string }> {
+    approveProposal(proposalId: string, _note?: string): Promise<{ executionJobId: string }> {
+      mockDecide(proposalId, 'done') // sweep/inbox-flows
+      applyMockFlowPublish(proposalId, true)
       return Promise.resolve({ executionJobId: nextId('ejob') })
     },
-    rejectProposal(_proposalId: string, _note: string): Promise<void> {
+    rejectProposal(proposalId: string, _note: string): Promise<void> {
+      mockDecide(proposalId, 'rejected') // sweep/inbox-flows
       return Promise.resolve()
     },
-    requestChanges(_proposalId: string, _note: string): Promise<void> {
+    requestChanges(proposalId: string, _note: string): Promise<void> {
+      mockDecide(proposalId, 'changes_requested') // sweep/inbox-flows
       return Promise.resolve()
     },
 
@@ -271,12 +291,19 @@ export function createMockCommands(): Commands {
 
     // ── P8 flow + routine + goal + skill commands ──────────────────────────────────
     publishFlow(id: string): Promise<unknown> {
+      // sweep/inbox-flows: raise a real (mock) flow_publish decision in the inbox
+      const f = flows.find(x => x.id === id)
+      if (f) return Promise.resolve(mockPublishProposal(f))
       return Promise.resolve({ id: nextId('prp'), type: 'flow_publish', status: 'pending', flowId: id })
     },
     runFlow(id: string): Promise<unknown> {
+      const f = flows.find(x => x.id === id) // sweep/inbox-flows
+      if (f) return Promise.resolve(mockRun(f, false))
       return Promise.resolve({ id: nextId('frn'), flowId: id, status: 'running' })
     },
     testRunFlow(id: string, _input?: Record<string, unknown>): Promise<unknown> {
+      const f = flows.find(x => x.id === id) // sweep/inbox-flows
+      if (f) return Promise.resolve(mockRun(f, true))
       return Promise.resolve({ id: nextId('frn'), flowId: id, status: 'done' })
     },
     runRoutineNow(id: string): Promise<{ jobId: string; runId?: string }> {
@@ -416,8 +443,11 @@ export function createMockCommands(): Commands {
         nodes: input.nodes,
         edges: input.edges,
         channelIds: input.channelIds,
+        version: 1, // sweep/inbox-flows
       }
       flows.push(flow)
+      mockSnapshot(flow, 'First version') // sweep/inbox-flows
+      rememberGraph(flow)
       return Promise.resolve(flow)
     },
     updateFlow(id: string, input: UpdateFlowInput): Promise<Flow> {
@@ -425,7 +455,7 @@ export function createMockCommands(): Commands {
       if (f) {
         if (input.title !== undefined) f.title = input.title
         if (input.trigger !== undefined) f.trigger = input.trigger
-        if (input.nodes !== undefined) { f.nodes = input.nodes; f.count = input.nodes.length }
+        if (input.nodes !== undefined) { f.nodes = input.nodes; f.count = input.nodes.length; f.version = (f.version ?? 1) + 1 }
         if (input.edges !== undefined) f.edges = input.edges
         if (input.enabled !== undefined) f.enabled = input.enabled
         if (input.areas !== undefined) f.areas = input.areas
@@ -600,6 +630,49 @@ export function createMockCommands(): Commands {
     },
     openGoalSession(goalId: string) {
       return Promise.resolve(mockGoalSession(goalId))
+    // ── sweep/inbox-flows ──
+    markInboxRead(id: string): Promise<void> {
+      mockMarkRead(id)
+    markAllInboxRead(before?: string): Promise<{ updated: number }> {
+      return Promise.resolve({ updated: mockMarkAllRead(before) })
+    updateProposal(id: string, input: UpdateProposalInput): Promise<void> {
+      mockUpdateProposal(id, input)
+    approveProposalAmended(id: string, params: Record<string, unknown>, _note?: string): Promise<{ executionJobId: string }> {
+      mockDecide(id, 'done', params)
+      return Promise.resolve({ executionJobId: nextId('ejob') })
+    undoApproval(id: string): Promise<void> {
+      return mockUndo(id).then(() => applyMockFlowPublish(id, false))
+    decideFlowRun(flowId: string, runId: string, approve: boolean): Promise<FlowRun> {
+      const run = flowRuns.find(r => r.id === runId && r.flowId === flowId)
+      if (!run) return Promise.reject(new Error('Run not found'))
+      const st = (run.steps ?? []).map(x => (x.status === 'waiting' ? { ...x, status: approve ? 'done' : 'declined', note: approve ? 'You approved' : 'You declined' } : x))
+      run.steps = st
+      run.status = approve ? 'done' : 'declined'
+      run.waitingFor = null
+      run.endedAt = new Date().toISOString()
+      for (const item of inboxItems) {
+        if (item.proposals?.some(p => p.flowRunId === runId)) item.status = 'done'
+      return Promise.resolve({ ...run })
+    retryFlowRun(flowId: string, _runId: string): Promise<FlowRun> {
+      const f = flows.find(x => x.id === flowId)
+      if (!f) return Promise.reject(new Error('Flow not found'))
+      return Promise.resolve(mockRun(f, false))
+    cancelFlowRun(flowId: string, runId: string): Promise<FlowRun> {
+      const run = flowRuns.find(r => r.id === runId && r.flowId === flowId)
+      if (!run) return Promise.reject(new Error('Run not found'))
+      run.status = 'cancelled'
+      run.waitingFor = null
+      run.steps = (run.steps ?? []).map(x => (x.status === 'waiting' ? { ...x, status: 'cancelled' } : x))
+      return Promise.resolve({ ...run })
+    restoreFlowVersion(flowId: string, version: number): Promise<Flow> {
+      const f = flows.find(x => x.id === flowId)
+      if (!f) return Promise.reject(new Error('Flow not found'))
+      const g = graphAt(flowId, version)
+      if (g) { f.nodes = g.nodes; f.edges = g.edges; f.count = g.nodes.length }
+      f.version = (f.version ?? 1) + 1
+      mockSnapshot(f, `Restored from v${version}`)
+      rememberGraph(f)
+      return Promise.resolve({ ...f })
     },
   }
 }
