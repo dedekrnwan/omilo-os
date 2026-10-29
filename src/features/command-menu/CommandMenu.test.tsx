@@ -16,6 +16,7 @@ import {
   RouterProvider,
   Outlet,
 } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CommandMenu } from './CommandMenu'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -29,12 +30,16 @@ function makeTestRouter(
   onOpenChange: (v: boolean) => void,
   initialPath = '/chat',
 ) {
+  // The corpus is built from live queries (mock repos by default).
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({
     component: () => (
-      <div>
-        <CommandMenu open={open} onOpenChange={onOpenChange} />
-        <Outlet />
-      </div>
+      <QueryClientProvider client={queryClient}>
+        <div>
+          <CommandMenu open={open} onOpenChange={onOpenChange} />
+          <Outlet />
+        </div>
+      </QueryClientProvider>
     ),
   })
 
@@ -103,11 +108,10 @@ describe('CommandMenu — result row navigation', () => {
 
     const input = await screen.findByRole('combobox', { name: /search/i })
 
-    // Arrow down once → index 1 (RECENT has 3 items: r-prep(0), r-passkey(1), ...)
-    // Arrow down 4 times: skip RECENT(3), land on JUMP TO first item = Inbox
+    // Wait for the live corpus (recent chats) to load, then move down once.
+    await screen.findByRole('option', { name: /^Inbox/ })
     await act(async () => {
-      // Navigate past RECENT (3 items) and land on first JUMP TO item (Inbox)
-      await user.type(input, '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}')
+      await user.type(input, '{ArrowDown}')
     })
 
     // Press Enter to run the active item (Inbox → /office/inbox)
@@ -135,5 +139,33 @@ describe('CommandMenu — result row navigation', () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
     expect(router.state.location.pathname).toBe('/inbox')
+  })
+})
+
+describe('CommandMenu — live corpus', () => {
+  test('searching finds a real chat from the sessions query and opens it', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const router = makeTestRouter(true, onOpenChange, '/chat')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    const input = await screen.findByRole('combobox', { name: /search/i })
+    await act(async () => {
+      await user.type(input, 'investor')
+    })
+    const row = await screen.findByRole('option', { name: /October investor update/ })
+    await act(async () => {
+      await user.click(row)
+    })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(router.state.location.pathname).toBe('/chat/sess-investor')
+  })
+
+  test('Inbox shows the real needs-you count', async () => {
+    const router = makeTestRouter(true, vi.fn(), '/chat')
+    await router.load()
+    render(<RouterProvider router={router} />)
+    expect(await screen.findByRole('option', { name: /^Inbox\s*\d+ need you/ })).toBeInTheDocument()
   })
 })

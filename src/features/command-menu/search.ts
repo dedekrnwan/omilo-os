@@ -1,6 +1,6 @@
 /** Pure search helpers for the command menu — no React. */
-import { CORPUS, DEFAULT_ACTIONS, GROUP_ORDER, JUMP_TO, RECENT, tabOf } from './data'
-import type { Group, Item, TabId } from './data'
+import { GROUP_ORDER, tabOf } from './data'
+import type { Corpus, Group, Item, TabId } from './data'
 
 export interface Section {
   heading: string
@@ -31,7 +31,8 @@ function isQuestion(q: string) {
   return q.endsWith('?') || /^(why|how|what|when|who|which|should|can|is|are|do|does)\b/i.test(q)
 }
 
-export function search(query: string, tab: TabId): SearchResult {
+export function search(query: string, tab: TabId, corpus: Corpus): SearchResult {
+  const CORPUS = corpus.all
   const raw = query.trim()
   const { tab: forced, needle } = prefixTab(raw)
   const t = forced ?? tab
@@ -41,9 +42,9 @@ export function search(query: string, tab: TabId): SearchResult {
       return {
         mode: 'empty',
         sections: [
-          { heading: 'RECENT', items: RECENT },
-          { heading: 'JUMP TO', items: JUMP_TO },
-          { heading: 'ACTIONS', items: DEFAULT_ACTIONS },
+          ...(corpus.recent.length ? [{ heading: 'RECENT', items: corpus.recent }] : []),
+          { heading: 'JUMP TO', items: corpus.jumpTo },
+          { heading: 'ACTIONS', items: corpus.actions },
         ],
       }
     }

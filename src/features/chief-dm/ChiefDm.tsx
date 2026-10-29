@@ -12,25 +12,30 @@
  * (deep links + screenshots); `window.dispatchEvent(new Event('omilo:chief-nudge'))` shows the nudge.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown, History, Lock, Maximize2, Pin, Search, SquarePen, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, History, Lock, Maximize2, Pin, Search, SquarePen, Trash2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import type { Model } from '../../core/domain/types'
+import type { ChiefNudge, Message, Model, Session } from '../../core/domain/types'
 import { Composer } from '../../ui/ChatSession/Composer'
-import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
-import { useInbox } from '../../app/queries'
-import { useFabHidden } from './fabStore'
+import { DEFAULT_MODEL, MODELS } from '../../ui/ChatSession/ModelMenu'
+import { usePickerSource } from '../../ui/ChatSession/usePickerSource'
+import { useCommands } from '../../app/CommandsProvider'
 import {
-  CHIEF_DAY_LABEL,
-  CHIEF_MESSAGES,
-  CHIEF_THREADS,
-  NUDGE,
-  QUICK_PROMPTS,
-  THREADS_NOTE,
-} from './data'
-import type { ChiefMessage, ChiefThread } from './data'
+  useChiefNudges,
+  useChiefThreads,
+  useDeleteSession,
+  useDismissChiefNudge,
+  useInbox,
+  useMessages,
+  useStartChat,
+} from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
+import { useFabHidden } from './fabStore'
+import { QUICK_PROMPTS, THREADS_NOTE } from './data'
+import type { ChiefMessage } from './data'
 
 export type ChiefDmState = 'closed' | 'nudge' | 'open' | 'full' | 'threads'
 const STATES: ChiefDmState[] = ['closed', 'nudge', 'open', 'full', 'threads']
@@ -130,10 +135,12 @@ function FabOpen({ onClose }: { onClose: () => void }) {
 
 /** pen Nudge (Yjkrc). */
 function Nudge({
+  nudge,
   onDismiss,
   onAccept,
   onLater,
 }: {
+  nudge: ChiefNudge
   onDismiss: () => void
   onAccept: () => void
   onLater: () => void
@@ -146,29 +153,29 @@ function Nudge({
     >
       <div className="flex w-full items-center gap-[8px]">
         <Mascot size={24} radius={7} area="brand" helper />
-        <span className="text-[13px] font-semibold text-ink">{NUDGE.name}</span>
+        <span className="text-[13px] font-semibold text-ink">Chief</span>
         <span className="flex items-center gap-[3px] text-muted">
           <Lock size={11} aria-hidden />
-          <span className="text-[11.5px]">{NUDGE.scope}</span>
+          <span className="text-[11.5px]">Just you</span>
         </span>
         <span className="h-px flex-1" />
         <HeadButton icon={X} label="Dismiss" onClick={onDismiss} size={24} iconSize={14} />
       </div>
-      <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{NUDGE.body}</p>
+      <p className="m-0 text-[13px] leading-[1.5] text-ink-2">{nudge.body}</p>
       <div className="flex gap-[6px]">
         <button
           type="button"
           onClick={onAccept}
           className="inline-flex h-[28px] items-center rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary transition-colors hover:bg-primary-hover"
         >
-          {NUDGE.primary}
+          {nudge.primary}
         </button>
         <button
           type="button"
           onClick={onLater}
           className="inline-flex h-[28px] items-center rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong transition-colors hover:bg-soft"
         >
-          {NUDGE.secondary}
+          {nudge.secondary}
         </button>
       </div>
     </div>
@@ -196,7 +203,7 @@ function Message({ msg }: { msg: ChiefMessage }) {
   if (msg.kind === 'user') {
     return (
       <div className="flex w-full justify-end">
-        <div className="rounded-[16px_16px_4px_16px] bg-app px-[12px] py-[8px]">
+        <div className={`rounded-[16px_16px_4px_16px] bg-app px-[12px] py-[8px] ${msg.pending ? 'opacity-60' : ''}`}>
           <p className="m-0 max-w-[280px] text-[13px] leading-[1.55] whitespace-pre-wrap text-ink">{msg.text}</p>
         </div>
       </div>
@@ -207,7 +214,19 @@ function Message({ msg }: { msg: ChiefMessage }) {
   )
 }
 
-function Messages({ messages, wide }: { messages: ChiefMessage[]; wide: boolean }) {
+function Messages({
+  messages,
+  wide,
+  dayLabel,
+  thinking,
+  loading,
+}: {
+  messages: ChiefMessage[]
+  wide: boolean
+  dayLabel?: string
+  thinking?: boolean
+  loading?: boolean
+}) {
   const end = useRef<HTMLDivElement>(null)
   const first = useRef(true)
   useEffect(() => {
@@ -223,12 +242,21 @@ function Messages({ messages, wide }: { messages: ChiefMessage[]; wide: boolean 
         wide ? 'px-[160px] py-[24px]' : 'px-[14px] py-[12px]'
       }`}
     >
-      <div className="flex w-full justify-center">
-        <span className="font-mono text-[10.5px] text-faint">{CHIEF_DAY_LABEL}</span>
-      </div>
+      {dayLabel && (
+        <div className="flex w-full justify-center">
+          <span className="font-mono text-[10.5px] text-faint">{dayLabel}</span>
+        </div>
+      )}
+      {loading && <p className="m-0 text-[12.5px] text-muted">Loading…</p>}
+      {!loading && messages.length === 0 && (
+        <p className="m-0 text-[13px] leading-[1.55] text-muted">
+          Think out loud — only you and Chief see this. Nothing is posted or done unless you ask.
+        </p>
+      )}
       {messages.map((m) => (
         <Message key={m.id} msg={m} />
       ))}
+      {thinking && <p className="m-0 text-[12.5px] text-muted">Chief is thinking…</p>}
       <div ref={end} />
     </div>
   )
@@ -251,12 +279,22 @@ function Suggestions({ onPick }: { onPick: (p: string) => void }) {
   )
 }
 
-function ThreadRow({ thread, active, onOpen }: { thread: ChiefThread; active: boolean; onOpen: () => void }) {
+function ThreadRow({
+  thread,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  thread: Session
+  active: boolean
+  onOpen: () => void
+  onDelete: () => void
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`flex w-full gap-[10px] rounded-base px-[10px] py-[9px] text-left transition-colors hover:bg-hover ${
+      className={`group flex w-full gap-[10px] rounded-base px-[10px] py-[9px] text-left transition-colors hover:bg-hover ${
         active ? 'bg-hover' : ''
       }`}
     >
@@ -268,10 +306,20 @@ function ThreadRow({ thread, active, onOpen }: { thread: ChiefThread; active: bo
           >
             {thread.title}
           </span>
-          <span className="shrink-0 font-mono text-[10.5px] text-faint">{thread.time}</span>
+          <span className="shrink-0 font-mono text-[10.5px] text-faint">{thread.updated}</span>
         </span>
         <span className="flex w-full items-center gap-[8px]">
-          <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{thread.preview}</span>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{thread.goal ?? 'Private chat with Chief'}</span>
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Delete “${thread.title}”`}
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onDelete() } }}
+            className="hidden shrink-0 text-faint hover:text-bad group-hover:inline-flex"
+          >
+            <Trash2 size={12} aria-hidden />
+          </span>
           {thread.unread && (
             <span aria-label="Unread" className="size-[7px] shrink-0 rounded-pill bg-warn" />
           )}
@@ -281,12 +329,27 @@ function ThreadRow({ thread, active, onOpen }: { thread: ChiefThread; active: bo
   )
 }
 
-function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) => void }) {
+/** Activity label → TODAY ("now", "2h", "14:03") or EARLIER. */
+function groupOf(t: Session): 'TODAY' | 'EARLIER' {
+  return /^(now|\d+[mh]|\d{1,2}:\d{2})$/.test(t.updated) ? 'TODAY' : 'EARLIER'
+}
+
+function Threads({
+  threads,
+  loading,
+  activeId,
+  onOpen,
+  onDelete,
+}: {
+  threads: Session[]
+  loading: boolean
+  activeId: string | null
+  onOpen: (id: string) => void
+  onDelete: (t: Session) => void
+}) {
   const [q, setQ] = useState('')
   const query = q.trim().toLowerCase()
-  const list = CHIEF_THREADS.filter(
-    (t) => !query || `${t.title} ${t.preview}`.toLowerCase().includes(query),
-  )
+  const list = threads.filter((t) => !query || t.title.toLowerCase().includes(query))
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-[2px] overflow-y-auto px-[8px] py-[10px]">
       <div className="w-full px-[6px] pb-[8px]">
@@ -301,8 +364,12 @@ function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) 
           />
         </label>
       </div>
+      {loading && <p className="m-0 px-[10px] text-[12.5px] text-muted">Loading…</p>}
+      {!loading && list.length === 0 && (
+        <p className="m-0 px-[10px] text-[12.5px] text-muted">{query ? 'No private chats match.' : 'No private chats yet.'}</p>
+      )}
       {(['TODAY', 'EARLIER'] as const).map((g) => {
-        const rows = list.filter((t) => t.group === g)
+        const rows = list.filter((t) => groupOf(t) === g)
         if (!rows.length) return null
         return (
           <div key={g} className="contents">
@@ -310,7 +377,7 @@ function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) 
               {g}
             </div>
             {rows.map((t) => (
-              <ThreadRow key={t.id} thread={t} active={t.id === activeId} onOpen={() => onOpen(t.id)} />
+              <ThreadRow key={t.id} thread={t} active={t.id === activeId} onOpen={() => onOpen(t.id)} onDelete={() => onDelete(t)} />
             ))}
           </div>
         )
@@ -325,14 +392,60 @@ function Threads({ activeId, onOpen }: { activeId: string; onOpen: (id: string) 
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+function clock(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function dayLabel(iso?: string): string | undefined {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return undefined
+  const today = new Date().toDateString() === d.toDateString()
+  return `${today ? 'Today' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${clock(iso)}`
+}
+
+function toChiefMessage(m: Message): ChiefMessage {
+  return { id: m.id, kind: m.author.kind === 'you' ? 'user' : 'chief', text: m.content, time: clock(m.createdAt) }
+}
+
+/** A thread title from the first thing said. */
+function titleFrom(text: string): string {
+  const line = text.trim().split('\n')[0]
+  return line.length > 60 ? `${line.slice(0, 57).trimEnd()}…` : line
+}
+
+const NUDGE_SEEN_KEY = 'omilo.chief.nudge-shown'
+const LATER_MS = 3 * 60 * 60 * 1000
+
 export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; hideFab?: boolean } = {}) {
   const [state, setState] = useState<ChiefDmState>(() => initial ?? initialState())
   const fabHidden = useFabHidden((s) => s.count > 0)
-  const [messages, setMessages] = useState<ChiefMessage[]>(CHIEF_MESSAGES)
   const [draft, setDraft] = useState('')
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
-  const [activeThread, setActiveThread] = useState('t1')
+  /** Thread on screen; null = latest thread, 'new' = a fresh chat. */
+  const [activeThread, setActiveThread] = useState<string | null>(null)
+  const [pending, setPending] = useState<ChiefMessage | null>(null)
   const [seen, setSeen] = useState(false)
+  const isOpen = state === 'open' || state === 'full' || state === 'threads'
+
+  const queryClient = useQueryClient()
+  const commands = useCommands()
+  const startChat = useStartChat()
+  const deleteSession = useDeleteSession()
+  const dismissNudge = useDismissChiefNudge()
+  const { data: threads = [], isLoading: threadsLoading } = useChiefThreads(isOpen)
+  const { data: nudges = [] } = useChiefNudges()
+  const nudge = nudges[0]
+  const threadId = activeThread === 'new' ? null : activeThread ?? threads[0]?.id ?? null
+  const thread = threads.find((t) => t.id === threadId)
+  const { data: rawMessages = [], isLoading: messagesLoading } = useMessages(threadId ?? '')
+  const messages = useMemo(() => {
+    const list = threadId ? rawMessages.map(toChiefMessage) : []
+    return pending && !list.some((m) => m.text === pending.text && m.kind === 'user') ? [...list, pending] : list
+  }, [rawMessages, threadId, pending])
+  const pickerSource = usePickerSource(null)
 
   // ⌘/Ctrl-J toggles; Esc closes.
   useEffect(() => {
@@ -347,25 +460,57 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
     function onNudge() {
       setState((s) => (s === 'closed' ? 'nudge' : s))
     }
-    /** Command menu "Ask Chief" / "Talk to Chief privately": open, prefill the question. */
+    /** Command menu "Ask Chief" / "Talk to Chief privately": open a fresh chat, prefill the question. */
     function onAsk(e: Event) {
       const text = (e as CustomEvent<string>).detail
-      if (text) setDraft(text)
+      if (text) {
+        setDraft(text)
+        setActiveThread('new')
+      }
+      setState('open')
+    }
+    /** Command menu: open one private chat. */
+    function onThread(e: Event) {
+      const id = (e as CustomEvent<string>).detail
+      if (id) setActiveThread(id)
       setState('open')
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('omilo:chief-nudge', onNudge)
     window.addEventListener('omilo:chief-ask', onAsk)
+    window.addEventListener('omilo:chief-thread', onThread)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('omilo:chief-nudge', onNudge)
       window.removeEventListener('omilo:chief-ask', onAsk)
+      window.removeEventListener('omilo:chief-thread', onThread)
     }
   }, [])
 
   useEffect(() => {
-    if (state === 'open' || state === 'full' || state === 'threads') setSeen(true)
-  }, [state])
+    if (isOpen) setSeen(true)
+  }, [isOpen])
+
+  // Proactive nudge: once per browser session, a few seconds after something needs you.
+  useEffect(() => {
+    if (!nudge || state !== 'closed') return
+    let shown = false
+    try {
+      shown = sessionStorage.getItem(NUDGE_SEEN_KEY) === '1'
+    } catch {
+      shown = false
+    }
+    if (shown) return
+    const t = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(NUDGE_SEEN_KEY, '1')
+      } catch {
+        // storage unavailable — the nudge may show again next load
+      }
+      setState((s) => (s === 'closed' ? 'nudge' : s))
+    }, 4000)
+    return () => window.clearTimeout(t)
+  }, [nudge, state])
 
   // Real "needs you" count: inbox items awaiting the user (decisions/mentions
   // flagged needsYou). Once the drawer is opened (`seen`), the badge clears.
@@ -373,24 +518,60 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
   const needsYouCount = (inboxItems ?? []).filter((i) => i.needsYou).length
   const unread = seen ? 0 : needsYouCount
 
-  function send(text: string) {
-    const now = new Date()
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    setMessages((prev) => [...prev, { id: `u-${prev.length}-${time}`, kind: 'user', text, time }])
+  async function send(text: string, forceNew = false) {
+    const target = forceNew ? null : threadId
+    const now = new Date().toISOString()
+    setPending({ id: `pending-${now}`, kind: 'user', text, time: clock(now), pending: true })
     if (state === 'threads') setState('open')
+    try {
+      if (target) {
+        await commands.sendMessage(target, text, { model: model.id })
+        await queryClient.invalidateQueries({ queryKey: ['messages', target] })
+        void queryClient.invalidateQueries({ queryKey: ['sessions', 'chief'] })
+      } else {
+        const session = await startChat.mutateAsync({
+          input: { kind: 'chief_private', title: titleFrom(text), model: model.id },
+          text,
+        })
+        setActiveThread(session.id)
+        await queryClient.invalidateQueries({ queryKey: ['messages', session.id] })
+      }
+    } catch {
+      notify('Couldn’t reach Chief — try again')
+      setDraft(text)
+    } finally {
+      setPending(null)
+    }
+  }
+
+  function removeThread(t: Session) {
+    deleteSession.mutate(t.id, {
+      onSuccess: () => notify('Private chat deleted'),
+      onError: () => notify('Couldn’t delete the chat — try again'),
+    })
+    if (t.id === threadId) setActiveThread('new')
   }
 
   if (state === 'closed' || state === 'nudge') {
     return (
       <>
-        {state === 'nudge' && (
+        {state === 'nudge' && nudge && (
           <Nudge
-            onDismiss={() => setState('closed')}
+            nudge={nudge}
+            onDismiss={() => {
+              dismissNudge.mutate({ id: nudge.id })
+              setState('closed')
+            }}
             onAccept={() => {
-              setDraft('Walk me through the 3pm with Pak RT')
+              dismissNudge.mutate({ id: nudge.id })
+              setDraft(nudge.prompt)
+              setActiveThread('new')
               setState('open')
             }}
-            onLater={() => setState('closed')}
+            onLater={() => {
+              dismissNudge.mutate({ id: nudge.id, snoozeUntil: new Date(Date.now() + LATER_MS).toISOString() })
+              setState('closed')
+            }}
           />
         )}
         {!hideFab && !fabHidden && <Fab unread={unread} onOpen={() => setState('open')} />}
@@ -399,22 +580,23 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
   }
 
   const full = state === 'full'
-  const threads = state === 'threads'
+  const showThreads = state === 'threads'
+  const busy = pending !== null
 
   const panel = (
     <section
       role="dialog"
-      aria-label={threads ? 'Private chats with Chief' : 'Chief — private chat'}
+      aria-label={showThreads ? 'Private chats with Chief' : 'Chief — private chat'}
       className={`fixed z-50 flex flex-col overflow-hidden rounded-[16px] bg-surface shadow-[0_16px_40px_#0C0A0926] outline-1 -outline-offset-1 outline-line-strong ${
         full
           ? 'top-[24px] bottom-[24px] left-1/2 w-[min(1040px,calc(100vw-48px))] -translate-x-1/2'
           : 'right-[24px] bottom-[88px] h-[min(628px,calc(100vh-112px))] w-[400px]'
       }`}
     >
-      {threads ? (
+      {showThreads ? (
         <Header
           title="Private chats"
-          sub={`${CHIEF_THREADS.length - 1} with Chief · only you see these`}
+          sub={`${threads.length} with Chief · only you see these`}
           actions={
             <>
               <HeadButton icon={History} label="Back to chat" active onClick={() => setState('open')} />
@@ -422,7 +604,7 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
                 icon={SquarePen}
                 label="New chat"
                 onClick={() => {
-                  setMessages([])
+                  setActiveThread('new')
                   setState('open')
                 }}
               />
@@ -432,7 +614,7 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
         />
       ) : (
         <Header
-          title="Chief"
+          title={thread?.title ?? 'Chief'}
           sub="Private · not in any channel"
           actions={
             <>
@@ -447,32 +629,44 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
           }
         />
       )}
-      {threads ? (
+      {showThreads ? (
         <Threads
-          activeId={activeThread}
+          threads={threads}
+          loading={threadsLoading}
+          activeId={threadId}
           onOpen={(id) => {
             setActiveThread(id)
             setState('open')
           }}
+          onDelete={removeThread}
         />
       ) : (
         <>
-          <Messages messages={messages} wide={full} />
+          <Messages
+            messages={messages}
+            wide={full}
+            dayLabel={dayLabel(rawMessages[0]?.createdAt)}
+            thinking={busy}
+            loading={Boolean(threadId) && messagesLoading}
+          />
           <Suggestions onPick={setDraft} />
         </>
       )}
       <div className="w-full shrink-0 px-[12px] pb-[12px]">
         <Composer
           key={`chief-dm-${draft}`}
-          sessionId="chief-dm"
-          selectedModel={model}
+          sessionId={threadId ?? 'chief-dm-new'}
+          selectedModel={MODELS.find((m) => m.id === thread?.model) ?? model}
           onModelChange={setModel}
-          placeholder={threads ? 'Start a new private chat…' : 'Think out loud with Chief…'}
+          placeholder={busy ? 'Chief is thinking…' : showThreads ? 'Start a new private chat…' : 'Think out loud with Chief…'}
           compact={!full}
           initialText={draft}
+          pickerSource={pickerSource}
           onSend={(text) => {
-            send(text)
+            if (busy) return
+            if (showThreads) setActiveThread('new')
             setDraft('')
+            void send(text, showThreads)
           }}
         />
       </div>

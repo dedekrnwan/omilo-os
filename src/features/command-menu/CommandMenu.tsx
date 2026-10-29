@@ -8,9 +8,15 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useNavigate } from '@tanstack/react-router'
 import { useUIStore, MODE_HOME } from '../../app/store'
+import { useAreas, useCreateHelper, useHelpers, useStartChat } from '../../app/queries'
+import { useSession as useAuthSession } from '../../app/session'
+import { useCompanyLook } from '../../ui/ds/looks'
+import { notify } from '../../ui/ds/Toaster'
 import {
+  Archive,
   Bell,
   Building2,
+  CalendarSync,
   ChevronLeft,
   Cpu,
   Crosshair,
@@ -30,9 +36,10 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { ASK_CHANNEL_HELPER, COMPANY, HIRE_HIRED, HIRE_READY, TABS } from './data'
+import { HIRE_TEMPLATES, TABS } from './data'
 import type { HireOption, Item, Preview, TabId } from './data'
 import { flatten, search } from './search'
+import { useCommandCorpus } from './corpus'
 import type { Section } from './search'
 
 export interface CommandMenuProps {
@@ -41,8 +48,10 @@ export interface CommandMenuProps {
 }
 
 const ICONS: Record<string, LucideIcon> = {
+  archive: Archive,
   bell: Bell,
   'building-2': Building2,
+  'calendar-sync': CalendarSync,
   cpu: Cpu,
   crosshair: Crosshair,
   'file-text': FileText,
@@ -129,16 +138,24 @@ function Row({
   )
 }
 
+/** Active company chip (name + logo tile from the signed-in session). */
 function Scope() {
+  const company = useAuthSession((s) => s.company)
+  const name = company?.name ?? 'Workspace'
+  const look = useCompanyLook({ id: company?.id ?? '', name, initial: name.charAt(0).toUpperCase(), color: '#78716C' })
   return (
     <span className="flex h-[24px] shrink-0 items-center gap-[6px] rounded-sm bg-soft pr-[8px] pl-[4px] outline-1 -outline-offset-1 outline-line">
-      <span
-        className="flex size-[16px] items-center justify-center rounded-xs text-[9.5px] font-bold text-white"
-        style={{ background: COMPANY.color }}
-      >
-        {COMPANY.initial}
-      </span>
-      <span className="text-[12px] whitespace-nowrap text-ink-2">{COMPANY.name}</span>
+      {look.image ? (
+        <img src={look.image} alt="" className="size-[16px] rounded-xs object-cover" />
+      ) : (
+        <span
+          className="flex size-[16px] items-center justify-center rounded-xs text-[9.5px] font-bold text-white"
+          style={{ background: look.color }}
+        >
+          {look.initial}
+        </span>
+      )}
+      <span className="text-[12px] whitespace-nowrap text-ink-2">{name}</span>
     </span>
   )
 }
@@ -267,12 +284,30 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const result = useMemo(() => search(query, tab), [query, tab])
+  const corpus = useCommandCorpus()
+  const result = useMemo(() => search(query, tab, corpus), [query, tab, corpus])
+  const { data: helpers = [] } = useHelpers()
+  const { data: areas = [] } = useAreas()
+  const areaId = useUIStore((s) => s.areaId)
+  const createHelper = useCreateHelper()
+  const startChat = useStartChat()
   const hireRows = useMemo(() => {
     const q = query.trim().toLowerCase()
     const f = (o: HireOption) => !q || `${o.label} ${o.meta}`.toLowerCase().includes(q)
-    return { ready: HIRE_READY.filter(f), hired: HIRE_HIRED.filter(f) }
-  }, [query])
+    const hiredNames = new Set(helpers.map((h) => h.name.toLowerCase()))
+    const hired: HireOption[] = helpers
+      .filter((h) => !h.isChief)
+      .map((h) => ({ id: `hh-${h.id}`, label: h.name, meta: h.role ?? h.area, helper: h.area, hired: true }))
+    return {
+      ready: HIRE_TEMPLATES.filter((o) => !o.template || !hiredNames.has(o.template.name.toLowerCase())).filter(f),
+      hired: hired.filter(f),
+    }
+  }, [query, helpers])
+
+  // "Ask <helper> in #area instead": the area in view (else the default area) and
+  // its first non-Chief helper — the question starts a chat there and is sent.
+  const askArea = areas.find((a) => a.id === areaId) ?? areas.find((a) => a.isDefault) ?? areas[0]
+  const askHelper = helpers.find((h) => !h.isChief && h.status !== 'paused') ?? helpers.find((h) => h.isChief)
 
   const flat: Item[] =
     step.kind === 'hire'
@@ -288,9 +323,26 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
     listRef.current?.querySelector('[data-active]')?.scrollIntoView?.({ block: 'nearest' })
   }, [active])
 
-  function askChief(text: string) {
+  function askChief(text: string, threadId?: string) {
     onClose()
-    window.dispatchEvent(new CustomEvent('omilo:chief-ask', { detail: text }))
+    if (threadId) window.dispatchEvent(new CustomEvent('omilo:chief-thread', { detail: threadId }))
+    else window.dispatchEvent(new CustomEvent('omilo:chief-ask', { detail: text }))
+  }
+
+  function askInArea(question: string) {
+    onClose()
+    if (!askArea) {
+      void navigate({ to: '/chat' })
+      return
+    }
+    const text = askHelper && !askHelper.isChief ? `@${askHelper.name} ${question}` : question
+    startChat.mutate(
+      { input: { channelId: askArea.id, title: question.slice(0, 60) }, text },
+      {
+        onSuccess: (session) => void navigate({ to: '/chat/$sessionId', params: { sessionId: session.id } }),
+        onError: () => notify('Couldn’t start the chat — try again'),
+      },
+    )
   }
 
   function run(item: Item) {
@@ -303,13 +355,13 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
         // Mode is persisted client state, not a route — flip it, then land on
         // that mode's home.
         onClose()
-        const next = item.run.to.startsWith('/inbox') ? 'office' : 'chat'
+        const next = useUIStore.getState().mode === 'chat' ? 'office' : 'chat'
         setMode(next)
         void navigate({ to: MODE_HOME[next] })
         return
       }
       case 'chief':
-        askChief('')
+        askChief('', item.run.threadId)
         return
       case 'hire':
         setQuery('')
@@ -321,8 +373,27 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
 
   function runHire(o: HireOption) {
     if (o.hired) return
+    if (!o.template) {
+      // Custom helper: Chief drafts the job from what was typed.
+      const what = query.trim()
+      if (what) askChief(`Help me hire a helper: ${what}. Draft the job description and a first loop.`)
+      else {
+        onClose()
+        void navigate({ to: '/team' })
+      }
+      return
+    }
     onClose()
-    void navigate({ to: '/team' })
+    createHelper.mutate(
+      { name: o.template.name, area: o.template.area, role: o.template.role, jobDescription: o.template.jobDescription },
+      {
+        onSuccess: (h) => {
+          notify(`${h.name} joined the team`)
+          void navigate({ to: '/team/$helperId', params: { helperId: h.id } } as never)
+        },
+        onError: () => notify(`Couldn’t hire ${o.label} — try again`),
+      },
+    )
   }
 
   function runActive() {
@@ -333,10 +404,8 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
     }
     if (result.mode === 'ask') {
       if (active === 0) askChief(result.question)
-      else if (active === 1) {
-        onClose()
-        void navigate({ to: '/chat' })
-      } else run(result.closest[active - 2])
+      else if (active === 1) askInArea(result.question)
+      else run(result.closest[active - 2])
       return
     }
     const item = flat[active]
@@ -455,10 +524,12 @@ function Palette({ onClose, initial = '' }: { onClose: () => void; initial?: str
               active={active}
               setActive={setActive}
               onAsk={() => askChief(result.question)}
-              onChannel={() => {
-                onClose()
-                void navigate({ to: '/chat' })
+              channel={{
+                label: `Ask ${askHelper && !askHelper.isChief ? askHelper.name : 'Chief'} in #${(askArea?.name ?? 'general').toLowerCase()} instead`,
+                meta: 'Shared with the area',
+                helper: askHelper?.area ?? 'brand',
               }}
+              onChannel={() => askInArea(result.question)}
               onRun={run}
             />
           ) : (
@@ -518,6 +589,7 @@ function AskList({
   active,
   setActive,
   onAsk,
+  channel,
   onChannel,
   onRun,
 }: {
@@ -526,6 +598,7 @@ function AskList({
   active: number
   setActive: (i: number) => void
   onAsk: () => void
+  channel: { label: string; meta: string; helper: Item['helper'] }
   onChannel: () => void
   onRun: (i: Item) => void
 }) {
@@ -558,7 +631,7 @@ function AskList({
         {active === 0 && <Kbd>↵</Kbd>}
       </button>
       <Row
-        item={{ label: ASK_CHANNEL_HELPER.label, meta: ASK_CHANNEL_HELPER.meta, helper: ASK_CHANNEL_HELPER.helper }}
+        item={{ label: channel.label, meta: channel.meta, helper: channel.helper }}
         active={active === 1}
         onHover={() => setActive(1)}
         onRun={onChannel}
@@ -594,7 +667,7 @@ function HireList({
       {rows.ready.map((o, i) => (
         <Row
           key={o.id}
-          item={{ label: o.label, meta: o.meta, helper: o.helper, icon: o.icon, hint: i === active ? undefined : o.price }}
+          item={{ label: o.label, meta: o.meta, helper: o.helper, icon: o.icon }}
           active={i === active}
           onHover={() => setActive(i)}
           onRun={() => onRun(o)}

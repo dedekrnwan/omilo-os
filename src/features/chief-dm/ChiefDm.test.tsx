@@ -58,3 +58,45 @@ describe('ChiefDm · unread badge', () => {
     expect(badge).toHaveTextContent('2')
   })
 })
+
+// ── Private threads are real sessions (kind='chief_private') ─────────────────
+
+describe('ChiefDm · private threads', () => {
+  test('opens on the latest private chat and lists threads from the API', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ReposProvider repos={createMockRepos()}>
+          <ChiefDm initial="threads" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('Are we spreading too thin?')).toBeInTheDocument()
+    expect(screen.getByText('Kopi Kenangan renewal')).toBeInTheDocument()
+  })
+
+  test('the open drawer shows the thread messages', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ReposProvider repos={createMockRepos()}>
+          <ChiefDm initial="open" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText(/Drafted, not applied/)).toBeInTheDocument()
+  })
+
+  test('nudge shows the real nudge body from the API', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ReposProvider repos={createMockRepos()}>
+          <ChiefDm initial="nudge" />
+        </ReposProvider>
+      </QueryClientProvider>,
+    )
+    const nudge = await screen.findByRole('dialog', { name: 'Chief nudge' })
+    await waitFor(() => expect(nudge).toHaveTextContent(/Got two minutes\?/))
+  })
+})

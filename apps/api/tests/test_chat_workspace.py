@@ -421,3 +421,35 @@ async def test_chief_nudges_and_dismiss(async_client, ws):
 
     await c.post(f"/v1/chief/nudges/{nid}/dismiss", json={}, headers=_auth(t))
     assert (await c.get("/v1/chief/nudges", headers=_auth(t))).json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_channel_with_color_and_helpers(async_client):
+    c = async_client
+    token, company_id, _ = await _sign_up(c, name="Area maker")
+    chief = _seed_chief(company_id)
+    from omilo.db import SessionLocal
+    from omilo.models.agents import Helper
+    from omilo.models.base import prefixed_id
+
+    with SessionLocal() as s:
+        with s.begin():
+            dev = Helper(
+                id=prefixed_id("hlp"), company_id=company_id, name="Dev", area="dev", is_chief=False,
+                engine={"type": "fake"}, autonomy_cap=None, permissions=[], status="active", channel_ids=[],
+            )
+            s.add(dev)
+            dev_id = dev.id
+    r = await c.post(
+        "/v1/channels",
+        json={"name": "Support", "accent": "general", "color": "#EC4899", "helper_ids": [dev_id, chief]},
+        headers=_auth(token),
+    )
+    assert r.status_code == 201, r.text
+    ch_id = r.json()["id"]
+    listed = [x for x in (await c.get("/v1/channels", headers=_auth(token))).json() if x["id"] == ch_id][0]
+    assert listed["color"] == "#EC4899"
+    assert listed["agentCount"] == 1
+    with SessionLocal() as s:
+        assert ch_id in s.get(Helper, dev_id).channel_ids
+        assert ch_id not in (s.get(Helper, chief).channel_ids or [])
