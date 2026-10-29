@@ -11,7 +11,23 @@
  * snake_case response fields are mapped back to camelCase.
  */
 
-import type { AiAccount, Channel, Company, Connector, McpToken, Message, Session, WalletSettings } from '../../core/domain/types'
+import type {
+  AiAccount,
+  Channel,
+  Company,
+  CompanyMember,
+  CompanySettings,
+  Connector,
+  Flow,
+  Goal,
+  Helper,
+  McpToken,
+  MemoryDoc,
+  Message,
+  Routine,
+  Session,
+  WalletSettings,
+} from '../../core/domain/types'
 import { apiFetch } from './client'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -212,6 +228,175 @@ function mapCompany(r: RawCompany): Company {
   }
 }
 
+// Goal write-endpoints emit snake_case; reads emit camelCase (by_alias). Map defensively.
+type RawGoal = {
+  id: string
+  title: string
+  progress?: number
+  channel_id?: string
+  channelId?: string
+}
+
+function mapGoal(r: RawGoal): Goal {
+  return {
+    id: r.id,
+    channelId: (r.channel_id ?? r.channelId) ?? '',
+    title: r.title,
+    progress: r.progress ?? 0,
+  }
+}
+
+type RawRoutine = {
+  id: string
+  company_id: string
+  helper_id: string
+  name: string
+  subtitle: string
+  instructions: string
+  freq: string
+  at: string
+  days: number[]
+  monthly: string | null
+  timezone: string
+  cron: string
+  sends_to: unknown[]
+  enabled: boolean
+  paused: boolean
+  managed_by_chief: boolean
+  next_at: string | null
+  last_at: string | null
+  goal_ids: string[]
+  created_by: string
+}
+
+function mapRoutine(r: RawRoutine): Routine {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    helperId: r.helper_id,
+    name: r.name,
+    subtitle: r.subtitle,
+    instructions: r.instructions,
+    freq: r.freq,
+    at: r.at,
+    days: r.days ?? [],
+    monthly: r.monthly,
+    timezone: r.timezone,
+    cron: r.cron,
+    sendsTo: r.sends_to ?? [],
+    enabled: r.enabled,
+    paused: r.paused,
+    managedByChief: r.managed_by_chief,
+    nextAt: r.next_at,
+    lastAt: r.last_at,
+    goalIds: r.goal_ids ?? [],
+    createdBy: r.created_by,
+  }
+}
+
+type RawFlow = {
+  id: string
+  title: string
+  status: string
+  enabled: boolean
+  count: number
+  areas: string[]
+  created_at: string | null
+  company_id?: string
+  version?: number
+  created_by?: string
+  proposed_from_pattern?: boolean
+  trigger?: { kind: string; spec: Record<string, unknown> }
+  nodes?: unknown[]
+  edges?: unknown[]
+  channel_ids?: string[]
+  poll_cursor?: unknown | null
+}
+
+function mapFlow(r: RawFlow): Flow {
+  return {
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    enabled: r.enabled,
+    count: r.count,
+    areas: r.areas ?? [],
+    createdAt: r.created_at,
+    companyId: r.company_id,
+    version: r.version,
+    createdBy: r.created_by,
+    proposedFromPattern: r.proposed_from_pattern,
+    trigger: r.trigger,
+    nodes: r.nodes,
+    edges: r.edges,
+    channelIds: r.channel_ids,
+    pollCursor: r.poll_cursor,
+  }
+}
+
+// Helper write-endpoints emit snake_case for the extra fields; reads emit camelCase.
+type RawHelper = {
+  id: string
+  name: string
+  area: string
+  role?: string
+  status?: string
+  is_chief?: boolean
+  isChief?: boolean
+  autonomy_cap?: string | null
+  autonomyCap?: string | null
+  job_description?: string
+  jobDescription?: string
+  model?: string
+}
+
+function mapHelper(r: RawHelper): Helper {
+  return {
+    id: r.id,
+    name: r.name,
+    area: r.area as Helper['area'],
+    role: r.role,
+    status: r.status,
+    isChief: r.is_chief ?? r.isChief,
+    autonomyCap: r.autonomy_cap ?? r.autonomyCap,
+    jobDescription: r.job_description ?? r.jobDescription,
+  }
+}
+
+type RawMember = {
+  id: string
+  user_id: string
+  name: string
+  email: string
+  role: string
+}
+
+function mapMember(r: RawMember): CompanyMember {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    email: r.email,
+    role: r.role,
+  }
+}
+
+type RawMemoryDoc = {
+  id: string
+  title: string
+  content: string
+  kind?: string
+}
+
+function mapMemoryDoc(r: RawMemoryDoc): MemoryDoc {
+  return {
+    id: r.id,
+    title: r.title,
+    content: r.content,
+    kind: r.kind ?? 'note',
+  }
+}
+
 // ── input types ──────────────────────────────────────────────────────────────
 
 export interface CreateSessionInput {
@@ -264,6 +449,101 @@ export interface CreateAiAccountInput {
   tokenHint?: string
   /** Optional free-text tag for grouping (e.g. 'primary', 'overflow'). */
   tag?: string | null
+}
+
+// ── P2 dead-CTA / form-wiring input types ───────────────────────────────────────
+
+export interface CreateGoalInput {
+  channelId: string
+  title: string
+  target: string
+  due?: string
+  autonomyOverride?: string
+}
+
+export interface UpdateGoalInput {
+  title?: string
+  target?: string
+  due?: string
+  status?: string
+  channelId?: string
+}
+
+export interface CreateRoutineInput {
+  helperId: string
+  name: string
+  instructions: string
+  freq: string
+  at: string
+  days?: number[]
+  monthly?: string | null
+  timezone?: string
+  sendsTo?: unknown[]
+  goalIds?: string[]
+  subtitle?: string
+}
+
+export interface UpdateRoutineInput {
+  paused?: boolean
+  enabled?: boolean
+  instructions?: string
+  name?: string
+  subtitle?: string
+  helperId?: string
+  sendsTo?: unknown[]
+  goalIds?: string[]
+  freq?: string
+  at?: string
+  days?: number[]
+  monthly?: string | null
+  timezone?: string
+}
+
+export interface CreateFlowInput {
+  title?: string
+  trigger: { kind: string; spec: Record<string, unknown> }
+  nodes: unknown[]
+  edges: unknown[]
+  channelIds?: string[]
+  areas?: string[]
+}
+
+export interface UpdateFlowInput {
+  title?: string
+  trigger?: { kind: string; spec: Record<string, unknown> }
+  nodes?: unknown[]
+  edges?: unknown[]
+  enabled?: boolean
+  areas?: string[]
+}
+
+export interface CreateHelperInput {
+  name: string
+  area: string
+  role: string
+  jobDescription?: string
+  autonomyCap?: string
+  isChief?: boolean
+}
+
+export interface UpdateHelperInput {
+  status?: string
+  role?: string
+  jobDescription?: string
+  autonomyCap?: string
+  model?: string
+}
+
+export interface InviteMemberInput {
+  email: string
+  role?: string
+  channels?: string[]
+}
+
+export interface CreateDocInput {
+  title: string
+  content: string
+  kind?: string
 }
 
 // ── Commands port ─────────────────────────────────────────────────────────────
@@ -339,6 +619,68 @@ export interface Commands {
   replanGoal(id: string): Promise<{ jobId: string }>
   /** POST /v1/skills/{id}/publish → Proposal */
   publishSkill(id: string): Promise<unknown>
+
+  // ── P2 Goal commands ──────────────────────────────────────────────────────────
+  /** POST /v1/goals {channel_id,title,target,due?,autonomy_override?} → Goal. */
+  createGoal(input: CreateGoalInput): Promise<Goal>
+  /** PATCH /v1/goals/{id} {title?,target?,due?,status?,channel_id?} → Goal. */
+  updateGoal(id: string, input: UpdateGoalInput): Promise<Goal>
+  /** DELETE /v1/goals/{id} → 204. */
+  deleteGoal(id: string): Promise<void>
+
+  // ── P2 Routine commands ───────────────────────────────────────────────────────
+  /** POST /v1/routines {helper_id,name,instructions,freq,at,...} → Routine. */
+  createRoutine(input: CreateRoutineInput): Promise<Routine>
+  /** PATCH /v1/routines/{id} {paused?,enabled?,instructions?,...} → Routine. */
+  updateRoutine(id: string, input: UpdateRoutineInput): Promise<Routine>
+  /** DELETE /v1/routines/{id} → 204. */
+  deleteRoutine(id: string): Promise<void>
+  /** POST /v1/routines/{id}/skip-next → {next_at}. */
+  skipRoutineNext(id: string): Promise<{ nextAt: string | null }>
+
+  // ── P2 Flow commands ──────────────────────────────────────────────────────────
+  /** POST /v1/flows {title?,trigger,nodes,edges,channel_ids?,areas?} → Flow. */
+  createFlow(input: CreateFlowInput): Promise<Flow>
+  /** PATCH /v1/flows/{id} {title?,trigger?,nodes?,edges?,enabled?,areas?} → Flow. */
+  updateFlow(id: string, input: UpdateFlowInput): Promise<Flow>
+  /** DELETE /v1/flows/{id} → 204. */
+  deleteFlow(id: string): Promise<void>
+  /** POST /v1/flows — create a new flow from a copied flow body (duplicate). */
+  duplicateFlow(input: CreateFlowInput): Promise<Flow>
+
+  // ── P2 Helper commands ────────────────────────────────────────────────────────
+  /** POST /v1/helpers {name,area,role,job_description?,autonomy_cap?,is_chief?} → Helper. */
+  createHelper(input: CreateHelperInput): Promise<Helper>
+  /** PATCH /v1/helpers/{id} {status?,role?,job_description?,autonomy_cap?,model?} → Helper. */
+  updateHelper(id: string, input: UpdateHelperInput): Promise<Helper>
+
+  // ── P2 Member commands ────────────────────────────────────────────────────────
+  /** PATCH /v1/members/{id} {role} → CompanyMember. */
+  changeMemberRole(id: string, role: string): Promise<CompanyMember>
+  /** DELETE /v1/members/{id} → 204. */
+  removeMember(id: string): Promise<void>
+  /** POST /v1/auth/invites {email,role?,channels?} → raw invite response. */
+  inviteMember(input: InviteMemberInput): Promise<unknown>
+
+  // ── P2 Company commands ───────────────────────────────────────────────────────
+  /** DELETE /v1/company → 204 (owner only). */
+  deleteCompany(): Promise<void>
+  /** GET /v1/company/settings → CompanySettings. */
+  getCompanySettings(): Promise<CompanySettings>
+  /** PATCH /v1/company/settings {partial} → merged CompanySettings. */
+  updateCompanySettings(patch: CompanySettings): Promise<CompanySettings>
+
+  // ── P2 AI-account commands ──────────────────────────────────────────────────────
+  /** POST /v1/ai-accounts/check → raw check result. */
+  checkAiAccounts(): Promise<unknown>
+  /** POST /v1/ai-accounts/{id}/test → raw test result. */
+  testAiAccount(id: string): Promise<unknown>
+
+  // ── P2 Doc (memory) commands ─────────────────────────────────────────────────────
+  /** POST /v1/memory {title,content,kind?} → MemoryDoc. */
+  createDoc(input: CreateDocInput): Promise<MemoryDoc>
+  /** PATCH /v1/memory/{id} {content} → MemoryDoc. */
+  updateDoc(id: string, content: string): Promise<MemoryDoc>
 }
 
 /**
@@ -652,6 +994,236 @@ export function createCommands(
      */
     async publishSkill(id: string): Promise<unknown> {
       return post<unknown>(`/v1/skills/${id}/publish`, {})
+    },
+
+    // ── P2 Goal commands ────────────────────────────────────────────────────────
+
+    /** POST /v1/goals — create a goal. Maps camelCase input → snake_case body. */
+    async createGoal(input: CreateGoalInput): Promise<Goal> {
+      const body: Record<string, unknown> = {
+        channel_id: input.channelId,
+        title: input.title,
+        target: input.target,
+      }
+      if (input.due !== undefined) body.due = input.due
+      if (input.autonomyOverride !== undefined) body.autonomy_override = input.autonomyOverride
+      const raw = await post<RawGoal>('/v1/goals', body)
+      return mapGoal(raw)
+    },
+
+    /** PATCH /v1/goals/{id} — update writable goal fields (only non-undefined). */
+    async updateGoal(id: string, input: UpdateGoalInput): Promise<Goal> {
+      const body: Record<string, unknown> = {}
+      if (input.title !== undefined) body.title = input.title
+      if (input.target !== undefined) body.target = input.target
+      if (input.due !== undefined) body.due = input.due
+      if (input.status !== undefined) body.status = input.status
+      if (input.channelId !== undefined) body.channel_id = input.channelId
+      const raw = await patch<RawGoal>(`/v1/goals/${id}`, body)
+      return mapGoal(raw)
+    },
+
+    /** DELETE /v1/goals/{id} → 204. */
+    async deleteGoal(id: string): Promise<void> {
+      await del(`/v1/goals/${id}`)
+    },
+
+    // ── P2 Routine commands ───────────────────────────────────────────────────────
+
+    /** POST /v1/routines — create a routine. Maps camelCase → snake_case body. */
+    async createRoutine(input: CreateRoutineInput): Promise<Routine> {
+      const body: Record<string, unknown> = {
+        helper_id: input.helperId,
+        name: input.name,
+        instructions: input.instructions,
+        freq: input.freq,
+        at: input.at,
+      }
+      if (input.days !== undefined) body.days = input.days
+      if (input.monthly !== undefined) body.monthly = input.monthly
+      if (input.timezone !== undefined) body.timezone = input.timezone
+      if (input.sendsTo !== undefined) body.sends_to = input.sendsTo
+      if (input.goalIds !== undefined) body.goal_ids = input.goalIds
+      if (input.subtitle !== undefined) body.subtitle = input.subtitle
+      const raw = await post<RawRoutine>('/v1/routines', body)
+      return mapRoutine(raw)
+    },
+
+    /** PATCH /v1/routines/{id} — update writable routine fields. */
+    async updateRoutine(id: string, input: UpdateRoutineInput): Promise<Routine> {
+      const body: Record<string, unknown> = {}
+      if (input.paused !== undefined) body.paused = input.paused
+      if (input.enabled !== undefined) body.enabled = input.enabled
+      if (input.instructions !== undefined) body.instructions = input.instructions
+      if (input.name !== undefined) body.name = input.name
+      if (input.subtitle !== undefined) body.subtitle = input.subtitle
+      if (input.helperId !== undefined) body.helper_id = input.helperId
+      if (input.sendsTo !== undefined) body.sends_to = input.sendsTo
+      if (input.goalIds !== undefined) body.goal_ids = input.goalIds
+      if (input.freq !== undefined) body.freq = input.freq
+      if (input.at !== undefined) body.at = input.at
+      if (input.days !== undefined) body.days = input.days
+      if (input.monthly !== undefined) body.monthly = input.monthly
+      if (input.timezone !== undefined) body.timezone = input.timezone
+      const raw = await patch<RawRoutine>(`/v1/routines/${id}`, body)
+      return mapRoutine(raw)
+    },
+
+    /** DELETE /v1/routines/{id} → 204. */
+    async deleteRoutine(id: string): Promise<void> {
+      await del(`/v1/routines/${id}`)
+    },
+
+    /** POST /v1/routines/{id}/skip-next → {next_at} mapped to {nextAt}. */
+    async skipRoutineNext(id: string): Promise<{ nextAt: string | null }> {
+      const raw = await post<{ next_at: string | null }>(`/v1/routines/${id}/skip-next`, {})
+      return { nextAt: raw.next_at }
+    },
+
+    // ── P2 Flow commands ──────────────────────────────────────────────────────────
+
+    /** POST /v1/flows — create a flow. Maps camelCase → snake_case body. */
+    async createFlow(input: CreateFlowInput): Promise<Flow> {
+      const body: Record<string, unknown> = {
+        trigger: input.trigger,
+        nodes: input.nodes,
+        edges: input.edges,
+      }
+      if (input.title !== undefined) body.title = input.title
+      if (input.channelIds !== undefined) body.channel_ids = input.channelIds
+      if (input.areas !== undefined) body.areas = input.areas
+      const raw = await post<RawFlow>('/v1/flows', body)
+      return mapFlow(raw)
+    },
+
+    /** PATCH /v1/flows/{id} — update writable flow fields. */
+    async updateFlow(id: string, input: UpdateFlowInput): Promise<Flow> {
+      const body: Record<string, unknown> = {}
+      if (input.title !== undefined) body.title = input.title
+      if (input.trigger !== undefined) body.trigger = input.trigger
+      if (input.nodes !== undefined) body.nodes = input.nodes
+      if (input.edges !== undefined) body.edges = input.edges
+      if (input.enabled !== undefined) body.enabled = input.enabled
+      if (input.areas !== undefined) body.areas = input.areas
+      const raw = await patch<RawFlow>(`/v1/flows/${id}`, body)
+      return mapFlow(raw)
+    },
+
+    /** DELETE /v1/flows/{id} → 204. */
+    async deleteFlow(id: string): Promise<void> {
+      await del(`/v1/flows/${id}`)
+    },
+
+    /** POST /v1/flows — duplicate = create a new flow from a copied body. */
+    async duplicateFlow(input: CreateFlowInput): Promise<Flow> {
+      const body: Record<string, unknown> = {
+        trigger: input.trigger,
+        nodes: input.nodes,
+        edges: input.edges,
+      }
+      if (input.title !== undefined) body.title = input.title
+      if (input.channelIds !== undefined) body.channel_ids = input.channelIds
+      if (input.areas !== undefined) body.areas = input.areas
+      const raw = await post<RawFlow>('/v1/flows', body)
+      return mapFlow(raw)
+    },
+
+    // ── P2 Helper commands ────────────────────────────────────────────────────────
+
+    /** POST /v1/helpers — create a helper. Maps camelCase → snake_case body. */
+    async createHelper(input: CreateHelperInput): Promise<Helper> {
+      const body: Record<string, unknown> = {
+        name: input.name,
+        area: input.area,
+        role: input.role,
+      }
+      if (input.jobDescription !== undefined) body.job_description = input.jobDescription
+      if (input.autonomyCap !== undefined) body.autonomy_cap = input.autonomyCap
+      if (input.isChief !== undefined) body.is_chief = input.isChief
+      const raw = await post<RawHelper>('/v1/helpers', body)
+      return mapHelper(raw)
+    },
+
+    /** PATCH /v1/helpers/{id} — update writable helper fields. */
+    async updateHelper(id: string, input: UpdateHelperInput): Promise<Helper> {
+      const body: Record<string, unknown> = {}
+      if (input.status !== undefined) body.status = input.status
+      if (input.role !== undefined) body.role = input.role
+      if (input.jobDescription !== undefined) body.job_description = input.jobDescription
+      if (input.autonomyCap !== undefined) body.autonomy_cap = input.autonomyCap
+      if (input.model !== undefined) body.model = input.model
+      const raw = await patch<RawHelper>(`/v1/helpers/${id}`, body)
+      return mapHelper(raw)
+    },
+
+    // ── P2 Member commands ────────────────────────────────────────────────────────
+
+    /** PATCH /v1/members/{id} {role} → CompanyMember. */
+    async changeMemberRole(id: string, role: string): Promise<CompanyMember> {
+      const raw = await patch<RawMember>(`/v1/members/${id}`, { role })
+      return mapMember(raw)
+    },
+
+    /** DELETE /v1/members/{id} → 204. */
+    async removeMember(id: string): Promise<void> {
+      await del(`/v1/members/${id}`)
+    },
+
+    /** POST /v1/auth/invites {email,role?,channels?} → raw invite response. */
+    async inviteMember(input: InviteMemberInput): Promise<unknown> {
+      const body: Record<string, unknown> = { email: input.email }
+      if (input.role !== undefined) body.role = input.role
+      if (input.channels !== undefined) body.channels = input.channels
+      return post<unknown>('/v1/auth/invites', body)
+    },
+
+    // ── P2 Company commands ───────────────────────────────────────────────────────
+
+    /** DELETE /v1/company → 204 (owner only). */
+    async deleteCompany(): Promise<void> {
+      await del('/v1/company')
+    },
+
+    /** GET /v1/company/settings → CompanySettings (free-form JSON). */
+    async getCompanySettings(): Promise<CompanySettings> {
+      const res = await apiFetch(`${baseUrl}/v1/company/settings`, getToken, { method: 'GET' })
+      return res.json() as Promise<CompanySettings>
+    },
+
+    /** PATCH /v1/company/settings {partial} → merged CompanySettings. */
+    async updateCompanySettings(p: CompanySettings): Promise<CompanySettings> {
+      return patch<CompanySettings>('/v1/company/settings', p)
+    },
+
+    // ── P2 AI-account commands ──────────────────────────────────────────────────────
+
+    /** POST /v1/ai-accounts/check → raw check result. */
+    async checkAiAccounts(): Promise<unknown> {
+      return post<unknown>('/v1/ai-accounts/check', {})
+    },
+
+    /** POST /v1/ai-accounts/{id}/test → raw test result. */
+    async testAiAccount(id: string): Promise<unknown> {
+      return post<unknown>(`/v1/ai-accounts/${id}/test`, {})
+    },
+
+    // ── P2 Doc (memory) commands ─────────────────────────────────────────────────────
+
+    /** POST /v1/memory {title,content,kind?} → MemoryDoc. */
+    async createDoc(input: CreateDocInput): Promise<MemoryDoc> {
+      const body: Record<string, unknown> = {
+        title: input.title,
+        content: input.content,
+      }
+      if (input.kind !== undefined) body.kind = input.kind
+      const raw = await post<RawMemoryDoc>('/v1/memory', body)
+      return mapMemoryDoc(raw)
+    },
+
+    /** PATCH /v1/memory/{id} {content} → MemoryDoc. */
+    async updateDoc(id: string, content: string): Promise<MemoryDoc> {
+      const raw = await patch<RawMemoryDoc>(`/v1/memory/${id}`, { content })
+      return mapMemoryDoc(raw)
     },
   }
 }

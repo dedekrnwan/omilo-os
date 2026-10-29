@@ -432,6 +432,34 @@ export interface CompanyMember {
   role: string
 }
 
+// ── Company settings (free-form JSONB) ─────────────────────────────────────────
+
+/**
+ * Free-form, tenant-scoped company settings (GET/PATCH /v1/company/settings).
+ * The backend stores this as a JSONB blob and deep-merges PATCH partials, so the
+ * shape is intentionally open — known top-level buckets are typed as optionals.
+ */
+export interface CompanySettings {
+  safety?: Record<string, unknown>
+  notifications?: Record<string, unknown>
+  aiEngine?: Record<string, unknown>
+  knowledge?: Record<string, unknown>
+  about?: string
+  language?: string
+  hours?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+// ── Knowledge docs (memory) ─────────────────────────────────────────────────────
+
+/** A created/updated memory doc (POST /v1/memory, PATCH /v1/memory/{id}). */
+export interface MemoryDoc {
+  id: Id
+  title: string
+  content: string
+  kind: string
+}
+
 export interface InboxItem {
   id: Id
   title: string
