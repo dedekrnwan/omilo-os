@@ -38,6 +38,7 @@ from omilo.auth.router import me_router, router as auth_router
 from omilo.auth.google import router as google_auth_router
 from omilo.realtime.sse import router as sse_router
 from omilo.realtime.ws import router as ws_router
+from omilo.compute.relay import router as compute_relay_router
 
 
 def create_app() -> FastAPI:
@@ -134,6 +135,8 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router, prefix="/v1")
     # Compute control-plane: worker pairing + job creation (Task 3 compute)
     app.include_router(compute_router, prefix="/v1")
+    # Compute worker relay WebSocket (Task 4 compute)
+    app.include_router(compute_relay_router, prefix="/v1")
 
     # /control/* federation endpoints — cloud + local mode (P6 Task 2, P6b).
     # Not mounted in hybrid/runtime mode (runtime delegates to the cloud /control).
