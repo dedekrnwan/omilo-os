@@ -20,6 +20,7 @@ import { Mascot } from '../../ui/ds/Mascot'
 import type { Model } from '../../core/domain/types'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
+import { useInbox } from '../../app/queries'
 import { useFabHidden } from './fabStore'
 import {
   CHIEF_DAY_LABEL,
@@ -366,7 +367,11 @@ export function ChiefDm({ initial, hideFab = false }: { initial?: ChiefDmState; 
     if (state === 'open' || state === 'full' || state === 'threads') setSeen(true)
   }, [state])
 
-  const unread = seen ? 0 : CHIEF_THREADS.filter((t) => t.unread).length
+  // Real "needs you" count: inbox items awaiting the user (decisions/mentions
+  // flagged needsYou). Once the drawer is opened (`seen`), the badge clears.
+  const { data: inboxItems } = useInbox()
+  const needsYouCount = (inboxItems ?? []).filter((i) => i.needsYou).length
+  const unread = seen ? 0 : needsYouCount
 
   function send(text: string) {
     const now = new Date()
