@@ -161,11 +161,6 @@ def create_app() -> FastAPI:
         from omilo.api.control import router as control_router
         app.include_router(control_router)
 
-    # Notification emails: commit hooks (approval / alert / welcome).
-    from omilo.notify import hooks as notify_hooks
-
-    notify_hooks.install()
-
     # ── sweep/docs ──
     from omilo.api.handbook import router as handbook_router
     from omilo.api.lessons import router as lessons_router
@@ -173,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(handbook_router, prefix="/v1")
     app.include_router(lessons_router, prefix="/v1")
     # ── end sweep/docs ──
+
     # ── sweep/control ──
     # Control-panel endpoints: activity log, data exports + storage, per-user
     # account (preferences / avatar / sessions), external MCP servers; plus the
@@ -188,6 +184,11 @@ def create_app() -> FastAPI:
     app.include_router(me_account_router, prefix="/v1")
     app.include_router(mcp_servers_router, prefix="/v1")
     app.middleware("http")(request_meta_middleware)
+
+    # Notification emails: commit hooks (approval / alert / welcome).
+    from omilo.notify import hooks as notify_hooks
+
+    notify_hooks.install()
 
     return app
 

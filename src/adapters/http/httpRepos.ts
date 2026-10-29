@@ -900,11 +900,17 @@ export function createHttpRepos(
         if (params?.status) qs.set('status', params.status)
         const raw = await get<RawHandbookSuggestion[]>(`/v1/handbook/suggestions?${qs.toString()}`)
         return raw.map(mapHandbookSuggestion)
+      },
+    },
+
     // ── sweep/inbox-flows ──
     proposals: {
+      get: async (id: Id) => {
         const raw = await getOrNull<RawProposalDetail>(`/v1/proposals/${id}`)
         return raw ? mapProposalDetail(raw) : null
       },
+    },
+
     // ── sweep/chat ──
     chat: {
       archived: (areaId: Id | null) =>
@@ -917,9 +923,309 @@ export function createHttpRepos(
       sessionShares: (id: Id) => get<Shares>(`/v1/sessions/${id}/shares`),
       sessionResults: (id: Id) => get<SessionResults>(`/v1/sessions/${id}/results`),
     },
+
     // ── sweep/control ──
     controlPanel: createHttpControlPanelRepo(baseUrl, getToken),
   }
+}
+
+// ── sweep/docs ──────────────────────────────────────────────────────────────
+
+export type RawDoc = {
+  id: string
+  path: string
+  title: string
+  content: string
+  kind: string
+  area: string | null
+  pinned: boolean
+  hidden: boolean
+  helper_id: string | null
+  version: number
+  updatedAt: string | null
+  updatedBy: string
+  createdAt: string | null
+  createdBy: string
+}
+
+type RawDocDetail = RawDoc & {
+  links: DocDetail['links']
+  goals: DocDetail['goals']
+  unresolved: string[]
+  backlinks: DocDetail['backlinks']
+}
+
+export function mapDoc(r: RawDoc): DocSummary {
+  return {
+    id: r.id,
+    path: r.path,
+    title: r.title,
+    content: r.content,
+    kind: r.kind ?? 'doc',
+    area: r.area ?? null,
+    pinned: !!r.pinned,
+    hidden: !!r.hidden,
+    helperId: r.helper_id ?? null,
+    version: r.version ?? 1,
+    updatedAt: r.updatedAt ?? null,
+    updatedBy: r.updatedBy ?? '',
+    createdAt: r.createdAt ?? null,
+    createdBy: r.createdBy ?? r.updatedBy ?? '',
+  }
+}
+
+function mapDocDetail(r: RawDocDetail): DocDetail {
+  return {
+    ...mapDoc(r),
+    links: r.links ?? [],
+    goals: r.goals ?? [],
+    unresolved: r.unresolved ?? [],
+    backlinks: r.backlinks ?? [],
+  }
+}
+
+export type RawLesson = {
+  id: string
+  helper_id: string | null
+  tag: Lesson['tag']
+  text: string
+  source: string
+  status: Lesson['status']
+  created_by: string
+  created_at: string | null
+}
+
+export function mapLesson(r: RawLesson): Lesson {
+  return {
+    id: r.id,
+    helperId: r.helper_id,
+    tag: r.tag,
+    text: r.text,
+    source: r.source,
+    status: r.status,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }
+}
+
+type RawHandbookFile = {
+  id: string
+  name: string
+  title: string
+  description: string
+  visibility: HandbookFile['visibility']
+  brief: boolean
+  version: number
+  updated_at: string | null
+  updated_by: string
+  open_suggestions: number
+}
+
+export type RawHandbookSuggestion = {
+  id: string
+  doc_id: string
+  file: string | null
+  helper_id: string | null
+  author: string
+  text: string
+  proposed_content: string | null
+  status: HandbookSuggestion['status']
+  created_at: string | null
+  resolved_at: string | null
+}
+
+export type RawHandbookDetail = RawHandbookFile & {
+  content: string
+  versions: { version: number; updated_by: string; note: string | null; created_at: string | null }[]
+  suggestions: RawHandbookSuggestion[]
+}
+
+function mapHandbookFile(r: RawHandbookFile): HandbookFile {
+  return {
+    id: r.id,
+    name: r.name,
+    title: r.title,
+    description: r.description,
+    visibility: r.visibility,
+    brief: r.brief,
+    version: r.version,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+    openSuggestions: r.open_suggestions,
+  }
+}
+
+export function mapHandbookSuggestion(r: RawHandbookSuggestion): HandbookSuggestion {
+  return {
+    id: r.id,
+    docId: r.doc_id,
+    file: r.file,
+    helperId: r.helper_id,
+    author: r.author,
+    text: r.text,
+    proposedContent: r.proposed_content,
+    status: r.status,
+    createdAt: r.created_at,
+    resolvedAt: r.resolved_at,
+  }
+}
+
+export function mapHandbookDetail(r: RawHandbookDetail): HandbookFileDetail {
+  return {
+    ...mapHandbookFile(r),
+    content: r.content,
+    versions: (r.versions ?? []).map((v) => ({ version: v.version, updatedBy: v.updated_by, note: v.note, createdAt: v.created_at })),
+    suggestions: (r.suggestions ?? []).map(mapHandbookSuggestion),
+  }
+}
+
+// ── sweep/inbox-flows ──
+
+type RawFlowRunStep = {
+  node_id: string
+  kind: string
+  label: string
+  status: string
+  duration_ms?: number
+  output?: Record<string, unknown>
+  note?: string
+}
+
+type RawFlowRunSweep = RawFlowRun & { steps?: RawFlowRunStep[] }
+
+type RawFlowSweep = RawFlow & {
+  settings?: Record<string, unknown>
+  trigger_kind?: string | null
+  apps?: string[]
+  ai_steps?: number
+  runs_7d?: number[]
+  last_run?: RawFlowRunSweep | null
+  spent_this_month_credits?: number
+  publish_state?: 'draft' | 'pending' | 'live'
+  pending_proposal_id?: string | null
+  published_version?: number | null
+}
+
+export function mapFlowRunSweep(r: RawFlowRunSweep): FlowRun {
+  const run = mapFlowRun(r)
+  if (r.steps) {
+    run.steps = r.steps.map((st) => ({
+      nodeId: st.node_id,
+      kind: st.kind,
+      label: st.label,
+      status: st.status,
+      durationMs: st.duration_ms ?? 0,
+      output: st.output,
+      note: st.note,
+    }))
+  }
+  return run
+}
+
+export function mapFlowSweep(r: RawFlowSweep): Flow {
+  const f: Flow = mapFlow(r)
+  if (r.settings !== undefined) f.settings = r.settings
+  if (r.trigger_kind !== undefined) f.triggerKind = r.trigger_kind
+  if (r.apps !== undefined) f.apps = r.apps
+  if (r.ai_steps !== undefined) f.aiSteps = r.ai_steps
+  if (r.runs_7d !== undefined) f.runs7d = r.runs_7d
+  if (r.last_run !== undefined) f.lastRun = r.last_run ? mapFlowRunSweep(r.last_run) : null
+  if (r.spent_this_month_credits !== undefined) f.spentThisMonthCredits = r.spent_this_month_credits
+  if (r.publish_state !== undefined) f.publishState = r.publish_state
+  if (r.pending_proposal_id !== undefined) f.pendingProposalId = r.pending_proposal_id
+  if (r.published_version !== undefined) f.publishedVersion = r.published_version
+  return f
+}
+
+type RawFlowVersion = {
+  id: string
+  flow_id: string
+  version: number
+  title: string
+  note: string
+  status: string
+  created_by: string
+  node_count: number
+  created_at: string | null
+}
+
+function mapFlowVersion(r: RawFlowVersion): FlowVersionInfo {
+  return {
+    id: r.id,
+    flowId: r.flow_id,
+    version: r.version,
+    title: r.title,
+    note: r.note,
+    status: r.status,
+    createdBy: r.created_by,
+    nodeCount: r.node_count,
+    createdAt: r.created_at,
+  }
+}
+
+type RawFlowSuggestion = Omit<FlowSuggestion, 'runsAs' | 'helperArea'> & { runs_as: string; helper_area: HelperArea }
+
+function mapFlowSuggestion(r: RawFlowSuggestion): FlowSuggestion {
+  const { runs_as, helper_area, ...rest } = r
+  return { ...rest, runsAs: runs_as, helperArea: helper_area }
+}
+
+type RawProposalDetail = {
+  proposal: {
+    id: string
+    type: string
+    risk: string
+    title: string
+    body_md: string
+    status: string
+    helper_id: string
+    assignee?: string | null
+    due?: string | null
+    params?: Record<string, unknown> | null
+    created_at: string | null
+  }
+  revisions: { n: number; author: string; summary: string; body_md: string; at: string | null }[]
+}
+
+export function mapProposalDetail(r: RawProposalDetail): ProposalDetail {
+  const p = r.proposal
+  return {
+    id: p.id,
+    type: p.type,
+    risk: p.risk,
+    title: p.title,
+    bodyMd: p.body_md,
+    status: p.status,
+    helperId: p.helper_id,
+    assignee: p.assignee ?? null,
+    due: p.due ?? null,
+    params: p.params ?? null,
+    createdAt: p.created_at,
+    revisions: (r.revisions ?? []).map((v) => ({ n: v.n, author: v.author, summary: v.summary, bodyMd: v.body_md, at: v.at })),
+  }
+}
+
+// ── sweep/team-analytics ──
+
+import type {
+  ActivityPage,
+  AnalyticsFailure,
+  AnalyticsLoop,
+  AnalyticsReliability,
+  AnalyticsStackedSeries,
+  HelperChannelBinding,
+  HelperDetail,
+  HelperFile,
+  HelperSkillRow,
+  HelperTools,
+} from '../../core/domain/types'
+import type { ActivityQuery } from '../../core/ports/repos'
+
+/** ?range=…&channel_id=… for the analytics endpoints. */
+function analyticsQs(range: string, channelId?: string): string {
+  const p = new URLSearchParams({ range })
+  if (channelId) p.set('channel_id', channelId)
+  return `?${p.toString()}`
 }
 
 
@@ -1024,15 +1330,19 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
         canAdd: r.can_add, used: r.used, pending: r.pending, viewers: r.viewers,
         billingInterval: r.billing_interval, periodEnd: r.period_end ?? null,
       }
+    },
     packs: async () => {
       const raw = await get<{ id: string; credits: number; amount_idr: number; label: string; sub: string; badge: string | null }[]>('/v1/billing/packs')
       return raw.map((p) => ({ id: p.id, credits: p.credits, amountIdr: p.amount_idr, label: p.label, sub: p.sub, badge: p.badge }))
+    },
     invoices: async () => {
       const raw = await get<{ id: string; amount: number; currency: string; status: string; period: string; provider: string; created_at: string | null }[]>('/v1/billing/invoices')
       return raw.map((i) => ({ id: i.id, amount: i.amount, currency: i.currency, status: i.status, period: i.period, provider: i.provider, createdAt: i.created_at }))
+    },
     ledger: async () => {
       const raw = await get<{ id: string; delta: number; reason: string; credits_charged: number; created_at: string; helper_id: string | null; balance_after: number }[]>('/v1/billing/ledger')
       return raw.map((l) => ({ id: l.id, delta: l.delta, reason: l.reason, creditsCharged: l.credits_charged, createdAt: l.created_at, helperId: l.helper_id, balanceAfter: l.balance_after }))
+    },
     payment: async (id: string) => {
       try {
         return mapPayment(await get<RawPayment>(`/v1/wallet/payments/${id}`))
@@ -1040,6 +1350,7 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
         if (err instanceof ApiError && err.status === 404) return null
         throw err
       }
+    },
     invites: async () => (await get<RawInvite[]>('/v1/auth/invites')).map(mapInvite),
     channels: async () => (await get<RawManagedChannel[]>('/v1/channels/manage')).map(mapManagedChannel),
     audit: async (q?: AuditQuery) => {
@@ -1058,9 +1369,11 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
         })),
         nextCursor: raw.next_cursor,
       }
+    },
     storage: async () => {
       const r = await get<{ used_bytes: number; quota_bytes: number | null; segments: { key: string; label: string; bytes: number; counted?: boolean }[] }>('/v1/data/storage')
       return { usedBytes: r.used_bytes, quotaBytes: r.quota_bytes, segments: r.segments }
+    },
     exports: async () => (await get<RawExport[]>('/v1/data/exports')).map(mapExport),
     account: async () => {
       const r = await get<{ id: string; email: string; name: string; avatar_url: string | null; role: string | null; company_name: string | null; two_factor_enabled: boolean; email_verified: boolean; google_linked: boolean }>('/v1/me/account')
@@ -1068,6 +1381,7 @@ function createHttpControlPanelRepo(baseUrl: string, getToken: () => string | nu
         id: r.id, email: r.email, name: r.name, avatarUrl: r.avatar_url, role: r.role, companyName: r.company_name,
         twoFactorEnabled: r.two_factor_enabled, emailVerified: r.email_verified, googleLinked: r.google_linked,
       }
+    },
     preferences: () => get<UserPreferences>('/v1/me/preferences'),
     sessions: async () => (await get<RawSession[]>('/v1/me/sessions')).map((s) => ({
       id: s.id, label: s.label, kind: s.kind, method: s.method, ip: s.ip, createdAt: s.created_at,
@@ -1083,275 +1397,4 @@ export function mapExport(r: RawExport): DataExport {
     id: r.id, status: r.status, filename: r.filename, sizeBytes: r.size_bytes, summary: r.summary ?? {},
     error: r.error, createdAt: r.created_at, expiresAt: r.expires_at,
   }
-}
-
-// ── sweep/docs ──────────────────────────────────────────────────────────────
-
-export type RawDoc = {
-  id: string
-  path: string
-  title: string
-  content: string
-  kind: string
-  area: string | null
-  pinned: boolean
-  hidden: boolean
-  helper_id: string | null
-  version: number
-  updatedAt: string | null
-  updatedBy: string
-  createdAt: string | null
-  createdBy: string
-}
-
-type RawDocDetail = RawDoc & {
-  links: DocDetail['links']
-  goals: DocDetail['goals']
-  unresolved: string[]
-  backlinks: DocDetail['backlinks']
-}
-
-export function mapDoc(r: RawDoc): DocSummary {
-  return {
-    id: r.id,
-    path: r.path,
-    title: r.title,
-    content: r.content,
-    kind: r.kind ?? 'doc',
-    area: r.area ?? null,
-    pinned: !!r.pinned,
-    hidden: !!r.hidden,
-    helperId: r.helper_id ?? null,
-    version: r.version ?? 1,
-    updatedAt: r.updatedAt ?? null,
-    updatedBy: r.updatedBy ?? '',
-    createdAt: r.createdAt ?? null,
-    createdBy: r.createdBy ?? r.updatedBy ?? '',
-  }
-}
-
-function mapDocDetail(r: RawDocDetail): DocDetail {
-  return {
-    ...mapDoc(r),
-    links: r.links ?? [],
-    goals: r.goals ?? [],
-    unresolved: r.unresolved ?? [],
-    backlinks: r.backlinks ?? [],
-  }
-}
-
-export type RawLesson = {
-  id: string
-  helper_id: string | null
-  tag: Lesson['tag']
-  text: string
-  source: string
-  status: Lesson['status']
-  created_by: string
-  created_at: string | null
-}
-
-export function mapLesson(r: RawLesson): Lesson {
-  return {
-    id: r.id,
-    helperId: r.helper_id,
-    tag: r.tag,
-    text: r.text,
-    source: r.source,
-    status: r.status,
-    createdBy: r.created_by,
-// ── sweep/inbox-flows ──
-
-type RawFlowRunStep = {
-  node_id: string
-  label: string
-  status: string
-  duration_ms?: number
-  output?: Record<string, unknown>
-  note?: string
-
-type RawFlowRunSweep = RawFlowRun & { steps?: RawFlowRunStep[] }
-
-type RawFlowSweep = RawFlow & {
-  settings?: Record<string, unknown>
-  trigger_kind?: string | null
-  apps?: string[]
-  ai_steps?: number
-  runs_7d?: number[]
-  last_run?: RawFlowRunSweep | null
-  spent_this_month_credits?: number
-  publish_state?: 'draft' | 'pending' | 'live'
-  pending_proposal_id?: string | null
-  published_version?: number | null
-
-export function mapFlowRunSweep(r: RawFlowRunSweep): FlowRun {
-  const run = mapFlowRun(r)
-  if (r.steps) {
-    run.steps = r.steps.map((st) => ({
-      nodeId: st.node_id,
-      kind: st.kind,
-      label: st.label,
-      status: st.status,
-      durationMs: st.duration_ms ?? 0,
-      output: st.output,
-      note: st.note,
-    }))
-  return run
-
-export function mapFlowSweep(r: RawFlowSweep): Flow {
-  const f: Flow = mapFlow(r)
-  if (r.settings !== undefined) f.settings = r.settings
-  if (r.trigger_kind !== undefined) f.triggerKind = r.trigger_kind
-  if (r.apps !== undefined) f.apps = r.apps
-  if (r.ai_steps !== undefined) f.aiSteps = r.ai_steps
-  if (r.runs_7d !== undefined) f.runs7d = r.runs_7d
-  if (r.last_run !== undefined) f.lastRun = r.last_run ? mapFlowRunSweep(r.last_run) : null
-  if (r.spent_this_month_credits !== undefined) f.spentThisMonthCredits = r.spent_this_month_credits
-  if (r.publish_state !== undefined) f.publishState = r.publish_state
-  if (r.pending_proposal_id !== undefined) f.pendingProposalId = r.pending_proposal_id
-  if (r.published_version !== undefined) f.publishedVersion = r.published_version
-  return f
-
-type RawFlowVersion = {
-  flow_id: string
-  note: string
-  status: string
-  node_count: number
-
-function mapFlowVersion(r: RawFlowVersion): FlowVersionInfo {
-    flowId: r.flow_id,
-    version: r.version,
-    note: r.note,
-    nodeCount: r.node_count,
-    createdAt: r.created_at,
-  }
-}
-
-type RawHandbookFile = {
-  id: string
-  name: string
-  title: string
-  description: string
-  visibility: HandbookFile['visibility']
-  brief: boolean
-  version: number
-  updated_at: string | null
-  updated_by: string
-  open_suggestions: number
-}
-
-export type RawHandbookSuggestion = {
-  id: string
-  doc_id: string
-  file: string | null
-  helper_id: string | null
-  author: string
-  text: string
-  proposed_content: string | null
-  status: HandbookSuggestion['status']
-  created_at: string | null
-  resolved_at: string | null
-}
-
-export type RawHandbookDetail = RawHandbookFile & {
-  content: string
-  versions: { version: number; updated_by: string; note: string | null; created_at: string | null }[]
-  suggestions: RawHandbookSuggestion[]
-}
-
-function mapHandbookFile(r: RawHandbookFile): HandbookFile {
-  return {
-    id: r.id,
-    name: r.name,
-    title: r.title,
-    description: r.description,
-    visibility: r.visibility,
-    brief: r.brief,
-    version: r.version,
-    updatedAt: r.updated_at,
-    updatedBy: r.updated_by,
-    openSuggestions: r.open_suggestions,
-  }
-}
-
-export function mapHandbookSuggestion(r: RawHandbookSuggestion): HandbookSuggestion {
-  return {
-    id: r.id,
-    docId: r.doc_id,
-    file: r.file,
-    helperId: r.helper_id,
-    author: r.author,
-    text: r.text,
-    proposedContent: r.proposed_content,
-    status: r.status,
-    createdAt: r.created_at,
-    resolvedAt: r.resolved_at,
-  }
-}
-
-export function mapHandbookDetail(r: RawHandbookDetail): HandbookFileDetail {
-  return {
-    ...mapHandbookFile(r),
-    content: r.content,
-    versions: (r.versions ?? []).map((v) => ({ version: v.version, updatedBy: v.updated_by, note: v.note, createdAt: v.created_at })),
-    suggestions: (r.suggestions ?? []).map(mapHandbookSuggestion),
-type RawFlowSuggestion = Omit<FlowSuggestion, 'runsAs' | 'helperArea'> & { runs_as: string; helper_area: HelperArea }
-
-function mapFlowSuggestion(r: RawFlowSuggestion): FlowSuggestion {
-  const { runs_as, helper_area, ...rest } = r
-  return { ...rest, runsAs: runs_as, helperArea: helper_area }
-
-type RawProposalDetail = {
-  proposal: {
-    id: string
-    type: string
-    risk: string
-    title: string
-    body_md: string
-    status: string
-    helper_id: string
-    assignee?: string | null
-    due?: string | null
-    params?: Record<string, unknown> | null
-    created_at: string | null
-  revisions: { n: number; author: string; summary: string; body_md: string; at: string | null }[]
-
-export function mapProposalDetail(r: RawProposalDetail): ProposalDetail {
-  const p = r.proposal
-    id: p.id,
-    type: p.type,
-    risk: p.risk,
-    title: p.title,
-    bodyMd: p.body_md,
-    status: p.status,
-    helperId: p.helper_id,
-    assignee: p.assignee ?? null,
-    due: p.due ?? null,
-    params: p.params ?? null,
-    createdAt: p.created_at,
-    revisions: (r.revisions ?? []).map((v) => ({ n: v.n, author: v.author, summary: v.summary, bodyMd: v.body_md, at: v.at })),
-  }
-}
-
-// ── sweep/team-analytics ──
-
-import type {
-  ActivityPage,
-  AnalyticsFailure,
-  AnalyticsLoop,
-  AnalyticsReliability,
-  AnalyticsStackedSeries,
-  HelperChannelBinding,
-  HelperDetail,
-  HelperFile,
-  HelperSkillRow,
-  HelperTools,
-} from '../../core/domain/types'
-import type { ActivityQuery } from '../../core/ports/repos'
-
-/** ?range=…&channel_id=… for the analytics endpoints. */
-function analyticsQs(range: string, channelId?: string): string {
-  const p = new URLSearchParams({ range })
-  if (channelId) p.set('channel_id', channelId)
-  return `?${p.toString()}`
 }

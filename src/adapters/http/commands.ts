@@ -60,6 +60,7 @@ import type { FlowRun } from '../../core/domain/types'
 import { mapFlowRunSweep } from './httpRepos'
 // ── sweep/control ──
 import type { Skill } from '../../core/domain/types'
+import type {
   AuditQuery,
   CompanyDetail,
   DataExport,
@@ -845,42 +846,7 @@ export interface Commands {
   acceptHandbookSuggestion(id: string): Promise<HandbookSuggestion>
   /** POST /v1/handbook/suggestions/{id}/dismiss */
   dismissHandbookSuggestion(id: string): Promise<HandbookSuggestion>
-}
 
-// ── sweep/docs ──
-export interface PatchDocInput {
-  title?: string
-  content?: string
-  pinned?: boolean
-  area?: string
-  hidden?: boolean
-}
-
-export interface AddKnowledgeSourceInput {
-  kind: string
-  ref: string
-  title: string
-  body: string
-}
-
-export interface CreateLessonInput {
-  text: string
-  helperId?: string | null
-  tag?: Lesson['tag']
-}
-
-export interface SaveHandbookFileInput {
-  content: string
-  title?: string
-  description?: string
-  visibility?: 'everyone' | 'members'
-  note?: string
-}
-
-export interface SuggestHandbookEditInput {
-  file: string
-  text: string
-  proposedContent?: string
   // ── sweep/goals-routines ──
   /** POST /v1/jobs/{id}/cancel → {jobId,status} (409 when already finished). */
   cancelJob(jobId: string): Promise<{ jobId: string; status: string }>
@@ -897,23 +863,6 @@ export interface SuggestHandbookEditInput {
   /** POST /v1/goals/{id}/session → the goal's session (created once, reused). */
   openGoalSession(goalId: string): Promise<Session>
 
-// ── sweep/goals-routines ──
-export interface PreviewRoutineInput {
-  freq: string
-  at: string
-  days?: number[]
-  monthly?: string | null
-  timezone?: string
-  helperId?: string
-  /** The routine being edited (excluded from clash checks). */
-  excludeId?: string
-
-export interface ResendRoutineRunResult {
-  /** True when the output was re-delivered; false when the routine re-ran instead. */
-  resent: boolean
-  jobId: string | null
-  runId: string | null
-  message: string
   // ── sweep/inbox-flows ──
   /** POST /v1/inbox/{id}/read → marks one inbox item read. */
   markInboxRead(id: string): Promise<void>
@@ -933,6 +882,7 @@ export interface ResendRoutineRunResult {
   cancelFlowRun(flowId: string, runId: string): Promise<FlowRun>
   /** POST /v1/flows/{id}/versions/{v}/restore → Flow. */
   restoreFlowVersion(flowId: string, version: number): Promise<Flow>
+
   // ── sweep/chat ──
   /** PATCH /v1/sessions/{id} — rename, move folder (null = none), pin (per user), archive, goal, model. */
   updateSession(id: string, input: UpdateSessionInput): Promise<Session>
@@ -958,6 +908,7 @@ export interface ResendRoutineRunResult {
   updateArea(id: string, input: UpdateAreaInput): Promise<Channel>
   /** POST /v1/chief/nudges/{id}/dismiss {snooze_until?} */
   dismissChiefNudge(id: string, snoozeUntil?: string): Promise<void>
+
   // ── sweep/control ──
   /** POST /v1/company/logo {data_url} → company detail. */
   uploadCompanyLogo(dataUrl: string): Promise<CompanyDetail>
@@ -1009,6 +960,62 @@ export interface ResendRoutineRunResult {
   downloadDataExport(id: string): Promise<Blob>
   /** GET /v1/audit.csv → csv blob. */
   downloadAuditCsv(query?: AuditQuery): Promise<Blob>
+}
+
+// ── sweep/docs ──
+export interface PatchDocInput {
+  title?: string
+  content?: string
+  pinned?: boolean
+  area?: string
+  hidden?: boolean
+}
+
+export interface AddKnowledgeSourceInput {
+  kind: string
+  ref: string
+  title: string
+  body: string
+}
+
+export interface CreateLessonInput {
+  text: string
+  helperId?: string | null
+  tag?: Lesson['tag']
+}
+
+export interface SaveHandbookFileInput {
+  content: string
+  title?: string
+  description?: string
+  visibility?: 'everyone' | 'members'
+  note?: string
+}
+
+export interface SuggestHandbookEditInput {
+  file: string
+  text: string
+  proposedContent?: string
+}
+
+// ── sweep/goals-routines ──
+export interface PreviewRoutineInput {
+  freq: string
+  at: string
+  days?: number[]
+  monthly?: string | null
+  timezone?: string
+  helperId?: string
+  /** The routine being edited (excluded from clash checks). */
+  excludeId?: string
+}
+
+export interface ResendRoutineRunResult {
+  /** True when the output was re-delivered; false when the routine re-ran instead. */
+  resent: boolean
+  jobId: string | null
+  runId: string | null
+  message: string
 }
 
 /**
@@ -1659,14 +1666,18 @@ export function createCommands(
     },
     async dismissHandbookSuggestion(id: string): Promise<HandbookSuggestion> {
       return mapHandbookSuggestion(await post<RawHandbookSuggestion>(`/v1/handbook/suggestions/${encodeURIComponent(id)}/dismiss`, {}))
+    },
+
     // ── sweep/goals-routines ──
     async cancelJob(jobId: string) {
       const raw = await post<{ job_id: string; status: string }>(`/v1/jobs/${jobId}/cancel`, {})
       return { jobId: raw.job_id, status: raw.status }
+    },
 
     async routineRunFeedback(runId: string, vote: 'up' | 'down' | null) {
       const raw = await post<{ run: RawRoutineRun }>(`/v1/routines/runs/${runId}/feedback`, { vote })
       return mapRoutineRun(raw.run)
+    },
 
     async resendRoutineRun(runId: string) {
       const raw = await post<{ resent: boolean; job_id?: string; run_id?: string; message: string }>(
@@ -1674,6 +1685,7 @@ export function createCommands(
         {},
       )
       return { resent: raw.resent, jobId: raw.job_id ?? null, runId: raw.run_id ?? null, message: raw.message }
+    },
 
     async previewRoutine(input: PreviewRoutineInput) {
       const body: Record<string, unknown> = { freq: input.freq, at: input.at }
@@ -1683,67 +1695,93 @@ export function createCommands(
       if (input.helperId !== undefined) body.helper_id = input.helperId
       if (input.excludeId !== undefined) body.exclude_id = input.excludeId
       return mapPreview(await post<RawPreview>('/v1/routines/preview', body))
+    },
 
     async applyRoutineSuggestion(id: string) {
       const raw = await post<{ applied: string[] }>(`/v1/routines/suggestions/${id}/apply`, {})
       return { applied: raw.applied ?? [] }
+    },
 
     async dismissRoutineSuggestion(id: string) {
       await post<unknown>(`/v1/routines/suggestions/${id}/dismiss`, {})
+    },
 
     async openGoalSession(goalId: string) {
       return post<Session>(`/v1/goals/${goalId}/session`, {})
+    },
+
     // ── sweep/inbox-flows ──
     async markInboxRead(id: string): Promise<void> {
       await post(`/v1/inbox/${id}/read`, {})
+    },
     async markAllInboxRead(before?: string): Promise<{ updated: number }> {
       return post<{ updated: number }>('/v1/inbox/read-all', before ? { before } : {})
+    },
     async updateProposal(id: string, input: UpdateProposalInput): Promise<void> {
       await patch(`/v1/proposals/${id}`, input)
+    },
     async approveProposalAmended(id: string, params: Record<string, unknown>, note?: string): Promise<{ executionJobId: string }> {
       const body: Record<string, unknown> = { params }
       if (note) body.note = note
       const raw = await post<{ execution_job_id: string }>(`/v1/proposals/${id}/approve`, body)
       return { executionJobId: raw.execution_job_id }
+    },
     async undoApproval(id: string): Promise<void> {
       await post(`/v1/proposals/${id}/undo`, {})
+    },
     async decideFlowRun(flowId: string, runId: string, approve: boolean): Promise<FlowRun> {
       return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/approve`, { approve }))
+    },
     async retryFlowRun(flowId: string, runId: string): Promise<FlowRun> {
       return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/retry`, {}))
+    },
     async cancelFlowRun(flowId: string, runId: string): Promise<FlowRun> {
       return mapFlowRunSweep(await post<RawRunSweep>(`/v1/flows/${flowId}/runs/${runId}/cancel`, {}))
+    },
     async restoreFlowVersion(flowId: string, version: number): Promise<Flow> {
       return mapFlow(await post<RawFlow>(`/v1/flows/${flowId}/versions/${version}/restore`, {}))
+    },
+
     // ── sweep/team-analytics ──
     async retireHelper(id: string): Promise<Helper> {
       return mapHelper(await post<RawHelper>(`/v1/helpers/${id}/retire`, {}))
+    },
     async allowHelperJob(id: string): Promise<Helper> {
       return mapHelper(await post<RawHelper>(`/v1/helpers/${id}/budget/allow-one`, {}))
+    },
     async connectHelperChannel(helperId: string, input: ConnectHelperChannelInput): Promise<HelperChannelBinding> {
       return post<HelperChannelBinding>(`/v1/helpers/${helperId}/channels`, {
         kind: input.kind,
         config: input.config ?? {},
         secrets: input.secrets ?? {},
       })
+    },
     async updateHelperChannel(helperId: string, channelId: string, config: Record<string, unknown>): Promise<HelperChannelBinding> {
       return patch<HelperChannelBinding>(`/v1/helpers/${helperId}/channels/${channelId}`, { config })
+    },
     async disconnectHelperChannel(helperId: string, channelId: string): Promise<void> {
       await del(`/v1/helpers/${helperId}/channels/${channelId}`)
+    },
     async setHelperTools(helperId: string, input: SetHelperToolsInput): Promise<HelperTools> {
       const res = await apiFetch(`${baseUrl}/v1/helpers/${helperId}/tools`, getToken, putJson(input))
       return res.json() as Promise<HelperTools>
+    },
     async setHelperSkills(helperId: string, skills: HelperSkillSetting[]): Promise<HelperSkillRow[]> {
       const res = await apiFetch(`${baseUrl}/v1/helpers/${helperId}/skills`, getToken, putJson({ skills }))
       return res.json() as Promise<HelperSkillRow[]>
+    },
     async saveHelperFile(helperId: string, name: string, content: string): Promise<HelperFile> {
       const res = await apiFetch(
         `${baseUrl}/v1/helpers/${helperId}/files/${encodeURIComponent(name)}`,
         getToken,
         putJson({ content }),
+      )
       return res.json() as Promise<HelperFile>
+    },
     async retryJob(jobId: string): Promise<RetryJobResult> {
       return post<RetryJobResult>(`/v1/jobs/${jobId}/retry`, {})
+    },
+
     // ── sweep/chat ──────────────────────────────────────────────────────────────
 
     async updateSession(id: string, input: UpdateSessionInput): Promise<Session> {
@@ -1755,23 +1793,28 @@ export function createCommands(
       if (input.goalId !== undefined) body.goal_id = input.goalId
       if (input.model !== undefined) body.model = input.model
       return patch<Session>(`/v1/sessions/${id}`, body)
+    },
 
     async deleteSession(id: string): Promise<void> {
       await del(`/v1/sessions/${id}`)
+    },
 
     async deleteArchivedSessions(channelId?: string): Promise<{ deleted: number }> {
       const qs = channelId ? `?channel_id=${encodeURIComponent(channelId)}` : ''
       const res = await apiFetch(`${baseUrl}/v1/sessions/archived${qs}`, getToken, deleteReq())
       return res.json() as Promise<{ deleted: number }>
+    },
 
     async setSessionShares(id: string, input: SetSharesInput): Promise<Shares> {
       return put<Shares>(`/v1/sessions/${id}/shares`, sharesBody(input))
+    },
 
     async createFolder(input: CreateFolderInput): Promise<Folder> {
       const body: Record<string, unknown> = { channel_id: input.channelId, name: input.name }
       if (input.icon !== undefined) body.icon = input.icon
       if (input.color !== undefined) body.color = input.color
       return post<Folder>('/v1/folders', body)
+    },
 
     async updateFolder(id: string, input: UpdateFolderInput): Promise<Folder> {
       const body: Record<string, unknown> = {}
@@ -1780,21 +1823,26 @@ export function createCommands(
       if (input.color !== undefined) body.color = input.color
       if (input.instructions !== undefined) body.instructions = input.instructions
       return patch<Folder>(`/v1/folders/${id}`, body)
+    },
 
     async deleteFolder(id: string): Promise<void> {
       await del(`/v1/folders/${id}`)
+    },
 
     async addFolderFile(folderId: string, input: AddFolderFileInput): Promise<FolderFile> {
       const body: Record<string, unknown> = { name: input.name, size: input.size ?? 0 }
       if (input.mime !== undefined) body.mime = input.mime
       if (input.text !== undefined) body.text = input.text
       return post<FolderFile>(`/v1/folders/${folderId}/files`, body)
+    },
 
     async removeFolderFile(folderId: string, fileId: string): Promise<void> {
       await del(`/v1/folders/${folderId}/files/${fileId}`)
+    },
 
     async setFolderShares(id: string, input: SetSharesInput): Promise<Shares> {
       return put<Shares>(`/v1/folders/${id}/shares`, sharesBody(input))
+    },
 
     async updateArea(id: string, input: UpdateAreaInput): Promise<Channel> {
       const body: Record<string, unknown> = {}
@@ -1804,77 +1852,115 @@ export function createCommands(
       if (input.color !== undefined) body.color = input.color
       const raw = await patch<RawChannel & { color?: string }>(`/v1/channels/${id}`, body)
       return { ...mapChannel(raw), ...(raw.color ? { color: raw.color } : {}) }
+    },
 
     async dismissChiefNudge(id: string, snoozeUntil?: string): Promise<void> {
       const body: Record<string, unknown> = {}
       if (snoozeUntil) body.snooze_until = snoozeUntil
+      const res = await apiFetch(
         `${baseUrl}/v1/chief/nudges/${encodeURIComponent(id)}/dismiss`,
+        getToken,
         postJson(body),
+      )
       if (res.status !== 204) await res.text()
+    },
+
     // ── sweep/control ──
     async uploadCompanyLogo(dataUrl: string): Promise<CompanyDetail> {
       return mapCompanyDetail(await post('/v1/company/logo', { data_url: dataUrl }))
+    },
     async removeCompanyLogo(): Promise<CompanyDetail> {
       const res = await apiFetch(`${baseUrl}/v1/company/logo`, getToken, deleteReq())
       return mapCompanyDetail(await res.json())
+    },
     async updateMember(id: string, input: UpdateMemberInput): Promise<CompanyMember> {
+      const body: Record<string, unknown> = {}
       if (input.role !== undefined) body.role = input.role
       if (input.channels !== undefined) body.channels = input.channels
       if (input.allChannels !== undefined) body.all_channels = input.allChannels
       const raw = await patch<RawMember & { channels?: string[] | null; channel_names?: string[] | null; last_seen_at?: string | null }>(`/v1/members/${id}`, body)
       return { ...mapMember(raw), channels: raw.channels ?? null, channelNames: raw.channel_names ?? null, lastSeenAt: raw.last_seen_at ?? null }
+    },
     async revokeInvite(id: string): Promise<void> {
       await del(`/v1/auth/invites/${id}`)
+    },
     async resendInvite(id: string): Promise<void> {
       await post(`/v1/auth/invites/${id}/resend`, {})
+    },
     async buySeats(count: number): Promise<BuySeatsResult> {
       const r = await post<{ status: string; seats?: number; hosted_url?: string | null; payment_id?: string; amount_idr: number }>('/v1/billing/seats', { count })
       return { status: r.status, seats: r.seats ?? null, hostedUrl: r.hosted_url ?? null, paymentId: r.payment_id ?? null, amountIdr: r.amount_idr }
+    },
     async updateChannel(id: string, input: UpdateChannelInput): Promise<ManagedChannel> {
+      const body: Record<string, unknown> = {}
+      if (input.archived !== undefined) body.archived = input.archived
       if (input.muted !== undefined) body.muted = input.muted
+      if (input.name !== undefined) body.name = input.name
+      if (input.purpose !== undefined) body.purpose = input.purpose
       return mapManagedChannel(await patch(`/v1/channels/${id}`, body))
+    },
     async deleteChannel(id: string): Promise<void> {
       await del(`/v1/channels/${id}`)
+    },
     async updateAiAccount(id: string, input: UpdateAiAccountInput): Promise<AiAccount> {
       return mapAiAccount(await patch<RawAiAccount>(`/v1/ai-accounts/${id}`, input))
+    },
     async reauthConnector(id: string): Promise<Connector> {
       const raw = await post<RawConnector & { auth?: { type: string; provider?: string | null; fields: string[] } }>(`/v1/connectors/${id}/reauth`, {})
       return { ...mapConnector(raw), ...(raw.auth ? { auth: { type: raw.auth.type, provider: raw.auth.provider ?? null, fields: raw.auth.fields } } : {}) }
+    },
     async refreshMarketplace(): Promise<unknown> {
       return post('/v1/marketplace/refresh', {})
+    },
     async createMcpServer(input: CreateMcpServerInput): Promise<McpServer> {
       return mapMcpServer(await post<RawMcpServer>('/v1/mcp-servers', { name: input.name, url: input.url, token: input.token ?? null }))
+    },
     async createMcpServerFromOpenApi(input: CreateMcpServerFromOpenApiInput): Promise<McpServer> {
       const body: Record<string, unknown> = { name: input.name }
       if (input.spec !== undefined) body.spec = input.spec
       if (input.specUrl !== undefined) body.spec_url = input.specUrl
       return mapMcpServer(await post<RawMcpServer>('/v1/mcp-servers/from-openapi', body))
+    },
     async refreshMcpServer(id: string): Promise<McpServer> {
       return mapMcpServer(await post<RawMcpServer>(`/v1/mcp-servers/${id}/refresh`, {}))
+    },
     async deleteMcpServer(id: string): Promise<void> {
       await del(`/v1/mcp-servers/${id}`)
+    },
     async createSkill(input: CreateSkillInput): Promise<Skill> {
       return post<Skill>('/v1/skills', { helper_id: input.helperId, name: input.name, body_md: input.bodyMd })
+    },
     async updateSkill(id: string, input: UpdateSkillInput): Promise<Skill> {
+      const body: Record<string, unknown> = {}
       if (input.status !== undefined) body.status = input.status
+      if (input.name !== undefined) body.name = input.name
       if (input.bodyMd !== undefined) body.body_md = input.bodyMd
+      if (input.helperId !== undefined) body.helper_id = input.helperId
       return patch<Skill>(`/v1/skills/${id}`, body)
+    },
     async setTelemetryOptOut(optedOut: boolean): Promise<void> {
       await post('/v1/telemetry-config', { opted_out: optedOut })
+    },
     async updatePreferences(p: UserPreferences): Promise<UserPreferences> {
       return patch<UserPreferences>('/v1/me/preferences', p)
+    },
     async setTwoFactor(enabled: boolean): Promise<void> {
       await post(`/v1/auth/two-factor/${enabled ? 'enable' : 'disable'}`, {})
+    },
     async revokeSession(id: string): Promise<void> {
       await del(`/v1/me/sessions/${id}`)
+    },
     async uploadAvatar(dataUrl: string): Promise<{ avatarUrl: string }> {
       const r = await post<{ avatar_url: string }>('/v1/me/avatar', { data_url: dataUrl })
       return { avatarUrl: r.avatar_url }
+    },
     async createDataExport(): Promise<DataExport> {
       return mapExport(await post('/v1/data/exports', {}))
+    },
     async downloadDataExport(id: string): Promise<Blob> {
       const res = await apiFetch(`${baseUrl}/v1/data/exports/${id}/download`, getToken, { method: 'GET', headers: { Accept: 'application/zip' } })
       return res.blob()
+    },
     async downloadAuditCsv(q?: AuditQuery): Promise<Blob> {
       const params = new URLSearchParams()
       if (q?.type) params.set('type', q.type)
@@ -1894,6 +1980,8 @@ type RawRunSweep = Parameters<typeof mapFlowRunSweep>[0]
 export interface UpdateProposalInput {
   assignee?: string | null
   due?: string | null
+}
+
 // ── sweep/team-analytics ──
 
 import type {
@@ -2008,40 +2096,53 @@ function updateHelperExtrasBody(input: UpdateHelperInput): Record<string, unknow
   if (input.behavior !== undefined) body.behavior = input.behavior
   if (input.budgetCreditsMonth !== undefined) body.budget_credits_month = input.budgetCreditsMonth
   return body
+}
+
 // ── sweep/chat ────────────────────────────────────────────────────────────────
 
 export interface SendMessageOptions {
   /** Model picked in the composer; stored on the session. */
+  model?: string
+}
 
 export interface UpdateSessionInput {
+  title?: string
   /** null removes the chat from its folder. */
   folderId?: string | null
   pinned?: boolean
   archived?: boolean
   /** null unlinks the goal. */
   goalId?: string | null
+  model?: string
+}
 
 export interface SetSharesInput {
   members: { userId: string; permission: 'can_talk' | 'can_view' }[]
   generalAccess?: 'restricted' | 'company'
+}
 
 function sharesBody(input: SetSharesInput): Record<string, unknown> {
   const body: Record<string, unknown> = {
     members: input.members.map((m) => ({ user_id: m.userId, permission: m.permission })),
   }
   if (input.generalAccess !== undefined) body.general_access = input.generalAccess
+  return body
+}
 
 export interface CreateFolderInput {
   channelId: string
   name: string
   icon?: string
   color?: string
+}
 
 export interface UpdateFolderInput {
+  name?: string
   /** null/'' resets to the default glyph. */
   icon?: string | null
   color?: string | null
   instructions?: string
+}
 
 export interface AddFolderFileInput {
   name: string
@@ -2049,47 +2150,68 @@ export interface AddFolderFileInput {
   mime?: string
   /** Extracted text (text-like files only). */
   text?: string
+}
 
 export interface UpdateAreaInput {
+  name?: string
   purpose?: string
   /** null resets to the accent default. */
   icon?: string | null
   color?: string | null
+}
+
 // ── sweep/control ──
 export interface UpdateMemberInput {
   role?: string
   /** Channel ids; use allChannels to grant every channel. */
+  channels?: string[]
   allChannels?: boolean
+}
 
 export interface BuySeatsResult {
+  status: string
   seats: number | null
   hostedUrl: string | null
   paymentId: string | null
   amountIdr: number
+}
 
 export interface UpdateChannelInput {
+  archived?: boolean
   muted?: boolean
+  name?: string
+  purpose?: string
+}
 
 export interface UpdateAiAccountInput {
+  name?: string
   tag?: string
   /** 'paused' takes the account out of the pool; 'ready' puts it back. */
   status?: string
+}
 
 export interface CreateMcpServerInput {
+  name: string
   url: string
   token?: string
+}
 
 export interface CreateMcpServerFromOpenApiInput {
+  name: string
   /** The OpenAPI document as JSON/YAML text (or parsed object). */
   spec?: string | Record<string, unknown>
   specUrl?: string
+}
 
 export interface CreateSkillInput {
   helperId: string
+  name: string
   bodyMd: string
+}
 
 export interface UpdateSkillInput {
   status?: 'active' | 'disabled' | 'draft'
+  name?: string
   bodyMd?: string
   helperId?: string
 }

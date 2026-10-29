@@ -572,7 +572,6 @@ def patch_helper(
         helper.budget_credits_month = body.budget_credits_month
 
     db.flush()
-
     from omilo import audit  # sweep/control — activity log
 
     changed = [k for k, v in body.model_dump(exclude_none=True).items()]

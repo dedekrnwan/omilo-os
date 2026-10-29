@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 .superpowers/
 src-tauri/target/
@@ -7,7 +7,7 @@ src-tauri/gen/
 .DS_Store
 **/__pycache__/
 .venv/
-apps/api/.venv/
+apps/api/.venv
 
 # Secrets — never commit real env files (public repo). The *.example templates stay tracked.
 .env

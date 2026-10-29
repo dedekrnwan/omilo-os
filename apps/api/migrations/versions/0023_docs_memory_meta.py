@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "0023_docs_memory_meta"
-down_revision: Union[str, Sequence[str], None] = "0022_flow_settings"
+down_revision: Union[str, Sequence[str], None] = "0023_email_notifications"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

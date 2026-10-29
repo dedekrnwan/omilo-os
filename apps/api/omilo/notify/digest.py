@@ -6,7 +6,7 @@ cron.  For every onboarded company whose local time is past Monday 08:00 it
 summarises the *previous* ISO week and mails each owner once (EmailLog
 dedupe).  A quiet week (no jobs, nothing waiting) sends nothing.
 
-Spend is shown in rupiah at the small top-up pack's rate (``PACKS["small"]``).
+Spend is shown in rupiah at the app-wide rate (``billing.catalog.IDR_PER_CREDIT``).
 """
 from __future__ import annotations
 
@@ -41,10 +41,10 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 
 
 def idr_per_credit() -> float:
-    from omilo.api.billing import PACKS
+    """The app-wide Rupiah-per-credit rate (base credit pack, billing.catalog)."""
+    from omilo.billing.catalog import IDR_PER_CREDIT
 
-    p = PACKS["small"]
-    return p["amount_idr"] / p["credits"]
+    return float(IDR_PER_CREDIT)
 
 
 def rupiah(amount: float, short: bool = True) -> str:
@@ -232,10 +232,11 @@ def run_due_digests(now: datetime | None = None) -> int:
             try:
                 w, due = previous_week(now, company)
                 quiet_key = f"digest:{company.id}:{w.key}:quiet"
-                if not due or already_sent(s, quiet_key) or not wants_email(company, PREF_WEEKLY):
+                if not due or already_sent(s, quiet_key):
                     continue
                 people = [u for u in owners(s, company.id)
-                          if not already_sent(s, f"digest:{company.id}:{w.key}:{u.id}")]
+                          if wants_email(company, PREF_WEEKLY, u)
+                          and not already_sent(s, f"digest:{company.id}:{w.key}:{u.id}")]
                 if not people:
                     continue
                 mail = build_digest(s, company, w, now)

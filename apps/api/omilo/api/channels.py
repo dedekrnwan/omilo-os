@@ -54,14 +54,9 @@ _404 = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 @router.get("/channels", response_model=list[ChannelOutDTO], response_model_by_alias=True, response_model_exclude_none=True)
 def list_channels(db: Session = Depends(get_tenant_db)) -> list[dict]:
-    rows = db.query(Channel).all()
-    return [channel_out(r) for r in rows]
-
-
-@router.get("/channels/{channel_id}", response_model=ChannelOutDTO, response_model_by_alias=True, response_model_exclude_none=True)
     # sweep/control — archived channels are read-only and hidden from the app.
     rows = db.query(Channel).filter(Channel.archived_at.is_(None)).all()
-    return [ChannelDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+    return [channel_out(r) for r in rows]
 
 
 # ── sweep/control: control-panel channel management ─────────────────────────
@@ -79,6 +74,11 @@ class PatchChannelBody(BaseModel):
     context_scope: Optional[str] = None
     accent: Optional[str] = None
     icon: Optional[str] = None
+    # sweep/chat: area looks (any member may change name/purpose/icon/color)
+    color: Optional[str] = None
+
+
+_ADMIN_ONLY_FIELDS = {"archived", "muted", "context_scope", "accent"}
 
 
 def _manage_dict(ch: Channel, *, chats: int, goals: int, helpers: list[dict], people: int | None) -> dict:
@@ -170,7 +170,9 @@ def patch_channel(
 ) -> dict:
     from datetime import datetime, timezone
 
-    if ctx.role not in ("owner", "admin"):
+    # One PATCH for both the control panel (archive/mute/scope — admins only)
+    # and the sidebar (area name/purpose/icon/colour — any member).
+    if ctx.role not in ("owner", "admin") and (body.model_fields_set & _ADMIN_ONLY_FIELDS):
         raise HTTPException(status_code=403, detail="Only owners and admins can change channels.")
     ch = db.query(Channel).filter(Channel.id == channel_id).first()
     if ch is None:
@@ -195,10 +197,16 @@ def patch_channel(
         ch.context_scope = body.context_scope
     if body.accent is not None:
         ch.accent = body.accent
-    if body.icon is not None:
-        ch.icon = body.icon
+    if "icon" in body.model_fields_set:
+        ch.icon = body.icon or None
+    if "color" in body.model_fields_set:
+        ch.color = body.color or None
     db.flush()
-    return _manage_rows(db, ctx, [ch])[0]
+    from omilo.api.chat_workspace import channel_out
+
+    # Union shape: the control panel reads the snake_case manage row, the
+    # sidebar reads the camelCase ChannelOutDTO.
+    return {**_manage_rows(db, ctx, [ch])[0], **channel_out(ch)}
 
 
 @router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -222,7 +230,7 @@ def delete_channel(
     audit.record_ctx(ctx, type="channels", action="removed", target=name)
 
 
-@router.get("/channels/{channel_id}", response_model=ChannelDTO, response_model_by_alias=True)
+@router.get("/channels/{channel_id}", response_model=ChannelOutDTO, response_model_by_alias=True, response_model_exclude_none=True)
 def get_channel(channel_id: str, db: Session = Depends(get_tenant_db)) -> dict:
     row = db.query(Channel).filter(Channel.id == channel_id).first()
     if row is None:

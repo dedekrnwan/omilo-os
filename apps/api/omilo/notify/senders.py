@@ -110,13 +110,15 @@ def send_approval(proposal_id: str) -> None:
         if p is None or (p.status or "pending") != "pending":
             return
         company = s.get(Company, p.company_id)
-        if company is None or not wants_email(company, PREF_DECISION):
+        if company is None:
             return
         helper = s.get(Helper, p.helper_id)
         name = helper.name if helper else "Your helper"
         reasoning, facts = split_body(p.body_md)
         tz = company_tz(company)
         for user in owners(s, p.company_id):
+            if not wants_email(company, PREF_DECISION, user):
+                continue
             mail = t.render_approval(
                 helper=helper_look(helper), helper_name=name, company=company.name,
                 kind="Proposal", waiting_since=clock(p.created_at, tz), question=p.title,
@@ -154,8 +156,6 @@ def _match_connector(s, company_id: str, error: str) -> Connector | None:
 
 def _send_alert(s, company: Company, *, helper: Helper | None, connector: Connector | None,
                 at: datetime, details: list[str]) -> None:
-    if not wants_email(company, PREF_FAILURE):
-        return
     tz = company_tz(company)
     label = connector.label if connector else "A connector"
     who = helper.name if helper else "Your helpers"
@@ -199,6 +199,8 @@ def _send_alert(s, company: Company, *, helper: Helper | None, connector: Connec
     day = at.astimezone(tz).date().isoformat()
     key = connector.slug if connector else "auth"
     for user in owners(s, company.id):
+        if not wants_email(company, PREF_FAILURE, user):
+            continue
         deliver(kind="alert", dedupe_key=f"alert:{company.id}:{key}:{day}:{user.id}", to=user.email,
                 mail=mail, company_id=company.id)
 

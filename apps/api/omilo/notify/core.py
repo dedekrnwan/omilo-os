@@ -132,13 +132,28 @@ PREF_FAILURE = ("Flow failed", True)
 PREF_WEEKLY = ("Weekly brief", True)
 
 
-def wants_email(company: Company, pref: tuple[str, bool]) -> bool:
-    label, default = pref
-    matrix = ((company.settings or {}).get("notifications") or {}).get("matrix") or []
+def _matrix_choice(settings: dict | None, label: str) -> bool | None:
+    matrix = ((settings or {}).get("notifications") or {}).get("matrix") or []
     for row in matrix:
         if isinstance(row, dict) and row.get("label") == label:
-            return bool((row.get("channels") or {}).get("email", default))
-    return default
+            email = (row.get("channels") or {}).get("email")
+            return None if email is None else bool(email)
+    return None
+
+
+def wants_email(company: Company, pref: tuple[str, bool], user: User | None = None) -> bool:
+    """Does this person want this email?
+
+    Control panel → Notifications is saved per person (``user.preferences``);
+    company settings are the older, company-wide fallback, then the UI default.
+    """
+    label, default = pref
+    if user is not None:
+        mine = _matrix_choice(getattr(user, "preferences", None), label)
+        if mine is not None:
+            return mine
+    shared = _matrix_choice(company.settings, label)
+    return default if shared is None else shared
 
 
 def first_name(user: User) -> str:

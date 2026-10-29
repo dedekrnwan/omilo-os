@@ -5,13 +5,10 @@ Helper is deferred to P1 (YAGNI for P0).
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Text
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
-
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omilo.db import Base

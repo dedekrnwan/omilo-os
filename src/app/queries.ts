@@ -697,97 +697,6 @@ export function useMemoryDoc(id: Id | null) {
   return useQuery({
     queryKey: ['docs', 'detail', id],
     queryFn: () => repos.docs.get(id!),
-// ── sweep/team-analytics ──────────────────────────────────────────────────────
-
-import type { ActivityQuery } from '../core/ports/repos'
-import type {
-  ConnectHelperChannelInput,
-  HelperSkillSetting,
-  SetHelperToolsInput,
-} from '../adapters/http/commands'
-
-const EMPTY_SERIES = { buckets: [], series: [], total: 0 }
-
-/** Analytics overview for a range ('week' | 'month' | 'quarter') and optional channel. */
-export function useAnalyticsOverviewFor(range: string, channelId?: string) {
-    queryKey: ['analyticsOverview', range, channelId ?? null],
-    queryFn: () =>
-      repos.analytics.overviewFor ? repos.analytics.overviewFor(range, channelId) : repos.analytics.overview(range),
-
-export function useAnalyticsHelpersFor(range: string, channelId?: string) {
-    queryKey: ['analyticsHelpers', range, channelId ?? null],
-    queryFn: () =>
-      repos.analytics.helpersFor ? repos.analytics.helpersFor(range, channelId) : repos.analytics.helpers(range),
-
-export function useSpendByChannel(range: string, channelId?: string) {
-    queryKey: ['analyticsSpendByChannel', range, channelId ?? null],
-    queryFn: () => repos.analytics.spendByChannel?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
-
-export function useTokensByHelper(range: string, channelId?: string) {
-    queryKey: ['analyticsTokensByHelper', range, channelId ?? null],
-    queryFn: () => repos.analytics.tokensByHelper?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
-
-export function useAnalyticsLoops(range: string) {
-    queryKey: ['analyticsLoops', range],
-    queryFn: () => repos.analytics.loops?.(range) ?? Promise.resolve([]),
-
-export function useAnalyticsReliability(range: string, channelId?: string) {
-    queryKey: ['analyticsReliability', range, channelId ?? null],
-    queryFn: () =>
-      repos.analytics.reliability?.(range, channelId) ??
-      Promise.resolve({ stats: [], causes: [], causesTip: '' }),
-
-export function useAnalyticsFailures(range: string, channelId?: string) {
-    queryKey: ['analyticsFailures', range, channelId ?? null],
-    queryFn: () => repos.analytics.failures?.(range, channelId) ?? Promise.resolve([]),
-
-export function useActivity(q: ActivityQuery) {
-    queryKey: ['activity', q],
-    queryFn: () =>
-      repos.analytics.activity?.(q) ??
-      Promise.resolve({ items: [], nextCursor: null, counts: { done: 0, needs_you: 0, failed: 0, started: 0 } }),
-
-export function useHelperDetail(id: Id) {
-    queryKey: ['helperDetail', id],
-    queryFn: async () => {
-      if (repos.helpers.detail) return repos.helpers.detail(id)
-      const helper = await repos.helpers.get(id)
-      return helper
-        ? { helper, routines: [], skills: [], counts: { channels: 1, tools: 0, skills: 0, routines: 0 } }
-        : null
-    },
-// ── sweep/chat ────────────────────────────────────────────────────────────────
-// Persisted chat workspace: sidebar edits (rename/pin/move/archive/delete),
-// folders (look, instructions, files, sharing), area looks, archive drawer,
-// results panel, private Chief threads and nudges. Session/folder/channel
-// patches are applied optimistically to every cached list, then refetched.
-
-type SessionList = import('../core/domain/types').Session[]
-type FolderList = import('../core/domain/types').Folder[]
-type ChannelList = import('../core/domain/types').Channel[]
-
-const EMPTY_RESULTS: import('../core/domain/types').SessionResults = {
-  steps: [],
-  outputs: [],
-  activity: [],
-  usage: { tokensIn: 0, tokensOut: 0, costCredits: 0 },
-
-export function useArchivedSessions(areaId: Id | null) {
-    queryKey: ['sessions', 'archived', areaId ?? 'all'],
-    queryFn: () => repos.chat?.archived(areaId) ?? Promise.resolve([]),
-
-export function useChiefThreads(enabled = true) {
-    queryKey: ['sessions', 'chief'],
-    queryFn: () => repos.chat?.chiefThreads() ?? Promise.resolve([]),
-    enabled,
-
-export function useChiefNudges() {
-    queryKey: ['chiefNudges'],
-    queryFn: () => repos.chat?.chiefNudges() ?? Promise.resolve([]),
-
-export function useFolder(id: Id) {
-    queryKey: ['folder', id],
-    queryFn: () => repos.chat?.folder(id) ?? Promise.resolve(null),
     enabled: !!id,
   })
 }
@@ -797,13 +706,6 @@ export function useDocVersions(id: Id | null) {
   return useQuery({
     queryKey: ['docs', 'versions', id],
     queryFn: () => repos.docs.versions(id!),
-export function useHelperChannels(id: Id) {
-  const repos = useRepos()
-    queryKey: ['helperChannels', id],
-    queryFn: () => repos.helpers.channels?.(id) ?? Promise.resolve([]),
-export function useFolderFiles(id: Id) {
-    queryKey: ['folderFiles', id],
-    queryFn: () => repos.chat?.folderFiles(id) ?? Promise.resolve([]),
     enabled: !!id,
   })
 }
@@ -948,89 +850,151 @@ export function useResolveHandbookSuggestion() {
     mutationFn: ({ id, accept }: { id: Id; accept: boolean }) =>
       accept ? commands.acceptHandbookSuggestion(id) : commands.dismissHandbookSuggestion(id),
     onSuccess: invalidate,
+  })
+}
+
 // ── sweep/goals-routines ──────────────────────────────────────────────────────
 
 /** GET /v1/goals/{id} — goal + planned jobs + proposals (null when the repo lacks it). */
 export function useGoalDetail(id: Id | null) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['goal', id],
     queryFn: () => (repos.goals.get ? repos.goals.get(id as Id) : Promise.resolve(null)),
+    enabled: !!id,
+  })
+}
 
 /** POST /v1/goals/{id}/session — open (create once) the goal's session. */
 export function useOpenGoalSession() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (goalId: Id) => commands.openGoalSession(goalId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['goals'] })
       void qc.invalidateQueries({ queryKey: ['sessions'] })
     },
+  })
+}
 
 export function useReplanGoal() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (goalId: Id) => commands.replanGoal(goalId),
     onSuccess: (_r, goalId) => {
       void qc.invalidateQueries({ queryKey: ['goals'] })
       void qc.invalidateQueries({ queryKey: ['goal', goalId] })
     },
+  })
+}
 
 /** GET /v1/routines/schedule — Week view slots (empty when the repo lacks it). */
 export function useRoutineSchedule(from: string, to: string) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['routines', 'schedule', from, to],
     queryFn: () =>
       repos.routines.schedule ? repos.routines.schedule(from, to) : Promise.resolve({ from, to, items: [] }),
+  })
+}
 
 /** GET /v1/routines/{id}/runs/{runId}; polls every 2s while the run is going. */
 export function useRoutineRun(routineId: Id | null, runId: Id | null) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['routines', 'run', routineId, runId],
     queryFn: () =>
       repos.routines.run ? repos.routines.run(routineId as Id, runId as Id) : Promise.resolve(null),
     enabled: !!routineId && !!runId,
     refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+  })
+}
 
 export function useRoutineSuggestions() {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['routines', 'suggestions'],
     queryFn: () => (repos.routines.suggestions ? repos.routines.suggestions() : Promise.resolve([])),
+  })
+}
 
 /** Invalidate everything routine-shaped after a write. */
 function useInvalidateRoutines() {
+  const qc = useQueryClient()
   return (id?: Id) => {
     void qc.invalidateQueries({ queryKey: ['routines'] })
     if (id) void qc.invalidateQueries({ queryKey: ['routine', id] })
+  }
+}
 
 export function useRunRoutineNow() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: (id: Id) => commands.runRoutineNow(id),
     onSuccess: (_r, id) => invalidate(id),
+  })
+}
 
 export function useCancelJob() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: (jobId: Id) => commands.cancelJob(jobId),
     onSettled: () => invalidate(),
+  })
+}
 
 export function useRoutineRunFeedback() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: ({ runId, vote }: { runId: Id; vote: 'up' | 'down' | null }) =>
       commands.routineRunFeedback(runId, vote),
     onSuccess: () => invalidate(),
+  })
+}
 
 export function useResendRoutineRun() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: (runId: Id) => commands.resendRoutineRun(runId),
     onSuccess: () => invalidate(),
+  })
+}
 
 export function useApplyRoutineSuggestion() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: (id: string) => commands.applyRoutineSuggestion(id),
     onSuccess: () => invalidate(),
+  })
+}
 
 export function useDismissRoutineSuggestion() {
+  const commands = useCommands()
   const invalidate = useInvalidateRoutines()
+  return useMutation({
     mutationFn: (id: string) => commands.dismissRoutineSuggestion(id),
     onSuccess: () => invalidate(),
+  })
+}
 
 /** POST /v1/routines/preview — read-like, so exposed as a query keyed by the draft. */
 export function useRoutinePreview(input: import('../adapters/http/commands').PreviewRoutineInput | null) {
+  const commands = useCommands()
+  return useQuery({
     queryKey: ['routines', 'preview', input],
     queryFn: () => commands.previewRoutine(input!),
     enabled: !!input && /^\d{1,2}:\d{2}$/.test(input.at),
     staleTime: 10_000,
+  })
+}
+
 // ── sweep/inbox-flows ──
 
 /** Everything an inbox decision / flow approval can change. */
@@ -1043,23 +1007,48 @@ function invalidateDecisions(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ['flowRuns'] })
   void qc.invalidateQueries({ queryKey: ['flowRun'] })
   void qc.invalidateQueries({ queryKey: ['flowVersions'] })
+}
 
 export function useMarkInboxRead() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.markInboxRead(id),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['inbox'] })
+    },
+  })
+}
 
 export function useMarkAllInboxRead() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (before?: string) => commands.markAllInboxRead(before),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['inbox'] })
+    },
+  })
+}
 
 export function useProposal(id: Id | undefined) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['proposal', id],
     queryFn: () => repos.proposals?.get(id!) ?? Promise.resolve(null),
+    enabled: !!id,
+  })
+}
 
 export function useUpdateProposal() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: { assignee?: string | null; due?: string | null } }) =>
       commands.updateProposal(id, input),
     onSuccess: () => invalidateDecisions(qc),
+  })
+}
 
 export type ProposalDecision =
   | { kind: 'approve'; proposalId: Id; note?: string; params?: Record<string, unknown> }
@@ -1070,6 +1059,9 @@ export type ProposalDecision =
 
 /** Approve / reject / request changes / undo a proposal, or decide a waiting flow run. */
 export function useDecide() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: async (d: ProposalDecision): Promise<unknown> => {
       switch (d.kind) {
         case 'approve':
@@ -1085,17 +1077,27 @@ export function useDecide() {
         case 'flowRun':
           return commands.decideFlowRun(d.flowId, d.runId, d.approve)
       }
+    },
     onSettled: () => invalidateDecisions(qc),
+  })
+}
 
 export function useFlowRun(flowId: Id, runId: Id | undefined, opts: { poll?: boolean } = {}) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['flowRun', flowId, runId],
     queryFn: () => repos.flows.run?.(flowId, runId!) ?? Promise.resolve(null),
     enabled: !!runId,
     refetchInterval: (q) => {
       const st = (q.state.data as { status?: string } | null | undefined)?.status
       return opts.poll && st === 'running' ? 1000 : false
+    },
+  })
+}
 
 export function useFlowVersions(flowId: Id) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['flowVersions', flowId],
     queryFn: () => repos.flows.versions?.(flowId) ?? Promise.resolve([]),
     enabled: Boolean(flowId),
@@ -1103,8 +1105,12 @@ export function useFlowVersions(flowId: Id) {
 }
 
 export function useFlowSuggestions() {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['flowSuggestions'],
     queryFn: () => repos.flows.suggestions?.() ?? Promise.resolve([]),
+  })
+}
 
 export type FlowRunAction =
   | { kind: 'run'; flowId: Id }
@@ -1115,6 +1121,9 @@ export type FlowRunAction =
 
 /** Start / test / retry / cancel / approve a flow run → the affected run's id. */
 export function useFlowRunAction() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: async (a: FlowRunAction): Promise<{ id: Id; status: string }> => {
       const run = (await (a.kind === 'run'
         ? commands.runFlow(a.flowId)
@@ -1126,103 +1135,364 @@ export function useFlowRunAction() {
               ? commands.cancelFlowRun(a.flowId, a.runId)
               : commands.decideFlowRun(a.flowId, a.runId, a.approve))) as { id: Id; status: string }
       return { id: run.id, status: run.status }
+    },
     onSettled: () => invalidateDecisions(qc),
+  })
+}
 
 export function usePublishFlow() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.publishFlow(id) as Promise<{ id?: Id }>,
     onSettled: () => invalidateDecisions(qc),
+  })
+}
 
 export function useRestoreFlowVersion() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ flowId, version }: { flowId: Id; version: number }) => commands.restoreFlowVersion(flowId, version),
     onSettled: () => invalidateDecisions(qc),
+  })
+}
+
+// ── sweep/team-analytics ──────────────────────────────────────────────────────
+
+import type { ActivityQuery } from '../core/ports/repos'
+import type {
+  ConnectHelperChannelInput,
+  HelperSkillSetting,
+  SetHelperToolsInput,
+} from '../adapters/http/commands'
+
+const EMPTY_SERIES = { buckets: [], series: [], total: 0 }
+
+/** Analytics overview for a range ('week' | 'month' | 'quarter') and optional channel. */
+export function useAnalyticsOverviewFor(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsOverview', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.overviewFor ? repos.analytics.overviewFor(range, channelId) : repos.analytics.overview(range),
+  })
+}
+
+export function useAnalyticsHelpersFor(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsHelpers', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.helpersFor ? repos.analytics.helpersFor(range, channelId) : repos.analytics.helpers(range),
+  })
+}
+
+export function useSpendByChannel(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsSpendByChannel', range, channelId ?? null],
+    queryFn: () => repos.analytics.spendByChannel?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
+  })
+}
+
+export function useTokensByHelper(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsTokensByHelper', range, channelId ?? null],
+    queryFn: () => repos.analytics.tokensByHelper?.(range, channelId) ?? Promise.resolve(EMPTY_SERIES),
+  })
+}
+
+export function useAnalyticsLoops(range: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsLoops', range],
+    queryFn: () => repos.analytics.loops?.(range) ?? Promise.resolve([]),
+  })
+}
+
+export function useAnalyticsReliability(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsReliability', range, channelId ?? null],
+    queryFn: () =>
+      repos.analytics.reliability?.(range, channelId) ??
+      Promise.resolve({ stats: [], causes: [], causesTip: '' }),
+  })
+}
+
+export function useAnalyticsFailures(range: string, channelId?: string) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['analyticsFailures', range, channelId ?? null],
+    queryFn: () => repos.analytics.failures?.(range, channelId) ?? Promise.resolve([]),
+  })
+}
+
+export function useActivity(q: ActivityQuery) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['activity', q],
+    queryFn: () =>
+      repos.analytics.activity?.(q) ??
+      Promise.resolve({ items: [], nextCursor: null, counts: { done: 0, needs_you: 0, failed: 0, started: 0 } }),
+  })
+}
+
+export function useHelperDetail(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['helperDetail', id],
+    queryFn: async () => {
+      if (repos.helpers.detail) return repos.helpers.detail(id)
+      const helper = await repos.helpers.get(id)
+      return helper
+        ? { helper, routines: [], skills: [], counts: { channels: 1, tools: 0, skills: 0, routines: 0 } }
+        : null
+    },
+    enabled: !!id,
+  })
+}
+
+export function useHelperChannels(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['helperChannels', id],
+    queryFn: () => repos.helpers.channels?.(id) ?? Promise.resolve([]),
+    enabled: !!id,
+  })
+}
+
 export function useHelperTools(id: Id) {
   const repos = useRepos()
+  return useQuery({
     queryKey: ['helperTools', id],
     queryFn: () => repos.helpers.tools?.(id) ?? Promise.resolve({ connectors: [], builtins: [] }),
     enabled: !!id,
+  })
+}
 
 export function useHelperSkillRows(id: Id) {
   const repos = useRepos()
+  return useQuery({
     queryKey: ['helperSkills', id],
     queryFn: () => repos.helpers.skillRows?.(id) ?? Promise.resolve([]),
     enabled: !!id,
+  })
+}
 
 export function useHelperFiles(id: Id) {
   const repos = useRepos()
+  return useQuery({
     queryKey: ['helperFiles', id],
     queryFn: () => repos.helpers.files?.(id) ?? Promise.resolve([]),
     enabled: !!id,
+  })
+}
 
 function invalidateHelper(qc: ReturnType<typeof useQueryClient>, id: Id) {
   void qc.invalidateQueries({ queryKey: ['helpers'] })
   void qc.invalidateQueries({ queryKey: ['helper', id] })
   void qc.invalidateQueries({ queryKey: ['helperDetail', id] })
   void qc.invalidateQueries({ queryKey: ['analyticsHelpers'] })
+}
 
 /** PATCH a helper and refresh roster, detail and analytics rows. */
 export function useUpdateHelperEverywhere() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: UpdateHelperInput }) => commands.updateHelper(id, input),
     onSuccess: (_d, { id }) => invalidateHelper(qc, id),
+  })
+}
 
 export function useRetireHelper() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.retireHelper(id),
     onSuccess: (_d, id) => invalidateHelper(qc, id),
+  })
+}
 
 export function useAllowHelperJob() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.allowHelperJob(id),
     onSuccess: (_d, id) => invalidateHelper(qc, id),
+  })
+}
 
 export function useConnectHelperChannel(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (input: ConnectHelperChannelInput) => commands.connectHelperChannel(helperId, input),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] })
       void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+    },
+  })
+}
 
 export function useUpdateHelperChannel(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ channelId, config }: { channelId: Id; config: Record<string, unknown> }) =>
       commands.updateHelperChannel(helperId, channelId, config),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] }) },
+  })
+}
 
 export function useDisconnectHelperChannel(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (channelId: Id) => commands.disconnectHelperChannel(helperId, channelId),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['helperChannels', helperId] })
       void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+    },
+  })
+}
 
 export function useSetHelperTools(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (input: SetHelperToolsInput) => commands.setHelperTools(helperId, input),
     onSuccess: (data) => {
       qc.setQueryData(['helperTools', helperId], data)
       void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+    },
+  })
+}
 
 export function useSetHelperSkills(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (list: HelperSkillSetting[]) => commands.setHelperSkills(helperId, list),
     onSuccess: (data) => {
       qc.setQueryData(['helperSkills', helperId], data)
       void qc.invalidateQueries({ queryKey: ['helperDetail', helperId] })
+    },
+  })
+}
 
 export function useSaveHelperFile(helperId: Id) {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ name, content }: { name: string; content: string }) =>
       commands.saveHelperFile(helperId, name, content),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['helperFiles', helperId] }) },
+  })
+}
 
 export function useRetryJob() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (jobId: Id) => commands.retryJob(jobId),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['analyticsFailures'] })
       void qc.invalidateQueries({ queryKey: ['analyticsReliability'] })
       void qc.invalidateQueries({ queryKey: ['activity'] })
+    },
+  })
+}
+
+// ── sweep/chat ────────────────────────────────────────────────────────────────
+// Persisted chat workspace: sidebar edits (rename/pin/move/archive/delete),
+// folders (look, instructions, files, sharing), area looks, archive drawer,
+// results panel, private Chief threads and nudges. Session/folder/channel
+// patches are applied optimistically to every cached list, then refetched.
+
+type SessionList = import('../core/domain/types').Session[]
+type FolderList = import('../core/domain/types').Folder[]
+type ChannelList = import('../core/domain/types').Channel[]
+
+const EMPTY_RESULTS: import('../core/domain/types').SessionResults = {
+  steps: [],
+  outputs: [],
+  activity: [],
+  usage: { tokensIn: 0, tokensOut: 0, costCredits: 0 },
+}
+
+export function useArchivedSessions(areaId: Id | null) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['sessions', 'archived', areaId ?? 'all'],
+    queryFn: () => repos.chat?.archived(areaId) ?? Promise.resolve([]),
+  })
+}
+
+export function useChiefThreads(enabled = true) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['sessions', 'chief'],
+    queryFn: () => repos.chat?.chiefThreads() ?? Promise.resolve([]),
+    enabled,
+  })
+}
+
+export function useChiefNudges() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['chiefNudges'],
+    queryFn: () => repos.chat?.chiefNudges() ?? Promise.resolve([]),
+  })
+}
+
+export function useFolder(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['folder', id],
+    queryFn: () => repos.chat?.folder(id) ?? Promise.resolve(null),
+    enabled: !!id,
+  })
+}
+
+export function useFolderFiles(id: Id) {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['folderFiles', id],
+    queryFn: () => repos.chat?.folderFiles(id) ?? Promise.resolve([]),
+    enabled: !!id,
+  })
+}
+
 export function useFolderShares(id: Id, enabled = true) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['folderShares', id],
     queryFn: () => repos.chat?.folderShares(id) ?? Promise.resolve({ members: [] }),
     enabled: !!id && enabled,
+  })
+}
 
 export function useSessionShares(id: Id, enabled = true) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['sessionShares', id],
     queryFn: () => repos.chat?.sessionShares(id) ?? Promise.resolve({ members: [] }),
     enabled: !!id && enabled,
+  })
+}
 
 export function useSessionResults(id: Id, enabled = true) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['sessionResults', id],
     queryFn: () => repos.chat?.sessionResults(id) ?? Promise.resolve(EMPTY_RESULTS),
     enabled: !!id && enabled,
+  })
+}
 
 /** Apply a session patch to a cached list; `drop` removes it instead. */
 function patchSessionList(list: SessionList | undefined, id: Id, patch: Partial<import('../core/domain/types').Session> | null, unset: string[] = []) {
@@ -1233,8 +1503,13 @@ function patchSessionList(list: SessionList | undefined, id: Id, patch: Partial<
     const next = { ...s, ...patch } as Record<string, unknown>
     for (const k of unset) delete next[k]
     return next as unknown as import('../core/domain/types').Session
+  })
+}
 
 export function useUpdateSession() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateSessionInput }) =>
       commands.updateSession(id, input),
     onMutate: async ({ id, input }) => {
@@ -1247,9 +1522,11 @@ export function useUpdateSession() {
       if (input.folderId !== undefined) {
         if (input.folderId === null) unset.push('folderId')
         else patch.folderId = input.folderId
+      }
       if (input.pinned !== undefined) {
         if (input.pinned) patch.pinned = true
         else unset.push('pinned')
+      }
       if (input.model !== undefined) patch.model = input.model
       if (input.goalId === null) unset.push('goalId', 'goal')
       for (const [key, list] of snapshot) {
@@ -1260,44 +1537,78 @@ export function useUpdateSession() {
         else if (input.archived === false && isArchivedList) next = patchSessionList(list, id, null)
         else next = patchSessionList(list, id, patch, unset)
         qc.setQueryData(key, next)
+      }
       qc.setQueryData(['session', id], (s: unknown) =>
         s ? patchSessionList([s as import('../core/domain/types').Session], id, patch, unset)?.[0] : s,
       )
       return { snapshot, prevSession }
+    },
     onError: (_err, { id }, ctx) => {
       for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
       if (ctx) qc.setQueryData(['session', id], ctx.prevSession)
+    },
     onSettled: (_data, _err, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
       void qc.invalidateQueries({ queryKey: ['session', id] })
       void qc.invalidateQueries({ queryKey: ['folders'] })
       void qc.invalidateQueries({ queryKey: ['folder'] })
+    },
+  })
+}
 
 export function useDeleteSession() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.deleteSession(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: ['sessions'] })
       const snapshot = qc.getQueriesData<SessionList>({ queryKey: ['sessions'] })
       for (const [key, list] of snapshot) qc.setQueryData(key, patchSessionList(list, id, null))
       return { snapshot }
+    },
     onError: (_e, _id, ctx) => {
       for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+    },
     onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
       void qc.invalidateQueries({ queryKey: ['folders'] })
+    },
+  })
+}
 
 export function useDeleteArchivedSessions() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (channelId?: Id) => commands.deleteArchivedSessions(channelId),
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['sessions'] }) },
+  })
+}
 
 export function useSetSessionShares() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').SetSharesInput }) =>
       commands.setSessionShares(id, input),
     onSuccess: (data, { id }) => { qc.setQueryData(['sessionShares', id], data) },
+  })
+}
 
 export function useCreateFolder() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (input: import('../adapters/http/commands').CreateFolderInput) => commands.createFolder(input),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['folders'] }) },
+  })
+}
 
 export function useUpdateFolder() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateFolderInput }) =>
       commands.updateFolder(id, input),
     onMutate: async ({ id, input }) => {
@@ -1312,44 +1623,77 @@ export function useUpdateFolder() {
           else next[k] = v
         }
         return next as unknown as import('../core/domain/types').Folder
+      }
       for (const [key, list] of snapshot) qc.setQueryData(key, list?.map((f) => (f.id === id ? apply(f) : f)))
       const prevFolder = qc.getQueryData<import('../core/domain/types').Folder | null>(['folder', id])
       if (prevFolder) qc.setQueryData(['folder', id], apply(prevFolder))
       return { snapshot, prevFolder }
+    },
     onError: (_e, { id }, ctx) => {
       for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
       if (ctx?.prevFolder) qc.setQueryData(['folder', id], ctx.prevFolder)
+    },
     onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: ['folders'] })
       void qc.invalidateQueries({ queryKey: ['folder', id] })
+    },
+  })
+}
 
 export function useDeleteFolder() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: (id: Id) => commands.deleteFolder(id),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: ['folders'] })
       const snapshot = qc.getQueriesData<FolderList>({ queryKey: ['folders'] })
       for (const [key, list] of snapshot) qc.setQueryData(key, list?.filter((f) => f.id !== id))
       return { snapshot }
+    },
     onError: (_e, _id, ctx) => {
       for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+    },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['folders'] })
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
 
 export function useAddFolderFile() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ folderId, input }: { folderId: Id; input: import('../adapters/http/commands').AddFolderFileInput }) =>
       commands.addFolderFile(folderId, input),
     onSuccess: (_d, { folderId }) => { void qc.invalidateQueries({ queryKey: ['folderFiles', folderId] }) },
+  })
+}
 
 export function useRemoveFolderFile() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ folderId, fileId }: { folderId: Id; fileId: Id }) => commands.removeFolderFile(folderId, fileId),
     onSuccess: (_d, { folderId }) => { void qc.invalidateQueries({ queryKey: ['folderFiles', folderId] }) },
+  })
+}
 
 export function useSetFolderShares() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').SetSharesInput }) =>
       commands.setFolderShares(id, input),
     onSuccess: (data, { id }) => { qc.setQueryData(['folderShares', id], data) },
+  })
+}
 
 export function useUpdateArea() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateAreaInput }) =>
       commands.updateArea(id, input),
     onMutate: async ({ id, input }) => {
@@ -1365,28 +1709,43 @@ export function useUpdateArea() {
           else next[k] = v
         }
         return next as unknown as import('../core/domain/types').Channel
+      }
       if (prev) qc.setQueryData(['channels'], prev.map((c) => (c.id === id ? apply(c) : c)))
       if (prevOne) qc.setQueryData(['channel', id], apply(prevOne))
       return { prev, prevOne }
+    },
     onError: (_e, { id }, ctx) => {
       if (ctx?.prev) qc.setQueryData(['channels'], ctx.prev)
       if (ctx?.prevOne) qc.setQueryData(['channel', id], ctx.prevOne)
+    },
     onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: ['channels'] })
       void qc.invalidateQueries({ queryKey: ['channel', id] })
+    },
+  })
+}
 
 export function useDismissChiefNudge() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: ({ id, snoozeUntil }: { id: Id; snoozeUntil?: string }) => commands.dismissChiefNudge(id, snoozeUntil),
     onMutate: ({ id }) => {
       const prev = qc.getQueryData<import('../core/domain/types').ChiefNudge[]>(['chiefNudges'])
       if (prev) qc.setQueryData(['chiefNudges'], prev.filter((n) => n.id !== id))
+    },
     onSettled: () => { void qc.invalidateQueries({ queryKey: ['chiefNudges'] }) },
+  })
+}
 
 /**
  * Start a chat: create the session (area / folder / goal / model / kind) and,
  * when there is a first message, send it. Returns the session.
  */
 export function useStartChat() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: async ({ input, text }: { input: import('../adapters/http/commands').CreateSessionInput; text?: string }) => {
       const session = await commands.createSession(input)
       if (text && text.trim()) {
@@ -1400,11 +1759,15 @@ export function useStartChat() {
         }
       }
       return session
+    },
     onSuccess: (session) => {
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
       void qc.invalidateQueries({ queryKey: ['folders'] })
       void qc.invalidateQueries({ queryKey: ['messages', session.id] })
+    },
   })
 }
+
 // ── sweep/control ──
 // Control-panel reads + mutations. Reads go through repos.controlPanel (HTTP
 // or mock); it is optional on Repos so hand-built test repos keep compiling —
@@ -1412,6 +1775,7 @@ export function useStartChat() {
 
 import type { AuditQuery, UserPreferences } from '../core/domain/controlPanel'
 import type { ControlPanelRepo } from '../core/ports/repos'
+import type {
   CreateMcpServerFromOpenApiInput,
   CreateMcpServerInput,
   CreateSkillInput,
@@ -1419,76 +1783,122 @@ import type { ControlPanelRepo } from '../core/ports/repos'
   UpdateChannelInput,
   UpdateMemberInput,
   UpdateSkillInput,
+} from '../adapters/http/commands'
 
 function cp(repos: ReturnType<typeof useRepos>): ControlPanelRepo {
   if (!repos.controlPanel) throw new Error('Control panel data is unavailable.')
   return repos.controlPanel
+}
 
 export function useCompanyDetail() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['companyDetail'], queryFn: () => cp(repos).company() })
+}
 
 export function useSeats() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['seats'], queryFn: () => cp(repos).seats() })
+}
 
 export function useCreditPacks() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['creditPacks'], queryFn: () => cp(repos).packs(), staleTime: 300_000 })
+}
 
 export function useInvoices() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['invoices'], queryFn: () => cp(repos).invoices() })
+}
 
 export function useLedger() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['ledger'], queryFn: () => cp(repos).ledger() })
+}
 
 /** Poll a pending payment (hosted checkout) until it settles. */
 export function usePayment(id: string | null) {
+  const repos = useRepos()
+  return useQuery({
     queryKey: ['payment', id],
     queryFn: () => cp(repos).payment(id as string),
+    enabled: !!id,
     refetchInterval: (q) => (q.state.data && q.state.data.status !== 'pending' ? false : 5_000),
+  })
+}
 
 export function useWallet() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['wallet'], queryFn: () => repos.wallet.get() })
+}
 
 export function useInvites() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['invites'], queryFn: () => cp(repos).invites() })
+}
 
 export function useManagedChannels() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['managedChannels'], queryFn: () => cp(repos).channels() })
+}
 
 export function useAuditLog(query: AuditQuery) {
+  const repos = useRepos()
   return useQuery({ queryKey: ['audit', query], queryFn: () => cp(repos).audit(query) })
+}
 
 export function useStorage() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['storage'], queryFn: () => cp(repos).storage() })
+}
 
 export function useDataExports() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['dataExports'], queryFn: () => cp(repos).exports() })
+}
 
 export function useAccount() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['account'], queryFn: () => cp(repos).account() })
+}
 
 export function usePreferences() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['preferences'], queryFn: () => cp(repos).preferences() })
+}
 
 export function useSignInSessions() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['signInSessions'], queryFn: () => cp(repos).sessions() })
+}
 
 export function useMcpServers() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['mcpServers'], queryFn: () => cp(repos).mcpServers() })
+}
 
 export function useTelemetryOptedOut() {
+  const repos = useRepos()
   return useQuery({ queryKey: ['telemetryOptedOut'], queryFn: () => cp(repos).telemetryOptedOut() })
+}
 
 /** Small helper: a mutation that invalidates the given query keys on success. */
 function useInvalidatingMutation<TVars, TResult>(
   fn: (vars: TVars) => Promise<TResult>,
   keys: string[][],
 ) {
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: fn,
+    onSuccess: () => {
       for (const k of keys) void qc.invalidateQueries({ queryKey: k })
+    },
+  })
+}
 
 export function useUploadCompanyLogo() {
   const c = useCommands()
   return useInvalidatingMutation((dataUrl: string) => c.uploadCompanyLogo(dataUrl), [['companyDetail']])
+}
 
 export function useUpdateMember() {
   const c = useCommands()
@@ -1496,18 +1906,22 @@ export function useUpdateMember() {
     ({ id, input }: { id: string; input: UpdateMemberInput }) => c.updateMember(id, input),
     [['members'], ['seats'], ['managedChannels']],
   )
+}
 
 export function useRevokeInvite() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.revokeInvite(id), [['invites'], ['seats']])
+}
 
 export function useResendInvite() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.resendInvite(id), [['invites']])
+}
 
 export function useBuySeats() {
   const c = useCommands()
   return useInvalidatingMutation((count: number) => c.buySeats(count), [['seats'], ['billingSubscription']])
+}
 
 export function useUpdateChannel() {
   const c = useCommands()
@@ -1515,10 +1929,12 @@ export function useUpdateChannel() {
     ({ id, input }: { id: string; input: UpdateChannelInput }) => c.updateChannel(id, input),
     [['managedChannels'], ['channels']],
   )
+}
 
 export function useDeleteChannel() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.deleteChannel(id), [['managedChannels'], ['channels']])
+}
 
 export function useUpdateAiAccount() {
   const c = useCommands()
@@ -1526,14 +1942,17 @@ export function useUpdateAiAccount() {
     ({ id, input }: { id: string; input: UpdateAiAccountInput }) => c.updateAiAccount(id, input),
     [['aiAccounts']],
   )
+}
 
 export function useReauthConnector() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.reauthConnector(id), [['connectors']])
+}
 
 export function useCreateMcpServer() {
   const c = useCommands()
   return useInvalidatingMutation((input: CreateMcpServerInput) => c.createMcpServer(input), [['mcpServers']])
+}
 
 export function useCreateMcpServerFromOpenApi() {
   const c = useCommands()
@@ -1541,14 +1960,17 @@ export function useCreateMcpServerFromOpenApi() {
     (input: CreateMcpServerFromOpenApiInput) => c.createMcpServerFromOpenApi(input),
     [['mcpServers']],
   )
+}
 
 export function useDeleteMcpServer() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.deleteMcpServer(id), [['mcpServers']])
+}
 
 export function useCreateSkill() {
   const c = useCommands()
   return useInvalidatingMutation((input: CreateSkillInput) => c.createSkill(input), [['skills']])
+}
 
 export function useUpdateSkill() {
   const c = useCommands()
@@ -1556,38 +1978,47 @@ export function useUpdateSkill() {
     ({ id, input }: { id: string; input: UpdateSkillInput }) => c.updateSkill(id, input),
     [['skills']],
   )
+}
 
 export function usePublishSkill() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.publishSkill(id), [['skills'], ['inbox']])
+}
 
 export function useUpdatePreferences() {
   const c = useCommands()
   return useInvalidatingMutation((patch: UserPreferences) => c.updatePreferences(patch), [['preferences']])
+}
 
 export function useSetTwoFactor() {
   const c = useCommands()
   return useInvalidatingMutation((enabled: boolean) => c.setTwoFactor(enabled), [['account']])
+}
 
 export function useRevokeSession() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.revokeSession(id), [['signInSessions']])
+}
 
 export function useUploadAvatar() {
   const c = useCommands()
   return useInvalidatingMutation((dataUrl: string) => c.uploadAvatar(dataUrl), [['account'], ['members']])
+}
 
 export function useCreateDataExport() {
   const c = useCommands()
   return useInvalidatingMutation(() => c.createDataExport(), [['dataExports'], ['storage']])
+}
 
 export function useSetTelemetryOptOut() {
   const c = useCommands()
   return useInvalidatingMutation((optedOut: boolean) => c.setTelemetryOptOut(optedOut), [['telemetryOptedOut']])
+}
 
 export function useInstallConnector() {
   const c = useCommands()
   return useInvalidatingMutation((pieceId: string) => c.installConnector(pieceId), [['connectors']])
+}
 
 export function useUpdateConnector() {
   const c = useCommands()
@@ -1595,6 +2026,7 @@ export function useUpdateConnector() {
     ({ id, enabled }: { id: string; enabled: boolean }) => c.updateConnector(id, { enabled }),
     [['connectors']],
   )
+}
 
 export function useConnectorCredentials() {
   const c = useCommands()
@@ -1602,14 +2034,17 @@ export function useConnectorCredentials() {
     ({ id, fields }: { id: string; fields: Record<string, string> }) => c.connectorCredentials(id, fields),
     [['connectors']],
   )
+}
 
 export function useDisconnectConnector() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.disconnectConnector(id), [['connectors']])
+}
 
 export function useRefreshMarketplace() {
   const c = useCommands()
   return useInvalidatingMutation(() => c.refreshMarketplace(), [['marketplace']])
+}
 
 export function useMintMcpToken() {
   const c = useCommands()
@@ -1617,10 +2052,12 @@ export function useMintMcpToken() {
     (input: { label: string; helperId: string; scopes: string[] }) => c.mintMcpToken(input),
     [['mcpTokens']],
   )
+}
 
 export function useRevokeMcpToken() {
   const c = useCommands()
   return useInvalidatingMutation((id: string) => c.revokeMcpToken(id), [['mcpTokens']])
+}
 
 export function useUpdateCompanyProfile() {
   const c = useCommands()
@@ -1628,3 +2065,4 @@ export function useUpdateCompanyProfile() {
     (input: Parameters<ReturnType<typeof useCommands>['updateCompanyProfile']>[0]) => c.updateCompanyProfile(input),
     [['companyDetail']],
   )
+}

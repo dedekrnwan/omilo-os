@@ -721,6 +721,8 @@ export interface HandbookFileDetail extends HandbookFile {
 export interface HandbookIndex {
   files: HandbookFile[]
   openSuggestions: number
+}
+
 
 // ── sweep/goals-routines ──────────────────────────────────────────────────────
 
@@ -739,6 +741,7 @@ export interface GoalDetail {
     goalId: string | null
   }>
   proposals: Array<{ id: string; jobId: string; type: string; status: string; title: string; risk?: string | null }>
+}
 
 export type RoutineRunOutcome = 'ok' | 'fail' | 'skip' | 'running'
 
@@ -755,6 +758,7 @@ export interface RoutineRunSummary {
   trigger: 'schedule' | 'manual' | 'resend' | null
   error: string | null
   feedback: 'up' | 'down' | null
+}
 
 /** GET /v1/routines/{id}/runs/{run_id}. */
 export interface RoutineRunDetail {
@@ -778,28 +782,34 @@ export interface RoutineRunDetail {
   output: { headline: string; bodyMd: string; lines: string[] } | null
   sources: unknown[]
   delivery: { sendsTo: unknown[]; delivered: boolean; note: string | null }
+}
 
 /** One expanded slot of GET /v1/routines/schedule. */
 export interface RoutineScheduleItem {
   routineId: string
   helperId: string
+  name: string
   /** ISO fire time. */
   at: string
   status: 'scheduled' | 'paused' | 'missed' | 'ok' | 'fail' | 'skip' | 'running'
   runId: string | null
   trigger: string
+}
 
 export interface RoutineSchedule {
   from: string
   to: string
   items: RoutineScheduleItem[]
+}
 
 export interface RoutineClash {
   routineId: string
+  name: string
   helperId: string
   at: string
   cadence: string
   when: string
+}
 
 export interface RoutineSlot {
   freq: string
@@ -810,6 +820,7 @@ export interface RoutineSlot {
   nextAt: string | null
   recommended: boolean
   reason: string
+}
 
 /** POST /v1/routines/preview. */
 export interface RoutinePreview {
@@ -818,23 +829,29 @@ export interface RoutinePreview {
   label: string
   clashes: RoutineClash[]
   suggestedSlots: RoutineSlot[]
+}
 
 export interface RoutineSuggestionMove {
   routineId: string
+  name: string
   helperId: string
   helperName: string
   from: string
   to: string
   fromAt: string
   toAt: string | null
+}
 
 /** GET /v1/routines/suggestions — deterministic Chief suggestions. */
 export interface RoutineSuggestion {
   id: string
   kind: 'clash' | 'failing'
+  title: string
   desc: string
   moves: RoutineSuggestionMove[]
   note: string
+}
+
 // ── sweep/inbox-flows ──
 // Interface merging: extends the declarations above without reordering them.
 
@@ -850,25 +867,32 @@ export interface InboxProposal {
   flowId?: string
   flowRunId?: string
   nodeId?: string
+}
 
 export interface InboxItem {
   /** ISO time the operator read the item; absent = unread. */
   readAt?: string
   /** ISO time of the last status change (drives "Done today"). */
   updatedAt?: string
+}
 
 /** One step of a flow run's log (GET /v1/flows/{id}/runs/{run_id}). */
 export interface FlowRunStep {
   nodeId: string
   /** Engine kind: trigger | ai_step | condition | approval | connector */
+  kind: string
+  label: string
   /** done | waiting | failed | skipped | declined | cancelled */
+  status: string
   durationMs: number
   output?: Record<string, unknown>
   note?: string
+}
 
 export interface FlowRun {
   /** Per-step log (present on run detail, and on list rows from the API). */
   steps?: FlowRunStep[]
+}
 
 export interface Flow {
   triggerKind?: string | null
@@ -883,43 +907,70 @@ export interface Flow {
   publishState?: 'draft' | 'pending' | 'live'
   pendingProposalId?: string | null
   publishedVersion?: number | null
+}
 
 /** GET /v1/flows/{id}/versions row. */
 export interface FlowVersionInfo {
+  id: Id
   flowId: string
+  version: number
+  title: string
+  note: string
   /** pending | live | superseded */
+  status: string
+  createdBy: string
   nodeCount: number
+  createdAt: string | null
+}
 
 /** GET /v1/flows/suggestions row. */
 export interface FlowSuggestion {
+  id: Id
+  title: string
   sub: string
   hint: string
   area: string
   runsAs: string
   helperArea: HelperArea
+  from: string
+  to: string
   count: number
   source: 'connector' | 'routine'
   draft: { title: string; trigger: { kind: string; spec: Record<string, unknown> }; nodes: unknown[]; edges: unknown[] }
+}
 
 /** GET /v1/proposals/{id}. */
 export interface ProposalDetail {
+  id: Id
   type: string
   risk: string
+  title: string
   bodyMd: string
+  status: string
+  helperId: string
   assignee: string | null
   due: string | null
   params: Record<string, unknown> | null
+  createdAt: string | null
   revisions: { n: number; author: string; summary: string; bodyMd: string; at: string | null }[]
+}
+
 // ── sweep/team-analytics ──────────────────────────────────────────────────────
 // Interface merging adds the fields the Team + Analytics endpoints now return.
 // Currency: every cost/spend below is in credits.
 
 export interface HelperJobRef {
+  id: Id
   brief: string
+  status: string
   startedAt?: string | null
+}
 
 export interface HelperNextRoutine {
+  id: Id
+  name: string
   nextAt: string
+}
 
 /** Mascot look saved on the helper (Profile tab). picture = data URL. */
 export interface HelperLook {
@@ -927,6 +978,7 @@ export interface HelperLook {
   shape?: string
   prop?: string
   picture?: string | null
+}
 
 /** Behavior tab settings (helper.behavior). */
 export interface HelperBehavior {
@@ -937,6 +989,7 @@ export interface HelperBehavior {
   /** 'owner' | 'helper:<id>' | 'member:<id>' */
   handoff_to?: string
   language?: string
+}
 
 export interface Helper {
   /** Engine model label, e.g. "Opus 5.5"; null = company default. */
@@ -956,17 +1009,31 @@ export interface Helper {
   budgetCreditsMonth?: number | null
   budgetAllowJobs?: number
   channelCount?: number
+}
 
 export interface HelperRoutineRow {
+  id: Id
+  name: string
+  freq: string
+  at: string
+  days: number[]
   paused: boolean
   enabled: boolean
+  nextAt: string | null
   managedByChief?: boolean
+}
 
 export interface HelperSkillRow {
+  id: Id
+  name: string
+  version: number
+  status: string
   own: boolean
   createdBy?: string
+  description: string
   enabled: boolean
   permission: 'always' | 'ask'
+}
 
 /** GET /v1/helpers/{id} — helper plus its routines, skills and tab counts. */
 export interface HelperDetail {
@@ -974,35 +1041,51 @@ export interface HelperDetail {
   routines: HelperRoutineRow[]
   skills: HelperSkillRow[]
   counts: { channels: number; tools: number; skills: number; routines: number }
+}
 
 export type HelperChannelKind = 'telegram' | 'whatsapp' | 'email'
 
 export interface HelperChannelBinding {
+  id: Id
   helperId: Id
   kind: HelperChannelKind
   config: Record<string, unknown>
   /** Names of secret fields that are set (values are never returned). */
   secretsSet: string[]
   /** 'pending_setup' until a delivery integration confirms the binding. */
+  status: string
+}
 
 export interface HelperConnectorTool {
+  id: Id
+  label: string
   kind?: string | null
   status?: string | null
   on: boolean
   /** 'read' | 'write' | 'ask' */
   access: string
+}
 
 export interface HelperBuiltinTool {
+  id: string
+  label: string
+  desc: string
   on: boolean
+}
 
 export interface HelperTools {
   connectors: HelperConnectorTool[]
   builtins: HelperBuiltinTool[]
+}
 
 export interface HelperFile {
   name: 'PERSONA.md' | 'STYLE.md' | 'PLAYBOOK.md' | 'MEMORY.md'
+  description: string
   docId: Id | null
+  content: string
+  updatedAt: string | null
   updatedBy: string | null
+}
 
 export interface AnalyticsStat {
   /** Same stat for the previous period (for the delta chip). */
@@ -1011,109 +1094,152 @@ export interface AnalyticsStat {
   perJob?: number
   of?: number
   p95?: number
+}
 
 export interface AnalyticsOverview {
   buckets?: { start: string; end: string }[]
+}
 
 export interface HelperStat {
   area?: HelperArea
   role?: string
   isChief?: boolean
   /** 'working' | 'idle' | 'needs' | 'paused' */
+  status?: string
   doing?: string
   nextAt?: string | null
   lastActive?: string | null
   budget?: { spent: number; limit: number } | null
   budgetReached?: boolean
+}
 
 /** Stacked bar chart data: one value per bucket per series. */
 export interface AnalyticsStackedSeries {
   buckets: { start: string; end: string }[]
   series: { key: string; label: string; area: string; values: number[] }[]
   total: number
+}
 
 export interface AnalyticsLoop {
+  id: Id
   kind: 'routine' | 'flow'
+  name: string
   helperId: Id | null
   helperName: string | null
+  area: string
   schedule: string
+  nextAt: string | null
   lastResult: string | null
   runs: number
   avgCost: number
   on: boolean
+}
 
 export interface AnalyticsReliability {
   stats: AnalyticsStat[]
   causes: { label: string; count: number }[]
   causesTip: string
+}
 
 export interface AnalyticsFailure {
   jobId: Id
   helperId: Id
   helperName: string | null
+  area: string
+  title: string
   error: string
   cause: string
   attempts: number
+  at: string | null
   /** 'failed' | 'recovered' | 'needs_you' */
+  status: string
   /** 'retry' | 'connect' | 'budget' | 'view' */
   action: string
   sessionId?: string | null
+}
 
 export type ActivityKind = 'done' | 'needs_you' | 'failed' | 'started'
 
 export interface ActivityEntry {
+  id: string
+  at: string
   kind: ActivityKind
   helperId: Id
   who: string
+  area: string
   what: string
   meta: string
   jobId?: Id
   proposalId?: Id
+}
 
 export interface ActivityPage {
   items: ActivityEntry[]
   nextCursor: string | null
   counts: Record<ActivityKind, number>
+}
+
 // ── sweep/chat ────────────────────────────────────────────────────────────────
 
 /** A file attached to a folder as shared context (GET /v1/folders/{id}/files). */
 export interface FolderFile {
+  id: Id
   folderId: Id
+  name: string
   size: number
   mime?: string | null
   /** True when the file's text was extracted for helpers to read. */
   hasText: boolean
   createdAt?: string | null
+}
 
 export type SharePermission = 'owner' | 'can_talk' | 'can_view'
 
 export interface ShareMember {
   userId: Id
+  name: string
   email: string
   permission: SharePermission
+}
 
 /** People a chat or folder is shared with. */
 export interface Shares {
   members: ShareMember[]
   /** Chats only: 'restricted' (people added) | 'company' (anyone in the company). */
   generalAccess?: 'restricted' | 'company'
+}
 
 export interface SessionStep {
+  id: Id
+  label: string
   status: 'done' | 'running' | 'pending' | 'waiting' | 'failed' | string
   helper: string
   helperArea?: HelperArea | null
+  startedAt?: string | null
   endedAt?: string | null
   durationS?: number | null
+}
 
 export interface SessionOutput {
+  id: Id
+  jobId: Id
+  title: string
+  bodyMd: string
   helper: string
   createdAt?: string | null
+}
 
 /** A tool / browser action a helper took in the chat (Browser panel). */
 export interface SessionActivity {
+  id: Id
+  jobId: Id
+  kind: string
   helper: string
+  action: string
   url?: string | null
+  title?: string | null
   at?: string | null
+}
 
 /** GET /v1/sessions/{id}/results — derived from the chat's jobs. */
 export interface SessionResults {
@@ -1121,9 +1247,11 @@ export interface SessionResults {
   outputs: SessionOutput[]
   activity: SessionActivity[]
   usage: { tokensIn: number; tokensOut: number; costCredits: number }
+}
 
 /** GET /v1/chief/nudges — a proactive prompt from Chief (derived from the inbox). */
 export interface ChiefNudge {
+  id: Id
   body: string
   /** Prefilled question when the person accepts. */
   prompt: string

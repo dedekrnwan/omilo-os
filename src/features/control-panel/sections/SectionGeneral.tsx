@@ -5,9 +5,7 @@ import { Box, Field, Group, IconTile, PageHeader, PageShell, PenButton, Row, use
 import type { SectionProps } from '../ControlPanel'
 import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
 import { useSession } from '../../../app/session'
-import { useCommands } from '../../../app/CommandsProvider'
-import { useCompanySettings, useHandbook, useUpdateCompanySettings } from '../../../app/queries'
-import { useCompanyDetail, useCompanySettings, useUpdateCompanyProfile, useUpdateCompanySettings, useUploadCompanyLogo } from '../../../app/queries'
+import { useCompanyDetail, useCompanySettings, useHandbook, useUpdateCompanyProfile, useUpdateCompanySettings, useUploadCompanyLogo } from '../../../app/queries'
 import { notify } from '../../../ui/ds/Toaster'
 import { errorMessage, fileToDataUrl } from '../format'
 
@@ -50,16 +48,10 @@ function localTime(tz: string): string | null {
 /** pen xVE7r · Control panel · General */
 export function SectionGeneral({ onDialog }: SectionProps) {
   const navigate = useNavigate()
-  const companyId = useUIStore((st) => st.companyId)
-  const company = COMPANIES.find((c) => c.id === companyId) ?? COMPANIES[0]
-  const look = useCompanyLook(company)
-  const { setLook, resetLook } = useAppearance()
-  const sessionCompanyName = useSession((s) => s.company?.name) ?? ''
-  const { data: handbook } = useHandbook()
-  const commands = useCommands()
   const sessionCompany = useSession((s) => s.company)
   const sessionCompanyName = sessionCompany?.name ?? ''
   const updateProfile = useUpdateCompanyProfile()
+  const { data: handbook } = useHandbook()
   const { data: settings } = useCompanySettings()
   const { data: detail } = useCompanyDetail()
   const updateSettings = useUpdateCompanySettings()

@@ -320,7 +320,7 @@ async def test_weekly_digest_monday_8am_once(async_client, outbox):
     m = m[0]
     assert m.subject == "Your week in Omilo · 4 jobs finished"
     assert "4 of 5 jobs succeeded (80%)." in m.html
-    assert "Rp 15rb" in m.html  # 1 000 credits × Rp 15
+    assert "Rp 50rb" in m.html  # 1 000 credits × Rp 50 (billing.catalog.IDR_PER_CREDIT)
     assert chief.name in m.html and m.from_name == "Chief of Staff via Omilo"
 
 
@@ -360,3 +360,23 @@ def test_deliver_is_at_most_once_and_releases_without_smtp(outbox, monkeypatch):
     assert core.deliver(kind="welcome", dedupe_key=key2, to="a@test.example", mail=mail) == "skipped"
     with SessionLocal() as s:
         assert not core.already_sent(s, key2)  # claim released, retried once SMTP exists
+
+
+# ── per-person email preferences (Control panel → Notifications) ────────────
+
+def test_wants_email_prefers_the_persons_own_matrix():
+    from types import SimpleNamespace
+
+    from omilo.notify.core import PREF_DECISION, PREF_WEEKLY, wants_email
+
+    company = SimpleNamespace(settings={"notifications": {"matrix": [
+        {"label": "Needs your decision", "channels": {"email": True}},
+    ]}})
+    off = SimpleNamespace(preferences={"notifications": {"matrix": [
+        {"label": "Needs your decision", "channels": {"email": False}},
+    ]}})
+    unset = SimpleNamespace(preferences={})
+    assert wants_email(company, PREF_DECISION, off) is False      # person said no
+    assert wants_email(company, PREF_DECISION, unset) is True     # company fallback
+    assert wants_email(company, PREF_DECISION) is True            # no person given
+    assert wants_email(SimpleNamespace(settings={}), PREF_WEEKLY, unset) is PREF_WEEKLY[1]  # UI default

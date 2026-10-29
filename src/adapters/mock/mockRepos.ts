@@ -219,12 +219,65 @@ export function createMockRepos(): Repos {
     docs: mockDocsRepos.docs,
     lessons: mockDocsRepos.lessons,
     handbook: mockDocsRepos.handbook,
+
     // ── sweep/inbox-flows ──
     proposals: {
       get: (id: Id) => {
         const p = mockProposals[id]
         return Promise.resolve(p ? { ...p } : null)
       },
+    },
+
+    // ── sweep/chat ──
+    chat: {
+      archived: (areaId: Id | null) =>
+        Promise.resolve(chatMock.archivedSessions.filter((s) => !areaId || s.channelId === areaId)),
+      chiefThreads: () => Promise.resolve([...chatMock.chiefThreads]),
+      chiefNudges: () => Promise.resolve(chatMock.listChiefNudges()),
+      folder: (id: Id) => Promise.resolve(chatMock.folderDetail(id)),
+      folderFiles: (id: Id) => Promise.resolve([...(chatMock.folderFiles[id] ?? [])]),
+      folderShares: (id: Id) => Promise.resolve({ members: [...(chatMock.folderShares[id] ?? [])] }),
+      sessionShares: (id: Id) => Promise.resolve(chatMock.getSessionShares(id)),
+      sessionResults: (id: Id) => Promise.resolve(chatMock.getSessionResults(id)),
+    },
+
+    // ── sweep/control ──
+    controlPanel: {
+      company: () => Promise.resolve({ ...companyDetail }),
+      seats: () => {
+        const used = members.filter((m) => m.role !== 'viewer').length
+        const pending = invites.filter((i) => i.role !== 'viewer').length
+        const total = seatSummary.total ?? 0
+        return Promise.resolve({
+          ...seatSummary,
+          used,
+          pending,
+          viewers: members.length - used,
+          available: Math.max(0, total - used - pending),
+        })
+      },
+      packs: () => Promise.resolve([...creditPacks]),
+      invoices: () => Promise.resolve([...invoices]),
+      ledger: () => Promise.resolve([...ledgerEntries]),
+      payment: (id: string) => Promise.resolve(payments.find((p) => p.id === id) ?? null),
+      invites: () => Promise.resolve([...invites]),
+      channels: () => Promise.resolve(managedChannels.map((c) => ({ ...c }))),
+      audit: (q?: AuditQuery) => {
+        let rows = [...auditEvents]
+        if (q?.type) {
+          const types = q.type.split(',')
+          rows = rows.filter((e) => types.includes(e.type))
+        }
+        if (q?.actor) rows = rows.filter((e) => e.actorType === q.actor)
+        return Promise.resolve({ events: rows, nextCursor: null })
+      },
+      storage: () => Promise.resolve({ ...storageSummary }),
+      exports: () => Promise.resolve([...dataExports]),
+      account: () => Promise.resolve({ ...accountInfo }),
+      preferences: () => Promise.resolve(JSON.parse(JSON.stringify(userPreferences)) as typeof userPreferences),
+      sessions: () => Promise.resolve([...signInSessions]),
+      mcpServers: () => Promise.resolve([...mcpServers]),
+      telemetryOptedOut: () => Promise.resolve(telemetryState.optedOut),
     },
   }
 }
@@ -351,52 +404,6 @@ function sweepMockActivity(q: ActivityQuery): ActivityPage {
       needs_you: mockActivity.filter((a) => a.kind === 'needs_you').length,
       failed: mockActivity.filter((a) => a.kind === 'failed').length,
       started: mockActivity.length,
-    // ── sweep/chat ──
-    chat: {
-      archived: (areaId: Id | null) =>
-        Promise.resolve(chatMock.archivedSessions.filter((s) => !areaId || s.channelId === areaId)),
-      chiefThreads: () => Promise.resolve([...chatMock.chiefThreads]),
-      chiefNudges: () => Promise.resolve(chatMock.listChiefNudges()),
-      folder: (id: Id) => Promise.resolve(chatMock.folderDetail(id)),
-      folderFiles: (id: Id) => Promise.resolve([...(chatMock.folderFiles[id] ?? [])]),
-      folderShares: (id: Id) => Promise.resolve({ members: [...(chatMock.folderShares[id] ?? [])] }),
-      sessionShares: (id: Id) => Promise.resolve(chatMock.getSessionShares(id)),
-      sessionResults: (id: Id) => Promise.resolve(chatMock.getSessionResults(id)),
-    // ── sweep/control ──
-    controlPanel: {
-      company: () => Promise.resolve({ ...companyDetail }),
-      seats: () => {
-        const used = members.filter((m) => m.role !== 'viewer').length
-        const pending = invites.filter((i) => i.role !== 'viewer').length
-        const total = seatSummary.total ?? 0
-        return Promise.resolve({
-          ...seatSummary,
-          used,
-          pending,
-          viewers: members.length - used,
-          available: Math.max(0, total - used - pending),
-        })
-      packs: () => Promise.resolve([...creditPacks]),
-      invoices: () => Promise.resolve([...invoices]),
-      ledger: () => Promise.resolve([...ledgerEntries]),
-      payment: (id: string) => Promise.resolve(payments.find((p) => p.id === id) ?? null),
-      invites: () => Promise.resolve([...invites]),
-      channels: () => Promise.resolve(managedChannels.map((c) => ({ ...c }))),
-      audit: (q?: AuditQuery) => {
-        let rows = [...auditEvents]
-        if (q?.type) {
-          const types = q.type.split(',')
-          rows = rows.filter((e) => types.includes(e.type))
-        }
-        if (q?.actor) rows = rows.filter((e) => e.actorType === q.actor)
-        return Promise.resolve({ events: rows, nextCursor: null })
-      storage: () => Promise.resolve({ ...storageSummary }),
-      exports: () => Promise.resolve([...dataExports]),
-      account: () => Promise.resolve({ ...accountInfo }),
-      preferences: () => Promise.resolve(JSON.parse(JSON.stringify(userPreferences)) as typeof userPreferences),
-      sessions: () => Promise.resolve([...signInSessions]),
-      mcpServers: () => Promise.resolve([...mcpServers]),
-      telemetryOptedOut: () => Promise.resolve(telemetryState.optedOut),
     },
   }
 }

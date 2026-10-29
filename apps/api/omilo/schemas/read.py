@@ -195,6 +195,7 @@ class InboxItemDTO(BaseModel):
 # ── sweep/goals-routines ──
 # GoalDTO gained optional fields (status/target/due/measuredBy/helperIds/
 # period/sessionId/statusSetBy) — see the Goal section above.
+
     # ── sweep/inbox-flows ──
     @field_serializer("read_at", "updated_at")
     def serialize_opt_dt(self, value: Optional[datetime], _info: Any) -> Optional[str]:
@@ -242,6 +243,8 @@ def normalise_inbox_proposal(entry: dict[str, Any], item: Any) -> dict[str, Any]
     out.setdefault("text", getattr(item, "title", ""))
     out.setdefault("due", "")
     return {k: v for k, v in out.items() if v is not None}
+
+
 # ── sweep/chat ────────────────────────────────────────────────────────────────
 # Extended read DTOs for the persisted sidebar (pins/archive/folders/looks).
 # Every new key is optional and omitted when None, so the base TS types stay
@@ -273,3 +276,4 @@ class SessionOutDTO(SessionDTO):
 
     @field_serializer("archived_at")
     def serialize_archived_at(self, value: Optional[datetime], _info: Any) -> Optional[str]:
+        return value.isoformat() if value else None

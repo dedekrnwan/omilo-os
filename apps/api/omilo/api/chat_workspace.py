@@ -670,36 +670,8 @@ def put_folder_shares(
 # ── Areas (looks) ─────────────────────────────────────────────────────────────
 
 
-class PatchChannelBody(BaseModel):
-    name: Optional[str] = None
-    purpose: Optional[str] = None
-    icon: Optional[str] = None
-    color: Optional[str] = None
-
-    @field_validator("name")
-    @classmethod
-    def name_not_blank(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not v.strip():
-            raise ValueError("name must not be empty")
-        return v.strip() if v is not None else v
-
-
-@router.patch("/channels/{channel_id}", response_model=ChannelOutDTO, response_model_by_alias=True, response_model_exclude_none=True)
-def patch_channel(channel_id: str, body: PatchChannelBody, db: Session = Depends(get_tenant_db)) -> dict:
-    row = db.query(Channel).filter(Channel.id == channel_id).first()
-    if row is None:
-        raise _404
-    fields = body.model_fields_set
-    if "name" in fields and body.name:
-        row.name = body.name
-    if "purpose" in fields:
-        row.purpose = body.purpose
-    if "icon" in fields:
-        row.icon = body.icon or None
-    if "color" in fields:
-        row.color = body.color or None
-    db.flush()
-    return channel_out(row)
+# PATCH /channels/{id} (area looks) lives in channels.py — one route for the
+# sidebar and the control panel.
 
 
 # ── Chief nudges ──────────────────────────────────────────────────────────────

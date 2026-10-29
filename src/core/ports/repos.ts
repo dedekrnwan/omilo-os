@@ -190,6 +190,11 @@ export interface Repos {
   docs?: DocsRepo
   lessons?: LessonRepo
   handbook?: HandbookRepo
+  // ── sweep/inbox-flows ── (optional: see FlowRepo note)
+  proposals?: ProposalRepo
+  // ── sweep/chat ──
+  /** Optional so lightweight test repos need not implement it; both adapters do. */
+  chat?: ChatRepo
 }
 
 // ── sweep/docs ──────────────────────────────────────────────────────────────
@@ -228,8 +233,7 @@ export interface HandbookRepo {
   file(name: string): Promise<HandbookFileDetail | null>
   /** GET /v1/handbook/suggestions?file=&status= */
   suggestions(params?: { file?: string; status?: string }): Promise<HandbookSuggestion[]>
-  // ── sweep/inbox-flows ── (optional: see FlowRepo note)
-  proposals?: ProposalRepo
+}
 
 // ── sweep/inbox-flows ──
 
@@ -283,9 +287,7 @@ export interface HelperRepo {
   tools?(id: Id): Promise<HelperTools>
   skillRows?(id: Id): Promise<HelperSkillRow[]>
   files?(id: Id): Promise<HelperFile[]>
-  // ── sweep/chat ──
-  /** Optional so lightweight test repos need not implement it; both adapters do. */
-  chat?: ChatRepo
+}
 
 // ── sweep/chat ────────────────────────────────────────────────────────────────
 

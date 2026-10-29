@@ -23,8 +23,8 @@ from omilo.models.pieces import Piece  # noqa: F401
 from omilo.models.connectors import Connector  # noqa: F401
 from omilo.models.helper_access import HelperAccess  # noqa: F401
 from omilo.models.auth_codes import AuthCode, Invite  # noqa: F401
-from omilo.models.notify import EmailLog, WaitlistEntry  # noqa: F401
 from omilo.models.control import AuditEvent, DataExport, McpServer, UserSession  # noqa: F401
+from omilo.models.notify import EmailLog, WaitlistEntry  # noqa: F401
 
 __all__ = [
     "Company",
@@ -64,12 +64,12 @@ __all__ = [
     "HelperAccess",
     "AuthCode",
     "Invite",
-    "EmailLog",
-    "WaitlistEntry",
     "AuditEvent",
     "DataExport",
     "McpServer",
     "UserSession",
+    "EmailLog",
+    "WaitlistEntry",
 ]
 
 # ── sweep/team-analytics ──
