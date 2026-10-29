@@ -110,19 +110,20 @@ async def test_patch_goal_persists(async_client, company_a):
 
     resp = await async_client.patch(
         f"/v1/goals/{goal_id}",
-        json={"title": "New title", "status": "paused"},
+        json={"title": "New title", "status": "at_risk"},
         headers=_auth(token),
     )
     assert resp.status_code == 200, resp.text
     goal = resp.json()["goal"]
     assert goal["title"] == "New title"
-    assert goal["status"] == "paused"
+    assert goal["status"] == "at_risk"
+    assert goal["statusSetBy"] == "user"
 
     # Round-trip via GET detail.
     get_resp = await async_client.get(f"/v1/goals/{goal_id}", headers=_auth(token))
     assert get_resp.status_code == 200, get_resp.text
     assert get_resp.json()["goal"]["title"] == "New title"
-    assert get_resp.json()["goal"]["status"] == "paused"
+    assert get_resp.json()["goal"]["status"] == "at_risk"
 
 
 @pytest.mark.asyncio

@@ -75,7 +75,8 @@ class FolderDTO(BaseModel):
 # ────────────────────────────────────────────────────────────────────────────
 
 class GoalDTO(BaseModel):
-    """TS: Goal{id,channelId,title,progress}."""
+    """TS: Goal{id,channelId,title,progress,status?,target?,due?,measuredBy?,
+    helperIds?,period?,sessionId?,statusSetBy?}."""
 
     model_config = _CFG
 
@@ -83,6 +84,15 @@ class GoalDTO(BaseModel):
     channel_id: str  # → channelId
     title: str
     progress: int    # required — 0 must survive exclude_none
+    # sweep/goals-routines — optional; omitted when None
+    status: Optional[str] = None          # on_track|at_risk|blocked|needs_you|done
+    target: Optional[str] = None
+    due: Optional[str] = None
+    measured_by: Optional[str] = None     # → measuredBy
+    helper_ids: Optional[list[str]] = None  # → helperIds
+    period: Optional[str] = None          # e.g. "2026-Q4"
+    session_id: Optional[str] = None      # → sessionId
+    status_set_by: Optional[str] = None   # → statusSetBy ('user'|'system')
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -177,3 +187,8 @@ class InboxItemDTO(BaseModel):
     @field_serializer("created_at")
     def serialize_created_at(self, value: datetime, _info: Any) -> str:
         return value.isoformat()
+
+
+# ── sweep/goals-routines ──
+# GoalDTO gained optional fields (status/target/due/measuredBy/helperIds/
+# period/sessionId/statusSetBy) — see the Goal section above.

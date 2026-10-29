@@ -43,6 +43,14 @@ class Routine(IdMixin, TimestampMixin, Base):
     last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     goal_ids: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="[]")
     created_by: Mapped[str] = mapped_column(nullable=False, server_default="operator")
+    # ── sweep/goals-routines (0023) ──
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    allow_chief_shift: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    skip_holidays: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    ask_before_sending: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    dismissed_suggestions: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
 
 
 class RoutineRun(IdMixin, Base):
@@ -62,6 +70,10 @@ class RoutineRun(IdMixin, Base):
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # seconds
     skipped: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     cost_credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # ── sweep/goals-routines (0023) ──
+    trigger: Mapped[str | None] = mapped_column(Text, nullable=True)  # schedule|manual|resend
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)  # up|down
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

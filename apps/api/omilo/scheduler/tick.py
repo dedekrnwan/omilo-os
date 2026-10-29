@@ -18,12 +18,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from croniter import croniter
 from sqlalchemy.orm import Session
 
-from omilo.loop.runner import start_job
-from omilo.models.base import prefixed_id
-from omilo.models.routines import Routine, RoutineRun
+from omilo.models.routines import Routine
+from omilo.scheduler.cadence import _tz, is_holiday, next_fire
+from omilo.scheduler.runs import fire_routine, record_skip
 
 
 def scheduler_tick(db: Session, now: datetime) -> int:
@@ -41,6 +40,17 @@ def scheduler_tick(db: Session, now: datetime) -> int:
     """
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+
+    # Auto-resume routines whose pause window ended (paused_until <= now).
+    for r in (
+        db.query(Routine)
+        .filter(Routine.paused.is_(True), Routine.paused_until.isnot(None), Routine.paused_until <= now)
+        .all()
+    ):
+        r.paused = False
+        r.paused_until = None
+        r.next_at = next_fire(r, now)
+    db.flush()
 
     # Find all due, enabled, non-paused routines visible in this session.
     # RLS restricts to the company whose GUC is set on this db session.
@@ -69,55 +79,18 @@ def scheduler_tick(db: Session, now: datetime) -> int:
         # forward and a second tick with the same `now` finds next_at > now → skips.
         # If start_job raises, the transaction rolls back (including the next_at
         # advance), so the routine remains due and will be retried on the next tick.
-        cron_expr = routine.cron or "0 9 * * *"
-        tz = routine.timezone or "UTC"
-        try:
-            import pytz  # type: ignore[import-untyped]
-            tz_obj = pytz.timezone(tz)
-        except Exception:
-            import zoneinfo
-            tz_obj = zoneinfo.ZoneInfo(tz)
-
-        # croniter needs a naive datetime in the routine's timezone
-        now_in_tz = now.astimezone(tz_obj)
-        now_naive = now_in_tz.replace(tzinfo=None)
-        cit = croniter(cron_expr, now_naive)
-        next_naive = cit.get_next(datetime)
-        # Convert back to UTC-aware
-        try:
-            next_aware = tz_obj.localize(next_naive)  # pytz
-        except AttributeError:
-            next_aware = next_naive.replace(tzinfo=tz_obj)  # zoneinfo
-        next_utc = next_aware.astimezone(timezone.utc)
-
-        # Advance next_at and record last_at
-        routine.next_at = next_utc
+        due_at = routine.next_at or now
+        routine.next_at = next_fire(routine, now)
         routine.last_at = now
         db.flush()
 
-        # Fire: create a Job via the shared runner
-        job = start_job(
-            db,
-            company_id=routine.company_id,
-            helper_id=routine.helper_id,
-            origin="routine",
-            brief=routine.instructions,
-        )
+        # Skip public holidays when the routine asks for it (records a skip).
+        local_day = due_at.astimezone(_tz(routine.timezone)).date()
+        if routine.skip_holidays and is_holiday(local_day):
+            record_skip(db, routine, due_at, "a public holiday")
+            continue
 
-        # Record the run
-        run = RoutineRun(
-            id=prefixed_id("rrn"),
-            company_id=routine.company_id,
-            routine_id=routine.id,
-            job_id=job.id,
-            when=now,
-            outcome="ok",
-            skipped=False,
-            cost_credits=job.cost_credits or 0,
-        )
-        db.add(run)
-        db.flush()
-
+        fire_routine(db, routine, trigger="schedule", when=now)
         fired += 1
 
     return fired

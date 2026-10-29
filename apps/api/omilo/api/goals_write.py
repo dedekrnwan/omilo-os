@@ -1,16 +1,23 @@
 """Goals write endpoints: create, detail, replan.
 
 Endpoints:
-  POST /goals        {channel_id, title, target, due?, autonomy_override?}
-                     → {goal: GoalDTO-extended, job_count: int}
-                     Creates a Goal (status=active, owner=Chief), then runs
-                     plan_goal() to spawn a Chief plan Job + delegated child Jobs.
+  POST /goals        {channel_id, title, target, due?, autonomy_override?,
+                      measured_by?, helper_ids?, period?, draft_key_results?}
+                     → {goal: GoalDTO, job_count: int}
+                     Creates a Goal (owner=Chief). When draft_key_results
+                     (default true) runs plan_goal() to spawn a Chief plan Job
+                     + delegated child Jobs.
+  PATCH /goals/{id}  {title?,target?,due?,status?,channel_id?,measured_by?,
+                      helper_ids?,period?}  → {goal}
+                     status ∈ on_track|at_risk|blocked|needs_you|done marks a
+                     user override; status='auto' hands it back to the system.
+  POST /goals/{id}/session → SessionDTO (the goal's chat session; created once)
   GET  /goals/{id}  → {goal, jobs[], proposals[]}   (404 for other-tenant)
   POST /goals/{id}/replan → {job_id}   (re-runs plan_goal; 404 for other-tenant)
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,9 +28,10 @@ from omilo.loop.runner import start_job
 from omilo.models.agents import Helper
 from omilo.models.approvals import Proposal
 from omilo.models.base import prefixed_id
+from omilo.models.chat import ChatSession
 from omilo.models.execution import Job
 from omilo.models.workspace import Goal
-from omilo.schemas.read import GoalDTO
+from omilo.schemas.read import GoalDTO, SessionDTO
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
 
@@ -36,9 +44,13 @@ router = APIRouter(tags=["goals-write"])
 class CreateGoalBody(BaseModel):
     channel_id: str
     title: str
-    target: str
+    target: str = ""
     due: Optional[str] = None
     autonomy_override: Optional[str] = None
+    measured_by: Optional[str] = None
+    helper_ids: Optional[list[str]] = None
+    period: Optional[str] = None
+    draft_key_results: bool = True
 
 
 class PatchGoalBody(BaseModel):
@@ -47,6 +59,102 @@ class PatchGoalBody(BaseModel):
     due: Optional[str] = None
     status: Optional[str] = None
     channel_id: Optional[str] = None
+    measured_by: Optional[str] = None
+    helper_ids: Optional[list[str]] = None
+    period: Optional[str] = None
+
+
+# ── Goal status (sweep/goals-routines) ────────────────────────────────────────
+
+GOAL_STATUSES = ("on_track", "at_risk", "blocked", "needs_you", "done")
+
+
+def _parse_due(due: str | None) -> date | None:
+    if not due:
+        return None
+    try:
+        return date.fromisoformat(due.strip()[:10])
+    except ValueError:
+        return None
+
+
+def period_for(d: date) -> str:
+    return f"{d.year}-Q{(d.month - 1) // 3 + 1}"
+
+
+def derive_goal_status(goal: Goal, jobs: list[Job], pending_proposals: int) -> str:
+    """Effective status. A user override wins; otherwise derived:
+
+    done      — progress ≥ 100 (or stored 'done')
+    needs_you — a proposal from one of the goal's jobs awaits approval
+    blocked   — the latest delegated work failed/was blocked and nothing is running
+    at_risk   — past due, or due within 14 days with progress < 50
+    on_track  — everything else
+    """
+    if goal.status_set_by == "user" and goal.status in GOAL_STATUSES:
+        return goal.status
+    if goal.progress >= 100 or goal.status == "done":
+        return "done"
+    if pending_proposals > 0:
+        return "needs_you"
+    work = [j for j in jobs if j.origin == "delegation"] or jobs
+    if work:
+        bad = [j for j in work if j.status in ("failed", "blocked", "paused_offline")]
+        active = [j for j in work if j.status in ("queued", "running", "waiting")]
+        if bad and not active and len(bad) >= max(1, len(work) // 2):
+            return "blocked"
+    due = _parse_due(goal.due)
+    if due is not None:
+        today = datetime.now(timezone.utc).date()
+        if due < today or ((due - today).days <= 14 and goal.progress < 50):
+            return "at_risk"
+    return "on_track"
+
+
+def goal_dtos(db: Session, goals: list[Goal]) -> list[dict[str, Any]]:
+    """GoalDTO dicts (camelCase, None omitted) with the derived status."""
+    if not goals:
+        return []
+    ids = [g.id for g in goals]
+    jobs = db.query(Job).filter(Job.goal_id.in_(ids)).all()
+    jobs_by_goal: dict[str, list[Job]] = {}
+    for j in jobs:
+        jobs_by_goal.setdefault(j.goal_id, []).append(j)
+    pending: dict[str, int] = {}
+    job_goal = {j.id: j.goal_id for j in jobs}
+    if job_goal:
+        for p in (
+            db.query(Proposal)
+            .filter(Proposal.job_id.in_(list(job_goal)), Proposal.status == "pending")
+            .all()
+        ):
+            gid = job_goal.get(p.job_id)
+            pending[gid] = pending.get(gid, 0) + 1
+    out = []
+    for g in goals:
+        dto = GoalDTO(
+            id=g.id,
+            channel_id=g.channel_id,
+            title=g.title,
+            progress=g.progress,
+            status=derive_goal_status(g, jobs_by_goal.get(g.id, []), pending.get(g.id, 0)),
+            target=g.target or None,
+            due=g.due,
+            measured_by=g.measured_by,
+            helper_ids=list(g.helper_ids or []),
+            period=g.period,
+            session_id=g.session_id,
+            status_set_by=g.status_set_by,
+        )
+        out.append(dto.model_dump(by_alias=True, exclude_none=True))
+    return out
+
+
+def goal_dto(db: Session, goal: Goal) -> dict[str, Any]:
+    d = goal_dtos(db, [goal])[0]
+    d["autonomyOverride"] = goal.autonomy_override
+    d["ownerHelperId"] = goal.owner_helper_id
+    return d
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -136,6 +244,9 @@ def plan_goal(db: Session, goal: Goal, chief: Helper) -> list[Job]:
 
     # ── Delegate to workers (or Chief if no workers) ──────────────────────────
     workers = _get_worker_helpers(db, company_id)
+    if goal.helper_ids:
+        picked = [w for w in workers if w.id in set(goal.helper_ids)]
+        workers = picked or workers
     assignees: list[Helper] = workers if workers else [chief]
 
     # Decompose target into 1–3 steps deterministically (word-count heuristic)
@@ -183,16 +294,7 @@ def _goal_detail_response(db: Session, goal: Goal) -> dict[str, Any]:
             .all()
         )
 
-    goal_data = {
-        "id": goal.id,
-        "channelId": goal.channel_id,
-        "title": goal.title,
-        "target": goal.target,
-        "status": goal.status,
-        "progress": goal.progress,
-        "autonomyOverride": goal.autonomy_override,
-        "ownerHelperId": goal.owner_helper_id,
-    }
+    goal_data = goal_dto(db, goal)
 
     jobs_data = [
         {
@@ -235,47 +337,44 @@ def create_goal(
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict[str, Any]:
-    """Create a Goal and kick off Chief planning + delegation fan-out.
+    """Create a Goal and (optionally) kick off Chief planning + delegation.
 
     Steps:
     a. Find the company's Chief Helper (409 if missing).
-    b. Create the Goal (status=active, owner=Chief, progress=0).
-    c. Run plan_goal() to spawn plan + delegated Jobs.
+    b. Create the Goal (owner=Chief, progress=0, status derived).
+    c. When ``draft_key_results`` (default) run plan_goal() to spawn plan +
+       delegated Jobs; otherwise the goal is created without any work.
     d. Return {goal, job_count}.
     """
-    # ── a. Chief ──────────────────────────────────────────────────────────────
     chief = _get_chief(db, ctx.company_id)
 
-    # ── b. Create Goal ────────────────────────────────────────────────────────
+    due_d = _parse_due(body.due)
+    period = body.period or period_for(due_d or datetime.now(timezone.utc).date())
     goal = Goal(
         id=prefixed_id("goal"),
         company_id=ctx.company_id,
         channel_id=body.channel_id,
         title=body.title,
-        target=body.target,
-        status="active",
+        target=body.target or "",
+        status="on_track",
+        status_set_by=None,
         autonomy_override=body.autonomy_override,
         owner_helper_id=chief.id,
         progress=0,
+        due=body.due or None,
+        measured_by=body.measured_by or None,
+        helper_ids=body.helper_ids or [],
+        period=period,
     )
     db.add(goal)
     db.flush()
 
-    # ── c. Plan + delegate ────────────────────────────────────────────────────
-    jobs = plan_goal(db, goal, chief)
+    jobs: list[Job] = []
+    if body.draft_key_results:
+        jobs = plan_goal(db, goal, chief)
 
-    # ── d. Return ─────────────────────────────────────────────────────────────
-    goal_dto = {
-        "id": goal.id,
-        "channelId": goal.channel_id,
-        "title": goal.title,
-        "target": goal.target,
-        "status": goal.status,
-        "progress": goal.progress,
-        "ownerHelperId": goal.owner_helper_id,
-    }
     return {
-        "goal": goal_dto,
+        "goal": goal_dto(db, goal),
         "job_count": len(jobs),
     }
 
@@ -303,11 +402,10 @@ def patch_goal(
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict[str, Any]:
-    """Update a Goal's editable fields (title, target, status, channel_id).
+    """Update a Goal's editable fields. 404 for another tenant's goal (RLS).
 
-    ``due`` is accepted for frontend-contract compatibility but not persisted
-    (the Goal model has no due column). 404 for another tenant's goal (RLS).
-    Returns the updated goal DTO.
+    ``status`` must be one of GOAL_STATUSES (a user override) or ``auto``
+    (clear the override; status is derived again).
     """
     goal = db.query(Goal).filter(Goal.id == goal_id).first()
     if goal is None:
@@ -318,24 +416,62 @@ def patch_goal(
     if body.target is not None:
         goal.target = body.target
     if body.status is not None:
-        goal.status = body.status
+        if body.status == "auto":
+            goal.status_set_by = None
+            goal.status = "on_track"
+        elif body.status in GOAL_STATUSES:
+            goal.status = body.status
+            goal.status_set_by = "user"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"status must be one of {', '.join(GOAL_STATUSES)} or 'auto'.",
+            )
     if body.channel_id is not None:
         goal.channel_id = body.channel_id
+    if body.due is not None:
+        goal.due = body.due or None
+    if body.measured_by is not None:
+        goal.measured_by = body.measured_by or None
+    if body.helper_ids is not None:
+        goal.helper_ids = body.helper_ids
+    if body.period is not None:
+        goal.period = body.period or None
 
     db.flush()
 
-    return {
-        "goal": {
-            "id": goal.id,
-            "channelId": goal.channel_id,
-            "title": goal.title,
-            "target": goal.target,
-            "status": goal.status,
-            "progress": goal.progress,
-            "autonomyOverride": goal.autonomy_override,
-            "ownerHelperId": goal.owner_helper_id,
-        }
-    }
+    return {"goal": goal_dto(db, goal)}
+
+
+@router.post("/goals/{goal_id}/session", status_code=status.HTTP_200_OK)
+def open_goal_session(
+    goal_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Return the goal's chat session, creating it once on first open."""
+    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    if goal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found.")
+    session = None
+    if goal.session_id:
+        session = db.query(ChatSession).filter(ChatSession.id == goal.session_id).first()
+    if session is None:
+        session = ChatSession(
+            id=prefixed_id("ses"),
+            company_id=ctx.company_id,
+            title=goal.title,
+            channel_id=goal.channel_id,
+            goal=goal.title,
+            updated="now",
+        )
+        db.add(session)
+        db.flush()
+        goal.session_id = session.id
+        db.flush()
+    return SessionDTO.model_validate(session, from_attributes=True).model_dump(
+        by_alias=True, exclude_none=True
+    )
 
 
 @router.delete("/goals/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -20,6 +20,7 @@ from omilo.models.base import prefixed_id
 from omilo.models.workspace import Channel, Folder, Goal
 from omilo.models.chat import ChatSession
 from omilo.schemas.read import ChannelDTO, FolderDTO, GoalDTO, SessionDTO
+from omilo.api.goals_write import goal_dtos
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
 
@@ -76,8 +77,8 @@ def list_channel_folders(channel_id: str, db: Session = Depends(get_tenant_db)) 
     response_model_by_alias=True,
 )
 def list_channel_goals(channel_id: str, db: Session = Depends(get_tenant_db)) -> list[dict]:
-    rows = db.query(Goal).filter(Goal.channel_id == channel_id).all()
-    return [GoalDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+    rows = db.query(Goal).filter(Goal.channel_id == channel_id).order_by(Goal.created_at.asc()).all()
+    return goal_dtos(db, rows)
 
 
 @router.get(

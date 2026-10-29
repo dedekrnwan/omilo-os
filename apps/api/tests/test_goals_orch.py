@@ -161,7 +161,8 @@ class TestCreateGoal:
         goal = data["goal"]
         assert goal["id"].startswith("goal_"), f"Bad id: {goal['id']}"
         assert goal["title"] == "Ship X"
-        assert goal["status"] == "active"
+        # Status is derived (fake engine finishes the delegated jobs inline).
+        assert goal["status"] in ("on_track", "at_risk", "blocked", "needs_you", "done")
 
     @pytest.mark.asyncio
     async def test_create_goal_owner_is_chief(

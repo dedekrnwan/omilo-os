@@ -5,7 +5,8 @@ Helper is deferred to P1 (YAGNI for P0).
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer
+from sqlalchemy import Boolean, ForeignKey, Integer, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omilo.db import Base
@@ -61,3 +62,10 @@ class Goal(IdMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(nullable=False, server_default="active")
     autonomy_override: Mapped[str | None] = mapped_column(nullable=True)
     owner_helper_id: Mapped[str | None] = mapped_column(nullable=True)
+    # ── sweep/goals-routines (0023) ──
+    due: Mapped[str | None] = mapped_column(Text, nullable=True)
+    measured_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    helper_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    period: Mapped[str | None] = mapped_column(Text, nullable=True)  # e.g. "2026-Q4"
+    session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status_set_by: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'user'|'system'

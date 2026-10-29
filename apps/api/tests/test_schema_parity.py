@@ -120,6 +120,20 @@ class TestGoalDTO:
         assert "progress" in dumped
         assert dumped["progress"] == 0
 
+    def test_optional_sweep_fields(self):
+        """sweep/goals-routines optional fields use camelCase keys."""
+        dto = GoalDTO(
+            id="goal_1", channel_id="ch_1", title="Launch v2", progress=50,
+            status="on_track", target="v2 live", due="2026-12-31",
+            measured_by="Signups", helper_ids=["hlp_1"], period="2026-Q4",
+            session_id="ses_1", status_set_by="user",
+        )
+        dumped = dto.model_dump(by_alias=True, exclude_none=True)
+        assert set(dumped.keys()) == self.EXPECTED_KEYS | {
+            "status", "target", "due", "measuredBy", "helperIds", "period",
+            "sessionId", "statusSetBy",
+        }
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # Session (→ SessionDTO)
