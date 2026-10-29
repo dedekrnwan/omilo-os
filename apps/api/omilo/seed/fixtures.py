@@ -364,6 +364,19 @@ _you   = {"kind": "you",    "name": "You"}
 _sales = {"kind": "helper", "name": "Sales",  "role": "Sales agent",      "area": "sales"}
 
 # ---------------------------------------------------------------------------
+# Helpers (DB rows) — the demo team. A Chief (is_chief) is REQUIRED: goal-create,
+# chat turns, and flow publish all 409 without one. The others populate the Team
+# roster. areas/channel_ids map onto the CHANNELS above.
+# ---------------------------------------------------------------------------
+
+HELPERS = [
+    {"id": "hlp-chief",  "name": "Chief",  "role": "Chief of Staff",    "area": "general",   "is_chief": True,  "channel_ids": ["ch-general"]},
+    {"id": "hlp-dev",    "name": "Dev",    "role": "Engineering agent", "area": "dev",       "is_chief": False, "channel_ids": ["ch-engineering"]},
+    {"id": "hlp-growth", "name": "Growth", "role": "Marketing agent",   "area": "marketing", "is_chief": False, "channel_ids": ["ch-marketing"]},
+    {"id": "hlp-sales",  "name": "Sales",  "role": "Sales agent",       "area": "sales",     "is_chief": False, "channel_ids": ["ch-business"]},
+]
+
+# ---------------------------------------------------------------------------
 # Messages (16)
 # ---------------------------------------------------------------------------
 

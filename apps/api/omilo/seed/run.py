@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from omilo.auth.passwords import hash_password
 from omilo.billing.catalog import seed_plans
 from omilo.db import SessionLocal
+from omilo.models.agents import Helper
 from omilo.models.chat import ChatSession, Message
 from omilo.models.inbox import InboxItem
 from omilo.models.tenancy import Company, Member, User
@@ -31,6 +32,7 @@ from omilo.seed.fixtures import (
     DEMO_USER,
     FOLDERS,
     GOALS,
+    HELPERS,
     INBOX_ITEMS,
     MESSAGES,
     SESSIONS,
@@ -61,6 +63,9 @@ def seed_demo() -> Company:
                     name=DEMO_COMPANY["name"],
                     color=DEMO_COMPANY["color"],
                     timezone=DEMO_COMPANY["timezone"],
+                    # Demo workspace is pre-onboarded so sign-in lands in the app
+                    # (not the onboarding wizard) — e.g. for E2E tests.
+                    onboarded_at=datetime.now(timezone.utc),
                 )
             )
 
@@ -108,6 +113,27 @@ def seed_demo() -> Company:
                     )
                 )
             # Flush so FKs from goals/folders/sessions are satisfied.
+            db.flush()
+
+            # ── Helpers ──────────────────────────────────────────────────────
+            # The demo team. A Chief (is_chief) is REQUIRED — goal-create, chat
+            # turns, and flow publish all 409 without one; the rest populate the
+            # Team roster.
+            for row in HELPERS:
+                db.merge(
+                    Helper(
+                        id=row["id"],
+                        company_id=DEMO_CMP_ID,
+                        name=row["name"],
+                        area=row["area"],
+                        role=row["role"],
+                        is_chief=row["is_chief"],
+                        engine={"type": "fake"},
+                        permissions=[],
+                        status="active",
+                        channel_ids=row["channel_ids"],
+                    )
+                )
             db.flush()
 
             # ── Goals ────────────────────────────────────────────────────────
@@ -212,6 +238,7 @@ def main() -> None:
     print(f"  company   : {company.id} — {company.name}")
     print(f"  user      : {DEMO_USER['email']}")
     print(f"  channels  : {len(CHANNELS)}")
+    print(f"  helpers   : {len(HELPERS)}")
     print(f"  goals     : {len(GOALS)}")
     print(f"  folders   : {len(FOLDERS)}")
     print(f"  sessions  : {len(SESSIONS)}")

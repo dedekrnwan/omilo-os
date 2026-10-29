@@ -19,6 +19,7 @@ import pytest
 from sqlalchemy import func, select, text
 
 from omilo.db import SessionLocal
+from omilo.models.agents import Helper
 from omilo.models.tenancy import Company, Member, User
 from omilo.models.workspace import Channel, Folder, Goal
 from omilo.models.chat import ChatSession, Message
@@ -30,6 +31,7 @@ from tests.utils import run_alembic
 # ---------------------------------------------------------------------------
 
 EXPECTED_CHANNELS = 4
+EXPECTED_HELPERS  = 4
 EXPECTED_GOALS    = 10
 EXPECTED_FOLDERS  = 10
 EXPECTED_SESSIONS = 32
@@ -128,6 +130,30 @@ def test_channel_count():
     assert _count(Channel) == EXPECTED_CHANNELS, (
         f"Expected {EXPECTED_CHANNELS} channels, got {_count(Channel)}"
     )
+
+
+def test_helper_count():
+    from omilo.seed.run import seed_demo
+    seed_demo()
+    assert _count(Helper) == EXPECTED_HELPERS, (
+        f"Expected {EXPECTED_HELPERS} helpers, got {_count(Helper)}"
+    )
+
+
+def test_seed_demo_creates_a_chief():
+    """A Chief helper is REQUIRED — goal-create / chat / flow-publish 409 without one."""
+    from omilo.seed.run import seed_demo
+    seed_demo()
+    with SessionLocal() as db:
+        chiefs = db.scalars(
+            select(Helper).where(
+                Helper.company_id == DEMO_CMP_ID,
+                Helper.is_chief.is_(True),
+                Helper.status == "active",
+            )
+        ).all()
+    assert len(chiefs) == 1, f"Expected exactly 1 active Chief, got {len(chiefs)}"
+    assert chiefs[0].name == "Chief"
 
 
 def test_goal_count():
@@ -263,6 +289,7 @@ def test_seed_idempotency():
     seed_demo()
 
     assert _count(Channel) == EXPECTED_CHANNELS
+    assert _count(Helper) == EXPECTED_HELPERS
     assert _count(Goal) == EXPECTED_GOALS
     assert _count(Folder) == EXPECTED_FOLDERS
     assert _count(ChatSession) == EXPECTED_SESSIONS
