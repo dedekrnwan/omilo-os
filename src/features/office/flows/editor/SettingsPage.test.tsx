@@ -1,6 +1,6 @@
 // ── Flow settings persistence ─────────────────────────────────────────────────
-// Proves Save wires the store-local saveSettings AND persists the
-// backend-supported fields (title, areas) via updateFlow (PATCH /v1/flows/{id}).
+// Proves Save wires the store-local saveSettings AND persists title, areas,
+// enabled AND the full settings object via updateFlow (PATCH /v1/flows/{id}).
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -72,5 +72,15 @@ describe('Flow settings — Save persists backend-supported fields', () => {
     expect(id).toBe(liveId)
     expect(input.title).toBe('Renamed flow')
     expect(Array.isArray(input.areas)).toBe(true)
+
+    // The remaining form (budget, approvals, quiet hours, notifications…) now
+    // persists inside the deep-merged `settings` payload — and excludes the
+    // fields that map to dedicated flow columns (name/areaId).
+    expect(input.settings).toBeTypeOf('object')
+    const settings = input.settings as Record<string, unknown>
+    expect(settings).not.toHaveProperty('name')
+    expect(settings).not.toHaveProperty('areaId')
+    expect(settings).toHaveProperty('monthlyBudget')
+    expect(settings).toHaveProperty('notifyFail')
   })
 })

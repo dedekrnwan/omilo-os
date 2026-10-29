@@ -326,6 +326,8 @@ export interface Flow {
   edges?: unknown[]
   channelIds?: string[]
   pollCursor?: unknown | null
+  /** Free-form flow settings (budget, approvals, quiet hours, notifications…), deep-merged server-side. */
+  settings?: Record<string, unknown>
 }
 
 export interface FlowRun {

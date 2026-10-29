@@ -143,15 +143,26 @@ export function FlowSettingsPage() {
   const updateFlow = useUpdateFlow()
   const v = f.settings
 
-  // Save persists the fields the backend has columns for (title, areas, enabled)
-  // via PATCH /v1/flows/{id}. The rest of this form (budget, approvals, quiet
-  // hours, notifications) has no backend column yet, so those stay store-local
-  // until the flow schema gains them.
+  // Serialize the settings-only fields (everything except name/areaId, which
+  // map to the flow's title/areas columns) into the JSONB `settings` payload.
+  function settingsPayload(s: FlowSettings): Record<string, unknown> {
+    const { name: _name, areaId: _areaId, ...rest } = s
+    return rest
+  }
+
+  // Save persists title/areas/enabled as flow columns and the remaining form
+  // (owner, budget, approvals, quiet hours, notifications…) into the flow's
+  // deep-merged `settings` JSONB — all via PATCH /v1/flows/{id}.
   function saveSettings() {
     st.saveSettings(flowId)
     updateFlow.mutate({
       id: flowId,
-      input: { title: v.name, areas: v.areaId ? [v.areaId] : [], enabled: f.enabled },
+      input: {
+        title: v.name,
+        areas: v.areaId ? [v.areaId] : [],
+        enabled: f.enabled,
+        settings: settingsPayload(v),
+      },
     })
   }
 
@@ -169,6 +180,20 @@ export function FlowSettingsPage() {
   }
   const set = (p: Partial<FlowSettings>) => st.setSettings(flowId, p)
   const dirty = JSON.stringify(v) !== JSON.stringify(f.savedSettings)
+
+  // Hydrate the Settings form from the flow's persisted `settings` once the
+  // GET resolves (unless the user is mid-edit).
+  const hydratedSettingsRef = useRef(false)
+  useEffect(() => {
+    if (hydratedSettingsRef.current || dirty) return
+    const s = liveFlow?.settings
+    if (!s) return
+    hydratedSettingsRef.current = true
+    st.setSettings(flowId, s as Partial<FlowSettings>)
+    st.saveSettings(flowId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveFlow])
+
   const [active, setActive] = useState('general')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [restored, setRestored] = useState<string | null>(null)
