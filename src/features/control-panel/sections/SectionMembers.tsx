@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Crown, Ellipsis, Mail, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
+import { Crown, Ellipsis, Pencil, Plus, Server, Trash2, UserPlus } from 'lucide-react'
 import { Chip, Field, Group, Initials, PageHeader, PageShell, PenButton, lineBottom } from '../ControlPanelShared'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 import type { SectionProps } from '../ControlPanel'
@@ -121,7 +121,6 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
   // Local state: role per person (keyed by email) — initialised from API data
   const [roles, setRoles] = useState<Record<string, string>>({})
   const [removedEmails, setRemovedEmails] = useState<Set<string>>(new Set())
-  const [pendingRole, setPendingRole] = useState<RoleOption>('Member')
 
   // Merge API rows with local overrides and removals
   const members = useMemo<PersonRow[]>(() => {
@@ -240,26 +239,6 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
             />
           </div>
         ))}
-        <div className="flex w-full items-center gap-[14px] px-[14px] py-[10px]">
-          <div className="flex min-w-0 flex-1 items-center gap-[10px]">
-            <span className="flex size-[28px] shrink-0 items-center justify-center rounded-full outline-[1.5px] -outline-offset-[1.5px] outline-wire-strong">
-              <Mail size={13} aria-hidden className="text-muted" />
-            </span>
-            <div className="flex flex-col gap-px">
-              <span className="text-[13px] font-medium text-ink">andi@saga.co.id</span>
-              <span className="text-[11.5px] text-muted">Invite sent · expires in 6 days</span>
-            </div>
-          </div>
-          <span className="w-[190px] text-[12px] text-ink-2">Business</span>
-          <div className="w-[150px]">
-            <RoleDropdown role={pendingRole} onChange={setPendingRole} />
-          </div>
-          <MemberMoreMenu
-            name="andi@saga.co.id"
-            onEdit={() => notify('Editing invite for andi@saga.co.id…')}
-            onRemove={() => notify('Invite cancelled')}
-          />
-        </div>
       </div>
 
       <Group title="What each role can do">
