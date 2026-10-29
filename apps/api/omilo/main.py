@@ -37,6 +37,8 @@ from omilo.auth.router import me_router, router as auth_router
 from omilo.auth.google import router as google_auth_router
 from omilo.realtime.sse import router as sse_router
 from omilo.realtime.ws import router as ws_router
+# ── sweep/chat ──
+from omilo.api.chat_workspace import router as chat_workspace_router
 
 
 def create_app() -> FastAPI:
@@ -127,6 +129,8 @@ def create_app() -> FastAPI:
     app.include_router(mcp_external_router, prefix="/v1")
     # Realtime (Task 6)
     app.include_router(ws_router, prefix="/v1")
+    # ── sweep/chat ──
+    app.include_router(chat_workspace_router, prefix="/v1")
     # SSE event bus (Task 8)
     app.include_router(sse_router, prefix="/v1")
     # Doit payment gateway webhooks (Task 3 P5a)

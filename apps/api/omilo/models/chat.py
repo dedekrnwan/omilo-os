@@ -7,7 +7,9 @@ Note: the class is named `ChatSession` to avoid clashing with
 """
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +37,23 @@ class ChatSession(IdMixin, TimestampMixin, Base):
     goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     # participants: [{name, area}] stored as JSONB
     participants: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # ── sweep/chat (0023) ──
+    # 'chat' (normal, company-visible) | 'chief_private' (owner-only Chief DM thread)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="chat")
+    # The member who started the chat (owner of chief_private threads).
+    owner_user_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    goal_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Model id picked in the composer (e.g. "opus-5-5"); informational.
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Pins are per user: list of user ids that pinned this chat.
+    pinned_by: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Soft delete — hidden everywhere once set.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sharing: [{user_id, permission}] + general access ('restricted' | 'company').
+    shares: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    general_access: Mapped[str] = mapped_column(Text, nullable=False, server_default="restricted")
 
 
 class Message(IdMixin, TimestampMixin, Base):

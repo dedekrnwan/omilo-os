@@ -22,6 +22,8 @@ from omilo.models.base import prefixed_id
 from omilo.models.chat import ChatSession, Message
 from omilo.models.execution import Job, Report
 from omilo.schemas.read import MessageDTO, SessionDTO
+from omilo.schemas.read import SessionOutDTO  # sweep/chat
+from omilo.models.workspace import Folder, Goal  # sweep/chat
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
 
@@ -36,6 +38,10 @@ class CreateSessionBody(BaseModel):
     goal_id: Optional[str] = None
     title: Optional[str] = None
     scope: Optional[str] = "chat"
+    # ── sweep/chat ──
+    folder_id: Optional[str] = None
+    model: Optional[str] = None
+    kind: Optional[str] = "chat"  # 'chat' | 'chief_private'
 
 
 class PostMessageBody(BaseModel):
@@ -55,10 +61,10 @@ class PostMessageResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _session_dto(row: ChatSession) -> dict:
-    return SessionDTO.model_validate(row, from_attributes=True).model_dump(
-        by_alias=True, exclude_none=True
-    )
+def _session_dto(row: ChatSession, user_id: str | None = None) -> dict:
+    from omilo.api.chat_workspace import session_out  # sweep/chat
+
+    return session_out(row, user_id)
 
 
 def _message_dto(row: Message) -> dict:
@@ -75,8 +81,10 @@ def _pick_helper(db: Session, session: ChatSession, company_id: str) -> Helper:
        contains it (first match).
     2. Fall back to the company's Chief (is_chief=True, status=active).
     3. 409 if no helper is found.
+
+    Private Chief threads (kind='chief_private') always go to the Chief.
     """
-    if session.channel_id:
+    if session.channel_id and getattr(session, "kind", "chat") != "chief_private":
         # JSONB contains operator: use Python-side filter (RLS scopes to company)
         candidates = (
             db.query(Helper)
@@ -164,8 +172,9 @@ def _persist_assistant_message(
 
 @router.post(
     "/sessions",
-    response_model=SessionDTO,
+    response_model=SessionOutDTO,
     response_model_by_alias=True,
+    response_model_exclude_none=True,
     status_code=status.HTTP_201_CREATED,
 )
 def create_session(
@@ -174,17 +183,42 @@ def create_session(
     ctx: RequestContext = Depends(get_context),
 ) -> dict:
     """Create a new chat session for the authenticated company."""
-    now = datetime.now(timezone.utc)
+    kind = body.kind or "chat"
+    if kind not in ("chat", "chief_private"):
+        raise HTTPException(status_code=422, detail="kind must be 'chat' or 'chief_private'.")
+    channel_id = body.channel_id
+    folder_id = body.folder_id
+    if folder_id:
+        folder = db.query(Folder).filter(Folder.id == folder_id).first()
+        if folder is None:
+            raise HTTPException(status_code=422, detail="Unknown folder.")
+        channel_id = channel_id or folder.channel_id
+    goal_label = None
+    if body.goal_id:
+        goal = db.query(Goal).filter(Goal.id == body.goal_id).first()
+        if goal is None:
+            raise HTTPException(status_code=422, detail="Unknown goal.")
+        goal_label = goal.title
+    if kind == "chief_private":
+        # Private Chief threads live outside every area/folder.
+        channel_id = None
+        folder_id = None
     session = ChatSession(
         id=prefixed_id("ses"),
         company_id=ctx.company_id,
         title=body.title or "New chat",
-        channel_id=body.channel_id,
+        channel_id=channel_id,
+        folder_id=folder_id,
+        goal_id=body.goal_id if goal_label else None,
+        goal=goal_label,
+        model=body.model,
+        kind=kind,
+        owner_user_id=ctx.user_id,
         updated="now",
     )
     db.add(session)
     db.flush()
-    return _session_dto(session)
+    return _session_dto(session, ctx.user_id)
 
 
 @router.post(
@@ -208,9 +242,13 @@ def post_message(
     f. Return {message: <operator MessageDTO>, job_id: <job.id>}.
     """
     # ── a. Load session (RLS already scopes to ctx.company_id) ───────────────
-    session = db.query(ChatSession).filter(ChatSession.id == session_id).first()
+    from omilo.api.chat_workspace import load_visible_session  # sweep/chat
+
+    session = load_visible_session(db, ctx, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    if body.model:
+        session.model = body.model
 
     # ── b. Persist operator message ───────────────────────────────────────────
     now = datetime.now(timezone.utc)

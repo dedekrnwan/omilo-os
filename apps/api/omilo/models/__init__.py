@@ -71,3 +71,5 @@ __all__ = [
 from omilo.models.helper_channel import HelperChannel  # noqa: F401,E402
 
 __all__.append("HelperChannel")
+# ── sweep/chat ──
+from omilo.models.workspace import ChiefNudgeState, FolderFile  # noqa: F401

@@ -242,3 +242,34 @@ def normalise_inbox_proposal(entry: dict[str, Any], item: Any) -> dict[str, Any]
     out.setdefault("text", getattr(item, "title", ""))
     out.setdefault("due", "")
     return {k: v for k, v in out.items() if v is not None}
+# ── sweep/chat ────────────────────────────────────────────────────────────────
+# Extended read DTOs for the persisted sidebar (pins/archive/folders/looks).
+# Every new key is optional and omitted when None, so the base TS types stay
+# valid and existing parity tests keep their exact key sets.
+
+
+class ChannelOutDTO(ChannelDTO):
+    """Channel + custom look colour (TS: Channel.color?)."""
+
+    color: Optional[str] = None
+
+
+class FolderOutDTO(FolderDTO):
+    """Folder + look + instructions (TS: Folder.icon?/color?/instructions?)."""
+
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    instructions: Optional[str] = None
+
+
+class SessionOutDTO(SessionDTO):
+    """Session + per-user pin, archive state, goal link, model, kind."""
+
+    pinned: Optional[bool] = None
+    archived_at: Optional[datetime] = None
+    goal_id: Optional[str] = None
+    model: Optional[str] = None
+    kind: Optional[str] = None
+
+    @field_serializer("archived_at")
+    def serialize_archived_at(self, value: Optional[datetime], _info: Any) -> Optional[str]:

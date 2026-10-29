@@ -21,6 +21,8 @@ from omilo.models.workspace import Channel, Folder, Goal
 from omilo.models.chat import ChatSession
 from omilo.schemas.read import ChannelDTO, FolderDTO, GoalDTO, SessionDTO
 from omilo.api.goals_write import goal_dtos
+from omilo.schemas.read import ChannelOutDTO, FolderOutDTO, SessionOutDTO  # sweep/chat
+from omilo.api.chat_workspace import channel_out, folders_out, session_out, visible_sessions_query  # sweep/chat
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
 
@@ -47,28 +49,29 @@ class CreateChannelBody(BaseModel):
 _404 = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 
-@router.get("/channels", response_model=list[ChannelDTO], response_model_by_alias=True)
+@router.get("/channels", response_model=list[ChannelOutDTO], response_model_by_alias=True, response_model_exclude_none=True)
 def list_channels(db: Session = Depends(get_tenant_db)) -> list[dict]:
     rows = db.query(Channel).all()
-    return [ChannelDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+    return [channel_out(r) for r in rows]
 
 
-@router.get("/channels/{channel_id}", response_model=ChannelDTO, response_model_by_alias=True)
+@router.get("/channels/{channel_id}", response_model=ChannelOutDTO, response_model_by_alias=True, response_model_exclude_none=True)
 def get_channel(channel_id: str, db: Session = Depends(get_tenant_db)) -> dict:
     row = db.query(Channel).filter(Channel.id == channel_id).first()
     if row is None:
         raise _404
-    return ChannelDTO.model_validate(row, from_attributes=True).model_dump(by_alias=True, exclude_none=True)
+    return channel_out(row)
 
 
 @router.get(
     "/channels/{channel_id}/folders",
-    response_model=list[FolderDTO],
+    response_model=list[FolderOutDTO],
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
 def list_channel_folders(channel_id: str, db: Session = Depends(get_tenant_db)) -> list[dict]:
-    rows = db.query(Folder).filter(Folder.channel_id == channel_id).all()
-    return [FolderDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+    rows = db.query(Folder).filter(Folder.channel_id == channel_id).order_by(Folder.created_at).all()
+    return folders_out(db, rows)
 
 
 @router.get(
@@ -83,12 +86,17 @@ def list_channel_goals(channel_id: str, db: Session = Depends(get_tenant_db)) ->
 
 @router.get(
     "/channels/{channel_id}/sessions",
-    response_model=list[SessionDTO],
+    response_model=list[SessionOutDTO],
     response_model_by_alias=True,
+    response_model_exclude_none=True,
 )
-def list_channel_sessions(channel_id: str, db: Session = Depends(get_tenant_db)) -> list[dict]:
-    rows = db.query(ChatSession).filter(ChatSession.channel_id == channel_id).all()
-    return [SessionDTO.model_validate(r, from_attributes=True).model_dump(by_alias=True, exclude_none=True) for r in rows]
+def list_channel_sessions(
+    channel_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> list[dict]:
+    rows = visible_sessions_query(db, ctx).filter(ChatSession.channel_id == channel_id).all()
+    return [session_out(r, ctx.user_id) for r in rows]
 
 
 @router.post("/channels", response_model=ChannelDTO, response_model_by_alias=True, status_code=status.HTTP_201_CREATED)

@@ -99,6 +99,8 @@ def _run_turn_sync(
     company_id: str,
     session_id: str,
     content: str,
+    user_id: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run one operator turn synchronously.
 
@@ -124,6 +126,13 @@ def _run_turn_sync(
             session_row = db.query(ChatSession).filter(
                 ChatSession.id == session_id
             ).first()
+            # sweep/chat: soft-deleted chats and other people's private Chief
+            # threads are invisible here too.
+            if session_row is not None and (
+                session_row.deleted_at is not None
+                or (session_row.kind == "chief_private" and session_row.owner_user_id != user_id)
+            ):
+                session_row = None
             if session_row is None:
                 return {
                     "error": "Session not found",
@@ -133,6 +142,9 @@ def _run_turn_sync(
                     "job_id": None,
                     "job_status": None,
                 }
+
+            if model:
+                session_row.model = model  # sweep/chat
 
             # ── Persist operator message ───────────────────────────────────
             now = datetime.now(timezone.utc)
@@ -251,11 +263,14 @@ async def ws_chat(
                 continue
 
             # ── Run the turn in a thread (sync runner) ─────────────────────
+            model = frame.get("model")
             result = await run_in_threadpool(
                 _run_turn_sync,
                 company_id,
                 session_id,
                 content,
+                user_id,
+                model if isinstance(model, str) and model else None,
             )
 
             if result["error"]:
