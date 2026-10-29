@@ -82,7 +82,21 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
   const [paused, setPaused] = useState(false)
   const [reportsTo, setReportsTo] = useState<string>(helper.id === 'chief' ? 'You (Dede)' : 'Chief of Staff')
   const [reportsToOpen, setReportsToOpen] = useState(false)
+  const [name, setName] = useState(n)
+  const [jobTitle, setJobTitle] = useState(helper.id === 'support' ? 'Resident support · WhatsApp' : helper.roleArea)
+  const [picture, setPicture] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const onPickPicture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setPicture(reader.result)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
 
   const setColour = (c: string) => {
     setColourState(c)
@@ -100,6 +114,7 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
     setShapeState(look.shape)
     setPropState(look.prop)
     setColourState(defaultColour)
+    setPicture(null)
     resetLook(helper.area)
   }
   // Order the options so the helper's own shape / prop comes first, as in pen.
@@ -116,8 +131,12 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
           </p>
         </div>
         <div className="flex w-full gap-[24px]">
-          <div className="flex size-[168px] shrink-0 items-center justify-center rounded-lg bg-soft outline-1 -outline-offset-1 outline-line">
-            <Mascot size={128} radius={36} color={colour} shape={shape} prop={prop} title={`${n} preview`} />
+          <div className="flex size-[168px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-soft outline-1 -outline-offset-1 outline-line">
+            {picture ? (
+              <img src={picture} alt={`${n} picture`} className="size-full object-cover" />
+            ) : (
+              <Mascot size={128} radius={36} color={colour} shape={shape} prop={prop} title={`${n} preview`} />
+            )}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-[16px]">
             <div className="flex flex-col gap-[8px]">
@@ -181,7 +200,7 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
                 accept="image/*"
                 className="hidden"
                 aria-label="Upload picture"
-                onChange={() => { /* stub — would set custom avatar */ }}
+                onChange={onPickPicture}
               />
               <Btn icon={ImagePlus} h={30} onClick={() => fileInputRef.current?.click()}>
                 Use a picture
@@ -198,10 +217,10 @@ export function ProfileTab({ helper, onLetGo }: { helper: HelperRecord; onLetGo:
         <h3 className="m-0 text-[14px] font-semibold text-ink">Name &amp; role</h3>
         <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
           <SettingRow title="Name" desc="What residents and the team call it.">
-            <InputField value={n} width={240} />
+            <InputField value={name} onChange={setName} width={240} />
           </SettingRow>
           <SettingRow title="Job title" desc="Shown under the name in chats.">
-            <InputField value={helper.id === 'support' ? 'Resident support · WhatsApp' : helper.roleArea} width={280} />
+            <InputField value={jobTitle} onChange={setJobTitle} width={280} />
           </SettingRow>
           <SettingRow title="Reports to" desc="Gets its updates and escalations." last>
             <div className="relative">

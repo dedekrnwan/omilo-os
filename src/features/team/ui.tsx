@@ -4,11 +4,11 @@
  * Option Tile, Radio, Drawer shell). Kept local to the feature — the shared
  * DS Button is the compact 30px/12.5 variant, these are the 32px/14 ones.
  */
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SegmentedTabs } from '../../ui/ds/Segmented'
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, X } from 'lucide-react'
+import { Check, ChevronDown, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 // ── Buttons (pen Button/Primary Upfho · Secondary sqbAw · Quiet p38fT · Danger DUk7e · Danger Solid YSMba) ──
@@ -171,10 +171,17 @@ export function FieldLabel({ children }: { children: ReactNode }) {
   return <span className="text-[13px] font-medium text-ink-2">{children}</span>
 }
 
+export interface SelectOption {
+  value: string
+  label: string
+}
+
 export function SelectField({
   label,
   icon: Icon,
   value,
+  options,
+  onChange,
   fs = 13,
   width,
   className = '',
@@ -183,24 +190,79 @@ export function SelectField({
   label?: string
   icon?: LucideIcon
   value: string
+  /** When provided, the field opens a real dropdown menu and calls onChange. */
+  options?: readonly SelectOption[]
+  onChange?: (value: string) => void
   fs?: number
   width?: number
   className?: string
   style?: React.CSSProperties
 }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const interactive = !!options && options.length > 0
+  const current = options?.find((o) => o.value === value)
+  const display = current?.label ?? value
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   return (
-    <div className={`flex shrink-0 flex-col gap-[6px] ${className}`} style={{ width, ...style }}>
+    <div ref={ref} className={`relative flex shrink-0 flex-col gap-[6px] ${className}`} style={{ width, ...style }}>
       {label && <FieldLabel>{label}</FieldLabel>}
       <button
         type="button"
+        aria-haspopup={interactive ? 'listbox' : undefined}
+        aria-expanded={interactive ? open : undefined}
+        aria-label={label ?? display}
+        onClick={interactive ? () => setOpen((v) => !v) : undefined}
         className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
       >
         {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
         <span className="min-w-0 flex-1 truncate text-ink" style={{ fontSize: fs }}>
-          {value}
+          {display}
         </span>
         <ChevronDown size={16} aria-hidden className="shrink-0 text-muted" />
       </button>
+      {interactive && open && (
+        <div
+          role="listbox"
+          aria-label={label ?? 'Options'}
+          className="absolute top-[calc(100%+4px)] left-0 z-40 flex max-h-[260px] w-full min-w-[160px] flex-col overflow-y-auto rounded-md bg-surface p-[4px] shadow-[0_8px_24px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong"
+        >
+          {options!.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              onClick={() => {
+                onChange?.(o.value)
+                setOpen(false)
+              }}
+              className={`flex items-center gap-[8px] rounded-sm px-[8px] py-[6px] text-left text-[13px] text-ink transition-colors hover:bg-hover ${
+                o.value === value ? 'bg-hover' : ''
+              }`}
+            >
+              <span className="flex size-[16px] shrink-0 items-center justify-center">
+                {o.value === value && <Check size={14} aria-hidden className="text-ink" />}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -209,6 +271,8 @@ export function InputField({
   label,
   icon: Icon,
   value,
+  onChange,
+  type = 'text',
   placeholder,
   help,
   width,
@@ -220,6 +284,9 @@ export function InputField({
   label?: string
   icon?: LucideIcon
   value?: string
+  /** When provided the input is controlled; otherwise it falls back to an uncontrolled defaultValue. */
+  onChange?: (value: string) => void
+  type?: string
   placeholder?: string
   help?: string
   width?: number
@@ -228,6 +295,7 @@ export function InputField({
   fs?: number
   className?: string
 }) {
+  const controlled = onChange !== undefined
   return (
     <label className={`flex shrink-0 flex-col gap-[6px] ${className}`} style={{ width }}>
       {label && <FieldLabel>{label}</FieldLabel>}
@@ -238,7 +306,8 @@ export function InputField({
       >
         {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
         <input
-          defaultValue={value}
+          type={type}
+          {...(controlled ? { value: value ?? '', onChange: (e) => onChange(e.target.value) } : { defaultValue: value })}
           placeholder={placeholder}
           aria-label={label ?? placeholder}
           className={`min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint ${mono ? 'font-mono' : ''}`}
@@ -250,12 +319,22 @@ export function InputField({
   )
 }
 
-export function TextareaField({ label, value }: { label: string; value: string }) {
+export function TextareaField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange?: (value: string) => void
+}) {
+  const controlled = onChange !== undefined
   return (
     <label className="flex w-full flex-col gap-[6px]">
       <FieldLabel>{label}</FieldLabel>
       <textarea
-        defaultValue={value}
+        aria-label={label}
+        {...(controlled ? { value, onChange: (e) => onChange(e.target.value) } : { defaultValue: value })}
         className="h-[88px] w-full resize-none rounded-base bg-surface px-[10px] py-[8px] text-[14px] leading-[1.43] text-ink outline-1 -outline-offset-1 outline-line-strong"
       />
     </label>

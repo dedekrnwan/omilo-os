@@ -9,6 +9,14 @@ import { ChannelLogo } from '../tabs/ChannelsTab'
 export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const n = helper.name
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
+  const [fromName, setFromName] = useState(`Sahabat Warga ${n}`)
+  const [signature, setSignature] = useState(`— ${n}, Sahabat Warga · replies within 1 hour`)
+  // Email provider OAuth isn't live yet — we capture the connection intent/config
+  // and surface an honest pending state rather than fake a live handshake.
+  const connect = () => {
+    notify('Email connection saved — pending provider setup')
+    onClose()
+  }
   return (
     <Drawer
       width={520}
@@ -33,7 +41,7 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" icon={Link2} onClick={onClose}>
+          <Btn variant="primary" icon={Link2} onClick={connect}>
             Connect email
           </Btn>
         </>
@@ -50,10 +58,10 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
       <div className="flex w-full flex-col gap-[8px]">
         <Eyebrow>HOW TO CONNECT</Eyebrow>
         <div className="flex w-full gap-[8px]">
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { notify('Connecting…'); onClose() }}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={connect}>
             Sign in with Google Workspace
           </Btn>
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => { notify('Connecting…'); onClose() }}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={connect}>
             Sign in with Microsoft 365
           </Btn>
         </div>
@@ -84,10 +92,11 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
       </div>
       <div className="flex w-full flex-col gap-[12px]">
         <Eyebrow>HOW EMAILS LOOK</Eyebrow>
-        <InputField label="From name" value={`Sahabat Warga ${n}`} className="w-full" />
+        <InputField label="From name" value={fromName} onChange={setFromName} className="w-full" />
         <InputField
           label="Signature"
-          value={`— ${n}, Sahabat Warga · replies within 1 hour`}
+          value={signature}
+          onChange={setSignature}
           help={`${n} adds this under every reply.`}
           className="w-full"
         />

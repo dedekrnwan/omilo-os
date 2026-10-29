@@ -30,11 +30,23 @@ function OptionCard({ o, selected, onPick }: { o: HireOption; selected: boolean;
 }
 
 /** Hire helper · Pick — pen jEooC (Drawer ThYEv). */
-export function HireDialog({ onClose, onNext }: { onClose: () => void; onNext: () => void }) {
+export function HireDialog({
+  onClose,
+  onNext,
+}: {
+  onClose: () => void
+  onNext: (optionId: string) => void
+}) {
   const navigate = useNavigate()
   const [category, setCategory] = useState<HireCategory>('All')
   const [picked, setPicked] = useState('sales')
-  const options = HIRE_OPTIONS.filter((o) => category === 'All' || o.category === category)
+  const [search, setSearch] = useState('')
+  const q = search.trim().toLowerCase()
+  const options = HIRE_OPTIONS.filter(
+    (o) =>
+      (category === 'All' || o.category === category) &&
+      (q === '' || o.name.toLowerCase().includes(q) || o.tagline.toLowerCase().includes(q)),
+  )
   const rows: HireOption[][] = []
   for (let i = 0; i < options.length; i += 2) rows.push(options.slice(i, i + 2))
   const pickedName = HIRE_OPTIONS.find((o) => o.id === picked)?.name ?? 'Sales'
@@ -58,13 +70,19 @@ export function HireDialog({ onClose, onNext }: { onClose: () => void; onNext: (
           <Btn onClick={onClose}>Cancel</Btn>
           <span className="h-px flex-1" />
           <span className="text-[12px] text-muted">{pickedName} selected</span>
-          <Btn variant="primary" icon={ArrowRight} onClick={onNext}>
+          <Btn variant="primary" icon={ArrowRight} onClick={() => onNext(picked)}>
             Next: set up {pickedName}
           </Btn>
         </>
       }
     >
-      <InputField icon={Search} placeholder="Search helpers — e.g. “answers WhatsApp”" className="w-full" />
+      <InputField
+        icon={Search}
+        placeholder="Search helpers — e.g. “answers WhatsApp”"
+        value={search}
+        onChange={setSearch}
+        className="w-full"
+      />
       <Segmented items={HIRE_CATEGORIES} value={category} onChange={setCategory} />
       {rows.map((row, i) => (
         <div key={i} className="flex w-full gap-[12px]">

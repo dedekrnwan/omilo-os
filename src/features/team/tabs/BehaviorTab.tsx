@@ -117,6 +117,8 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
   const [language, setLanguage] = useState<(typeof LANGUAGE_OPTIONS)[number]>('Bahasa Indonesia')
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [languageOpen, setLanguageOpen] = useState(false)
+  const [spend, setSpend] = useState('Rp 50.000')
+  const [rate, setRate] = useState('60')
   const addInputRef = useRef<HTMLInputElement>(null)
 
   const modes: { id: Mode; icon: LucideIcon; desc: string }[] = [
@@ -154,10 +156,10 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
         <Head title="Limits" desc="On top of the company's Safety & limits" />
         <Box>
           <SettingRow title="Spend per task" desc="Pauses and asks above this.">
-            <InputField icon={Wallet} value="Rp 50.000" width={180} />
+            <InputField icon={Wallet} value={spend} onChange={setSpend} width={180} />
           </SettingRow>
           <SettingRow title="Messages per hour" desc="Stops a runaway loop on WhatsApp.">
-            <InputField icon={Gauge} value="60" width={180} />
+            <InputField icon={Gauge} value={rate} onChange={setRate} width={180} />
           </SettingRow>
           <SettingRow title="Never discuss" desc={`Topics ${n} always hands to you.`}>
             <div className="flex flex-wrap items-center gap-[6px]">
