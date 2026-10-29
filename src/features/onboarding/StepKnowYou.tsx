@@ -19,6 +19,9 @@ import { IconButton } from '../../ui/ds/Button'
 import { INTERVIEW, KNOWLEDGE_NOTES, LEARNED } from './data'
 import { Pill, QuietButton, Stroke } from './parts'
 import { useSession } from '../../app/session'
+import { useUpdateCompanySettings } from '../../app/queries'
+import { isMockMode } from '../../app/useAuth'
+import { notify } from '../../ui/ds/Toaster'
 
 function ChiefSays({ text, ideas, children }: { text: string; ideas: string[]; children?: React.ReactNode }) {
   return (
@@ -39,7 +42,13 @@ function ChiefSays({ text, ideas, children }: { text: string; ideas: string[]; c
   )
 }
 
-function LearnedPanel() {
+function LearnedPanel({
+  website,
+  onWebsiteChange,
+}: {
+  website: string
+  onWebsiteChange: (v: string) => void
+}) {
   const done = LEARNED.filter((n) => n.state === 'done').length
   return (
     <aside
@@ -93,6 +102,8 @@ function LearnedPanel() {
             <input
               aria-label="Website"
               placeholder="sahabatwarga.id"
+              value={website}
+              onChange={(e) => onWebsiteChange(e.target.value)}
               className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-faint"
             />
           </label>
@@ -107,7 +118,25 @@ function LearnedPanel() {
 export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [draft, setDraft] = useState('')
+  const [website, setWebsite] = useState('')
+  const updateSettings = useUpdateCompanySettings()
   const navigate = useNavigate()
+
+  // Persist the interview answer + website into company settings so the knowledge
+  // the owner typed survives the step instead of being discarded on submit.
+  const submitAnswer = () => {
+    const answer = draft.trim()
+    const site = website.trim()
+    if (!answer && !site) return
+    if (!isMockMode()) {
+      updateSettings.mutate({
+        about: answer || undefined,
+        ...(site ? { website: site } : {}),
+      })
+    }
+    notify('Saved to your company knowledge')
+    setDraft('')
+  }
   return (
     <div className="flex min-h-0 w-full flex-1 gap-[16px] px-[24px] pt-[8px] pb-[24px]">
       <section aria-label="Interview" className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-surface">
@@ -162,7 +191,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              setDraft('')
+              submitAnswer()
             }}
             className="relative flex w-full items-center gap-[12px] rounded-lg py-[10px] pr-[10px] pl-[16px]"
             style={{ boxShadow: 'inset 0 0 0 1px var(--color-line-strong), 0 2px 8px #0C0A090D' }}
@@ -192,7 +221,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
         </div>
         <Stroke />
       </section>
-      <LearnedPanel />
+      <LearnedPanel website={website} onWebsiteChange={setWebsite} />
     </div>
   )
 }

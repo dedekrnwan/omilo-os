@@ -314,6 +314,15 @@ function ApiKeyForm({
 
 type SelfHostPick = 'existing' | 'api-key'
 
+/** What the user picked on the Your-AI step, handed to the wizard on Next. */
+export interface AiSelection {
+  mode: AIMode
+  /** For self-host: the chosen existing pool account id (if any). */
+  accountId?: string | null
+  /** For cloud: the chosen cloud option id. */
+  cloudPick?: string
+}
+
 export function StepYourAI({
   initialMode = 'self-host',
   onBack,
@@ -321,7 +330,7 @@ export function StepYourAI({
 }: {
   initialMode?: AIMode
   onBack: () => void
-  onNext: () => void
+  onNext: (selection?: AiSelection) => void
 }) {
   const [mode, setMode] = useState<AIMode>(initialMode)
   const copy = AI_MODES[mode]
@@ -530,7 +539,16 @@ export function StepYourAI({
               {copy.footA}
             </button>
           )}
-          <PrimaryButton icon={ArrowRight} onClick={onNext}>
+          <PrimaryButton
+            icon={ArrowRight}
+            onClick={() =>
+              onNext(
+                mode === 'cloud'
+                  ? { mode, cloudPick }
+                  : { mode, accountId: existingAccountId },
+              )
+            }
+          >
             {copy.cta}
           </PrimaryButton>
         </div>

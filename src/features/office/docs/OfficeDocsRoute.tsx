@@ -51,7 +51,7 @@ import { KnowledgeView } from './KnowledgeView'
 import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
-import { useArea, useKnowledge } from '../../../app/queries'
+import { useArea, useCreateDoc, useKnowledge, useUpdateDoc } from '../../../app/queries'
 import { useUIStore } from '../../../app/store'
 
 // ── KbItem → DocFile mapping ──────────────────────────────────────────────────
@@ -417,9 +417,17 @@ function NoteDocRow({
 
 // ── Notes: doc viewer ─────────────────────────────────────────────────────────
 
-function NoteDocViewer() {
+function NoteDocViewer({ docId }: { docId: string }) {
   const [mode, setMode] = useState<'read' | 'edit' | 'both'>('read')
   const doc = ACTIVE_DOC
+  const [body, setBody] = useState(doc.body)
+  const updateDoc = useUpdateDoc()
+  const save = () => {
+    updateDoc.mutate(
+      { id: docId, content: body },
+      { onSuccess: () => notify('Saved'), onError: () => notify("Couldn't save") },
+    )
+  }
 
   function renderInline(text: string) {
     const parts = text.split(/(\[\[[^\]]+\]\])/g)
@@ -501,10 +509,15 @@ function NoteDocViewer() {
 
           {/* Actions */}
           <div className="flex items-center gap-[2px]">
-            <span className="mr-[4px] text-[12px] text-muted">Saved · v3</span>
+            {mode !== 'read' && (
+              <Button variant="primary" height={28} onClick={save} disabled={updateDoc.isPending}>
+                {updateDoc.isPending ? 'Saving…' : 'Save'}
+              </Button>
+            )}
+            <span className="mx-[4px] text-[12px] text-muted">{mode === 'read' ? 'Saved · v3' : 'Editing'}</span>
             <IconButton icon={Share2} size={14} aria-label="Share" />
             <IconButton icon={Link2} size={14} aria-label="Copy link" />
-            <IconButton icon={Eye} size={14} aria-label="Preview" />
+            <IconButton icon={Eye} size={14} aria-label="Preview" onClick={() => setMode('read')} />
             <IconButton icon={MoreHorizontal} size={14} aria-label="More" />
           </div>
         </div>
@@ -517,7 +530,16 @@ function NoteDocViewer() {
           <h1 className="mb-[20px] font-display text-[28px] font-semibold tracking-[-0.6px] text-ink">
             {doc.title}
           </h1>
-          <div className="flex flex-col gap-[6px]">{renderBody(doc.body)}</div>
+          {mode === 'read' ? (
+            <div className="flex flex-col gap-[6px]">{renderBody(body)}</div>
+          ) : (
+            <textarea
+              aria-label="Doc body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="min-h-[320px] w-full resize-y rounded-base bg-surface px-[12px] py-[10px] font-mono text-[13px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong"
+            />
+          )}
         </div>
       </div>
 
@@ -1071,8 +1093,19 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
   const panelOpen = panel[view] ?? false
   const setPanelOpen = useCallback((open: boolean) => setPanel((p) => ({ ...p, [view]: open })), [view])
 
+  const createDoc = useCreateDoc()
   function handleNewDoc() {
-    notify('Draft created')
+    createDoc.mutate(
+      { title: 'Untitled doc', content: '', kind: 'doc' },
+      {
+        onSuccess: (doc) => {
+          notify('Draft created')
+          setActiveDocId(doc.id)
+          setView('notes')
+        },
+        onError: () => notify("Couldn't create the doc"),
+      },
+    )
   }
 
   return (
@@ -1119,7 +1152,7 @@ function DocsBoard({ areaId }: { areaId: string | null }) {
             isLoading={kbLoading}
             isError={kbError}
           />
-          <NoteDocViewer />
+          <NoteDocViewer docId={activeDocId} />
         </div>
       )}
 

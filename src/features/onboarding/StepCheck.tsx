@@ -1,26 +1,50 @@
 /** Onboarding 4 · Check (pen M1ZiO). */
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, Pencil, Plus, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { notify } from '../../ui/ds/Toaster'
 import { CHECK_NOTES, KNOWLEDGE_NOTES } from './data'
 import type { CheckNote } from './data'
 import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
 import { useSession } from '../../app/session'
 
-function NoteCard({ note }: { note: CheckNote }) {
-  const meta = KNOWLEDGE_NOTES.find((k) => k.id === note.id)!
+function NoteCard({
+  note,
+  content,
+  onChange,
+}: {
+  note: CheckNote
+  content: string
+  onChange: (content: string) => void
+}) {
+  const meta = KNOWLEDGE_NOTES.find((k) => k.id === note.id)
+  const label = meta?.label ?? note.id
+  const [editing, setEditing] = useState(content.trim() === '')
   return (
     <article className="relative flex min-w-0 flex-1 flex-col gap-[8px] self-start rounded-md bg-surface p-[14px]">
       <div className="flex w-full items-center gap-[8px]">
-        <IconTile icon={meta.icon} />
-        <h3 className="text-[14px] font-semibold text-ink">{meta.label}</h3>
+        {meta && <IconTile icon={meta.icon} />}
+        <h3 className="text-[14px] font-semibold text-ink">{label}</h3>
         <span className="h-px flex-1" />
-        <button type="button" aria-label={`Edit ${meta.label}`} className="text-muted hover:text-ink" onClick={() => notify(`Editing ${meta.label}`)}>
-          <Pencil size={14} aria-hidden />
+        <button
+          type="button"
+          aria-label={editing ? `Save ${label}` : `Edit ${label}`}
+          className="text-muted hover:text-ink"
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? <Check size={14} aria-hidden /> : <Pencil size={14} aria-hidden />}
         </button>
       </div>
-      <p className="w-full text-[13px] leading-[1.5] whitespace-pre-line text-ink-2">{note.content}</p>
+      {editing ? (
+        <textarea
+          aria-label={`${label} note`}
+          value={content}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Add a note…"
+          className="min-h-[72px] w-full resize-none rounded-base bg-surface px-[10px] py-[8px] text-[13px] leading-[1.5] text-ink outline-1 -outline-offset-1 outline-line-strong"
+        />
+      ) : (
+        <p className="w-full text-[13px] leading-[1.5] whitespace-pre-line text-ink-2">{content}</p>
+      )}
       {note.kpi && (
         <div className="flex w-full gap-[8px] pt-[2px]">
           <span aria-hidden className="mt-[4px] size-[7px] shrink-0 rounded-full bg-helper-brand" />
@@ -40,8 +64,19 @@ function NoteCard({ note }: { note: CheckNote }) {
 
 export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  const [, setAdded] = useState(0)
-  const rows = [CHECK_NOTES.slice(0, 4), CHECK_NOTES.slice(4)]
+  // Editable copy of each note's content, keyed by id, plus any added notes.
+  const [notes, setNotes] = useState<CheckNote[]>(CHECK_NOTES)
+  const [contents, setContents] = useState<Record<string, string>>(() =>
+    Object.fromEntries(CHECK_NOTES.map((n) => [n.id, n.content])),
+  )
+  const setContent = (id: string, content: string) =>
+    setContents((prev) => ({ ...prev, [id]: content }))
+  const addNote = () => {
+    const id = `custom-${notes.length}`
+    setNotes((prev) => [...prev, { id, content: '' }])
+    setContent(id, '')
+  }
+  const rows = [notes.slice(0, 4), notes.slice(4)]
   return (
     <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
       <div className="flex w-full items-center gap-[14px]">
@@ -60,12 +95,17 @@ export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () =
         {rows.map((row, i) => (
           <div key={i} className="flex w-full gap-[12px]">
             {row.map((n) => (
-              <NoteCard key={n.id} note={n} />
+              <NoteCard
+                key={n.id}
+                note={n}
+                content={contents[n.id] ?? n.content}
+                onChange={(c) => setContent(n.id, c)}
+              />
             ))}
             {i === 1 && (
               <button
                 type="button"
-                onClick={() => { setAdded((n) => n + 1); notify('Add a topic — coming soon') }}
+                onClick={addNote}
                 className="relative flex h-[128px] min-w-0 flex-1 flex-col items-center justify-center gap-[6px] rounded-md p-[14px] text-muted hover:bg-soft"
               >
                 <Plus size={18} aria-hidden />

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plug, Repeat, TriangleAlert, UserPlus } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
+import { notify } from '../../ui/ds/Toaster'
 import {
   activity,
   activityKinds,
@@ -131,7 +132,9 @@ function HelperCard({
           <BigButton kind="primary" onClick={() => onSetBudget(h)}>
             Raise budget
           </BigButton>
-          <BigButton kind="secondary">Allow this job</BigButton>
+          <BigButton kind="secondary" onClick={() => notify(`Allowed one more job for ${h.name}`)}>
+            Allow this job
+          </BigButton>
         </div>
       )}
     </section>
@@ -236,7 +239,22 @@ export function LoopsTab() {
 // ── Reliability (pen Q7dBso) ──────────────────────────────────────────────────
 
 export function ReliabilityTab() {
+  const navigate = useNavigate()
   const max = Math.max(...causes.map((c) => c.count))
+
+  // Map a failure-row action label to a real next-action.
+  const runFailureAction = (f: (typeof failures)[number]) => {
+    switch (f.action.label) {
+      case 'Connect':
+        return void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } })
+      case 'Retry':
+        notify(`Retrying “${f.job}”`)
+        return
+      case 'View run':
+      default:
+        return void navigate({ to: '/inbox' })
+    }
+  }
   return (
     <>
       <StatRow stats={reliabilityStats} />
@@ -257,7 +275,7 @@ export function ReliabilityTab() {
               </div>
               <span className="font-mono text-[11px] text-muted">{f.when}</span>
               <Chip tone={f.status.tone}>{f.status.label}</Chip>
-              <BigButton kind={f.action.kind}>{f.action.label}</BigButton>
+              <BigButton kind={f.action.kind} onClick={() => runFailureAction(f)}>{f.action.label}</BigButton>
             </div>
           ))}
         </Card>
@@ -289,13 +307,37 @@ export function ReliabilityTab() {
 
 const FILTER_HELPERS = helpers.slice(0, 4)
 
+// Each activity-kind filter maps to one or more status tones on an activity item.
+const KIND_TONES: string[][] = [
+  ['up'],     // Finished jobs
+  ['warn'],   // Needs you
+  ['down'],   // Failures
+  ['run'],    // Started
+]
+
 export function ActivityTab() {
   const [kinds, setKinds] = useState(() => activityKinds.map((k) => k.on))
   const [who, setWho] = useState(() => FILTER_HELPERS.map(() => true))
+
+  const activeTones = new Set(kinds.flatMap((on, i) => (on ? KIND_TONES[i] : [])))
+  const activeAreas = new Set(FILTER_HELPERS.filter((_, i) => who[i]).map((h) => h.area))
+
+  // Filter each group's items by the selected kinds (status tone) + helpers (area),
+  // then drop any group that ends up empty so the list genuinely reflects the filters.
+  const groups = activity
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((a) => activeTones.has(a.status.tone) && activeAreas.has(a.area)),
+    }))
+    .filter((g) => g.items.length > 0)
+
   return (
     <div className="flex w-full items-start gap-[12px]">
       <Card className="flex min-w-0 flex-1 flex-col py-[6px]">
-        {activity.map((g) => (
+        {groups.length === 0 && (
+          <p className="px-[16px] py-[20px] text-[13px] text-muted">No activity matches these filters.</p>
+        )}
+        {groups.map((g) => (
           <div key={g.group} className="flex flex-col">
             <h3 className="m-0 px-[16px] pt-[10px] pb-[4px] text-[11px] font-semibold tracking-[1px] text-faint">
               {g.group}

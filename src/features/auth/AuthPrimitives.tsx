@@ -216,10 +216,28 @@ export function AuthSelect({
 }
 
 // ── Checkbox/On ───────────────────────────────────────────────────────────────
-export function AuthCheckbox({ label, defaultChecked = true }: { label: string; defaultChecked?: boolean }) {
+export function AuthCheckbox({
+  label,
+  defaultChecked = true,
+  checked,
+  onChange,
+}: {
+  label: string
+  defaultChecked?: boolean
+  /** When provided (with onChange) the checkbox is controlled. */
+  checked?: boolean
+  onChange?: (checked: boolean) => void
+}) {
+  const controlled = checked !== undefined && onChange !== undefined
   return (
     <label className="flex w-full cursor-pointer items-center gap-[8px]">
-      <input type="checkbox" defaultChecked={defaultChecked} className="peer sr-only" />
+      <input
+        type="checkbox"
+        {...(controlled
+          ? { checked, onChange: (e) => onChange(e.target.checked) }
+          : { defaultChecked })}
+        className="peer sr-only"
+      />
       <span
         aria-hidden
         className="flex size-[16px] shrink-0 items-center justify-center rounded-xs bg-surface text-transparent outline-1 -outline-offset-1 outline-wire-strong peer-checked:bg-primary peer-checked:text-primary-ink peer-checked:outline-primary"

@@ -6,11 +6,12 @@ import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
 import { notify } from '../../ui/ds/Toaster'
 import type { Helper, HelperArea } from '../../core/domain/types'
-import { useHelpers } from '../../app/queries'
+import { useCreateHelper, useHelpers } from '../../app/queries'
 import { StatusChip, TeamTopbar } from './StatusChip'
 import { Btn, Chip, IconBtn, Segmented } from './ui'
 import { HireDialog } from './HireDialog'
 import { SetupDialog } from './SetupDialog'
+import type { HireSubmit } from './SetupDialog'
 import { RolesModelsDialog } from './RolesModelsDialog'
 import { LetGoDialog } from './LetGoDialog'
 
@@ -251,9 +252,29 @@ export function TeamRoster() {
   const search = useSearch({ strict: false }) as { state?: string }
   const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('All')
+  const [pickedOption, setPickedOption] = useState('sales')
   const state = search.state as RosterState
   const setState = (s: RosterState) =>
     void navigate({ to: '/team', search: (s ? { state: s } : {}) as never, replace: true })
+
+  const createHelper = useCreateHelper()
+  const onHire = (input: HireSubmit) => {
+    createHelper.mutate(
+      {
+        name: input.name,
+        area: input.area,
+        role: input.role,
+        jobDescription: input.jobDescription || undefined,
+      },
+      {
+        onSuccess: () => {
+          notify(`${input.name} hired`)
+          setState(undefined)
+        },
+        onError: () => notify(`Couldn't hire ${input.name}`),
+      },
+    )
+  }
 
   const { data: rawHelpers, isLoading, isError } = useHelpers()
   const allHelpers = (rawHelpers ?? []).map(toRosterHelper)
@@ -333,8 +354,24 @@ export function TeamRoster() {
         </div>
       </Inset>
 
-      {state === 'hire' && <HireDialog onClose={() => setState(undefined)} onNext={() => setState('setup')} />}
-      {state === 'setup' && <SetupDialog onClose={() => setState(undefined)} onBack={() => setState('hire')} />}
+      {state === 'hire' && (
+        <HireDialog
+          onClose={() => setState(undefined)}
+          onNext={(optionId) => {
+            setPickedOption(optionId)
+            setState('setup')
+          }}
+        />
+      )}
+      {state === 'setup' && (
+        <SetupDialog
+          optionId={pickedOption}
+          onClose={() => setState(undefined)}
+          onBack={() => setState('hire')}
+          onHire={onHire}
+          submitting={createHelper.isPending}
+        />
+      )}
       {state === 'roles' && <RolesModelsDialog onClose={() => setState(undefined)} />}
     </>
   )

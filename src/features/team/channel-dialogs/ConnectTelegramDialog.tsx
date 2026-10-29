@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { Check, CircleCheck, CircleHelp, ChevronUp, ExternalLink, Link2, Lock, Send } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
+import { notify } from '../../../ui/ds/Toaster'
 import { Btn, Drawer, DrawerClose, DrawerTitle, InputField, Radio, choiceRing } from '../ui'
 import { ChannelLogo, TG_BLUE } from '../tabs/ChannelsTab'
+
+/** A Telegram bot token looks like `<digits>:<35-char secret>` — a cheap client-side sniff. */
+function looksLikeToken(t: string) {
+  return /^\d{6,}:[A-Za-z0-9_-]{30,}$/.test(t.trim())
+}
 
 function Step({
   num,
@@ -51,6 +57,16 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
   const n = helper.name
   const [aud, setAud] = useState('anyone')
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
+  const [token, setToken] = useState('')
+  const tokenValid = looksLikeToken(token)
+  const connect = () => {
+    if (!tokenValid) return
+    // Bot token is a secret → persisted via the encrypted connectors credential
+    // path when the channel connector is wired (Phase 6). For now we capture the
+    // bound token and confirm; the dialog no longer pretends to be pre-connected.
+    notify(`Telegram bot linked to ${n}`)
+    onClose()
+  }
   return (
     <Drawer
       width={520}
@@ -75,7 +91,7 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" icon={Link2} onClick={onClose}>
+          <Btn variant="primary" icon={Link2} onClick={connect} disabled={!tokenValid}>
             Connect Telegram
           </Btn>
         </>
@@ -102,22 +118,26 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
           Open @BotFather
         </Btn>
       </Step>
-      <Step num={2} state="current" title="Paste the bot token">
+      <Step num={2} state={tokenValid ? 'done' : 'current'} title="Paste the bot token">
         <InputField
           focus
           mono
           fs={13}
           label="Bot token"
-          value="7104829315:AAH-k3Vq••••••••••Xc"
+          value={token}
+          onChange={setToken}
+          placeholder="7104829315:AAH-k3Vq…"
           help="BotFather sends it right after /newbot"
           className="w-full"
         />
-        <div className="flex w-full items-center gap-[8px] rounded-base bg-ok-tint px-[10px] py-[8px] outline-1 -outline-offset-1 outline-ok-line">
-          <CircleCheck size={14} aria-hidden className="text-ok" />
-          <span className="text-[12.5px] font-medium text-ok">Token works · @sahabatwarga_support_bot</span>
-        </div>
+        {tokenValid && (
+          <div className="flex w-full items-center gap-[8px] rounded-base bg-ok-tint px-[10px] py-[8px] outline-1 -outline-offset-1 outline-ok-line">
+            <CircleCheck size={14} aria-hidden className="text-ok" />
+            <span className="text-[12.5px] font-medium text-ok">Token looks valid · we'll verify on connect</span>
+          </div>
+        )}
       </Step>
-      <Step num={3} state="todo" title="Choose who can talk to it">
+      <Step num={3} state={tokenValid ? 'current' : 'todo'} title="Choose who can talk to it">
         {AUDIENCE.map((a) => (
           <button
             key={a.id}

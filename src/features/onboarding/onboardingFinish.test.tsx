@@ -42,10 +42,13 @@ const mockOnboardCompany = vi.fn().mockResolvedValue({
   onboarded: true,
 })
 
+const mockCreateHelper = vi.fn().mockResolvedValue({ id: 'h-new', name: 'Helper' })
+
 vi.mock('../../adapters/http/commands', () => ({
   createCommands: () => ({
     updateCompanyProfile: mockUpdateCompanyProfile,
     onboardCompany: mockOnboardCompany,
+    createHelper: mockCreateHelper,
   }),
 }))
 

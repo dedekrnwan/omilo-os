@@ -1,6 +1,9 @@
 /** Create company — /auth/onboarding/company (pen OsWDG). */
 import { useRef, useState } from 'react'
 import { Globe, Users } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { useCommands } from '../../app/CommandsProvider'
+import { isMockMode } from '../../app/useAuth'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
 
@@ -16,9 +19,47 @@ const TIME_ZONES = [
 ]
 
 export function CreateCompanyPage() {
+  const commands = useCommands()
+  const navigate = useNavigate()
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const [name, setName] = useState('Sahabat Warga')
+  const [whatYouDo, setWhatYouDo] = useState('SaaS for RT/RW neighborhoods in Indonesia')
   const [teamSize, setTeamSize] = useState('2–10 people')
   const [timeZone, setTimeZone] = useState('Asia/Jakarta')
+  const [logo, setLogo] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  function onPickLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setLogo(reader.result)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  // Sign-up already created the company for this tenant; Continue persists the
+  // profile the owner just filled in, then moves on to the plan step.
+  async function onContinue() {
+    if (saving) return
+    setSaving(true)
+    try {
+      if (!isMockMode()) {
+        await commands.updateCompanyProfile({
+          name: name.trim(),
+          industry: whatYouDo.trim(),
+          teamSize,
+          timezone: timeZone,
+        })
+      }
+      await navigate({ to: '/auth/onboarding/plan' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <OnboardingLayout step={2}>
       <div className="flex w-[440px] flex-col gap-[20px]">
@@ -33,14 +74,19 @@ export function CreateCompanyPage() {
             ref={logoInputRef}
             type="file"
             accept="image/*"
-            aria-hidden
+            aria-label="Company logo"
             tabIndex={-1}
             className="sr-only"
+            onChange={onPickLogo}
           />
           <div className="flex w-full items-center gap-[12px]">
-            <span className="flex size-[44px] shrink-0 items-center justify-center rounded-lg bg-[#EB6834] text-[18px] font-bold text-white">
-              S
-            </span>
+            {logo ? (
+              <img src={logo} alt="Company logo" className="size-[44px] shrink-0 rounded-lg object-cover" />
+            ) : (
+              <span className="flex size-[44px] shrink-0 items-center justify-center rounded-lg bg-[#EB6834] text-[18px] font-bold text-white">
+                {name.charAt(0).toUpperCase() || 'S'}
+              </span>
+            )}
             <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
               <span className="text-[13px] font-medium text-ink">Company logo</span>
               <span className="text-[12px] text-muted">Optional — we'll use your initial</span>
@@ -53,11 +99,17 @@ export function CreateCompanyPage() {
               Upload
             </button>
           </div>
-          <AuthField id="company-name" label="Company name" defaultValue="Sahabat Warga" />
+          <AuthField
+            id="company-name"
+            label="Company name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
           <AuthField
             id="what-you-do"
             label="What you do"
-            defaultValue="SaaS for RT/RW neighborhoods in Indonesia"
+            value={whatYouDo}
+            onChange={(e) => setWhatYouDo(e.target.value)}
             help="One line. Chief uses it in every intro."
           />
           <div className="flex w-full gap-[12px]">
@@ -79,7 +131,9 @@ export function CreateCompanyPage() {
             />
           </div>
         </div>
-        <AuthButton to="/auth/onboarding/plan">Continue</AuthButton>
+        <AuthButton onClick={() => void onContinue()} disabled={saving || name.trim() === ''}>
+          {saving ? 'Saving…' : 'Continue'}
+        </AuthButton>
       </div>
     </OnboardingLayout>
   )

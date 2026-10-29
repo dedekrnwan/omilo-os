@@ -1,7 +1,9 @@
 /** Payment — /auth/onboarding/payment (pen rK2oH). */
 import { useState } from 'react'
 import { CreditCard, Globe, Lock, ShieldCheck } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useCommands } from '../../app/CommandsProvider'
+import { isMockMode } from '../../app/useAuth'
 import { OnboardingLayout } from './AuthLayout'
 import { AuthButton, AuthField, AuthSelect } from './AuthPrimitives'
 
@@ -16,7 +18,37 @@ const LINES: { k: string; v: string; tone?: 'ok'; strong?: boolean; rule?: boole
 ]
 
 export function PaymentPage() {
+  const commands = useCommands()
+  const navigate = useNavigate()
+  const [card, setCard] = useState('4242 4242 4242 4242')
+  const [expiry, setExpiry] = useState('08 / 28')
+  const [cvc, setCvc] = useState('')
+  const [nameOnCard, setNameOnCard] = useState('Dede Kurniawan')
   const [country, setCountry] = useState('Indonesia')
+  const [taxId, setTaxId] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  // Trial-start: begin the Team · yearly subscription. On a hosted-checkout
+  // provider (Doit) we redirect to the hosted_url; otherwise we land on all-set.
+  async function startTrial() {
+    if (loading) return
+    if (isMockMode()) {
+      await navigate({ to: '/auth/onboarding/all-set' })
+      return
+    }
+    setLoading(true)
+    try {
+      const result = (await commands.changePlan('team', 'yearly')) as Record<string, unknown>
+      if (typeof result.hosted_url === 'string' && result.hosted_url) {
+        window.location.assign(result.hosted_url)
+      } else {
+        await navigate({ to: '/auth/onboarding/all-set' })
+      }
+    } catch {
+      setLoading(false)
+    }
+  }
+
   return (
     <OnboardingLayout step={4}>
       <div className="flex w-[920px] gap-[24px]">
@@ -28,15 +60,41 @@ export function PaymentPage() {
             </p>
           </div>
           <div className="flex w-full flex-col gap-[14px] rounded-[16px] bg-surface p-[24px] outline-1 -outline-offset-1 outline-line-strong">
-            <AuthField id="card" label="Card number" icon={CreditCard} defaultValue="4242 4242 4242 4242" inputMode="numeric" />
+            <AuthField
+              id="card"
+              label="Card number"
+              icon={CreditCard}
+              value={card}
+              onChange={(e) => setCard(e.target.value)}
+              inputMode="numeric"
+            />
             <div className="flex w-full gap-[12px]">
-              <AuthField id="expiry" label="Expiry" defaultValue="08 / 28" />
-              <AuthField id="cvc" label="CVC" icon={Lock} defaultValue="•••" />
+              <AuthField id="expiry" label="Expiry" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+              <AuthField
+                id="cvc"
+                label="CVC"
+                icon={Lock}
+                secret
+                placeholder="•••"
+                value={cvc}
+                onChange={(e) => setCvc(e.target.value)}
+              />
             </div>
-            <AuthField id="name-on-card" label="Name on card" defaultValue="Dede Kurniawan" />
+            <AuthField
+              id="name-on-card"
+              label="Name on card"
+              value={nameOnCard}
+              onChange={(e) => setNameOnCard(e.target.value)}
+            />
             <div className="flex w-full gap-[12px]">
               <AuthSelect id="country" label="Country" icon={Globe} options={COUNTRIES} value={country} onChange={setCountry} />
-              <AuthField id="tax-id" label="Tax ID (optional)" defaultValue="NPWP" />
+              <AuthField
+                id="tax-id"
+                label="Tax ID (optional)"
+                placeholder="NPWP"
+                value={taxId}
+                onChange={(e) => setTaxId(e.target.value)}
+              />
             </div>
             <p className="flex items-center gap-[6px] text-[12px] text-muted">
               <ShieldCheck size={13} aria-hidden />
@@ -64,7 +122,9 @@ export function PaymentPage() {
               {l.rule && <span className="h-px w-full bg-line" />}
             </div>
           ))}
-          <AuthButton to="/auth/onboarding/all-set">Start 14-day trial</AuthButton>
+          <AuthButton onClick={() => void startTrial()} disabled={loading}>
+            {loading ? 'Starting…' : 'Start 14-day trial'}
+          </AuthButton>
           <p className="w-full text-center text-[11.5px] text-faint">We’ll remind you 3 days before the trial ends.</p>
         </aside>
       </div>

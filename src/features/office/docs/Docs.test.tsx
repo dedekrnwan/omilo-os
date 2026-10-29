@@ -156,3 +156,12 @@ describe('Docs', () => {
     await waitFor(() => expect(screen.getByText(/facts added from Harga sewa balai\.xlsx/)).toBeInTheDocument(), { timeout: 3000 })
   })
 })
+
+describe('Docs — New doc (Task 5.4)', () => {
+  test('clicking New doc creates a draft and toasts', async () => {
+    const user = userEvent.setup()
+    renderDocs()
+    await user.click(await screen.findByRole('button', { name: 'New doc' }))
+    expect(await screen.findByText('Draft created')).toBeInTheDocument()
+  })
+})

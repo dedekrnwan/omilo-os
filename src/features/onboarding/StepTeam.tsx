@@ -6,12 +6,19 @@ import { TEAM_HELPERS } from './data'
 import { ChipInfo, ChipNeutral, PrimaryButton, QuietButton, Stroke, Switch, WizardCard } from './parts'
 import { useSession } from '../../app/session'
 
-export function StepTeam({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+export function StepTeam({
+  onBack,
+  onNext,
+}: {
+  onBack: () => void
+  onNext: (selectedHelperIds: string[]) => void
+}) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [on, setOn] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(TEAM_HELPERS.map((h) => [h.id, h.on])),
   )
-  const count = TEAM_HELPERS.filter((h) => on[h.id]).length
+  const selectedIds = TEAM_HELPERS.filter((h) => on[h.id]).map((h) => h.id)
+  const count = selectedIds.length
 
   return (
     <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
@@ -62,7 +69,7 @@ export function StepTeam({ onBack, onNext }: { onBack: () => void; onNext: () =>
         </QuietButton>
         <span className="h-px flex-1" />
         <span className="text-[12px] text-muted">{count} helpers · they sleep until they have work</span>
-        <PrimaryButton icon={Sparkles} onClick={onNext}>
+        <PrimaryButton icon={Sparkles} onClick={() => onNext(selectedIds)}>
           Create my team
         </PrimaryButton>
       </div>

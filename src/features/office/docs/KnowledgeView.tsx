@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   ArrowRight,
   Building2,
@@ -387,6 +388,7 @@ function AskPanel({
 
 /** pen `Docs · Knowledge (on)` — eU7Fc, TBJls, cUtde, n8N6dT, igY8b, WZycb. */
 export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOpen: boolean; onPanelOpen: (open: boolean) => void; teachSignal: number }) {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('all')
   const [base, setBase] = useState<KnowNode[]>(KNOW_NODES)
   const [extraEdges, setExtraEdges] = useState<GEdge[]>([])
@@ -646,7 +648,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
         { label: `Teach ${name} something`, icon: Lightbulb, onSelect: () => { setPlaceholder(`Remember that… (for ${name})`); onPanelOpen(true) } },
         { label: `Ask what ${name} knows`, icon: Sparkles, onSelect: () => ask(`What has ${name} learned?`) },
         { type: 'separator' },
-        { label: 'Open profile', icon: UserRound, onSelect: () => notify(`${name}’s profile is in Team`) },
+        { label: 'Open profile', icon: UserRound, onSelect: () => void navigate({ to: '/team/$helperId', params: { helperId: n.id } }) },
       ]
     }
     if (n.kind === 'file') {
