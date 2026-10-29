@@ -57,7 +57,7 @@ beforeEach(() => {
 })
 
 describe('New flow dialog — create', () => {
-  test('Draft with Chief creates a flow with the typed description and navigates to its canvas', async () => {
+  test('Draft with Chief creates a flow with the typed description and opens it as a draft', async () => {
     const user = userEvent.setup()
     const createFlow = vi.fn().mockResolvedValue({ id: 'flw-created' })
     const router = makeRouter('/flows', { createFlow })
@@ -73,7 +73,29 @@ describe('New flow dialog — create', () => {
         expect.objectContaining({ trigger: expect.objectContaining({ spec: expect.objectContaining({ description: 'Send a weekly recap on Mondays' }) }) }),
       ),
     )
-    await waitFor(() => expect(router.state.location.pathname).toBe('/flows/flw-created/canvas'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/flows/flw-created/draft'))
+  })
+
+  test('Start blank creates an empty flow (no fake "blank-new" id)', async () => {
+    const user = userEvent.setup()
+    const createFlow = vi.fn().mockResolvedValue({ id: 'flw-blank' })
+    const router = makeRouter('/flows', { createFlow })
+    await user.click(await screen.findByRole('button', { name: /New flow/i }))
+    await user.click(await screen.findByRole('tab', { name: 'Start blank' }))
+    await user.click(screen.getAllByRole('button', { name: /^Start blank$/ }).at(-1)!)
+    await waitFor(() => expect(createFlow).toHaveBeenCalledWith(expect.objectContaining({ nodes: [], edges: [] })))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/flows/flw-blank/canvas'))
+  })
+
+  test('Use on a template creates a draft from it', async () => {
+    const user = userEvent.setup()
+    const createFlow = vi.fn().mockResolvedValue({ id: 'flw-tpl' })
+    const router = makeRouter('/flows', { createFlow })
+    await user.click(await screen.findByRole('button', { name: 'Use Incident → postmortem' }))
+    await waitFor(() => expect(createFlow).toHaveBeenCalledWith(expect.objectContaining({ title: 'Incident → postmortem' })))
+    const body = createFlow.mock.calls[0][0] as { nodes: { kind: string }[] }
+    expect(body.nodes.map((n) => n.kind)).toEqual(['trigger', 'ai_step', 'connector'])
+    await waitFor(() => expect(router.state.location.pathname).toBe('/flows/flw-tpl/draft'))
   })
 })
 
@@ -105,10 +127,21 @@ describe('Flow settings — danger zone', () => {
 
 describe('Inspector — trigger "only on branch" persists via updateNode', () => {
   test('typing a branch writes it to the node config (survives a re-render)', async () => {
-    // Select the trigger node of the demo flow.
+    // Seed a live flow with a trigger node, then select it.
+    useFlowStore.getState().seed('flw-insp', {
+      id: 'flw-insp', title: 'Insp', status: 'draft', enabled: false, count: 1, areas: [], createdAt: null, version: 1,
+      nodes: [{ id: 'trigger', kind: 'trigger', label: 'Deploy fails', x: 0, y: 0, config: { ui: { app: 'github' } } }],
+      edges: [],
+    })
     useFlowStore.getState().select('flw-insp', 'trigger')
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrap = (ui: React.ReactNode) => (
+      <QueryClientProvider client={qc}>
+        <ReposProvider repos={createMockRepos()}>{ui}</ReposProvider>
+      </QueryClientProvider>
+    )
 
-    const { rerender } = render(<Inspector flowId="flw-insp" />)
+    const { rerender } = render(wrap(<Inspector flowId="flw-insp" />))
 
     const branch = await screen.findByLabelText('Branch')
     fireEvent.change(branch, { target: { value: 'release/*' } })
@@ -118,7 +151,7 @@ describe('Inspector — trigger "only on branch" persists via updateNode', () =>
     expect(node?.config?.branch).toBe('release/*')
 
     // And a fresh render reads it back (not lost local state).
-    rerender(<Inspector flowId="flw-insp" />)
+    rerender(wrap(<Inspector flowId="flw-insp" />))
     expect((await screen.findByLabelText('Branch') as HTMLInputElement).value).toBe('release/*')
   })
 })

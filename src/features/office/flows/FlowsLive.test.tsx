@@ -16,10 +16,16 @@ import {
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../../app/ReposProvider'
+import { CommandsProvider } from '../../../app/CommandsProvider'
 import { createMockRepos } from '../../../adapters/mock/mockRepos'
-import { flows as fixtureFlows } from '../../../adapters/mock/fixtures'
+import { createMockCommands } from '../../../adapters/mock/mockCommands'
+import { flows as allFixtureFlows } from '../../../adapters/mock/fixtures'
+
+// The original fixture flows (the mock layer also adds a demo triage flow first).
+const fixtureFlows = allFixtureFlows.filter((f) => f.id.startsWith('flw-') && f.id !== 'flw-deploy-triage')
 import { OfficeFlowsRoute, OfficeFlowCanvasRoute, OfficeFlowRunsRoute } from './index'
 import { useUIStore } from '../../../app/store'
+import { resetFlows } from './editor'
 
 // ── Stub commands so publish/run/test-run are observable ──────────────────────
 
@@ -27,13 +33,6 @@ const publishSpy = vi.fn().mockResolvedValue({})
 const runSpy = vi.fn().mockResolvedValue({})
 const testRunSpy = vi.fn().mockResolvedValue({})
 
-vi.mock('../../../features/control-panel/sections/getCommands', () => ({
-  getCommands: () => ({
-    publishFlow: publishSpy,
-    runFlow: runSpy,
-    testRunFlow: testRunSpy,
-  }),
-}))
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,9 +42,11 @@ function makeEnv() {
   const root = createRootRoute({
     component: () => (
       <QueryClientProvider client={queryClient}>
-        <ReposProvider repos={repos}>
-          <Outlet />
-        </ReposProvider>
+        <CommandsProvider commands={{ ...createMockCommands(), publishFlow: publishSpy, runFlow: runSpy, testRunFlow: testRunSpy }}>
+          <ReposProvider repos={repos}>
+            <Outlet />
+          </ReposProvider>
+        </CommandsProvider>
       </QueryClientProvider>
     ),
   })
@@ -67,6 +68,7 @@ function renderAt(path: string, root: ReturnType<typeof makeEnv>['root']) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetFlows()
   useUIStore.setState({ mode: 'office', areaId: null })
 })
 
@@ -131,6 +133,6 @@ describe('Flow runs — seeded from useFlowRuns()', () => {
     ;(repos.flows as { runs: (id: string) => Promise<unknown[]> }).runs = () => Promise.resolve([])
     const liveId = fixtureFlows[0].id
     renderAt(`/flows/${liveId}/runs`, root)
-    await screen.findByText(/no runs yet/i)
+    expect((await screen.findAllByText(/no runs yet/i)).length).toBeGreaterThan(0)
   })
 })

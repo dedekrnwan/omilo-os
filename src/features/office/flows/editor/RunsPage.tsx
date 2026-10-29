@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
-import { Check, CircleCheck, CircleSlash, Hash, Link, PanelRight, X, CircleDashed, CircleMinus, CircleX, Hourglass, Loader2, RotateCcw } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Check, CircleCheck, CircleSlash, Hash, Link, PanelRight, Play, X, CircleDashed, CircleMinus, CircleX, Hourglass, Loader2, RotateCcw } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { RunStatus, RunStep } from './data'
 import { EditorFrame } from './EditorFrame'
 import { ContextMenuArea, MoreMenu, copyText } from '../../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../../ui/ds/ItemMenu'
 import { notify } from '../../../../ui/ds/Toaster'
-import { useFlow, useFlowStore } from './store'
-import type { RunState } from './store'
-import { useFlowRuns } from '../../../../app/queries'
+import { useFlowStore } from './store'
+import { runsThisWeek, toRunStates } from './runs'
+import type { RunState } from './runs'
+import { useFlowRun, useFlowRunAction, useFlowRuns } from '../../../../app/queries'
+import type { FlowRunAction } from '../../../../app/queries'
 
 type Filter = 'all' | 'waiting' | 'failed'
 
@@ -34,7 +36,7 @@ function StatusIcon({ status, running }: { status: RunStatus; running?: boolean 
 }
 
 function statusLabel(r: RunState) {
-  if (r.detail.chip === 'Running') return { label: 'Running', ink: 'text-muted' }
+  if (r.live) return { label: 'Running', ink: 'text-muted' }
   if (r.detail.chip === 'Cancelled') return { label: 'Cancelled', ink: 'text-faint' }
   if (r.detail.chip.startsWith('Declined')) return { label: 'Declined', ink: 'text-faint' }
   return STATUS[r.status]
@@ -54,7 +56,7 @@ function RunRow({
   menu: MenuEntries
 }) {
   const st = statusLabel(run)
-  const running = run.detail.chip === 'Running'
+  const running = run.live
   return (
     <ContextMenuArea items={menu} label={`Run #${run.number} actions`}>
     <li className="group/run relative data-[state=open]:[&>button]:bg-soft">
@@ -87,7 +89,7 @@ function RunRow({
           className="absolute bottom-[10px] left-[37px] flex items-center gap-[5px] rounded-xs px-[2px] text-[12px] text-ink-2 hover:text-ink"
         >
           <RotateCcw size={11} aria-hidden />
-          Retry from failed step
+          Retry
         </button>
       )}
       <span className="absolute top-[9px] right-[11px] hidden group-hover/run:flex group-focus-within/run:flex has-[[data-state=open]]:flex">
@@ -111,7 +113,7 @@ function StepIcon({ state }: { state: RunStep['state'] }) {
   }
 }
 
-function Timeline({ run, onApprove }: { run: RunState; onApprove: (ok: boolean) => void }) {
+function Timeline({ run, onApprove, busy }: { run: RunState; onApprove: (ok: boolean) => void; busy?: boolean }) {
   const steps = run.detail.steps
   return (
     <ol className="m-0 flex list-none flex-col px-[24px] pt-[16px] pb-[24px]">
@@ -147,6 +149,7 @@ function Timeline({ run, onApprove }: { run: RunState; onApprove: (ok: boolean) 
                   <div className="flex items-center gap-[6px]">
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() => onApprove(true)}
                       className="flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[11px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover"
                     >
@@ -155,6 +158,7 @@ function Timeline({ run, onApprove }: { run: RunState; onApprove: (ok: boolean) 
                     </button>
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() => onApprove(false)}
                       className="h-[28px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
                     >
@@ -183,18 +187,40 @@ const CHIP_LOOK: Record<string, string> = {
 export function FlowRunsPage() {
   const { flowId } = useParams({ strict: false }) as { flowId: string }
   const navigate = useNavigate()
-  const f = useFlow(flowId)
   const s = useFlowStore()
-  const { data: apiRuns } = useFlowRuns(flowId)
-  useEffect(() => {
-    if (apiRuns) s.seedRuns(flowId, apiRuns)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flowId, apiRuns])
+  const { data: apiRuns = [], isLoading, isError } = useFlowRuns(flowId)
+  const all = useMemo(() => toRunStates(apiRuns), [apiRuns])
   const [filter, setFilter] = useState<Filter>('all')
-  const [selectedId, setSelectedId] = useState(f.runs[0]?.id)
-  const runs = f.runs.filter((r) => (filter === 'all' ? true : r.status === filter))
-  const run = f.runs.find((r) => r.id === selectedId) ?? runs[0]
-  const live = run && (run.status === 'waiting' || run.detail.chip === 'Running')
+  const [selectedId, setSelectedId] = useState<string | undefined>(() =>
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('run') ?? undefined : undefined,
+  )
+  const runs = all.filter((r) => (filter === 'all' ? true : r.status === filter))
+  const listed = all.find((r) => r.id === selectedId) ?? runs[0]
+  // Full step log for the selected run (polls while it is still going).
+  const { data: detail } = useFlowRun(flowId, listed?.id, { poll: true })
+  const run = useMemo(() => {
+    if (!listed) return undefined
+    if (!detail?.steps) return listed
+    const [fresh] = toRunStates([detail])
+    return { ...fresh, number: listed.number, detail: { ...fresh.detail, title: listed.detail.title } }
+  }, [listed, detail])
+  const live = run && (run.waiting || run.live)
+  const action = useFlowRunAction()
+
+  function act(a: FlowRunAction, done: string, select = false) {
+    action.mutate(a, {
+      onSuccess: (r) => {
+        notify(done)
+        if (select) setSelectedId(r.id)
+      },
+      onError: () => notify('Could not update the run — try again'),
+    })
+  }
+  const approve = (id: string, ok: boolean) =>
+    act({ kind: 'decide', flowId, runId: id, approve: ok }, ok ? 'Approved — the run continues' : 'Declined — nothing changed')
+  const cancel = (id: string) => act({ kind: 'cancel', flowId, runId: id }, 'Run cancelled')
+  const retry = (id: string) => act({ kind: 'retry', flowId, runId: id }, 'Retrying — new run started', true)
+  const runNow = () => act({ kind: 'run', flowId }, 'Run started', true)
 
   return (
     <EditorFrame
@@ -207,7 +233,21 @@ export function FlowRunsPage() {
     >
       <section aria-label="Runs" className="flex w-[380px] shrink-0 flex-col shadow-[inset_-1px_0_0_var(--color-line-strong)]">
         <header className="flex h-[47px] shrink-0 items-center gap-[8px] pr-[14px] pl-[14px] shadow-[inset_0_-1px_0_var(--color-line)]">
-          <h2 className="m-0 flex-1 text-[13px] font-semibold text-ink">{f.runs.length + 8} runs this week</h2>
+          <h2 className="m-0 flex-1 text-[13px] font-semibold text-ink">
+            {(() => {
+              const n = runsThisWeek(apiRuns)
+              return `${n} run${n === 1 ? '' : 's'} this week`
+            })()}
+          </h2>
+          <button
+            type="button"
+            onClick={runNow}
+            disabled={action.isPending}
+            className="flex h-[24px] items-center gap-[4px] rounded-full bg-surface px-[9px] text-[12px] font-medium text-ink-2 outline-1 -outline-offset-1 outline-line-strong hover:bg-soft disabled:text-muted"
+          >
+            <Play size={11} aria-hidden />
+            Run now
+          </button>
           <div role="radiogroup" aria-label="Filter runs" className="flex gap-[8px]">
             {(
               [
@@ -238,23 +278,29 @@ export function FlowRunsPage() {
               run={r}
               selected={r.id === run?.id}
               onSelect={() => setSelectedId(r.id)}
-              onRetry={() => setSelectedId(s.retryRun(flowId, r.id))}
+              onRetry={() => retry(r.id)}
               menu={[
                 { label: 'Open', icon: PanelRight, onSelect: () => setSelectedId(r.id) },
-                r.status === 'waiting' && r.detail.chip !== 'Running' && { type: 'separator' },
-                r.status === 'waiting' && r.detail.chip !== 'Running' && { label: 'Approve', icon: Check, onSelect: () => { setSelectedId(r.id); s.approve(flowId, r.id, true) } },
-                r.status === 'waiting' && r.detail.chip !== 'Running' && { label: 'Decline', icon: X, onSelect: () => { setSelectedId(r.id); s.approve(flowId, r.id, false) } },
-                (r.status === 'waiting' || r.detail.chip === 'Running') && { label: 'Cancel run', icon: CircleSlash, onSelect: () => s.cancelRun(flowId, r.id) },
-                r.status === 'failed' && { label: 'Retry from failed step', icon: RotateCcw, onSelect: () => setSelectedId(s.retryRun(flowId, r.id)) },
+                r.waiting && { type: 'separator' },
+                r.waiting && { label: 'Approve', icon: Check, onSelect: () => { setSelectedId(r.id); approve(r.id, true) } },
+                r.waiting && { label: 'Decline', icon: X, onSelect: () => { setSelectedId(r.id); approve(r.id, false) } },
+                (r.waiting || r.live) && { label: 'Cancel run', icon: CircleSlash, onSelect: () => cancel(r.id) },
+                r.status === 'failed' && { label: 'Retry', icon: RotateCcw, onSelect: () => retry(r.id) },
                 { type: 'separator' },
                 { label: 'Copy run link', icon: Link, onSelect: () => { copyText(`${location.origin}/flows/${flowId}/runs?run=${r.id}`); notify('Link copied') } },
-                { label: 'Copy run ID', icon: Hash, onSelect: () => { copyText(`run_${r.number}`); notify('Run ID copied') } },
+                { label: 'Copy run ID', icon: Hash, onSelect: () => { copyText(r.id); notify('Run ID copied') } },
               ]}
             />
           ))}
-          {runs.length === 0 && (
+          {isLoading && <li className="px-[16px] py-[24px] text-[12.5px] text-muted">Loading runs…</li>}
+          {isError && (
+            <li role="alert" className="px-[16px] py-[24px] text-[12.5px] text-bad">
+              Could not load runs. Please refresh to try again.
+            </li>
+          )}
+          {!isLoading && !isError && runs.length === 0 && (
             <li className="px-[16px] py-[24px] text-[12.5px] text-muted">
-              {f.runs.length === 0 ? 'No runs yet' : `No ${filter} runs this week.`}
+              {all.length === 0 ? 'No runs yet' : `No ${filter} runs.`}
             </li>
           )}
         </ul>
@@ -274,7 +320,8 @@ export function FlowRunsPage() {
             {live ? (
               <button
                 type="button"
-                onClick={() => s.cancelRun(flowId, run.id)}
+                disabled={action.isPending}
+                onClick={() => cancel(run.id)}
                 className="mt-[4px] h-[28px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
               >
                 Cancel run
@@ -282,7 +329,8 @@ export function FlowRunsPage() {
             ) : run.status === 'failed' ? (
               <button
                 type="button"
-                onClick={() => setSelectedId(s.retryRun(flowId, run.id))}
+                disabled={action.isPending}
+                onClick={() => retry(run.id)}
                 className="mt-[4px] flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
               >
                 <RotateCcw size={13} aria-hidden />
@@ -290,10 +338,16 @@ export function FlowRunsPage() {
               </button>
             ) : null}
           </header>
-          <Timeline run={run} onApprove={(ok) => s.approve(flowId, run.id, ok)} />
+          {run.detail.steps.length === 0 ? (
+            <p className="m-0 px-[24px] py-[16px] text-[12.5px] text-muted">No step log for this run.</p>
+          ) : (
+            <Timeline run={run} busy={action.isPending} onApprove={(ok) => approve(run.id, ok)} />
+          )}
         </section>
       ) : (
-        <div className="flex flex-1 items-center justify-center text-[13px] text-muted">Pick a run to see its steps.</div>
+        <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
+          {all.length === 0 && !isLoading ? 'No runs yet — use Run now or Test run.' : 'Pick a run to see its steps.'}
+        </div>
       )}
     </EditorFrame>
   )

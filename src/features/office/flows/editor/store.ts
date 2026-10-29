@@ -1,15 +1,8 @@
 import { create } from 'zustand'
-import type { Flow, FlowRun as DomainFlowRun } from '../../../../core/domain/types'
-import {
-  AI_DETAIL,
-  DEFAULT_SETTINGS,
-  IF_H,
-  NODE_H,
-  NODE_W,
-  TRIAGE_EDGES,
-  TRIAGE_NODES,
-} from './data'
-import type { AiStepDetail, FlowEdge, FlowNode, FlowRun, FlowSettings, PaletteItem, RunStep } from './data'
+import type { Flow } from '../../../../core/domain/types'
+import { DEFAULT_SETTINGS, IF_H, NODE_H, NODE_W } from './data'
+import type { AiStepDetail, FlowEdge, FlowNode, FlowSettings, PaletteItem } from './data'
+import { fromApiGraph } from './graphMap'
 
 /** Vertical room one inserted step takes (node + gap). */
 const ROW = 140
@@ -19,11 +12,8 @@ export interface Graph {
   edges: FlowEdge[]
 }
 
-export interface RunState extends FlowRun {
-  detail: { title: string; chip: string; sub: string; steps: RunStep[] }
-}
-
-export type TestState = 'idle' | 'running' | 'done'
+/** idle → requested (any page asked for a test) → running (POST in flight) → done. */
+export type TestState = 'idle' | 'requested' | 'running' | 'done'
 
 export interface FlowEditorState {
   graph: Graph
@@ -32,46 +22,38 @@ export interface FlowEditorState {
   selected: string | null
   ai: Record<string, AiStepDetail>
   enabled: boolean
-  /** Unpublished edits on the canvas */
+  /** Canvas edits not saved to the server yet (autosave clears it). */
   dirty: boolean
-  publishedAt: string | null
+  /** Server graph version the canvas was seeded from / last saved as. */
+  serverVersion: number | null
+  /** True once seeded from the live flow. */
+  hydrated: boolean
   test: TestState
-  testStep: number
-  runs: RunState[]
+  /** The test run being shown in the test panel. */
+  testRunId: string | null
   settings: FlowSettings
   savedSettings: FlowSettings
-  /** Draft (from Suggested) not turned on yet */
-  draft: 'draft' | 'on' | 'discarded'
   /** Step whose name is being edited in the inspector */
   renamingId: string | null
 }
 
-/**
- * Create initial editor state for a flow.
- * For blank/new flows: empty canvas, no runs.
- * For known flow IDs: demo graph (TRIAGE_NODES/EDGES) + empty runs until
- * CanvasPage calls seed() and RunsPage calls seedRuns() with live data.
- */
-function makeFlow(flowId: string): FlowEditorState {
-  // A blank flow (from "Start blank") opens an empty canvas — no demo graph/runs.
-  const blank = flowId.startsWith('blank')
-  const settings = { ...DEFAULT_SETTINGS, name: blank ? 'Untitled flow' : DEFAULT_SETTINGS.name }
+/** Empty editor state until CanvasPage / SettingsPage seed it from GET /v1/flows/{id}. */
+function makeFlow(): FlowEditorState {
+  const settings = { ...DEFAULT_SETTINGS }
   return {
-    graph: blank ? { nodes: [], edges: [] } : { nodes: TRIAGE_NODES, edges: TRIAGE_EDGES },
+    graph: { nodes: [], edges: [] },
     past: [],
     future: [],
-    selected: blank ? null : 'read-logs',
-    ai: blank ? {} : AI_DETAIL,
-    enabled: !blank,
-    dirty: true,
-    publishedAt: null,
+    selected: null,
+    ai: {},
+    enabled: false,
+    dirty: false,
+    serverVersion: null,
+    hydrated: false,
     test: 'idle',
-    testStep: 0,
-    // Runs start empty; RunsPage seeds from useFlowRuns() via seedRuns()
-    runs: [],
+    testRunId: null,
     settings,
     savedSettings: settings,
-    draft: 'draft',
     renamingId: null,
   }
 }
@@ -82,7 +64,7 @@ const FALLBACK = {
   get(id: string) {
     let f = this.cache.get(id)
     if (!f) {
-      f = makeFlow(id)
+      f = makeFlow()
       this.cache.set(id, f)
     }
     return f
@@ -115,10 +97,13 @@ export function stepFromPalette(item: PaletteItem, x: number, y: number): FlowNo
 
 interface Actions {
   get(flowId: string): FlowEditorState
-  /** Seed editor settings/enabled from a live Flow (called by CanvasPage on query resolve). */
+  /**
+   * Seed the editor from a live Flow: title/area/enabled always; the graph only
+   * on first load or when the server version moved on and there are no local edits.
+   */
   seed(flowId: string, flow: Flow): void
-  /** Seed runs from live FlowRun[] (called by RunsPage on query resolve). */
-  seedRuns(flowId: string, apiRuns: DomainFlowRun[]): void
+  /** Autosave finished: the server now holds `version`. */
+  markSaved(flowId: string, version: number | null): void
   select(flowId: string, id: string | null): void
   /** Commit a graph change (undoable). */
   edit(flowId: string, fn: (g: Graph) => Graph): void
@@ -134,30 +119,17 @@ interface Actions {
   updateNode(flowId: string, id: string, patch: Partial<FlowNode>): void
   updateAi(flowId: string, id: string, patch: Partial<AiStepDetail>): void
   setEnabled(flowId: string, on: boolean): void
-  publish(flowId: string): void
+  /** Ask the canvas to run a real test (CanvasPage performs POST /test-run). */
   startTest(flowId: string): void
+  setTest(flowId: string, test: TestState, runId?: string | null): void
   closeTest(flowId: string): void
-  approve(flowId: string, runId: string, ok: boolean): void
-  cancelRun(flowId: string, runId: string): void
-  retryRun(flowId: string, runId: string): string
   setSettings(flowId: string, patch: Partial<FlowSettings>): void
   saveSettings(flowId: string): void
   discardSettings(flowId: string): void
-  restoreVersion(flowId: string): void
-  setDraft(flowId: string, draft: FlowEditorState['draft']): void
   setRenaming(flowId: string, id: string | null): void
 }
 
 type Store = { flows: Record<string, FlowEditorState> } & Actions
-
-const timers = new Set<ReturnType<typeof setTimeout>>()
-function later(ms: number, fn: () => void) {
-  const t = setTimeout(() => {
-    timers.delete(t)
-    fn()
-  }, ms)
-  timers.add(t)
-}
 
 /** Editor state per flow — kept while you switch Canvas / Runs / Settings. */
 export const useFlowStore = create<Store>()((set, get) => {
@@ -176,64 +148,39 @@ export const useFlowStore = create<Store>()((set, get) => {
       ...extra?.(f),
     }))
 
-  const updateRun = (flowId: string, runId: string, fn: (r: RunState) => RunState) =>
-    patch(flowId, (f) => ({ runs: f.runs.map((r) => (r.id === runId ? fn(r) : r)) }))
-
-  // ── Live data seeding helpers ────────────────────────────────────────────────
-
-  function normaliseStatus(s: string): FlowRun['status'] {
-    if (s === 'done' || s === 'succeeded') return 'succeeded'
-    if (s === 'waiting') return 'waiting'
-    if (s === 'failed') return 'failed'
-    return 'noop'
-  }
-
-  function apiRunToRunState(r: DomainFlowRun, i: number): RunState {
-    const number = i + 1
-    const status = normaliseStatus(r.status)
-    const when = r.startedAt ? new Date(r.startedAt).toLocaleDateString() : 'Unknown'
-    const durationSec = r.duration ?? 0
-    const costUsd = (r.costCredits * 0.001).toFixed(3)
-    const meta = durationSec > 0 ? `${durationSec}s · $${costUsd}` : `$${costUsd}`
-    const chipMap: Record<FlowRun['status'], string> = {
-      waiting: 'Waiting for you',
-      succeeded: 'Succeeded',
-      failed: 'Failed',
-      noop: 'No action needed',
-    }
-    return {
-      id: r.id,
-      number,
-      status,
-      when,
-      what: r.triggerSummary ?? '',
-      meta,
-      retry: status === 'failed',
-      detail: {
-        title: `Run #${number}`,
-        chip: chipMap[status],
-        sub: `${when} · ${r.triggerSummary ?? ''} · ${meta}`,
-        steps: [],
-      },
-    }
-  }
-
   return {
     flows: {},
     get: (flowId) => get().flows[flowId] ?? FALLBACK.get(flowId),
 
     seed: (flowId, flow) => {
-      patch(flowId, (f) => ({
-        settings: { ...f.settings, name: flow.title },
-        savedSettings: { ...f.savedSettings, name: flow.title },
-        enabled: flow.enabled,
-      }))
+      patch(flowId, (f) => {
+        const name = flow.title
+        const areaId = flow.areas?.[0] ?? f.settings.areaId
+        const base: Partial<FlowEditorState> = {
+          settings: { ...f.settings, name, areaId },
+          savedSettings: { ...f.savedSettings, name, areaId },
+          enabled: flow.enabled,
+        }
+        const version = flow.version ?? null
+        const fresh = !f.hydrated || (!f.dirty && version !== null && version !== f.serverVersion)
+        if (!fresh) return base
+        const g = fromApiGraph(flow.nodes ?? [], flow.edges ?? [])
+        const keep = f.selected && g.nodes.some((n) => n.id === f.selected)
+        return {
+          ...base,
+          graph: { nodes: g.nodes, edges: g.edges },
+          ai: g.ai,
+          past: [],
+          future: [],
+          dirty: false,
+          hydrated: true,
+          serverVersion: version,
+          selected: keep ? f.selected : (g.nodes.find((n) => n.kind === 'ai') ?? g.nodes[0])?.id ?? null,
+        }
+      })
     },
 
-    seedRuns: (flowId, apiRuns) => {
-      const runs = apiRuns.map((r, i) => apiRunToRunState(r, i))
-      patch(flowId, () => ({ runs }))
-    },
+    markSaved: (flowId, version) => patch(flowId, () => ({ dirty: false, serverVersion: version })),
 
     select: (flowId, id) => patch(flowId, () => ({ selected: id })),
     edit: (flowId, fn) => commit(flowId, fn),
@@ -338,96 +285,13 @@ export const useFlowStore = create<Store>()((set, get) => {
     updateAi: (flowId, id, p) =>
       patch(flowId, (f) => ({ ai: { ...f.ai, [id]: { ...(f.ai[id] ?? blankAi()), ...p } }, dirty: true })),
     setEnabled: (flowId, on) => patch(flowId, () => ({ enabled: on })),
-    publish: (flowId) => patch(flowId, () => ({ dirty: false, publishedAt: 'just now' })),
-    startTest: (flowId) => {
-      patch(flowId, () => ({ test: 'running', testStep: 0 }))
-      for (let i = 1; i <= 5; i++) {
-        later(i * 380, () =>
-          patch(flowId, (f) => (f.test === 'running' ? { testStep: i, test: i === 5 ? 'done' : 'running' } : {})),
-        )
-      }
-    },
-    closeTest: (flowId) => patch(flowId, () => ({ test: 'idle', testStep: 0 })),
-    approve: (flowId, runId, ok) => {
-      updateRun(flowId, runId, (r) => {
-        const steps = r.detail.steps.map((s): RunStep => {
-          if (s.state === 'waiting')
-            return { ...s, state: ok ? 'done' : 'failed', title: ok ? 'You approved the fix' : 'You declined the fix', time: ok ? 'just now' : 'declined', approval: undefined }
-          if (s.state === 'queued' && !ok) return { ...s, state: 'queued', time: 'skipped' }
-          return s
-        })
-        return ok
-          ? { ...r, status: 'waiting', detail: { ...r.detail, steps, chip: 'Running' } }
-          : { ...r, status: 'noop', detail: { ...r.detail, steps, chip: 'Declined — nothing changed' } }
-      })
-      if (!ok) return
-      // Run the remaining steps one by one
-      const queued = get().get(flowId).runs.find((r) => r.id === runId)?.detail.steps.filter((s) => s.state === 'queued').length ?? 0
-      for (let i = 1; i <= queued; i++) {
-        later(i * 700, () =>
-          updateRun(flowId, runId, (r) => {
-            let done = false
-            const steps = r.detail.steps.map((s) => {
-              if (!done && s.state === 'queued') {
-                done = true
-                return { ...s, state: 'done' as const, time: i === 1 ? '38s · $0.004' : '0.3s' }
-              }
-              return s
-            })
-            const last = i === queued
-            return {
-              ...r,
-              status: last ? 'succeeded' : r.status,
-              what: last ? r.what.replace('migration step failed', 'fix PR opened') : r.what,
-              detail: { ...r.detail, steps, chip: last ? 'Succeeded' : 'Running' },
-            }
-          }),
-        )
-      }
-    },
-    cancelRun: (flowId, runId) =>
-      updateRun(flowId, runId, (r) => ({
-        ...r,
-        status: 'failed',
-        detail: {
-          ...r.detail,
-          chip: 'Cancelled',
-          steps: r.detail.steps.map((s) =>
-            s.state === 'waiting' || s.state === 'queued' ? { ...s, state: 'queued', time: 'cancelled', approval: undefined } : s,
-          ),
-        },
-      })),
-    retryRun: (flowId, runId) => {
-      const f = get().get(flowId)
-      const src = f.runs.find((r) => r.id === runId)
-      const number = Math.max(...f.runs.map((r) => r.number)) + 1
-      const id = `r${number}`
-      if (!src) return id
-      const run: RunState = {
-        ...src,
-        id,
-        number,
-        status: 'succeeded',
-        when: 'just now',
-        retry: false,
-        what: src.what.replace('timed out', 'retried, passed'),
-        detail: {
-          ...src.detail,
-          title: `Run #${number}`,
-          chip: 'Succeeded',
-          sub: `Retried from run #${src.number} · just now`,
-          steps: src.detail.steps.map((s) => ({ ...s, state: 'done' as const, time: s.state === 'failed' ? '9.1s' : s.time })),
-        },
-      }
-      patch(flowId, (fl) => ({ runs: [run, ...fl.runs] }))
-      return id
-    },
+    startTest: (flowId) => patch(flowId, () => ({ test: 'requested', testRunId: null })),
+    setTest: (flowId, test, runId) => patch(flowId, (f) => ({ test, testRunId: runId === undefined ? f.testRunId : runId })),
+    closeTest: (flowId) => patch(flowId, () => ({ test: 'idle', testRunId: null })),
     setSettings: (flowId, p) => patch(flowId, (f) => ({ settings: { ...f.settings, ...p } })),
     saveSettings: (flowId) => patch(flowId, (f) => ({ savedSettings: f.settings })),
     discardSettings: (flowId) => patch(flowId, (f) => ({ settings: f.savedSettings })),
-    restoreVersion: (flowId) => patch(flowId, () => ({ dirty: true })),
     setRenaming: (flowId, id) => patch(flowId, () => ({ renamingId: id, selected: id ?? get().get(flowId).selected })),
-    setDraft: (flowId, draft) => patch(flowId, () => ({ draft, enabled: draft === 'on' })),
   }
 })
 
@@ -452,8 +316,6 @@ export function useFlow(flowId: string): FlowEditorState {
 }
 /** Reset (tests). */
 export function resetFlows() {
-  timers.forEach(clearTimeout)
-  timers.clear()
   FALLBACK.cache.clear()
   useFlowStore.setState({ flows: {} })
 }

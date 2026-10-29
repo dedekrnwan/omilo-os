@@ -5,14 +5,14 @@ import { Bell, Check, Plus, X, ChevronsUpDown, Copy, Gauge, History, Pause, Play
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import type { HelperArea } from '../../../../core/domain/types'
-import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow, useUpdateFlow } from '../../../../app/queries'
+import { useChannels, useFlow as useFlowQuery, useDeleteFlow, useDuplicateFlow, useFlowRuns, useFlowVersions, useRestoreFlowVersion, useUpdateFlow } from '../../../../app/queries'
 import { notify } from '../../../../ui/ds/Toaster'
 import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
 import { AreaTile } from '../../../shell/LookControls'
 import { Box, Chip, DialogCard, Group, PenButton, Row, SaveBar, Scrim, lineBottom } from '../../../control-panel/ControlPanelShared'
-import { SPENT_THIS_MONTH, VERSIONS } from './data'
 import type { FlowSettings, OverlapPolicy } from './data'
+import { formatRelative } from '../runsAdapter'
 import { EditorFrame } from './EditorFrame'
 import { useFlow, useFlowStore } from './store'
 
@@ -141,7 +141,30 @@ export function FlowSettingsPage() {
   const deleteFlow = useDeleteFlow()
   const duplicateFlow = useDuplicateFlow()
   const updateFlow = useUpdateFlow()
+  const { data: versions = [], isLoading: versionsLoading } = useFlowVersions(flowId)
+  const { data: runs = [] } = useFlowRuns(flowId)
+  const restoreVersion = useRestoreFlowVersion()
   const v = f.settings
+  // Credits → dollars (1 credit = $0.001), as everywhere else in Flows.
+  const spent = (liveFlow?.spentThisMonthCredits ?? 0) * 0.001
+  const avgRun = runs.length ? (runs.reduce((acc, r) => acc + r.costCredits, 0) * 0.001) / runs.length : 0
+  const nextMonth = new Date()
+  nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
+  const resets = nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+  function setFlowEnabled(on: boolean) {
+    st.setEnabled(flowId, on)
+    updateFlow.mutate(
+      { id: flowId, input: { enabled: on } },
+      {
+        onSuccess: () => notify(on ? 'Flow resumed' : 'Flow paused'),
+        onError: () => {
+          st.setEnabled(flowId, !on)
+          notify('Could not change the flow — try again')
+        },
+      },
+    )
+  }
 
   // Serialize the settings-only fields (everything except name/areaId, which
   // map to the flow's title/areas columns) into the JSONB `settings` payload.
@@ -216,7 +239,7 @@ export function FlowSettingsPage() {
   }, [])
 
   const budget = Number(v.monthlyBudget) || 0
-  const pct = budget > 0 ? Math.min(100, (SPENT_THIS_MONTH / budget) * 100) : 0
+  const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0
 
   return (
     <EditorFrame
@@ -347,7 +370,7 @@ export function FlowSettingsPage() {
               <Anchor id="limits">
                 <Group title="Budget & limits" desc="A run that hits a limit stops and tells you — it never keeps spending.">
                   <Box>
-                    <Row title="Monthly budget" desc={`$${SPENT_THIS_MONTH.toFixed(2)} spent this month · resets Nov 1`}>
+                    <Row title="Monthly budget" desc={`$${spent.toFixed(2)} spent this month · resets ${resets}`}>
                       <Affix label="Monthly budget" prefix="$" value={v.monthlyBudget} onChange={(monthlyBudget) => set({ monthlyBudget })} width={110} />
                     </Row>
                     <div className={`flex flex-col gap-[6px] pt-[2px] pb-[14px] ${lineBottom}`}>
@@ -355,10 +378,11 @@ export function FlowSettingsPage() {
                         <div className={`h-full rounded-full ${pct > 85 ? 'bg-bad-solid' : pct > 60 ? 'bg-spark' : 'bg-ok'}`} style={{ width: `${pct}%` }} />
                       </div>
                       <span className="text-[12px] text-muted">
-                        {Math.round(pct)}% used · about {Math.max(0, Math.floor((budget - SPENT_THIS_MONTH) / 0.018))} more runs at today’s cost
+                        {Math.round(pct)}% used
+                        {avgRun > 0 ? ` · about ${Math.max(0, Math.floor((budget - spent) / avgRun))} more runs at today’s cost` : ''}
                       </span>
                     </div>
-                    <Row title="Max cost per run" desc="Typical run is ~$0.02.">
+                    <Row title="Max cost per run" desc={avgRun > 0 ? `Typical run is ~$${avgRun.toFixed(3)}.` : 'No runs yet.'}>
                       <Affix label="Max cost per run" prefix="$" value={v.costCap} onChange={(costCap) => set({ costCap })} width={110} />
                     </Row>
                     <Row title="Max steps per run" desc="Counts every step, including retries.">
@@ -474,27 +498,39 @@ export function FlowSettingsPage() {
               <Anchor id="versions">
                 <Group title="Versions" desc="Every publish is kept. Restoring puts that version on the canvas as unpublished changes.">
                   <Box>
-                    {VERSIONS.map((ver, i) => (
+                    {versionsLoading && <Row title="Loading versions…" last />}
+                    {!versionsLoading && versions.length === 0 && <Row title="No versions yet" desc="A version is kept every time you publish." last />}
+                    {versions.map((ver, i) => (
                       <Row
                         key={ver.id}
-                        last={i === VERSIONS.length - 1}
-                        leading={<span className="w-[26px] shrink-0 font-mono text-[12px] text-muted">{ver.label}</span>}
-                        title={ver.note}
-                        desc={`${ver.when} · ${ver.by}`}
+                        last={i === versions.length - 1}
+                        leading={<span className="w-[26px] shrink-0 font-mono text-[12px] text-muted">v{ver.version}</span>}
+                        title={ver.note || `${ver.nodeCount} steps`}
+                        desc={`${formatRelative(ver.createdAt, Date.now())} · ${ver.createdBy === 'operator' ? 'You' : ver.createdBy} · ${ver.nodeCount} steps`}
                       >
-                        {i === 0 ? (
-                          <Chip tone="ok">{f.publishedAt ? 'Live' : 'Live'}</Chip>
+                        {ver.status === 'live' ? (
+                          <Chip tone="ok">Live</Chip>
                         ) : restored === ver.id ? (
                           <Chip tone="info">On canvas</Chip>
+                        ) : ver.version === liveFlow?.version ? (
+                          <Chip tone="info">{ver.status === 'pending' && liveFlow?.publishState === 'pending' ? 'Waiting for approval' : 'Current'}</Chip>
                         ) : (
                           <PenButton
                             h={28}
                             fs={12.5}
                             px={10}
-                            onClick={() => {
-                              st.restoreVersion(flowId)
-                              setRestored(ver.id)
-                            }}
+                            onClick={() =>
+                              restoreVersion.mutate(
+                                { flowId, version: ver.version },
+                                {
+                                  onSuccess: () => {
+                                    setRestored(ver.id)
+                                    notify(`v${ver.version} is on the canvas — publish to make it live`)
+                                  },
+                                  onError: () => notify('Could not restore — try again'),
+                                },
+                              )
+                            }
                           >
                             Restore
                           </PenButton>
@@ -509,7 +545,7 @@ export function FlowSettingsPage() {
                 <Group title="Danger zone">
                   <Box className="!outline-bad-line">
                     <Row title={f.enabled ? 'Pause this flow' : 'Resume this flow'} desc={f.enabled ? 'Stops new runs. Runs in progress finish.' : 'Paused — new deploy failures are ignored.'}>
-                      <PenButton h={30} fs={13} px={11} icon={f.enabled ? Pause : Play} iconSize={14} onClick={() => st.setEnabled(flowId, !f.enabled)}>
+                      <PenButton h={30} fs={13} px={11} icon={f.enabled ? Pause : Play} iconSize={14} onClick={() => setFlowEnabled(!f.enabled)}>
                         {f.enabled ? 'Pause' : 'Resume'}
                       </PenButton>
                     </Row>

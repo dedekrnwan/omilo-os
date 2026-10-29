@@ -9,36 +9,76 @@ import { ContextMenuArea, MoreMenu, copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
 import { useFlowStore } from './editor/store'
-import { useFlowBoard, flowToCard } from './boardStore'
+import { draftGraph, flowToCard, useFlowBoard } from './boardStore'
 import type { FlowCard } from './boardStore'
-import type { Flow } from '../../../core/domain/types'
+import type { Flow, FlowSuggestion } from '../../../core/domain/types'
 import { officeRunRow, runsStats, sortRunsByStartedDesc } from './runsAdapter'
 import { useNavigate } from '@tanstack/react-router'
-import { useAllFlowRuns, useArea, useAreas, useFlows, useCreateFlow, useDeleteFlow, useDuplicateFlow } from '../../../app/queries'
+import {
+  useAllFlowRuns,
+  useArea,
+  useAreas,
+  useCreateFlow,
+  useDeleteFlow,
+  useDuplicateFlow,
+  useFlowSuggestions,
+  useFlows,
+  useHelpers,
+  useUpdateFlow,
+} from '../../../app/queries'
+import type { CreateFlowInput } from '../../../adapters/http/commands'
 import { useUIStore } from '../../../app/store'
 import { Button } from '../../../ui/ds/Button'
 import { Topbar } from '../../../ui/ds/Frame'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { FlowChain } from '../../../ui/ds/FlowChain'
-import {
-  TEMPLATES,
-  SUGGESTED_FLOWS,
-  newDraftId,
-} from './data'
-import type { FlowTab } from './data'
+import type { FlowIconId } from '../../../ui/ds/FlowChain'
+import { TEMPLATES } from './data'
+import type { FlowTab, TemplateFlow } from './data'
 import { RunStatusChip, Sparkline, Toggle } from './shared'
+
+/** "Use" on a template → a draft flow body (trigger → AI step → app). */
+function templateBody(t: TemplateFlow): CreateFlowInput {
+  return {
+    title: t.title,
+    trigger: { kind: t.from === 'clock' ? 'schedule' : 'manual', spec: t.from === 'clock' ? { cron: '0 9 * * 1' } : {} },
+    ...draftGraph(t.title, [t.desc.replace(/\.$/, '')], t.from, t.to),
+    areas: [],
+  }
+}
+
+/** "Create" on a suggestion → its server-built draft. */
+function suggestionBody(s: FlowSuggestion): CreateFlowInput {
+  return { title: s.draft.title, trigger: s.draft.trigger, nodes: s.draft.nodes, edges: s.draft.edges, areas: [] }
+}
 
 // ── FlowCard ──────────────────────────────────────────────────────────────────
 
 function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void }) {
   const navigate = useNavigate()
-  const enabled = useFlowStore((st) => st.flows[card.id]?.enabled) ?? card.enabled
-  const { setEnabled, startTest } = useFlowStore()
-  const { remove, restore } = useFlowBoard()
+  const [optimistic, setOptimistic] = useState<boolean | null>(null)
+  const enabled = optimistic ?? card.enabled
+  const { startTest } = useFlowStore()
+  const { scheduleDelete, restore } = useFlowBoard()
   const duplicateFlow = useDuplicateFlow()
   const deleteFlow = useDeleteFlow()
+  const updateFlow = useUpdateFlow()
   const go = (to: '/flows/$flowId/canvas' | '/flows/$flowId/runs' | '/flows/$flowId/settings') =>
     void navigate({ to, params: { flowId: card.id } })
+
+  function setEnabled(on: boolean, toast?: boolean) {
+    setOptimistic(on)
+    updateFlow.mutate(
+      { id: card.id, input: { enabled: on } },
+      {
+        onSuccess: () => {
+          if (toast) notify(on ? `${card.title} is on` : `${card.title} paused`, on ? undefined : () => setEnabled(true))
+        },
+        onError: () => notify('Could not change the flow — try again'),
+        onSettled: () => setOptimistic(null),
+      },
+    )
+  }
 
   const menu: MenuEntries = [
     { label: 'Open canvas', icon: Workflow, onSelect: () => go('/flows/$flowId/canvas') },
@@ -49,13 +89,14 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
       label: 'Test run',
       icon: Play,
       onSelect: () => {
+        // The canvas performs the real POST /test-run and shows the result sheet.
         startTest(card.id)
         go('/flows/$flowId/canvas')
       },
     },
     enabled
-      ? { label: 'Pause flow', icon: Pause, onSelect: () => { setEnabled(card.id, false); notify(`${card.title} paused`, () => setEnabled(card.id, true)) } }
-      : { label: 'Turn on', icon: Power, onSelect: () => { setEnabled(card.id, true); notify(`${card.title} is on`) } },
+      ? { label: 'Pause flow', icon: Pause, onSelect: () => setEnabled(false, true) }
+      : { label: 'Turn on', icon: Power, onSelect: () => setEnabled(true, true) },
     {
       label: 'Duplicate',
       icon: Copy,
@@ -79,13 +120,16 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
       icon: Trash2,
       danger: true,
       onSelect: () => {
-        // Optimistically hide the card, then delete on the backend. Undo restores
-        // the local view (a full re-delete would be needed to re-apply server-side).
-        remove(card.id)
-        deleteFlow.mutate(card.id, {
-          onSuccess: () => notify('Flow deleted', () => restore(card.id)),
-          onError: () => restore(card.id),
-        })
+        // Hide now; the server delete waits out the Undo window so Undo is real.
+        scheduleDelete(card.id, () =>
+          deleteFlow.mutate(card.id, {
+            onError: () => {
+              restore(card.id)
+              notify('Could not delete the flow')
+            },
+          }),
+        )
+        notify('Flow deleted', () => restore(card.id))
       },
     },
   ]
@@ -103,7 +147,7 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
             <button
               type="button"
               aria-label={enabled ? `Pause ${card.title}` : `Turn on ${card.title}`}
-              onClick={() => setEnabled(card.id, !enabled)}
+              onClick={() => setEnabled(!enabled)}
               className="flex rounded-pill"
             >
               <Toggle on={enabled} />
@@ -112,7 +156,7 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
         </div>
         <span className="pointer-events-none relative text-[13px] font-medium text-ink">{card.title}</span>
         <div className="pointer-events-none relative flex items-end justify-between gap-[8px]">
-          <span className="text-[11.5px] text-muted">{enabled ? card.status : `Paused · ${card.status}`}</span>
+          <span className="text-[11.5px] text-muted">{enabled ? card.statusLabel : `Paused · ${card.statusLabel}`}</span>
           <Sparkline bars={card.bars} />
         </div>
       </div>
@@ -122,13 +166,13 @@ function FlowCardItem({ card, onClick }: { card: FlowCard; onClick?: () => void 
 
 // ── SuggestedCard ─────────────────────────────────────────────────────────────
 
-function SuggestedCard({ item, onCreate }: { item: (typeof SUGGESTED_FLOWS)[number]; onCreate?: () => void }) {
+function SuggestedCard({ item, onCreate }: { item: FlowSuggestion; onCreate?: () => void }) {
   return (
     <div className="flex flex-col gap-[10px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-soft p-[14px]">
       {/* chain + suggesting helper */}
       <div className="flex items-center justify-between">
-        <FlowChain from={item.from} to={item.to} count={item.count} />
-        <Mascot size={22} radius={6} area="dev" title="Dev" />
+        <FlowChain from={item.from as FlowIconId} to={item.to as FlowIconId} count={item.count} />
+        <Mascot size={22} radius={6} area={item.helperArea} title={item.runsAs} />
       </div>
       <span className="text-[13px] font-medium text-ink">{item.title}</span>
       <div className="flex items-center justify-between gap-[8px]">
@@ -187,6 +231,7 @@ function TemplateCard({ t, onUse }: { t: (typeof TEMPLATES)[number]; onUse?: () 
 
 function YoursTab({
   liveFlows,
+  suggestions,
   loading,
   error,
   onCardClick,
@@ -195,14 +240,15 @@ function YoursTab({
   onSuggestedCreate,
 }: {
   liveFlows: Flow[]
+  suggestions: FlowSuggestion[]
   loading: boolean
   error: boolean
   onCardClick?: (flowId: string) => void
   onNewClick?: () => void
-  onTemplateUse?: (templateId: string) => void
-  onSuggestedCreate?: (suggestedId: string) => void
+  onTemplateUse?: (template: TemplateFlow) => void
+  onSuggestedCreate?: (s: FlowSuggestion) => void
 }) {
-  const { deleted, copies } = useFlowBoard()
+  const { deleted } = useFlowBoard()
 
   if (error) {
     return <div className="px-[24px] py-[20px] text-[13px] text-bad">Failed to load flows. Please refresh to try again.</div>
@@ -211,15 +257,16 @@ function YoursTab({
     return <div className="px-[24px] py-[20px] text-[13px] text-muted">Loading flows…</div>
   }
 
-  const cards = [...liveFlows.map(flowToCard), ...copies].filter((c) => !deleted.includes(c.id))
+  const now = Date.now()
+  const cards = liveFlows.map((f) => flowToCard(f, now)).filter((c) => !deleted.includes(c.id))
 
   if (cards.length === 0) {
     return (
       <div className="flex flex-col gap-[20px]">
         <div className="grid grid-cols-3 gap-[12px]">
           <div className="col-span-3 py-[24px] text-center text-[13px] text-muted">No flows yet</div>
-          {SUGGESTED_FLOWS.map((item) => (
-            <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item.id)} />
+          {suggestions.map((item) => (
+            <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item)} />
           ))}
           <NewFlowCard onClick={onNewClick} />
         </div>
@@ -233,8 +280,8 @@ function YoursTab({
         {cards.map((card) => (
           <FlowCardItem key={card.id} card={card} onClick={() => onCardClick?.(card.id)} />
         ))}
-        {SUGGESTED_FLOWS.map((item) => (
-          <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item.id)} />
+        {suggestions.map((item) => (
+          <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item)} />
         ))}
         <NewFlowCard onClick={onNewClick} />
       </div>
@@ -255,7 +302,7 @@ function YoursTab({
               <button
                 type="button"
                 aria-label={`Use ${t.title}`}
-                onClick={() => onTemplateUse?.(t.id)}
+                onClick={() => onTemplateUse?.(t)}
                 className="flex size-[20px] shrink-0 items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong text-muted transition-colors hover:bg-soft"
               >
                 <Plus size={12} aria-hidden />
@@ -270,31 +317,53 @@ function YoursTab({
 
 // ── SuggestedTab ──────────────────────────────────────────────────────────────
 
-function SuggestedTab({ onCreateFlow, onPreview }: { onCreateFlow?: (suggestedId: string) => void; onPreview?: (suggestedId: string) => void }) {
+function SuggestedTab({
+  suggestions,
+  loading,
+  onCreateFlow,
+}: {
+  suggestions: FlowSuggestion[]
+  loading: boolean
+  onCreateFlow?: (s: FlowSuggestion) => void
+}) {
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="flex flex-col gap-[12px]">
       <p className="text-[13px] text-muted">
-        Helpers watch how the company works and propose flows. Nothing runs until you create it.
+        Helpers look at the apps and routines you already have and propose flows. Nothing runs until you create it.
       </p>
-      {SUGGESTED_FLOWS.map((s) => (
+      {loading && <p className="m-0 text-[13px] text-muted">Loading suggestions…</p>}
+      {!loading && suggestions.length === 0 && (
+        <p className="m-0 text-[13px] text-muted">No suggestions right now — connect an app or add a routine and check back.</p>
+      )}
+      {suggestions.map((s) => (
         <div
           key={s.id}
           className="flex flex-col gap-[8px] rounded-lg outline-1 -outline-offset-1 outline-line-strong bg-surface p-[14px]"
         >
           <div className="flex items-start justify-between gap-[12px]">
             <div className="flex items-center gap-[10px] min-w-0">
-              <Mascot size={28} radius={8} area="dev" />
+              <Mascot size={28} radius={8} area={s.helperArea} />
               <div className="flex flex-col gap-[2px] min-w-0">
                 <span className="text-[13px] font-medium text-ink">{s.title}</span>
                 <span className="text-[11.5px] text-muted">{s.sub}</span>
               </div>
             </div>
             <div className="flex gap-[6px] shrink-0">
-              <Button variant="secondary" height={28} onClick={() => onPreview?.(s.id)}>Preview</Button>
-              <Button variant="primary" height={28} icon={Plus} onClick={() => onCreateFlow?.(s.id)}>Create flow</Button>
+              <Button variant="secondary" height={28} aria-expanded={open === s.id} onClick={() => setOpen(open === s.id ? null : s.id)}>
+                Preview
+              </Button>
+              <Button variant="primary" height={28} icon={Plus} onClick={() => onCreateFlow?.(s)}>Create flow</Button>
             </div>
           </div>
           <span className="text-[11.5px] text-faint">{s.hint}</span>
+          {open === s.id && (
+            <ol className="m-0 flex list-decimal flex-col gap-[2px] pl-[18px] text-[12.5px] text-ink-2">
+              {(s.draft.nodes as { id: string; label?: string }[]).map((n) => (
+                <li key={n.id}>{n.label ?? n.id}</li>
+              ))}
+            </ol>
+          )}
           {/* Area + Runs as */}
           <div className="flex items-center gap-[16px] pt-[4px]">
             <span className="text-[11.5px] text-faint">Area</span>
@@ -319,7 +388,22 @@ function SuggestedTab({ onCreateFlow, onPreview }: { onCreateFlow?: (suggestedId
 const TEMPLATE_CATS = ['All', 'Engineering', 'Ops', 'Reporting', 'Support'] as const
 type TemplateCat = (typeof TEMPLATE_CATS)[number]
 
-function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (templateId: string) => void }) {
+function inCat(t: TemplateFlow, cat: TemplateCat) {
+  switch (cat) {
+    case 'All':
+      return true
+    case 'Engineering':
+      return t.areas.includes('dev')
+    case 'Ops':
+      return t.areas.includes('ops')
+    case 'Reporting':
+      return /report|digest|summar|notes/i.test(`${t.title} ${t.desc}`)
+    case 'Support':
+      return t.areas.includes('support')
+  }
+}
+
+function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (template: TemplateFlow) => void }) {
   const [cat, setCat] = useState<TemplateCat>('All')
   return (
     <div className="flex flex-col gap-[16px]">
@@ -340,11 +424,11 @@ function TemplatesTab({ onTemplateUse }: { onTemplateUse?: (templateId: string) 
             </button>
           ))}
         </div>
-        <span className="text-[12px] text-faint">{TEMPLATES.length} templates</span>
+        <span className="text-[12px] text-faint">{TEMPLATES.filter((t) => inCat(t, cat)).length} templates</span>
       </div>
       <div className="grid grid-cols-3 gap-[12px]">
-        {TEMPLATES.map((t) => (
-          <TemplateCard key={t.id} t={t} onUse={() => onTemplateUse?.(t.id)} />
+        {TEMPLATES.filter((t) => inCat(t, cat)).map((t) => (
+          <TemplateCard key={t.id} t={t} onUse={() => onTemplateUse?.(t)} />
         ))}
       </div>
     </div>
@@ -466,6 +550,10 @@ interface NewFlowDialogProps {
   onDraft?: (draft: NewFlowDraft) => void
   /** Start an empty flow (no Chief draft). */
   onBlank?: () => void
+  /** Start from a template. */
+  onTemplate?: (t: TemplateFlow) => void
+  /** Helper names for "Runs as". */
+  runsAsOptions: string[]
 }
 
 type NewFlowMode = 'describe' | 'blank' | 'template'
@@ -476,15 +564,24 @@ const NEW_FLOW_MODES: Array<{ id: NewFlowMode; label: string }> = [
   { id: 'template', label: 'From a template' },
 ]
 
-const RUNS_AS_OPTIONS = ['Growth', 'Ops', 'Dev'] as const
+const APP_WORDS = ['Stripe', 'WhatsApp', 'Slack', 'GitHub', 'Gmail', 'Email', 'Sheets', 'Notion', 'Calendar']
 
-function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowDialogProps) {
+/** What Chief will draft, read straight from the description (no model call). */
+function draftTags(description: string): string[] {
+  const tags: string[] = []
+  const when = /\b(every\s+\w+(?:\s+\d{1,2}[:.]\d{2})?|daily|weekly|monthly|\d{1,2}[:.]\d{2})\b/i.exec(description)
+  if (when) tags.push(when[1].replace(/^every\s+/i, ''))
+  for (const w of APP_WORDS) if (new RegExp(`\\b${w}\\b`, 'i').test(description)) tags.push(w)
+  if (/\bask me|approve|approval|before\b/i.test(description)) tags.push('Approve')
+  return tags
+}
+
+function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank, onTemplate, runsAsOptions }: NewFlowDialogProps) {
   const [mode, setMode] = useState<NewFlowMode>('describe')
-  const [description, setDescription] = useState(
-    "Every Friday 16:00, pull this week's Stripe payouts, match them to referral signups, and send me a summary on WhatsApp. Ask me before paying anyone over Rp 5jt."
-  )
+  const [description, setDescription] = useState('')
   const [areaId, setAreaId] = useState(areas[0]?.id ?? '')
-  const [runsAs, setRunsAs] = useState<string>(RUNS_AS_OPTIONS[0])
+  const [runsAs, setRunsAs] = useState<string>(runsAsOptions[0] ?? 'Chief')
+  const tags = draftTags(description)
 
   if (!open) return null
   const close = () => onOpenChange(false)
@@ -507,7 +604,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
               Start blank
             </Button>
           ) : (
-            <Button variant="primary" height={30} icon={Sparkles} onClick={draft}>
+            <Button variant="primary" height={30} icon={Sparkles} disabled={mode === 'describe' && !description.trim()} onClick={draft}>
               Draft with Chief
             </Button>
           )}
@@ -531,7 +628,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
               rows={4}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what you want the flow to do…"
+              placeholder="e.g. Every Friday 16:00, sum this week's Stripe payouts and send me a summary on WhatsApp. Ask me before paying anyone."
               className="w-full resize-none rounded-base bg-surface px-[10px] py-[9px] text-[13.5px] leading-[1.55] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink placeholder:text-faint"
             />
           </label>
@@ -546,7 +643,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
               <span className="text-[13px] font-semibold text-ink">Chief will draft</span>
             </div>
             <div className="flex flex-wrap gap-[4px]">
-              {(['Fri 16:00', 'Stripe', 'AI match', 'Approve', 'WhatsApp'] as const).map((tag) => (
+              {(tags.length ? tags : ['Describe it above']).map((tag) => (
                 <span
                   key={tag}
                   className="inline-flex h-[20px] items-center rounded-pill bg-surface px-[7px] text-[11px] font-medium text-ink-2"
@@ -555,7 +652,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
                 </span>
               ))}
             </div>
-            <span className="text-[11.5px] text-muted">3 steps · 1 AI · ~$0.03 a run</span>
+            <span className="text-[11.5px] text-muted">A trigger, an AI step and what you mention — you review before it runs</span>
           </section>
 
           {/* Area + Runs as */}
@@ -586,7 +683,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
                   onChange={(e) => setRunsAs(e.target.value)}
                   className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none"
                 >
-                  {RUNS_AS_OPTIONS.map((o) => (
+                  {runsAsOptions.map((o) => (
                     <option key={o} value={o}>{o}</option>
                   ))}
                 </select>
@@ -617,7 +714,7 @@ function NewFlowDialog({ open, onOpenChange, areas, onDraft, onBlank }: NewFlowD
               <button
                 type="button"
                 aria-label={`Use ${t.title}`}
-                onClick={draft}
+                onClick={() => { close(); onTemplate?.(t) }}
                 className="text-[12px] text-muted transition-colors hover:text-ink-2 shrink-0"
               >
                 Use
@@ -638,6 +735,8 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
   const areaName = areaId ? area?.name ?? '' : null
   const { data: liveFlows = [], isLoading: flowsLoading, isError: flowsError } = useFlows()
   const { data: allAreas = [] } = useAreas()
+  const { data: suggestions = [], isLoading: suggestionsLoading } = useFlowSuggestions()
+  const { data: helpers = [] } = useHelpers()
   const createFlow = useCreateFlow()
   const [activeTab, setActiveTab] = useState<FlowTab>('Yours')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -646,7 +745,7 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
   // Tabs — count from live query
   const tabs: Array<{ key: FlowTab; label: string; count?: number }> = [
     { key: 'Yours',     label: 'Yours',                count: liveFlows.length },
-    { key: 'Suggested', label: 'Suggested by agents',  count: SUGGESTED_FLOWS.length },
+    { key: 'Suggested', label: 'Suggested by agents',  count: suggestions.length },
     { key: 'Templates', label: 'Templates' },
     { key: 'Runs',      label: 'Runs' },
   ]
@@ -656,35 +755,39 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
     navigate({ to: '/flows/$flowId/canvas', params: { flowId } })
   }
 
-  function goToDraft(sourceId?: string) {
-    navigate({ to: '/flows/$flowId/draft', params: { flowId: newDraftId(sourceId) } })
+  /** Create a real draft flow, then open it (draft canvas for templates/suggestions). */
+  function create(body: CreateFlowInput, to: 'canvas' | 'draft', toast: string) {
+    createFlow.mutate(body, {
+      onSuccess: (flow) => {
+        notify(toast)
+        void navigate({ to: to === 'draft' ? '/flows/$flowId/draft' : '/flows/$flowId/canvas', params: { flowId: flow.id } })
+      },
+      onError: () => notify('Could not create the flow — try again'),
+    })
   }
 
-  // "Describe it" → create a real flow with the typed description/area/runs-as,
-  // then open its canvas. Falls back to the local draft route on error.
+  // "Describe it" → a draft with a manual trigger and one AI step carrying the brief.
   function createFromDraft(draft: NewFlowDraft) {
     const title = draft.description.split(/[.\n]/)[0]?.slice(0, 60) || 'New flow'
-    createFlow.mutate(
+    create(
       {
         title,
         trigger: { kind: 'manual', spec: { description: draft.description, runsAs: draft.runsAs } },
-        nodes: [],
-        edges: [],
+        ...draftGraph('When you run it', [draft.description.slice(0, 120)], 'clock', 'message-circle'),
         areas: draft.areaId ? [draft.areaId] : [],
       },
-      {
-        onSuccess: (flow) => {
-          notify('Flow drafted')
-          navigate({ to: '/flows/$flowId/canvas', params: { flowId: flow.id } })
-        },
-        onError: () => goToDraft(),
-      },
+      'draft',
+      'Flow drafted',
     )
   }
 
   function goToBlank() {
-    navigate({ to: '/flows/$flowId/canvas', params: { flowId: 'blank-new' } })
+    create({ title: 'Untitled flow', trigger: { kind: 'manual', spec: {} }, nodes: [], edges: [], areas: areaId ? [areaId] : [] }, 'canvas', 'Blank flow created')
   }
+
+  const applyTemplate = (t: TemplateFlow) => create(templateBody(t), 'draft', `“${t.title}” added as a draft`)
+  const applySuggestion = (sg: FlowSuggestion) => create(suggestionBody(sg), 'draft', 'Draft created from the suggestion')
+  const runsAsOptions = helpers.length ? helpers.map((h) => h.name) : ['Chief']
 
   return (
     <>
@@ -716,21 +819,19 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         {activeTab === 'Yours'     && (
           <YoursTab
             liveFlows={liveFlows}
+            suggestions={suggestions}
             loading={flowsLoading}
             error={flowsError}
             onCardClick={goToCanvas}
             onNewClick={() => setDialogOpen(true)}
-            onTemplateUse={(id) => goToDraft(id)}
-            onSuggestedCreate={(id) => goToDraft(id)}
+            onTemplateUse={applyTemplate}
+            onSuggestedCreate={applySuggestion}
           />
         )}
         {activeTab === 'Suggested' && (
-          <SuggestedTab
-            onCreateFlow={(id) => goToDraft(id)}
-            onPreview={(id) => goToDraft(id)}
-          />
+          <SuggestedTab suggestions={suggestions} loading={suggestionsLoading} onCreateFlow={applySuggestion} />
         )}
-        {activeTab === 'Templates' && <TemplatesTab onTemplateUse={(id) => goToDraft(id)} />}
+        {activeTab === 'Templates' && <TemplatesTab onTemplateUse={applyTemplate} />}
         {activeTab === 'Runs'      && <RunsTab flows={liveFlows} />}
       </div>
 
@@ -740,6 +841,8 @@ function FlowsBoard({ areaId }: { areaId: string | null }) {
         areas={allAreas}
         onDraft={createFromDraft}
         onBlank={goToBlank}
+        onTemplate={applyTemplate}
+        runsAsOptions={runsAsOptions}
       />
     </>
   )

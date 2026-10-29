@@ -7,8 +7,9 @@ import { Mascot } from '../../../../ui/ds/Mascot'
 import { menuItemClass, menuSurface } from '../../../../ui/ds/Menu'
 import { MoreMenu } from '../../../../ui/ds/ItemMenu'
 import { stepMenu } from './stepMenu'
-import { RUN_DETAIL } from './data'
 import type { AiStepDetail, FlowNode } from './data'
+import { useFlowRun, useFlowRuns } from '../../../../app/queries'
+import { stepTime } from './runs'
 import { APP_ICON, StepTile, nodeGlyph } from './icons'
 import { blankAi, useFlow, useFlowStore } from './store'
 
@@ -419,7 +420,9 @@ export function Inspector({ flowId }: { flowId: string }) {
   const f = useFlow(flowId)
   const { updateNode } = useFlowStore()
   const node = f.graph.nodes.find((n) => n.id === f.selected)
-  const [test, setTest] = useState<{ id: string; state: 'running' | 'done' } | null>(null)
+  const [testing, setTesting] = useState<string | null>(null)
+  const { data: runs = [] } = useFlowRuns(flowId)
+  const { data: testRun } = useFlowRun(flowId, f.testRunId ?? undefined)
   const renaming = f.renamingId === node?.id && Boolean(node)
   const setRenaming = (on: boolean) => useFlowStore.getState().setRenaming(flowId, on && node ? node.id : null)
 
@@ -434,13 +437,25 @@ export function Inspector({ flowId }: { flowId: string }) {
 
   const { icon, tone } = nodeGlyph(node)
   const AppIcon = node.app && node.kind === 'connector' ? APP_ICON[node.app] : null
-  const testing = test?.id === node.id ? test.state : null
-  const output = node.id === 'read-logs' ? RUN_DETAIL.r214.steps[1].output : undefined
+  // "Test this step" runs a real dry run of the whole flow and shows this step's result.
+  const mine = testing === node.id
+  const state: 'running' | 'done' | null = !mine
+    ? null
+    : f.test === 'done' && testRun
+      ? 'done'
+      : f.test === 'idle'
+        ? null
+        : 'running'
+  const tested = state === 'done' ? testRun?.steps?.find((st) => st.nodeId === node.id) : undefined
+  // Sample output: this step's output in the test run, else in the latest real run.
+  const sample = tested?.output ?? runs.find((r) => r.steps?.some((st) => st.nodeId === node.id && st.output))?.steps?.find((st) => st.nodeId === node.id)?.output
+  const output = sample
+    ? Object.entries(sample).map(([k, v]): [string, string] => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+    : undefined
 
   function runStepTest() {
-    const id = node!.id
-    setTest({ id, state: 'running' })
-    setTimeout(() => setTest((t) => (t?.id === id ? { id, state: 'done' } : t)), 900)
+    setTesting(node!.id)
+    useFlowStore.getState().startTest(flowId)
   }
 
   return (
@@ -485,11 +500,13 @@ export function Inspector({ flowId }: { flowId: string }) {
         {node.kind === 'approval' && <ApprovalBody flowId={flowId} node={node} />}
         {node.kind === 'connector' && <ConnectorBody flowId={flowId} node={node} />}
 
-        {testing === 'done' && (
+        {state === 'done' && (
           <div role="status" className="flex flex-col gap-[6px] rounded-base bg-ok-tint p-[10px] outline-1 -outline-offset-1 outline-ok-line">
             <span className="flex items-center gap-[6px] text-[12.5px] font-medium text-ok">
               <Check size={13} aria-hidden />
-              Step passed with last run’s data · {node.last && node.last !== 'waits' ? node.last : '0.4s'}
+              {tested
+                ? `Step ${tested.status === 'failed' ? 'failed' : tested.status === 'skipped' ? 'skipped in test' : 'passed'} · ${stepTime(tested.durationMs)}`
+                : 'The test run didn’t reach this step'}
             </span>
             {output ? (
               output.map(([k, v]) => (
@@ -508,11 +525,11 @@ export function Inspector({ flowId }: { flowId: string }) {
         <button
           type="button"
           onClick={runStepTest}
-          disabled={testing === 'running'}
+          disabled={state === 'running'}
           className="flex h-[30px] w-full items-center justify-center gap-[7px] rounded-base bg-surface text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft disabled:text-muted"
         >
-          {testing === 'running' ? <Loader2 size={14} aria-hidden className="animate-spin" /> : <FlaskConical size={14} aria-hidden className="text-ink-2" />}
-          {testing === 'running' ? 'Testing this step…' : 'Test this step with last run’s data'}
+          {state === 'running' ? <Loader2 size={14} aria-hidden className="animate-spin" /> : <FlaskConical size={14} aria-hidden className="text-ink-2" />}
+          {state === 'running' ? 'Testing this step…' : 'Test this step with sample data'}
         </button>
       </div>
     </aside>

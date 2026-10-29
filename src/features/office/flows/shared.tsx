@@ -13,6 +13,7 @@ export const RUN_STATUS_STYLE: Record<FlowRunStatus, { bg: string; ink: string }
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
+/** 7-day run sparkline; `bars` are pre-scaled to 0–5 (see boardStore.sparkBars). */
 export function Sparkline({ bars }: { bars: number[] }) {
   const max = 5
   const barW = 4
@@ -22,8 +23,11 @@ export function Sparkline({ bars }: { bars: number[] }) {
       {bars.map((v, i) => {
         const pct = v / max
         const barH = Math.max(3, Math.round(pct * h))
+        // 0 = no runs that day: a faint stub, not a "bad" bar.
         const color =
-          pct > 0.7
+          v === 0
+            ? 'var(--color-line-strong)'
+            : pct > 0.7
             ? 'var(--color-ok)'
             : pct > 0.4
             ? 'var(--color-helper-marketing)'

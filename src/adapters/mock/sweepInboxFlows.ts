@@ -179,7 +179,8 @@ const TRIAGE_FLOW: Flow = {
   settings: {},
 }
 
-if (!flows.some((f) => f.id === TRIAGE_FLOW.id)) flows.unshift(TRIAGE_FLOW)
+const TRIAGE_SNAPSHOT = JSON.stringify(TRIAGE_FLOW)
+if (!flows.some((f) => f.id === TRIAGE_FLOW.id)) flows.unshift(structuredClone(TRIAGE_FLOW))
 
 function steps(kind: 'done' | 'waiting' | 'failed'): FlowRunStep[] {
   const base: FlowRunStep[] = [
@@ -215,12 +216,25 @@ function triageRun(id: string, status: string, agoMs: number, st: FlowRunStep[],
   }
 }
 
-if (!flowRuns.some((r) => r.flowId === TRIAGE_FLOW.id)) {
-  flowRuns.unshift(
+function triageRuns(): FlowRun[] {
+  return [
     triageRun('frn-triage-3', 'needs_you', 12 * 60_000, steps('waiting'), 18, null),
     triageRun('frn-triage-2', 'done', 26 * 3_600_000, steps('done'), 14, 38),
     triageRun('frn-triage-1', 'failed', 3 * 86_400_000, steps('failed'), 20, 120),
-  )
+  ]
+}
+if (!flowRuns.some((r) => r.flowId === TRIAGE_FLOW.id)) flowRuns.unshift(...triageRuns())
+
+/** Tests: put the demo triage flow + its runs back the way they started. */
+export function resetMockTriageFlow() {
+  const fresh = JSON.parse(TRIAGE_SNAPSHOT) as Flow
+  const i = flows.findIndex((f) => f.id === fresh.id)
+  if (i >= 0) flows.splice(i, 1, fresh)
+  else flows.unshift(fresh)
+  for (let j = flowRuns.length - 1; j >= 0; j--) if (flowRuns[j].flowId === fresh.id) flowRuns.splice(j, 1)
+  flowRuns.unshift(...triageRuns())
+  for (const k of Object.keys(mockProposals)) if (k.startsWith(`prp-publish-${fresh.id}`)) delete mockProposals[k]
+  mockFlowVersions[fresh.id] = TRIAGE_VERSIONS()
 }
 
 export function runsForFlow(flowId: string): FlowRun[] {
@@ -264,11 +278,13 @@ export function withFlowExtras(f: Flow): Flow {
   }
 }
 
+const TRIAGE_VERSIONS = (): FlowVersionInfo[] => [
+  { id: 'flv-7', flowId: TRIAGE_FLOW.id, version: 7, title: TRIAGE_FLOW.title, note: 'Published', status: 'live', createdBy: 'operator', nodeCount: 7, createdAt: agoIso(2 * 86_400_000) },
+  { id: 'flv-4', flowId: TRIAGE_FLOW.id, version: 4, title: TRIAGE_FLOW.title, note: 'First version', status: 'superseded', createdBy: 'operator', nodeCount: 5, createdAt: agoIso(27 * 86_400_000) },
+]
+
 export const mockFlowVersions: Record<string, FlowVersionInfo[]> = {
-  [TRIAGE_FLOW.id]: [
-    { id: 'flv-7', flowId: TRIAGE_FLOW.id, version: 7, title: TRIAGE_FLOW.title, note: 'Published', status: 'live', createdBy: 'operator', nodeCount: 7, createdAt: agoIso(2 * 86_400_000) },
-    { id: 'flv-4', flowId: TRIAGE_FLOW.id, version: 4, title: TRIAGE_FLOW.title, note: 'First version', status: 'superseded', createdBy: 'operator', nodeCount: 5, createdAt: agoIso(27 * 86_400_000) },
-  ],
+  [TRIAGE_FLOW.id]: TRIAGE_VERSIONS(),
 }
 
 export function mockSnapshot(f: Flow, note: string) {

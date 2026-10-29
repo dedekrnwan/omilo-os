@@ -61,6 +61,7 @@ describe('Flow settings — Save persists backend-supported fields', () => {
 
     // Edit the flow name so the settings form goes dirty and the SaveBar appears.
     const nameInput = await screen.findByLabelText('Flow name')
+    await waitFor(() => expect(nameInput).toHaveValue(fixtureFlows[0].title))
     await user.clear(nameInput)
     await user.type(nameInput, 'Renamed flow')
 

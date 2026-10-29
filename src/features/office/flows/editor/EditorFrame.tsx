@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft, Check, Play, Power, Upload } from 'lucide-react'
+import { ArrowLeft, Check, Hourglass, Play, Power, Upload } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { AreaChip } from '../../../../ui/ds/AreaChip'
-import { useChannel } from '../../../../app/queries'
-import { getCommands } from '../../../control-panel/sections/getCommands'
+import { useChannel, useFlowRuns, useUpdateFlow } from '../../../../app/queries'
+import { notify } from '../../../../ui/ds/Toaster'
+import { avgCost } from './runs'
 import { useFlow, useFlowStore } from './store'
+import { usePublish, useSaveGraph, useSeedFlow } from './useFlowSync'
 
 export type EditorTab = 'canvas' | 'runs' | 'settings'
 
@@ -62,8 +64,42 @@ export function EditorFrame({
   const navigate = useNavigate()
   const title = useFlowTitle(flowId)
   const f = useFlow(flowId)
-  const { setEnabled, publish, setDraft, startTest } = useFlowStore()
+  const { setEnabled, startTest } = useFlowStore()
   const { data: area } = useChannel(f.settings.areaId)
+  const { data: liveFlow } = useSeedFlow(flowId)
+  const { data: runs = [] } = useFlowRuns(flowId)
+  const updateFlow = useUpdateFlow()
+  const save = useSaveGraph(flowId)
+  const { publish, pending } = usePublish(flowId)
+  const cost = avgCost(runs)
+  const publishState = f.dirty ? 'draft' : liveFlow?.publishState ?? 'draft'
+
+  function toggle(on: boolean) {
+    setEnabled(flowId, on)
+    updateFlow.mutate(
+      { id: flowId, input: { enabled: on } },
+      {
+        onSuccess: () => notify(on ? `${title} is on` : `${title} paused`),
+        onError: () => {
+          setEnabled(flowId, !on)
+          notify('Could not change the flow — try again')
+        },
+      },
+    )
+  }
+
+  /** Draft → save, switch on, and send for publish approval. */
+  async function turnOn() {
+    try {
+      await save()
+      await updateFlow.mutateAsync({ id: flowId, input: { enabled: true } })
+      setEnabled(flowId, true)
+      await publish()
+      void navigate({ to: '/flows/$flowId/canvas', params: { flowId } })
+    } catch {
+      notify('Could not turn the flow on — try again')
+    }
+  }
 
   const go = (t: EditorTab) => {
     if (t === tab) return
@@ -97,7 +133,7 @@ export function EditorFrame({
               </span>
             ) : (
               <span className="ml-[6px]">
-                <OnSwitch on={f.enabled} onChange={(on) => setEnabled(flowId, on)} />
+                <OnSwitch on={f.enabled} onChange={toggle} />
               </span>
             )}
           </div>
@@ -121,7 +157,9 @@ export function EditorFrame({
           </nav>
           <div className="h-px min-w-0 flex-1" />
           <div className="flex items-center gap-[10px]">
-            <span className="text-[12.5px] whitespace-nowrap text-muted">{draft ? 'est. ~$0.02 a run' : '~$0.02 a run'}</span>
+            <span className="text-[12.5px] whitespace-nowrap text-muted">
+              {cost ? `~${cost} a run` : liveFlow?.aiSteps ? `${liveFlow.aiSteps} AI step${liveFlow.aiSteps === 1 ? '' : 's'} · not run yet` : 'Not run yet'}
+            </span>
             <button
               type="button"
               onClick={
@@ -139,10 +177,8 @@ export function EditorFrame({
             {draft ? (
               <button
                 type="button"
-                onClick={() => {
-                  setDraft(flowId, 'on')
-                  void navigate({ to: '/flows/$flowId/canvas', params: { flowId } })
-                }}
+                disabled={pending}
+                onClick={() => void turnOn()}
                 className="inline-flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover"
               >
                 <Power size={14} aria-hidden />
@@ -151,12 +187,18 @@ export function EditorFrame({
             ) : (
               <button
                 type="button"
-                disabled={!f.dirty}
-                onClick={() => { void getCommands().publishFlow(flowId); publish(flowId) }}
+                disabled={publishState !== 'draft' || pending || !f.hydrated}
+                onClick={() => void publish()}
                 className="inline-flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover disabled:bg-surface disabled:text-muted disabled:outline-1 disabled:-outline-offset-1 disabled:outline-line-strong"
               >
-                {f.dirty ? <Upload size={14} aria-hidden /> : <Check size={14} aria-hidden />}
-                {f.dirty ? 'Publish changes' : 'Published'}
+                {publishState === 'draft' ? (
+                  <Upload size={14} aria-hidden />
+                ) : publishState === 'pending' ? (
+                  <Hourglass size={14} aria-hidden />
+                ) : (
+                  <Check size={14} aria-hidden />
+                )}
+                {publishState === 'draft' ? 'Publish changes' : publishState === 'pending' ? 'Waiting for approval' : 'Published'}
               </button>
             )}
           </div>
