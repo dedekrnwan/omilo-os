@@ -11,7 +11,7 @@ import { useCompanyLook } from '../../../ui/ds/looks'
 import { LookPicker } from '../../../ui/ds/LookPicker'
 import { useSession } from '../../../app/session'
 import { useCommands } from '../../../app/CommandsProvider'
-import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { useCompanySettings, useHandbook, useUpdateCompanySettings } from '../../../app/queries'
 import { notify } from '../../../ui/ds/Toaster'
 
 const INITIAL_GENERAL = {
@@ -33,6 +33,7 @@ export function SectionGeneral({ onDialog }: SectionProps) {
   const look = useCompanyLook(company)
   const { setLook, resetLook } = useAppearance()
   const sessionCompanyName = useSession((s) => s.company?.name) ?? ''
+  const { data: handbook } = useHandbook()
   const commands = useCommands()
   const { data: settings } = useCompanySettings()
   const updateSettings = useUpdateCompanySettings()
@@ -112,7 +113,8 @@ export function SectionGeneral({ onDialog }: SectionProps) {
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
           <span className="text-[13px] font-semibold text-ink">Company handbook</span>
           <span className="text-[12.5px] text-muted">
-            The brief, policies, services and FAQ — read by every helper, pinned in Docs for your staff. 6 files · 1 suggested edit.
+            The brief, policies, services and FAQ — read by every helper, pinned in Docs for your staff.
+            {handbook ? ` ${handbook.files.length} files · ${handbook.openSuggestions} suggested edit${handbook.openSuggestions === 1 ? '' : 's'}.` : ''}
           </span>
         </div>
         <PenButton h={30} fs={13} onClick={() => navigate({ to: '/control-panel/$section', params: { section: 'handbook' } })}>Open handbook</PenButton>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Building2,
   Check,
@@ -7,6 +8,7 @@ import {
   Contact,
   Eye,
   FilePlus,
+  FileText,
   Globe,
   History,
   ListChecks,
@@ -16,255 +18,37 @@ import {
   Pencil,
   Pin,
   ShieldCheck,
-  Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../../ui/ds/Mascot'
-import type { HelperArea } from '../../../core/domain/types'
+import type { HandbookFile, HandbookFileDetail } from '../../../core/domain/types'
 import { Drawer } from '../../routines/ui'
 import { Chip, IconTile, Initials, PageHeader, PageShell, PenButton } from '../ControlPanelShared'
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
-import { useMembers } from '../../../app/queries'
+import {
+  useHandbook,
+  useHandbookFile,
+  useHelpers,
+  useMembers,
+  useResolveHandbookSuggestion,
+  useSaveHandbookFile,
+} from '../../../app/queries'
 import { useSession } from '../../../app/session'
+import { longAgo, shortAgo, whoLabel } from '../../office/docs/docsUtil'
 
-// NOTE: The Handbook uses rich structured HandbookFile objects (sections,
-// suggestions, history, used-by stats). useKnowledge() returns KbItem recall
-// chunks (sourceId, heading, text, score) which lack this metadata. Wiring the
-// handbook *file list* to useKnowledge would require a sources list endpoint
-// (GET /v1/knowledge/sources — not yet implemented) and a mapping layer.
-// For P13 we wire only the "read by N people" avatar stack to real members;
-// the handbook file content stays as-is until a dedicated handbook endpoint exists.
+// Handbook files live on the backend (GET /v1/handbook, GET/PUT /v1/handbook/{file},
+// suggestions accept/dismiss). Readers are the company's helpers + members.
 
-interface Section {
-  h: string
-  body: string
-  /** Optional green "added" note rendered below the section. */
-  note?: string
+const FILE_ICON: Record<string, LucideIcon> = {
+  'COMPANY.md': Building2,
+  'SERVICES.md': ListChecks,
+  'POLICIES.md': ShieldCheck,
+  'VOICE.md': MessageSquareQuote,
+  'FAQ.md': MessagesSquare,
+  'PEOPLE.md': Contact,
 }
-
-interface UsedRow {
-  area?: HelperArea
-  icon?: LucideIcon
-  label: string
-  count: string
-}
-
-interface HandbookFile {
-  name: string
-  icon: LucideIcon
-  title: string
-  desc: string
-  meta: string
-  /** Footer line in the drawer, e.g. "Edited by you · 1 day ago · v12". */
-  edited: string
-  locked?: boolean
-  badge?: { tone: 'warn' | 'info'; label: string }
-  intro: string
-  sections: Section[]
-  suggestion?: { area: HelperArea; who: string; text: string }
-  used?: UsedRow[]
-  history?: { label: string; right: string }[]
-}
-
-const FILES: HandbookFile[] = [
-  {
-    name: 'COMPANY.md',
-    icon: Building2,
-    title: 'Company',
-    desc: 'Who we are, who we serve and the 64 RTs we cover',
-    meta: 'Everyone · 5d ago',
-    edited: 'Edited by you · 5 days ago · v4',
-    intro: 'Who Sahabat Warga is, who we serve, and the 64 RTs we cover.',
-    sections: [
-      {
-        h: 'Who we are',
-        body: 'Sahabat Warga runs neighbourhood admin for 64 RTs in South Jakarta — monthly dues, cover letters, facility bookings and clean-up days. One small team, one phone number, one place everything is written down.',
-      },
-      {
-        h: 'Who we serve',
-        body: '•  Residents first — the people who live in each RT.\n•  RT heads second — they approve, we do the admin.\nWe speak Bahasa Indonesia, warm and plain.',
-      },
-      {
-        h: 'The 64 RTs',
-        body: 'We cover RT 01 to RT 64 across four kelurahan. Each RT has one head and one deputy, listed in PEOPLE.md.',
-      },
-    ],
-    used: [
-      { area: 'brand', label: 'Chief', count: '12×' },
-      { area: 'support', label: 'Support', count: '9×' },
-      { area: 'finance', label: 'Finance', count: '4×' },
-    ],
-    history: [
-      { label: 'v4 · you', right: '5d' },
-      { label: 'v3 · accepted from Chief', right: '2w' },
-      { label: 'v2 · you', right: '1mo' },
-    ],
-  },
-  {
-    name: 'SERVICES.md',
-    icon: ListChecks,
-    title: 'Services',
-    desc: 'Dues, letters and bookings — what each costs and takes',
-    meta: 'Everyone · 2w ago',
-    edited: 'Edited by Chief · 2 weeks ago · v7',
-    intro: 'Dues, letters and bookings — what each costs and how long it takes.',
-    sections: [
-      {
-        h: 'Monthly dues',
-        body: '•  Rp 50.000 per household, due by the 10th.\n•  Paid by transfer or to the RT head in cash.\n•  A receipt is sent the same day.',
-      },
-      {
-        h: 'Cover letters',
-        body: '•  Domicile and introduction letters, issued within 2 working days.\n•  Free for residents in good standing.',
-      },
-      {
-        h: 'Facility bookings',
-        body: '•  Hall and sports court, Rp 150.000 deposit.\n•  Deposit is refunded if cancelled 48 hours before.',
-      },
-    ],
-    used: [
-      { area: 'finance', label: 'Finance', count: '22×' },
-      { area: 'support', label: 'Support', count: '18×' },
-    ],
-    history: [
-      { label: 'v7 · accepted from Finance', right: '2w' },
-      { label: 'v6 · you', right: '5w' },
-    ],
-  },
-  {
-    name: 'POLICIES.md',
-    icon: ShieldCheck,
-    title: 'Policies',
-    desc: 'Refunds, resident data, and what needs an owner’s OK',
-    meta: 'Everyone · 1d ago',
-    edited: 'Edited by you · 1 day ago · v12',
-    badge: { tone: 'warn', label: '1 suggested edit' },
-    intro:
-      'The rules every helper and every person at Sahabat Warga follows. When something isn’t covered here, ask the owner — don’t guess.',
-    sections: [
-      {
-        h: 'Refunds',
-        body: '•  Dues paid twice are refunded within 3 working days, to the same method.\n•  Booking deposits are refunded if cancelled 48 hours before.\n•  Anything else needs an owner’s OK first.',
-      },
-      {
-        h: 'Resident data',
-        body: '•  A resident’s name, phone and address never leave their own RT.\n•  Never paste resident data into a public channel or a shared doc.',
-      },
-      {
-        h: 'Late dues',
-        body: '•  A Rp 10.000 late fee applies after the 10th of the month.',
-        note: '+  The late fee is waived for residents aged 65 and over.',
-      },
-    ],
-    suggestion: {
-      area: 'support',
-      who: 'Support suggests an edit',
-      text: 'Residents asked about the late fee for elders 4 times this month (RT 04, RT 09). Adding the rule lets me answer without asking you.',
-    },
-    used: [
-      { area: 'support', label: 'Support', count: '41×' },
-      { area: 'finance', label: 'Finance', count: '6×' },
-      { area: 'brand', label: 'Chief', count: '3×' },
-      { icon: Users, label: 'Opened by 3 people', count: '8×' },
-    ],
-    history: [
-      { label: 'v12 · you', right: '1d' },
-      { label: 'v11 · accepted from Finance', right: '1w' },
-      { label: 'v10 · you', right: '3w' },
-    ],
-  },
-  {
-    name: 'VOICE.md',
-    icon: MessageSquareQuote,
-    title: 'Voice',
-    desc: 'How we talk to residents and RT heads',
-    meta: 'Everyone · 3w ago',
-    edited: 'Edited by you · 3 weeks ago · v3',
-    intro: 'How we talk to residents and RT heads — the same voice, every helper.',
-    sections: [
-      {
-        h: 'Tone',
-        body: 'Warm, plain and short. Like a helpful neighbour, not an office. Bahasa Indonesia first.',
-      },
-      { h: 'Do', body: '•  Greet people by name.\n•  Say what happens next, and when.\n•  Thank them for waiting.' },
-      { h: 'Don’t', body: '•  No jargon, no legalese.\n•  Never promise money or a date we haven’t approved.' },
-    ],
-    used: [
-      { area: 'support', label: 'Support', count: '38×' },
-      { area: 'brand', label: 'Chief', count: '5×' },
-    ],
-    history: [
-      { label: 'v3 · you', right: '3w' },
-      { label: 'v2 · accepted from Support', right: '2mo' },
-    ],
-  },
-  {
-    name: 'FAQ.md',
-    icon: MessagesSquare,
-    title: 'FAQ',
-    desc: 'What residents ask every week, answered once',
-    meta: 'Everyone · today',
-    edited: 'Edited today · v9',
-    badge: { tone: 'info', label: '3 new from Support' },
-    intro: 'What residents ask every week, answered once so every helper replies the same way.',
-    sections: [
-      { h: 'When are dues due?', body: 'By the 10th of each month. A Rp 10.000 late fee applies after that.' },
-      {
-        h: 'How do I book the hall?',
-        body: 'Ask any helper with the date and time. A Rp 150.000 deposit holds it, refundable up to 48 hours before.',
-      },
-      {
-        h: 'How long does a cover letter take?',
-        body: 'Two working days. We send it in the chat and keep a copy in Docs.',
-      },
-    ],
-    suggestion: {
-      area: 'support',
-      who: 'Support added 3 new answers',
-      text: 'From this week’s tickets: parking, visitor hours and the clean-up schedule. Accept to let every helper use them.',
-    },
-    used: [
-      { area: 'support', label: 'Support', count: '54×' },
-      { icon: Users, label: 'Opened by 6 people', count: '23×' },
-    ],
-    history: [
-      { label: 'v9 · Support', right: 'today' },
-      { label: 'v8 · you', right: '1w' },
-    ],
-  },
-  {
-    name: 'PEOPLE.md',
-    icon: Contact,
-    title: 'People',
-    desc: 'Who owns what, and who to call after hours',
-    meta: 'Members & helpers only',
-    edited: 'Edited by you · 1 week ago · v6',
-    locked: true,
-    intro: 'Who owns what, and who to call after hours. Members and helpers only.',
-    sections: [
-      {
-        h: 'Owners',
-        body: '•  Dues and refunds — Finance.\n•  Letters and bookings — Support.\n•  Everything else — the Chief of Staff.',
-      },
-      {
-        h: 'After hours',
-        body: '•  Urgent only: the RT head on duty, listed per RT.\n•  Non-urgent waits until the next working day.',
-      },
-    ],
-    used: [
-      { area: 'support', label: 'Support', count: '11×' },
-      { area: 'brand', label: 'Chief', count: '7×' },
-    ],
-    history: [
-      { label: 'v6 · you', right: '1w' },
-      { label: 'v5 · you', right: '1mo' },
-    ],
-  },
-]
-
-/** pen Read-by stack: Chief · Builder · Grower · Sales · Finance · Support (Mini/*, 24, r7). */
-const READERS: HelperArea[] = ['brand', 'dev', 'marketing', 'sales', 'finance', 'support']
+const iconFor = (name: string) => FILE_ICON[name] ?? FileText
 
 /** Derive display initials from a name string. */
 function nameInitials(name: string): string {
@@ -281,15 +65,28 @@ function avatarColor(id: string): string {
   return AVATAR_PALETTE[h % AVATAR_PALETTE.length]
 }
 
+function useWho() {
+  const { data: helpers = [] } = useHelpers()
+  const { data: members = [] } = useMembers()
+  const userId = useSession((s) => s.user?.id)
+  return (by: string) => whoLabel(by, { userId, members, helpers })
+}
+
 /** pen TZ6Ia · Company handbook. Clicking a file opens it in a right-side drawer. */
 export function SectionHandbook({ variant, onVariant }: SectionProps) {
+  const navigate = useNavigate()
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
-  const { data: members } = useMembers()
-  const [open, setOpen] = useState<HandbookFile | null>(() =>
-    variant === 'policies' ? FILES.find((f) => f.name === 'POLICIES.md') ?? null : null,
-  )
+  const { data: members = [] } = useMembers()
+  const { data: helpers = [] } = useHelpers()
+  const { data: index, isLoading, isError } = useHandbook()
+  const who = useWho()
+  const files = (index?.files ?? []).filter((f) => !f.brief)
+  const briefFile = index?.files.find((f) => f.brief) ?? null
+  const [open, setOpen] = useState<string | null>(() => (variant === 'policies' ? 'POLICIES.md' : null))
+  const [creating, setCreating] = useState(false)
   const close = () => {
     setOpen(null)
+    setCreating(false)
     if (variant) onVariant?.(null)
   }
   return (
@@ -300,49 +97,34 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
         sub={`What ${companyName} is, how it works and the rules. Every helper reads it before acting, and every person can read it in Docs.`}
         actions={
           <>
-            <PenButton fs={13} icon={Eye} onClick={() => notify('Previewing as staff member')}>Preview as staff</PenButton>
-            <PenButton variant="primary" icon={FilePlus} onClick={() => notify('New file — editor coming soon')}>New file</PenButton>
+            <PenButton fs={13} icon={Eye} onClick={() => void navigate({ to: '/docs/$docId', params: { docId: 'handbook' } })}>Preview as staff</PenButton>
+            <PenButton variant="primary" icon={FilePlus} onClick={() => { setOpen(null); setCreating(true) }}>New file</PenButton>
           </>
         }
       />
 
-      <div className="flex w-full flex-col gap-[12px] rounded-lg p-[18px] outline-1 -outline-offset-1 outline-line-strong">
-        <div className="flex w-full items-center gap-[8px]">
-          <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="text-[14px] font-semibold text-ink">Company brief</span>
-            <span className="text-[12.5px] text-muted">The paragraph every helper reads first, and the first page new staff see.</span>
-          </div>
-          <PenButton variant="quiet" h={30} fs={13} icon={Pencil} onClick={() => notify('Opening brief editor…')}>Edit</PenButton>
-        </div>
-        <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
-          <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">
-            {companyName} runs neighbourhood admin for 64 RTs in South Jakarta: monthly dues, cover letters, facility bookings and clean-up days. We serve residents first, RT heads second. We speak Bahasa Indonesia, warm and plain. We never share a resident’s data outside their RT, and we never promise money we haven’t approved…
-          </p>
-        </div>
-        <div className="flex items-center gap-[6px]">
-          <History size={12} aria-hidden className="text-muted" />
-          <span className="text-[11.5px] text-faint">Edited by you · 5 days ago · v4</span>
-        </div>
-      </div>
+      <BriefCard file={briefFile} who={who} loading={isLoading} />
 
       <div className="flex w-full items-center gap-[24px] px-[2px]">
         <div className="flex items-center gap-[8px]">
           <span className="text-[12px] text-muted">Read by</span>
           <div className="flex -space-x-[6px]">
-            {READERS.map((a) => (
-              <Mascot key={a} helper area={a} size={24} radius={7} className="outline-2 outline-surface" />
+            {helpers.slice(0, 6).map((h) => (
+              <Mascot key={h.id} helper area={h.area} size={24} radius={7} className="outline-2 outline-surface" />
             ))}
           </div>
-          <span className="text-[12px] font-medium text-ink-2">6 helpers</span>
+          <span className="text-[12px] font-medium text-ink-2">
+            {helpers.length} {helpers.length === 1 ? 'helper' : 'helpers'}
+          </span>
         </div>
         <div className="flex items-center gap-[8px]">
           <span className="text-[12px] text-muted">and</span>
           <div className="flex -space-x-[6px]">
-            {(members ?? []).map((m) => (
+            {members.map((m) => (
               <Initials key={m.id} text={nameInitials(m.name)} color={avatarColor(m.id)} size={24} fs={9.5} ring />
             ))}
           </div>
-          <span className="text-[12px] font-medium text-ink-2">{(members ?? []).length} {(members ?? []).length === 1 ? 'person' : 'people'}</span>
+          <span className="text-[12px] font-medium text-ink-2">{members.length} {members.length === 1 ? 'person' : 'people'}</span>
         </div>
         <div className="h-px flex-1" />
         <div className="flex items-center gap-[6px]">
@@ -356,38 +138,119 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
           <h2 className="m-0 text-[14px] font-semibold text-ink">Handbook files</h2>
           <span className="text-[12.5px] text-muted">Helpers suggest edits as they learn — nothing changes until you accept</span>
         </div>
+        {isError && <span className="text-[12.5px] text-bad">Couldn't load the handbook</span>}
         <div className="grid w-full grid-cols-2 items-start gap-[12px]">
-          {FILES.map((f) => (
-            <button
-              key={f.name}
-              type="button"
-              onClick={() => setOpen(f)}
-              className="flex w-full items-center gap-[12px] rounded-lg px-[16px] py-[14px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
-            >
-              <IconTile icon={f.icon} />
-              <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                <div className="flex w-full items-center gap-[8px]">
-                  <span className="font-mono text-[13.5px] font-medium text-ink">{f.name}</span>
-                  {f.badge && <Chip tone={f.badge.tone}>{f.badge.label}</Chip>}
-                </div>
-                <span className="text-[12.5px] text-muted">{f.desc}</span>
-                <div className="flex items-center gap-[5px] pt-[2px]">
-                  {f.locked ? (
-                    <Lock size={11} aria-hidden className="text-faint" />
-                  ) : (
-                    <Globe size={11} aria-hidden className="text-faint" />
-                  )}
-                  <span className="text-[11.5px] text-faint">{f.meta}</span>
-                </div>
-              </div>
-              <ChevronRight size={16} aria-hidden className="text-muted" />
-            </button>
+          {isLoading && [1, 2, 3, 4].map((i) => <div key={i} className="h-[76px] animate-pulse rounded-lg bg-soft" />)}
+          {files.map((f) => (
+            <FileCard key={f.name} file={f} who={who} onOpen={() => { setCreating(false); setOpen(f.name) }} />
           ))}
         </div>
       </section>
 
-      {open && <HandbookFileDrawer file={open} onClose={close} />}
+      {open && <HandbookFileDrawer name={open} onClose={close} />}
+      {creating && <NewFileDrawer onClose={close} onCreated={(name) => { setCreating(false); setOpen(name) }} />}
     </PageShell>
+  )
+}
+
+function FileCard({ file, who, onOpen }: { file: HandbookFile; who: (by: string) => string; onOpen: () => void }) {
+  const Icon = iconFor(file.name)
+  const locked = file.visibility === 'members'
+  return (
+    <button type="button" onClick={onOpen} className="flex w-full items-center gap-[12px] rounded-lg px-[16px] py-[14px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
+      <IconTile icon={Icon} />
+      <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <div className="flex w-full items-center gap-[8px]">
+          <span className="font-mono text-[13.5px] font-medium text-ink">{file.name}</span>
+          {file.openSuggestions > 0 && (
+            <Chip tone="warn">{`${file.openSuggestions} suggested edit${file.openSuggestions === 1 ? '' : 's'}`}</Chip>
+          )}
+        </div>
+        <span className="text-[12.5px] text-muted">{file.description}</span>
+        <div className="flex items-center gap-[5px] pt-[2px]">
+          {locked ? <Lock size={11} aria-hidden className="text-faint" /> : <Globe size={11} aria-hidden className="text-faint" />}
+          <span className="text-[11.5px] text-faint">
+            {locked ? 'Members & helpers only' : 'Everyone'} · {shortAgo(file.updatedAt) === 'now' ? 'now' : `${shortAgo(file.updatedAt)} ago`} · v{file.version}
+            {who(file.updatedBy) === 'you' ? '' : ` · ${who(file.updatedBy)}`}
+          </span>
+        </div>
+      </div>
+      <ChevronRight size={16} aria-hidden className="text-muted" />
+    </button>
+  )
+}
+
+function BriefCard({ file, who, loading }: { file: HandbookFile | null; who: (by: string) => string; loading: boolean }) {
+  const { data: detail } = useHandbookFile(file?.name ?? null)
+  const save = useSaveHandbookFile()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  return (
+    <div className="flex w-full flex-col gap-[12px] rounded-lg p-[18px] outline-1 -outline-offset-1 outline-line-strong">
+      <div className="flex w-full items-center gap-[8px]">
+        <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+          <span className="text-[14px] font-semibold text-ink">Company brief</span>
+          <span className="text-[12.5px] text-muted">The paragraph every helper reads first, and the first page new staff see.</span>
+        </div>
+        {editing ? (
+          <>
+            <PenButton h={30} fs={13} onClick={() => setEditing(false)}>Cancel</PenButton>
+            <PenButton
+              variant="primary"
+              h={30}
+              fs={13}
+              icon={Check}
+              onClick={() =>
+                save.mutate(
+                  { name: 'BRIEF.md', input: { content: draft, title: 'Company brief' } },
+                  { onSuccess: () => { setEditing(false); notify('Brief saved — helpers use it from the next run') }, onError: () => notify("Couldn't save the brief") },
+                )
+              }
+            >
+              {save.isPending ? 'Saving…' : 'Save'}
+            </PenButton>
+          </>
+        ) : (
+          <PenButton
+            variant="quiet"
+            h={30}
+            fs={13}
+            icon={Pencil}
+            disabled={loading}
+            onClick={() => {
+              setDraft(detail?.content ?? '')
+              setEditing(true)
+            }}
+          >
+            Edit
+          </PenButton>
+        )}
+      </div>
+      {editing ? (
+        <textarea
+          autoFocus
+          aria-label="Edit company brief"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={5}
+          className="w-full resize-y rounded-md bg-surface px-[14px] py-[12px] font-mono text-[12.5px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
+        />
+      ) : (
+        <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
+          <p className="m-0 font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap text-ink-2">
+            {detail?.content?.trim() || (loading ? '…' : 'No brief yet — press Edit to write one.')}
+          </p>
+        </div>
+      )}
+      {file && (
+        <div className="flex items-center gap-[6px]">
+          <History size={12} aria-hidden className="text-muted" />
+          <span className="text-[11.5px] text-faint">
+            Edited by {who(file.updatedBy)} · {longAgo(file.updatedAt)} · v{file.version}
+          </span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -408,29 +271,58 @@ function SideTitle({ children }: { children: string }) {
 const H = 'm-0 font-display text-[17px] font-semibold tracking-[-0.2px] text-ink'
 const P = 'm-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ink-2'
 
-/** Serialise a handbook file's structured content to editable markdown. */
-function fileToMarkdown(f: HandbookFile): string {
-  return [
-    f.intro,
-    ...f.sections.map((s) => `## ${s.h}\n\n${s.body}${s.note ? `\n\n> ${s.note}` : ''}`),
-  ].join('\n\n')
+/** Split a handbook file's markdown into an intro and `## ` sections. */
+function sectionsOf(content: string): { intro: string; sections: { h: string; body: string }[] } {
+  const parts = content.split(/^##\s+/m)
+  const intro = parts[0].trim()
+  const sections = parts.slice(1).map((p) => {
+    const [h, ...rest] = p.split('\n')
+    return { h: h.trim(), body: rest.join('\n').trim().replace(/^- /gm, '•  ') }
+  })
+  return { intro, sections }
 }
 
 /** pen bb67G · a handbook file opened in the right-side drawer. */
-function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: () => void }) {
-  const [suggestion, setSuggestion] = useState(file.suggestion ?? null)
-  const scope = file.locked ? 'Members & helpers only' : 'Everyone can read'
-  const ScopeIcon = file.locked ? Lock : Globe
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(() => fileToMarkdown(file))
-
-  function acceptSuggestion() {
-    setSuggestion(null)
-    notify('Suggestion accepted — handbook updated')
+function HandbookFileDrawer({ name, onClose }: { name: string; onClose: () => void }) {
+  const { data: file, isLoading, isError } = useHandbookFile(name)
+  if (!file) {
+    return (
+      <Drawer title={name} subtitle={isError ? "Couldn't load this file" : isLoading ? 'Loading…' : 'Not found'} onClose={onClose} bodyClass="gap-[16px] px-[24px] py-[20px]">
+        {isLoading && <div className="h-[120px] animate-pulse rounded-md bg-soft" />}
+      </Drawer>
+    )
   }
-  function dismissSuggestion() {
-    setSuggestion(null)
-    notify('Suggestion dismissed')
+  return <FileDrawerBody key={`${file.name}:${file.version}`} file={file} onClose={onClose} />
+}
+
+function FileDrawerBody({ file, onClose }: { file: HandbookFileDetail; onClose: () => void }) {
+  const who = useWho()
+  const { data: helpers = [] } = useHelpers()
+  const save = useSaveHandbookFile()
+  const resolve = useResolveHandbookSuggestion()
+  const locked = file.visibility === 'members'
+  const scope = locked ? 'Members & helpers only' : 'Everyone can read'
+  const ScopeIcon = locked ? Lock : Globe
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(file.content)
+  const { intro, sections } = sectionsOf(file.content)
+  const suggestion = file.suggestions[0] ?? null
+  const suggester = suggestion?.helperId ? helpers.find((h) => h.id === suggestion.helperId) : undefined
+
+  function settle(accept: boolean) {
+    if (!suggestion) return
+    resolve.mutate(
+      { id: suggestion.id, accept },
+      {
+        onSuccess: () =>
+          notify(accept ? (suggestion.proposedContent != null ? 'Suggestion accepted — handbook updated' : 'Suggestion accepted — edit the file to apply it') : 'Suggestion dismissed'),
+        onError: () => notify("Couldn't update the suggestion"),
+      },
+    )
+    if (accept && suggestion.proposedContent == null) {
+      setDraft(file.content)
+      setEditing(true)
+    }
   }
 
   return (
@@ -447,20 +339,33 @@ function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: ()
               h={30}
               fs={13}
               onClick={() => {
-                setDraft(fileToMarkdown(file))
+                setDraft(file.content)
                 setEditing(false)
               }}
             >
               Cancel
             </PenButton>
-            <PenButton variant="primary" h={30} fs={13} icon={Check} onClick={() => setEditing(false)}>
-              Save changes
+            <PenButton
+              variant="primary"
+              h={30}
+              fs={13}
+              icon={Check}
+              onClick={() =>
+                save.mutate(
+                  { name: file.name, input: { content: draft } },
+                  { onSuccess: () => notify(`Saved ${file.name}`), onError: () => notify("Couldn't save changes") },
+                )
+              }
+            >
+              {save.isPending ? 'Saving…' : 'Save changes'}
             </PenButton>
           </>
         ) : (
           <>
             <History size={12} aria-hidden className="text-muted" />
-            <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">{file.edited}</span>
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
+              Edited by {who(file.updatedBy)} · {longAgo(file.updatedAt)} · v{file.version}
+            </span>
             <PenButton h={30} fs={13} icon={Pencil} onClick={() => setEditing(true)}>
               Edit
             </PenButton>
@@ -474,70 +379,97 @@ function HandbookFileDrawer({ file, onClose }: { file: HandbookFile; onClose: ()
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           aria-label={`Edit ${file.name}`}
-          className="w-full min-h-[55vh] flex-1 resize-none rounded-md bg-surface p-[14px] font-mono text-[13px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
+          className="min-h-[55vh] w-full flex-1 resize-none rounded-md bg-surface p-[14px] font-mono text-[13px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
         />
       ) : (
         <>
-      <div className="flex w-full items-center gap-[8px]">
-        <span className="inline-flex h-[26px] items-center gap-[6px] rounded-btn px-[10px] outline-1 -outline-offset-1 outline-line-strong">
-          <ScopeIcon size={12} aria-hidden className="text-ink-2" />
-          <span className="text-[12px] text-ink-2">{scope}</span>
-        </span>
-      </div>
+          <div className="flex w-full items-center gap-[8px]">
+            <span className="inline-flex h-[26px] items-center gap-[6px] rounded-btn px-[10px] outline-1 -outline-offset-1 outline-line-strong">
+              <ScopeIcon size={12} aria-hidden className="text-ink-2" />
+              <span className="text-[12px] text-ink-2">{scope}</span>
+            </span>
+          </div>
 
-      <p className="m-0 text-[13.5px] leading-[1.6] text-muted">{file.intro}</p>
+          {intro && <p className="m-0 text-[13.5px] leading-[1.6] whitespace-pre-wrap text-muted">{intro}</p>}
 
-      {file.sections.map((s) => (
-        <div key={s.h} className="flex w-full flex-col gap-[6px]">
-          <h2 className={H}>{s.h}</h2>
-          <p className={P}>{s.body}</p>
-          {s.note && (
-            <div className="w-full rounded-sm bg-ok-tint px-[12px] py-[8px] shadow-[inset_3px_0_0_var(--color-ok-line)]">
-              <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-ok">{s.note}</p>
+          {sections.map((s, i) => (
+            <div key={`${s.h}-${i}`} className="flex w-full flex-col gap-[6px]">
+              <h2 className={H}>{s.h}</h2>
+              <p className={P}>{s.body}</p>
+            </div>
+          ))}
+
+          {suggestion && (
+            <div className="flex w-full flex-col gap-[10px] rounded-lg bg-warn-tint p-[14px] outline-1 -outline-offset-1 outline-warn-line">
+              <div className="flex w-full items-center gap-[8px]">
+                <Mascot helper area={suggester?.area ?? 'brand'} size={24} radius={7} />
+                <span className="text-[12.5px] font-semibold text-ink">{suggestion.author} suggests an edit</span>
+              </div>
+              <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{suggestion.text}</p>
+              <div className="flex gap-[6px]">
+                <PenButton variant="primary" h={28} fs={12.5} px={12} onClick={() => settle(true)}>Accept</PenButton>
+                <PenButton h={28} fs={12.5} px={12} onClick={() => settle(false)}>Dismiss</PenButton>
+              </div>
             </div>
           )}
-        </div>
-      ))}
 
-      {suggestion && (
-        <div className="flex w-full flex-col gap-[10px] rounded-lg bg-warn-tint p-[14px] outline-1 -outline-offset-1 outline-warn-line">
-          <div className="flex w-full items-center gap-[8px]">
-            <Mascot helper area={suggestion.area} size={24} radius={7} />
-            <span className="text-[12.5px] font-semibold text-ink">{suggestion.who}</span>
-          </div>
-          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">{suggestion.text}</p>
-          <div className="flex gap-[6px]">
-            <PenButton variant="primary" h={28} fs={12.5} px={12} onClick={acceptSuggestion}>Accept</PenButton>
-            <PenButton h={28} fs={12.5} px={12} onClick={dismissSuggestion}>Dismiss</PenButton>
-          </div>
-        </div>
-      )}
-
-      {file.used && (
-        <div className="flex w-full flex-col gap-[8px] pt-[2px]">
-          <SideTitle>USED THIS WEEK</SideTitle>
-          {file.used.map((u) => {
-            const Icon = u.icon
-            const lead = u.area ? (
-              <Mascot helper area={u.area} size={24} radius={7} />
-            ) : Icon ? (
-              <Icon size={14} aria-hidden className="text-muted" />
-            ) : null
-            return <SideRow key={u.label} lead={lead} label={u.label} right={u.count} />
-          })}
-        </div>
-      )}
-
-      {file.history && (
-        <div className="flex w-full flex-col gap-[8px]">
-          <SideTitle>HISTORY</SideTitle>
-          {file.history.map((h) => (
-            <SideRow key={h.label} lead={null} label={h.label} right={h.right} />
-          ))}
-        </div>
-      )}
+          {file.versions.length > 0 && (
+            <div className="flex w-full flex-col gap-[8px]">
+              <SideTitle>HISTORY</SideTitle>
+              {file.versions.slice(0, 5).map((h) => (
+                <SideRow key={`${h.version}-${h.createdAt}`} lead={null} label={`v${h.version} · ${h.note && h.note !== 'Created' ? h.note.toLowerCase() : who(h.updatedBy)}`} right={shortAgo(h.createdAt)} />
+              ))}
+            </div>
+          )}
         </>
       )}
+    </Drawer>
+  )
+}
+
+/** "New file" — name + content, saved with PUT /v1/handbook/{file}. */
+function NewFileDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string) => void }) {
+  const save = useSaveHandbookFile()
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [members, setMembers] = useState(false)
+  const [content, setContent] = useState('')
+  const fileName = name.trim() ? `${name.trim().replace(/\.md$/i, '').toUpperCase().replace(/\s+/g, '-')}.md` : ''
+  return (
+    <Drawer
+      title="New handbook file"
+      subtitle={fileName || 'Name it, write it, save it'}
+      onClose={onClose}
+      bodyClass="gap-[12px] px-[24px] py-[20px]"
+      footer={
+        <>
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">Every helper reads it from the next run</span>
+          <PenButton h={30} fs={13} onClick={onClose}>Cancel</PenButton>
+          <PenButton
+            variant="primary"
+            h={30}
+            fs={13}
+            icon={Check}
+            disabled={!fileName || save.isPending}
+            onClick={() =>
+              save.mutate(
+                { name: fileName, input: { content, title: name.trim(), description, visibility: members ? 'members' : 'everyone' } },
+                { onSuccess: (f) => { notify(`Created ${f.name}`); onCreated(f.name) }, onError: () => notify("Couldn't create the file — use letters, numbers and dashes") },
+              )
+            }
+          >
+            Create file
+          </PenButton>
+        </>
+      }
+    >
+      <input aria-label="File name" placeholder="File name, e.g. Pricing" value={name} onChange={(e) => setName(e.target.value)} className="h-[32px] rounded-md bg-surface px-[10px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink" />
+      <input aria-label="Description" placeholder="One line on what's inside" value={description} onChange={(e) => setDescription(e.target.value)} className="h-[32px] rounded-md bg-surface px-[10px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink" />
+      <label className="flex items-center gap-[8px] text-[12.5px] text-ink-2">
+        <input type="checkbox" checked={members} onChange={(e) => setMembers(e.target.checked)} /> Members &amp; helpers only
+      </label>
+      <textarea aria-label="File content" placeholder={'Intro line\n\n## A section\n\n- A rule'} value={content} onChange={(e) => setContent(e.target.value)} className="min-h-[45vh] w-full resize-none rounded-md bg-surface p-[14px] font-mono text-[13px] leading-[1.6] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink" />
+      <span className="text-[11.5px] text-faint">Markdown — use ## for sections and - for rules.</span>
     </Drawer>
   )
 }
