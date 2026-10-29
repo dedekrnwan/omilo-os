@@ -33,5 +33,6 @@ async def async_client():
 @pytest.fixture(autouse=True)
 def _no_real_ai_keys(monkeypatch):
     """Never reach a real AI from the test suite, whatever the developer's shell exports."""
-    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OMILO_ANTHROPIC_BASE_URL", "OMILO_OPENAI_BASE_URL"):
+    for var in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OMILO_POOL_ANTHROPIC_API_KEY", "OMILO_ANTHROPIC_BASE_URL",
+                "OMILO_OPENAI_BASE_URL"):
         monkeypatch.delenv(var, raising=False)

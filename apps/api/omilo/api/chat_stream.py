@@ -35,7 +35,7 @@ from omilo.ai.config import resolve
 from omilo.ai.prompts import chat_system
 from omilo.api.chat_write import _message_dto, _pick_helper
 from omilo.db import SessionLocal, set_company
-from omilo.engine.real import ENGINE_TYPE, usd_to_credits
+from omilo.engine.real import engine_type_for, usd_to_credits
 from omilo.models.base import prefixed_id
 from omilo.models.chat import ChatSession, Message
 from omilo.models.execution import Job
@@ -90,6 +90,12 @@ def _prepare(ctx: RequestContext, session_id: str, body: StreamBody) -> dict:
         helper = _pick_helper(db, sess, ctx.company_id)
         company = db.get(Company, ctx.company_id)
         cfg = resolve(db, ctx.company_id, helper, tier="balanced").with_model(body.model or sess.model)
+        if cfg.pooled:
+            from omilo.ai.config import has_credits
+
+            if not has_credits(db, ctx.company_id):
+                raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                                    detail="You're out of Omilo credits. Top up or pick a plan in Control panel → Usage & billing.")
         history = [
             {"role": "user" if (m.author or {}).get("kind") == "you" else "assistant", "content": m.content or ""}
             for m in reversed(past)
@@ -120,7 +126,7 @@ def _finish(ctx: RequestContext, session_id: str, prep: dict, reply: str, done: 
             attempts=1, checkpoint={}, result_text=reply[:20000] or None,
             error=(error or None), started_at=prep.get("started_at") or now, ended_at=now,
         )
-        job.engine_type = ENGINE_TYPE.get(cfg.provider, cfg.provider)
+        job.engine_type = engine_type_for(cfg)
         db.add(job)
         content = reply.strip() or (f"I couldn't answer just now: {error}" if error else "(no answer)")
         msg = Message(
@@ -130,6 +136,13 @@ def _finish(ctx: RequestContext, session_id: str, prep: dict, reply: str, done: 
         )
         db.add(msg)
         db.flush()
+        if cfg.pooled:  # Omilo Cloud's AI: charge the turn in credits
+            from omilo.billing.meter import meter_job
+
+            try:
+                meter_job(db, job)
+            except Exception:  # noqa: BLE001 — never lose the reply over metering
+                log.exception("metering chat turn failed")
         dto = _message_dto(msg)
     try:
         from omilo.realtime.events import broker

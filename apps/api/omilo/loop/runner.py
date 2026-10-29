@@ -321,6 +321,15 @@ def run_job(
         from omilo.engine.real import RealEngine
 
         _ai = _resolve_ai(db, job.company_id, helper)
+        if _ai.pooled:
+            from omilo.ai.config import has_credits as _has_credits
+
+            if not _has_credits(db, job.company_id):
+                job.status = "failed"
+                job.error = "Out of Omilo credits. Top up or pick a plan in Control panel → Usage & billing."
+                job.ended_at = datetime.now(timezone.utc)
+                db.flush()
+                return job
         if not _ai.is_fake:
             if (engine_cfg or {}).get("model"):
                 _ai = _ai.with_model(engine_cfg["model"])

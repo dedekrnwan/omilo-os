@@ -155,3 +155,37 @@ async def team_plan(ctx: RequestContext = Depends(get_context)) -> dict:
     state, company_name, cfg = await asyncio.to_thread(_load, ctx)
     plan = await I.plan_team(cfg, company_name, state["notes"])
     return plan
+
+
+@router.get("/onboarding/ai-status")
+async def ai_status(ctx: RequestContext = Depends(get_context)) -> dict:
+    """Is there an AI ready to run the interview (and the team)?
+
+    ready     — a connected account, or Omilo Cloud with credits
+    reason    — what's missing, in plain words, when not ready
+    """
+    from omilo.ai.config import has_credits, pool_config
+    from omilo.control.factory import is_local_mode
+
+    def check() -> dict:
+        with SessionLocal() as db, db.begin():
+            db.execute(text("SET LOCAL ROLE omilo_app"))
+            set_company(db, ctx.company_id)
+            cfg = resolve(db, ctx.company_id, None)
+            credits = has_credits(db, ctx.company_id)
+        local = is_local_mode()
+        if cfg.pooled and not credits:
+            return {"ready": False, "label": cfg.label, "pooled": True, "mode": "cloud",
+                    "reason": "Start the free trial or buy credits to use Omilo Cloud's AI."}
+        if cfg.is_fake:
+            reason = ("Connect an AI: a Claude or OpenAI key, or Claude Code signed in on this computer."
+                      if local or pool_config() is None else "Start the free trial or buy credits.")
+            if not local and pool_config() is None:
+                reason = ("Omilo Cloud's AI isn't set up on this server yet (OMILO_POOL_ANTHROPIC_API_KEY). "
+                          "Connect your own AI under Self-host instead.")
+            return {"ready": False, "label": cfg.label, "pooled": False, "mode": "local" if local else "cloud",
+                    "reason": reason}
+        return {"ready": True, "label": cfg.label, "pooled": cfg.pooled, "mode": "local" if local else "cloud",
+                "reason": None}
+
+    return await asyncio.to_thread(check)

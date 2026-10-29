@@ -153,7 +153,7 @@ export function OnboardingRoute() {
               }}
             />
           )}
-          {step === 'know-you' && <StepKnowYou onNext={() => goToStep('profile')} />}
+          {step === 'know-you' && <StepKnowYou onNext={() => goToStep('profile')} onBack={() => goToStep('your-ai')} />}
           {step === 'profile' && (
             <StepProfile
               onNext={() => goToStep('check')}

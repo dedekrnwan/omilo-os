@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowRight, CircleCheck, Globe, Loader2, Paperclip, Pause, Pencil, SkipForward, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleCheck, Globe, Loader2, Paperclip, Pause, Pencil, SkipForward, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { IconButton } from '../../ui/ds/Button'
 import { Composer } from '../../ui/ChatSession/Composer'
@@ -15,8 +15,8 @@ import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { KNOWLEDGE_NOTES } from './data'
 import { Pill, QuietButton, Stroke } from './parts'
 import { notify } from '../../ui/ds/Toaster'
-import { getInterview, interviewTurn, readTextFile, TOPIC_IDS } from './interviewApi'
-import type { InterviewEntry, InterviewView, TopicId } from './interviewApi'
+import { getAiStatus, getInterview, interviewTurn, readTextFile, TOPIC_IDS } from './interviewApi'
+import type { AiStatus, InterviewEntry, InterviewView, TopicId } from './interviewApi'
 
 function ChiefSays({ text, ideas, onIdea, children }: {
   text: string
@@ -165,7 +165,7 @@ function LearnedPanel({
   )
 }
 
-export function StepKnowYou({ onNext }: { onNext: () => void }) {
+export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: () => void }) {
   const navigate = useNavigate()
   const [view, setView] = useState<InterviewView | null>(null)
   const [pendingOwner, setPendingOwner] = useState<string | null>(null)
@@ -174,6 +174,8 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const [writing, setWriting] = useState<TopicId | null>(null)
   const [website, setWebsite] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // The interview runs on your AI: it only starts once one is ready (Your AI step).
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const busy = liveText !== null
@@ -220,12 +222,13 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
   // Load where we were; a fresh interview starts with Chief's first question.
   useEffect(() => {
     let alive = true
-    getInterview()
-      .then((v) => {
+    Promise.all([getAiStatus(), getInterview()])
+      .then(([st, v]) => {
         if (!alive) return
+        setAiStatus(st)
         setView(v)
         if (v.website) setWebsite(v.website)
-        if (!v.history.length) turn({})
+        if (st.ready && !v.history.length) turn({})
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Couldn’t load the interview'))
     return () => {
@@ -263,6 +266,39 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const lastAi = [...history].reverse().find((h) => h.role === 'ai')
   const doneCount = view ? TOPIC_IDS.filter((t) => view.notes[t]?.trim()).length : 0
   const finished = view?.topic === 'finish'
+
+  if (aiStatus && !aiStatus.ready) {
+    return (
+      <div className="flex min-h-0 w-full flex-1 items-center justify-center px-[16px] py-[24px]">
+        <section
+          aria-label="Connect your AI first"
+          className="relative flex w-full max-w-[520px] flex-col items-start gap-[14px] rounded-lg bg-surface p-[28px]"
+        >
+          <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />
+          <h2 className="font-display text-[22px] font-semibold tracking-[-0.3px] text-ink">
+            I need an AI before we talk
+          </h2>
+          <p className="text-[14px] leading-[1.55] text-ink-2">
+            I get to know your business in a real conversation, and that runs on the AI you pick in the first step.{' '}
+            {aiStatus.reason}
+          </p>
+          <div className="flex w-full flex-wrap items-center gap-[8px] pt-[4px]">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-[36px] items-center gap-[6px] rounded-btn bg-ink px-[14px] text-[13.5px] font-medium text-surface"
+              >
+                <ArrowLeft size={14} aria-hidden /> Back to Your AI
+              </button>
+            )}
+            <QuietButton icon={ArrowRight} onClick={onNext}>Skip the interview for now</QuietButton>
+          </div>
+          <Stroke />
+        </section>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-[16px] overflow-y-auto px-[16px] pt-[8px] pb-[16px] sm:px-[24px] sm:pb-[24px] lg:flex-row lg:overflow-hidden">

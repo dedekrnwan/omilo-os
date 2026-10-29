@@ -12,11 +12,11 @@
  * pool account OR by entering an API key.
  */
 import { useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight, KeyRound, Loader } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AI_MODES } from './data'
-import type { AIMode, AIOption } from './data'
+import { CloudSetup, useCloudSetup } from './CloudSetup'
+import type { AIMode } from './data'
 import { ChipNeutral, IconTile, Pill, PrimaryButton, QuietButton, Radio, StepEyebrow, WizardCard } from './parts'
 import { capture } from '../../telemetry'
 import { useAiAccounts, useUpdateCompanySettings } from '../../app/queries'
@@ -89,72 +89,6 @@ function OptionCard({
       {chips && (
         <div className="flex gap-[6px] pl-[76px]">
           {chips.map((c) => (
-            <Pill key={c}>{c}</Pill>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Cloud option card — preserves original "found" detail + pricing link. */
-function CloudOptionCard({
-  option,
-  selected,
-  onSelect,
-  onUseAnother,
-}: {
-  option: AIOption
-  selected: boolean
-  onSelect: () => void
-  onUseAnother: () => void
-}) {
-  const navigate = useNavigate()
-  return (
-    <div
-      role="radio"
-      aria-checked={selected}
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect()}
-      className={`flex w-full cursor-pointer flex-col gap-[10px] rounded-md p-[16px] ${selected ? 'bg-surface' : ''}`}
-      style={{
-        boxShadow: selected
-          ? 'inset 0 0 0 2px var(--color-ink)'
-          : 'inset 0 0 0 1px var(--color-line-strong)',
-      }}
-    >
-      <div className="flex w-full items-center gap-[12px]">
-        <Radio on={selected} />
-        <IconTile icon={option.icon} />
-        <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-          <span className="text-[15px] font-semibold text-ink">{option.title}</span>
-          <span className="w-full text-[13px] text-muted">{option.desc}</span>
-        </div>
-        {selected && option.found && <ChipNeutral>Recommended</ChipNeutral>}
-      </div>
-      {selected && option.found && (
-        <div className="flex w-full items-center gap-[8px] pt-[2px] pl-[72px]">
-          <span aria-hidden className="size-[7px] shrink-0 rounded-full bg-ok" />
-          <span className="font-mono text-[12px] text-ink-2">{option.found.value}</span>
-          <span className="text-[12px] text-muted">{option.found.note}</span>
-          <span className="h-px flex-1" />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (option.found?.action === 'pricing') void navigate({ to: '/auth/onboarding/plan' })
-              else if (option.found?.action === 'use-another') onUseAnother()
-            }}
-            className="text-[12px] font-medium text-link hover:underline"
-          >
-            {option.found.link}
-          </button>
-        </div>
-      )}
-      {option.chips && (
-        <div className="flex gap-[6px] pl-[76px]">
-          {option.chips.map((c) => (
             <Pill key={c}>{c}</Pill>
           ))}
         </div>
@@ -334,7 +268,6 @@ export function StepYourAI({
   // Self-host existing: which account id is selected in the pool list
   const [existingAccountId, setExistingAccountId] = useState<string | null>(null)
   // Cloud: which cloud option is selected
-  const [cloudPick, setCloudPick] = useState<string>(AI_MODES.cloud.options[0].id)
 
   // API key connect state
   const [connecting, setConnecting] = useState(false)
@@ -347,11 +280,17 @@ export function StepYourAI({
   const qc = useQueryClient()
   const updateSettings = useUpdateCompanySettings()
   const [checking, setChecking] = useState(false)
+  // Cloud: settle trial / pack / plan here; the interview opens once Omilo Cloud's AI is ready.
+  const cloud = useCloudSetup(() => onNext({ mode: 'cloud', cloudPick: cloud.pick }))
 
   /** Prove the picked AI really answers (one tiny call), save it as the company's AI, then move on. */
   async function confirmAccount(accountId: string | null) {
-    if (!accountId || isMockMode()) {
+    if (isMockMode()) {
       onNext({ mode, accountId })
+      return
+    }
+    if (!accountId) {
+      setConnectError('Connect an AI first — Claude Code on this computer, or an API key — so Chief can interview you.')
       return
     }
     setChecking(true)
@@ -550,23 +489,8 @@ export function StepYourAI({
           </div>
         )}
 
-        {/* ── Cloud ── */}
-        {mode === 'cloud' && (
-          <div role="radiogroup" aria-label="AI account" className="contents">
-            {copy.options.map((o) => (
-              <CloudOptionCard
-                key={o.id}
-                option={o}
-                selected={cloudPick === o.id}
-                onSelect={() => setCloudPick(o.id)}
-                onUseAnother={() => {
-                  const other = copy.options.find((opt) => opt.id !== cloudPick)
-                  if (other) setCloudPick(other.id)
-                }}
-              />
-            ))}
-          </div>
-        )}
+        {/* ── Cloud: trial / pack / plan, settled here (no jump to the pricing pages) ── */}
+        {mode === 'cloud' && <CloudSetup s={cloud} />}
 
         <div className="w-px flex-1" />
 
@@ -593,11 +517,11 @@ export function StepYourAI({
             icon={ArrowRight}
             onClick={() =>
               mode === 'cloud'
-                ? onNext({ mode, cloudPick })
-                : void confirmAccount(existingAccountId ?? displayAccounts[0]?.id ?? null)
+                ? cloud.busy ? undefined : void cloud.start()
+                : checking ? undefined : void confirmAccount(existingAccountId ?? displayAccounts[0]?.id ?? null)
             }
           >
-            {checking ? 'Checking your AI…' : copy.cta}
+            {mode === 'cloud' ? cloud.cta : checking ? 'Checking your AI…' : copy.cta}
           </PrimaryButton>
         </div>
       </div>

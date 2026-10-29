@@ -5,6 +5,7 @@ import { OnboardingLayout } from './AuthLayout'
 import { AuthButton } from './AuthPrimitives'
 import { usePlans } from '../../app/queries'
 import { isMockMode } from '../../app/useAuth'
+import { useSession } from '../../app/session'
 import { getCommands } from '../control-panel/sections/getCommands'
 import type { BillingPlan } from '../../core/domain/types'
 
@@ -105,11 +106,16 @@ export function ChoosePlanPage() {
     )
   }
 
+  // Not onboarded yet: the plan is settled, so the next thing is the interview
+  // (it used to land on '/', which bounced back to the start of onboarding).
+  const onboarded = useSession((st) => st.company?.onboarded) ?? false
+  const next = onboarded ? '/' : '/onboarding?step=know-you'
+
   async function handleSubscribe() {
     if (!cloudPlan) return
     if (mock) {
-      // In mock mode, navigate into the app without a real network call.
-      window.location.assign('/')
+      // In mock mode, carry on without a real network call.
+      window.location.assign(next)
       return
     }
     setLoading(true)
@@ -119,7 +125,7 @@ export function ChoosePlanPage() {
       if (typeof res.hosted_url === 'string' && res.hosted_url) {
         window.location.assign(res.hosted_url)
       } else {
-        window.location.assign('/')
+        window.location.assign(next)
       }
     } catch {
       setLoading(false)

@@ -27,6 +27,11 @@ def usd_to_credits(usd: float) -> int:
 ENGINE_TYPE = {"anthropic": "anthropic", "openai_compat": "openai", "cli": "claude_code"}
 
 
+def engine_type_for(cfg: AiConfig) -> str:
+    """Job.engine_type: 'litellm' is the credit-metered cloud engine (billing.meter)."""
+    return "litellm" if cfg.pooled else ENGINE_TYPE.get(cfg.provider, cfg.provider)
+
+
 class RealEngine:
     def __init__(self, cfg: AiConfig, *, helper: Any = None, company: Any = None) -> None:
         self.cfg = cfg
@@ -35,7 +40,7 @@ class RealEngine:
 
     @property
     def engine_type(self) -> str:
-        return ENGINE_TYPE.get(self.cfg.provider, self.cfg.provider)
+        return engine_type_for(self.cfg)
 
     def run(self, ctx: TaskContext) -> EngineResult:
         try:

@@ -78,6 +78,8 @@ class AiConfig:
     tier: str = "balanced"     # fast | balanced | deep
     account_id: str | None = None
     extra: dict = field(default_factory=dict)
+    # True for Omilo Cloud's own AI (cloud/hybrid mode): every turn is metered in credits.
+    pooled: bool = False
 
     @property
     def is_fake(self) -> bool:
@@ -132,6 +134,30 @@ def from_account(acc: Any) -> AiConfig | None:
     return None
 
 
+def pool_config() -> AiConfig | None:
+    """Omilo Cloud's AI (cloud/hybrid mode only): the server's key, billed to the company in credits."""
+    from omilo.control.factory import is_local_mode
+
+    if is_local_mode():
+        return None
+    key = os.environ.get("OMILO_POOL_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return None
+    return AiConfig(provider="anthropic", vendor="anthropic", key=key, label="Omilo Cloud", pooled=True,
+                    base_url=os.environ.get("OMILO_ANTHROPIC_BASE_URL", "https://api.anthropic.com"))
+
+
+def has_credits(db: Session, company_id: str) -> bool:
+    from omilo.billing.balance import balance
+    from omilo.models.tenancy import Company
+
+    company = db.get(Company, company_id)
+    try:
+        return company is not None and balance(db, company) > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _env_config() -> AiConfig | None:
     if os.environ.get("ANTHROPIC_API_KEY"):
         return AiConfig(provider="anthropic", vendor="anthropic", key=os.environ["ANTHROPIC_API_KEY"], label="Claude",
@@ -171,7 +197,9 @@ def resolve(db: Session, company_id: str, helper: Any = None, *, tier: str = "ba
         usable.sort(key=_rank)
         cfg = usable[0] if usable else None
 
-    cfg = cfg or _env_config() or FAKE
+    # No AI of their own: Omilo Cloud's AI (cloud/hybrid; metered in credits),
+    # then a developer key in the environment (local mode), then practice mode.
+    cfg = cfg or pool_config() or _env_config() or FAKE
     if isinstance(eng, dict) and eng.get("model") and not cfg.is_fake:
         cfg = AiConfig(**{**cfg.__dict__, "model": eng["model"]})
     if cfg.tier != tier and not cfg.model:

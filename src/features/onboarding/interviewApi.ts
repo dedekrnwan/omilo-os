@@ -171,3 +171,20 @@ const mock = (() => {
     ],
   }
 })()
+
+// ── Is an AI ready? (Your AI → interview gate) ───────────────────────────────
+
+export interface AiStatus {
+  ready: boolean
+  label: string
+  pooled: boolean
+  mode: 'local' | 'cloud'
+  reason: string | null
+}
+
+/** GET /v1/onboarding/ai-status — a connected account, or Omilo Cloud with credits. */
+export async function getAiStatus(): Promise<AiStatus> {
+  if (!live()) return { ready: true, label: 'Practice mode', pooled: false, mode: 'local', reason: null }
+  const res = await apiFetch(`${base()}/v1/onboarding/ai-status`, token)
+  return (await res.json()) as AiStatus
+}
