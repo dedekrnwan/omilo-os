@@ -182,6 +182,13 @@ const docsRoute = createRoute({
   component: DocsRoute,
 })
 
+// ── sweep/docs ── /docs/$docId opens a doc from a copied link (/docs/handbook → handbook)
+const docDetailRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/docs/$docId',
+  component: DocsRoute,
+})
+
 const analyticsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/analytics',
@@ -413,6 +420,7 @@ const routeTree = rootRoute.addChildren([
       routinesRoute,
       routineDetailRoute,
       docsRoute,
+      docDetailRoute,
       analyticsRoute,
     ]),
     editorLayoutRoute.addChildren([

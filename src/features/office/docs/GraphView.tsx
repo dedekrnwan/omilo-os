@@ -2,20 +2,16 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowUpRight, Brain, Check, EyeOff, FileText, Link2, Search, Sparkles, Target } from 'lucide-react'
+import type { Channel, DocGraph } from '../../../core/domain/types'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { copyText } from '../../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
+import { useDocGraph, usePatchDoc } from '../../../app/queries'
 import { NetworkGraph } from './graph/NetworkGraph'
-import { AREA_COLOR, DOC_EDGES, DOC_FRAME, DOC_NODES } from './graph/graphData'
-import type { DocArea, DocGraphNode } from './graph/graphData'
-
-const AREAS: { id: DocArea; label: string; count: number }[] = [
-  { id: 'engineering', label: 'Engineering', count: 18 },
-  { id: 'marketing', label: 'Marketing', count: 14 },
-  { id: 'business', label: 'Business', count: 21 },
-  { id: 'general', label: 'General', count: 11 },
-]
+import { DOC_FRAME, areaColor, layoutDocGraph } from './graph/graphData'
+import type { DocGraphNode } from './graph/graphData'
+import { areaLabel, longAgo } from './docsUtil'
 
 function CheckRow({ on, onChange, children, count }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; count?: number }) {
   return (
@@ -46,38 +42,61 @@ export function GraphView({
   onOpenNote,
   onAskChief,
   showFilters = true,
+  channels = [],
+  focusDocId = null,
 }: {
   onOpenNote: (docId: string) => void
   onAskChief: (about: string) => void
   showFilters?: boolean
+  channels?: Channel[]
+  /** Doc to select when the graph opens ("Show in graph"). */
+  focusDocId?: string | null
 }) {
   const navigate = useNavigate()
-  const [selected, setSelected] = useState<string | null>('passkey')
+  const { data: graph, isLoading, isError } = useDocGraph()
+  const patchDoc = usePatchDoc()
+  const [selected, setSelected] = useState<string | null>(focusDocId)
   const [query, setQuery] = useState('')
-  const [areas, setAreas] = useState<Record<DocArea, boolean>>({ engineering: true, marketing: true, business: true, general: true })
+  const [areasOff, setAreasOff] = useState<Record<string, boolean>>({})
   const [madeBy, setMadeBy] = useState({ team: true, agents: true })
   const [orphans, setOrphans] = useState(false)
   const [goals, setGoals] = useState(true)
   const [hidden, setHidden] = useState<string[]>([])
 
-  const linked = useMemo(() => new Set(DOC_EDGES.flatMap((e) => [e.from, e.to])), [])
-  const nodes = useMemo(
-    () =>
-      DOC_NODES.filter((n) => {
-        if (hidden.includes(n.id)) return false
-        if (n.area === 'goal') return goals
-        if (!areas[n.area]) return false
-        if (n.by && !madeBy[n.by]) return false
-        if (!orphans && !linked.has(n.id)) return false
-        return true
-      }),
-    [areas, madeBy, orphans, goals, hidden, linked],
-  )
+  const all = useMemo(() => layoutDocGraph(graph ?? EMPTY, (a) => areaLabel(a, channels)), [graph, channels])
+  const allEdges = useMemo(() => graph?.edges ?? [], [graph])
+  const linked = useMemo(() => new Set(allEdges.flatMap((e) => [e.from, e.to])), [allEdges])
+  const docNodes = all.filter((n) => n.kind !== 'goal')
+  const areas = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const n of docNodes) m.set(n.area, (m.get(n.area) ?? 0) + 1)
+    return [...m.entries()].map(([label, count]) => ({ id: label, label, count }))
+  }, [docNodes])
+  const teamCount = docNodes.filter((n) => n.by === 'team').length
+  const orphanCount = docNodes.filter((n) => !linked.has(n.id)).length
+
+  const nodes = all.filter((n) => {
+    if (hidden.includes(n.id)) return false
+    if (n.kind === 'goal') return goals
+    if (areasOff[n.area]) return false
+    if (n.by && !madeBy[n.by]) return false
+    if (!orphans && !linked.has(n.id)) return false
+    return true
+  })
   const ids = new Set(nodes.map((n) => n.id))
-  const edges = DOC_EDGES.filter((e) => ids.has(e.from) && ids.has(e.to))
+  const edges = allEdges.filter((e) => ids.has(e.from) && ids.has(e.to))
   const q = query.trim().toLowerCase()
   const focus = q ? new Set(nodes.filter((n) => n.label.toLowerCase().includes(q)).map((n) => n.id)) : null
   const sel = nodes.find((n) => n.id === selected) as DocGraphNode | undefined
+
+  function hide(n: DocGraphNode) {
+    setHidden((h) => [...h, n.id])
+    if (n.docId) patchDoc.mutate({ id: n.docId, patch: { hidden: true } })
+    notify(`Hid “${n.label}”`, () => {
+      setHidden((h) => h.filter((x) => x !== n.id))
+      if (n.docId) patchDoc.mutate({ id: n.docId, patch: { hidden: false } })
+    })
+  }
 
   function menuFor(n: DocGraphNode): MenuEntries {
     return [
@@ -86,15 +105,8 @@ export function GraphView({
       { label: 'Show only its links', icon: Link2, onSelect: () => setSelected(n.id) },
       n.kind === 'goal' && { label: 'Open goal', icon: Target, onSelect: () => void navigate({ to: '/goals' }) },
       { type: 'separator' },
-      { label: 'Copy link', icon: Link2, onSelect: () => { copyText(`${location.origin}/docs/${n.docId ?? n.id}`); notify('Link copied') } },
-      {
-        label: 'Hide from graph',
-        icon: EyeOff,
-        onSelect: () => {
-          setHidden((h) => [...h, n.id])
-          notify(`Hid “${n.label}”`, () => setHidden((h) => h.filter((x) => x !== n.id)))
-        },
-      },
+      n.docId && { label: 'Copy link', icon: Link2, onSelect: () => { copyText(`${location.origin}/docs/${n.docId}`); notify('Link copied') } },
+      { label: 'Hide from graph', icon: EyeOff, onSelect: () => hide(n) },
     ]
   }
 
@@ -114,17 +126,17 @@ export function GraphView({
             />
           </label>
           <Heading>AREAS</Heading>
-          {AREAS.map((a) => (
-            <CheckRow key={a.id} on={areas[a.id]} count={a.count} onChange={(on) => setAreas((s) => ({ ...s, [a.id]: on }))}>
-              <span className="size-[8px] rounded-full" style={{ background: AREA_COLOR[a.id] }} />
+          {areas.map((a) => (
+            <CheckRow key={a.id} on={!areasOff[a.id]} count={a.count} onChange={(on) => setAreasOff((s) => ({ ...s, [a.id]: !on }))}>
+              <span className="size-[8px] rounded-full" style={{ background: areaColor(a.label) }} />
               {a.label}
             </CheckRow>
           ))}
           <Heading>MADE BY</Heading>
-          <CheckRow on={madeBy.team} count={29} onChange={(team) => setMadeBy((m) => ({ ...m, team }))}>You &amp; team</CheckRow>
-          <CheckRow on={madeBy.agents} count={35} onChange={(agents) => setMadeBy((m) => ({ ...m, agents }))}>Agents</CheckRow>
+          <CheckRow on={madeBy.team} count={teamCount} onChange={(team) => setMadeBy((m) => ({ ...m, team }))}>You &amp; team</CheckRow>
+          <CheckRow on={madeBy.agents} count={docNodes.length - teamCount} onChange={(agents) => setMadeBy((m) => ({ ...m, agents }))}>Agents</CheckRow>
           <Heading>SHOW</Heading>
-          <CheckRow on={orphans} count={6} onChange={setOrphans}>Orphan docs</CheckRow>
+          <CheckRow on={orphans} count={orphanCount} onChange={setOrphans}>Orphan docs</CheckRow>
           <CheckRow on={goals} onChange={setGoals}>Links to goals</CheckRow>
           <div className="mt-[16px] flex gap-[8px] rounded-base bg-soft px-[10px] py-[10px] text-[12px] leading-[17px] text-muted outline-1 -outline-offset-1 outline-line">
             <Brain size={13} aria-hidden className="mt-[2px] shrink-0" />
@@ -153,10 +165,10 @@ export function GraphView({
             <div className="flex items-center gap-[7px]">
               {sel.kind === 'goal' ? <Target size={13} aria-hidden className="text-ok" /> : <FileText size={13} aria-hidden className="text-muted" />}
               <h3 className="m-0 min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{sel.label}</h3>
-              {sel.by === 'agents' && <Mascot size={16} radius={4} area="dev" still />}
+              {sel.by === 'agents' && sel.kind !== 'goal' && <Mascot size={16} radius={4} area="dev" still />}
             </div>
             <p className="m-0 mt-[4px] truncate text-[11.5px] tracking-[-0.1px] text-muted">
-              {sel.meta ?? `${sel.area === 'goal' ? 'Goal' : sel.area[0].toUpperCase() + sel.area.slice(1)} · ${edges.filter((e) => e.from === sel.id || e.to === sel.id).length} links`}
+              {`${sel.kind === 'goal' ? 'Goal' : sel.area} · ${allEdges.filter((e) => e.from === sel.id || e.to === sel.id).length} links${sel.updatedAt ? ` · edited ${longAgo(sel.updatedAt)}` : ''}`}
             </p>
             {sel.excerpt && <p className="m-0 mt-[5px] text-[12.5px] leading-[17px] text-ink-2">{sel.excerpt}</p>}
             <div className="mt-[9px] flex gap-[6px]">
@@ -179,11 +191,18 @@ export function GraphView({
             </div>
           </section>
         )}
+        {(isLoading || isError || docNodes.length === 0) && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className={`text-[13px] ${isError ? 'text-bad' : 'text-muted'}`}>
+              {isError ? "Couldn't load the graph" : isLoading ? 'Loading the graph…' : 'No docs yet — link docs with [[their title]] to grow the graph'}
+            </span>
+          </div>
+        )}
         <div className="pointer-events-none absolute bottom-[20px] left-[20px] flex items-center gap-[12px]">
-          {(['engineering', 'marketing', 'business', 'general'] as const).map((a) => (
-            <span key={a} className="flex items-center gap-[5px] text-[11.5px] text-muted">
-              <span className="size-[7px] rounded-full" style={{ background: AREA_COLOR[a] }} />
-              {a[0].toUpperCase() + a.slice(1)}
+          {areas.map((a) => (
+            <span key={a.id} className="flex items-center gap-[5px] text-[11.5px] text-muted">
+              <span className="size-[7px] rounded-full" style={{ background: areaColor(a.label) }} />
+              {a.label}
             </span>
           ))}
           <span className="flex items-center gap-[5px] text-[11.5px] text-muted">
@@ -195,3 +214,5 @@ export function GraphView({
     </div>
   )
 }
+
+const EMPTY: DocGraph = { nodes: [], edges: [] }

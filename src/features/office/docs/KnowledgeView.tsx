@@ -27,75 +27,66 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import type { Model } from '../../../core/domain/types'
+import type { KbSource, Model } from '../../../core/domain/types'
 import { Composer } from '../../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../../ui/ChatSession/ModelMenu'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { useHideChiefFab } from '../../chief-dm'
 import type { MenuEntries } from '../../../ui/ds/ItemMenu'
 import { notify } from '../../../ui/ds/Toaster'
+import {
+  useAddKnowledgeSource,
+  useAsk,
+  useConfirmLesson,
+  useCreateLesson,
+  useDeleteKnowledgeSource,
+  useForgetLesson,
+  useHelpers,
+  useKnowledgeSources,
+  useLessons,
+  useUpdateLesson,
+} from '../../../app/queries'
 import { NetworkGraph } from './graph/NetworkGraph'
-import type { FileKind, GEdge, GNode } from './graph/NetworkGraph'
-import { AGENT_NAME, DEPLOY_ANSWER, KNOW_EDGES, KNOW_FRAME, KNOW_NODES, SOURCE_SLOTS, TAG_COLOR } from './graph/graphData'
+import type { FileKind, GNode } from './graph/NetworkGraph'
+import { KNOW_FRAME, TAG_COLOR, kindOf, layoutKnowledge, sourceNodes } from './graph/graphData'
 import type { KnowNode, MemTag } from './graph/graphData'
 
 type Filter = 'all' | MemTag
 
-interface Source {
-  id: string
-  /** Where it sits next to Company facts */
-  slot: { x: number; y: number }
-  name: string
-  file: FileKind
-  /** 0–1 */
-  progress: number
-  pages?: number
-  done: boolean
-  facts: string[]
-  skipped: number
+interface Cite {
+  key: string
+  label: string
+  /** Lesson id when the citation is a memory in the graph */
+  memoryId?: string
+  owner?: string
+  review?: boolean
 }
 
 interface Turn {
   id: string
   role: 'you' | 'chief'
   text: string
-  /** Memory ids Chief cites, numbered in order */
-  cites?: string[]
+  pending?: boolean
+  cites?: Cite[]
   /** A lesson Chief proposes to save or change */
   proposal?: { kind: 'update' | 'new'; memoryId?: string; text: string; owner: string; saved?: boolean }
 }
 
-const BASE_MEMORY_COUNT = KNOW_NODES.length
+interface Reading {
+  id: string
+  title: string
+}
 
-const SUGGESTIONS = ['What did agents learn this week?', 'Teach: refunds over Rp 2jt go to Dede', 'Forget anything about old pricing']
+const SUGGESTIONS = ['What did agents learn this week?', 'Teach: refunds need an owner’s OK first', 'Forget anything about old pricing']
 
 const FILE_ICON: Record<FileKind, typeof FileText> = { pdf: FileText, xlsx: Sheet, img: ImageIcon, doc: FileText }
 const FILE_INK: Record<FileKind, string> = { pdf: 'text-[#DC2626]', xlsx: 'text-ok', img: 'text-[#2563EB]', doc: 'text-[#2563EB]' }
 
-function kindOf(name: string): FileKind {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (['xlsx', 'xls', 'csv', 'numbers'].includes(ext)) return 'xlsx'
-  if (['pdf'].includes(ext)) return 'pdf'
-  if (['jpg', 'jpeg', 'png', 'heic', 'webp'].includes(ext)) return 'img'
-  return 'doc'
-}
+/** Files the browser can read as text (Knowledge indexes their text). */
+const TEXT_EXT = ['txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'html', 'htm', 'xml', 'yaml', 'yml']
+const isReadable = (f: File) => f.type.startsWith('text/') || TEXT_EXT.includes(f.name.split('.').pop()?.toLowerCase() ?? '')
 
-/** Facts a source yields (mock reader) */
-function factsFor(name: string, file: FileKind): string[] {
-  if (/harga|sewa/i.test(name)) return ['Hall Rp 250rb / Rp 400rb', 'Deposit Rp 200rb', 'Book ≥ 3 days ahead']
-  if (/iuran|sop/i.test(name)) return ['Iuran Rp 25rb / month', 'Late fee after the 10th']
-  if (file === 'img') return ['Kerja bakti Sun 07:00']
-  return [`From ${name.replace(/\.[^.]+$/, '')}`]
-}
-
-const DEFAULT_DROP = ['Harga sewa balai.xlsx', 'SOP Iuran Warga 2026.pdf', 'Papan RT 04.jpg']
-
-function sourceSub(s: Source) {
-  if (s.done) return s.file === 'xlsx' ? `${s.facts.length * 4} added · ${s.skipped} skipped` : `${s.facts.length} added`
-  if (s.file === 'img') return 'Reading photo'
-  if (s.pages) return `Reading p. ${Math.max(1, Math.round(s.progress * s.pages))} of ${s.pages}`
-  return 'Reading…'
-}
+const significant = (s: string) => s.toLowerCase().split(/\W+/).filter((w) => w.length > 3)
 
 // ── Small pieces ─────────────────────────────────────────────────────────────
 
@@ -133,14 +124,31 @@ function Spinner({ size = 14 }: { size?: number }) {
 
 // ── Add sources dialog (igY8b) ───────────────────────────────────────────────
 
-function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; onFiles: (names: string[]) => void; onClose: () => void }) {
+function AddSourcesDialog({
+  sources,
+  reading,
+  onFiles,
+  onLink,
+  onDrive,
+  onClose,
+}: {
+  sources: KbSource[]
+  reading: Reading[]
+  onFiles: (files: File[]) => void
+  onLink: (url: string) => void
+  onDrive: () => void
+  onClose: () => void
+}) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
+  const [linking, setLinking] = useState(false)
+  const [url, setUrl] = useState('')
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
+  const rows = [...reading.map((r) => ({ id: r.id, title: r.title, done: false, chunks: 0 })), ...sources.slice(0, 6).map((s) => ({ id: s.id, title: s.title, done: true, chunks: s.chunks ?? 0 }))]
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0C0A0933] animate-in fade-in-0" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-label="Add to company knowledge" className="flex w-[580px] max-w-[calc(100%-32px)] flex-col rounded-[16px] bg-surface shadow-[0_24px_60px_#0C0A0933] outline-1 -outline-offset-1 outline-line-strong">
@@ -150,7 +158,7 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-[4px]">
             <h2 className="m-0 font-display text-[18px] font-semibold text-ink [font-variation-settings:'opsz'_96]">Add to company knowledge</h2>
-            <p className="m-0 text-[13px] text-muted">Drop documents or photos. Chief reads them and adds the facts, rules and prices it finds. Undo any time.</p>
+            <p className="m-0 text-[13px] text-muted">Drop documents. Chief reads them and adds the facts, rules and prices it finds. Undo any time.</p>
           </div>
           <button type="button" aria-label="Close" onClick={onClose} className="flex size-[28px] items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-ink">
             <X size={16} aria-hidden />
@@ -166,7 +174,7 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
             onDrop={(e) => {
               e.preventDefault()
               setOver(false)
-              onFiles([...e.dataTransfer.files].map((f) => f.name))
+              onFiles([...e.dataTransfer.files])
             }}
             className={`flex flex-col items-center gap-[6px] rounded-lg px-[20px] py-[18px] text-center outline-1 -outline-offset-1 ${over ? 'bg-[#EFF6FF] outline-[#93C5FD]' : 'bg-soft outline-line-strong'}`}
           >
@@ -177,15 +185,39 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
                 browse
               </button>
             </p>
-            <p className="m-0 text-[11.5px] text-faint">PDF, Word, Excel, slides · photos and scans (JPG, PNG, HEIC) · up to 50 MB each</p>
+            <p className="m-0 text-[11.5px] text-faint">Text, Markdown, CSV, JSON or HTML files · PDF, Office and photos are coming soon</p>
             <div className="mt-[4px] flex gap-[6px]">
-              <button type="button" onClick={() => notify('Connect Google Drive in Control panel → Connectors')} className="flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[10px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
+              <button type="button" onClick={onDrive} className="flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[10px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
                 <HardDrive size={13} aria-hidden /> From Google Drive
               </button>
-              <button type="button" onClick={() => onFiles(['Link · rangka.co/harga'])} className="flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[10px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
+              <button type="button" onClick={() => setLinking((l) => !l)} className="flex h-[28px] items-center gap-[6px] rounded-btn bg-surface px-[10px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
                 <Link2 size={13} aria-hidden /> Paste a link
               </button>
             </div>
+            {linking && (
+              <form
+                className="mt-[6px] flex w-full gap-[6px]"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!url.trim()) return
+                  onLink(url.trim())
+                  setUrl('')
+                  setLinking(false)
+                }}
+              >
+                <input
+                  autoFocus
+                  aria-label="Link"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://…"
+                  className="h-[28px] min-w-0 flex-1 rounded-btn bg-surface px-[8px] text-[12.5px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
+                />
+                <button type="submit" className="h-[28px] rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover">
+                  Add link
+                </button>
+              </form>
+            )}
             <input
               ref={input}
               type="file"
@@ -193,7 +225,7 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
               hidden
               aria-label="Choose files"
               onChange={(e) => {
-                onFiles([...(e.target.files ?? [])].map((f) => f.name))
+                onFiles([...(e.target.files ?? [])])
                 e.target.value = ''
               }}
             />
@@ -205,27 +237,19 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
             </span>
             <span className="ml-auto text-[11.5px] text-faint">Per channel · soon</span>
           </div>
-          {sources.length > 0 && (
+          {rows.length > 0 && (
             <ul className="m-0 flex list-none flex-col rounded-lg p-0 outline-1 -outline-offset-1 outline-line-strong">
-              {sources.map((s, i) => {
-                const Icon = FILE_ICON[s.file]
+              {rows.map((s, i) => {
+                const file = kindOf(s.title)
+                const Icon = FILE_ICON[file]
                 return (
-                  <li key={s.id} className={`flex items-center gap-[10px] px-[12px] py-[10px] ${i < sources.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}>
+                  <li key={s.id} className={`flex items-center gap-[10px] px-[12px] py-[10px] ${i < rows.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}>
                     <span className="flex size-[30px] items-center justify-center rounded-base outline-1 -outline-offset-1 outline-line-strong">
-                      <Icon size={15} aria-hidden className={FILE_INK[s.file]} />
+                      <Icon size={15} aria-hidden className={FILE_INK[file]} />
                     </span>
                     <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                      <span className="truncate text-[13px] font-medium text-ink">{s.name}</span>
-                      {s.done ? (
-                        <span className="text-[11.5px] text-muted">{sourceSub(s)}</span>
-                      ) : (
-                        <span className="flex items-center gap-[8px]">
-                          <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-app">
-                            <span className="block h-full rounded-full bg-[#2563EB] transition-all" style={{ width: `${Math.round(s.progress * 100)}%` }} />
-                          </span>
-                          <span className="text-[11.5px] whitespace-nowrap text-muted">{sourceSub(s)}</span>
-                        </span>
-                      )}
+                      <span className="truncate text-[13px] font-medium text-ink">{s.title}</span>
+                      <span className="text-[11.5px] text-muted">{s.done ? `${s.chunks} added` : 'Reading…'}</span>
                     </div>
                     <span
                       className={`rounded-sm px-[7px] py-[2px] text-[12px] font-medium outline-1 -outline-offset-1 ${
@@ -241,7 +265,7 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
           )}
         </div>
         <div className="flex items-center gap-[8px] px-[20px] py-[14px] shadow-[inset_0_1px_0_var(--color-line)]">
-          <span className="flex-1 text-[12.5px] text-muted">Runs on Quick steps · about Rp 400 for these files</span>
+          <span className="flex-1 text-[12.5px] text-muted">Indexed in your workspace database · no AI credits used</span>
           <button type="button" onClick={onClose} className="h-[32px] rounded-base bg-primary px-[14px] text-[13px] font-medium text-primary-ink hover:bg-primary-hover">
             Done
           </button>
@@ -255,7 +279,8 @@ function AddSourcesDialog({ sources, onFiles, onClose }: { sources: Source[]; on
 
 function AskPanel({
   turns,
-  memories,
+  memoryCount,
+  nameOf,
   onSend,
   onClose,
   onNew,
@@ -264,7 +289,8 @@ function AskPanel({
   placeholder,
 }: {
   turns: Turn[]
-  memories: Map<string, KnowNode>
+  memoryCount: number
+  nameOf: (owner: string | undefined) => string
   onSend: (text: string) => void
   onClose: () => void
   onNew: () => void
@@ -276,7 +302,7 @@ function AskPanel({
   const [editing, setEditing] = useState<string | null>(null)
   const scroll = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' })
+    scroll.current?.scrollTo?.({ top: scroll.current.scrollHeight, behavior: 'smooth' })
   }, [turns])
   return (
     <aside aria-label="Ask & teach" className="flex w-[400px] shrink-0 flex-col bg-surface shadow-[inset_1px_0_0_var(--color-line-strong)]">
@@ -307,25 +333,26 @@ function AskPanel({
               <Mascot size={22} radius={6} area="brand" still />
               <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
                 <span className="flex items-center gap-[8px] text-[12.5px] font-semibold text-ink">
-                  Chief <span className="text-[11.5px] font-normal text-faint">read {51 + memories.size - BASE_MEMORY_COUNT} memories · now</span>
+                  Chief <span className="text-[11.5px] font-normal text-faint">read {memoryCount} memories · now</span>
                 </span>
-                <p className="m-0 text-[13px] leading-[19px] text-ink-2">{t.text}</p>
-                {t.cites && (
+                {t.pending ? <div className="h-[14px] w-2/3 animate-pulse rounded-sm bg-soft" /> : <p className="m-0 text-[13px] leading-[19px] text-ink-2">{t.text}</p>}
+                {t.cites && t.cites.length > 0 && (
                   <ol className="m-0 flex list-none flex-col p-0">
-                    {t.cites.map((id, i) => {
-                      const m = memories.get(id)
-                      if (!m) return null
-                      return (
-                        <li key={id}>
-                          <button type="button" onClick={() => onPick(id)} className="flex h-[27px] w-full items-center gap-[8px] rounded-sm px-[2px] text-left hover:bg-soft">
-                            <span className="flex size-[16px] shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-white">{i + 1}</span>
-                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{m.label}</span>
-                            {m.review && <span className="rounded-xs bg-[#FFEDD5] px-[5px] text-[11px] font-medium text-[#C2410C]">Review</span>}
-                            <span className="text-[11.5px] text-faint">{AGENT_NAME[m.owner ?? 'hub']}</span>
-                          </button>
-                        </li>
-                      )
-                    })}
+                    {t.cites.map((c, i) => (
+                      <li key={c.key}>
+                        <button
+                          type="button"
+                          disabled={!c.memoryId}
+                          onClick={() => c.memoryId && onPick(c.memoryId)}
+                          className="flex h-[27px] w-full items-center gap-[8px] rounded-sm px-[2px] text-left hover:bg-soft disabled:hover:bg-transparent"
+                        >
+                          <span className="flex size-[16px] shrink-0 items-center justify-center rounded-full bg-ink text-[10px] font-semibold text-white">{i + 1}</span>
+                          <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{c.label}</span>
+                          {c.review && <span className="rounded-xs bg-[#FFEDD5] px-[5px] text-[11px] font-medium text-[#C2410C]">Review</span>}
+                          <span className="text-[11.5px] text-faint">{c.memoryId ? nameOf(c.owner) : 'Doc'}</span>
+                        </button>
+                      </li>
+                    ))}
                   </ol>
                 )}
                 {t.proposal && (
@@ -334,7 +361,11 @@ function AskPanel({
                       <span className="flex size-[28px] items-center justify-center rounded-base bg-[#FEF2F2]">
                         <Lightbulb size={15} aria-hidden className="text-[#DC2626]" />
                       </span>
-                      {t.proposal.kind === 'update' ? `Update ${AGENT_NAME[t.proposal.owner]}’s lesson?` : `Save a lesson for ${AGENT_NAME[t.proposal.owner]}?`}
+                      {t.proposal.kind === 'update'
+                        ? `Update ${nameOf(t.proposal.owner)}’s lesson?`
+                        : t.proposal.owner === 'hub'
+                          ? 'Save a company fact?'
+                          : `Save a lesson for ${nameOf(t.proposal.owner)}?`}
                     </span>
                     {editing === t.id ? (
                       <textarea
@@ -350,7 +381,7 @@ function AskPanel({
                       />
                     ) : (
                       <p className="m-0 text-[13px] leading-[19px] text-ink-2">
-                        “{t.proposal.text}” {t.proposal.kind === 'update' ? 'Replaces the old version; Chief uses it from the next run.' : 'Agents use it from the next run.'}
+                        “{t.proposal.text}” {t.proposal.kind === 'update' ? 'Replaces the old version; agents use it from the next run.' : 'Agents use it from the next run.'}
                       </p>
                     )}
                     <div className="flex items-center gap-[6px]">
@@ -389,26 +420,37 @@ function AskPanel({
 /** pen `Docs · Knowledge (on)` — eU7Fc, TBJls, cUtde, n8N6dT, igY8b, WZycb. */
 export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOpen: boolean; onPanelOpen: (open: boolean) => void; teachSignal: number }) {
   const navigate = useNavigate()
+  const { data: lessons = [], isError: lessonsError } = useLessons()
+  const { data: helpers = [] } = useHelpers()
+  const { data: sources = [] } = useKnowledgeSources()
+  const confirmLesson = useConfirmLesson()
+  const forgetLesson = useForgetLesson()
+  const updateLesson = useUpdateLesson()
+  const createLesson = useCreateLesson()
+  const addSource = useAddKnowledgeSource()
+  const deleteSource = useDeleteKnowledgeSource()
+  const askChief = useAsk()
+
   const [filter, setFilter] = useState<Filter>('all')
-  const [base, setBase] = useState<KnowNode[]>(KNOW_NODES)
-  const [extraEdges, setExtraEdges] = useState<GEdge[]>([])
   const [selected, setSelected] = useState<string | null>(null)
-  const [reviewCard, setReviewCard] = useState<string | null>('m-deploys')
+  /** undefined → show the first lesson that needs review */
+  const [reviewPick, setReviewPick] = useState<string | null | undefined>(undefined)
   const [editingReview, setEditingReview] = useState(false)
   const [owner, setOwner] = useState<string | null>(null)
+  const [teachOwner, setTeachOwner] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [sources, setSources] = useState<Source[]>([])
+  const [reading, setReading] = useState<Reading[]>([])
   const [readingOpen, setReadingOpen] = useState(true)
   const [sourcesCard, setSourcesCard] = useState(false)
-  /** Source whose facts are shown in the graph (n8N6dT) */
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; sourceId: string } | null>(null)
   const [dialog, setDialog] = useState(false)
   const [turns, setTurns] = useState<Turn[]>([])
   const [highlight, setHighlight] = useState<{ ids: string[]; about: string } | null>(null)
+  const [forgotten, setForgotten] = useState<string[]>([])
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const [placeholder, setPlaceholder] = useState('Ask or teach — “Remember that…”')
   const dragDepth = useRef(0)
+  const forgetTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   useHideChiefFab(true)
 
   // Topbar "Teach something" (the board opens the panel) — get ready to teach
@@ -418,197 +460,184 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
     setPlaceholder('Remember that…')
   }
 
-  const reviews = base.filter((n) => n.review)
-  const firstReview = reviews[0]?.id
+  const live = useMemo(() => lessons.filter((l) => !forgotten.includes(l.id)), [lessons, forgotten])
+  const lessonById = useMemo(() => new Map(live.map((l) => [l.id, l])), [live])
+  const chief = helpers.find((h) => h.isChief)
+  const nameOf = (o: string | undefined | null) => (!o || o === 'hub' ? 'Company fact' : helpers.find((h) => h.id === o)?.name ?? 'Helper')
+  const reviews = live.filter((l) => l.status === 'review')
+  const reviewCard = reviewPick === undefined ? reviews[0]?.id ?? null : reviewPick
+  const busy = reading.length > 0
 
-  // ── Reading sources (mock reader ticks) ──
-  const reading = sources.some((s) => !s.done)
-  useEffect(() => {
-    if (!reading) return
-    const t = setInterval(() => {
-      setSources((list) =>
-        list.map((s) => {
-          if (s.done) return s
-          const step = s.file === 'xlsx' ? 0.35 : s.file === 'img' ? 0.12 : 0.08
-          const progress = Math.min(1, s.progress + step)
-          return { ...s, progress, done: progress >= 1 }
-        }),
-      )
-    }, 450)
-    return () => clearInterval(t)
-  }, [reading])
-
-  // When a source finishes, its facts join the graph
-  const announced = useRef(new Set<string>())
-  useEffect(() => {
-    for (const s of sources) {
-      if (!s.done || announced.current.has(s.id)) continue
-      announced.current.add(s.id)
-      const at = s.slot
-      const facts: KnowNode[] = s.facts.map((label, i) => ({
-        id: `${s.id}-f${i}`,
-        kind: 'memory',
-        label,
-        x: at.x + [51, 66, 36][i % 3],
-        y: at.y + [-40, 5, 50][i % 3],
-        tag: 'fact',
-        owner: 'hub',
-        color: TAG_COLOR.fact,
-        emphasis: 'new',
-        source: s.name,
-        spawnFrom: s.id,
-      }))
-      setBase((b) => [...b, ...facts])
-      setExtraEdges((e) => [...e, ...facts.map((f) => ({ from: s.id, to: f.id, tone: 'new' as const }))])
-      setToast(`${s.facts.length * (s.file === 'xlsx' ? 4 : 1)} fact${s.facts.length * (s.file === 'xlsx' ? 4 : 1) === 1 ? '' : 's'} added from ${s.name}${s.skipped ? ` · ${s.skipped} skipped (Handbook wins)` : ''}`)
-    }
-  }, [sources])
-
-
-  function addFiles(names: string[]) {
-    const list = (names.length ? names : DEFAULT_DROP).slice(0, 5)
-    const used = new Set(sources.map((s) => `${s.slot.x},${s.slot.y}`))
-    const prefer: Record<FileKind, number> = { xlsx: 1, pdf: 0, img: 2, doc: 3 }
-    const next: Source[] = list.map((name, i) => {
-      const file = kindOf(name)
-      const order = [prefer[file], ...SOURCE_SLOTS.keys()]
-      const slotIdx = order.find((j) => !used.has(`${SOURCE_SLOTS[j].x},${SOURCE_SLOTS[j].y}`)) ?? (sources.length + i) % SOURCE_SLOTS.length
-      const slot = SOURCE_SLOTS[slotIdx]
-      used.add(`${slot.x},${slot.y}`)
-      return {
-        slot,
-        id: `src-${Date.now().toString(36)}-${i}`,
-        name,
-        file,
-        progress: file === 'xlsx' ? 0.6 : file === 'pdf' ? 0.55 : 0.2,
-        pages: file === 'pdf' ? 14 : undefined,
-        done: false,
-        facts: factsFor(name, file),
-        skipped: file === 'xlsx' ? 1 : 0,
-      }
-    })
-    setSources((s) => [...s, ...next])
+  // ── Sources ──
+  async function addOne(input: { kind: string; ref: string; title: string; body: string }) {
+    const tmp = { id: `reading-${input.ref}`, title: input.title }
+    setReading((r) => [...r.filter((x) => x.id !== tmp.id), tmp])
     setReadingOpen(true)
+    try {
+      const src = await addSource.mutateAsync(input)
+      const n = src.chunks ?? 0
+      setToast({ text: `${n} fact${n === 1 ? '' : 's'} added from ${src.title}`, sourceId: src.id })
+    } catch {
+      notify(`Couldn't read ${input.title}`)
+    } finally {
+      setReading((r) => r.filter((x) => x.id !== tmp.id))
+    }
+  }
+
+  function addFiles(files: File[]) {
+    const list = files.slice(0, 5)
+    const skipped = list.filter((f) => !isReadable(f))
+    if (skipped.length) notify(`Can’t read ${skipped.map((f) => f.name).join(', ')} yet — add text, Markdown or CSV files`)
+    for (const f of list.filter(isReadable)) {
+      void f.text().then((body) => addOne({ kind: 'upload', ref: `upload:${f.name}`, title: f.name, body }))
+    }
     setSourcesCard(false)
-    setReviewCard(null)
+    setReviewPick(null)
+  }
+
+  function addLink(url: string) {
+    void addOne({ kind: 'url', ref: url, title: url.replace(/^https?:\/\//, ''), body: `Link: ${url}` })
   }
 
   function removeSource(id: string) {
     const s = sources.find((x) => x.id === id)
-    setSources((list) => list.filter((x) => x.id !== id))
-    setBase((b) => b.filter((n) => !n.id.startsWith(`${id}-f`)))
-    setExtraEdges((e) => e.filter((x) => x.from !== id))
-    announced.current.delete(id)
-    if (expanded === id) setExpanded(null)
-    if (s) notify(`Removed ${s.name} and its facts`)
+    deleteSource.mutate(id, {
+      onSuccess: () => notify(`Removed ${s?.title ?? 'the source'} and its facts`),
+      onError: () => notify("Couldn't remove the source"),
+    })
   }
 
   // ── Memories ──
   function confirm(id: string) {
-    setBase((b) => b.map((n) => (n.id === id ? { ...n, review: false } : n)))
-    const next = base.find((n) => n.review && n.id !== id)
-    setReviewCard(next?.id ?? null)
+    confirmLesson.mutate(id, {
+      onSuccess: () => notify('Lesson confirmed — agents use it from the next run'),
+      onError: () => notify("Couldn't confirm the lesson"),
+    })
+    setReviewPick(undefined)
     setEditingReview(false)
-    notify('Lesson confirmed — agents use it from the next run')
   }
   function forget(id: string) {
-    const n = base.find((x) => x.id === id)
-    if (!n) return
-    setBase((b) => b.filter((x) => x.id !== id))
-    if (reviewCard === id) setReviewCard(base.find((x) => x.review && x.id !== id)?.id ?? null)
+    const l = lessonById.get(id)
+    if (!l) return
+    setForgotten((f) => [...f, id])
+    if (reviewCard === id) setReviewPick(undefined)
     if (selected === id) setSelected(null)
-    notify(`Forgot “${n.label}”`, () => setBase((b) => [...b, n]))
+    const timer = setTimeout(() => {
+      forgetTimers.current.delete(id)
+      forgetLesson.mutate(id, { onError: () => notify(`Couldn't forget “${l.text}”`) })
+    }, 6000)
+    forgetTimers.current.set(id, timer)
+    notify(`Forgot “${l.text}”`, () => {
+      clearTimeout(timer)
+      forgetTimers.current.delete(id)
+      setForgotten((f) => f.filter((x) => x !== id))
+    })
   }
+  // Flush pending forgets if the view goes away.
+  useEffect(() => {
+    const timers = forgetTimers.current
+    return () => {
+      for (const [id, t] of timers) {
+        clearTimeout(t)
+        forgetLesson.mutate(id)
+      }
+      timers.clear()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   function rename(id: string, label: string) {
-    if (label.trim()) setBase((b) => b.map((n) => (n.id === id ? { ...n, label: label.trim() } : n)))
+    const l = lessonById.get(id)
+    if (l && label.trim() && label.trim() !== l.text) updateLesson.mutate({ id, text: label.trim() }, { onError: () => notify("Couldn't save the change") })
   }
 
   // ── Ask & teach ──
   function ask(text: string) {
     const id = `t${Date.now()}`
     const you: Turn = { id: `${id}y`, role: 'you', text }
-    let reply: Turn
+    onPanelOpen(true)
+    setReviewPick(null)
     if (/^(remember|teach)/i.test(text)) {
-      const body = text.replace(/^(remember( that)?|teach)[:\s]*/i, '')
-      const touches = /deploy|hotfix|21:00/i.test(body)
-      reply = touches
-        ? { id, role: 'chief', text: 'That refines lesson 1. Here’s the update — save it?', proposal: { kind: 'update', memoryId: 'm-deploys', text: `Don’t propose deploys after 21:00 — unless it’s a P0 hotfix.`, owner: 'chief' } }
-        : { id, role: 'chief', text: 'Got it. I’ll keep this as a lesson for Chief — save it?', proposal: { kind: 'new', text: body.charAt(0).toUpperCase() + body.slice(1), owner: 'chief' } }
-    } else if (/^forget/i.test(text)) {
+      const body = text.replace(/^(remember( that)?|teach)[:\s]*/i, '').trim()
+      const target = teachOwner ?? chief?.id ?? 'hub'
+      const words = significant(body)
+      const match = live.find((l) => (l.helperId ?? 'hub') === target && significant(l.text).filter((w) => words.includes(w)).length >= 2)
+      const proposalText = body.charAt(0).toUpperCase() + body.slice(1)
+      const reply: Turn = match
+        ? { id, role: 'chief', text: 'That refines a lesson I already have. Here’s the update — save it?', proposal: { kind: 'update', memoryId: match.id, text: proposalText, owner: target } }
+        : { id, role: 'chief', text: target === 'hub' ? 'Got it. I’ll keep this as a company fact — save it?' : `Got it. I’ll keep this as a lesson for ${nameOf(target)} — save it?`, proposal: { kind: 'new', text: proposalText, owner: target } }
+      setTurns((t) => [...t, you, reply])
+      return
+    }
+    if (/^forget/i.test(text)) {
       const word = text.replace(/^forget( anything)?( about)?/i, '').trim().toLowerCase()
-      const hits = base.filter((n) => n.kind === 'memory' && word && word.split(' ').some((w) => w.length > 3 && n.label.toLowerCase().includes(w)))
-      reply = hits.length
-        ? { id, role: 'chief', text: `I found ${hits.length} — right-click one in the graph to forget it.`, cites: hits.map((h) => h.id) }
+      const hits = live.filter((l) => word && word.split(' ').some((w) => w.length > 3 && l.text.toLowerCase().includes(w)))
+      const reply: Turn = hits.length
+        ? { id, role: 'chief', text: `I found ${hits.length} — right-click one in the graph to forget it.`, cites: hits.map((h) => ({ key: h.id, label: h.text, memoryId: h.id, owner: h.helperId ?? 'hub', review: h.status === 'review' })) }
         : { id, role: 'chief', text: `Nothing about “${word || text}” is in memory — nothing to forget.` }
       setHighlight(hits.length ? { ids: hits.map((h) => h.id), about: word } : null)
-    } else {
-      const cites = DEPLOY_ANSWER.filter((m) => base.some((n) => n.id === m))
-      reply = { id, role: 'chief', text: 'Six things — mostly from your Inbox decisions and the #482 postmortem:', cites }
-      setHighlight({ ids: cites, about: /deploy/i.test(text) ? 'deploys' : 'this' })
+      setTurns((t) => [...t, you, reply])
+      return
     }
-    setTurns((t) => [...t, you, reply])
-    onPanelOpen(true)
-    setReviewCard(null)
+    setTurns((t) => [...t, you, { id, role: 'chief', text: '', pending: true }])
+    askChief.mutate(text, {
+      onSuccess: (a) => {
+        const cites: Cite[] = a.citations.map((c) => {
+          const memoryId = c.kind === 'lesson' && c.ref.startsWith('lesson:') ? c.ref.slice(7) : undefined
+          const l = memoryId ? lessonById.get(memoryId) : undefined
+          return { key: `${c.n}-${c.sourceId}`, label: l?.text ?? c.title, memoryId: l?.id, owner: l?.helperId ?? 'hub', review: l?.status === 'review' }
+        })
+        // Questions about what agents learned also list their recent lessons.
+        if (/learn|know/i.test(text) && cites.every((c) => !c.memoryId)) {
+          for (const l of live.slice(0, 6)) cites.push({ key: l.id, label: l.text, memoryId: l.id, owner: l.helperId ?? 'hub', review: l.status === 'review' })
+        }
+        const ids = cites.flatMap((c) => (c.memoryId ? [c.memoryId] : []))
+        setHighlight(ids.length ? { ids, about: 'this' } : null)
+        setTurns((list) => list.map((x) => (x.id === id ? { ...x, pending: false, text: a.answer, cites } : x)))
+      },
+      onError: () => setTurns((list) => list.map((x) => (x.id === id ? { ...x, pending: false, text: 'I couldn’t search right now — try again.' } : x))),
+    })
   }
 
   function saveProposal(turnId: string, text: string) {
     const t = turns.find((x) => x.id === turnId)
     if (!t?.proposal) return
     const p = t.proposal
-    if (p.kind === 'update' && p.memoryId) {
-      rename(p.memoryId, text.length > 34 ? 'Deploys not after 21:00 (P0 ok)' : text)
-      setBase((b) => b.map((n) => (n.id === p.memoryId ? { ...n, review: false } : n)))
-    } else {
-      const id = `m-new-${Date.now()}`
-      const chief = base.find((n) => n.id === 'chief')!
-      setBase((b) => [
-        ...b,
-        { id, kind: 'memory', label: text.length > 32 ? `${text.slice(0, 30)}…` : text, x: chief.x + 40, y: chief.y - 70, tag: 'lesson', owner: 'chief', color: TAG_COLOR.lesson, emphasis: 'new', source: 'You taught it · now', spawnFrom: 'chief' },
-      ])
-      setExtraEdges((e) => [...e, { from: 'chief', to: id }])
+    const done = () => {
+      setTurns((list) => list.map((x) => (x.id === turnId ? { ...x, proposal: { ...p, text, saved: true } } : x)))
+      notify('Lesson saved')
     }
-    setTurns((list) => list.map((x) => (x.id === turnId ? { ...x, proposal: { ...p, text, saved: true } } : x)))
-    notify('Lesson saved')
+    if (p.kind === 'update' && p.memoryId) {
+      updateLesson.mutate({ id: p.memoryId, text }, {
+        onSuccess: () => {
+          if (lessonById.get(p.memoryId!)?.status === 'review') confirmLesson.mutate(p.memoryId!)
+          done()
+        },
+        onError: () => notify("Couldn't save the lesson"),
+      })
+    } else {
+      createLesson.mutate(
+        { text, helperId: p.owner === 'hub' ? null : p.owner, tag: p.owner === 'hub' ? 'fact' : 'lesson' },
+        { onSuccess: done, onError: () => notify("Couldn't save the lesson") },
+      )
+    }
   }
 
   // ── Graph model ──
-  const memories = useMemo(() => new Map(base.map((n) => [n.id, n])), [base])
+  const layout = useMemo(() => layoutKnowledge(helpers, live), [helpers, live])
+  const memories = useMemo(() => new Map(layout.nodes.map((n) => [n.id, n])), [layout])
+  const fileNodes = useMemo(() => sourceNodes(sources, reading), [sources, reading])
   const nodes: GNode[] = useMemo(() => {
     const cites = highlight?.ids ?? []
-    const fileNodes: GNode[] = sources
-      .filter((s) => !expanded || s.id === expanded)
-      .map((s) => ({
-        id: s.id,
-        kind: 'file',
-        label: s.name,
-        file: s.file,
-        ...s.slot,
-        progress: s.done ? 1 : s.progress,
-        sub: expanded ? undefined : sourceSub(s),
-        subTone: s.done ? 'ok' : 'info',
-        labelSide: expanded ? 'below' : 'right',
-        spawnFrom: 'hub',
-      }))
-    const isFact = (id: string) => id.startsWith('src-')
     return [
-      ...base.filter((n) => !isFact(n.id) || (expanded && n.id.startsWith(`${expanded}-f`))).map((n) => ({
+      ...layout.nodes.map((n) => ({
         ...n,
-        emphasis: n.emphasis === 'new' ? n.emphasis : n.review ? (n.id === (reviewCard ?? firstReview) ? 'review' : 'halo') : undefined,
+        emphasis: n.review ? (n.id === reviewCard ? 'review' : 'halo') : undefined,
         badge: cites.includes(n.id) ? cites.indexOf(n.id) + 1 : undefined,
       })) as GNode[],
       ...fileNodes,
     ]
-  }, [base, sources, reviewCard, highlight, firstReview, expanded])
-
-  const edges = useMemo(
-    () => [...KNOW_EDGES, ...sources.map((s) => ({ from: 'hub', to: s.id, tone: 'source' as const })), ...extraEdges],
-    [sources, extraEdges],
-  )
-  function showSource(id: string | null) {
-    setExpanded(id)
-    setSelected(id)
-    if (id) setSourcesCard(true)
-  }
+  }, [layout, fileNodes, reviewCard, highlight])
+  const edges = useMemo(() => [...layout.edges, ...fileNodes.map((f) => ({ from: 'hub', to: f.id, tone: 'source' as const }))], [layout, fileNodes])
 
   const focus = useMemo(() => {
     if (highlight) {
@@ -620,48 +649,45 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
       s.add('hub')
       return s
     }
-    if (owner) return new Set(base.filter((n) => n.id === owner || n.owner === owner || n.kind === 'hub').map((n) => n.id))
-    if (filter !== 'all')
-      return new Set(
-        nodes.filter((n) => n.kind !== 'memory' || (n as KnowNode).tag === filter).map((n) => n.id),
-      )
+    if (owner) return new Set(layout.nodes.filter((n) => n.id === owner || n.owner === owner || n.kind === 'hub').map((n) => n.id))
+    if (filter !== 'all') return new Set(nodes.filter((n) => n.kind !== 'memory' || (n as KnowNode).tag === filter).map((n) => n.id))
     return null
-  }, [filter, owner, highlight, base, nodes, memories])
+  }, [filter, owner, highlight, layout, nodes, memories])
 
   function menuFor(n: GNode): MenuEntries {
     const k = memories.get(n.id)
     if (n.kind === 'memory' && k) {
       return [
-        { type: 'label', label: `${AGENT_NAME[k.owner ?? 'hub']} · ${k.tag}` },
+        { type: 'label', label: `${nameOf(k.owner)} · ${k.tag}` },
         k.review && { label: 'Confirm', icon: Check, onSelect: () => confirm(k.id) },
-        { label: 'Edit', icon: Pencil, onSelect: () => { setReviewCard(k.id); setEditingReview(true) } },
-        { label: 'Ask about this', icon: Sparkles, onSelect: () => ask(`What does ${AGENT_NAME[k.owner ?? 'hub']} know about “${k.label}”?`) },
+        { label: 'Edit', icon: Pencil, onSelect: () => { setReviewPick(k.id); setEditingReview(true) } },
+        { label: 'Ask about this', icon: Sparkles, onSelect: () => ask(`What does ${nameOf(k.owner)} know about “${lessonById.get(k.id)?.text ?? k.label}”?`) },
         { label: k.source ? `Learned from: ${k.source}` : 'Show source', icon: MessageSquareText, disabled: true, onSelect: () => {} },
         { type: 'separator' },
         { label: 'Forget', icon: Trash2, danger: true, onSelect: () => forget(k.id) },
       ]
     }
     if (n.kind === 'agent') {
-      const name = AGENT_NAME[n.id]
+      const name = nameOf(n.id)
       return [
         { label: owner === n.id ? 'Show everyone' : `Show only ${name}’s memories`, icon: ListChecks, onSelect: () => setOwner(owner === n.id ? null : n.id) },
-        { label: `Teach ${name} something`, icon: Lightbulb, onSelect: () => { setPlaceholder(`Remember that… (for ${name})`); onPanelOpen(true) } },
+        { label: `Teach ${name} something`, icon: Lightbulb, onSelect: () => { setTeachOwner(n.id); setPlaceholder(`Remember that… (for ${name})`); onPanelOpen(true) } },
         { label: `Ask what ${name} knows`, icon: Sparkles, onSelect: () => ask(`What has ${name} learned?`) },
         { type: 'separator' },
         { label: 'Open profile', icon: UserRound, onSelect: () => void navigate({ to: '/team/$helperId', params: { helperId: n.id } }) },
       ]
     }
     if (n.kind === 'file') {
-      const s = sources.find((x) => x.id === n.id)
+      const id = n.id.startsWith('src:') ? n.id.slice(4) : null
       return [
-        { label: expanded === n.id ? 'Hide its facts' : 'Show its facts', icon: ListChecks, disabled: !s?.done, onSelect: () => showSource(expanded === n.id ? null : n.id) },
+        { label: 'Show all sources', icon: ListChecks, onSelect: () => setSourcesCard(true) },
         { type: 'separator' },
-        { label: 'Remove source and its facts', icon: Trash2, danger: true, onSelect: () => removeSource(n.id) },
+        { label: 'Remove source and its facts', icon: Trash2, danger: true, disabled: !id, onSelect: () => id && removeSource(id) },
       ]
     }
     return [
       { label: 'Add sources', icon: Upload, onSelect: () => setDialog(true) },
-      { label: 'Teach something', icon: Plus, onSelect: () => onPanelOpen(true) },
+      { label: 'Teach something', icon: Plus, onSelect: () => { setTeachOwner(null); onPanelOpen(true) } },
     ]
   }
 
@@ -678,7 +704,8 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
   const card = reviewCard ? memories.get(reviewCard) : undefined
   const sel = selected ? memories.get(selected) : undefined
   const shownCard = card ?? (sel?.kind === 'memory' ? sel : undefined)
-  const doneSources = sources.filter((s) => s.done)
+  const shownLesson = shownCard ? lessonById.get(shownCard.id) : undefined
+  const showSourcesPanel = (sources.length > 0 || busy) && !sourcesCard
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -692,7 +719,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
           e.preventDefault()
           dragDepth.current = 0
           setDragging(false)
-          addFiles([...e.dataTransfer.files].map((f) => f.name))
+          addFiles([...e.dataTransfer.files])
         }}
       >
         <NetworkGraph
@@ -702,18 +729,20 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
           frame={KNOW_FRAME}
           selected={selected}
           onSelect={(id) => {
-            const src = id ? sources.find((x) => x.id === id) : undefined
-            if (src) return src.done ? showSource(expanded === src.id ? null : src.id) : setSelected(id)
+            if (id?.startsWith('src:') || id?.startsWith('reading-')) {
+              setSelected(id)
+              return setSourcesCard(true)
+            }
             setSelected(id)
-            const m = id ? memories.get(id) : undefined
-            if (m?.review) setReviewCard(id)
-            else if (id) setReviewCard(null)
+            const m = id ? lessonById.get(id) : undefined
+            if (m?.status === 'review') setReviewPick(id)
+            else if (id) setReviewPick(null)
           }}
           focus={focus}
           menuFor={menuFor}
           backgroundMenu={[
             { label: 'Add sources', icon: Upload, onSelect: () => setDialog(true) },
-            { label: 'Teach something', icon: Plus, onSelect: () => onPanelOpen(true) },
+            { label: 'Teach something', icon: Plus, onSelect: () => { setTeachOwner(null); onPanelOpen(true) } },
           ]}
           className={dragging ? 'opacity-30 blur-[2px]' : ''}
         >
@@ -727,7 +756,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
             </div>
             {owner && (
               <button type="button" onClick={() => setOwner(null)} className="flex h-[28px] items-center gap-[6px] rounded-full bg-surface px-[10px] text-[12.5px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong">
-                Only {AGENT_NAME[owner]} <X size={12} aria-hidden />
+                Only {nameOf(owner)} <X size={12} aria-hidden />
               </button>
             )}
             <div className="flex-1" />
@@ -738,7 +767,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
               <button
                 type="button"
                 onClick={() => {
-                  setReviewCard(reviews[0].id)
+                  setReviewPick(reviews[0].id)
                   setSelected(reviews[0].id)
                 }}
                 className="flex h-[30px] items-center gap-[7px] rounded-full bg-[#FFF7ED] px-[12px] text-[13px] font-medium text-[#C2410C] outline-1 -outline-offset-1 outline-[#FDBA74] hover:bg-[#FFEDD5]"
@@ -748,20 +777,24 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
             )}
           </div>
 
+          {lessonsError && (
+            <div className="absolute top-[60px] left-[15px] z-10 text-[12.5px] text-bad">Couldn't load memories</div>
+          )}
+
           {/* Review / memory card */}
-          {shownCard && !sourcesCard && (
+          {shownCard && shownLesson && !sourcesCard && (
             <Card className="top-[84px] left-[15px] w-[270px] px-[12px] pt-[11px] pb-[12px]">
               <div className="flex items-center gap-[6px] text-[12px] text-muted">
                 {shownCard.owner && shownCard.owner !== 'hub' ? (
-                  <Mascot size={14} radius={4} area={base.find((n) => n.id === shownCard.owner)?.helper ?? 'brand'} still />
+                  <Mascot size={14} radius={4} area={helpers.find((h) => h.id === shownCard.owner)?.area ?? 'brand'} still />
                 ) : (
                   <Building2 size={13} aria-hidden />
                 )}
-                {AGENT_NAME[shownCard.owner ?? 'hub']} · {shownCard.tag}
+                {nameOf(shownCard.owner)} · {shownCard.tag}
                 <span className="flex-1" />
                 {shownCard.review && <span className="rounded-xs bg-[#FEF2F2] px-[6px] py-[1px] text-[11px] font-medium text-[#B91C1C]">Needs review</span>}
                 {!shownCard.review && (
-                  <button type="button" aria-label="Close" onClick={() => { setReviewCard(null); setSelected(null) }} className="text-faint hover:text-ink">
+                  <button type="button" aria-label="Close" onClick={() => { setReviewPick(null); setSelected(null) }} className="text-faint hover:text-ink">
                     <X size={13} aria-hidden />
                   </button>
                 )}
@@ -770,7 +803,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
                 <input
                   autoFocus
                   aria-label="Memory text"
-                  defaultValue={shownCard.label}
+                  defaultValue={shownLesson.text}
                   onBlur={(e) => {
                     rename(shownCard.id, e.target.value)
                     setEditingReview(false)
@@ -782,16 +815,16 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
                   className="mt-[6px] h-[28px] w-full rounded-sm bg-surface px-[6px] text-[13.5px] font-semibold text-ink outline-1 outline-ink"
                 />
               ) : (
-                <p className="m-0 mt-[6px] text-[13.5px] font-semibold text-ink">{shownCard.label}</p>
+                <p className="m-0 mt-[6px] text-[13.5px] font-semibold text-ink">{shownLesson.text}</p>
               )}
-              <p className="m-0 mt-[3px] text-[12px] text-muted">{shownCard.source}</p>
+              <p className="m-0 mt-[3px] text-[12px] text-muted">{shownLesson.source}</p>
               <div className="mt-[10px] flex gap-[6px]">
                 {shownCard.review && (
                   <button type="button" onClick={() => confirm(shownCard.id)} className="flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[10px] text-[12.5px] font-medium text-primary-ink hover:bg-primary-hover">
                     <Check size={13} aria-hidden /> Confirm
                   </button>
                 )}
-                <button type="button" onClick={() => { setReviewCard(shownCard.id); setEditingReview(true) }} className="h-[28px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
+                <button type="button" onClick={() => { setReviewPick(shownCard.id); setEditingReview(true) }} className="h-[28px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
                   Edit
                 </button>
                 <button type="button" onClick={() => forget(shownCard.id)} className="h-[28px] rounded-btn bg-surface px-[10px] text-[12.5px] font-medium text-bad outline-1 -outline-offset-1 outline-line-strong hover:bg-bad-tint">
@@ -802,7 +835,7 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
           )}
 
           {/* Sources card (n8N6dT) */}
-          {sourcesCard && sources.length > 0 && (
+          {sourcesCard && (
             <Card className="top-[84px] left-[15px] w-[270px] p-[6px]">
               <div className="flex items-center gap-[6px] px-[6px] pt-[4px] pb-[6px]">
                 <span className="text-[13px] font-semibold text-ink">Sources</span>
@@ -811,52 +844,53 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
                 <button type="button" aria-label="Add sources" onClick={() => setDialog(true)} className="flex size-[22px] items-center justify-center rounded-xs text-muted hover:bg-hover">
                   <Plus size={14} aria-hidden />
                 </button>
-                <button type="button" aria-label="Close sources" onClick={() => { setSourcesCard(false); setExpanded(null) }} className="flex size-[22px] items-center justify-center rounded-xs text-muted hover:bg-hover">
+                <button type="button" aria-label="Close sources" onClick={() => setSourcesCard(false)} className="flex size-[22px] items-center justify-center rounded-xs text-muted hover:bg-hover">
                   <X size={13} aria-hidden />
                 </button>
               </div>
+              {sources.length === 0 && <p className="m-0 px-[8px] pb-[8px] text-[12px] text-muted">Nothing added yet.</p>}
               {sources.map((s) => {
-                const Icon = FILE_ICON[s.file]
+                const file = kindOf(s.title)
+                const Icon = FILE_ICON[file]
                 return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => showSource(s.done ? s.id : null)}
-                    className={`flex w-full gap-[8px] rounded-base px-[8px] py-[7px] text-left ${expanded === s.id ? 'bg-[#EFF6FF]' : 'hover:bg-soft'}`}
-                  >
-                    <Icon size={14} aria-hidden className={`mt-[2px] shrink-0 ${FILE_INK[s.file]}`} />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-[12.5px] font-medium text-ink">{s.name}</span>
-                      <span className="text-[11.5px] text-[#2563EB]">{s.done ? `${sourceSub(s)} · just now` : sourceSub(s)}</span>
+                  <div key={s.id} className={`group/src flex w-full gap-[8px] rounded-base px-[8px] py-[7px] text-left ${selected === `src:${s.id}` ? 'bg-[#EFF6FF]' : 'hover:bg-soft'}`}>
+                    <Icon size={14} aria-hidden className={`mt-[2px] shrink-0 ${FILE_INK[file]}`} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-[12.5px] font-medium text-ink">{s.title}</span>
+                      <span className="text-[11.5px] text-[#2563EB]">{s.chunks ?? 0} added</span>
                     </span>
-                  </button>
+                    <button type="button" aria-label={`Remove ${s.title}`} onClick={() => removeSource(s.id)} className="hidden size-[20px] items-center justify-center rounded-xs text-muted group-hover/src:flex hover:text-bad">
+                      <Trash2 size={12} aria-hidden />
+                    </button>
+                  </div>
                 )
               })}
             </Card>
           )}
 
           {/* Reading panel (cUtde) */}
-          {sources.length > 0 && !sourcesCard && (
+          {showSourcesPanel && (
             <Card className="top-[56px] right-[16px] w-[283px]">
               <button type="button" onClick={() => setReadingOpen((o) => !o)} className="flex h-[36px] w-full items-center gap-[8px] px-[12px] text-left shadow-[inset_0_-1px_0_var(--color-line)]">
-                {reading ? <Spinner /> : <CircleCheck size={14} aria-hidden className="text-ok" />}
+                {busy ? <Spinner /> : <CircleCheck size={14} aria-hidden className="text-ok" />}
                 <span className="flex-1 text-[13px] font-semibold text-ink">
-                  {reading ? `Reading ${sources.filter((s) => !s.done).length} file${sources.filter((s) => !s.done).length > 1 ? 's' : ''}` : `Read ${sources.length} files`}
+                  {busy ? `Reading ${reading.length} file${reading.length > 1 ? 's' : ''}` : `Read ${sources.length} source${sources.length === 1 ? '' : 's'}`}
                 </span>
                 {readingOpen ? <ChevronUp size={14} aria-hidden className="text-muted" /> : <ChevronDown size={14} aria-hidden className="text-muted" />}
               </button>
               {readingOpen && (
                 <>
                   <ul className="m-0 list-none p-0">
-                    {sources.map((s) => {
-                      const Icon = FILE_ICON[s.file]
+                    {[...reading.map((r) => ({ id: r.id, title: r.title, done: false, chunks: 0 })), ...sources.slice(0, 5).map((s) => ({ id: s.id, title: s.title, done: true, chunks: s.chunks ?? 0 }))].map((s) => {
+                      const file = kindOf(s.title)
+                      const Icon = FILE_ICON[file]
                       return (
                         <li key={s.id}>
-                          <button type="button" onClick={() => (s.done ? showSource(s.id) : setSelected(s.id))} className="flex w-full items-center gap-[9px] px-[12px] py-[7px] text-left hover:bg-soft">
-                            <Icon size={14} aria-hidden className={`shrink-0 ${FILE_INK[s.file]}`} />
+                          <button type="button" onClick={() => setSourcesCard(true)} className="flex w-full items-center gap-[9px] px-[12px] py-[7px] text-left hover:bg-soft">
+                            <Icon size={14} aria-hidden className={`shrink-0 ${FILE_INK[file]}`} />
                             <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="truncate text-[12.5px] font-medium text-ink">{s.name}</span>
-                              <span className="truncate text-[11.5px] text-muted">{s.done && s.skipped ? `${sourceSub(s)}, Handbook wins` : sourceSub(s)}</span>
+                              <span className="truncate text-[12.5px] font-medium text-ink">{s.title}</span>
+                              <span className="truncate text-[11.5px] text-muted">{s.done ? `${s.chunks} added` : 'Reading…'}</span>
                             </span>
                             {s.done ? <CircleCheck size={15} aria-hidden className="shrink-0 text-ok" /> : <Spinner size={14} />}
                           </button>
@@ -876,12 +910,11 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
           {toast && (
             <div role="status" className="absolute top-[60px] left-1/2 z-20 flex h-[34px] -translate-x-1/2 items-center gap-[10px] rounded-lg bg-primary pr-[14px] pl-[12px] text-[13px] whitespace-nowrap text-primary-ink shadow-[0_10px_24px_#0C0A0940] animate-in fade-in-0 slide-in-from-top-1" onPointerDown={(e) => e.stopPropagation()}>
               <CircleCheck size={15} aria-hidden className="text-[#86EFAC]" />
-              {toast}
+              {toast.text}
               <button
                 type="button"
                 onClick={() => {
-                  const last = doneSources.at(-1)
-                  if (last) removeSource(last.id)
+                  removeSource(toast.sourceId)
                   setToast(null)
                 }}
                 className="text-on-ink-2 hover:text-white"
@@ -891,8 +924,8 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
               <button
                 type="button"
                 onClick={() => {
-                  const last = doneSources.at(-1)
-                  if (last) showSource(last.id)
+                  setSelected(`src:${toast.sourceId}`)
+                  setSourcesCard(true)
                   setToast(null)
                 }}
                 className="font-semibold hover:underline"
@@ -940,21 +973,31 @@ export function KnowledgeView({ panelOpen, onPanelOpen, teachSignal }: { panelOp
           <div className="pointer-events-none absolute inset-[12px] z-20 flex flex-col items-center justify-center gap-[8px] rounded-lg bg-[#EFF6FFB3] text-center outline-2 -outline-offset-2 outline-[#93C5FD]">
             <Mascot size={56} radius={16} area="brand" helper tile={false} />
             <h3 className="m-0 mt-[6px] text-[15px] font-semibold text-ink">Drop to teach the whole company</h3>
-            <p className="m-0 text-[13px] text-muted">Chief reads documents and photos and adds what it finds to company knowledge.</p>
+            <p className="m-0 text-[13px] text-muted">Chief reads the documents and adds what it finds to company knowledge.</p>
             <span className="mt-[4px] flex h-[26px] items-center gap-[6px] rounded-full bg-surface px-[10px] text-[12.5px] text-ink-2 outline-1 -outline-offset-1 outline-line-strong">
               <Building2 size={13} aria-hidden /> Company-wide
             </span>
-            <p className="m-0 text-[11.5px] text-faint">PDF, Word, Excel, slides · photos and scans · up to 50 MB each</p>
+            <p className="m-0 text-[11.5px] text-faint">Text, Markdown, CSV, JSON or HTML files</p>
           </div>
         )}
 
-        {dialog && <AddSourcesDialog sources={sources} onFiles={addFiles} onClose={() => setDialog(false)} />}
+        {dialog && (
+          <AddSourcesDialog
+            sources={sources}
+            reading={reading}
+            onFiles={addFiles}
+            onLink={addLink}
+            onDrive={() => void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } })}
+            onClose={() => setDialog(false)}
+          />
+        )}
       </div>
 
       {panelOpen && (
         <AskPanel
           turns={turns}
-          memories={memories}
+          memoryCount={live.length}
+          nameOf={nameOf}
           onSend={ask}
           onClose={() => onPanelOpen(false)}
           onNew={() => {

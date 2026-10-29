@@ -14,7 +14,7 @@ function useActiveNav(mode: Mode): AppNav | undefined {
   if (matchRoute({ to: '/goals', fuzzy: false })) return 'Goals'
   if (matchRoute({ to: '/flows', fuzzy: true })) return 'Flows'
   if (matchRoute({ to: '/routines', fuzzy: true })) return 'Routines'
-  if (matchRoute({ to: '/docs', fuzzy: false })) return 'Docs'
+  if (matchRoute({ to: '/docs', fuzzy: true })) return 'Docs'
   if (matchRoute({ to: '/analytics', fuzzy: false })) return 'Analytics'
   if (matchRoute({ to: '/archived', fuzzy: false })) return 'Archived'
   if (mode === 'office' && matchRoute({ to: '/inbox', fuzzy: true })) return 'Primary'
