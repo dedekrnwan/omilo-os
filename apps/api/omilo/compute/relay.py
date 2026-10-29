@@ -242,6 +242,20 @@ def _handle_job_step_db(job_id: str, company_id: str) -> ComputeJob | None:
             )
 
 
+def _strip_secrets_recursive(obj: Any) -> Any:
+    """Recursively remove any dict key named 'secrets' at any depth.
+
+    Returns a new object (dicts/lists are copied; other values returned as-is).
+    This is the canonical sanitiser: call it on any untrusted worker payload
+    before persisting to the DB row or publishing to SSE.
+    """
+    if isinstance(obj, dict):
+        return {k: _strip_secrets_recursive(v) for k, v in obj.items() if k != "secrets"}
+    if isinstance(obj, list):
+        return [_strip_secrets_recursive(item) for item in obj]
+    return obj
+
+
 def _handle_job_done_db(
     job_id: str,
     company_id: str,
@@ -251,16 +265,19 @@ def _handle_job_done_db(
     """Settle job as 'done'. Idempotent — no-op if already terminal.
 
     Security: only updates jobs whose company_id matches the worker's company_id.
-    Secrets are NEVER stored here — result is written as-is from the worker but
-    the 'secrets' key is explicitly stripped before persisting and publishing.
+    Secrets are NEVER stored here — 'secrets' keys are stripped **recursively**
+    from the result before persisting and publishing (I1 fix: deep strip).
+
+    Concurrency: the row is locked with SELECT … FOR UPDATE before the
+    was_terminal check so that a concurrent double-delivery cannot race past
+    the guard and double-settle (I2 fix: row lock for atomic read-then-write).
 
     Returns the updated job snapshot, or None on security/not-found rejection.
-    Returns a job snapshot with already-terminal status if it was already done/error
-    (the caller detects idempotency by checking the returned status vs 'done').
+    Returns None if already terminal (idempotent replay — caller skips SSE).
     """
     with SessionLocal() as session:
         with session.begin():
-            job = session.get(ComputeJob, job_id)
+            job = session.get(ComputeJob, job_id, with_for_update=True)
             if job is None:
                 logger.warning("_handle_job_done_db: job %s not found", job_id)
                 return None
@@ -281,10 +298,11 @@ def _handle_job_done_db(
                 # Return None to signal the caller to skip SSE publish.
                 return None
 
-            # Strip 'secrets' from result before persisting (security invariant)
+            # Strip 'secrets' **recursively** from result before persisting
+            # (security invariant — nested secrets must not survive either).
             safe_result: dict | None = None
             if result is not None:
-                safe_result = {k: v for k, v in result.items() if k != "secrets"}
+                safe_result = _strip_secrets_recursive(result)
             job.status = "done"
             job.result = safe_result
             job.artifact = artifact
@@ -307,11 +325,16 @@ def _handle_job_error_db(job_id: str, company_id: str, error: str) -> ComputeJob
     """Settle job as 'error'. Idempotent — no-op if already terminal.
 
     Security: only updates jobs whose company_id matches the worker's company_id.
+
+    Concurrency: the row is locked with SELECT … FOR UPDATE before the
+    was_terminal check so that a concurrent double-delivery cannot race past
+    the guard and double-settle (I2 fix: row lock for atomic read-then-write).
+
     Returns the updated job snapshot, or None on security/not-found rejection.
     """
     with SessionLocal() as session:
         with session.begin():
-            job = session.get(ComputeJob, job_id)
+            job = session.get(ComputeJob, job_id, with_for_update=True)
             if job is None:
                 logger.warning("_handle_job_error_db: job %s not found", job_id)
                 return None

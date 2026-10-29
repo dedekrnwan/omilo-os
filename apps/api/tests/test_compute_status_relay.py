@@ -503,6 +503,91 @@ class TestSecretsNeverInSseOrJobRow:
 
 
 # ---------------------------------------------------------------------------
+# Test 3b — nested secrets never leak (I1 regression guard)
+# ---------------------------------------------------------------------------
+
+
+class TestNestedSecretsNeverLeak:
+    def test_nested_secrets_never_in_sse_or_job_row(self, relay_setup):
+        """A 'secrets' key nested inside result must be stripped recursively.
+
+        The shallow strip (``{k: v for k, v in result.items() if k != 'secrets'}``)
+        only removes top-level keys.  This test sends a result with a secret buried
+        one level deep and asserts that neither the persisted ``ComputeJob.result``
+        nor any SSE event payload contains the secret value or key.
+        """
+        client, owner_token, company_id = relay_setup
+
+        pair = _pair_worker(client, owner_token, capacity=2)
+        worker_id = pair["worker_id"]
+        raw_token = pair["token"]
+
+        job_id = _seed_dispatched_job(company_id, worker_id)
+
+        job_settled = False
+        job_row_snapshot = None
+
+        with BrokerCapture(company_id) as cap:
+            with client.websocket_connect(
+                f"/v1/compute/relay?token={raw_token}"
+            ) as ws:
+                ws.send_text(json.dumps({
+                    "type": "register",
+                    "role": "worker",
+                    "worker_id": worker_id,
+                    "company_id": company_id,
+                    "capacity": 2,
+                }))
+                time.sleep(0.05)
+
+                # 'secrets' is nested inside 'output' dict — shallow strip would miss it
+                ws.send_text(json.dumps({
+                    "type": "job_done",
+                    "job_id": job_id,
+                    "ok": True,
+                    "result": {
+                        "output": {
+                            "text": "hello",
+                            "secrets": "NESTED_SECRET_VALUE",
+                        },
+                        "metadata": "ok",
+                    },
+                    "artifact": None,
+                }))
+
+                def _settled_check():
+                    j = _get_job_from_db(job_id)
+                    return j is not None and j.status in ("done", "error")
+
+                job_settled = _poll(_settled_check, timeout=5.0)
+                if job_settled:
+                    job_row_snapshot = _get_job_from_db(job_id)
+                time.sleep(0.1)
+
+        assert job_settled, "Job did not settle in DB while WS was open"
+
+        # The nested 'secrets' key and its value must not appear in the persisted result
+        if job_row_snapshot is not None and job_row_snapshot.result is not None:
+            result_str = json.dumps(job_row_snapshot.result)
+            assert "NESTED_SECRET_VALUE" not in result_str, (
+                f"Nested secret value leaked into ComputeJob.result: {job_row_snapshot.result}"
+            )
+            assert "secrets" not in result_str, (
+                f"'secrets' key survived deep in ComputeJob.result: {job_row_snapshot.result}"
+            )
+            # The non-secret sibling must still be present
+            assert job_row_snapshot.result.get("metadata") == "ok", (
+                f"Non-secret field stripped incorrectly: {job_row_snapshot.result}"
+            )
+
+        # SSE payload must not echo the nested secret
+        all_event_str = json.dumps(cap.events)
+        assert "NESTED_SECRET_VALUE" not in all_event_str, (
+            f"Nested secret value leaked into SSE events: {cap.events}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test 4 — duplicate / replayed terminal frame is idempotent
 # ---------------------------------------------------------------------------
 
