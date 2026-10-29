@@ -26,7 +26,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
-from omilo.compute.protocol import JobQueuedFrame, StartJobFrame, encode
+from omilo.compute.protocol import StartJobFrame, encode
 from omilo.db import SessionLocal
 from omilo.models.compute import ComputeJob, ComputeWorker
 
@@ -67,7 +67,7 @@ def _db_pick_and_reserve(
                 return None
 
             for wid in candidate_worker_ids:
-                worker = session.get(ComputeWorker, wid)
+                worker = session.get(ComputeWorker, wid, with_for_update=True)
                 if worker is None:
                     continue
                 # Defense-in-depth: re-verify company isolation at the DB layer.

@@ -547,3 +547,57 @@ def test_create_job_dispatches_immediately_with_online_worker():
     assert refreshed_worker.in_use == 1, (
         f"Worker in_use should be 1 after dispatch; got {refreshed_worker.in_use}"
     )
+
+
+# ---------------------------------------------------------------------------
+# I1 (dispatch) — row-lock: _db_pick_and_reserve uses with_for_update=True
+# ---------------------------------------------------------------------------
+
+
+def test_db_pick_and_reserve_uses_row_lock():
+    """_db_pick_and_reserve must lock the worker row (SELECT … FOR UPDATE) before
+    the capacity check to prevent overbooking under concurrent dispatches.
+
+    True concurrency is impractical in a unit test, so this verifies the lock
+    is issued at all by wrapping Session.get and asserting that the call for
+    ComputeWorker includes with_for_update=True.
+    """
+    from unittest.mock import patch
+
+    import omilo.compute.dispatch as _dispatch_mod
+    from sqlalchemy.orm import Session
+
+    company_id = prefixed_id("cmp")
+    worker = _make_worker(company_id, capacity=2, in_use=0)
+    job = _make_job(company_id, status="queued")
+
+    lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=LEASE_S)
+
+    get_calls: list[tuple] = []
+    _real_get = Session.get
+
+    def _tracking_get(self_session, model, pk, **kwargs):
+        get_calls.append((model, pk, kwargs))
+        # Forward to the real implementation — self_session is the bound instance.
+        return _real_get(self_session, model, pk, **kwargs)
+
+    with patch.object(Session, "get", _tracking_get):
+        _dispatch_mod._db_pick_and_reserve(
+            job.id,
+            job.company_id,
+            [worker.id],
+            lease_expires_at,
+        )
+
+    # Find the call(s) for ComputeWorker rows
+    worker_get_calls = [c for c in get_calls if c[0] is ComputeWorker]
+    assert len(worker_get_calls) >= 1, (
+        "Expected at least one session.get(ComputeWorker, ...) call; got none. "
+        "Is _db_pick_and_reserve loading the worker differently?"
+    )
+
+    for _, _, kw in worker_get_calls:
+        assert kw.get("with_for_update") is True, (
+            f"session.get(ComputeWorker, ...) was called without with_for_update=True "
+            f"(kwargs={kw!r}). The row-lock is missing — concurrent dispatches can overbook."
+        )

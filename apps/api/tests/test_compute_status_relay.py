@@ -664,3 +664,93 @@ class TestDuplicateSeqIsIdempotent:
             f"Expected exactly 1 job.done SSE event (duplicate must be suppressed), "
             f"got {len(done_events)}: {done_events}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Minor #3 — no stray job.step SSE published after the job is already terminal
+# ---------------------------------------------------------------------------
+
+
+class TestNoStrayStepAfterTerminal:
+    def test_job_step_after_terminal_publishes_no_sse(self, relay_setup):
+        """A job_step frame received AFTER the job is already terminal must not
+        publish a stray job.step SSE event.
+
+        Sequence:
+          1. Send job_done → job settles to 'done'.
+          2. Send an additional job_step frame (simulates a late/out-of-order
+             frame from the worker).
+          3. Assert no new job.step SSE events appear after the settlement.
+
+        The fix in _handle_job_step_db returns None when the job is already
+        terminal, which causes _dispatch_status_frame to skip the SSE publish.
+        """
+        client, owner_token, company_id = relay_setup
+
+        pair = _pair_worker(client, owner_token, capacity=2)
+        worker_id = pair["worker_id"]
+        raw_token = pair["token"]
+
+        job_id = _seed_dispatched_job(company_id, worker_id)
+
+        job_settled_done = False
+
+        with BrokerCapture(company_id, drain_timeout=0.5) as cap:
+            with client.websocket_connect(
+                f"/v1/compute/relay?token={raw_token}"
+            ) as ws:
+                ws.send_text(json.dumps({
+                    "type": "register",
+                    "role": "worker",
+                    "worker_id": worker_id,
+                    "company_id": company_id,
+                    "capacity": 2,
+                }))
+                time.sleep(0.05)
+
+                # Step 1: settle the job as done
+                ws.send_text(json.dumps({
+                    "type": "job_done",
+                    "job_id": job_id,
+                    "ok": True,
+                    "result": {"output": "finished"},
+                    "artifact": None,
+                }))
+
+                # Poll for done while connection is still open
+                def _job_done_check():
+                    j = _get_job_from_db(job_id)
+                    return j is not None and j.status == "done"
+
+                job_settled_done = _poll(_job_done_check, timeout=10.0)
+
+                # Step 2: send a late job_step after the job is already terminal
+                ws.send_text(json.dumps({
+                    "type": "job_step",
+                    "job_id": job_id,
+                    "seq": 99,
+                    "stream": "stdout",
+                    "line": "This step arrives after job is done — must be suppressed",
+                }))
+
+                # Brief wait to let any stray publish propagate (should not)
+                time.sleep(0.3)
+
+        assert job_settled_done, "Job did not settle to 'done' while WS was open."
+
+        # There must be no job.step SSE event published after the terminal done.
+        # (Any steps before done are OK, but the post-terminal step must be silent.)
+        done_events = [e for e in cap.events if e.get("type") == "job.done"]
+        step_events = [e for e in cap.events if e.get("type") == "job.step"]
+
+        assert len(done_events) >= 1, (
+            f"Expected at least one job.done SSE event; got: {cap.events}"
+        )
+
+        # Find any step events with seq=99 (the post-terminal one)
+        stray_steps = [e for e in step_events if e.get("seq") == 99]
+        assert len(stray_steps) == 0, (
+            f"Stray job.step (seq=99) was published after the job was already done. "
+            f"_handle_job_step_db must return None for terminal jobs. "
+            f"Events captured: {cap.events}"
+        )

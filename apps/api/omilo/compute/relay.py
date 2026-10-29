@@ -221,11 +221,15 @@ def _handle_job_step_db(job_id: str, company_id: str) -> ComputeJob | None:
                 )
                 return None
 
-            # Transition to running if not already terminal
-            if job.status not in ("done", "error"):
-                job.status = "running"
-                # Renew lease so a long-running job isn't reaped mid-flight
-                job.lease_expires_at = now + timedelta(seconds=LEASE_S)
+            # If the job is already terminal, skip — mirrors the done/error
+            # handlers' idempotent return None so no stray SSE is published.
+            if job.status in ("done", "error"):
+                return None
+
+            # Transition to running and renew lease so a long-running job
+            # isn't reaped mid-flight.
+            job.status = "running"
+            job.lease_expires_at = now + timedelta(seconds=LEASE_S)
 
             # Return a detached snapshot for SSE publishing (outside session)
             session.flush()
