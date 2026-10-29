@@ -450,3 +450,30 @@ async def test_analytics_tenancy_isolation(async_client, company_a, company_b):
         # Edge case: if both happen to equal, tokens/spend must differ
         stats_a.get("Tokens") != stats_b.get("Tokens")
     ), "Analytics data appears to bleed across companies"
+
+
+# ---------------------------------------------------------------------------
+# Task 1.7: Helper model/engine field (PATCH model persists + round-trips)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_helper_model_persists_and_round_trips(async_client, company_a):
+    """PATCH /v1/helpers/{id} {model} persists into engine.model; GET returns it."""
+    token = company_a["token"]
+    helper_id = company_a["helper_id"]
+
+    resp = await async_client.patch(
+        f"/v1/helpers/{helper_id}",
+        json={"model": "claude-sonnet-4"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["model"] == "claude-sonnet-4"
+
+    # GET helper detail round-trips the model.
+    get_resp = await async_client.get(
+        f"/v1/helpers/{helper_id}", headers=_auth(token)
+    )
+    assert get_resp.status_code == 200, get_resp.text
+    assert get_resp.json()["helper"]["model"] == "claude-sonnet-4"

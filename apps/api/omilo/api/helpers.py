@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import Integer, case, func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.models.agents import Helper
 from omilo.models.base import prefixed_id
@@ -45,6 +46,8 @@ class PatchHelperBody(BaseModel):
     role: Optional[str] = None
     job_description: Optional[str] = None
     autonomy_cap: Optional[str] = None
+    # model: engine id (e.g. "gpt-4o", "claude-sonnet") — stored in engine.model.
+    model: Optional[str] = None
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -76,6 +79,7 @@ def _helper_to_dict(helper: Helper) -> dict[str, Any]:
         "isChief": helper.is_chief,
         "autonomyCap": helper.autonomy_cap,
         "jobDescription": helper.job_description,
+        "model": (helper.engine or {}).get("model"),
     }
 
 
@@ -232,6 +236,12 @@ def patch_helper(
         helper.job_description = body.job_description
     if body.autonomy_cap is not None:
         helper.autonomy_cap = body.autonomy_cap
+    if body.model is not None:
+        # model is stored inside the engine JSONB ({type, auth, model, tier}).
+        engine = dict(helper.engine or {})
+        engine["model"] = body.model
+        helper.engine = engine
+        flag_modified(helper, "engine")
 
     db.flush()
 
