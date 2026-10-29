@@ -41,6 +41,14 @@ class CreateGoalBody(BaseModel):
     autonomy_override: Optional[str] = None
 
 
+class PatchGoalBody(BaseModel):
+    title: Optional[str] = None
+    target: Optional[str] = None
+    due: Optional[str] = None
+    status: Optional[str] = None
+    channel_id: Optional[str] = None
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
@@ -286,6 +294,62 @@ def get_goal_detail(
     if goal is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found.")
     return _goal_detail_response(db, goal)
+
+
+@router.patch("/goals/{goal_id}", status_code=status.HTTP_200_OK)
+def patch_goal(
+    goal_id: str,
+    body: PatchGoalBody,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Update a Goal's editable fields (title, target, status, channel_id).
+
+    ``due`` is accepted for frontend-contract compatibility but not persisted
+    (the Goal model has no due column). 404 for another tenant's goal (RLS).
+    Returns the updated goal DTO.
+    """
+    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    if goal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found.")
+
+    if body.title is not None:
+        goal.title = body.title
+    if body.target is not None:
+        goal.target = body.target
+    if body.status is not None:
+        goal.status = body.status
+    if body.channel_id is not None:
+        goal.channel_id = body.channel_id
+
+    db.flush()
+
+    return {
+        "goal": {
+            "id": goal.id,
+            "channelId": goal.channel_id,
+            "title": goal.title,
+            "target": goal.target,
+            "status": goal.status,
+            "progress": goal.progress,
+            "autonomyOverride": goal.autonomy_override,
+            "ownerHelperId": goal.owner_helper_id,
+        }
+    }
+
+
+@router.delete("/goals/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_goal(
+    goal_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> None:
+    """Hard-delete a Goal. 404 for another tenant's goal (RLS)."""
+    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    if goal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found.")
+    db.delete(goal)
+    db.flush()
 
 
 @router.post("/goals/{goal_id}/replan", status_code=status.HTTP_200_OK)
