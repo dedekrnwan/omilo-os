@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Info, Plus } from 'lucide-react'
-import { SKILLS } from '../teamData'
-import type { HelperRecord, Skill } from '../teamData'
+import { BookOpenCheck, Check, Info, Plus } from 'lucide-react'
+import type { HelperSkillRow } from '../../../core/domain/types'
+import { useHelperSkillRows, useSetHelperSkills } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
+import type { HelperRecord } from '../teamData'
 import { Btn, IconTile, Switch } from '../ui'
 import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 
-const PERMISSION_OPTIONS: Skill['permission'][] = ['Always allowed', 'Ask each time']
+type Permission = 'Always allowed' | 'Ask each time'
+const PERMISSION_OPTIONS: Permission[] = ['Always allowed', 'Ask each time']
+const TO_API: Record<Permission, 'always' | 'ask'> = { 'Always allowed': 'always', 'Ask each time': 'ask' }
+const FROM_API: Record<'always' | 'ask', Permission> = { always: 'Always allowed', ask: 'Ask each time' }
 
 function PermissionMenu({
   value,
   onPick,
   onClose,
 }: {
-  value: Skill['permission']
-  onPick: (p: Skill['permission']) => void
+  value: Permission
+  onPick: (p: Permission) => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -52,19 +57,28 @@ function PermissionMenu({
   )
 }
 
-function SkillRow({ s, last }: { s: Skill; last: boolean }) {
-  const [on, setOn] = useState(s.enabled)
-  const [permission, setPermission] = useState<Skill['permission']>(s.permission)
+function SkillRow({
+  s,
+  last,
+  onChange,
+}: {
+  s: HelperSkillRow
+  last: boolean
+  onChange: (next: { enabled: boolean; permission: 'always' | 'ask' }) => void
+}) {
+  const on = s.enabled
+  const permission = FROM_API[s.permission]
   const [permOpen, setPermOpen] = useState(false)
+  const version = `v${s.version} · ${s.own ? 'learned' : s.createdBy?.startsWith('operator') ? 'you' : 'company'}`
   return (
     <div className={`flex w-full items-center gap-[12px] py-[12px] ${last ? '' : 'shadow-[inset_0_-1px_0_var(--color-line)]'}`}>
-      <IconTile icon={s.icon} iconClass={on ? 'text-ink-2' : 'text-faint'} />
+      <IconTile icon={BookOpenCheck} iconClass={on ? 'text-ink-2' : 'text-faint'} />
       <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
         <div className="flex items-center gap-[8px]">
           <span className={`text-[13.5px] font-medium ${on ? 'text-ink' : 'text-muted'}`}>{s.name}</span>
-          <span className="font-mono text-[11px] text-faint">{s.version}</span>
+          <span className="font-mono text-[11px] text-faint">{version}</span>
         </div>
-        <span className="text-[12px] text-muted">{s.description}</span>
+        {s.description && <span className="text-[12px] text-muted">{s.description}</span>}
       </div>
       <div className="relative" style={{ opacity: on ? 1 : 0.5 }}>
         <button
@@ -78,32 +92,43 @@ function SkillRow({ s, last }: { s: Skill; last: boolean }) {
         {permOpen && (
           <PermissionMenu
             value={permission}
-            onPick={setPermission}
+            onPick={(p) => onChange({ enabled: on, permission: TO_API[p] })}
             onClose={() => setPermOpen(false)}
           />
         )}
       </div>
-      <Switch on={on} onChange={setOn} label={`${s.name} on`} />
+      <Switch on={on} onChange={(v) => onChange({ enabled: v, permission: s.permission })} label={`${s.name} on`} />
     </div>
   )
 }
 
-/** Skills tab — pen dXeCS. */
+/** Skills tab — pen dXeCS. Rows: the helper's own skills + company skills added to it. */
 export function SkillsTab({ helper, onBrowse }: { helper: HelperRecord; onBrowse: () => void }) {
+  const { data: skills = [], isLoading, isError } = useHelperSkillRows(helper.id)
+  const setSkills = useSetHelperSkills(helper.id)
+  const change = (s: HelperSkillRow, next: { enabled: boolean; permission: 'always' | 'ask' }) =>
+    setSkills.mutate([{ id: s.id, ...next }], { onError: () => notify(`Couldn't update ${s.name}`) })
   return (
     <div className="flex w-full flex-col gap-[20px]">
       <section className="flex w-full flex-col gap-[10px]">
         <div className="flex w-full items-center gap-[8px]">
           <h3 className="m-0 text-[14px] font-semibold text-ink">Skills {helper.name} can use</h3>
-          <span className="text-[12.5px] text-muted">{SKILLS.filter((s) => s.enabled).length} on</span>
+          <span className="text-[12.5px] text-muted">{skills.filter((s) => s.enabled).length} on</span>
           <span className="h-px flex-1" />
           <Btn icon={Plus} h={30} onClick={onBrowse}>
             Browse skills
           </Btn>
         </div>
         <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
-          {SKILLS.map((s, i) => (
-            <SkillRow key={s.name} s={s} last={i === SKILLS.length - 1} />
+          {isLoading && <span className="py-[14px] text-[12.5px] text-muted">Loading skills…</span>}
+          {isError && <span className="py-[14px] text-[12.5px] text-bad">Couldn't load skills.</span>}
+          {!isLoading && !isError && skills.length === 0 && (
+            <span className="py-[14px] text-[12.5px] text-muted">
+              No skills yet. Browse company skills, or {helper.name} learns its own as it works.
+            </span>
+          )}
+          {skills.map((s, i) => (
+            <SkillRow key={s.id} s={s} last={i === skills.length - 1} onChange={(n) => change(s, n)} />
           ))}
         </div>
       </section>

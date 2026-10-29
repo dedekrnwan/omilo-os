@@ -13,10 +13,10 @@ const TONE: Record<HelperStatus, ChipTone> = {
 }
 
 /** Helper status as the pen draws it: Chip/Run · Chip/Warn · Chip/Up · Chip/Idle. */
-export function StatusChip({ status, className }: { status: HelperStatus; className?: string }) {
+export function StatusChip({ status, className, label }: { status: HelperStatus; className?: string; label?: string }) {
   return (
     <Chip tone={TONE[status]} icon={status === 'Always on' ? CircleDot : undefined} className={className}>
-      {status}
+      {label ?? status}
     </Chip>
   )
 }

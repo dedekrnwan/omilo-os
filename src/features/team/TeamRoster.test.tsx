@@ -59,6 +59,7 @@ vi.mock('../../adapters/http/commands', () => ({
 import { TeamRoster } from './TeamRoster'
 import { HelperDetail } from './HelperDetail'
 import { TeamLayout } from './TeamLayout'
+import { useSession } from '../../app/session'
 
 // ── fixture helpers ────────────────────────────────────────────────────────────
 
@@ -156,6 +157,30 @@ describe('TeamRoster — live repo', () => {
     // LiveChief and LiveDev come from the mock repo, not from teamData.ts HELPERS
     await waitFor(() => expect(screen.getByText('LiveChief')).toBeInTheDocument())
     expect(screen.getByText('LiveDev')).toBeInTheDocument()
+  })
+
+  test('Chief stats and topbar come from live data, not literals', async () => {
+    useSession.setState({ company: { id: 'c1', name: 'Acme Kopi', currency: 'IDR', onboarded: true } })
+    const helpers: Helper[] = [
+      { ...LIVE_HELPERS[0], jobsMonth: 30, costMonth: 400 },
+      { ...LIVE_HELPERS[1], jobsMonth: 12, costMonth: 1000, currentJob: { id: 'j', brief: 'Fix the login bug', status: 'running' } },
+    ]
+    renderRoster(
+      makeRepos({
+        helpers: { list: vi.fn().mockResolvedValue(helpers), get: vi.fn().mockResolvedValue(null) },
+        inbox: {
+          list: vi.fn().mockResolvedValue([
+            { id: 'i1', title: 't', summary: '', sessionId: '', channelId: '', kind: 'decision', status: 'pending', createdAt: '', asker: 'Chief', askerArea: 'brand', needsYou: true },
+          ]),
+          get: vi.fn().mockResolvedValue(null),
+        },
+      }),
+    )
+    expect(await screen.findByText('Fix the login bug')).toBeInTheDocument()
+    expect(screen.getByText('42')).toBeInTheDocument()
+    expect(screen.getByText('1.400 cr')).toBeInTheDocument()
+    expect(screen.getByText(/Acme Kopi/)).toBeInTheDocument()
+    expect(screen.queryByText('Sahabat Warga', { exact: false })).toBeNull()
   })
 
   test('renders "Hire a helper" card from the roster', async () => {

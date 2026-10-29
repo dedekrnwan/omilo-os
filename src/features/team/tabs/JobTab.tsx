@@ -1,7 +1,9 @@
-import { CalendarSync, Check, ChevronRight, History, Pencil, Sparkles, X } from 'lucide-react'
+import { CalendarSync, Check, ChevronRight, Pencil, Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../../ui/ds/Mascot'
+import { notify } from '../../../ui/ds/Toaster'
+import { useUpdateHelperEverywhere, useUpdateRoutine } from '../../../app/queries'
 import { FILE_ICON } from '../teamData'
 import type { HelperRecord, WorkingFile } from '../teamData'
 import { Btn, IconTile, Switch } from '../ui'
@@ -45,13 +47,33 @@ export function JobTab({
 }) {
   const navigate = useNavigate()
   const files = helper.files
+  const updateHelper = useUpdateHelperEverywhere()
+  const updateRoutine = useUpdateRoutine()
   const [editing, setEditing] = useState(false)
-  const [jobDesc, setJobDesc] = useState(helper.description)
+  const jobDesc = helper.description
   const [draft, setDraft] = useState(helper.description)
 
   const startEdit = () => { setDraft(jobDesc); setEditing(true) }
-  const saveEdit = () => { setJobDesc(draft); setEditing(false) }
+  const saveEdit = () =>
+    updateHelper.mutate(
+      { id: helper.id, input: { jobDescription: draft.trim() } },
+      {
+        onSuccess: () => {
+          setEditing(false)
+          notify('Job description saved')
+        },
+        onError: () => notify("Couldn't save the job description"),
+      },
+    )
   const cancelEdit = () => { setDraft(jobDesc); setEditing(false) }
+  const toggleRoutine = (id: string, label: string, on: boolean) =>
+    updateRoutine.mutate(
+      { id, input: { paused: !on } },
+      {
+        onSuccess: () => notify(`${label} ${on ? 'resumed' : 'paused'}`),
+        onError: () => notify(`Couldn't update ${label}`),
+      },
+    )
 
   return (
     <div className="flex w-full flex-col gap-[20px]">
@@ -67,7 +89,9 @@ export function JobTab({
           {editing ? (
             <div className="flex items-center gap-[6px]">
               <Btn variant="quiet" icon={X} h={30} onClick={cancelEdit}>Cancel</Btn>
-              <Btn icon={Check} h={30} onClick={saveEdit}>Save</Btn>
+              <Btn icon={Check} h={30} onClick={saveEdit} disabled={updateHelper.isPending}>
+                {updateHelper.isPending ? 'Saving…' : 'Save'}
+              </Btn>
             </div>
           ) : (
             <Btn variant="quiet" icon={Pencil} h={30} onClick={startEdit}>
@@ -85,13 +109,11 @@ export function JobTab({
           />
         ) : (
           <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
-            <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">{jobDesc}</p>
+            <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">
+              {jobDesc || `No job description yet. Click Edit to tell ${helper.name} what it's for.`}
+            </p>
           </div>
         )}
-        <div className="flex items-center gap-[6px]">
-          <History size={12} aria-hidden className="text-muted" />
-          <span className="text-[11.5px] text-faint">Edited by you · 2 days ago · v7</span>
-        </div>
       </section>
 
       {/* Routines */}
@@ -114,7 +136,7 @@ export function JobTab({
           <div className="flex w-full flex-col rounded-lg outline-1 -outline-offset-1 outline-line-strong">
             {helper.routines.map((r, i) => (
               <div
-                key={r.label}
+                key={r.id}
                 className={`flex w-full items-center gap-[12px] px-[14px] py-[10px] ${
                   i < helper.routines.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
                 }`}
@@ -129,7 +151,7 @@ export function JobTab({
                 <span className={`text-[12px] ${r.nextRun ? 'text-ink-2' : 'text-warn'}`}>
                   {r.nextRun ?? 'Paused'}
                 </span>
-                <Switch on={!!r.nextRun} label={`${r.label} on`} />
+                <Switch on={!r.paused} label={`${r.label} on`} onChange={(v) => toggleRoutine(r.id, r.label, v)} />
               </div>
             ))}
           </div>
@@ -150,7 +172,8 @@ export function JobTab({
           <h3 className="m-0 text-[14px] font-semibold text-ink">Working files</h3>
           <span className="text-[12.5px] text-muted">{helper.name} keeps these up to date as it learns</span>
         </div>
-        {[files.slice(0, 2), files.slice(2, 4)].map((row, i) => (
+        {files.length === 0 && <span className="text-[12.5px] text-muted">Loading files…</span>}
+        {[files.slice(0, 2), files.slice(2, 4)].filter((row) => row.length > 0).map((row, i) => (
           <div key={i} className="flex w-full gap-[12px]">
             {row.map((f) => (
               <FileCard key={f.name} file={f} active={activeFile === f.name} onOpen={() => onOpenFile(f.name)} />

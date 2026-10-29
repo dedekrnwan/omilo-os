@@ -5,8 +5,19 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
 import { notify } from '../../ui/ds/Toaster'
-import type { Helper, HelperArea } from '../../core/domain/types'
-import { useCreateHelper, useHelpers } from '../../app/queries'
+import type { HelperArea } from '../../core/domain/types'
+import {
+  useCompanySettings,
+  useCreateHelper,
+  useHelpers,
+  useInbox,
+  useRetireHelper,
+  useUpdateHelperEverywhere,
+} from '../../app/queries'
+import { useSession } from '../../app/session'
+import { formatCredits } from '../analytics/format'
+import { buildHelperRecord, companyDefaultModel } from './model'
+import type { HelperRecord } from './teamData'
 import { StatusChip, TeamTopbar } from './StatusChip'
 import { Btn, Chip, IconBtn, Segmented } from './ui'
 import { HireDialog } from './HireDialog'
@@ -15,33 +26,21 @@ import type { HireSubmit } from './SetupDialog'
 import { RolesModelsDialog } from './RolesModelsDialog'
 import { LetGoDialog } from './LetGoDialog'
 
-// ── Adapter: Helper domain type → roster display shape ────────────────────────
-
-type RosterHelper = Helper & {
-  rosterStatus: 'Working' | 'Needs you' | 'Caught up' | 'Idle' | 'Always on' | 'Planning next week'
-  rosterMeta: string
-  roleArea: string
-  nowLabel: 'NOW' | 'NEXT'
-  now: string
-  cost: string
-}
-
-function toRosterHelper(h: Helper): RosterHelper {
-  const status = h.isChief ? 'Planning next week' : h.status === 'active' ? 'Working' : 'Idle'
-  return {
-    ...h,
-    rosterStatus: status as RosterHelper['rosterStatus'],
-    rosterMeta: h.role ?? '',
-    roleArea: h.role ?? h.area,
-    nowLabel: 'NOW',
-    now: '',
-    cost: '',
-  }
-}
+type RosterHelper = HelperRecord
 
 // ── Lead · Chief (pen FEsXM) ──────────────────────────────────────────────────
 
-function ChiefLead({ chief }: { chief: RosterHelper }) {
+function ChiefLead({
+  chief,
+  jobs,
+  waiting,
+  cost,
+}: {
+  chief: RosterHelper
+  jobs: number
+  waiting: number
+  cost: number
+}) {
   return (
     <Link
       to="/team/$helperId"
@@ -62,9 +61,9 @@ function ChiefLead({ chief }: { chief: RosterHelper }) {
       </div>
       <span className="h-[64px] w-px shrink-0 bg-line-strong" aria-hidden />
       <div className="flex shrink-0 gap-[28px]">
-        <Stat value="42" label="Jobs routed" />
-        <Stat value="2" label="Waiting on you" warn />
-        <Stat value="$88" label="This month" />
+        <Stat value={String(jobs)} label="Jobs routed" />
+        <Stat value={String(waiting)} label="Waiting on you" warn={waiting > 0} />
+        <Stat value={formatCredits(cost)} label="This month" />
       </div>
     </Link>
   )
@@ -142,14 +141,25 @@ function CardMoreMenu({
 function HelperCard({ helper }: { helper: RosterHelper }) {
   const area = helper.area as HelperArea
   const [menuOpen, setMenuOpen] = useState(false)
-  const [paused, setPaused] = useState(false)
   const [letGoOpen, setLetGoOpen] = useState(false)
+  const updateHelper = useUpdateHelperEverywhere()
+  const retire = useRetireHelper()
+  const paused = helper.paused
 
   function togglePause() {
     setMenuOpen(false)
-    setPaused((p) => {
-      notify(p ? `${helper.name} resumed` : `${helper.name} paused`)
-      return !p
+    updateHelper.mutate(
+      { id: helper.id, input: { status: paused ? 'active' : 'paused' } },
+      {
+        onSuccess: () => notify(paused ? `${helper.name} resumed` : `${helper.name} paused`),
+        onError: () => notify(`Couldn't ${paused ? 'resume' : 'pause'} ${helper.name}`),
+      },
+    )
+  }
+  function letGo() {
+    retire.mutate(helper.id, {
+      onSuccess: () => notify(`${helper.name} let go`),
+      onError: () => notify(`Couldn't let ${helper.name} go`),
     })
   }
   return (
@@ -197,7 +207,7 @@ function HelperCard({ helper }: { helper: RosterHelper }) {
           onLetGo={() => { setMenuOpen(false); setLetGoOpen(true) }}
         />
       )}
-      {letGoOpen && <LetGoDialog helper={helper} onClose={() => setLetGoOpen(false)} />}
+      {letGoOpen && <LetGoDialog helper={helper} onClose={() => setLetGoOpen(false)} onLetGo={letGo} />}
     </div>
   )
 }
@@ -265,6 +275,10 @@ export function TeamRoster() {
         area: input.area,
         role: input.role,
         jobDescription: input.jobDescription || undefined,
+        model: input.model || undefined,
+        reportsTo: input.reportsTo,
+        channels: input.channels,
+        look: input.look.color || input.look.picture ? input.look : undefined,
       },
       {
         onSuccess: () => {
@@ -276,10 +290,19 @@ export function TeamRoster() {
     )
   }
 
+  const companyName = useSession((st) => st.company?.name) ?? ''
+  const ownerName = useSession((st) => st.user?.name) ?? 'you'
+  const { data: settings } = useCompanySettings()
+  const { data: inbox = [] } = useInbox()
   const { data: rawHelpers, isLoading, isError } = useHelpers()
-  const allHelpers = (rawHelpers ?? []).map(toRosterHelper)
-  const chief = allHelpers.find((h) => h.isChief)
-  const reports = allHelpers.filter((h) => !h.isChief)
+  const live = rawHelpers ?? []
+  const ctx = { helpers: live, ownerName, defaultModel: companyDefaultModel(settings) }
+  const allHelpers = live.map((h) => buildHelperRecord(h, ctx))
+  const teamJobs = live.reduce((n, h) => n + (h.jobsMonth ?? 0), 0)
+  const teamCost = live.reduce((n, h) => n + (h.costMonth ?? 0), 0)
+  const waiting = inbox.filter((i) => i.needsYou && i.status === 'pending').length
+  const chief = allHelpers.find((h) => h.helper.isChief)
+  const reports = allHelpers.filter((h) => !h.helper.isChief)
   const shown = reports.filter((h) => matches(h, filter))
   const cells: (RosterHelper | 'hire')[] = [...shown, 'hire']
   const rows: (RosterHelper | 'hire')[][] = []
@@ -288,7 +311,7 @@ export function TeamRoster() {
   return (
     <>
       <Inset label="Team">
-        <TeamTopbar meta="Sahabat Warga" />
+        <TeamTopbar meta={companyName} />
         <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto">
           <div className="flex w-[1040px] max-w-full flex-col gap-[20px] py-[24px]">
             <div className="flex w-full items-end gap-[10px]">
@@ -328,7 +351,7 @@ export function TeamRoster() {
               </div>
             )}
 
-            {chief && <ChiefLead chief={chief} />}
+            {chief && <ChiefLead chief={chief} jobs={teamJobs} waiting={waiting} cost={teamCost} />}
 
             {!isLoading && !isError && (
               <div className="flex w-full items-center gap-[8px] pt-[8px]">

@@ -22,6 +22,9 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { ReposProvider } from '../../app/ReposProvider'
+import { CommandsProvider } from '../../app/CommandsProvider'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
+import type { Commands } from '../../adapters/http/commands'
 import type { Repos } from '../../core/ports/repos'
 import type { Helper } from '../../core/domain/types'
 import { HelperDetail } from './HelperDetail'
@@ -38,7 +41,24 @@ const CHIEF_HELPER: Helper = {
   isChief: true,
 }
 
+/** Stateful: updateHelper (via the commands below) mutates this record and the next read sees it. */
+let current: Helper | null = null
+
+function makeCommands(): Commands {
+  const c = createMockCommands()
+  c.updateHelper = vi.fn((_id: string, input) => {
+    if (current) {
+      if (input.status !== undefined) current.status = input.status
+      if (input.role !== undefined) current.role = input.role
+      if (input.model !== undefined) current.model = input.model || null
+    }
+    return Promise.resolve(current as Helper)
+  })
+  return c
+}
+
 function makeRepos(helper: Helper | null = CHIEF_HELPER): Repos {
+  current = helper ? { ...helper } : null
   return {
     channels: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
     folders: { listByChannel: vi.fn().mockResolvedValue([]), listAll: vi.fn().mockResolvedValue([]) },
@@ -60,9 +80,9 @@ function makeRepos(helper: Helper | null = CHIEF_HELPER): Repos {
     analytics: { overview: vi.fn().mockResolvedValue({ stats: [], series: [] }), helpers: vi.fn().mockResolvedValue([]) },
     skills: { list: vi.fn().mockResolvedValue([]), get: vi.fn().mockResolvedValue(null) },
     helpers: {
-      list: vi.fn().mockResolvedValue(helper ? [helper] : []),
+      list: vi.fn().mockImplementation(() => Promise.resolve(current ? [{ ...current }] : [])),
       get: vi.fn().mockImplementation((id: string) =>
-        Promise.resolve(helper?.id === id ? helper : null),
+        Promise.resolve(current?.id === id ? { ...current } : null),
       ),
     },
     members: { list: vi.fn().mockResolvedValue([]) },
@@ -70,7 +90,7 @@ function makeRepos(helper: Helper | null = CHIEF_HELPER): Repos {
 }
 
 /** Mount the HelperDetail for a given helperId via a minimal memory router. */
-function renderHelperDetail(helperId: string, repos?: Repos) {
+function renderHelperDetail(helperId: string, repos?: Repos, commands: Commands = makeCommands()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({
     notFoundComponent: () => <div data-testid="not-found">Not found</div>,
@@ -83,7 +103,9 @@ function renderHelperDetail(helperId: string, repos?: Repos) {
   return render(
     <QueryClientProvider client={queryClient}>
       <ReposProvider repos={repos ?? makeRepos()}>
-        <RouterProvider router={router} />
+        <CommandsProvider commands={commands}>
+          <RouterProvider router={router} />
+        </CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>,
   )
@@ -106,15 +128,17 @@ describe('HelperDetail — wired controls', () => {
     expect(screen.queryByTestId('not-found')).toBeNull()
   })
 
-  test('Picking a model option updates the pill label to the selected model', async () => {
-    renderHelperDetail('chief')
+  test('Picking a model option saves it and updates the pill label', async () => {
+    const commands = makeCommands()
+    renderHelperDetail('chief', undefined, commands)
     // Open the menu
     const pill = await screen.findByRole('button', { name: /Opus 5\.5/ })
     fireEvent.click(pill)
     // Pick Sonnet 5.5
     const sonnet = await screen.findByRole('menuitemradio', { name: /Sonnet 5\.5/ })
     fireEvent.click(sonnet)
-    // Pill now shows Sonnet (local model state updated)
+    // Saved through PATCH /v1/helpers/{id}, then the pill shows the saved model
+    await waitFor(() => expect(commands.updateHelper).toHaveBeenCalledWith('chief', { model: 'Sonnet 5.5' }))
     expect(await screen.findByRole('button', { name: /Sonnet 5\.5/ })).toBeInTheDocument()
     // Menu should eventually close (navigate sets state=undefined)
     await waitFor(() => {
@@ -133,14 +157,15 @@ describe('HelperDetail — wired controls', () => {
     expect(await screen.findByRole('button', { name: /^Pause$/ })).toBeInTheDocument()
   })
 
-  test('More-options menu opens with Pause and Let go items', async () => {
+  test('More-options menu opens with Pause, and no Let go for the Chief', async () => {
     renderHelperDetail('chief')
     const moreBtn = await screen.findByRole('button', { name: /More actions/i })
     fireEvent.click(moreBtn)
     const menu = await screen.findByRole('menu', { name: /More actions/i })
     expect(menu).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Pause Chief/i })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: /Let Chief go/i })).toBeInTheDocument()
+    // The Chief can't be let go
+    expect(screen.queryByRole('menuitem', { name: /Let Chief go/i })).toBeNull()
   })
 
   test('Role pill opens a role selector and picking updates the label', async () => {
@@ -153,7 +178,7 @@ describe('HelperDetail — wired controls', () => {
     // Pick Sales
     const salesOption = screen.getByRole('menuitemradio', { name: /^Sales$/i })
     fireEvent.click(salesOption)
-    // Menu closes and pill updates
+    // Menu closes, the role is saved and the pill updates
     expect(screen.queryByRole('menu', { name: /Select role/i })).toBeNull()
     expect(await screen.findByRole('button', { name: /Role · Sales/i })).toBeInTheDocument()
   })

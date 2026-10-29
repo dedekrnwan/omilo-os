@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, UserRound, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Building2, Check, ChevronDown, Cpu, Ellipsis, Feather, Pause, Play, UserMinus, Zap } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { Inset } from '../../ui/ds/Frame'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../../ui/ds/Menu'
-import type { Helper } from '../../core/domain/types'
-import { useHelper } from '../../app/queries'
-import type { HelperRecord, HelperTab } from './teamData'
+import { notify } from '../../ui/ds/Toaster'
+import {
+  useCompanySettings,
+  useHelperDetail,
+  useHelperFiles,
+  useHelpers,
+  useRetireHelper,
+  useUpdateHelperEverywhere,
+} from '../../app/queries'
+import { useSession } from '../../app/session'
+import type { HelperRecord, HelperTab, WorkingFile } from './teamData'
+import { MODEL_IDS, buildHelperRecord, companyDefaultModel } from './model'
 import { StatusChip, TeamTopbar } from './StatusChip'
 import { Btn, IconBtn } from './ui'
 import { JobTab } from './tabs/JobTab'
@@ -28,35 +37,6 @@ import { LetGoDialog } from './LetGoDialog'
  * email (WruOn) · browse (uvNJ3) · letgo (HX7PZ).
  */
 export type HelperState = 'model' | 'playbook' | 'telegram' | 'whatsapp' | 'email' | 'browse' | 'letgo'
-
-/**
- * Adapt a live Helper domain type to the HelperRecord display shape.
- * Fields not present in the API (routines, files, cost, etc.) are given
- * safe defaults so the tab UIs remain unchanged.
- */
-function helperToRecord(h: Helper): HelperRecord {
-  return {
-    id: h.id,
-    name: h.name,
-    area: h.area,
-    roleIcon: UserRound,
-    role: h.role ?? h.area,
-    roleArea: h.role ?? h.area,
-    status: (h.status === 'active' ? 'Working' : h.status === 'paused' ? 'Idle' : 'Idle') as HelperRecord['status'],
-    rosterStatus: 'Working',
-    model: 'Opus 5.5',
-    statsLine: `${h.jobs ?? 0} jobs · ${h.success ?? 0}% success`,
-    nowLabel: 'NOW',
-    now: h.jobDescription ?? '',
-    rosterMeta: h.role ?? '',
-    cost: '',
-    description: h.jobDescription ?? '',
-    routinesNote: '',
-    routines: [],
-    files: [],
-    counts: { channels: '—', tools: '—', skills: '—' },
-  }
-}
 
 const TABS: { id: HelperTab; label: string; count?: keyof HelperRecord['counts'] }[] = [
   { id: 'job', label: 'Job' },
@@ -96,11 +76,8 @@ function Pill({
   )
 }
 
-const MODELS = [
-  { id: 'Opus 5.5', icon: Zap, hint: undefined },
-  { id: 'Sonnet 5.5', icon: Zap, hint: '~3× cheaper' },
-  { id: 'Haiku 5.5', icon: Feather, hint: 'Fastest' },
-] as const
+const MODEL_HINT: Record<string, string | undefined> = { 'Sonnet 5.5': '~3× cheaper', 'Haiku 5.5': 'Fastest' }
+const MODELS = MODEL_IDS.map((id) => ({ id, icon: id === 'Haiku 5.5' ? Feather : Zap, hint: MODEL_HINT[id] }))
 
 /** Model menu — pen dcvvQ Popover TTWx4 (260 wide, 6px under the pill). */
 function ModelMenu({
@@ -155,7 +132,7 @@ function ModelMenu({
         </button>
       ))}
       <MenuSeparatorLine />
-      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onPick(helper.model); onClose() }}>
+      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onPick(''); onClose() }}>
         <MenuItemBody icon={Building2} label="Use company default" />
       </button>
       <button
@@ -242,7 +219,8 @@ function MoreMenu({
   helperName: string
   paused: boolean
   onTogglePause: () => void
-  onLetGo: () => void
+  /** Absent for the Chief, who can't be let go. */
+  onLetGo?: () => void
   onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -268,10 +246,14 @@ function MoreMenu({
       <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onTogglePause(); onClose() }}>
         <MenuItemBody icon={paused ? Play : Pause} label={paused ? `Resume ${helperName}` : `Pause ${helperName}`} />
       </button>
-      <MenuSeparatorLine />
-      <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onLetGo(); onClose() }}>
-        <MenuItemBody icon={UserMinus} label={`Let ${helperName} go`} danger />
-      </button>
+      {onLetGo && (
+        <>
+          <MenuSeparatorLine />
+          <button type="button" role="menuitem" className={menuItemClass} onClick={() => { onLetGo(); onClose() }}>
+            <MenuItemBody icon={UserMinus} label={`Let ${helperName} go`} danger />
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -293,12 +275,31 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
   const setState = (st?: HelperState) => go({ state: st })
   const close = () => setState(undefined)
 
-  // Local state for controls
-  const [paused, setPaused] = useState(false)
-  const [model, setModel] = useState(helper.model)
-  const [role, setRole] = useState(helper.role)
+  const updateHelper = useUpdateHelperEverywhere()
+  const retire = useRetireHelper()
+  const paused = helper.paused
+  const isChief = !!helper.helper.isChief
   const [showRoleMenu, setShowRoleMenu] = useState(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [openFile, setOpenFile] = useState<WorkingFile['name']>('PLAYBOOK.md')
+
+  const patch = (input: Parameters<typeof updateHelper.mutate>[0]['input'], ok: string) =>
+    updateHelper.mutate(
+      { id: helper.id, input },
+      { onSuccess: () => notify(ok), onError: () => notify(`Couldn't update ${helper.name}`) },
+    )
+  const togglePause = () =>
+    patch({ status: paused ? 'active' : 'paused' }, paused ? `${helper.name} resumed` : `${helper.name} paused`)
+  const letGo = () =>
+    retire.mutate(helper.id, {
+      onSuccess: () => {
+        notify(`${helper.name} let go`)
+        void navigate({ to: '/team' })
+      },
+      onError: () => notify(`Couldn't let ${helper.name} go`),
+    })
+  const role = helper.helper.role || helper.role
+  const model = helper.model
 
   return (
     <>
@@ -313,7 +314,7 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
                 <span className="text-[13px]">Team</span>
               </Link>
               <span className="h-px flex-1" />
-              <Btn icon={paused ? Play : Pause} h={30} onClick={() => setPaused((p) => !p)}>
+              <Btn icon={paused ? Play : Pause} h={30} onClick={togglePause}>
                 {paused ? 'Resume' : 'Pause'}
               </Btn>
               <div className="relative">
@@ -326,8 +327,8 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
                   <MoreMenu
                     helperName={helper.name}
                     paused={paused}
-                    onTogglePause={() => setPaused((p) => !p)}
-                    onLetGo={() => { setShowMoreMenu(false); setState('letgo') }}
+                    onTogglePause={togglePause}
+                    onLetGo={isChief ? undefined : () => { setShowMoreMenu(false); setState('letgo') }}
                     onClose={() => setShowMoreMenu(false)}
                   />
                 )}
@@ -349,7 +350,7 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
                   {showRoleMenu && (
                     <RoleMenu
                       currentRole={role}
-                      onPick={setRole}
+                      onPick={(r) => patch({ role: r }, `${helper.name} is now ${r}`)}
                       onClose={() => setShowRoleMenu(false)}
                     />
                   )}
@@ -365,12 +366,12 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
                     <ModelMenu
                       helper={helper}
                       currentModel={model}
-                      onPick={setModel}
+                      onPick={(m) => patch({ model: m }, m ? `${helper.name} now uses ${m}` : `${helper.name} uses the company default`)}
                       onClose={close}
                     />
                   )}
                 </div>
-                <StatusChip status={helper.status} />
+                {paused ? <StatusChip status="Idle" label="Paused" /> : <StatusChip status={helper.status} />}
               </div>
               <p className="m-0 text-[12.5px] text-muted">{helper.statsLine}</p>
             </div>
@@ -405,25 +406,30 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
             {tab === 'job' && (
               <JobTab
                 helper={helper}
-                activeFile={state === 'playbook' ? 'PLAYBOOK.md' : undefined}
-                onOpenFile={(f) => f === 'PLAYBOOK.md' && setState('playbook')}
+                activeFile={state === 'playbook' ? openFile : undefined}
+                onOpenFile={(f) => {
+                  setOpenFile(f)
+                  setState('playbook')
+                }}
               />
             )}
             {tab === 'channels' && <ChannelsTab helper={helper} onConnect={(c) => setState(c)} />}
             {tab === 'behavior' && <BehaviorTab helper={helper} />}
             {tab === 'tools' && <ToolsTab helper={helper} />}
             {tab === 'skills' && <SkillsTab helper={helper} onBrowse={() => setState('browse')} />}
-            {tab === 'profile' && <ProfileTab helper={helper} onLetGo={() => setState('letgo')} />}
+            {tab === 'profile' && (
+              <ProfileTab helper={helper} onLetGo={isChief ? undefined : () => setState('letgo')} onTogglePause={togglePause} />
+            )}
           </div>
         </div>
       </Inset>
 
-      {state === 'playbook' && <PlaybookDrawer helper={helper} onClose={close} />}
+      {state === 'playbook' && <PlaybookDrawer helper={helper} file={openFile} onClose={close} />}
       {state === 'telegram' && <ConnectTelegramDialog helper={helper} onClose={close} />}
       {state === 'whatsapp' && <ConnectWhatsAppDialog helper={helper} onClose={close} />}
       {state === 'email' && <ConnectEmailDialog helper={helper} onClose={close} />}
       {state === 'browse' && <BrowseSkillsDialog helper={helper} onClose={close} />}
-      {state === 'letgo' && <LetGoDialog helper={helper} onClose={close} />}
+      {state === 'letgo' && !isChief && <LetGoDialog helper={helper} onClose={close} onLetGo={letGo} />}
     </>
   )
 }
@@ -438,7 +444,11 @@ function HelperDetailPage({ helper }: { helper: HelperRecord }) {
 export function HelperDetail() {
   const params = useParams({ strict: false }) as { helperId?: string }
   const id = params.helperId ?? ''
-  const { data: rawHelper, isLoading, isError } = useHelper(id)
+  const { data: detail, isLoading, isError } = useHelperDetail(id)
+  const { data: team = [] } = useHelpers()
+  const { data: files = [] } = useHelperFiles(id)
+  const { data: settings } = useCompanySettings()
+  const ownerName = useSession((st) => st.user?.name) ?? 'you'
 
   if (isLoading) {
     return (
@@ -451,12 +461,12 @@ export function HelperDetail() {
     )
   }
 
-  if (isError || !rawHelper) {
+  if (isError || !detail || detail.helper.status === 'retired') {
     return (
       <Inset label="Team">
         <TeamTopbar meta="Not found" />
         <div className="flex flex-1 items-center justify-center gap-[4px] text-[13px] text-muted">
-          Helper not found.
+          {detail?.helper.status === 'retired' ? `${detail.helper.name} was let go.` : 'Helper not found.'}
           <Link to="/team" className="text-link hover:underline">
             Back to Team
           </Link>
@@ -465,6 +475,11 @@ export function HelperDetail() {
     )
   }
 
-  const helper = helperToRecord(rawHelper)
+  const helper = buildHelperRecord(
+    detail.helper,
+    { helpers: team, ownerName, defaultModel: companyDefaultModel(settings) },
+    detail,
+    files,
+  )
   return <HelperDetailPage key={helper.id} helper={helper} />
 }

@@ -3,39 +3,40 @@ import { ArrowUpRight, Cpu, Info } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../../ui/ds/Mascot'
 import { notify } from '../../ui/ds/Toaster'
-import { useUpdateHelper } from '../../app/queries'
-import { HELPER_MODEL_ROWS } from './teamData'
+import { useCompanySettings, useHelpers, useUpdateCompanySettings, useUpdateHelper } from '../../app/queries'
+import { MODEL_IDS, companyDefaultModel } from './model'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, SelectField } from './ui'
 import type { SelectOption } from './ui'
 
-const MODEL_OPTIONS: readonly SelectOption[] = [
-  { value: 'Opus 5.5', label: 'Opus 5.5' },
-  { value: 'Sonnet 5.5', label: 'Sonnet 5.5' },
-  { value: 'Haiku 5.5', label: 'Haiku 5.5' },
-]
+const COMPANY_DEFAULT_OPTIONS: readonly SelectOption[] = MODEL_IDS.map((m) => ({ value: m, label: `${m} · Anthropic` }))
 
-const COMPANY_DEFAULT_OPTIONS: readonly SelectOption[] = [
-  { value: 'Opus 5.5 · Anthropic', label: 'Opus 5.5 · Anthropic' },
-  { value: 'Sonnet 5.5 · Anthropic', label: 'Sonnet 5.5 · Anthropic' },
-  { value: 'Haiku 5.5 · Anthropic', label: 'Haiku 5.5 · Anthropic' },
-]
-
-/** Roles & models — pen JYwEe (Drawer a3egX). */
+/** Roles & models — pen JYwEe (Drawer a3egX). Rows are the live team. */
 export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
   const updateHelper = useUpdateHelper()
-  const [companyDefault, setCompanyDefault] = useState('Opus 5.5 · Anthropic')
-  const [models, setModels] = useState<Record<string, string>>(() =>
-    Object.fromEntries(HELPER_MODEL_ROWS.map((r) => [r.helperId, r.model])),
-  )
+  const updateSettings = useUpdateCompanySettings()
+  const { data: team = [], isLoading } = useHelpers()
+  const { data: settings } = useCompanySettings()
+  const savedDefault = companyDefaultModel(settings)
+  const [companyDefaultState, setCompanyDefault] = useState<string | null>(null)
+  const companyDefault = companyDefaultState ?? savedDefault
+  // '' = follow the company default
+  const [edits, setModels] = useState<Record<string, string>>({})
+  const modelOf = (id: string, saved: string | null | undefined) => edits[id] ?? saved ?? ''
+  const modelOptions: SelectOption[] = [
+    { value: '', label: `Default · ${companyDefault}` },
+    ...MODEL_IDS.map((m) => ({ value: m, label: m })),
+  ]
 
   const save = () => {
-    const changed = HELPER_MODEL_ROWS.filter((r) => models[r.helperId] !== r.model)
-    Promise.all(
-      changed.map((r) => updateHelper.mutateAsync({ id: r.helperId, input: { model: models[r.helperId] } })),
-    )
+    const changed = team.filter((h) => edits[h.id] !== undefined && edits[h.id] !== (h.model ?? ''))
+    const defaultChanged = companyDefault !== savedDefault
+    Promise.all([
+      ...changed.map((h) => updateHelper.mutateAsync({ id: h.id, input: { model: edits[h.id] } })),
+      ...(defaultChanged ? [updateSettings.mutateAsync({ aiEngine: { defaultModel: companyDefault } })] : []),
+    ])
       .then(() => {
-        notify(changed.length ? 'Models updated' : 'Nothing to save')
+        notify(changed.length || defaultChanged ? 'Models updated' : 'Nothing to save')
         onClose()
       })
       .catch(() => notify("Couldn't update models"))
@@ -69,8 +70,8 @@ export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" onClick={save} disabled={updateHelper.isPending}>
-            {updateHelper.isPending ? 'Saving…' : 'Save'}
+          <Btn variant="primary" onClick={save} disabled={updateHelper.isPending || updateSettings.isPending}>
+            {updateHelper.isPending || updateSettings.isPending ? 'Saving…' : 'Save'}
           </Btn>
         </>
       }
@@ -86,22 +87,26 @@ export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
       />
       <Eyebrow>PER HELPER</Eyebrow>
       <div className="flex w-full flex-col rounded-lg px-[14px] outline-1 -outline-offset-1 outline-line-strong">
-        {HELPER_MODEL_ROWS.map((r, i) => (
+        {isLoading && <span className="py-[12px] text-[12.5px] text-muted">Loading helpers…</span>}
+        {!isLoading && team.length === 0 && (
+          <span className="py-[12px] text-[12.5px] text-muted">No helpers yet.</span>
+        )}
+        {team.map((h, i) => (
           <div
-            key={r.helperId}
+            key={h.id}
             className={`flex w-full items-center gap-[12px] py-[10px] ${
-              i < HELPER_MODEL_ROWS.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
+              i < team.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
             }`}
           >
-            <Mascot helper size={28} radius={7} area={r.area} title={r.name} />
+            <Mascot helper size={28} radius={7} area={h.area} title={h.name} />
             <div className="flex min-w-0 flex-1 flex-col gap-[1px]">
-              <span className="text-[13px] font-medium text-ink">{r.name}</span>
-              <span className="text-[12px] text-muted">{r.description}</span>
+              <span className="text-[13px] font-medium text-ink">{h.name}</span>
+              <span className="truncate text-[12px] text-muted">{h.title || h.role || h.area}</span>
             </div>
             <SelectField
-              value={models[r.helperId]}
-              options={MODEL_OPTIONS}
-              onChange={(v) => setModels((prev) => ({ ...prev, [r.helperId]: v }))}
+              value={modelOf(h.id, h.model)}
+              options={modelOptions}
+              onChange={(v) => setModels((prev) => ({ ...prev, [h.id]: v }))}
               width={170}
             />
           </div>

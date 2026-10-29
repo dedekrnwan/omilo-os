@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { ChevronUp, CircleHelp, Copy, Link2, Mail } from 'lucide-react'
+import { ChevronUp, CircleHelp, Link2, Mail } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
 import { notify } from '../../../ui/ds/Toaster'
+import { useConnectHelperChannel } from '../../../app/queries'
+import { useSession } from '../../../app/session'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, InputField } from '../ui'
 import { ChannelLogo } from '../tabs/ChannelsTab'
 
@@ -9,14 +11,23 @@ import { ChannelLogo } from '../tabs/ChannelsTab'
 export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const n = helper.name
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
-  const [fromName, setFromName] = useState(`Sahabat Warga ${n}`)
-  const [signature, setSignature] = useState(`— ${n}, Sahabat Warga · replies within 1 hour`)
-  // Email provider OAuth isn't live yet — we capture the connection intent/config
-  // and surface an honest pending state rather than fake a live handshake.
-  const connect = () => {
-    notify('Email connection saved — pending provider setup')
-    onClose()
-  }
+  const company = useSession((st) => st.company?.name) ?? ''
+  const [fromName, setFromName] = useState(company ? `${company} ${n}` : n)
+  const [signature, setSignature] = useState(`— ${n}${company ? `, ${company}` : ''}`)
+  const connectChannel = useConnectHelperChannel(helper.id)
+  // Email provider OAuth / inbound mail isn't live yet — we save the binding and
+  // its settings and show an honest "pending setup" state rather than fake a handshake.
+  const connect = (method: 'google' | 'microsoft' | 'forward') =>
+    connectChannel.mutate(
+      { kind: 'email', config: { method, from_name: fromName.trim(), signature: signature.trim() } },
+      {
+        onSuccess: () => {
+          notify('Email saved — pending provider setup')
+          onClose()
+        },
+        onError: () => notify("Couldn't save the email channel"),
+      },
+    )
   return (
     <Drawer
       width={520}
@@ -41,7 +52,7 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" icon={Link2} onClick={connect}>
+          <Btn variant="primary" icon={Link2} onClick={() => connect('forward')} disabled={connectChannel.isPending}>
             Connect email
           </Btn>
         </>
@@ -58,10 +69,10 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
       <div className="flex w-full flex-col gap-[8px]">
         <Eyebrow>HOW TO CONNECT</Eyebrow>
         <div className="flex w-full gap-[8px]">
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={connect}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => connect('google')}>
             Sign in with Google Workspace
           </Btn>
-          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={connect}>
+          <Btn icon={Mail} h={40} className="min-w-0 flex-1" onClick={() => connect('microsoft')}>
             Sign in with Microsoft 365
           </Btn>
         </div>
@@ -71,23 +82,11 @@ export function ConnectEmailDialog({ helper, onClose }: { helper: HelperRecord; 
           <span className="h-px flex-1 bg-line" />
         </div>
         <div className="flex w-full flex-col gap-[8px] rounded-md bg-soft p-[14px] outline-1 -outline-offset-1 outline-line">
-          <span className="text-[12.5px] text-ink-2">Forward support@sahabatwarga.id to this address:</span>
-          <div className="flex w-full items-center gap-[8px] rounded-base bg-surface px-[10px] py-[8px] outline-1 -outline-offset-1 outline-line-strong">
-            <span className="min-w-0 flex-1 font-mono text-[13px] text-ink">support-sw7k@in.omilo.app</span>
-            <Btn
-              variant="quiet"
-              icon={Copy}
-              h={26}
-              px={8}
-              fs={12}
-              onClick={() => void navigator.clipboard?.writeText('support-sw7k@in.omilo.app')}
-            >
-              Copy
-            </Btn>
-          </div>
-          <span className="text-[12px] text-muted">
-            Replies go out from support@sahabatwarga.id once you verify the domain.
+          <span className="text-[12.5px] text-ink-2">
+            Forward your support address to {n}. Omilo shows the forwarding address here once inbound email is
+            switched on for your workspace.
           </span>
+          <span className="text-[12px] text-muted">Replies go out from your own domain once you verify it.</span>
         </div>
       </div>
       <div className="flex w-full flex-col gap-[12px]">

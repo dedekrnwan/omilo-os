@@ -1,23 +1,29 @@
 import { useState } from 'react'
-import { CircleHelp, History, MessageCircle, QrCode, ShieldCheck, UserCheck } from 'lucide-react'
+import { CircleHelp, History, Link2, MessageCircle, QrCode, ShieldCheck, UserCheck } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
+import { notify } from '../../../ui/ds/Toaster'
+import { useConnectHelperChannel } from '../../../app/queries'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, Radio, choiceRing } from '../ui'
 import { ChannelLogo, WA_GREEN } from '../tabs/ChannelsTab'
-
-/** pen `Spinner` (g4C5A): 14px ring, 90° ink arc. */
-function Spinner() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 14 14" className="shrink-0 animate-spin" aria-hidden>
-      <circle cx="7" cy="7" r="5.74" fill="none" stroke="var(--color-line-strong)" strokeWidth="2.52" />
-      <path d="M11.06 2.94A5.74 5.74 0 0 0 2.94 2.94" fill="none" stroke="var(--color-ink)" strokeWidth="2.52" />
-    </svg>
-  )
-}
 
 /** Channels · WhatsApp — pen pyuhG (Channel Drawer taFU5, 520 wide). */
 export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const n = helper.name
   const [method, setMethod] = useState<'app' | 'cloud'>('app')
+  const connectChannel = useConnectHelperChannel(helper.id)
+  // WhatsApp linking (QR / Cloud API) isn't live yet: save the binding as
+  // "pending setup" so the choice is kept, without pretending a scan happened.
+  const save = () =>
+    connectChannel.mutate(
+      { kind: 'whatsapp', config: { method } },
+      {
+        onSuccess: () => {
+          notify(`WhatsApp saved for ${n} — pending setup`)
+          onClose()
+        },
+        onError: () => notify("Couldn't save WhatsApp"),
+      },
+    )
   const methods = [
     { id: 'app' as const, t: 'WhatsApp Business app', d: 'Scan a QR code with the phone that runs your business number. Best for small teams.' },
     { id: 'cloud' as const, t: 'WhatsApp Cloud API', d: 'For higher volume. Needs a verified Meta Business account and a dedicated number.' },
@@ -36,7 +42,7 @@ export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecor
       head={
         <>
           <ChannelLogo icon={MessageCircle} bg={WA_GREEN} />
-          <DrawerTitle title="Connect WhatsApp Business" sub={`Residents message ${n} on your business number`} />
+          <DrawerTitle title="Connect WhatsApp Business" sub={`Customers message ${n} on your business number`} />
           <DrawerClose onClose={onClose} />
         </>
       }
@@ -51,6 +57,9 @@ export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecor
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" icon={Link2} onClick={save} disabled={connectChannel.isPending}>
+            Save WhatsApp
+          </Btn>
         </>
       }
     >
@@ -75,7 +84,7 @@ export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecor
       </div>
       <div className="flex w-full items-center gap-[18px] rounded-lg bg-soft p-[16px] outline-1 -outline-offset-1 outline-line">
         <div className="flex size-[148px] shrink-0 items-center justify-center rounded-md bg-white outline-1 -outline-offset-1 outline-line-strong">
-          <QrCode size={124} aria-label="QR code" className="text-ink" />
+          <QrCode size={124} aria-label="QR code placeholder" className="text-faint" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[8px]">
           {['Open WhatsApp Business on your phone', 'Tap ⋮ → Linked devices', 'Tap Link a device and point it here'].map(
@@ -86,10 +95,9 @@ export function ConnectWhatsAppDialog({ helper, onClose }: { helper: HelperRecor
               </div>
             ),
           )}
-          <div className="flex items-center gap-[8px] pt-[6px]">
-            <Spinner />
-            <span className="text-[12px] text-muted">Waiting for scan · new code in 0:45</span>
-          </div>
+          <span className="pt-[6px] text-[12px] text-muted">
+            Linking by QR isn't switched on yet. Save now and {n} starts on WhatsApp once it is.
+          </span>
         </div>
       </div>
       <div className="flex w-full flex-col gap-[8px]">

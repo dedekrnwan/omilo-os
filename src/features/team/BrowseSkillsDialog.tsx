@@ -1,22 +1,31 @@
 import { useState } from 'react'
-import { BadgeDollarSign, BookOpenCheck, CalendarCheck, Check, Info, Languages, Pencil, Plus, QrCode, Search } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { BookOpenCheck, Check, Info, Pencil, Plus, Search } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { useHelperSkillRows, useHelpers, useSetHelperSkills, useSkills } from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
 import type { HelperRecord } from './teamData'
 import { Btn, Chip, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, InputField } from './ui'
 
-const SUGGESTED: { name: string; desc: string; meta: string; icon: LucideIcon; added?: boolean }[] = [
-  { name: 'Refund check', desc: 'Checks Midtrans before promising a refund', meta: 'Saga · 4.8 · 1.2k teams', icon: BadgeDollarSign },
-  { name: 'Facility booking', desc: 'Books the hall or field and confirms on WhatsApp', meta: 'Saga · 4.7 · 860 teams', icon: CalendarCheck },
-  { name: 'Translate replies', desc: 'Answers in English, Javanese or Sundanese', meta: 'Saga · 4.9 · 2.1k teams', icon: Languages, added: true },
-  { name: 'Visitor pass', desc: 'Creates a guest QR pass for the security post', meta: 'Your company · Written by you', icon: QrCode },
-]
-
-/** Browse skills — pen uvNJ3 (Drawer nsZwE). */
+/** Browse skills — pen uvNJ3 (Drawer nsZwE). Lists the company's skills; Add attaches one to this helper. */
 export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
   const navigate = useNavigate()
   const n = helper.name
-  const [added, setAdded] = useState(new Set(SUGGESTED.filter((s) => s.added).map((s) => s.name)))
+  const [q, setQ] = useState('')
+  const { data: all = [], isLoading } = useSkills()
+  const { data: mine = [] } = useHelperSkillRows(helper.id)
+  const { data: team = [] } = useHelpers()
+  const setSkills = useSetHelperSkills(helper.id)
+  const added = new Set(mine.map((s) => s.id))
+  const query = q.trim().toLowerCase()
+  const list = all.filter((s) => !query || s.name.toLowerCase().includes(query))
+  const ownerOf = (helperId: string) => team.find((h) => h.id === helperId)?.name
+
+  const add = (id: string, name: string) =>
+    setSkills.mutate([{ id, enabled: true, permission: 'ask' }], {
+      onSuccess: () => notify(`${name} added to ${n}`),
+      onError: () => notify(`Couldn't add ${name}`),
+    })
+
   return (
     <Drawer
       label={`Add a skill to ${n}`}
@@ -43,26 +52,34 @@ export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; 
         </>
       }
     >
-      <InputField icon={Search} placeholder="Search skills" className="w-full" />
-      <Eyebrow>SUGGESTED FOR {n.toUpperCase()}</Eyebrow>
+      <InputField icon={Search} placeholder="Search skills" value={q} onChange={setQ} className="w-full" />
+      <Eyebrow>COMPANY SKILLS</Eyebrow>
       <div className="flex w-full flex-col rounded-lg px-[14px] outline-1 -outline-offset-1 outline-line-strong">
-        {SUGGESTED.map((s, i) => (
+        {isLoading && <span className="py-[12px] text-[12.5px] text-muted">Loading skills…</span>}
+        {!isLoading && list.length === 0 && (
+          <span className="py-[12px] text-[12.5px] text-muted">
+            {query ? 'No skills match.' : 'No company skills yet — write one in Control panel → Skills.'}
+          </span>
+        )}
+        {list.map((s, i) => (
           <div
-            key={s.name}
-            className={`flex w-full items-center gap-[12px] py-[12px] ${i < SUGGESTED.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
+            key={s.id}
+            className={`flex w-full items-center gap-[12px] py-[12px] ${i < list.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
           >
-            <IconTile icon={s.icon} />
+            <IconTile icon={BookOpenCheck} />
             <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
               <span className="text-[13px] font-semibold text-ink">{s.name}</span>
-              <span className="text-[12.5px] text-ink-2">{s.desc}</span>
-              <span className="text-[11.5px] text-faint">{s.meta}</span>
+              <span className="text-[11.5px] text-faint">
+                v{s.version} · {s.status}
+                {ownerOf(s.helperId) ? ` · learned by ${ownerOf(s.helperId)}` : ''} · used {s.usageCount}×
+              </span>
             </div>
-            {added.has(s.name) ? (
+            {added.has(s.id) ? (
               <Chip tone="ok" icon={Check} className="self-center">
                 Added
               </Chip>
             ) : (
-              <Btn icon={Plus} h={30} onClick={() => setAdded((a) => new Set(a).add(s.name))}>
+              <Btn icon={Plus} h={30} onClick={() => add(s.id, s.name)} disabled={setSkills.isPending}>
                 Add
               </Btn>
             )}

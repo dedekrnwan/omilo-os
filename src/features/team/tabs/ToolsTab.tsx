@@ -1,23 +1,43 @@
-import { useState } from 'react'
-import { ArrowUpRight, Building2, CreditCard, Database, Globe, HardDrive, MessageCircle, Notebook, Search, Terminal } from 'lucide-react'
+import { ArrowUpRight, Building2, Globe, Plug, Search, Terminal } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { useHelperTools, useSetHelperTools } from '../../../app/queries'
+import { notify } from '../../../ui/ds/Toaster'
 import type { HelperRecord } from '../teamData'
-import { GithubIcon } from '../brandIcons'
 import { Btn, Chip, SelectField, Switch } from '../ui'
+import type { SelectOption } from '../ui'
 
 interface ToolRow {
+  id: string
   name: string
   desc: string
   icon: LucideIcon
   bg?: string
+  /** 'read' | 'write' | 'ask' for company connectors; undefined for built-ins. */
   access?: string
   on: boolean
   mcp?: boolean
 }
 
-function Row({ t, last }: { t: ToolRow; last: boolean }) {
-  const [on, setOn] = useState(t.on)
+const ACCESS_OPTIONS: readonly SelectOption[] = [
+  { value: 'write', label: 'Can act' },
+  { value: 'read', label: 'Read only' },
+  { value: 'ask', label: 'Ask first' },
+]
+const BUILTIN_ICON: Record<string, LucideIcon> = { browser: Globe, web_search: Search, code_runner: Terminal }
+
+function Row({
+  t,
+  last,
+  onToggle,
+  onAccess,
+}: {
+  t: ToolRow
+  last: boolean
+  onToggle: (on: boolean) => void
+  onAccess?: (access: string) => void
+}) {
+  const on = t.on
   return (
     <div className={`flex w-full items-center gap-[12px] py-[12px] ${last ? '' : 'shadow-[inset_0_-1px_0_var(--color-line)]'}`}>
       <span
@@ -37,13 +57,35 @@ function Row({ t, last }: { t: ToolRow; last: boolean }) {
         </div>
         <span className="text-[12px] text-muted">{t.desc}</span>
       </div>
-      {t.access && <SelectField value={t.access} width={150} style={{ opacity: on ? 1 : 0.5 }} />}
-      <Switch on={on} onChange={setOn} label={`${t.name} on`} />
+      {t.access && (
+        <SelectField
+          value={t.access}
+          options={ACCESS_OPTIONS}
+          onChange={(v) => on && onAccess?.(v)}
+          width={150}
+          style={{ opacity: on ? 1 : 0.5 }}
+        />
+      )}
+      <Switch on={on} onChange={onToggle} label={`${t.name} on`} />
     </div>
   )
 }
 
-function Group({ title, desc, rows }: { title: string; desc: string; rows: ToolRow[] }) {
+function Group({
+  title,
+  desc,
+  rows,
+  empty,
+  onToggle,
+  onAccess,
+}: {
+  title: string
+  desc: string
+  rows: ToolRow[]
+  empty?: string
+  onToggle: (t: ToolRow, on: boolean) => void
+  onAccess?: (t: ToolRow, access: string) => void
+}) {
   return (
     <section className="flex w-full flex-col gap-[10px]">
       <div className="flex w-full items-center gap-[8px]">
@@ -51,8 +93,15 @@ function Group({ title, desc, rows }: { title: string; desc: string; rows: ToolR
         <span className="text-[12.5px] text-muted">{desc}</span>
       </div>
       <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
+        {rows.length === 0 && empty && <span className="py-[12px] text-[12.5px] text-muted">{empty}</span>}
         {rows.map((t, i) => (
-          <Row key={t.name} t={t} last={i === rows.length - 1} />
+          <Row
+            key={t.id}
+            t={t}
+            last={i === rows.length - 1}
+            onToggle={(v) => onToggle(t, v)}
+            onAccess={onAccess ? (a) => onAccess(t, a) : undefined}
+          />
         ))}
       </div>
     </section>
@@ -63,19 +112,34 @@ function Group({ title, desc, rows }: { title: string; desc: string; rows: ToolR
 export function ToolsTab({ helper }: { helper: HelperRecord }) {
   const navigate = useNavigate()
   const n = helper.name
-  const company: ToolRow[] = [
-    { name: 'WhatsApp Business', desc: 'Read and reply to resident chats', icon: MessageCircle, bg: '#25D366', access: 'Can act', on: true },
-    { name: 'Notion', desc: 'Look up the resident handbook and FAQ', icon: Notebook, access: 'Read only', on: true },
-    { name: 'Google Drive', desc: 'Find letters and forms to send', icon: HardDrive, access: 'Read only', on: true },
-    { name: 'Midtrans', desc: "Check if a resident's dues are paid", icon: CreditCard, access: 'Ask first', on: true },
-    { name: 'sahabat-db', desc: 'Resident & unit records, read-only queries', icon: Database, access: 'Read only', on: true, mcp: true },
-    { name: 'GitHub', desc: `Not needed for ${n}'s job`, icon: GithubIcon, access: 'Read only', on: false },
-  ]
-  const builtIn: ToolRow[] = [
-    { name: 'Browser', desc: 'Open pages and fill simple forms', icon: Globe, on: true },
-    { name: 'Web search', desc: 'Look things up when the handbook has no answer', icon: Search, on: true },
-    { name: 'Code runner', desc: 'Run small scripts on files', icon: Terminal, on: false },
-  ]
+  const { data, isLoading } = useHelperTools(helper.id)
+  const setTools = useSetHelperTools(helper.id)
+  const company: ToolRow[] = (data?.connectors ?? []).map((c) => ({
+    id: c.id,
+    name: c.label,
+    desc: c.status === 'connected' ? `Connected for the company` : `Needs sign-in in Connectors`,
+    icon: Plug,
+    access: c.access,
+    on: c.on,
+    mcp: c.kind === 'mcp',
+  }))
+  const builtIn: ToolRow[] = (data?.builtins ?? []).map((b) => ({
+    id: b.id,
+    name: b.label,
+    desc: b.desc,
+    icon: BUILTIN_ICON[b.id] ?? Globe,
+    on: b.on,
+  }))
+  const fail = () => notify(`Couldn't update ${n}'s tools`)
+  const toggleConnector = (t: ToolRow, on: boolean) =>
+    setTools.mutate({ connectors: [{ id: t.id, on, access: t.access }] }, { onError: fail })
+  const setAccess = (t: ToolRow, access: string) =>
+    setTools.mutate({ connectors: [{ id: t.id, on: true, access }] }, { onError: fail })
+  const toggleBuiltin = (t: ToolRow, on: boolean) => setTools.mutate({ builtins: { [t.id]: on } }, { onError: fail })
+  const mcpCount = company.filter((c) => c.mcp).length
+  const companyDesc = isLoading
+    ? 'Loading…'
+    : `${company.length - mcpCount} connector${company.length - mcpCount === 1 ? '' : 's'}${mcpCount ? ` · ${mcpCount} MCP server${mcpCount === 1 ? '' : 's'}` : ''}`
   return (
     <div className="flex w-full flex-col gap-[20px]">
       <div className="flex w-full items-center gap-[12px] rounded-md bg-info-tint px-[14px] py-[12px] outline-1 -outline-offset-1 outline-info-line">
@@ -96,8 +160,15 @@ export function ToolsTab({ helper }: { helper: HelperRecord }) {
           Open Connectors
         </Btn>
       </div>
-      <Group title="From the company" desc="5 connectors · 1 MCP server" rows={company} />
-      <Group title="Built in" desc="Come with every helper" rows={builtIn} />
+      <Group
+        title="From the company"
+        desc={companyDesc}
+        rows={company}
+        empty={isLoading ? undefined : 'No connectors yet — add them in Control panel → Connectors.'}
+        onToggle={toggleConnector}
+        onAccess={setAccess}
+      />
+      <Group title="Built in" desc="Come with every helper" rows={builtIn} onToggle={toggleBuiltin} />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, CircleCheck, CircleHelp, ChevronUp, ExternalLink, Link2, Lock, Send } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
 import { notify } from '../../../ui/ds/Toaster'
+import { useConnectHelperChannel } from '../../../app/queries'
 import { Btn, Drawer, DrawerClose, DrawerTitle, InputField, Radio, choiceRing } from '../ui'
 import { ChannelLogo, TG_BLUE } from '../tabs/ChannelsTab'
 
@@ -48,7 +49,7 @@ function Step({
 
 const AUDIENCE = [
   { id: 'anyone', t: 'Anyone who finds the bot', d: 'Good for a public help line' },
-  { id: 'invite', t: 'Only people you invite', d: 'Share a private link with residents' },
+  { id: 'invite', t: 'Only people you invite', d: 'Share a private link with your customers' },
   { id: 'group', t: 'A Telegram group', d: "{n} replies when it's mentioned" },
 ]
 
@@ -59,13 +60,22 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
   const [howItWorksOpen, setHowItWorksOpen] = useState(false)
   const [token, setToken] = useState('')
   const tokenValid = looksLikeToken(token)
+  const connectChannel = useConnectHelperChannel(helper.id)
   const connect = () => {
     if (!tokenValid) return
-    // Bot token is a secret → persisted via the encrypted connectors credential
-    // path when the channel connector is wired (Phase 6). For now we capture the
-    // bound token and confirm; the dialog no longer pretends to be pre-connected.
-    notify(`Telegram bot linked to ${n}`)
-    onClose()
+    // The bot token is a secret: stored encrypted on the helper's channel
+    // binding, never returned. Live Telegram delivery isn't switched on yet, so
+    // the binding is saved as "pending setup" rather than claiming connected.
+    connectChannel.mutate(
+      { kind: 'telegram', config: { audience: aud }, secrets: { bot_token: token.trim() } },
+      {
+        onSuccess: () => {
+          notify(`Telegram bot saved for ${n} — pending setup`)
+          onClose()
+        },
+        onError: () => notify("Couldn't save the Telegram bot"),
+      },
+    )
   }
   return (
     <Drawer
@@ -91,7 +101,7 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
           </Btn>
           <span className="h-px flex-1" />
           <Btn onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" icon={Link2} onClick={connect} disabled={!tokenValid}>
+          <Btn variant="primary" icon={Link2} onClick={connect} disabled={!tokenValid || connectChannel.isPending}>
             Connect Telegram
           </Btn>
         </>
@@ -107,7 +117,7 @@ export function ConnectTelegramDialog({ helper, onClose }: { helper: HelperRecor
       )}
       <Step num={1} state="done" title="Create a bot">
         <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
-          In Telegram, open @BotFather, send /newbot and give it a name like "Sahabat Warga {n}".
+          In Telegram, open @BotFather, send /newbot and give it a name like "{n} bot".
         </p>
         <Btn
           icon={ExternalLink}

@@ -3,31 +3,35 @@ import { ArrowLeft, Check, Cpu, Crown, Palette, Plus, UserPlus, Wallet } from 'l
 import { Mascot } from '../../ui/ds/Mascot'
 import { LookPicker } from '../../ui/ds/LookPicker'
 import type { Look } from '../../app/appearance'
+import { useCompanySettings, useHelpers } from '../../app/queries'
+import { useSession } from '../../app/session'
+import { creditsInRp, formatCredits } from '../analytics/format'
 import { HIRE_OPTIONS } from './teamData'
+import { MODEL_IDS, companyDefaultModel } from './model'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconTile, InputField, SelectField, TextareaField } from './ui'
 import type { SelectOption } from './ui'
 
 const CHANNELS = ['Omilo chat', 'WhatsApp', 'Telegram', 'Email'] as const
-
-const REPORTS_TO: readonly SelectOption[] = [
-  { value: 'chief', label: 'Chief of Staff' },
-  { value: 'you', label: 'You (Dede)' },
-]
-
-const MODEL_OPTIONS: readonly SelectOption[] = [
-  { value: 'opus-5.5', label: 'Opus 5.5 · default' },
-  { value: 'sonnet-5.5', label: 'Sonnet 5.5' },
-  { value: 'haiku-5.5', label: 'Haiku 5.5' },
-]
+/** Setup chip → helper channel kind ('Omilo chat' is built in, nothing to bind). */
+const CHANNEL_KIND: Record<string, string | null> = {
+  'Omilo chat': null,
+  WhatsApp: 'whatsapp',
+  Telegram: 'telegram',
+  Email: 'email',
+}
 
 export interface HireSubmit {
   name: string
   area: string
   role: string
   jobDescription: string
+  /** Model label, or '' for the company default. */
   model: string
+  /** 'owner' | helper id */
   reportsTo: string
+  /** Channel kinds to bind (telegram | whatsapp | email). */
   channels: string[]
+  look: { color?: string; picture?: string | null }
 }
 
 /** Hire helper · Set up — pen hkw1l (Drawer x1VQBT). */
@@ -45,11 +49,30 @@ export function SetupDialog({
   submitting?: boolean
 }) {
   const option = HIRE_OPTIONS.find((o) => o.id === optionId) ?? HIRE_OPTIONS[0]
+  const { data: team = [] } = useHelpers()
+  const { data: settings } = useCompanySettings()
+  const ownerName = useSession((st) => st.user?.name) ?? 'you'
+  const chief = team.find((h) => h.isChief)
+  const defaultModel = companyDefaultModel(settings)
+  const reportsOptions: SelectOption[] = [
+    ...(chief ? [{ value: chief.id, label: chief.title || chief.role || chief.name }] : []),
+    { value: 'owner', label: `You (${ownerName})` },
+  ]
+  const modelOptions: SelectOption[] = [
+    { value: '', label: `${defaultModel} · default` },
+    ...MODEL_IDS.filter((m) => m !== defaultModel).map((m) => ({ value: m, label: m })),
+  ]
+  // Monthly cost estimate from the helpers you already have (credits).
+  const others = team.filter((h) => !h.isChief && (h.costMonth ?? 0) > 0)
+  const estimate = others.length
+    ? Math.round(others.reduce((n, h) => n + (h.costMonth ?? 0), 0) / others.length)
+    : null
   const [name, setName] = useState(option.name)
   const [jobDescription, setJobDescription] = useState(option.tagline)
-  const [reportsTo, setReportsTo] = useState('chief')
-  const [model, setModel] = useState('opus-5.5')
-  const [on, setOn] = useState<Set<string>>(new Set(['Omilo chat', 'WhatsApp']))
+  const [reportsToState, setReportsTo] = useState<string | null>(null)
+  const reportsTo = reportsToState ?? (chief ? chief.id : 'owner')
+  const [model, setModel] = useState('')
+  const [on, setOn] = useState<Set<string>>(new Set(['Omilo chat']))
   const [look, setLook] = useState<Look>({ color: '#6366f1', initial: name.charAt(0).toUpperCase() })
   const toggle = (c: string) =>
     setOn((s) => {
@@ -67,7 +90,8 @@ export function SetupDialog({
       jobDescription: jobDescription.trim(),
       model,
       reportsTo,
-      channels: [...on],
+      channels: [...on].map((c) => CHANNEL_KIND[c]).filter((k): k is string => !!k),
+      look: { color: look.color, picture: look.image ?? null },
     })
   }
 
@@ -119,7 +143,7 @@ export function SetupDialog({
           label="Reports to"
           icon={Crown}
           value={reportsTo}
-          options={REPORTS_TO}
+          options={reportsOptions}
           onChange={setReportsTo}
           fs={14}
           className="min-w-0 flex-1"
@@ -128,7 +152,7 @@ export function SetupDialog({
           label="Model"
           icon={Cpu}
           value={model}
-          options={MODEL_OPTIONS}
+          options={modelOptions}
           onChange={setModel}
           fs={14}
           className="min-w-0 flex-1"
@@ -160,10 +184,14 @@ export function SetupDialog({
           })}
         </div>
       </div>
-      <div className="flex w-full items-center gap-[8px] rounded-md bg-info-tint px-[12px] py-[10px] outline-1 -outline-offset-1 outline-info-line">
-        <Wallet size={14} aria-hidden className="text-info" />
-        <span className="text-[12.5px] text-ink-2">About Rp 150–250 rb / month at your current volume</span>
-      </div>
+      {estimate !== null && (
+        <div className="flex w-full items-center gap-[8px] rounded-md bg-info-tint px-[12px] py-[10px] outline-1 -outline-offset-1 outline-info-line">
+          <Wallet size={14} aria-hidden className="text-info" />
+          <span className="text-[12.5px] text-ink-2">
+            About {formatCredits(estimate)} ({creditsInRp(estimate)}) a month, like your other helpers
+          </span>
+        </div>
+      )}
     </Drawer>
   )
 }

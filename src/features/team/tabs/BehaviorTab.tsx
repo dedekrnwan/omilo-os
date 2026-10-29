@@ -2,10 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Gauge, Hand, Languages, Plus, Send, User, Wallet, X, Zap } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { HelperRecord } from '../teamData'
+import type { HelperBehavior } from '../../../core/domain/types'
+import { useCompanySettings, useHelpers, useMembers, useUpdateHelperEverywhere } from '../../../app/queries'
+import { useSession } from '../../../app/session'
+import { notify } from '../../../ui/ds/Toaster'
+import { formatRp } from '../../analytics/format'
 import { IconBtn, InputField, SettingRow, Switch, choiceRing } from '../ui'
 import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 
 type Mode = 'Ask first' | 'Act, then report' | 'Fully on its own'
+/** Behavior mode ↔ the helper's autonomy cap (strict | ask | yolo) the runner enforces. */
+const MODE_CAP: Record<Mode, string> = { 'Ask first': 'strict', 'Act, then report': 'ask', 'Fully on its own': 'yolo' }
+function modeOf(cap: string | null | undefined): Mode {
+  if (cap === 'strict' || cap === 'review_first' || cap === 'off') return 'Ask first'
+  if (cap === 'yolo') return 'Fully on its own'
+  return 'Act, then report'
+}
 
 function OptionTile({
   icon: Icon,
@@ -53,19 +65,20 @@ function Head({ title, desc }: { title: string; desc?: string }) {
   )
 }
 
-const HANDOFF_OPTIONS = ['You (Dede)', 'Chief of Staff', 'Builder', 'Grower', 'Sales', 'Finance', 'Support'] as const
 const LANGUAGE_OPTIONS = ['Bahasa Indonesia', 'English', 'Auto (detect)'] as const
+const LANGUAGE_API: Record<string, string> = { 'Auto (detect)': 'auto' }
+const DEFAULT_TOPICS = ['Money disputes', 'Legal', 'Politics']
 
-function SimpleMenu<T extends string>({
+function SimpleMenu({
   options,
   value,
   onPick,
   onClose,
   label,
 }: {
-  options: readonly T[]
-  value: T
-  onPick: (v: T) => void
+  options: readonly { value: string; label: string }[]
+  value: string
+  onPick: (v: string) => void
   onClose: () => void
   label: string
 }) {
@@ -91,14 +104,14 @@ function SimpleMenu<T extends string>({
     >
       {options.map((o) => (
         <button
-          key={o}
+          key={o.value}
           type="button"
           role="menuitemradio"
-          aria-checked={value === o}
-          className={`${menuItemClass} ${value === o ? 'bg-hover' : ''}`}
-          onClick={() => { onPick(o); onClose() }}
+          aria-checked={value === o.value}
+          className={`${menuItemClass} ${value === o.value ? 'bg-hover' : ''}`}
+          onClick={() => { onPick(o.value); onClose() }}
         >
-          <MenuItemBody icon={value === o ? Check : User} label={o} />
+          <MenuItemBody icon={value === o.value ? Check : User} label={o.label} />
         </button>
       ))}
     </div>
@@ -108,18 +121,68 @@ function SimpleMenu<T extends string>({
 /** Behavior tab — pen C5M5HG. */
 export function BehaviorTab({ helper }: { helper: HelperRecord }) {
   const n = helper.name
-  const [mode, setMode] = useState<Mode>('Act, then report')
-  const [override, setOverride] = useState(false)
-  const [topics, setTopics] = useState<string[]>(['Money disputes', 'Legal', 'Politics'])
+  const live = helper.helper
+  const b: HelperBehavior = live.behavior ?? {}
+  const updateHelper = useUpdateHelperEverywhere()
+  const save = (input: Parameters<typeof updateHelper.mutate>[0]['input'], ok?: string) =>
+    updateHelper.mutate(
+      { id: helper.id, input },
+      { onSuccess: () => ok && notify(ok), onError: () => notify(`Couldn't save ${n}'s behavior`) },
+    )
+  const saveBehavior = (patch: HelperBehavior | Record<string, null>, ok?: string) => save({ behavior: patch }, ok)
+
+  const ownerName = useSession((st) => st.user?.name) ?? 'you'
+  const { data: team = [] } = useHelpers()
+  const { data: members = [] } = useMembers()
+  const { data: settings } = useCompanySettings()
+  const hoursLabel =
+    settings?.hours && typeof (settings.hours as { label?: unknown }).label === 'string'
+      ? (settings.hours as { label: string }).label
+      : null
+
+  const mode = modeOf(live.autonomyCap)
+  const override = !!b.work_hours_override
+  const topics = b.never_discuss ?? DEFAULT_TOPICS
   const [addingTopic, setAddingTopic] = useState(false)
   const [topicInput, setTopicInput] = useState('')
-  const [handoff, setHandoff] = useState<(typeof HANDOFF_OPTIONS)[number]>('You (Dede)')
-  const [language, setLanguage] = useState<(typeof LANGUAGE_OPTIONS)[number]>('Bahasa Indonesia')
+  const handoffOptions = [
+    { value: 'owner', label: `You (${ownerName})` },
+    ...members.filter((m) => m.role !== 'owner').map((m) => ({ value: `member:${m.id}`, label: m.name })),
+    ...team.filter((h) => h.id !== helper.id).map((h) => ({ value: `helper:${h.id}`, label: h.isChief ? h.title || h.role || h.name : h.name })),
+  ]
+  const handoff = b.handoff_to ?? 'owner'
+  const handoffLabel = handoffOptions.find((o) => o.value === handoff)?.label ?? `You (${ownerName})`
+  const languageLabel =
+    LANGUAGE_OPTIONS.find((l) => (LANGUAGE_API[l] ?? l) === b.language) ?? 'Auto (detect)'
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [languageOpen, setLanguageOpen] = useState(false)
-  const [spend, setSpend] = useState('Rp 50.000')
-  const [rate, setRate] = useState('60')
+  const [spend, setSpend] = useState(b.spend_per_task_idr ? formatRp(b.spend_per_task_idr) : '')
+  const [rate, setRate] = useState(b.messages_per_hour ? String(b.messages_per_hour) : '')
   const addInputRef = useRef<HTMLInputElement>(null)
+
+  const setMode = (m: Mode) => save({ autonomyCap: MODE_CAP[m] }, `${n}: ${m}`)
+  const setOverride = (v: boolean) => saveBehavior({ work_hours_override: v })
+  const setTopics = (next: string[]) => saveBehavior({ never_discuss: next })
+  const commitSpend = () => {
+    const idr = Number(spend.replace(/[^0-9]/g, ''))
+    if (!idr) {
+      setSpend('')
+      if (b.spend_per_task_idr) saveBehavior({ spend_per_task_idr: null }, 'Spend limit removed')
+      return
+    }
+    setSpend(formatRp(idr))
+    if (idr !== b.spend_per_task_idr) saveBehavior({ spend_per_task_idr: idr }, 'Spend limit saved')
+  }
+  const commitRate = () => {
+    const v = Number(rate.replace(/[^0-9]/g, ''))
+    if (!v) {
+      setRate('')
+      if (b.messages_per_hour) saveBehavior({ messages_per_hour: null }, 'Message limit removed')
+      return
+    }
+    setRate(String(v))
+    if (v !== b.messages_per_hour) saveBehavior({ messages_per_hour: v }, 'Message limit saved')
+  }
 
   const modes: { id: Mode; icon: LucideIcon; desc: string }[] = [
     { id: 'Ask first', icon: Hand, desc: 'Drafts every reply, you send it' },
@@ -129,7 +192,7 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
 
   const commitTopic = () => {
     const t = topicInput.trim()
-    if (t && !topics.includes(t)) setTopics((prev) => [...prev, t])
+    if (t && !topics.includes(t)) setTopics([...topics, t])
     setTopicInput('')
     setAddingTopic(false)
   }
@@ -156,10 +219,14 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
         <Head title="Limits" desc="On top of the company's Safety & limits" />
         <Box>
           <SettingRow title="Spend per task" desc="Pauses and asks above this.">
-            <InputField icon={Wallet} value={spend} onChange={setSpend} width={180} />
+            <span onBlur={commitSpend} onKeyDown={(e) => e.key === 'Enter' && commitSpend()}>
+              <InputField icon={Wallet} value={spend} onChange={setSpend} placeholder="No limit" width={180} />
+            </span>
           </SettingRow>
           <SettingRow title="Messages per hour" desc="Stops a runaway loop on WhatsApp.">
-            <InputField icon={Gauge} value={rate} onChange={setRate} width={180} />
+            <span onBlur={commitRate} onKeyDown={(e) => e.key === 'Enter' && commitRate()}>
+              <InputField icon={Gauge} value={rate} onChange={setRate} placeholder="No limit" width={180} />
+            </span>
           </SettingRow>
           <SettingRow title="Never discuss" desc={`Topics ${n} always hands to you.`}>
             <div className="flex flex-wrap items-center gap-[6px]">
@@ -167,7 +234,7 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
                 <button
                   key={t}
                   type="button"
-                  onClick={() => setTopics((prev) => prev.filter((x) => x !== t))}
+                  onClick={() => setTopics(topics.filter((x) => x !== t))}
                   className="flex items-center gap-[4px] rounded-sm bg-soft px-[8px] py-[3px] text-[12px] font-medium text-ink-2 outline-1 -outline-offset-1 outline-line-strong hover:bg-hover"
                   aria-label={`Remove ${t}`}
                 >
@@ -194,7 +261,11 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
               )}
             </div>
           </SettingRow>
-          <SettingRow title="Work hours" desc="Uses the company hours: 08:00 – 21:00." last>
+          <SettingRow
+            title="Work hours"
+            desc={hoursLabel ? `Uses the company hours: ${hoursLabel}.` : 'Uses the company hours.'}
+            last
+          >
             <span className="text-[12.5px] text-muted">Override</span>
             <Switch on={override} onChange={setOverride} label="Override work hours" />
           </SettingRow>
@@ -212,20 +283,20 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
                 className="flex h-[36px] w-[200px] items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
               >
                 <User size={16} aria-hidden className="shrink-0 text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{handoff}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{handoffLabel}</span>
               </button>
               {handoffOpen && (
                 <SimpleMenu
-                  options={HANDOFF_OPTIONS}
+                  options={handoffOptions}
                   value={handoff}
-                  onPick={setHandoff}
+                  onPick={(v) => saveBehavior({ handoff_to: v }, 'Hand-off saved')}
                   onClose={() => setHandoffOpen(false)}
                   label="Hand off to"
                 />
               )}
             </div>
           </SettingRow>
-          <SettingRow title="Language" desc="Replies in the resident's language if it can." last>
+          <SettingRow title="Language" desc="Replies in the customer's language if it can." last>
             <div className="relative">
               <button
                 type="button"
@@ -233,13 +304,13 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
                 className="flex h-[36px] w-[200px] items-center gap-[8px] rounded-base bg-surface px-[10px] text-left outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
               >
                 <Languages size={16} aria-hidden className="shrink-0 text-muted" />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{language}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{languageLabel}</span>
               </button>
               {languageOpen && (
                 <SimpleMenu
-                  options={LANGUAGE_OPTIONS}
-                  value={language}
-                  onPick={setLanguage}
+                  options={LANGUAGE_OPTIONS.map((l) => ({ value: l, label: l }))}
+                  value={languageLabel}
+                  onPick={(v) => saveBehavior({ language: LANGUAGE_API[v] ?? v }, 'Language saved')}
                   onClose={() => setLanguageOpen(false)}
                   label="Language"
                 />

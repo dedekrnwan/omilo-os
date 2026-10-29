@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { UserMinus } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { helperColor } from '../../ui/tokens'
-import { notify } from '../../ui/ds/Toaster'
 import type { HelperArea } from '../../core/domain/types'
 import { Btn } from './ui'
 
@@ -13,14 +12,10 @@ interface LetGoHelper {
 }
 
 /** Let go — pen HX7PZ (Confirm Dialog x70TQk, worried mascot). */
-export function LetGoDialog({ helper, onClose, onLetGo }: { helper: LetGoHelper; onClose: () => void; onLetGo?: () => void }) {
+export function LetGoDialog({ helper, onClose, onLetGo }: { helper: LetGoHelper; onClose: () => void; onLetGo: () => void }) {
   const n = helper.name
   const handleLetGo = () => {
-    if (onLetGo) {
-      onLetGo()
-    } else {
-      notify(`${n} let go`)
-    }
+    onLetGo()
     onClose()
   }
   useEffect(() => {
@@ -52,8 +47,8 @@ export function LetGoDialog({ helper, onClose, onLetGo }: { helper: LetGoHelper;
         </h2>
         <div className="h-[8px]" />
         <p className="m-0 w-[340px] text-center text-[14px] leading-[1.55] text-ink-2">
-          {n} stops answering on WhatsApp and Omilo chat, and hands its 3 open chats back to you. Its files and memory
-          are kept for 30 days — rehire anytime.
+          {n} stops answering in every channel and its loops are paused. Its jobs, files and memory are kept, so its
+          history stays in Analytics.
         </p>
         <div className="flex w-full gap-[8px] pt-[20px]">
           <Btn h={40} radius={12} fs={14} labelClass="font-semibold" className="min-w-0 flex-1" onClick={onClose}>
