@@ -247,17 +247,37 @@ export function SaveBar({
   dirty = false,
   onSave,
   onDiscard,
+  saving = false,
+  error = null,
+  saved = false,
 }: {
   dirty?: boolean
   onSave?: () => void
   onDiscard?: () => void
+  /** True while the save mutation is in flight. */
+  saving?: boolean
+  /** Error message to surface when a save fails. */
+  error?: string | null
+  /** True briefly after a successful save. */
+  saved?: boolean
 }) {
+  const status = error
+    ? error
+    : saving
+      ? 'Saving…'
+      : dirty
+        ? 'Unsaved changes'
+        : saved
+          ? 'Saved'
+          : 'No unsaved changes'
   return (
     <div className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-[48px]">
-      <span className="text-[12px] text-muted">{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span>
+      <span className={`text-[12px] ${error ? 'text-bad' : saved ? 'text-ok' : 'text-muted'}`}>{status}</span>
       <div className="flex items-center gap-[8px]">
-        <Button variant="secondary" height={30} disabled={!dirty} onClick={onDiscard}>Discard</Button>
-        <Button variant="primary" height={30} disabled={!dirty} onClick={onSave}>Save changes</Button>
+        <Button variant="secondary" height={30} disabled={!dirty || saving} onClick={onDiscard}>Discard</Button>
+        <Button variant="primary" height={30} disabled={!dirty || saving} onClick={onSave}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </Button>
       </div>
     </div>
   )

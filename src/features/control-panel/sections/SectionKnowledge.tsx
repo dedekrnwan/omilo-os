@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import {
@@ -14,8 +14,10 @@ import {
   SubHeading,
   Toggle,
 } from '../legacyShared'
+import { useSectionSave } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
 import { notify } from '../../../ui/ds/Toaster'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
 
 const AGENTS: Array<{ area: 'ops' | 'dev' | 'marketing' | 'finance' | 'support' | 'sales'; active: boolean }> = [
   { area: 'ops', active: true },
@@ -29,23 +31,43 @@ const AGENTS: Array<{ area: 'ops' | 'dev' | 'marketing' | 'finance' | 'support' 
 const INITIAL = { knowledgeOn: true, reviewBeforeUse: true }
 
 export function SectionKnowledge() {
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
+
   const [knowledgeOn, setKnowledgeOn] = useState(INITIAL.knowledgeOn)
   const [reviewBeforeUse, setReviewBeforeUse] = useState(INITIAL.reviewBeforeUse)
-  const [dirty, setDirty] = useState(false)
 
-  const mark = () => setDirty(true)
+  async function persist() {
+    await updateSettings.mutateAsync({
+      knowledge: {
+        knowledgeOn,
+        reviewBeforeUse,
+      },
+    })
+    notify('Knowledge settings saved')
+  }
+
+  function reset() {
+    setKnowledgeOn(INITIAL.knowledgeOn)
+    setReviewBeforeUse(INITIAL.reviewBeforeUse)
+  }
+
+  const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
+
+  // Hydrate from persisted settings when they arrive (unless the user is editing).
+  useEffect(() => {
+    if (dirty) return
+    const k = settings?.knowledge as Record<string, unknown> | undefined
+    if (!k) return
+    if (typeof k.knowledgeOn === 'boolean') setKnowledgeOn(k.knowledgeOn)
+    if (typeof k.reviewBeforeUse === 'boolean') setReviewBeforeUse(k.reviewBeforeUse)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
 
   function handleTurnOff() {
     setKnowledgeOn(false)
     mark()
     notify('Knowledge turned off — memories will be deleted in 30 days')
-  }
-
-  function handleSave() { setDirty(false) }
-  function handleDiscard() {
-    setKnowledgeOn(INITIAL.knowledgeOn)
-    setReviewBeforeUse(INITIAL.reviewBeforeUse)
-    setDirty(false)
   }
 
   return (
@@ -138,7 +160,7 @@ export function SectionKnowledge() {
         </SettingCard>
       </SectionPane>
 
-      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
+      <SaveBar dirty={dirty} saving={saving} error={error} saved={saved} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

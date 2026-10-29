@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Bell, BellOff, Check, Send } from 'lucide-react'
 import {
   Breadcrumb,
@@ -11,10 +11,12 @@ import {
   TextInput,
   Toggle,
 } from '../legacyShared'
+import { useSectionSave } from '../ControlPanelShared'
 import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 import { usePush } from '../../../app/push'
 import { useUIStore } from '../../../app/store'
+import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
 
 type Channel = 'app' | 'whatsapp' | 'email' | 'push'
 
@@ -152,11 +154,47 @@ function PushCard() {
 }
 
 export function SectionNotifications() {
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
+
   const [notifs, setNotifs] = useState<NotifState>(INITIAL_NOTIFICATIONS)
   const [weekends, setWeekends] = useState(false)
-  const [dirty, setDirty] = useState(false)
 
-  const markDirty = useCallback(() => setDirty(true), [])
+  async function persist() {
+    await updateSettings.mutateAsync({
+      notifications: {
+        matrix: notifs.map((n) => ({ label: n.label, channels: n.channels })),
+        weekends,
+      },
+    })
+    notify('Notification settings saved')
+  }
+
+  function reset() {
+    setNotifs(INITIAL_NOTIFICATIONS)
+    setWeekends(false)
+  }
+
+  const { dirty, saving, error, saved, markDirty, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
+
+  // Hydrate from persisted settings when they arrive (unless the user is editing).
+  useEffect(() => {
+    if (dirty) return
+    const n = settings?.notifications as { matrix?: unknown; weekends?: unknown } | undefined
+    if (!n) return
+    if (typeof n.weekends === 'boolean') setWeekends(n.weekends)
+    if (Array.isArray(n.matrix)) {
+      setNotifs((prev) =>
+        prev.map((row) => {
+          const match = (n.matrix as Array<{ label?: string; channels?: Record<Channel, boolean> }>).find(
+            (m) => m.label === row.label,
+          )
+          return match?.channels ? { ...row, channels: { ...row.channels, ...match.channels } } : row
+        }),
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
 
   function toggleChannel(rowIdx: number, ch: Channel) {
     setNotifs((prev) => {
@@ -173,16 +211,6 @@ export function SectionNotifications() {
   function toggleWeekends() {
     setWeekends((v) => !v)
     markDirty()
-  }
-
-  function handleSave() {
-    setDirty(false)
-  }
-
-  function handleDiscard() {
-    setNotifs(INITIAL_NOTIFICATIONS)
-    setWeekends(false)
-    setDirty(false)
   }
 
   return (
@@ -242,7 +270,7 @@ export function SectionNotifications() {
         </SettingCardRows>
       </SectionPane>
 
-      <SaveBar dirty={dirty} onSave={handleSave} onDiscard={handleDiscard} />
+      <SaveBar dirty={dirty} saving={saving} error={error} saved={saved} onSave={handleSave} onDiscard={handleDiscard} />
     </div>
   )
 }

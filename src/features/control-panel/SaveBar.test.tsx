@@ -13,9 +13,24 @@
  */
 
 import { describe, test, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SaveBar } from './ControlPanelShared'
 import { SectionNotifications } from './sections/SectionNotifications'
+
+/**
+ * SectionNotifications now persists through useUpdateCompanySettings, which needs
+ * a QueryClientProvider. CommandsProvider has a default (mock) client, so the
+ * save resolves against the in-memory fixture.
+ */
+function renderSection() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <SectionNotifications />
+    </QueryClientProvider>,
+  )
+}
 
 // ── Unit: SaveBar component ───────────────────────────────────────────────────
 
@@ -53,14 +68,14 @@ describe('SaveBar', () => {
 
 describe('SectionNotifications — SaveBar dirty integration', () => {
   test('SaveBar is disabled initially (no unsaved changes)', () => {
-    render(<SectionNotifications />)
+    renderSection()
     expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /discard/i })).toBeDisabled()
     expect(screen.getByText('No unsaved changes')).toBeInTheDocument()
   })
 
   test('toggling a notification checkbox enables the SaveBar', () => {
-    render(<SectionNotifications />)
+    renderSection()
 
     // First checkbox in the table (In app column, first row)
     const checkboxes = screen.getAllByRole('checkbox')
@@ -72,8 +87,8 @@ describe('SectionNotifications — SaveBar dirty integration', () => {
     expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
   })
 
-  test('clicking Save clears the dirty flag', () => {
-    render(<SectionNotifications />)
+  test('clicking Save persists and clears the dirty flag', async () => {
+    renderSection()
 
     const checkboxes = screen.getAllByRole('checkbox')
     fireEvent.click(checkboxes[0])
@@ -81,16 +96,15 @@ describe('SectionNotifications — SaveBar dirty integration', () => {
     // Dirty now
     expect(screen.getByRole('button', { name: /save changes/i })).not.toBeDisabled()
 
-    // Click Save
+    // Click Save — persists through the mock command, then clears dirty.
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
 
-    // Should be clean again
-    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled()
-    expect(screen.getByText('No unsaved changes')).toBeInTheDocument()
+    // Should be clean again once the save resolves.
+    await waitFor(() => expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled())
   })
 
   test('clicking Discard resets changes and clears dirty flag', () => {
-    render(<SectionNotifications />)
+    renderSection()
 
     const checkboxes = screen.getAllByRole('checkbox')
     const initialChecked = checkboxes[0].getAttribute('aria-checked')
@@ -111,7 +125,7 @@ describe('SectionNotifications — SaveBar dirty integration', () => {
   })
 
   test('toggling the weekends switch enables the SaveBar', () => {
-    render(<SectionNotifications />)
+    renderSection()
 
     const weekendsSwitch = screen.getByRole('switch', { name: /weekends/i })
     expect(weekendsSwitch).toBeInTheDocument()
