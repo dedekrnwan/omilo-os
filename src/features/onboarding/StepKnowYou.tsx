@@ -109,7 +109,6 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [answers, setAnswers] = useState<string[]>([])
   const [website, setWebsite] = useState('')
-  const [model, setModel] = useState(DEFAULT_MODEL)
   const updateSettings = useUpdateCompanySettings()
   const navigate = useNavigate()
 
@@ -173,10 +172,11 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
           {/* Reuse the real chat Composer (compact) instead of a bespoke input. */}
           <Composer
             sessionId="onboarding-interview"
-            selectedModel={model}
-            onModelChange={setModel}
+            selectedModel={DEFAULT_MODEL}
+            onModelChange={() => {}}
             onSend={handleSend}
             compact
+            hideModelControls
             placeholder="Type your answer…"
           />
         </div>

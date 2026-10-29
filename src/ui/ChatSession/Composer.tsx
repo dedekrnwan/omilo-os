@@ -42,6 +42,9 @@ export interface ComposerProps {
   autoFocus?: boolean
   /** Hide the context ring (narrow surfaces like the Chief drawer). */
   compact?: boolean
+  /** Hide the model + thinking pickers (e.g. the onboarding interview, where the
+   *  pool model isn't a per-message choice). Keeps Add / voice / send. */
+  hideModelControls?: boolean
 }
 
 /**
@@ -67,6 +70,7 @@ export function Composer({
   onSend,
   autoFocus = false,
   compact = false,
+  hideModelControls = false,
 }: ComposerProps) {
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
   const [plusOpen, setPlusOpen] = useState(false)
@@ -301,13 +305,17 @@ export function Composer({
                 </button>
               </ContextMenu>
             )}
-            <ModelMenu selected={selectedModel} onSelect={onModelChange} defaultOpen={initialMenu === 'model'} />
-            <ThinkingMenu
-              model={selectedModel}
-              level={thinking}
-              onSelect={setThinking}
-              defaultOpen={initialMenu === 'thinking'}
-            />
+            {!hideModelControls && (
+              <>
+                <ModelMenu selected={selectedModel} onSelect={onModelChange} defaultOpen={initialMenu === 'model'} />
+                <ThinkingMenu
+                  model={selectedModel}
+                  level={thinking}
+                  onSelect={setThinking}
+                  defaultOpen={initialMenu === 'thinking'}
+                />
+              </>
+            )}
             <SquareButton
               variant="primary"
               icon={ArrowUp}
