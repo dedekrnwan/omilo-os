@@ -246,8 +246,20 @@ dev server) — those restart; their files are on the volume.
   seccomp, non-root in-sandbox, per-company network namespace, no host mounts beyond the company's
   own volume.
 - **Per-company volume** is only ever mounted into *that company's* sandbox. No shared mounts.
-- **Secrets injected short-lived at job start** from the Cloud secret store (including the GitHub
-  push token). Never written to the image or volume. A leaked volume leaks no long-lived creds.
+- **Credentials reach the sandbox via the existing company connectors — but never the raw stored
+  credential.** The connector is the *grant* (the company connects GitHub/etc. once in the
+  connectors UI). What differs for sandbox use is the *token handed in*:
+  - The **GitHub connector is implemented as a GitHub App installation** (not a plain OAuth token)
+    specifically so Omilo can **mint a short-lived (≤1h), single-repo, permission-scoped token per
+    job** and inject only *that* into the sandbox. The company's master grant never enters the box,
+    so a malicious/prompt-injected agent can't exfiltrate a broad credential or touch other repos.
+  - This per-job minting applies **only to credentials that must enter the untrusted sandbox**
+    (GitHub push; any tool the agent's own code calls directly). Connectors used by **lightweight**
+    agents run in Omilo's **trusted backend** and use the normal stored connector credential — no
+    minting needed.
+  - Tokens are **injected at job start, never written to the image or volume.** A leaked volume
+    leaks no long-lived creds. (Phase-2 hardening: a cloud-side **push-proxy** so the sandbox never
+    holds even the short-lived token — it asks the Cloud to perform the push.)
 - **Egress controls** on the sandbox (allowlist the model endpoints, package registries, the git
   remote) to limit exfiltration.
 - **Credits hold** placed at job start, settled on completion (existing billing semantics).
@@ -373,9 +385,12 @@ These are flagged, with my leanings, to resolve during planning or a quick spike
 
 **Calls I settled myself** (a sensible builder could decide these; recorded as my call):
 
-- **Git-token mechanism:** a per-company **GitHub App installation** issuing **repo-scoped,
-  short-TTL** tokens, injected at job start. A cloud-side **push-proxy** (the sandbox never holds
-  the token — it asks the Cloud to push) is a Phase-2 hardening, not v1.
+- **Git-token mechanism:** the company connects GitHub through the **existing connectors** (the
+  grant). That connector is implemented as a **GitHub App installation** so Omilo can **mint a
+  short-lived, single-repo token per job** and inject only that into the sandbox — never the
+  company's stored master credential. Per-job minting is only for creds that enter the untrusted
+  sandbox; lightweight-agent connectors use the normal stored credential in the trusted backend.
+  A cloud-side **push-proxy** (sandbox never holds even the short token) is Phase-2.
 - **Lightweight→heavy classification:** decided at the **tool layer** — a turn that invokes a
   *workspace tool* (shell / file-edit / build) is heavy and runs in a sandbox; a lightweight turn
   that reaches for a workspace tool **escalates** to a sandboxed job mid-turn. The "shared runtime"
