@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from omilo.api.ai_accounts import router as ai_accounts_router
+from omilo.api.compute import router as compute_router
 from omilo.api.webhooks import router as webhooks_router
 from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
@@ -131,6 +132,8 @@ def create_app() -> FastAPI:
     app.include_router(sse_router, prefix="/v1")
     # Doit payment gateway webhooks (Task 3 P5a)
     app.include_router(webhooks_router, prefix="/v1")
+    # Compute control-plane: worker pairing + job creation (Task 3 compute)
+    app.include_router(compute_router, prefix="/v1")
 
     # /control/* federation endpoints — cloud + local mode (P6 Task 2, P6b).
     # Not mounted in hybrid/runtime mode (runtime delegates to the cloud /control).
