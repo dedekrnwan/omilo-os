@@ -1,16 +1,21 @@
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, test, expect, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SectionAccount } from './SectionAccount'
+import { CommandsProvider } from '../../../app/CommandsProvider'
+import { createMockCommands } from '../../../adapters/mock/mockCommands'
+import type { Commands } from '../../../adapters/http/commands'
 
 // SectionAccount now persists the profile via useUpdateCompanySettings → needs a
 // QueryClientProvider. CommandsProvider has a default (mock) client.
-function renderAccount() {
+function renderAccount(commands?: Commands) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <SectionAccount />
+      <CommandsProvider commands={commands}>
+        <SectionAccount />
+      </CommandsProvider>
     </QueryClientProvider>,
   )
 }
@@ -33,5 +38,27 @@ describe('SectionAccount · Devices & tokens', () => {
     const revoke = screen.getByRole('button', { name: 'Revoke' })
     await user.click(revoke)
     expect(screen.queryByText('CLI token "omilo-cli"')).not.toBeInTheDocument()
+  })
+})
+
+describe('SectionAccount · Profile name save', () => {
+  test('saving the Name field calls updateMe with the new name', async () => {
+    const user = userEvent.setup()
+    const commands = createMockCommands()
+    const updateMeSpy = vi.spyOn(commands, 'updateMe')
+
+    renderAccount(commands)
+
+    const nameInput = screen.getByLabelText('Name')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'New Name')
+
+    // The SaveBar appears once the field is dirty.
+    const save = await screen.findByRole('button', { name: /save/i })
+    await user.click(save)
+
+    await waitFor(() => {
+      expect(updateMeSpy).toHaveBeenCalledWith({ name: 'New Name' })
+    })
   })
 })

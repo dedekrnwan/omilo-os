@@ -10,12 +10,14 @@ import type {
   UpdateFlowInput,
   UpdateGoalInput,
   UpdateHelperInput,
+  UpdateMeInput,
   UpdateRoutineInput,
   UpdateWalletInput,
 } from '../adapters/http/commands'
 import type { CompanySettings } from '../core/domain/types'
 import { useCommands } from './CommandsProvider'
 import { useRepos } from './ReposProvider'
+import { useSession as useSessionStore } from './session'
 
 export function useChannels() {
   const repos = useRepos()
@@ -532,6 +534,21 @@ export function useUpdateCompanySettings() {
   return useMutation({
     mutationFn: (patch: CompanySettings) => commands.updateCompanySettings(patch),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['companySettings'] }) },
+  })
+}
+
+// User profile → session store
+
+/**
+ * PATCH /v1/me — update the authed user's real name and push the returned /me
+ * shape into the session store so the Rail / avatar refresh immediately.
+ */
+export function useUpdateMe() {
+  const commands = useCommands()
+  const applyMe = useSessionStore((s) => s.applyMe)
+  return useMutation({
+    mutationFn: (input: UpdateMeInput) => commands.updateMe(input),
+    onSuccess: (result) => { applyMe(result) },
   })
 }
 

@@ -28,6 +28,7 @@ import type {
   Session,
   WalletSettings,
 } from '../../core/domain/types'
+import type { MeResult } from '../../core/domain/session'
 import { apiFetch } from './client'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -230,6 +231,44 @@ function mapCompany(r: RawCompany): Company {
   }
 }
 
+// PATCH /v1/me returns the same shape as GET /me: {user, member, company, companies}.
+type RawMeUser = {
+  id: string
+  email: string
+  name: string
+  created_at?: string
+}
+
+type RawMeResponse = {
+  user: RawMeUser
+  member: { role: string }
+  company: RawCompany
+  companies: RawCompany[]
+}
+
+/** Map a raw CompanyOut into the session-domain Company (no `color`/`icon`). */
+function mapSessionCompany(r: RawCompany): import('../../core/domain/session').Company {
+  return {
+    id: r.id,
+    name: r.name,
+    industry: r.industry,
+    teamSize: r.team_size,
+    region: r.region,
+    currency: r.currency ?? 'IDR',
+    picRole: r.pic_role,
+    autonomyDefault: r.autonomy_default,
+  }
+}
+
+function mapMe(r: RawMeResponse): MeResult {
+  return {
+    user: { id: r.user.id, email: r.user.email, name: r.user.name },
+    role: r.member.role,
+    company: mapSessionCompany(r.company),
+    companies: r.companies.map(mapSessionCompany),
+  }
+}
+
 // Goal write-endpoints emit snake_case; reads emit camelCase (by_alias). Map defensively.
 type RawGoal = {
   id: string
@@ -313,6 +352,7 @@ type RawFlow = {
   edges?: unknown[]
   channel_ids?: string[]
   poll_cursor?: unknown | null
+  settings?: Record<string, unknown> | null
 }
 
 function mapFlow(r: RawFlow): Flow {
@@ -333,6 +373,7 @@ function mapFlow(r: RawFlow): Flow {
     edges: r.edges,
     channelIds: r.channel_ids,
     pollCursor: r.poll_cursor,
+    settings: r.settings ?? undefined,
   }
 }
 
@@ -442,6 +483,11 @@ export interface UpdateCompanyProfileInput {
   autonomyDefault?: string
 }
 
+export interface UpdateMeInput {
+  /** The user's real display name (PATCH /v1/me → updates the User row). */
+  name?: string
+}
+
 export interface CreateAiAccountInput {
   /** Harness identifier, e.g. 'claude-code', 'codex', 'copilot', 'gemini-cli', 'cursor', 'anthropic', 'openai'. */
   harness: string
@@ -519,6 +565,8 @@ export interface UpdateFlowInput {
   edges?: unknown[]
   enabled?: boolean
   areas?: string[]
+  /** Free-form flow settings (budget, approvals, quiet hours, notifications…); deep-merged server-side. */
+  settings?: Record<string, unknown>
 }
 
 export interface CreateHelperInput {
@@ -594,6 +642,10 @@ export interface Commands {
   // ── P5d Company profile command ─────────────────────────────────────────────
   /** PATCH /v1/company — update writable profile fields. */
   updateCompanyProfile(input: UpdateCompanyProfileInput): Promise<Company>
+
+  // ── User profile command ─────────────────────────────────────────────────────
+  /** PATCH /v1/me {name?} — update the authed user; returns the full /me shape. */
+  updateMe(input: UpdateMeInput): Promise<MeResult>
 
   // ── P13 AI account commands ──────────────────────────────────────────────────
   /**
@@ -920,6 +972,20 @@ export function createCommands(
       return mapCompany(raw)
     },
 
+    // ── User profile command ──────────────────────────────────────────────────
+
+    /**
+     * PATCH /v1/me {name?} — update the authed user's real name.
+     * Returns the full /me shape ({user, member, company, companies}) so the
+     * session can be rehydrated from it.
+     */
+    async updateMe(input: UpdateMeInput): Promise<MeResult> {
+      const body: Record<string, unknown> = {}
+      if (input.name !== undefined) body.name = input.name
+      const raw = await patch<RawMeResponse>('/v1/me', body)
+      return mapMe(raw)
+    },
+
     // ── P13 AI account commands ──────────────────────────────────────────────
 
     /**
@@ -1110,6 +1176,7 @@ export function createCommands(
       if (input.edges !== undefined) body.edges = input.edges
       if (input.enabled !== undefined) body.enabled = input.enabled
       if (input.areas !== undefined) body.areas = input.areas
+      if (input.settings !== undefined) body.settings = input.settings
       const raw = await patch<RawFlow>(`/v1/flows/${id}`, body)
       return mapFlow(raw)
     },

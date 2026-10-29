@@ -17,7 +17,7 @@ import { create } from 'zustand'
 import type { AuthAdapter, AuthTokenStorage } from '../adapters/http/auth'
 import { createAuthAdapter } from '../adapters/http/auth'
 import { platform } from '../platform'
-import type { SessionUser, Company, SignInResult } from '../core/domain/session'
+import type { SessionUser, Company, SignInResult, MeResult } from '../core/domain/session'
 
 // ── Injectable overrides (for tests) ─────────────────────────────────────────
 
@@ -84,6 +84,13 @@ export interface SessionState {
    * Sets status to 'authed' and updates user / company / companies.
    */
   applySignIn(result: SignInResult): void
+
+  /**
+   * Apply a fresh /me result (e.g. after PATCH /v1/me) into the session so the
+   * Rail / avatar reflect the updated user and company context immediately.
+   * Does not touch `status` or the stored token.
+   */
+  applyMe(result: MeResult): void
 
   /**
    * Sign out: clear the stored token and reset to anon state (preserves `mode`).
@@ -156,6 +163,14 @@ export const useSession = create<SessionState>()((set, get) => ({
       status: 'authed',
       user: result.user,
       company: result.company ?? result.companies[0] ?? null,
+      companies: result.companies,
+    })
+  },
+
+  applyMe(result: MeResult) {
+    set({
+      user: result.user,
+      company: result.company,
       companies: result.companies,
     })
   },

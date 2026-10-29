@@ -20,7 +20,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useAuth } from '../../../app/useAuth'
 import { useSession } from '../../../app/session'
 import { useCommands } from '../../../app/CommandsProvider'
-import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { useCompanySettings, useUpdateCompanySettings, useUpdateMe } from '../../../app/queries'
 
 const DEVICES_INIT = [
   { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
@@ -34,9 +34,11 @@ const PROFILE_LANGUAGES = ['Bahasa Indonesia', 'English', 'Bahasa Melayu', 'Ti�
 export function SectionAccount() {
   const { signOut } = useAuth()
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
+  const userName = useSession((s) => s.user?.name)
   const commands = useCommands()
   const { data: settings } = useCompanySettings()
   const updateSettings = useUpdateCompanySettings()
+  const updateMe = useUpdateMe()
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -44,11 +46,14 @@ export function SectionAccount() {
   const [profile, setProfile] = useState(PROFILE_INITIAL)
 
   async function persistProfile() {
+    // Name is the real user name (PATCH /v1/me) — the Rail/avatar read it from
+    // the session, which this mutation refreshes on success.
+    await updateMe.mutateAsync({ name: profile.name })
     // "Agents call you" maps to the company PIC role column (PATCH /v1/company);
-    // name + personal language persist in free-form company settings.
+    // nickname + personal language persist in free-form company settings.
     await commands.updateCompanyProfile({ picRole: profile.nickname })
     await updateSettings.mutateAsync({
-      profile: { name: profile.name, nickname: profile.nickname, language: profile.language },
+      profile: { nickname: profile.nickname, language: profile.language },
     })
     notify('Profile saved')
   }
@@ -68,18 +73,18 @@ export function SectionAccount() {
     markProfileDirty()
   }
 
-  // Hydrate from persisted settings when they arrive (unless editing).
+  // Hydrate the Name from the real session user, and nickname/language from
+  // persisted company settings, when they arrive (unless editing).
   useEffect(() => {
     if (profileDirty) return
     const p = settings?.profile as Record<string, unknown> | undefined
-    if (!p) return
     setProfile((prev) => ({
-      name: typeof p.name === 'string' ? p.name : prev.name,
-      nickname: typeof p.nickname === 'string' ? p.nickname : prev.nickname,
-      language: typeof p.language === 'string' ? p.language : prev.language,
+      name: typeof userName === 'string' && userName ? userName : prev.name,
+      nickname: typeof p?.nickname === 'string' ? p.nickname : prev.nickname,
+      language: typeof p?.language === 'string' ? p.language : prev.language,
     }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings])
+  }, [settings, userName])
   // Telemetry opt-out: local state only; backend persistence happens via POST
   // /v1/telemetry-config in a full integration, but the toggle wires the client-side
   // opt-out immediately so capture() becomes a no-op.

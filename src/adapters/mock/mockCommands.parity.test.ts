@@ -29,6 +29,7 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'topup',
   'changePlan',
   'updateCompanyProfile',
+  'updateMe',
   'createAiAccount',
   'onboardCompany',
   'publishFlow',

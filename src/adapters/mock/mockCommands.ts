@@ -42,9 +42,11 @@ import type {
   UpdateFlowInput,
   UpdateGoalInput,
   UpdateHelperInput,
+  UpdateMeInput,
   UpdateRoutineInput,
   UpdateWalletInput,
 } from '../http/commands'
+import type { MeResult } from '../../core/domain/session'
 import {
   aiAccounts,
   channels,
@@ -221,6 +223,17 @@ export function createMockCommands(): Commands {
       return Promise.resolve(company)
     },
 
+    // ── User profile command ──────────────────────────────────────────────────────────
+    updateMe(input: UpdateMeInput): Promise<MeResult> {
+      const company = { id: 'cmp-mock', name: 'Mock Co', currency: 'IDR' }
+      return Promise.resolve({
+        user: { id: 'usr-mock', email: 'demo@omilo.app', name: input.name ?? 'Demo' },
+        role: 'owner',
+        company,
+        companies: [company],
+      })
+    },
+
     // ── P13 AI account commands ──────────────────────────────────────────────────────
     createAiAccount(input: CreateAiAccountInput): Promise<AiAccount> {
       const account: AiAccount = {
@@ -371,6 +384,12 @@ export function createMockCommands(): Commands {
         if (input.edges !== undefined) f.edges = input.edges
         if (input.enabled !== undefined) f.enabled = input.enabled
         if (input.areas !== undefined) f.areas = input.areas
+        if (input.settings !== undefined) {
+          f.settings = deepMerge(
+            (f.settings ?? {}) as Record<string, unknown>,
+            input.settings,
+          )
+        }
       }
       return Promise.resolve(f ?? flows[0])
     },
