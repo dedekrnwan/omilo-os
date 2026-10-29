@@ -212,6 +212,7 @@ type RawCompany = {
   currency?: string
   pic_role?: string | null
   timezone?: string | null
+  autonomy_default?: string
 }
 
 function mapCompany(r: RawCompany): Company {
@@ -225,6 +226,7 @@ function mapCompany(r: RawCompany): Company {
     currency: r.currency,
     picRole: r.pic_role,
     timezone: r.timezone,
+    autonomyDefault: r.autonomy_default,
   }
 }
 
@@ -436,6 +438,8 @@ export interface UpdateCompanyProfileInput {
   region?: string
   currency?: string
   picRole?: string
+  /** Workspace autonomy dial (the real column the enforcement engine reads): strict | ask | yolo. */
+  autonomyDefault?: string
 }
 
 export interface CreateAiAccountInput {
@@ -911,6 +915,7 @@ export function createCommands(
       if (input.region !== undefined) body.region = input.region
       if (input.currency !== undefined) body.currency = input.currency
       if (input.picRole !== undefined) body.pic_role = input.picRole
+      if (input.autonomyDefault !== undefined) body.autonomy_default = input.autonomyDefault
       const raw = await patch<RawCompany>('/v1/company', body)
       return mapCompany(raw)
     },

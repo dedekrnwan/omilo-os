@@ -216,6 +216,7 @@ export function createMockCommands(): Commands {
         currency: input.currency,
         picRole: input.picRole,
         timezone: input.timezone,
+        autonomyDefault: input.autonomyDefault,
       }
       return Promise.resolve(company)
     },

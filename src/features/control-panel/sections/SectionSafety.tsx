@@ -14,6 +14,8 @@ import {
 } from '../legacyShared'
 import { useSectionSave } from '../ControlPanelShared'
 import { useCompanySettings, useUpdateCompanySettings } from '../../../app/queries'
+import { useSession } from '../../../app/session'
+import { useCommands } from '../../../app/CommandsProvider'
 import { notify } from '../../../ui/ds/Toaster'
 
 type AutonomyMode = 'strict' | 'ask' | 'yolo'
@@ -81,6 +83,10 @@ const INITIAL = {
 export function SectionSafety() {
   const { data: settings } = useCompanySettings()
   const updateSettings = useUpdateCompanySettings()
+  const commands = useCommands()
+  // Autonomy is the real `company.autonomy_default` column the enforcement engine
+  // reads — it lives on the company profile, not in free-form safety settings.
+  const companyAutonomy = useSession((s) => s.company?.autonomyDefault)
 
   const [autonomy, setAutonomy] = useState<AutonomyMode>(INITIAL.autonomy)
   const [postPublicly, setPostPublicly] = useState(INITIAL.postPublicly)
@@ -89,9 +95,11 @@ export function SectionSafety() {
   const [noDelete, setNoDelete] = useState(INITIAL.noDelete)
 
   async function persist() {
+    // Autonomy → company.autonomy_default (PATCH /v1/company); the real column.
+    await commands.updateCompanyProfile({ autonomyDefault: autonomy })
+    // The remaining toggles stay in free-form safety settings.
     await updateSettings.mutateAsync({
       safety: {
-        autonomy,
         postPublicly,
         messageCustomers,
         deployProd,
@@ -111,12 +119,20 @@ export function SectionSafety() {
 
   const { dirty, saving, error, saved, markDirty: mark, save: handleSave, discard: handleDiscard } = useSectionSave(persist, reset)
 
-  // Hydrate from persisted settings when they arrive (unless the user is editing).
+  // Hydrate the autonomy dial from the company column (unless the user is editing).
+  useEffect(() => {
+    if (dirty) return
+    if (companyAutonomy === 'strict' || companyAutonomy === 'ask' || companyAutonomy === 'yolo') {
+      setAutonomy(companyAutonomy)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyAutonomy])
+
+  // Hydrate the remaining toggles from free-form safety settings (unless editing).
   useEffect(() => {
     if (dirty) return
     const s = settings?.safety as Record<string, unknown> | undefined
     if (!s) return
-    if (s.autonomy === 'strict' || s.autonomy === 'ask' || s.autonomy === 'yolo') setAutonomy(s.autonomy)
     if (typeof s.postPublicly === 'boolean') setPostPublicly(s.postPublicly)
     if (typeof s.messageCustomers === 'boolean') setMessageCustomers(s.messageCustomers)
     if (typeof s.deployProd === 'boolean') setDeployProd(s.deployProd)

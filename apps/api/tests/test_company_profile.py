@@ -248,6 +248,75 @@ async def test_cross_company_isolation(async_client, company_a, company_b):
 
 
 # ---------------------------------------------------------------------------
+# Autonomy dial — PATCH /v1/company {autonomy_default} persists to the column
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_autonomy_default_persists(async_client, company_a):
+    """PATCH {autonomy_default:'yolo'} → 200; persists to the column; GET reflects it."""
+    resp = await async_client.patch(
+        "/v1/company",
+        json={"autonomy_default": "yolo"},
+        headers=_auth(company_a["token"]),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["autonomy_default"] == "yolo"
+
+    # Column is actually written
+    with SessionLocal() as session:
+        company = session.get(Company, company_a["company_id"])
+        assert company.autonomy_default == "yolo"
+
+    # GET /v1/company and /me both expose it
+    get_resp = await async_client.get("/v1/company", headers=_auth(company_a["token"]))
+    assert get_resp.json()["autonomy_default"] == "yolo"
+
+    me_resp = await async_client.get("/v1/me", headers=_auth(company_a["token"]))
+    assert me_resp.json()["company"]["autonomy_default"] == "yolo"
+
+
+@pytest.mark.asyncio
+async def test_patch_autonomy_default_rejects_invalid(async_client, company_a):
+    """An out-of-range autonomy value is rejected (422), column untouched."""
+    resp = await async_client.patch(
+        "/v1/company",
+        json={"autonomy_default": "banana"},
+        headers=_auth(company_a["token"]),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_patch_autonomy_default_role_guarded(async_client, company_a):
+    """A 'member' cannot change autonomy_default → 403 (same guard as other fields)."""
+    member_token, _ = await _sign_up(async_client, name="CP Autonomy Member")
+    me_resp = await async_client.get("/v1/me", headers=_auth(member_token))
+    member_user_id = me_resp.json()["user"]["id"]
+
+    with SessionLocal() as session:
+        with session.begin():
+            session.add(
+                Member(
+                    id=prefixed_id("mem"),
+                    company_id=company_a["company_id"],
+                    user_id=member_user_id,
+                    role="member",
+                )
+            )
+
+    resp = await async_client.patch(
+        "/v1/company",
+        json={"autonomy_default": "yolo"},
+        headers={
+            "Authorization": f"Bearer {member_token}",
+            "X-Company-Id": company_a["company_id"],
+        },
+    )
+    assert resp.status_code == 403, resp.text
+
+
+# ---------------------------------------------------------------------------
 # Task 1.6: DELETE /v1/company (owner only, removes members)
 # ---------------------------------------------------------------------------
 

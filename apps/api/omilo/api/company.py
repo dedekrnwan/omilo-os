@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -87,6 +87,16 @@ class CompanyPatchBody(BaseModel):
     region: str | None = None
     currency: str | None = None
     pic_role: str | None = None
+    # Workspace autonomy dial — the real column the enforcement engine reads
+    # (mcp/tools.py, loop/runner.py). Must be one of strict | ask | yolo.
+    autonomy_default: str | None = None
+
+    @field_validator("autonomy_default")
+    @classmethod
+    def _validate_autonomy(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("strict", "ask", "yolo"):
+            raise ValueError("autonomy_default must be one of: strict, ask, yolo")
+        return v
 
 
 # ---------------------------------------------------------------------------

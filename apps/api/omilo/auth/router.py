@@ -71,6 +71,8 @@ class CompanyOut(BaseModel):
     region: str | None = None
     currency: str = "IDR"
     pic_role: str | None = None
+    # Workspace autonomy dial (the column the enforcement engine reads)
+    autonomy_default: str = "ask"
     # P13 onboarding gate — True once the company finishes the onboarding wizard
     onboarded: bool = False
 
@@ -189,6 +191,7 @@ def _company_out(company: Company) -> CompanyOut:
         region=company.region,
         currency=getattr(company, "currency", "IDR") or "IDR",
         pic_role=company.pic_role,
+        autonomy_default=getattr(company, "autonomy_default", "ask") or "ask",
         onboarded=company.onboarded_at is not None,
     )
 

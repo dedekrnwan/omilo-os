@@ -46,6 +46,8 @@ interface RawCompany {
   region?: string | null
   currency?: string
   pic_role?: string | null
+  /** Workspace autonomy dial — backend CompanyOut field. */
+  autonomy_default?: string
   /** P13 onboarding gate — backend CompanyOut field. */
   onboarded?: boolean
 }
@@ -146,6 +148,7 @@ function mapCompany(r: RawCompany): Company {
     region: r.region,
     currency: r.currency ?? 'IDR',
     picRole: r.pic_role,
+    autonomyDefault: r.autonomy_default,
     onboarded: r.onboarded ?? false,
   }
 }
