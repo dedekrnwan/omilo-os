@@ -130,6 +130,11 @@ async def _event_stream(company_id: str) -> AsyncGenerator[str, None]:
     sub = broker.subscribe(company_id)
     heartbeat_task: asyncio.Task | None = None
 
+    # Emit an immediate "connected" comment so clients know the subscription
+    # is live before they submit work.  This eliminates the race where a fast
+    # producer publishes events before the stream is established.
+    yield _sse_comment("connected")
+
     # Use an asyncio Queue as the merge point for events and heartbeats.
     merged: asyncio.Queue[str | None] = asyncio.Queue()
 

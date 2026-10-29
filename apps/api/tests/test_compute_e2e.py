@@ -141,6 +141,7 @@ async def _collect_sse_events(
     *,
     until_job_done_id: str,
     timeout: float = 15.0,
+    connected_event: asyncio.Event | None = None,
 ) -> list[dict]:
     """Stream GET /v1/stream?token=<token> and collect events until job.done.
 
@@ -148,6 +149,11 @@ async def _collect_sse_events(
     in-process event loop sharing. Collects all events and returns when a
     ``job.done`` event for ``until_job_done_id`` arrives or ``timeout``
     elapses.
+
+    If *connected_event* is provided it is set as soon as the server sends the
+    initial ``: connected`` comment, which the SSE endpoint emits immediately
+    after ``broker.subscribe()`` completes.  Callers can ``await`` that event
+    before submitting work so the subscription is guaranteed to be live.
 
     Each SSE frame is ``data: {json}``; this parser ignores comments and
     empty lines, and yields the parsed JSON dicts.
@@ -165,6 +171,10 @@ async def _collect_sse_events(
 
             deadline = time.monotonic() + timeout
             async for line in response.aiter_lines():
+                # Signal "connected" on the initial ": connected" server comment
+                if connected_event is not None and not connected_event.is_set():
+                    if line.startswith(": "):
+                        connected_event.set()
                 # SSE frame lines start with "data: "
                 if line.startswith("data: "):
                     raw = line[6:]
@@ -326,9 +336,78 @@ async def test_job_e2e_stub(live_server):
             online = await _apoll(_worker_online, timeout=10.0)
             assert online, f"Worker {worker_id} did not come online within 10 s"
 
-            # 4. POST /v1/compute/jobs BEFORE opening the SSE stream so we have
-            #    a job_id to filter on.
+            # 4. Open the SSE stream BEFORE submitting the job so that no
+            #    job.step events can be missed even on a fast/CI box.
+            #
+            #    The SSE endpoint emits ": connected" immediately after
+            #    broker.subscribe() completes.  We await that signal (via
+            #    connected_event) before POSTing the job so the subscription
+            #    is guaranteed to be live when the worker starts publishing.
+            #
+            #    _stream() opens the SSE connection, signals connected_event on
+            #    the first comment line, then waits for job_id_box to be
+            #    populated (filled just after POST) before collecting events.
             steps_from_spec = ["echo e2e step 1", "echo e2e step 2", "echo e2e step 3"]
+            sse_events: list[dict] = []
+            connected_event: asyncio.Event = asyncio.Event()
+            # Mutable box so the test can pass job_id to the already-open stream
+            job_id_box: list[str] = []
+
+            async def _stream() -> None:
+                """Open SSE, signal connected, then collect until job.done."""
+                nonlocal sse_events
+                sse_url = f"{base_url}/v1/stream"
+                collected: list[dict] = []
+                deadline = time.monotonic() + 25.0  # generous outer timeout
+
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(30.0)
+                ) as sse_client:
+                    async with sse_client.stream(
+                        "GET", sse_url, params={"token": token}
+                    ) as response:
+                        assert response.status_code == 200, (
+                            f"SSE endpoint returned {response.status_code}"
+                        )
+                        async for line in response.aiter_lines():
+                            # Server emits ": connected" immediately on subscribe
+                            if not connected_event.is_set() and line.startswith(": "):
+                                connected_event.set()
+
+                            if line.startswith("data: "):
+                                raw = line[6:]
+                                try:
+                                    ev = json.loads(raw)
+                                except json.JSONDecodeError:
+                                    continue
+                                collected.append(ev)
+                                # Wait until we know which job to stop on
+                                while not job_id_box:
+                                    await asyncio.sleep(0)
+                                target = job_id_box[0]
+                                if (
+                                    ev.get("type") == "job.done"
+                                    and ev.get("job_id") == target
+                                ):
+                                    break
+
+                            if time.monotonic() > deadline:
+                                break
+
+                sse_events = collected
+
+            sse_task = asyncio.create_task(_stream())
+
+            # Wait until the SSE stream is open and the broker subscription is
+            # live (signalled by the ": connected" server comment).
+            try:
+                await asyncio.wait_for(connected_event.wait(), timeout=10.0)
+            except asyncio.TimeoutError:
+                assert False, (
+                    "SSE stream did not emit the ':connected' comment within 10 s"
+                )
+
+            # 5. NOW submit the job — subscription is live, no events will be missed.
             job_resp = await client.post(
                 "/v1/compute/jobs",
                 json={"spec": {"steps": steps_from_spec}},
@@ -336,22 +415,8 @@ async def test_job_e2e_stub(live_server):
             )
             assert job_resp.status_code == 200, f"create_job failed: {job_resp.text}"
             job_id = job_resp.json()["id"]
-
-            # 5. Open the real SSE HTTP stream and collect events until job.done
-            #    This runs concurrently via asyncio.create_task so the test loop
-            #    can also poll the DB for the done condition.
-            sse_events: list[dict] = []
-
-            async def _stream():
-                nonlocal sse_events
-                sse_events = await _collect_sse_events(
-                    base_url,
-                    token,
-                    until_job_done_id=job_id,
-                    timeout=20.0,
-                )
-
-            sse_task = asyncio.create_task(_stream())
+            # Unblock _stream() so it knows which job to stop on
+            job_id_box.append(job_id)
 
             # 6. Poll DB until job is 'done' (independent of SSE)
             def _job_done():
