@@ -299,6 +299,49 @@ describe('ChatRoute — deleteAllArchived clears static entries', () => {
   })
 })
 
+describe('ChatRoute — hero Composer sends', () => {
+  beforeEach(() => useUIStore.setState({ mode: 'chat', areaId: null }))
+
+  test('typing in the hero and sending creates a session and navigates to /chat/:id', async () => {
+    const user = userEvent.setup()
+    const { router } = makeTestRouter('/chat')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/what are we figuring out/i)).toBeInTheDocument()
+    })
+
+    const editor = screen.getByRole('textbox', { name: 'Message' })
+    await act(async () => {
+      editor.textContent = 'Draft the Q4 plan'
+      fireEvent.input(editor)
+    })
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toMatch(/^\/chat\/ses/)
+    })
+  })
+
+  test('a "start from a goal" chip opens a session seeded by that goal', async () => {
+    const user = userEvent.setup()
+    const { router } = makeTestRouter('/chat')
+    await router.load()
+    render(<RouterProvider router={router} />)
+
+    // Wait for the hero goal chips to render, then click one by its goal title.
+    await screen.findByText(/Or start from a goal/i)
+    const chip = screen.getByText('Close October books').closest('button')
+    expect(chip).not.toBeNull()
+    await user.click(chip as HTMLButtonElement)
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toMatch(/^\/chat\/ses/)
+    })
+  })
+})
+
 describe('ChatRoute — empty workspace', () => {
   beforeEach(() => useUIStore.setState({ mode: 'chat', areaId: null }))
 

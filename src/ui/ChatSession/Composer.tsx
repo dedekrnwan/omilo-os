@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { ArrowUp, AtSign, FoldVertical, Hash, Paperclip, Plus, Slash } from 'lucide-react'
+import { ArrowUp, AtSign, FoldVertical, Hash, Paperclip, Plus, Slash, X } from 'lucide-react'
 import type { Model } from '../../core/domain/types'
 import { SquareButton } from '../ds/Button'
 import { MenuItemBody, MenuSeparatorLine, menuItemClass, menuSurface } from '../ds/Menu'
@@ -75,6 +75,10 @@ export function Composer({
   )
   const [activeIndex, setActiveIndex] = useState(0)
   const [hasText, setHasText] = useState(initialText.trim().length > 0)
+  // Attached files are retained (as removable chips) until send. The send path
+  // is text-only today, so files are cleared on send; the chips make the
+  // Attach affordance honest instead of silently discarding the selection.
+  const [attachments, setAttachments] = useState<File[]>([])
 
   const inputRef = useRef<ComposerInputHandle>(null)
   useEffect(() => {
@@ -110,6 +114,7 @@ export function Composer({
     if (trimmed) {
       onSend?.(trimmed)
       inputRef.current?.clear()
+      setAttachments([])
     }
     setHasText(false)
     setPicker(null)
@@ -207,7 +212,7 @@ export function Composer({
             />
           </div>
 
-          {/* Hidden file input for Attach */}
+          {/* Hidden file input for Attach — selected files are retained as chips. */}
           <input
             ref={fileInputRef}
             type="file"
@@ -215,9 +220,34 @@ export function Composer({
             aria-label="File input"
             className="sr-only"
             onChange={(e) => {
+              const picked = Array.from(e.target.files ?? [])
+              if (picked.length) setAttachments((prev) => [...prev, ...picked])
               e.target.value = ''
             }}
           />
+
+          {/* Attached-file chips */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-[6px] px-[4px]">
+              {attachments.map((file, i) => (
+                <span
+                  key={`${file.name}-${i}`}
+                  className="inline-flex items-center gap-[6px] rounded-base bg-soft px-[8px] py-[4px] text-[11.5px] text-ink-2 outline-1 -outline-offset-1 outline-line"
+                >
+                  <Paperclip size={12} aria-hidden className="text-muted" />
+                  <span className="max-w-[160px] truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    className="inline-flex text-muted transition-colors hover:text-ink"
+                  >
+                    <X size={12} aria-hidden />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Controls */}
           <div className="flex w-full items-center gap-[8px]">

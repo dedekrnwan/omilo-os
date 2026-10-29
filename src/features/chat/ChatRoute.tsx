@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useCallback, useState } from 'react'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { SquarePen, Target } from 'lucide-react'
-import type { Channel, Model } from '../../core/domain/types'
+import type { Channel, Goal, Model } from '../../core/domain/types'
 import { useArea, useGoals } from '../../app/queries'
+import { useCommands } from '../../app/CommandsProvider'
 import { useUIStore } from '../../app/store'
 import { ChatSession } from '../../ui/ChatSession/ChatSession'
 import { Composer } from '../../ui/ChatSession/Composer'
@@ -17,7 +18,27 @@ export function NewChatHero({ channel }: { channel: Channel | null }) {
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
   const areaId = useUIStore((s) => s.areaId)
   const { data: goals = [] } = useGoals(areaId)
+  const commands = useCommands()
+  const navigate = useNavigate()
   const where = channel ? channel.name : 'all areas'
+
+  // Create a fresh session (optionally seeded by a goal), send the first
+  // message, then land on the live thread. Used by both the hero Composer and
+  // the "start from a goal" chips.
+  const startSession = useCallback(
+    async (text: string, goal?: Goal) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      const session = await commands.createSession({
+        channelId: goal?.channelId ?? channel?.id ?? areaId ?? undefined,
+        goalId: goal?.id,
+        title: goal ? goal.title : undefined,
+      })
+      await commands.sendMessage(session.id, trimmed)
+      void navigate({ to: '/chat/$sessionId', params: { sessionId: session.id } })
+    },
+    [commands, navigate, channel, areaId],
+  )
 
   return (
     <>
@@ -42,6 +63,7 @@ export function NewChatHero({ channel }: { channel: Channel | null }) {
             sessionId={`new-${areaId ?? 'all'}`}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
+            onSend={(text) => { void startSession(text) }}
           />
         </div>
 
@@ -53,6 +75,7 @@ export function NewChatHero({ channel }: { channel: Channel | null }) {
                 <button
                   key={g.id}
                   type="button"
+                  onClick={() => { void startSession(`Let's make progress on "${g.title}". Where should we start?`, g) }}
                   className="flex min-w-0 flex-1 items-center gap-[8px] rounded-md outline-1 -outline-offset-1 outline-line-strong px-[9px] py-[7px] text-left transition-colors hover:bg-soft"
                 >
                   <Target size={14} aria-hidden className="shrink-0 text-muted" />

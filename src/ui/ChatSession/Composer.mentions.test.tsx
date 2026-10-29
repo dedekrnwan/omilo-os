@@ -83,3 +83,18 @@ describe('Composer mention picker', () => {
     expect(chip).toHaveTextContent('@all')
   })
 })
+
+describe('Composer file attach', () => {
+  test('attaching a file retains it as a removable chip', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const input = screen.getByLabelText('File input') as HTMLInputElement
+    const file = new File(['hello'], 'brief.pdf', { type: 'application/pdf' })
+    await user.upload(input, file)
+
+    expect(screen.getByText('brief.pdf')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remove brief.pdf' }))
+    expect(screen.queryByText('brief.pdf')).not.toBeInTheDocument()
+  })
+})
