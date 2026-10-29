@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.auth.router import CompanyOut, _company_out
@@ -27,6 +28,46 @@ from omilo.db import SessionLocal
 from omilo.models.tenancy import Company
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, require_role
+
+# Tenant tables (every table carrying a company_id) — wiped on company delete.
+# DB-level FKs among these are CASCADE/SET NULL, so delete order is safe.
+_TENANT_TABLES = (
+    "connector",
+    "credit_ledger",
+    "doit_payment",
+    "flow_run",
+    "flow",
+    "goal",
+    "harness_account",
+    "helper_access",
+    "helper",
+    "improvement",
+    "inbox_item",
+    "install_token",
+    "invite",
+    "invoice",
+    "job",
+    "kb_chunk",
+    "kb_source",
+    "mcp_access_token",
+    "memory_doc",
+    "message",
+    "proposal_revision",
+    "proposal",
+    "provider_key",
+    "report",
+    "routine_run",
+    "routine",
+    "run_event",
+    "safety_limit",
+    "session",
+    "skill",
+    "subscription",
+    "tool_call",
+    "wallet_settings",
+    "channel",
+    "folder",
+)
 
 router = APIRouter(tags=["company"])
 
@@ -197,3 +238,44 @@ def onboard_company(ctx: RequestContext = Depends(get_context)) -> CompanyOut:
             session.flush()
 
             return _company_out(company)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /v1/company — delete the workspace (owner only)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/company", status_code=status.HTTP_204_NO_CONTENT)
+def delete_company(
+    _guard: None = Depends(require_role("owner")),
+    ctx: RequestContext = Depends(get_context),
+) -> None:
+    """Hard-delete the authed company and all its tenant-scoped rows. Owner only.
+
+    Deletes every company-scoped table's rows, then the members, then the
+    Company row itself — all in one privileged transaction. DB-level FKs among
+    tenant tables are CASCADE/SET NULL, so the delete order is safe.
+    Global catalog tables (plan, piece) are never touched.
+    """
+    with SessionLocal() as session:
+        with session.begin():
+            company = session.get(Company, ctx.company_id)
+            if company is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Company not found.",
+                )
+
+            for table in _TENANT_TABLES:
+                session.execute(
+                    text(f"DELETE FROM {table} WHERE company_id = :cid"),
+                    {"cid": ctx.company_id},
+                )
+
+            # Members are company-scoped but FK to the global user table.
+            session.execute(
+                text("DELETE FROM member WHERE company_id = :cid"),
+                {"cid": ctx.company_id},
+            )
+
+            session.delete(company)

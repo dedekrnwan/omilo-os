@@ -245,3 +245,54 @@ async def test_cross_company_isolation(async_client, company_a, company_b):
     assert body["industry"] is None, "Company B's industry must be null"
     assert body["region"] is None, "Company B's region must be null"
     assert body["currency"] == "IDR"
+
+
+# ---------------------------------------------------------------------------
+# Task 1.6: DELETE /v1/company (owner only, removes members)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_owner_deletes_company(async_client, company_a):
+    """Owner DELETE /v1/company → 204; the member row is gone."""
+    from omilo.models.tenancy import Member
+
+    company_id = company_a["company_id"]
+    resp = await async_client.delete("/v1/company", headers=_auth(company_a["token"]))
+    assert resp.status_code == 204, resp.text
+
+    with SessionLocal() as session:
+        remaining = (
+            session.query(Member).filter(Member.company_id == company_id).count()
+        )
+        company = session.get(Company, company_id)
+    assert remaining == 0, "members must be removed on company delete"
+    assert company is None, "company row must be removed"
+
+
+@pytest.mark.asyncio
+async def test_non_owner_cannot_delete_company(async_client, company_a):
+    """A 'member' (and 'admin') cannot delete the company → 403."""
+    member_token, _ = await _sign_up(async_client, name="CP Del Member")
+    me = await async_client.get("/v1/me", headers=_auth(member_token))
+    member_user_id = me.json()["user"]["id"]
+
+    with SessionLocal() as session:
+        with session.begin():
+            session.add(
+                Member(
+                    id=prefixed_id("mem"),
+                    company_id=company_a["company_id"],
+                    user_id=member_user_id,
+                    role="admin",
+                )
+            )
+
+    resp = await async_client.delete(
+        "/v1/company",
+        headers={
+            "Authorization": f"Bearer {member_token}",
+            "X-Company-Id": company_a["company_id"],
+        },
+    )
+    assert resp.status_code == 403, resp.text
