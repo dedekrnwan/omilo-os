@@ -18,6 +18,7 @@ import {
 import { Button } from '../../../ui/ds/Button'
 import { notify } from '../../../ui/ds/Toaster'
 import { useAuth } from '../../../app/useAuth'
+import { useSession } from '../../../app/session'
 
 const DEVICES_INIT = [
   { name: 'MacBook Pro · Jakarta', desc: 'This device · active now', icon: Monitor, canSignOut: false, isCli: false },
@@ -27,6 +28,7 @@ const DEVICES_INIT = [
 
 export function SectionAccount() {
   const { signOut } = useAuth()
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [devices, setDevices] = useState(DEVICES_INIT)
   const photoInputRef = useRef<HTMLInputElement>(null)
   // Telemetry opt-out: local state only; backend persistence happens via POST
@@ -91,7 +93,7 @@ export function SectionAccount() {
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
               <span className="text-[15px] font-semibold text-ink">Dede Kurniawan</span>
-              <span className="text-[12px] text-muted">dede@saga.co.id · Owner of Sahabat Warga, Kopi Kenangan</span>
+              <span className="text-[12px] text-muted">dede@saga.co.id · Owner of {companyName}</span>
             </div>
             <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelected} />
             <Button variant="secondary" height={28} onClick={handleChangePhoto}>Change photo</Button>

@@ -7,6 +7,7 @@ import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
 import { useMembers } from '../../../app/queries'
 import type { CompanyMember } from '../../../core/domain/types'
+import { useSession } from '../../../app/session'
 
 /** Derive display initials from a name string. */
 function initials(name: string): string {
@@ -108,6 +109,7 @@ function toPersonRow(m: CompanyMember): PersonRow {
 /** pen ZDdLD · Members & roles — and X16ZX · Self-hosted (variant). */
 export function SectionMembers({ onDialog, variant }: SectionProps) {
   const selfHosted = variant === 'self-hosted'
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const { data: fetchedMembers, isLoading, isError } = useMembers()
 
   // Convert API members to PersonRow; fall back to empty while loading
@@ -161,7 +163,7 @@ export function SectionMembers({ onDialog, variant }: SectionProps) {
     <PageShell crumb="Members & roles">
       <PageHeader
         title="Members & roles"
-        sub="People in Sahabat Warga and what they can approve."
+        sub={`People in ${companyName} and what they can approve.`}
         actions={
           <PenButton variant="primary" icon={UserPlus} onClick={() => onDialog(selfHosted ? 'invite' : 'seats-full')}>
             Invite people

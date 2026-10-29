@@ -5,6 +5,7 @@ import { SidebarFrame, NavGroup, NavLink, GroupLabel } from '../../ui/ds/Sidebar
 import { BackToApp } from '../shell/BackToApp'
 import { NAV_GROUPS } from './data'
 import type { ControlPanelSection } from './types'
+import { useSession } from '../../app/session'
 
 interface Props {
   section: ControlPanelSection
@@ -17,7 +18,9 @@ interface Props {
  * standard 232px app sidebar so the layout matches Chat/Office:
  *   Rail → ControlPanelSidebar → Inset(section content).
  */
-export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat Warga' }: Props) {
+export function ControlPanelSidebar({ section, onSection, workspace }: Props) {
+  const sessionCompanyName = useSession((s) => s.company?.name) ?? 'your company'
+  const resolvedWorkspace = workspace ?? sessionCompanyName
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const groups = q
@@ -32,7 +35,7 @@ export function ControlPanelSidebar({ section, onSection, workspace = 'Sahabat W
       {/* Workspace header */}
       <div className="flex w-full flex-col gap-px px-[8px] pt-[2px] pb-[4px]">
         <p className="m-0 text-[14px] font-semibold text-ink">Control panel</p>
-        <p className="m-0 truncate text-[11.5px] text-muted">{workspace}</p>
+        <p className="m-0 truncate text-[11.5px] text-muted">{resolvedWorkspace}</p>
       </div>
 
       {/* Find a setting search */}

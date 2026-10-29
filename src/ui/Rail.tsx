@@ -259,6 +259,7 @@ function AutonomyPopover({
   const navigate = useNavigate()
   const autonomy = useUIStore((s) => s.autonomy)
   const setAutonomy = useUIStore((s) => s.setAutonomy)
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const active = AUTONOMY_OPTIONS.find((o) => o.level === autonomy) ?? AUTONOMY_OPTIONS[1]
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
@@ -284,7 +285,7 @@ function AutonomyPopover({
         >
           <div className="flex flex-col gap-[2px] border-b border-line px-[14px] pt-[12px] pb-[10px]">
             <span className="text-[13px] font-semibold text-ink">Autonomy</span>
-            <span className="text-[12px] text-muted">For every helper in Sahabat Warga</span>
+            <span className="text-[12px] text-muted">For every helper in {companyName}</span>
           </div>
           <div className="flex flex-col gap-[2px] p-[6px]">
             {AUTONOMY_OPTIONS.map((o) => {

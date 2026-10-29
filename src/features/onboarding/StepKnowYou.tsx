@@ -18,6 +18,7 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { IconButton } from '../../ui/ds/Button'
 import { INTERVIEW, KNOWLEDGE_NOTES, LEARNED } from './data'
 import { Pill, QuietButton, Stroke } from './parts'
+import { useSession } from '../../app/session'
 
 function ChiefSays({ text, ideas, children }: { text: string; ideas: string[]; children?: React.ReactNode }) {
   return (
@@ -104,6 +105,7 @@ function LearnedPanel() {
 }
 
 export function StepKnowYou({ onNext }: { onNext: () => void }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [draft, setDraft] = useState('')
   const navigate = useNavigate()
   return (
@@ -139,7 +141,7 @@ export function StepKnowYou({ onNext }: { onNext: () => void }) {
             </span>
             <span className="h-px flex-1 bg-line" />
           </div>
-          <ChiefSays text={INTERVIEW.q1} ideas={INTERVIEW.ideas1}>
+          <ChiefSays text={INTERVIEW.q1.replace('Sahabat Warga', companyName)} ideas={INTERVIEW.ideas1}>
             <p className="text-[12px] text-muted">{INTERVIEW.hint1}</p>
           </ChiefSays>
           <div className="flex w-full justify-end">

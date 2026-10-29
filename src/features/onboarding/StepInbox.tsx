@@ -31,21 +31,22 @@ import {
   SidebarFrame,
 } from "../../ui/ds/Sidebar";
 import {
-  COMPANY_NAME,
   GETTING_STARTED_ITEMS,
   INBOX_AREAS,
   INBOX_JOBS,
 } from "./data";
+import { useSession } from "../../app/session";
 import type { InboxJob } from "./data";
 import { Stroke } from "./parts";
 
 function Sidebar() {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   return (
     <SidebarFrame label="Office">
       <div className="flex w-full items-center gap-[8px] px-[8px] py-[6px]">
         <div className="flex min-w-0 flex-1 flex-col gap-px">
           <span className="truncate text-[13.5px] font-semibold text-ink">
-            {COMPANY_NAME}
+            {companyName}
           </span>
           <span className="truncate text-[11.5px] text-muted">
             Office · 5 areas
