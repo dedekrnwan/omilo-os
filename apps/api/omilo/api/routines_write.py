@@ -58,6 +58,12 @@ class PatchRoutineBody(BaseModel):
     helper_id: Optional[str] = None
     sends_to: Optional[list[Any]] = None
     goal_ids: Optional[list[str]] = None
+    # Schedule fields — when any is provided, cron + next_at are recomputed.
+    freq: Optional[str] = None       # daily | weekdays | weekly | monthly
+    at: Optional[str] = None         # "HH:MM"
+    days: Optional[list[int]] = None
+    monthly: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -292,8 +298,64 @@ def patch_routine(
     if body.goal_ids is not None:
         routine.goal_ids = body.goal_ids
 
+    # ── Schedule change → recompute cron + next_at ────────────────────────────
+    schedule_changed = any(
+        v is not None
+        for v in (body.freq, body.at, body.days, body.monthly, body.timezone)
+    )
+    if body.freq is not None:
+        routine.freq = body.freq
+    if body.at is not None:
+        routine.at = body.at
+    if body.days is not None:
+        routine.days = body.days
+    if body.monthly is not None:
+        routine.monthly = body.monthly
+    if body.timezone is not None:
+        _validate_timezone(body.timezone)
+        routine.timezone = body.timezone
+
+    if schedule_changed:
+        tz = routine.timezone or "UTC"
+        cron_expr = _build_cron(
+            routine.freq, routine.at, routine.days, routine.monthly
+        )
+        routine.cron = cron_expr
+        routine.next_at = _compute_next_at(cron_expr, tz)
+
     db.flush()
     return {"routine": _routine_to_dict(routine)}
+
+
+@router.post("/routines/{routine_id}/skip-next", status_code=status.HTTP_200_OK)
+def skip_next_routine(
+    routine_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Advance next_at past the next occurrence (skip one run). Returns {next_at}.
+
+    Computes the fire-time strictly after the current next_at using the
+    routine's cron + timezone. 404 for another tenant's routine (RLS).
+    """
+    routine = db.query(Routine).filter(Routine.id == routine_id).first()
+    if routine is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found.")
+
+    import zoneinfo
+
+    tz_name = routine.timezone or "UTC"
+    tz_obj = zoneinfo.ZoneInfo(tz_name)
+    # Anchor from the current next_at (or now if unset) and advance one period.
+    anchor = routine.next_at or datetime.now(timezone.utc)
+    anchor_in_tz = anchor.astimezone(tz_obj).replace(tzinfo=None)
+    cit = croniter(routine.cron, anchor_in_tz)
+    next_naive = cit.get_next(datetime)
+    next_aware = next_naive.replace(tzinfo=tz_obj).astimezone(timezone.utc)
+    routine.next_at = next_aware
+    db.flush()
+
+    return {"next_at": routine.next_at.isoformat()}
 
 
 @router.delete("/routines/{routine_id}", status_code=status.HTTP_204_NO_CONTENT)

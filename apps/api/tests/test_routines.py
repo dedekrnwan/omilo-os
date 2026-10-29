@@ -474,3 +474,102 @@ class TestTenancy:
         assert get_resp.status_code == 404, (
             f"Expected 404 for cross-tenant access; got {get_resp.status_code}: {get_resp.text}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 1.4 — PATCH schedule fields recompute cron + next_at; skip-next
+# ---------------------------------------------------------------------------
+
+
+class TestPatchScheduleAndSkip:
+    @pytest.mark.asyncio
+    async def test_patch_freq_at_recomputes_cron_and_next_at(
+        self, async_client, company_with_helper
+    ):
+        """PATCH freq/at updates cron + next_at to the new schedule."""
+        token, _, helper_id = company_with_helper
+        create = await async_client.post(
+            "/v1/routines",
+            json={
+                "helper_id": helper_id,
+                "name": "Brief",
+                "instructions": "Do it.",
+                "freq": "daily",
+                "at": "07:30",
+                "timezone": "UTC",
+            },
+            headers=_auth(token),
+        )
+        assert create.status_code == 201, create.text
+        routine = create.json()["routine"]
+        routine_id = routine["id"]
+        old_cron = routine["cron"]
+
+        patch = await async_client.patch(
+            f"/v1/routines/{routine_id}",
+            json={"freq": "daily", "at": "18:45"},
+            headers=_auth(token),
+        )
+        assert patch.status_code == 200, patch.text
+        updated = patch.json()["routine"]
+        assert updated["cron"] != old_cron
+        assert updated["cron"] == "45 18 * * *", updated["cron"]
+        next_at = datetime.fromisoformat(updated["next_at"])
+        assert next_at > datetime.now(timezone.utc)
+        assert next_at.hour == 18 and next_at.minute == 45
+
+    @pytest.mark.asyncio
+    async def test_skip_next_moves_next_at_forward_one_period(
+        self, async_client, company_with_helper
+    ):
+        """POST /v1/routines/{id}/skip-next advances next_at past the next run."""
+        token, _, helper_id = company_with_helper
+        create = await async_client.post(
+            "/v1/routines",
+            json={
+                "helper_id": helper_id,
+                "name": "Daily",
+                "instructions": "Daily task.",
+                "freq": "daily",
+                "at": "07:30",
+                "timezone": "UTC",
+            },
+            headers=_auth(token),
+        )
+        assert create.status_code == 201, create.text
+        routine_id = create.json()["routine"]["id"]
+        before = datetime.fromisoformat(create.json()["routine"]["next_at"])
+
+        skip = await async_client.post(
+            f"/v1/routines/{routine_id}/skip-next",
+            headers=_auth(token),
+        )
+        assert skip.status_code == 200, skip.text
+        after = datetime.fromisoformat(skip.json()["next_at"])
+        # Daily cadence → next_at moves ~24h forward (strictly greater).
+        assert after > before
+        assert (after - before) >= timedelta(hours=23)
+
+    @pytest.mark.asyncio
+    async def test_skip_next_cross_tenant_404(self, async_client, company_with_helper):
+        token, _, helper_id = company_with_helper
+        create = await async_client.post(
+            "/v1/routines",
+            json={
+                "helper_id": helper_id,
+                "name": "X",
+                "instructions": "x",
+                "freq": "daily",
+                "at": "07:00",
+                "timezone": "UTC",
+            },
+            headers=_auth(token),
+        )
+        routine_id = create.json()["routine"]["id"]
+
+        body_b = await _sign_up(async_client, email=f"rtn_skip_b_{uuid.uuid4().hex[:6]}@test.example")
+        token_b = body_b["session"]["access"]
+        resp = await async_client.post(
+            f"/v1/routines/{routine_id}/skip-next", headers=_auth(token_b)
+        )
+        assert resp.status_code == 404, resp.text
