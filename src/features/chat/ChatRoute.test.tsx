@@ -13,7 +13,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
 import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
-import { useChatStore, useUIStore } from '../../app/store'
+import { useUIStore } from '../../app/store'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
 import { ModeLayout } from '../shell/ModeLayout'
 import { ChatIndexRoute, ChatSessionRoute } from './ChatRoute'
 import { ArchivedRoute } from './ArchivedRoute'
@@ -163,63 +164,46 @@ describe('ChatRoute — stale session on switch', () => {
   })
 })
 
-// ── Archive / restore via useChatStore (state-layer tests) ──────────────────
+// ── Archive / restore / rename / pin persist through Commands (mock adapter) ──
 
-describe('Archive / restore — useChatStore', () => {
-  beforeEach(() => {
-    useChatStore.setState({ overrides: {}, archived: [], removedStaticIds: new Set(), newFolders: [] })
+describe('Archive / restore — chat commands', () => {
+  test('archiving moves a chat to the archived list; restoring brings it back', async () => {
+    const commands = createMockCommands()
+    const repos = createMockRepos()
+    const s = await commands.createSession({ channelId: 'ch-general', title: 'Archive me' })
+    await commands.updateSession(s.id, { archived: true })
+    expect((await repos.sessions.listAll()).some((x) => x.id === s.id)).toBe(false)
+    const archived = await repos.chat!.archived(null)
+    expect(archived[0]).toMatchObject({ id: s.id, title: 'Archive me' })
+    expect(archived[0].archivedAt).toBeTruthy()
+
+    await commands.updateSession(s.id, { archived: false })
+    expect((await repos.chat!.archived(null)).some((x) => x.id === s.id)).toBe(false)
+    expect((await repos.sessions.listAll()).some((x) => x.id === s.id)).toBe(true)
   })
 
-  test('archiveSession adds the session to the archived list', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    const { archived, overrides } = useChatStore.getState()
-    expect(archived).toHaveLength(1)
-    expect(archived[0].id).toBe('sess-passkey')
-    expect(archived[0].title).toBe('Passkey rollout plan')
-    expect(overrides['sess-passkey']?.archived).toBe(true)
+  test('delete removes an archived chat; delete-all clears the area', async () => {
+    const commands = createMockCommands()
+    const repos = createMockRepos()
+    const a = await commands.createSession({ channelId: 'ch-business', title: 'A' })
+    const b = await commands.createSession({ channelId: 'ch-business', title: 'B' })
+    await commands.updateSession(a.id, { archived: true })
+    await commands.updateSession(b.id, { archived: true })
+    await commands.deleteSession(a.id)
+    const left = await repos.chat!.archived('ch-business')
+    expect(left.some((x) => x.id === a.id)).toBe(false)
+    expect(left.some((x) => x.id === b.id)).toBe(true)
+    const { deleted } = await commands.deleteArchivedSessions('ch-business')
+    expect(deleted).toBeGreaterThan(0)
+    expect(await repos.chat!.archived('ch-business')).toEqual([])
   })
 
-  test('restoreSession removes the session from archived and clears the flag', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    useChatStore.getState().restoreSession('sess-passkey')
-    const { archived, overrides } = useChatStore.getState()
-    expect(archived).toHaveLength(0)
-    expect(overrides['sess-passkey']?.archived).toBe(false)
-  })
-
-  test('archiving then restoring leaves no other sessions affected', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
-    useChatStore.getState().restoreSession('sess-passkey')
-    const { archived } = useChatStore.getState()
-    expect(archived).toHaveLength(1)
-    expect(archived[0].id).toBe('sess-investor')
-  })
-
-  test('deleteArchived removes a specific entry without affecting others', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
-    useChatStore.getState().deleteArchived('sess-passkey')
-    const { archived } = useChatStore.getState()
-    expect(archived).toHaveLength(1)
-    expect(archived[0].id).toBe('sess-investor')
-  })
-
-  test('deleteAllArchived clears all entries', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    useChatStore.getState().archiveSession('sess-investor', 'October investor update', 'General')
-    useChatStore.getState().deleteAllArchived()
-    expect(useChatStore.getState().archived).toHaveLength(0)
-  })
-
-  test('patchSession renames a session', () => {
-    useChatStore.getState().patchSession('sess-passkey', { title: 'Renamed chat' })
-    expect(useChatStore.getState().overrides['sess-passkey']?.title).toBe('Renamed chat')
-  })
-
-  test('patchSession can pin a session', () => {
-    useChatStore.getState().patchSession('sess-passkey', { pinned: true })
-    expect(useChatStore.getState().overrides['sess-passkey']?.pinned).toBe(true)
+  test('rename and pin persist on the session', async () => {
+    const commands = createMockCommands()
+    const repos = createMockRepos()
+    const s = await commands.createSession({ channelId: 'ch-general', title: 'Old' })
+    await commands.updateSession(s.id, { title: 'Renamed chat', pinned: true })
+    expect(await repos.sessions.get(s.id)).toMatchObject({ title: 'Renamed chat', pinned: true })
   })
 })
 
@@ -228,7 +212,6 @@ describe('Archive / restore — useChatStore', () => {
 describe('ChatRoute — archive navigates away from session', () => {
   beforeEach(() => {
     useUIStore.setState({ mode: 'chat', areaId: null })
-    useChatStore.setState({ overrides: {}, archived: [], removedStaticIds: new Set(), newFolders: [] })
   })
 
   test('archiving a chat session navigates to /chat/archived', async () => {
@@ -271,31 +254,6 @@ describe('ChatRoute — archive navigates away from session', () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/chat')
     })
-  })
-})
-
-describe('ChatRoute — deleteAllArchived clears static entries', () => {
-  beforeEach(() => {
-    useChatStore.setState({ overrides: {}, archived: [], removedStaticIds: new Set(), newFolders: [] })
-  })
-
-  test('deleteAllArchived with staticIds adds static IDs to removedStaticIds', () => {
-    const staticIds = ['a-1', 'a-2', 'a-3']
-    useChatStore.getState().deleteAllArchived(staticIds)
-    const { removedStaticIds, archived } = useChatStore.getState()
-    expect(archived).toHaveLength(0)
-    staticIds.forEach((id) => expect(removedStaticIds.has(id)).toBe(true))
-  })
-
-  test('deleteAllArchived clears both dynamic and static entries together', () => {
-    useChatStore.getState().archiveSession('sess-passkey', 'Passkey rollout plan', 'Engineering')
-    const staticIds = ['a-1', 'a-2']
-    useChatStore.getState().deleteAllArchived(staticIds)
-    const { archived, removedStaticIds } = useChatStore.getState()
-    expect(archived).toHaveLength(0)
-    expect(removedStaticIds.has('sess-passkey')).toBe(true)
-    expect(removedStaticIds.has('a-1')).toBe(true)
-    expect(removedStaticIds.has('a-2')).toBe(true)
   })
 })
 

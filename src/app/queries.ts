@@ -750,6 +750,38 @@ export function useHelperDetail(id: Id) {
         ? { helper, routines: [], skills: [], counts: { channels: 1, tools: 0, skills: 0, routines: 0 } }
         : null
     },
+// ── sweep/chat ────────────────────────────────────────────────────────────────
+// Persisted chat workspace: sidebar edits (rename/pin/move/archive/delete),
+// folders (look, instructions, files, sharing), area looks, archive drawer,
+// results panel, private Chief threads and nudges. Session/folder/channel
+// patches are applied optimistically to every cached list, then refetched.
+
+type SessionList = import('../core/domain/types').Session[]
+type FolderList = import('../core/domain/types').Folder[]
+type ChannelList = import('../core/domain/types').Channel[]
+
+const EMPTY_RESULTS: import('../core/domain/types').SessionResults = {
+  steps: [],
+  outputs: [],
+  activity: [],
+  usage: { tokensIn: 0, tokensOut: 0, costCredits: 0 },
+
+export function useArchivedSessions(areaId: Id | null) {
+    queryKey: ['sessions', 'archived', areaId ?? 'all'],
+    queryFn: () => repos.chat?.archived(areaId) ?? Promise.resolve([]),
+
+export function useChiefThreads(enabled = true) {
+    queryKey: ['sessions', 'chief'],
+    queryFn: () => repos.chat?.chiefThreads() ?? Promise.resolve([]),
+    enabled,
+
+export function useChiefNudges() {
+    queryKey: ['chiefNudges'],
+    queryFn: () => repos.chat?.chiefNudges() ?? Promise.resolve([]),
+
+export function useFolder(id: Id) {
+    queryKey: ['folder', id],
+    queryFn: () => repos.chat?.folder(id) ?? Promise.resolve(null),
     enabled: !!id,
   })
 }
@@ -763,6 +795,9 @@ export function useHelperChannels(id: Id) {
   const repos = useRepos()
     queryKey: ['helperChannels', id],
     queryFn: () => repos.helpers.channels?.(id) ?? Promise.resolve([]),
+export function useFolderFiles(id: Id) {
+    queryKey: ['folderFiles', id],
+    queryFn: () => repos.chat?.folderFiles(id) ?? Promise.resolve([]),
     enabled: !!id,
   })
 }
@@ -1165,5 +1200,190 @@ export function useRetryJob() {
       void qc.invalidateQueries({ queryKey: ['analyticsFailures'] })
       void qc.invalidateQueries({ queryKey: ['analyticsReliability'] })
       void qc.invalidateQueries({ queryKey: ['activity'] })
+export function useFolderShares(id: Id, enabled = true) {
+    queryKey: ['folderShares', id],
+    queryFn: () => repos.chat?.folderShares(id) ?? Promise.resolve({ members: [] }),
+    enabled: !!id && enabled,
+
+export function useSessionShares(id: Id, enabled = true) {
+    queryKey: ['sessionShares', id],
+    queryFn: () => repos.chat?.sessionShares(id) ?? Promise.resolve({ members: [] }),
+    enabled: !!id && enabled,
+
+export function useSessionResults(id: Id, enabled = true) {
+    queryKey: ['sessionResults', id],
+    queryFn: () => repos.chat?.sessionResults(id) ?? Promise.resolve(EMPTY_RESULTS),
+    enabled: !!id && enabled,
+
+/** Apply a session patch to a cached list; `drop` removes it instead. */
+function patchSessionList(list: SessionList | undefined, id: Id, patch: Partial<import('../core/domain/types').Session> | null, unset: string[] = []) {
+  if (!list) return list
+  if (patch === null) return list.filter((s) => s.id !== id)
+  return list.map((s) => {
+    if (s.id !== id) return s
+    const next = { ...s, ...patch } as Record<string, unknown>
+    for (const k of unset) delete next[k]
+    return next as unknown as import('../core/domain/types').Session
+
+export function useUpdateSession() {
+    mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateSessionInput }) =>
+      commands.updateSession(id, input),
+    onMutate: async ({ id, input }) => {
+      await qc.cancelQueries({ queryKey: ['sessions'] })
+      const snapshot = qc.getQueriesData<SessionList>({ queryKey: ['sessions'] })
+      const prevSession = qc.getQueryData(['session', id])
+      const patch: Record<string, unknown> = {}
+      const unset: string[] = []
+      if (input.title !== undefined) patch.title = input.title
+      if (input.folderId !== undefined) {
+        if (input.folderId === null) unset.push('folderId')
+        else patch.folderId = input.folderId
+      if (input.pinned !== undefined) {
+        if (input.pinned) patch.pinned = true
+        else unset.push('pinned')
+      if (input.model !== undefined) patch.model = input.model
+      if (input.goalId === null) unset.push('goalId', 'goal')
+      for (const [key, list] of snapshot) {
+        const isArchivedList = key[1] === 'archived'
+        const isChief = key[1] === 'chief'
+        let next = list
+        if (input.archived === true && !isArchivedList && !isChief) next = patchSessionList(list, id, null)
+        else if (input.archived === false && isArchivedList) next = patchSessionList(list, id, null)
+        else next = patchSessionList(list, id, patch, unset)
+        qc.setQueryData(key, next)
+      qc.setQueryData(['session', id], (s: unknown) =>
+        s ? patchSessionList([s as import('../core/domain/types').Session], id, patch, unset)?.[0] : s,
+      )
+      return { snapshot, prevSession }
+    onError: (_err, { id }, ctx) => {
+      for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+      if (ctx) qc.setQueryData(['session', id], ctx.prevSession)
+    onSettled: (_data, _err, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['session', id] })
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+      void qc.invalidateQueries({ queryKey: ['folder'] })
+
+export function useDeleteSession() {
+    mutationFn: (id: Id) => commands.deleteSession(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['sessions'] })
+      const snapshot = qc.getQueriesData<SessionList>({ queryKey: ['sessions'] })
+      for (const [key, list] of snapshot) qc.setQueryData(key, patchSessionList(list, id, null))
+      return { snapshot }
+    onError: (_e, _id, ctx) => {
+      for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+
+export function useDeleteArchivedSessions() {
+    mutationFn: (channelId?: Id) => commands.deleteArchivedSessions(channelId),
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['sessions'] }) },
+
+export function useSetSessionShares() {
+    mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').SetSharesInput }) =>
+      commands.setSessionShares(id, input),
+    onSuccess: (data, { id }) => { qc.setQueryData(['sessionShares', id], data) },
+
+export function useCreateFolder() {
+    mutationFn: (input: import('../adapters/http/commands').CreateFolderInput) => commands.createFolder(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['folders'] }) },
+
+export function useUpdateFolder() {
+    mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateFolderInput }) =>
+      commands.updateFolder(id, input),
+    onMutate: async ({ id, input }) => {
+      await qc.cancelQueries({ queryKey: ['folders'] })
+      const snapshot = qc.getQueriesData<FolderList>({ queryKey: ['folders'] })
+      const apply = (f: import('../core/domain/types').Folder) => {
+        const next = { ...f } as Record<string, unknown>
+        for (const k of ['name', 'icon', 'color', 'instructions'] as const) {
+          const v = input[k]
+          if (v === undefined) continue
+          if (v === null || v === '') delete next[k]
+          else next[k] = v
+        }
+        return next as unknown as import('../core/domain/types').Folder
+      for (const [key, list] of snapshot) qc.setQueryData(key, list?.map((f) => (f.id === id ? apply(f) : f)))
+      const prevFolder = qc.getQueryData<import('../core/domain/types').Folder | null>(['folder', id])
+      if (prevFolder) qc.setQueryData(['folder', id], apply(prevFolder))
+      return { snapshot, prevFolder }
+    onError: (_e, { id }, ctx) => {
+      for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+      if (ctx?.prevFolder) qc.setQueryData(['folder', id], ctx.prevFolder)
+    onSettled: (_d, _e, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+      void qc.invalidateQueries({ queryKey: ['folder', id] })
+
+export function useDeleteFolder() {
+    mutationFn: (id: Id) => commands.deleteFolder(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['folders'] })
+      const snapshot = qc.getQueriesData<FolderList>({ queryKey: ['folders'] })
+      for (const [key, list] of snapshot) qc.setQueryData(key, list?.filter((f) => f.id !== id))
+      return { snapshot }
+    onError: (_e, _id, ctx) => {
+      for (const [key, list] of ctx?.snapshot ?? []) qc.setQueryData(key, list)
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+
+export function useAddFolderFile() {
+    mutationFn: ({ folderId, input }: { folderId: Id; input: import('../adapters/http/commands').AddFolderFileInput }) =>
+      commands.addFolderFile(folderId, input),
+    onSuccess: (_d, { folderId }) => { void qc.invalidateQueries({ queryKey: ['folderFiles', folderId] }) },
+
+export function useRemoveFolderFile() {
+    mutationFn: ({ folderId, fileId }: { folderId: Id; fileId: Id }) => commands.removeFolderFile(folderId, fileId),
+    onSuccess: (_d, { folderId }) => { void qc.invalidateQueries({ queryKey: ['folderFiles', folderId] }) },
+
+export function useSetFolderShares() {
+    mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').SetSharesInput }) =>
+      commands.setFolderShares(id, input),
+    onSuccess: (data, { id }) => { qc.setQueryData(['folderShares', id], data) },
+
+export function useUpdateArea() {
+    mutationFn: ({ id, input }: { id: Id; input: import('../adapters/http/commands').UpdateAreaInput }) =>
+      commands.updateArea(id, input),
+    onMutate: async ({ id, input }) => {
+      await qc.cancelQueries({ queryKey: ['channels'] })
+      const prev = qc.getQueryData<ChannelList>(['channels'])
+      const prevOne = qc.getQueryData<import('../core/domain/types').Channel | null>(['channel', id])
+      const apply = (c: import('../core/domain/types').Channel) => {
+        const next = { ...c } as Record<string, unknown>
+        for (const k of ['name', 'purpose', 'icon', 'color'] as const) {
+          const v = input[k]
+          if (v === undefined) continue
+          if (v === null || v === '') delete next[k]
+          else next[k] = v
+        }
+        return next as unknown as import('../core/domain/types').Channel
+      if (prev) qc.setQueryData(['channels'], prev.map((c) => (c.id === id ? apply(c) : c)))
+      if (prevOne) qc.setQueryData(['channel', id], apply(prevOne))
+      return { prev, prevOne }
+    onError: (_e, { id }, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['channels'], ctx.prev)
+      if (ctx?.prevOne) qc.setQueryData(['channel', id], ctx.prevOne)
+    onSettled: (_d, _e, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['channels'] })
+      void qc.invalidateQueries({ queryKey: ['channel', id] })
+
+export function useDismissChiefNudge() {
+    mutationFn: ({ id, snoozeUntil }: { id: Id; snoozeUntil?: string }) => commands.dismissChiefNudge(id, snoozeUntil),
+    onMutate: ({ id }) => {
+      const prev = qc.getQueryData<import('../core/domain/types').ChiefNudge[]>(['chiefNudges'])
+      if (prev) qc.setQueryData(['chiefNudges'], prev.filter((n) => n.id !== id))
+    onSettled: () => { void qc.invalidateQueries({ queryKey: ['chiefNudges'] }) },
+
+/**
+ * Start a chat: create the session (area / folder / goal / model / kind) and,
+ * when there is a first message, send it. Returns the session.
+ */
+export function useStartChat() {
+    mutationFn: async ({ input, text }: { input: import('../adapters/http/commands').CreateSessionInput; text?: string }) => {
+      const session = await commands.createSession(input)
+      if (text && text.trim()) await commands.sendMessage(session.id, text.trim(), { model: input.model })
+      return session
+    onSuccess: (session) => {
+      void qc.invalidateQueries({ queryKey: ['folders'] })
+      void qc.invalidateQueries({ queryKey: ['messages', session.id] })
   })
 }

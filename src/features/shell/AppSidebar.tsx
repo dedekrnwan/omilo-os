@@ -30,8 +30,18 @@ import {
 } from 'lucide-react'
 import type { Channel, Session } from '../../core/domain/types'
 import type { Mode } from '../../app/store'
-import { useUIStore, useChatStore } from '../../app/store'
-import { useAreas, useFolders, useSessions, useGoals } from '../../app/queries'
+import { useUIStore } from '../../app/store'
+import {
+  useAreas,
+  useCreateFolder,
+  useDeleteFolder,
+  useDeleteSession,
+  useFolders,
+  useGoals,
+  useSessions,
+  useUpdateFolder,
+  useUpdateSession,
+} from '../../app/queries'
 import { AreaBadgeButton, AreaTile, FolderIconButton } from './LookControls'
 import { Button } from '../../ui/ds/Button'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
@@ -40,7 +50,6 @@ import type { MenuEntries } from '../../ui/ds/ItemMenu'
 import { notify } from '../../ui/ds/Toaster'
 import { CreateChannelDialog } from '../chat/CreateChannelDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
-import { DEFAULT_OPEN_FOLDERS } from '../chat/data'
 
 /** Chats listed under an open folder before "Show N more". */
 const FOLDER_PREVIEW = 3
@@ -255,7 +264,11 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   const { data: baseFolders = [] } = useFolders(areaId)
   const { data: baseSessions = [] } = useSessions(areaId)
   const { data: goals = [] } = useGoals(areaId)
-  const { createFolder, overrides, folderOverrides, newFolders, patchSession, patchFolder, archiveSession } = useChatStore()
+  const updateSession = useUpdateSession()
+  const deleteSession = useDeleteSession()
+  const createFolder = useCreateFolder()
+  const updateFolder = useUpdateFolder()
+  const deleteFolder = useDeleteFolder()
   const [renaming, setRenaming] = useState<string | null>(null)
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   const [areaPickerOpen, setAreaPickerOpen] = useState(false)
@@ -267,27 +280,20 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
 
   const isChat = mode === 'chat'
   const area = areaId ? areas.find((c) => c.id === areaId) : undefined
-  // Fixtures + what people changed from menus (rename, move, pin, archive, delete)
-  const folders = useMemo(() => {
-    const created = newFolders
-      .filter((f) => !areaId || f.channelId === areaId)
-      .map((f) => ({ id: f.id, channelId: f.channelId, name: f.name, count: 0 }))
-    return [...baseFolders, ...created]
-      .filter((f) => !folderOverrides[f.id]?.deleted)
-      .map((f) => ({ ...f, name: folderOverrides[f.id]?.name ?? f.name }))
-  }, [baseFolders, newFolders, folderOverrides, areaId])
+  // Rename / move / pin / archive / delete persist through the API (optimistic).
+  const folders = baseFolders
   const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders])
   const sessions = useMemo(
     () =>
-      baseSessions
-        .filter((x) => !overrides[x.id]?.archived && !overrides[x.id]?.deleted)
-        .map((x) => {
-          const o = overrides[x.id]
-          const folder = o && 'folderId' in o ? (o.folderId ?? undefined) : x.folderId
-          return { ...x, title: o?.title ?? x.title, folderId: folder && folderIds.has(folder) ? folder : undefined, pinned: Boolean(o?.pinned) }
-        }),
-    [baseSessions, overrides, folderIds],
+      baseSessions.map((x) => ({
+        ...x,
+        folderId: x.folderId && folderIds.has(x.folderId) ? x.folderId : undefined,
+        pinned: Boolean(x.pinned),
+      })),
+    [baseSessions, folderIds],
   )
+  const patchSession = (id: string, input: Parameters<typeof updateSession.mutate>[0]['input']) =>
+    updateSession.mutate({ id, input }, { onError: () => notify('Couldn’t save that change — try again') })
 
   const byFolder = useMemo(() => {
     const map: Record<string, Session[]> = {}
@@ -297,7 +303,6 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   const pinned = sessions.filter((s) => s.pinned)
   const activeSession = sessions.find((s) => s.id === sessionId)
   const recent = sessions.filter((s) => !s.folderId && !s.pinned)
-  const areaName = (id: string) => areas.find((a) => a.id === id)?.name ?? 'General'
 
   function chatMenu(s: Session & { pinned?: boolean }): MenuEntries {
     const moveTargets = folders.filter((f) => f.id !== s.folderId)
@@ -332,8 +337,9 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
         label: 'Archive',
         icon: Archive,
         onSelect: () => {
-          archiveSession(s.id, s.title, areaName(s.channelId ?? ''))
-          notify('Chat archived', () => useChatStore.getState().restoreSession(s.id))
+          patchSession(s.id, { archived: true })
+          if (s.id === sessionId) void navigate({ to: '/chat' })
+          notify('Chat archived', () => patchSession(s.id, { archived: false }))
         },
       },
       {
@@ -341,9 +347,9 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
         icon: Trash2,
         danger: true,
         onSelect: () => {
-          patchSession(s.id, { deleted: true })
+          deleteSession.mutate(s.id, { onError: () => notify('Couldn’t delete the chat — try again') })
           if (s.id === sessionId) void navigate({ to: '/chat' })
-          notify('Chat deleted', () => patchSession(s.id, { deleted: false }))
+          notify('Chat deleted')
         },
       },
     ]
@@ -352,7 +358,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   function folderMenu(f: { id: string; name: string }, open: boolean): MenuEntries {
     return [
       { label: 'Open folder', icon: FolderOpen, onSelect: () => openFolder(f.id) },
-      { label: 'New chat here', icon: SquarePen, onSelect: () => void navigate({ to: '/chat' }) },
+      { label: 'New chat here', icon: SquarePen, onSelect: () => void navigate({ to: '/chat', search: { folder: f.id } } as never) },
       { type: 'separator' },
       { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(f.id) },
       { label: 'Change icon…', icon: Palette, onSelect: () => setTimeout(() => setIconPickerFor(f.id), 0) },
@@ -366,9 +372,9 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
         icon: Trash2,
         danger: true,
         onSelect: () => {
-          patchFolder(f.id, { deleted: true })
+          deleteFolder.mutate(f.id, { onError: () => notify('Couldn’t delete the folder — try again') })
           if (f.id === folderId) void navigate({ to: '/chat' })
-          notify(`Folder deleted — its chats moved to Recent`, () => patchFolder(f.id, { deleted: false }))
+          notify(`Folder deleted — its chats moved to Recent`)
         },
       },
     ]
@@ -390,7 +396,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   }
   function renameFolder(id: string, next: string | null) {
     setRenaming(null)
-    if (next) patchFolder(id, { name: next })
+    if (next) updateFolder.mutate({ id, input: { name: next } }, { onError: () => notify('Couldn’t rename the folder — try again') })
   }
 
   function row(s: Session & { pinned?: boolean }) {
@@ -411,7 +417,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   }
 
   const isOpen = (id: string) =>
-    toggled[id] ?? (activeSession?.folderId === id || folderId === id || DEFAULT_OPEN_FOLDERS.has(id))
+    toggled[id] ?? (activeSession?.folderId === id || folderId === id)
 
   // ── Navigation (mode-neutral; mode lives in the store, not the URL) ──
   function openSession(id: string) {
@@ -594,7 +600,18 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
       <CreateFolderDialog
         open={createFolderOpen}
         onOpenChange={setCreateFolderOpen}
-        onConfirm={(name) => createFolder(areaId ?? 'ch-general', name)}
+        onConfirm={(name) => {
+          // "All areas" files new folders under the default area.
+          const channelId = areaId ?? areas.find((a) => a.isDefault)?.id ?? areas[0]?.id
+          if (!channelId) return
+          createFolder.mutate(
+            { channelId, name },
+            {
+              onSuccess: (f) => openFolder(f.id),
+              onError: () => notify('Couldn’t create the folder — try again'),
+            },
+          )
+        }}
       />
     </SidebarFrame>
   )

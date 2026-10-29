@@ -103,6 +103,19 @@ const COMMAND_NAMES: (keyof Commands)[] = [
   'setHelperSkills',
   'saveHelperFile',
   'retryJob',
+  // ── sweep/chat ──
+  'updateSession',
+  'deleteSession',
+  'deleteArchivedSessions',
+  'setSessionShares',
+  'createFolder',
+  'updateFolder',
+  'deleteFolder',
+  'addFolderFile',
+  'removeFolderFile',
+  'setFolderShares',
+  'updateArea',
+  'dismissChiefNudge',
 ]
 
 describe('mock-mode parity', () => {

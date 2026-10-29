@@ -11,29 +11,25 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { HelperArea } from '../../core/domain/types'
 import { Button } from '../../ui/ds/Button'
 import { Dialog } from '../../ui/ds/Dialog'
 import { Mascot } from '../../ui/ds/Mascot'
-import { createCommands } from '../../adapters/http/commands'
-import { platform } from '../../platform'
+import { useCommands } from '../../app/CommandsProvider'
+import { useHelpers, useMembers } from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
 import { capture } from '../../telemetry'
 
 // ── pen `Chat · Create channel` (W0f1Ji) → Dialog bPWTh: right-side sheet ────
 
-const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
-function getToken(): string | null {
-  return platform.tokenStorage.getToken()
-}
-
+/** `hex` is saved as the area's look colour (tokens.css helper colours). */
 const SWATCHES = [
-  { id: 'support',   value: 'var(--color-helper-support)' },
-  { id: 'dev',       value: 'var(--color-helper-dev)' },
-  { id: 'marketing', value: 'var(--color-helper-marketing)' },
-  { id: 'sales',     value: 'var(--color-helper-sales)' },
-  { id: 'ops',       value: 'var(--color-helper-ops)' },
-  { id: 'finance',   value: 'var(--color-helper-finance)' },
-  { id: 'stone',     value: '#78716C' },
+  { id: 'support',   value: 'var(--color-helper-support)',   hex: '#EC4899' },
+  { id: 'dev',       value: 'var(--color-helper-dev)',       hex: '#14B8A6' },
+  { id: 'marketing', value: 'var(--color-helper-marketing)', hex: '#F97316' },
+  { id: 'sales',     value: 'var(--color-helper-sales)',     hex: '#8B5CF6' },
+  { id: 'ops',       value: 'var(--color-helper-ops)',       hex: '#0EA5E9' },
+  { id: 'finance',   value: 'var(--color-helper-finance)',   hex: '#65A30D' },
+  { id: 'stone',     value: '#78716C',                       hex: '#78716C' },
 ]
 
 /** Icon choices for an area — stored as the icon name string. */
@@ -49,20 +45,6 @@ const ICON_OPTIONS = [
 ] as const
 
 type IconName = typeof ICON_OPTIONS[number]['name']
-
-interface AgentEntry {
-  id: string
-  name: string
-  role: string
-  area: HelperArea
-  locked?: boolean
-}
-
-const AGENTS: AgentEntry[] = [
-  { id: 'chief',   name: 'Chief',   role: 'Chief of Staff · default in every chat', area: 'brand', locked: true },
-  { id: 'support', name: 'Support', role: 'Tickets, refunds, CSAT',                 area: 'support' },
-  { id: 'ops',     name: 'Ops',     role: 'Process & SOP upkeep',                   area: 'ops' },
-]
 
 /** pen Toggle: 32×18 pill · padding 2 · knob 14 white · on = primary, off = #D6D3D1. */
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -144,11 +126,16 @@ export interface CreateChannelDialogProps {
 }
 
 export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogProps) {
-  const [name, setName] = useState('Customer Success')
+  const [name, setName] = useState('')
   const [purpose, setPurpose] = useState('')
   const [color, setColor] = useState('support')
   const [icon, setIcon] = useState<IconName>('headphones')
-  const [agents, setAgents] = useState<Record<string, boolean>>({ support: true, ops: false })
+  const [agents, setAgents] = useState<Record<string, boolean>>({})
+  const commands = useCommands()
+  const { data: helpers = [] } = useHelpers()
+  const { data: members } = useMembers()
+  const chief = helpers.find((h) => h.isChief)
+  const others = helpers.filter((h) => !h.isChief)
   const [context, setContext] = useState<ContextOption>('isolated')
   const [nameError, setNameError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -165,19 +152,25 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
     setNameError('')
     setSubmitting(true)
     try {
-      const commands = createCommands(BASE_URL, getToken)
       await commands.createArea({
         name: trimmed,
         color,
+        colorHex: swatch.hex,
         icon,
         purpose: purpose.trim() || undefined,
         contextScope: context,
+        helperIds: Object.entries(agents).filter(([, on]) => on).map(([id]) => id),
       })
       await queryClient.invalidateQueries({ queryKey: ['channels'] })
+      await queryClient.invalidateQueries({ queryKey: ['helpers'] })
       capture('area_created', {})
+      setName('')
+      setPurpose('')
+      setAgents({})
       onOpenChange(false)
     } catch {
-      // Silent — network error; dialog stays open
+      // Network error — dialog stays open so nothing typed is lost.
+      notify('Couldn’t create the area — try again')
     } finally {
       setSubmitting(false)
     }
@@ -194,7 +187,9 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
         <>
           <span className="flex min-w-0 flex-1 items-center gap-[6px]">
             <Users size={14} aria-hidden className="text-muted" />
-            <span className="text-[12.5px] text-muted">Visible to 4 people</span>
+            <span className="text-[12.5px] text-muted">
+              {members ? `Visible to ${members.length} ${members.length === 1 ? 'person' : 'people'}` : 'Visible to everyone in the company'}
+            </span>
           </span>
           <Button variant="secondary" style={{ height: 32 }} onClick={() => onOpenChange(false)}>
             Cancel
@@ -228,7 +223,7 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
                 setName(e.target.value)
                 if (nameError) setNameError('')
               }}
-              placeholder="Area name"
+              placeholder="e.g. Customer Success"
               aria-label="Area name"
               className="h-[40px] min-w-0 w-full rounded-base bg-surface px-[9px] text-[13px] text-ink outline-[1.5px] -outline-offset-1 outline-primary placeholder:text-faint"
             />
@@ -310,27 +305,33 @@ export function CreateChannelDialog({ open, onOpenChange }: CreateChannelDialogP
       <div className="flex flex-col gap-[8px]">
         <SectionLabel label="Agents in this area" hint="Chief is always here" />
         <div className="flex flex-col overflow-hidden rounded-md outline-1 -outline-offset-1 outline-line-strong">
-          {AGENTS.map((agent, i) => (
+          <div
+            className={`flex items-center gap-[10px] px-[9px] py-[7px] ${others.length ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
+          >
+            <Mascot size={24} radius={7} area={chief?.area ?? 'brand'} title={chief?.name ?? 'Chief'} />
+            <div className="flex min-w-0 flex-1 flex-col gap-px">
+              <span className="text-[12.5px] font-medium text-ink">{chief?.name ?? 'Chief'}</span>
+              <span className="truncate text-[12px] text-muted">Chief of Staff · default in every chat</span>
+            </div>
+            <Lock size={14} aria-label="Always included" className="text-faint" />
+          </div>
+          {others.map((agent, i) => (
             <div
               key={agent.id}
               className={`flex items-center gap-[10px] px-[9px] py-[7px] ${
-                i < AGENTS.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
+                i < others.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
               }`}
             >
               <Mascot size={24} radius={7} area={agent.area} title={agent.name} />
               <div className="flex min-w-0 flex-1 flex-col gap-px">
                 <span className="text-[12.5px] font-medium text-ink">{agent.name}</span>
-                <span className="truncate text-[12px] text-muted">{agent.role}</span>
+                <span className="truncate text-[12px] text-muted">{agent.role ?? agent.jobDescription ?? agent.area}</span>
               </div>
-              {agent.locked ? (
-                <Lock size={14} aria-label="Always included" className="text-faint" />
-              ) : (
-                <Toggle
-                  on={agents[agent.id] ?? false}
-                  onChange={(v) => setAgents((prev) => ({ ...prev, [agent.id]: v }))}
-                  label={`Toggle ${agent.name}`}
-                />
-              )}
+              <Toggle
+                on={agents[agent.id] ?? false}
+                onChange={(v) => setAgents((prev) => ({ ...prev, [agent.id]: v }))}
+                label={`Toggle ${agent.name}`}
+              />
             </div>
           ))}
         </div>

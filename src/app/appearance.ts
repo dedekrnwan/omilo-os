@@ -15,22 +15,19 @@ export interface Look {
 
 interface AppearanceState {
   companies: Record<string, Look>
-  areas: Record<string, Look>
-  folders: Record<string, Look>
-  setLook(kind: 'companies' | 'areas' | 'folders', id: string, look: Look): void
-  resetLook(kind: 'companies' | 'areas' | 'folders', id: string): void
+  setLook(kind: 'companies', id: string, look: Look): void
+  resetLook(kind: 'companies', id: string): void
 }
 
 /**
- * Custom logos and icons (mock backend: kept in this browser).
- * Real persistence will move behind a repo port when the API lands.
+ * Company logos chosen on the rail (kept in this browser).
+ * Area and folder looks are saved on the area / folder through the API
+ * (PATCH /v1/channels/{id}, PATCH /v1/folders/{id}) — see `ui/ds/looks`.
  */
 export const useAppearance = create<AppearanceState>()(
   persist(
     (set) => ({
       companies: {},
-      areas: {},
-      folders: {},
       setLook(kind, id, look) {
         set((s) => ({ [kind]: { ...s[kind], [id]: { ...s[kind][id], ...look } } }) as Partial<AppearanceState>)
       },
@@ -51,7 +48,7 @@ export const useAppearance = create<AppearanceState>()(
           return sessionStorage
         }
       }),
-      partialize: (s) => ({ companies: s.companies, areas: s.areas, folders: s.folders }),
+      partialize: (s) => ({ companies: s.companies }),
     },
   ),
 )

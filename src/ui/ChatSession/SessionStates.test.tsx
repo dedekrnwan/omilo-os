@@ -33,16 +33,18 @@ function renderSession(sessionId: string) {
   )
 }
 
+const T = { kind: 'session' as const, id: 'sess-passkey' }
+
 // ── Share dialog ──────────────────────────────────────────────────────────────
 
 describe('ShareDialog', () => {
   test('renders closed by default', () => {
-    render(<ShareDialog title="Test chat" open={false} onOpenChange={() => {}} />)
+    render(<ShareDialog title="Test chat" target={T} open={false} onOpenChange={() => {}} />, { wrapper: makeWrapper() })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   test('opens with title when open=true', () => {
-    render(<ShareDialog title="Passkey rollout plan" open={true} onOpenChange={() => {}} />)
+    render(<ShareDialog title="Passkey rollout plan" target={T} open={true} onOpenChange={() => {}} />, { wrapper: makeWrapper() })
     const dialog = screen.getByRole('dialog')
     expect(dialog).toBeInTheDocument()
     expect(dialog).toHaveAccessibleName(/Share/i)
@@ -52,9 +54,7 @@ describe('ShareDialog', () => {
   test('Close button triggers onOpenChange(false)', async () => {
     const user = userEvent.setup()
     let openState = true
-    render(
-      <ShareDialog title="Test" open={openState} onOpenChange={(v) => { openState = v }} />,
-    )
+    render(<ShareDialog title="Test" target={T} open={openState} onOpenChange={(v) => { openState = v }} />, { wrapper: makeWrapper() })
     const closeBtn = screen.getByRole('button', { name: /close/i })
     await act(async () => {
       await user.click(closeBtn)
@@ -65,9 +65,7 @@ describe('ShareDialog', () => {
   test('Done button triggers onOpenChange(false)', async () => {
     const user = userEvent.setup()
     let openState = true
-    render(
-      <ShareDialog title="Test" open={openState} onOpenChange={(v) => { openState = v }} />,
-    )
+    render(<ShareDialog title="Test" target={T} open={openState} onOpenChange={(v) => { openState = v }} />, { wrapper: makeWrapper() })
     const doneBtn = screen.getByRole('button', { name: /done/i })
     await act(async () => {
       await user.click(doneBtn)
@@ -76,13 +74,24 @@ describe('ShareDialog', () => {
   })
 
   test('shows WHO HAS ACCESS section', () => {
-    render(<ShareDialog title="Test" open={true} onOpenChange={() => {}} />)
+    render(<ShareDialog title="Test" target={T} open={true} onOpenChange={() => {}} />, { wrapper: makeWrapper() })
     expect(screen.getByText(/who has access/i)).toBeInTheDocument()
   })
 
   test('shows Copy link button', () => {
-    render(<ShareDialog title="Test" open={true} onOpenChange={() => {}} />)
+    render(<ShareDialog title="Test" target={T} open={true} onOpenChange={() => {}} />, { wrapper: makeWrapper() })
     expect(screen.getByRole('button', { name: /copy link/i })).toBeInTheDocument()
+  })
+})
+
+describe('ShareDialog — real people', () => {
+  test('lists the owner from the API and adds a member by name', async () => {
+    const user = userEvent.setup()
+    render(<ShareDialog title="Test" target={T} open={true} onOpenChange={() => {}} />, { wrapper: makeWrapper() })
+    expect(await screen.findByText(/Dede Kurniawan/)).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /add people/i }), 'Rina')
+    await user.click(await screen.findByRole('option', { name: /Rina Ayu/ }))
+    expect(await screen.findByRole('button', { name: /Rina Ayu access/i })).toHaveTextContent('Can talk')
   })
 })
 

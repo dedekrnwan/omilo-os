@@ -28,6 +28,7 @@ import type {
   Session,
   WalletSettings,
 } from '../../core/domain/types'
+import type { Folder, FolderFile, Shares } from '../../core/domain/types' // sweep/chat
 import type { MeResult } from '../../core/domain/session'
 import { apiFetch } from './client'
 // ── sweep/docs ──
@@ -481,6 +482,13 @@ export interface CreateSessionInput {
   goalId?: string
   title?: string
   scope?: string
+  // ── sweep/chat ──
+  /** File the new chat straight into a folder (its area is inherited). */
+  folderId?: string
+  /** Model picked in the composer, stored on the session. */
+  model?: string
+  /** 'chief_private' for a private Chief DM thread. */
+  kind?: 'chat' | 'chief_private'
 }
 
 export interface MintMcpTokenInput {
@@ -497,6 +505,11 @@ export interface CreateAreaInput {
   icon?: string
   purpose?: string
   contextScope: string
+  // ── sweep/chat ──
+  /** Hex look colour saved on the area. */
+  colorHex?: string
+  /** Helpers (besides Chief) that join the new area. */
+  helperIds?: string[]
 }
 
 export interface UpdateWalletInput {
@@ -659,7 +672,7 @@ export interface CreateDocInput {
 export interface Commands {
   // ── P1 session + proposal commands ─────────────────────────────────────────
   createSession(input: CreateSessionInput): Promise<Session>
-  sendMessage(sessionId: string, content: string): Promise<{ message: Message; jobId: string }>
+  sendMessage(sessionId: string, content: string, opts?: SendMessageOptions): Promise<{ message: Message; jobId: string }>
   approveProposal(proposalId: string, note?: string): Promise<{ executionJobId: string }>
   rejectProposal(proposalId: string, note: string): Promise<void>
   requestChanges(proposalId: string, note: string): Promise<void>
@@ -909,6 +922,31 @@ export interface ResendRoutineRunResult {
   cancelFlowRun(flowId: string, runId: string): Promise<FlowRun>
   /** POST /v1/flows/{id}/versions/{v}/restore → Flow. */
   restoreFlowVersion(flowId: string, version: number): Promise<Flow>
+  // ── sweep/chat ──
+  /** PATCH /v1/sessions/{id} — rename, move folder (null = none), pin (per user), archive, goal, model. */
+  updateSession(id: string, input: UpdateSessionInput): Promise<Session>
+  /** DELETE /v1/sessions/{id} — soft delete (distinct from archive). */
+  deleteSession(id: string): Promise<void>
+  /** DELETE /v1/sessions/archived?channel_id= — delete every archived chat (optionally one area). */
+  deleteArchivedSessions(channelId?: string): Promise<{ deleted: number }>
+  /** PUT /v1/sessions/{id}/shares */
+  setSessionShares(id: string, input: SetSharesInput): Promise<Shares>
+  /** POST /v1/folders */
+  createFolder(input: CreateFolderInput): Promise<Folder>
+  /** PATCH /v1/folders/{id} — name, look, instructions. */
+  updateFolder(id: string, input: UpdateFolderInput): Promise<Folder>
+  /** DELETE /v1/folders/{id} — its chats move to Recent. */
+  deleteFolder(id: string): Promise<void>
+  /** POST /v1/folders/{id}/files */
+  addFolderFile(folderId: string, input: AddFolderFileInput): Promise<FolderFile>
+  /** DELETE /v1/folders/{id}/files/{fileId} */
+  removeFolderFile(folderId: string, fileId: string): Promise<void>
+  /** PUT /v1/folders/{id}/shares */
+  setFolderShares(id: string, input: SetSharesInput): Promise<Shares>
+  /** PATCH /v1/channels/{id} — area look (icon/colour) and name/purpose. */
+  updateArea(id: string, input: UpdateAreaInput): Promise<Channel>
+  /** POST /v1/chief/nudges/{id}/dismiss {snooze_until?} */
+  dismissChiefNudge(id: string, snoozeUntil?: string): Promise<void>
 }
 
 /**
@@ -961,6 +999,9 @@ export function createCommands(
       if (input.goalId !== undefined) body.goal_id = input.goalId
       if (input.title !== undefined) body.title = input.title
       if (input.scope !== undefined) body.scope = input.scope
+      if (input.folderId !== undefined) body.folder_id = input.folderId
+      if (input.model !== undefined) body.model = input.model
+      if (input.kind !== undefined) body.kind = input.kind
       return post<Session>('/v1/sessions', body)
     },
 
@@ -971,10 +1012,13 @@ export function createCommands(
     async sendMessage(
       sessionId: string,
       content: string,
+      opts?: SendMessageOptions,
     ): Promise<{ message: Message; jobId: string }> {
+      const body: Record<string, unknown> = { content }
+      if (opts?.model) body.model = opts.model
       const raw = await post<{ message: Message; job_id: string }>(
         `/v1/sessions/${sessionId}/messages`,
-        { content },
+        body,
       )
       return { message: raw.message, jobId: raw.job_id }
     },
@@ -1083,11 +1127,14 @@ export function createCommands(
     async createArea(input: CreateAreaInput): Promise<Channel> {
       const body: Record<string, unknown> = {
         name: input.name,
-        accent: input.color,
+        // sweep/chat: accent must be a ChannelAccent; other swatches keep 'general' + a hex look colour.
+        accent: ['dev', 'marketing', 'sales'].includes(input.color) ? input.color : 'general',
         context_scope: input.contextScope,
       }
       if (input.icon !== undefined) body.icon = input.icon
       if (input.purpose !== undefined) body.purpose = input.purpose
+      if (input.colorHex !== undefined) body.color = input.colorHex
+      if (input.helperIds !== undefined) body.helper_ids = input.helperIds
       const raw = await post<RawChannel>('/v1/channels', body)
       return mapChannel(raw)
     },
@@ -1635,6 +1682,73 @@ export function createCommands(
       return res.json() as Promise<HelperFile>
     async retryJob(jobId: string): Promise<RetryJobResult> {
       return post<RetryJobResult>(`/v1/jobs/${jobId}/retry`, {})
+    // ── sweep/chat ──────────────────────────────────────────────────────────────
+
+    async updateSession(id: string, input: UpdateSessionInput): Promise<Session> {
+      const body: Record<string, unknown> = {}
+      if (input.title !== undefined) body.title = input.title
+      if (input.folderId !== undefined) body.folder_id = input.folderId
+      if (input.pinned !== undefined) body.pinned = input.pinned
+      if (input.archived !== undefined) body.archived = input.archived
+      if (input.goalId !== undefined) body.goal_id = input.goalId
+      if (input.model !== undefined) body.model = input.model
+      return patch<Session>(`/v1/sessions/${id}`, body)
+
+    async deleteSession(id: string): Promise<void> {
+      await del(`/v1/sessions/${id}`)
+
+    async deleteArchivedSessions(channelId?: string): Promise<{ deleted: number }> {
+      const qs = channelId ? `?channel_id=${encodeURIComponent(channelId)}` : ''
+      const res = await apiFetch(`${baseUrl}/v1/sessions/archived${qs}`, getToken, deleteReq())
+      return res.json() as Promise<{ deleted: number }>
+
+    async setSessionShares(id: string, input: SetSharesInput): Promise<Shares> {
+      return put<Shares>(`/v1/sessions/${id}/shares`, sharesBody(input))
+
+    async createFolder(input: CreateFolderInput): Promise<Folder> {
+      const body: Record<string, unknown> = { channel_id: input.channelId, name: input.name }
+      if (input.icon !== undefined) body.icon = input.icon
+      if (input.color !== undefined) body.color = input.color
+      return post<Folder>('/v1/folders', body)
+
+    async updateFolder(id: string, input: UpdateFolderInput): Promise<Folder> {
+      const body: Record<string, unknown> = {}
+      if (input.name !== undefined) body.name = input.name
+      if (input.icon !== undefined) body.icon = input.icon
+      if (input.color !== undefined) body.color = input.color
+      if (input.instructions !== undefined) body.instructions = input.instructions
+      return patch<Folder>(`/v1/folders/${id}`, body)
+
+    async deleteFolder(id: string): Promise<void> {
+      await del(`/v1/folders/${id}`)
+
+    async addFolderFile(folderId: string, input: AddFolderFileInput): Promise<FolderFile> {
+      const body: Record<string, unknown> = { name: input.name, size: input.size ?? 0 }
+      if (input.mime !== undefined) body.mime = input.mime
+      if (input.text !== undefined) body.text = input.text
+      return post<FolderFile>(`/v1/folders/${folderId}/files`, body)
+
+    async removeFolderFile(folderId: string, fileId: string): Promise<void> {
+      await del(`/v1/folders/${folderId}/files/${fileId}`)
+
+    async setFolderShares(id: string, input: SetSharesInput): Promise<Shares> {
+      return put<Shares>(`/v1/folders/${id}/shares`, sharesBody(input))
+
+    async updateArea(id: string, input: UpdateAreaInput): Promise<Channel> {
+      const body: Record<string, unknown> = {}
+      if (input.name !== undefined) body.name = input.name
+      if (input.purpose !== undefined) body.purpose = input.purpose
+      if (input.icon !== undefined) body.icon = input.icon
+      if (input.color !== undefined) body.color = input.color
+      const raw = await patch<RawChannel & { color?: string }>(`/v1/channels/${id}`, body)
+      return { ...mapChannel(raw), ...(raw.color ? { color: raw.color } : {}) }
+
+    async dismissChiefNudge(id: string, snoozeUntil?: string): Promise<void> {
+      const body: Record<string, unknown> = {}
+      if (snoozeUntil) body.snooze_until = snoozeUntil
+        `${baseUrl}/v1/chief/nudges/${encodeURIComponent(id)}/dismiss`,
+        postJson(body),
+      if (res.status !== 204) await res.text()
     },
   }
 }
@@ -1760,4 +1874,51 @@ function updateHelperExtrasBody(input: UpdateHelperInput): Record<string, unknow
   if (input.behavior !== undefined) body.behavior = input.behavior
   if (input.budgetCreditsMonth !== undefined) body.budget_credits_month = input.budgetCreditsMonth
   return body
+// ── sweep/chat ────────────────────────────────────────────────────────────────
+
+export interface SendMessageOptions {
+  /** Model picked in the composer; stored on the session. */
+
+export interface UpdateSessionInput {
+  /** null removes the chat from its folder. */
+  folderId?: string | null
+  pinned?: boolean
+  archived?: boolean
+  /** null unlinks the goal. */
+  goalId?: string | null
+
+export interface SetSharesInput {
+  members: { userId: string; permission: 'can_talk' | 'can_view' }[]
+  generalAccess?: 'restricted' | 'company'
+
+function sharesBody(input: SetSharesInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    members: input.members.map((m) => ({ user_id: m.userId, permission: m.permission })),
+  }
+  if (input.generalAccess !== undefined) body.general_access = input.generalAccess
+
+export interface CreateFolderInput {
+  channelId: string
+  name: string
+  icon?: string
+  color?: string
+
+export interface UpdateFolderInput {
+  /** null/'' resets to the default glyph. */
+  icon?: string | null
+  color?: string | null
+  instructions?: string
+
+export interface AddFolderFileInput {
+  name: string
+  size?: number
+  mime?: string
+  /** Extracted text (text-like files only). */
+  text?: string
+
+export interface UpdateAreaInput {
+  purpose?: string
+  /** null resets to the accent default. */
+  icon?: string | null
+  color?: string | null
 }

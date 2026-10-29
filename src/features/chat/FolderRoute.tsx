@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { notFound, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
@@ -20,39 +20,74 @@ import {
   Target,
   Trash2,
   UserPlus,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { Folder as FolderT, Session } from '../../core/domain/types'
+import type { Folder as FolderT, HelperArea, Session } from '../../core/domain/types'
 import { FolderTileButton } from '../shell/LookControls'
-import { useAreas, useFolders, useSessions } from '../../app/queries'
-import { useChatStore } from '../../app/store'
+import {
+  useAddFolderFile,
+  useAreas,
+  useCreateFolder,
+  useDeleteSession,
+  useFolder,
+  useFolderFiles,
+  useFolderShares,
+  useFolders,
+  useGoals,
+  useRemoveFolderFile,
+  useSessions,
+  useUpdateFolder,
+  useUpdateSession,
+} from '../../app/queries'
+import { notify } from '../../ui/ds/Toaster'
+import { ShareDialog } from '../../ui/ChatSession/ShareDialog'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { accents } from '../../ui/ds/accents'
 import { CreateFolderDialog } from '../shell/CreateFolderDialog'
-import { FOLDER_PAGES } from './data'
-import type { FolderChat, FolderPage } from './data'
 
 // ── pen `Chat · Folder` (A8lWSN) ─────────────────────────────────────────────
 
-/** Folder page content: the design's copy for Q4 Launch, derived from fixtures otherwise. */
-function folderPage(folder: FolderT, sessions: Session[]): FolderPage {
-  const known = FOLDER_PAGES[folder.id]
-  if (known) return known
+interface FolderChat {
+  id: string
+  title: string
+  snippet: string
+  /** Helpers in the chat (Mascot avatars, 18px) */
+  agents: HelperArea[]
+  time: string
+  pinned?: boolean
+}
+
+const INSTRUCTIONS_PLACEHOLDER = 'Add instructions to tell helpers what every chat in this folder is about.'
+
+function toFolderChat(s: Session): FolderChat {
   return {
-    instructions: 'Add instructions to tell helpers what every chat in this folder is about.',
-    files: [],
-    chats: sessions
-      .filter((s) => s.folderId === folder.id)
-      .map((s) => ({
-        id: s.id,
-        title: s.title,
-        snippet: s.goal ? `Linked to ${s.goal}` : 'No linked goal',
-        agents: (s.participants ?? [{ area: 'brand' as const }]).map((p) => p.area),
-        time: s.updated,
-      })),
+    id: s.id,
+    title: s.title,
+    snippet: s.goal ? `Linked to ${s.goal}` : 'No linked goal',
+    agents: (s.participants?.length ? s.participants : [{ name: 'Chief', area: 'brand' as const }]).map((p) => p.area),
+    time: s.updated,
+    pinned: s.pinned,
   }
+}
+
+/** Text-like files are read so helpers can use them as folder context. */
+const TEXT_LIKE = /^(text\/|application\/(json|xml|x-yaml|yaml|csv|markdown))/
+const TEXT_EXT = /\.(md|markdown|txt|csv|tsv|json|ya?ml|xml|html?)$/i
+const MAX_TEXT_BYTES = 1_000_000
+
+async function readFileInput(file: File): Promise<{ name: string; size: number; mime?: string; text?: string }> {
+  const base = { name: file.name, size: file.size, mime: file.type || undefined }
+  if (file.size <= MAX_TEXT_BYTES && (TEXT_LIKE.test(file.type) || TEXT_EXT.test(file.name))) {
+    try {
+      return { ...base, text: await file.text() }
+    } catch {
+      return base
+    }
+  }
+  return base
 }
 
 // ── Chat menu (pen `Chat Menu` mXyV3 + `Folder Submenu` LiRnp) ────────────────
@@ -161,7 +196,7 @@ function ChatMenu({
             <ItemBody icon={Target} label="Link to goal" sub />
           </DropdownMenu.Item>
           <DropdownMenu.Item className={itemClass} onSelect={onPin}>
-            <ItemBody icon={Pin} label="Pin to sidebar" />
+            <ItemBody icon={Pin} label={chat.pinned ? 'Unpin from sidebar' : 'Pin to sidebar'} />
           </DropdownMenu.Item>
           <Divider />
           <DropdownMenu.Item className={itemClass} onSelect={onArchive}>
@@ -215,7 +250,7 @@ function FolderChatRow({
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 /**
- * Route: /chat/$channelId/folder/$folderId
+ * Route: /folder/$folderId
  * `?state=menu` opens the chat menu + Move-to-folder submenu on the third chat (design state).
  */
 export function FolderRoute() {
@@ -226,73 +261,111 @@ export function FolderRoute() {
   // Folders/sessions resolve across all areas so the view works from either mode.
   const { data: areas = [] } = useAreas()
   const { data: folders = [], isLoading } = useFolders(null)
+  const { data: detail } = useFolder(folderId)
   const { data: sessions = [] } = useSessions(null)
-  const { patchSession, archiveSession } = useChatStore()
+  const { data: files = [], isLoading: filesLoading } = useFolderFiles(folderId)
+  const { data: shares } = useFolderShares(folderId)
+  const { data: allGoals = [] } = useGoals(null)
+  const updateSession = useUpdateSession()
+  const deleteSession = useDeleteSession()
+  const updateFolder = useUpdateFolder()
+  const createFolder = useCreateFolder()
+  const addFile = useAddFolderFile()
+  const removeFile = useRemoveFolderFile()
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const [renameFor, setRenameFor] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [editingInstructions, setEditingInstructions] = useState(false)
   const [instructionsDraft, setInstructionsDraft] = useState('')
-  const [localInstructions, setLocalInstructions] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'recent' | 'oldest' | 'az'>('recent')
-  const [localFiles, setLocalFiles] = useState<string[]>([])
-  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [newFolderFor, setNewFolderFor] = useState<string | null>(null)
   const [goalPickerFor, setGoalPickerFor] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const designMenu = state === 'menu'
 
+  const listed = folders.find((f) => f.id === folderId)
+  // The detail read carries instructions; the list keeps the look in sync optimistically.
+  const folder: FolderT | undefined = listed ? { ...detail, ...listed, instructions: detail?.instructions } : detail ?? undefined
+
+  const chats = useMemo(() => {
+    const inFolder = sessions.filter((s) => s.folderId === folderId).map(toFolderChat)
+    if (sortOrder === 'oldest') return [...inFolder].reverse()
+    if (sortOrder === 'az') return [...inFolder].sort((a, b) => a.title.localeCompare(b.title))
+    return inFolder
+  }, [sessions, folderId, sortOrder])
+
   if (isLoading) return null
-  const folder = folders.find((f) => f.id === folderId)
   if (!folder) throw notFound()
   const channel = areas.find((a) => a.id === folder.channelId)
+  const goals = allGoals.filter((g) => g.channelId === folder.channelId).length
+    ? allGoals.filter((g) => g.channelId === folder.channelId)
+    : allGoals
 
-  const page = folderPage(folder, sessions)
+  const instructions = folder.instructions ?? ''
   const accent = accents[channel?.accent ?? 'general']
-  const openChatId = menuFor ?? (designMenu ? page.chats[2]?.id : null)
-  const highlightedIndex = page.chats.findIndex((c) => c.id === openChatId)
+  const openChatId = menuFor ?? (designMenu ? chats[2]?.id : null)
+  const highlightedIndex = chats.findIndex((c) => c.id === openChatId)
+  const sharedWith = (shares?.members ?? []).filter((m) => m.permission !== 'owner').map((m) => m.name.split(' ')[0])
   const sub = [
-    `${page.chats.length} chats`,
-    `${page.files.length} files`,
-    page.sharedWith ? `shared with ${page.sharedWith}` : null,
+    `${chats.length} chat${chats.length === 1 ? '' : 's'}`,
+    `${files.length} file${files.length === 1 ? '' : 's'}`,
+    sharedWith.length ? `shared with ${sharedWith.join(', ')}` : null,
   ]
     .filter(Boolean)
     .join(' · ')
 
+  const fail = (what: string) => () => notify(`Couldn’t ${what} — try again`)
+  const patchChat = (id: string, input: Parameters<typeof updateSession.mutate>[0]['input'], done?: string) =>
+    updateSession.mutate({ id, input }, { onSuccess: done ? () => notify(done) : undefined, onError: fail('save that change') })
+
   function openChat(id: string) {
-    if (sessions.some((s) => s.id === id)) {
-      void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
-    }
+    void navigate({ to: '/chat/$sessionId', params: { sessionId: id } })
   }
 
-  function startRename(chat: (typeof page.chats)[number]) {
+  function startRename(chat: FolderChat) {
     setRenameFor(chat.id)
     setRenameValue(chat.title)
     setMenuFor(null)
   }
 
   function commitRename() {
-    if (renameFor && renameValue.trim()) {
-      patchSession(renameFor, { title: renameValue.trim() })
-    }
+    if (renameFor && renameValue.trim()) patchChat(renameFor, { title: renameValue.trim() })
     setRenameFor(null)
   }
 
-  // Mock goal list derived from sessions linked to any channel
-  const mockGoals = [
-    { id: 'g1', title: 'Passwordless login by Q4' },
-    { id: 'g2', title: 'Grow RT admin sign-ups 20%' },
-    { id: 'g3', title: 'Ship mobile app v2' },
-  ]
+  function saveInstructions() {
+    updateFolder.mutate(
+      { id: folderId, input: { instructions: instructionsDraft.trim() } },
+      { onSuccess: () => notify('Folder instructions saved'), onError: fail('save the instructions') },
+    )
+    setEditingInstructions(false)
+  }
+
+  async function onFiles(list: FileList | null) {
+    for (const file of Array.from(list ?? [])) {
+      const input = await readFileInput(file)
+      addFile.mutate({ folderId, input }, { onError: fail(`add ${file.name}`) })
+    }
+  }
 
   return (
     <>
-      {/* New folder dialog */}
+      {/* New folder dialog (from a chat's Move-to-folder submenu: the chat moves into it) */}
       <CreateFolderDialog
-        open={newFolderOpen}
-        onOpenChange={setNewFolderOpen}
+        open={newFolderFor !== null}
+        onOpenChange={(o) => { if (!o) setNewFolderFor(null) }}
         onConfirm={(name) => {
-          // Mock: just close — no real folder store in this view
-          void name
+          const chatId = newFolderFor
+          createFolder.mutate(
+            { channelId: folder.channelId, name },
+            {
+              onSuccess: (f) => {
+                if (chatId) patchChat(chatId, { folderId: f.id }, `Moved to ${f.name}`)
+              },
+              onError: fail('create the folder'),
+            },
+          )
         }}
       />
 
@@ -307,12 +380,12 @@ export function FolderRoute() {
           <div className="flex w-[360px] flex-col gap-[12px] rounded-lg bg-surface p-[16px] outline-1 -outline-offset-1 outline-line-strong shadow-[0_12px_32px_#0C0A0924]">
             <h3 className="m-0 text-[16px] font-semibold text-ink">Link to goal</h3>
             <div className="flex flex-col gap-[4px]">
-              {mockGoals.map((g) => (
+              {goals.map((g) => (
                 <button
                   key={g.id}
                   type="button"
                   onClick={() => {
-                    patchSession(goalPickerFor, { goal: g.title })
+                    patchChat(goalPickerFor, { goalId: g.id }, `Linked to “${g.title}”`)
                     setGoalPickerFor(null)
                   }}
                   className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
@@ -321,6 +394,7 @@ export function FolderRoute() {
                   {g.title}
                 </button>
               ))}
+              {goals.length === 0 && <p className="m-0 text-[13px] text-muted">No goals yet.</p>}
             </div>
             <div className="flex justify-end">
               <Button variant="secondary" style={{ height: 32 }} onClick={() => setGoalPickerFor(null)}>Cancel</Button>
@@ -351,16 +425,23 @@ export function FolderRoute() {
         </div>
       )}
 
+      <ShareDialog
+        target={{ kind: 'folder', id: folder.id }}
+        title={folder.name}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
+
       <Topbar
         icon={FolderOpen}
         title={folder.name}
         meta={`Folder · ${channel?.name ?? ''}`}
         actions={
           <div className="flex items-center gap-[8px]">
-            <Button variant="secondary" icon={UserPlus}>
+            <Button variant="secondary" icon={UserPlus} onClick={() => setShareOpen(true)}>
               Share
             </Button>
-            <Button icon={Plus} onClick={() => void navigate({ to: '/chat' })}>
+            <Button icon={Plus} onClick={() => void navigate({ to: '/chat', search: { folder: folder.id } } as never)}>
               New chat in folder
             </Button>
           </div>
@@ -392,7 +473,7 @@ export function FolderRoute() {
                 {editingInstructions ? (
                   <button
                     type="button"
-                    onClick={() => { setLocalInstructions(instructionsDraft); setEditingInstructions(false) }}
+                    onClick={saveInstructions}
                     className="text-[12.5px] text-link hover:underline"
                   >
                     Save
@@ -401,7 +482,7 @@ export function FolderRoute() {
                   <button
                     type="button"
                     aria-label="Edit folder instructions"
-                    onClick={() => { setInstructionsDraft(localInstructions ?? page.instructions); setEditingInstructions(true) }}
+                    onClick={() => { setInstructionsDraft(instructions); setEditingInstructions(true) }}
                     className="text-[12.5px] text-link hover:underline"
                   >
                     Edit
@@ -412,13 +493,16 @@ export function FolderRoute() {
                 <textarea
                   autoFocus
                   value={instructionsDraft}
+                  placeholder={INSTRUCTIONS_PLACEHOLDER}
                   onChange={e => setInstructionsDraft(e.target.value)}
                   rows={4}
                   aria-label="Folder instructions text"
                   className="w-full resize-none rounded-base bg-surface p-[8px] text-[12.5px] leading-[1.55] text-ink-2 outline-1 -outline-offset-1 outline-line-strong"
                 />
               ) : (
-                <p className="m-0 text-[12.5px] leading-[1.55] text-ink-2">{localInstructions ?? page.instructions}</p>
+                <p className={`m-0 text-[12.5px] leading-[1.55] ${instructions ? 'text-ink-2' : 'text-muted'}`}>
+                  {instructions || INSTRUCTIONS_PLACEHOLDER}
+                </p>
               )}
             </section>
             <section
@@ -432,8 +516,7 @@ export function FolderRoute() {
                 aria-label="File input"
                 className="sr-only"
                 onChange={e => {
-                  const names = Array.from(e.target.files ?? []).map(f => f.name)
-                  if (names.length) setLocalFiles(prev => [...prev, ...names])
+                  void onFiles(e.target.files)
                   e.target.value = ''
                 }}
               />
@@ -449,12 +532,26 @@ export function FolderRoute() {
                   <Plus size={14} aria-hidden />
                 </button>
               </div>
-              {[...page.files, ...localFiles].map((name) => (
-                <div key={name} className="flex w-full items-center gap-[8px]">
-                  <File size={13} aria-hidden className="text-faint" />
-                  <span className="truncate text-[12.5px] text-ink-2">{name}</span>
-                </div>
-              ))}
+              {filesLoading ? (
+                <span className="text-[12.5px] text-faint">Loading…</span>
+              ) : files.length === 0 ? (
+                <span className="text-[12.5px] text-faint">No files yet — add docs helpers should read.</span>
+              ) : (
+                files.map((f) => (
+                  <div key={f.id} className="group flex w-full items-center gap-[8px]">
+                    <File size={13} aria-hidden className="text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{f.name}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${f.name}`}
+                      onClick={() => removeFile.mutate({ folderId, fileId: f.id }, { onError: fail(`remove ${f.name}`) })}
+                      className="hidden text-faint hover:text-ink group-hover:flex"
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  </div>
+                ))
+              )}
             </section>
           </div>
 
@@ -470,7 +567,12 @@ export function FolderRoute() {
             </button>
           </div>
           <div className="flex w-full flex-col">
-            {page.chats.map((chat, i) => (
+            {chats.length === 0 && (
+              <p className="m-0 px-[9px] py-[11px] text-[13px] text-muted">
+                No chats here yet. Start one with “New chat in folder”, or move a chat in from the sidebar.
+              </p>
+            )}
+            {chats.map((chat, i) => (
               <FolderChatRow
                 key={chat.id}
                 chat={chat}
@@ -485,12 +587,24 @@ export function FolderRoute() {
                     subOpen={designMenu && menuFor === null}
                     onOpenChange={(o) => setMenuFor(o ? chat.id : null)}
                     onRename={() => startRename(chat)}
-                    onMoveToFolder={(fId) => patchSession(chat.id, { folderId: fId })}
-                    onNewFolder={() => setNewFolderOpen(true)}
+                    onMoveToFolder={(fId) => {
+                      if (fId === folder.id) return
+                      const target = folders.find((f) => f.id === fId)
+                      patchChat(chat.id, { folderId: fId }, target ? `Moved to ${target.name}` : undefined)
+                    }}
+                    onNewFolder={() => { setNewFolderFor(chat.id); setMenuFor(null) }}
                     onLinkToGoal={() => { setGoalPickerFor(chat.id); setMenuFor(null) }}
-                    onPin={() => patchSession(chat.id, { pinned: true })}
-                    onArchive={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}
-                    onDelete={() => archiveSession(chat.id, chat.title, channel?.name ?? '')}
+                    onPin={() => patchChat(chat.id, { pinned: !chat.pinned }, chat.pinned ? 'Unpinned' : 'Pinned to sidebar')}
+                    onArchive={() =>
+                      updateSession.mutate(
+                        { id: chat.id, input: { archived: true } },
+                        {
+                          onSuccess: () => notify('Chat archived', () => patchChat(chat.id, { archived: false })),
+                          onError: fail('archive the chat'),
+                        },
+                      )
+                    }
+                    onDelete={() => deleteSession.mutate(chat.id, { onSuccess: () => notify('Chat deleted'), onError: fail('delete the chat') })}
                   />
                 }
               />

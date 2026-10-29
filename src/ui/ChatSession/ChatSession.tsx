@@ -4,17 +4,27 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, CircleCheck, Ellipsis, FoldVertical, Globe, MessageCircle, PanelRight, ScrollText, ShieldCheck, Target, UserPlus, X } from 'lucide-react'
-import type { Message, Model, SessionParticipant } from '../../core/domain/types'
-import { useChannel, useChannelFolders, useChannelGoals, useMessages, useSession } from '../../app/queries'
-import { useChatStore } from '../../app/store'
-import { createCommands } from '../../adapters/http/commands'
+import type { HelperArea, Message, Model, SessionParticipant } from '../../core/domain/types'
+import {
+  useChannel,
+  useChannelFolders,
+  useChannelGoals,
+  useDeleteSession,
+  useFolderFiles,
+  useMessages,
+  useSession,
+  useUpdateSession,
+} from '../../app/queries'
+import { useCommands } from '../../app/CommandsProvider'
 import { openChatSocket } from '../../adapters/http/chatSocket'
 import { platform } from '../../platform'
+import { notify } from '../ds/Toaster'
+import { usePickerSource } from './usePickerSource'
 import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
 import { MessageList } from './MessageList'
-import { DEFAULT_MODEL } from './ModelMenu'
+import { DEFAULT_MODEL, MODELS } from './ModelMenu'
 import { Composer } from './Composer'
 import type { ComposerMenu } from './Composer'
 import type { ComposerPopoverKind } from './ComposerPopovers'
@@ -77,19 +87,9 @@ interface ChatSessionProps {
   channelName?: string
 }
 
-/** pen `Checkbox/Off` (qswGP): 16px · radius 4 · 1px #A8A29E. */
-function Checkbox() {
-  return <span aria-hidden className="size-[16px] shrink-0 rounded-[4px] bg-surface outline-1 -outline-offset-1 outline-[#A8A29E]" />
-}
-
-const CREATED_TASKS = [
-  { label: 'Ship WebAuthn on web + iOS', meta: 'Dev · Nov 14' },
-  { label: 'Password fallback for legacy Android', meta: 'Dev · Nov 20' },
-  { label: 'Write rollout comms for residents', meta: 'Grower · Nov 18' },
-]
-
-/** pen `Tasks created` (n9NI9G): card under Chief's offer, replacing the suggested actions. */
-function TasksCreated({ goal, onUndo }: { goal: string; onUndo: () => void }) {
+/** pen `Tasks created` (n9NI9G): card under Chief's offer, replacing the suggested actions.
+ *  Chief re-plans the linked goal (POST /v1/goals/{id}/replan); the tasks land on the goal. */
+function TasksCreated({ goal, onDismiss }: { goal: string; onDismiss: () => void }) {
   const navigate = useNavigate()
   return (
     <div className="flex w-[680px] max-w-[calc(100%-48px)] flex-col gap-[8px] pl-[34px]">
@@ -99,19 +99,15 @@ function TasksCreated({ goal, onUndo }: { goal: string; onUndo: () => void }) {
       >
         <div className="flex w-full items-center gap-[8px]">
           <CircleCheck size={15} aria-hidden className="shrink-0 text-ok" />
-          <span className="text-[13px] font-semibold text-ink">3 tasks added to &ldquo;{goal}&rdquo;</span>
+          <span className="text-[13px] font-semibold text-ink">Chief is turning this into tasks under &ldquo;{goal}&rdquo;</span>
           <span className="h-px flex-1" />
-          <button type="button" onClick={onUndo} className="text-[12.5px] text-link hover:underline">
-            Undo
+          <button type="button" onClick={onDismiss} className="text-[12.5px] text-link hover:underline">
+            Dismiss
           </button>
         </div>
-        {CREATED_TASKS.map((t) => (
-          <div key={t.label} className="flex w-full items-center gap-[8px]">
-            <Checkbox />
-            <span className="flex-1 text-[13px] text-ink-2">{t.label}</span>
-            <span className="text-[12px] text-muted">{t.meta}</span>
-          </div>
-        ))}
+        <span className="text-[13px] text-ink-2">
+          Tasks show up on the goal as Chief assigns them to helpers.
+        </span>
         <button
           type="button"
           onClick={() => void navigate({ to: '/goals' })}
@@ -217,23 +213,33 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const { data: folders = [] } = useChannelFolders(channelId)
   const { data: goals = [] } = useChannelGoals(channelId)
 
-  // Chat store mutations
-  const { overrides, patchSession, archiveSession } = useChatStore()
-  const override = overrides[sessionId]
-  // Effective title: from store override, then session fixture
-  const effectiveTitle = override?.title ?? session?.title ?? ''
-  // Effective goal: from store override (can be null to clear), then session fixture
-  const effectiveGoal = override && 'goal' in override ? override.goal : session?.goal
+  // Rename / move / pin / goal / archive / delete persist through the API.
+  const updateSession = useUpdateSession()
+  const deleteSession = useDeleteSession()
+  const commands = useCommands()
+  const effectiveTitle = session?.title ?? ''
+  const effectiveGoal = session?.goal
+  const pickerSource = usePickerSource(channelId || null, sessionId)
+  const { data: folderFiles = [] } = useFolderFiles(session?.folderId ?? '')
 
-  // Model state keyed to sessionId — reset whenever sessionId changes
-  const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL)
-  const prevSessionId = useRef(sessionId)
-  useEffect(() => {
-    if (prevSessionId.current !== sessionId) {
-      prevSessionId.current = sessionId
-      setSelectedModel(DEFAULT_MODEL)
-    }
-  }, [sessionId])
+  // Model: the session's stored model (falls back to the default); a pick is saved.
+  const sessionModel = MODELS.find((m) => m.id === session?.model)
+  // (ChatSessionRoute keys this component by sessionId, so the pick resets per chat.)
+  const [pickedModel, setPickedModel] = useState<Model | null>(null)
+  const selectedModel: Model = pickedModel ?? sessionModel ?? DEFAULT_MODEL
+  function changeModel(m: Model) {
+    setPickedModel(m)
+    if (session && m.id !== session.model) updateSession.mutate({ id: sessionId, input: { model: m.id } })
+  }
+  function patch(input: Parameters<typeof updateSession.mutate>[0]['input'], done?: string) {
+    updateSession.mutate(
+      { id: sessionId, input },
+      {
+        onSuccess: done ? () => setActionToast(done) : undefined,
+        onError: () => notify('Couldn’t save that change — try again'),
+      },
+    )
+  }
 
   const [shareOpen, setShareOpen] = useState(screen === 'share')
   const [resultsOpen, setResultsOpen] = useState(screen?.startsWith('results') ?? false)
@@ -241,6 +247,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [isDraggingOver, setIsDraggingOver] = useState(screen === 'results-drop')
   const [tasksCreated, setTasksCreated] = useState(screen === 'tasks')
   const [toast, setToast] = useState(screen === 'tasks')
+  const [draft, setDraft] = useState<string | undefined>(undefined)
 
   // Chat menu dialog states
   const [renameOpen, setRenameOpen] = useState(false)
@@ -267,30 +274,28 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   // In mock mode (default): the existing behaviour is preserved exactly.
   const isLiveMode = import.meta.env.VITE_USE_HTTP === '1'
 
-  const { commands, baseUrl, getToken } = useMemo(() => {
-    if (!isLiveMode) return { commands: null, baseUrl: '', getToken: () => null }
+  const { baseUrl, getToken } = useMemo(() => {
+    if (!isLiveMode) return { baseUrl: '', getToken: () => null }
     const base = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
     const tok = () => platform.tokenStorage.getToken()
-    return { commands: createCommands(base, tok), baseUrl: base, getToken: tok }
+    return { baseUrl: base, getToken: tok }
   }, [isLiveMode])
 
   // Fallback: POST + refetch (called when socket errors / closes before job_done)
   const runFallback = useCallback(async (text: string) => {
     try {
-      if (commands) {
-        await commands.sendMessage(sessionId, text)
-        // Invalidate the messages query so useMessages refetches the saved message
-        await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
-      }
+      await commands.sendMessage(sessionId, text, { model: selectedModel.id })
+      // Invalidate the messages query so useMessages refetches the saved message
+      await queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
     } catch {
       // Fallback also failed — best effort, nothing more to do
     }
     setIsSending(false)
     setSendNotice('Message sent via fallback — response may take a moment.')
-  }, [commands, sessionId, queryClient])
+  }, [commands, sessionId, queryClient, selectedModel])
 
   const handleSend = useCallback((text: string) => {
-    if (!isLiveMode || !commands) return
+    if (!isLiveMode) return
 
     // Guard (a): if a send is already in-flight, deny the new send.
     // The composer disables send during isSending; this enforces it at the logic layer too.
@@ -325,6 +330,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
         setIsSending(false)
         // Invalidate to merge streamed messages with the server state
         void queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+        void queryClient.invalidateQueries({ queryKey: ['sessionResults', sessionId] })
         socket.close()
       },
       onJobFailed: (_jobId) => {
@@ -361,8 +367,8 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
     })
 
     socketRef.current = socket
-    socket.send(text)
-  }, [isLiveMode, commands, isSending, sessionId, getToken, baseUrl, queryClient, runFallback])
+    socket.send(text, { model: selectedModel.id })
+  }, [isLiveMode, isSending, sessionId, getToken, baseUrl, queryClient, runFallback, selectedModel])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -372,7 +378,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   }, [messages])
 
   const area = channelName ?? channel?.name ?? 'channel'
-  const folder = folders.find((f) => f.id === (override?.folderId ?? session?.folderId))
+  const folder = folders.find((f) => f.id === session?.folderId)
   const meta = [channel?.name, folder?.name].filter(Boolean).join(' / ')
   const participants = session?.participants?.length ? session.participants : [CHIEF]
   const composerState = screen ? COMPOSER_STATE[screen] : undefined
@@ -397,11 +403,34 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   // With the 600px browser beside it the thread and composer keep 28px gutters (pen E5554m).
   const col = browser ? 'w-[680px] max-w-[calc(100%-56px)]' : 'w-[680px] max-w-[calc(100%-48px)]'
 
-  const isPinned = override?.pinned ?? false
+  const isPinned = Boolean(session?.pinned)
+  const chatFiles = [
+    ...new Set([
+      ...(messages ?? []).flatMap((m) => (m.attachment ? [m.attachment.title] : [])),
+      ...folderFiles.map((f) => f.name),
+    ]),
+  ]
 
+  /** "Turn this into tasks": Chief re-plans the linked goal into tasks. */
   function createTasks() {
-    setTasksCreated(true)
-    setToast(true)
+    const goalId = session?.goalId
+    if (!goalId) {
+      setGoalPickerOpen(true)
+      setActionToast('Link this chat to a goal first')
+      return
+    }
+    commands.replanGoal(goalId).then(
+      () => {
+        setTasksCreated(true)
+        setToast(true)
+      },
+      () => notify('Couldn’t plan the tasks — try again'),
+    )
+  }
+
+  /** Ask a helper in this chat (prefills the composer with an @mention). */
+  function askHelper(name: string, _area?: HelperArea, about?: string) {
+    setDraft(`@${name} ${about ? `can you change something in “${about}”? ` : ''}`)
   }
 
   // ── ChatMenu handlers ────────────────────────────────────────────────────────
@@ -413,7 +442,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
 
   function commitRename() {
     const trimmed = renameValue.trim()
-    if (trimmed) patchSession(sessionId, { title: trimmed })
+    if (trimmed && trimmed !== effectiveTitle) patch({ title: trimmed })
     setRenameOpen(false)
   }
 
@@ -426,8 +455,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   }
 
   function handlePinToSidebar() {
-    patchSession(sessionId, { pinned: !isPinned })
-    setActionToast(isPinned ? 'Unpinned from sidebar' : 'Pinned to sidebar')
+    patch({ pinned: !isPinned }, isPinned ? 'Unpinned from sidebar' : 'Pinned to sidebar')
   }
 
   function handleExportMarkdown() {
@@ -454,8 +482,13 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   }
 
   function handleArchive() {
-    archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
-    setActionToast('Chat archived')
+    updateSession.mutate(
+      { id: sessionId, input: { archived: true } },
+      {
+        onSuccess: () => notify('Chat archived', () => updateSession.mutate({ id: sessionId, input: { archived: false } })),
+        onError: () => notify('Couldn’t archive the chat — try again'),
+      },
+    )
     void navigate({ to: '/archived' })
   }
 
@@ -464,10 +497,11 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   }
 
   function confirmDelete() {
-    // Mark as archived+deleted in store — simplest mock-only approach
-    archiveSession(sessionId, effectiveTitle, channel?.name ?? 'General')
+    deleteSession.mutate(sessionId, {
+      onSuccess: () => notify('Chat deleted'),
+      onError: () => notify('Couldn’t delete the chat — try again'),
+    })
     setDeleteConfirmOpen(false)
-    setActionToast('Chat deleted')
     void navigate({ to: '/chat' })
   }
 
@@ -523,7 +557,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 <button
                   key={f.id}
                   type="button"
-                  onClick={() => { patchSession(sessionId, { folderId: f.id }); setFolderPickerOpen(false); setActionToast(`Moved to "${f.name}"`) }}
+                  onClick={() => { patch({ folderId: f.id }, `Moved to "${f.name}"`); setFolderPickerOpen(false) }}
                   className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
                 >
                   {f.name}
@@ -553,7 +587,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 <button
                   key={g.id}
                   type="button"
-                  onClick={() => { patchSession(sessionId, { goal: g.title }); setGoalPickerOpen(false); setActionToast(`Linked to "${g.title}"`) }}
+                  onClick={() => { patch({ goalId: g.id }, `Linked to "${g.title}"`); setGoalPickerOpen(false) }}
                   className="flex w-full items-center gap-[8px] rounded-base px-[8px] py-[6px] text-left text-[13px] text-ink hover:bg-soft"
                 >
                   <Target size={13} aria-hidden className="text-ok" />
@@ -693,7 +727,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 onTasksAction={createTasks}
                 replaceActions={
                   tasksCreated && effectiveGoal ? (
-                    <TasksCreated goal={effectiveGoal} onUndo={() => setTasksCreated(false)} />
+                    <TasksCreated goal={effectiveGoal} onDismiss={() => setTasksCreated(false)} />
                   ) : undefined
                 }
               />
@@ -723,16 +757,17 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             </div>
           )}
           <Composer
-            key={screen ?? 'base'}
+            key={`${screen ?? 'base'}-${draft ?? ''}`}
             sessionId={sessionId}
             selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
+            onModelChange={changeModel}
+            pickerSource={pickerSource}
             contextUsed={contextUsed}
             contextAlmostFull={screen === 'almost-full' || contextUsed >= 90}
             autoCompact={autoCompact}
             onAutoCompactToggle={() => setAutoCompact(v => !v)}
             onCompactNow={() => setActionToast('Context compacted')}
-            initialText={composerState?.text}
+            initialText={draft ?? composerState?.text}
             initialPopover={composerState?.popover}
             initialMenu={composerState?.menu}
             placeholder={
@@ -742,7 +777,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                     participants.length > 1 ? 'are' : 'is'
                   } in this chat`
             }
-            onSend={isLiveMode ? handleSend : undefined}
+            onSend={isLiveMode ? (text) => { setDraft(undefined); handleSend(text) } : undefined}
           />
         </div>
         <p className="m-0 flex items-center gap-[6px] text-[12px] text-faint">
@@ -760,26 +795,36 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
         <BesideInset anchor={rootRef}>
           {resultsOpen && (
             <ResultsPanel
+              sessionId={sessionId}
               onClose={() => setResultsOpen(false)}
               highlightFiles={isDraggingOver}
               initialPreview={screen === 'results-preview'}
+              contextUsed={contextUsed}
+              modelLabel={selectedModel.label}
+              onCompact={() => setActionToast('Context compacted')}
+              files={chatFiles}
+              goal={effectiveGoal}
+              onAskChange={(helper, title) => askHelper(helper, undefined, title)}
             />
           )}
-          {browserOpen && (
-            <BrowserPanel onClose={() => setBrowserOpen(false)} initialTakenOver={screen === 'browser-takeover'} />
-          )}
+          {browserOpen && <BrowserPanel sessionId={sessionId} onClose={() => setBrowserOpen(false)} />}
         </BesideInset>
       )}
 
       {toast && (
         <Toast
-          title="3 tasks added to the goal"
-          body="Dev and Grower got them in Office mode."
+          title="Chief is planning the tasks"
+          body="They land on the goal in Office mode as helpers pick them up."
           onClose={() => setToast(false)}
         />
       )}
 
-      <ShareDialog title={session?.title ?? 'this chat'} open={shareOpen} onOpenChange={setShareOpen} />
+      <ShareDialog
+        title={session?.title ?? 'this chat'}
+        target={{ kind: 'session', id: sessionId }}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </div>
   )
 }

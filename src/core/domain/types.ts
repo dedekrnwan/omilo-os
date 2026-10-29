@@ -57,6 +57,8 @@ export interface Channel {
   purpose?: string
   /** Agent context scope: 'isolated' | 'isolated_general'. Defaults to 'isolated'. */
   contextScope: string
+  /** sweep/chat — custom area colour (hex) chosen in the icon picker. */
+  color?: string
 }
 
 /**
@@ -94,6 +96,12 @@ export interface Folder {
   name: string
   /** Total chats in the folder (may exceed the chats listed in the sidebar). */
   count: number
+  // ── sweep/chat ──
+  icon?: string
+  /** Hex colour of the folder glyph. */
+  color?: string
+  /** Instructions every chat in the folder gets as context. */
+  instructions?: string
 }
 
 export interface Model {
@@ -151,6 +159,17 @@ export interface Session {
   goal?: string
   /** Helpers in the chat (topbar avatars). */
   participants?: SessionParticipant[]
+  // ── sweep/chat ──
+  /** Pinned to the sidebar by the current user (pins are per user). */
+  pinned?: boolean
+  /** ISO time the chat was archived (only on archived listings). */
+  archivedAt?: string
+  /** Linked goal id (the `goal` label is its title). */
+  goalId?: Id
+  /** Model picked in the composer, e.g. 'opus-5-5'. */
+  model?: string
+  /** 'chief_private' for private Chief DM threads; absent for normal chats. */
+  kind?: 'chief_private'
 }
 
 export interface InboxProposal {
@@ -1037,4 +1056,62 @@ export interface ActivityPage {
   items: ActivityEntry[]
   nextCursor: string | null
   counts: Record<ActivityKind, number>
+// ── sweep/chat ────────────────────────────────────────────────────────────────
+
+/** A file attached to a folder as shared context (GET /v1/folders/{id}/files). */
+export interface FolderFile {
+  folderId: Id
+  size: number
+  mime?: string | null
+  /** True when the file's text was extracted for helpers to read. */
+  hasText: boolean
+  createdAt?: string | null
+
+export type SharePermission = 'owner' | 'can_talk' | 'can_view'
+
+export interface ShareMember {
+  userId: Id
+  email: string
+  permission: SharePermission
+
+/** People a chat or folder is shared with. */
+export interface Shares {
+  members: ShareMember[]
+  /** Chats only: 'restricted' (people added) | 'company' (anyone in the company). */
+  generalAccess?: 'restricted' | 'company'
+
+export interface SessionStep {
+  status: 'done' | 'running' | 'pending' | 'waiting' | 'failed' | string
+  helper: string
+  helperArea?: HelperArea | null
+  endedAt?: string | null
+  durationS?: number | null
+
+export interface SessionOutput {
+  helper: string
+  createdAt?: string | null
+
+/** A tool / browser action a helper took in the chat (Browser panel). */
+export interface SessionActivity {
+  helper: string
+  url?: string | null
+  at?: string | null
+
+/** GET /v1/sessions/{id}/results — derived from the chat's jobs. */
+export interface SessionResults {
+  steps: SessionStep[]
+  outputs: SessionOutput[]
+  activity: SessionActivity[]
+  usage: { tokensIn: number; tokensOut: number; costCredits: number }
+
+/** GET /v1/chief/nudges — a proactive prompt from Chief (derived from the inbox). */
+export interface ChiefNudge {
+  body: string
+  /** Prefilled question when the person accepts. */
+  prompt: string
+  primary: string
+  secondary: string
+  inboxItemId?: Id
+  sessionId?: Id
+  createdAt?: string | null
 }

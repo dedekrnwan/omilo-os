@@ -1,85 +1,59 @@
 /**
  * BrowserPanel — the 600px agent-browser card beside the chat
- * (pen `Chat · Session + Browser` E5554m, `· You took over` ocar6).
+ * (pen `Chat · Session + Browser` E5554m).
+ *
+ * Omilo has no live remote browser stream yet, so the panel shows what was
+ * actually recorded: the browser / tool actions helpers took in this chat
+ * (GET /v1/sessions/{id}/results → activity), grouped into one tab per site.
+ * With nothing recorded it says so instead of showing a mock page.
  */
-
-import { useState } from 'react'
-import {
-  ArrowLeft,
-  ArrowRight,
-  EllipsisVertical,
-  Hand,
-  Lock,
-  Maximize2,
-  Minimize2,
-  MousePointer2,
-  MousePointerClick,
-  Plus,
-  RotateCw,
-  ShieldCheck,
-  Undo2,
-  X,
-} from 'lucide-react'
-import { notify } from '../ds/Toaster'
-
-/** lucide `github` (brand icons are not shipped by lucide-react). */
-function Github({ size = 24, className }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className}>
-      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
-      <path d="M9 18c-4.51 2-5-2-7-2" />
-    </svg>
-  )
-}
-
-/** pen `Switch/On` (y1lHE) / `Switch/Off` (o4QgH): 32×18 · radius 9 · p-2 · 14px knob. */
-function Switch({ on }: { on: boolean }) {
-  return (
-    <span aria-hidden className={`flex h-[18px] w-[32px] shrink-0 rounded-[9px] p-[2px] ${on ? 'justify-end bg-primary' : 'bg-line-strong'}`}>
-      <span className="size-[14px] rounded-full bg-white shadow-[0_1px_2px_#0000002E]" />
-    </span>
-  )
-}
-
-/** pen `Spinner` (g4C5A): 14px donut, ink quarter arc on a line-strong track. */
-function Spinner() {
-  return (
-    <svg width={14} height={14} viewBox="0 0 14 14" aria-hidden className="shrink-0 animate-spin">
-      <circle cx={7} cy={7} r={6.02} fill="none" stroke="var(--color-line-strong)" strokeWidth={1.96} />
-      <circle cx={7} cy={7} r={6.02} fill="none" stroke="var(--color-ink)" strokeWidth={1.96} strokeDasharray={`${(Math.PI * 2 * 6.02) / 4} 100`} transform="rotate(-45 7 7)" />
-    </svg>
-  )
-}
-
-const SETTINGS = [
-  { label: 'Enable passkeys', desc: 'Show “Sign in with passkey” on the login page', on: true },
-  { label: 'Staged rollout', desc: 'Start with 10% of Engineering, then everyone', on: true },
-  { label: 'Require on new devices', desc: 'Ask for a passkey when a device is unknown', on: false },
-]
+import { useMemo, useState } from 'react'
+import { ArrowUpRight, Globe, Lock, Maximize2, Minimize2, MousePointerClick, X } from 'lucide-react'
+import type { SessionActivity } from '../../core/domain/types'
+import { useSessionResults } from '../../app/queries'
+import { Mascot } from '../ds/Mascot'
 
 const iconBtn = 'flex items-center justify-center text-muted hover:text-ink-2'
 
 export interface BrowserPanelProps {
+  /** Chat whose helper browser activity is shown. */
+  sessionId: string
   onClose: () => void
-  /** Start in the "You took over" state (ocar6). */
-  initialTakenOver?: boolean
 }
 
-const INITIAL_TABS = [
-  { id: 'passkeys', label: 'Auth console · Passkeys', icon: 'shield' as const },
-  { id: 'pr482',   label: 'PR #482',                 icon: 'github' as const },
-]
-
-export function BrowserPanel({ onClose, initialTakenOver = false }: BrowserPanelProps) {
-  const [takenOver, setTakenOver] = useState(initialTakenOver)
-  const [tabs, setTabs] = useState(INITIAL_TABS)
-  const [optionsOpen, setOptionsOpen] = useState(false)
-  const [expanded, setExpanded] = useState(false)
-
-  function addTab() {
-    const id = `tab-${Date.now()}`
-    setTabs((prev) => [...prev, { id, label: 'New tab', icon: 'shield' as const }])
+function hostOf(url?: string | null): string | null {
+  if (!url) return null
+  try {
+    return new URL(url).host
+  } catch {
+    return null
   }
+}
+
+function timeOf(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+export function BrowserPanel({ sessionId, onClose }: BrowserPanelProps) {
+  const [expanded, setExpanded] = useState(false)
+  const { data, isLoading, isError } = useSessionResults(sessionId)
+  const activity = useMemo(() => data?.activity ?? [], [data])
+
+  // One "tab" per site visited (actions without a URL are grouped as "Actions").
+  const tabs = useMemo(() => {
+    const map = new Map<string, SessionActivity[]>()
+    for (const a of activity) {
+      const key = hostOf(a.url) ?? 'Actions'
+      map.set(key, [...(map.get(key) ?? []), a])
+    }
+    return [...map.entries()].map(([host, items]) => ({ host, items }))
+  }, [activity])
+  const [tab, setTab] = useState<string | null>(null)
+  const current = tabs.find((t) => t.host === tab) ?? tabs[tabs.length - 1]
+  const lastUrl = current ? [...current.items].reverse().find((a) => a.url)?.url : undefined
 
   return (
     <aside
@@ -87,68 +61,27 @@ export function BrowserPanel({ onClose, initialTakenOver = false }: BrowserPanel
       data-testid="browser-panel"
       className={`ml-[6px] flex min-h-0 shrink-0 flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong ${expanded ? 'w-[900px]' : 'w-[600px]'}`}
     >
-      {takenOver && (
-        <div role="alert" className="flex w-full items-center justify-center gap-[8px] bg-warn px-[12px] py-[6px]">
-          <MousePointer2 size={13} aria-hidden className="text-white" />
-          <span className="text-[12px] font-medium text-white">You&apos;re controlling this tab — Dev won&apos;t click or type</span>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="flex w-full items-center gap-[6px] bg-soft px-[10px] py-[8px]">
-        {tabs.map((tab) => (
-          tab.icon === 'shield' ? (
-            <div key={tab.id} className="flex items-center gap-[8px] rounded-sm bg-surface px-[10px] py-[6px] outline-1 -outline-offset-1 outline-line">
-              <ShieldCheck size={13} aria-hidden className="text-ok" />
-              <span className="text-[12px] text-ink">{tab.label}</span>
-              <button
-                type="button"
-                aria-label={`Close ${tab.label}`}
-                onClick={() => setTabs((prev) => prev.filter((t) => t.id !== tab.id))}
-              >
-                <X size={12} aria-hidden className="text-muted hover:text-ink" />
-              </button>
-            </div>
-          ) : (
-            <div key={tab.id} className="flex items-center gap-[8px] rounded-sm px-[10px] py-[6px]">
-              <Github size={13} className="text-muted" />
-              <span className="text-[12px] text-muted">{tab.label}</span>
-            </div>
-          )
-        ))}
-        <button type="button" aria-label="New tab" onClick={addTab} className={iconBtn}>
-          <Plus size={15} aria-hidden />
-        </button>
-        <span className="h-px flex-1" />
-        <div className="relative">
-          <button
-            type="button"
-            aria-label="Browser options"
-            aria-expanded={optionsOpen}
-            onClick={() => setOptionsOpen((v) => !v)}
-            className={iconBtn}
-          >
-            <EllipsisVertical size={15} aria-hidden />
-          </button>
-          {optionsOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-full z-50 mt-[4px] flex w-[180px] flex-col gap-px rounded-lg bg-surface p-[6px] shadow-[0_12px_32px_#0C0A0924] outline-1 -outline-offset-1 outline-line-strong"
+        {tabs.map((t) => {
+          const active = t.host === current?.host
+          return (
+            <button
+              key={t.host}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setTab(t.host)}
+              className={`flex min-w-0 items-center gap-[8px] rounded-sm px-[10px] py-[6px] ${
+                active ? 'bg-surface outline-1 -outline-offset-1 outline-line' : ''
+              }`}
             >
-              {(['Reload tab', 'Find on page', 'Save page as…'] as const).map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => { notify(label); setOptionsOpen(false) }}
-                  className="flex w-full items-center gap-[8px] rounded-btn px-[8px] py-[7px] text-left text-[12.5px] text-ink hover:bg-hover"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+              <Globe size={13} aria-hidden className={active ? 'text-ok' : 'text-muted'} />
+              <span className={`truncate text-[12px] ${active ? 'text-ink' : 'text-muted'}`}>{t.host}</span>
+            </button>
+          )
+        })}
+        {tabs.length === 0 && <span className="px-[4px] text-[12px] text-muted">Agent browser</span>}
+        <span className="h-px flex-1" />
         <button
           type="button"
           aria-label={expanded ? 'Collapse browser' : 'Expand browser'}
@@ -162,91 +95,63 @@ export function BrowserPanel({ onClose, initialTakenOver = false }: BrowserPanel
         </button>
       </div>
 
-      {/* Nav */}
+      {/* Nav: the last page the helper was on */}
       <div className="flex w-full items-center gap-[10px] px-[12px] py-[8px] shadow-[inset_0_-1px_0_var(--color-line)]">
-        <ArrowLeft size={15} aria-hidden className="text-muted" />
-        <ArrowRight size={15} aria-hidden className="text-muted" />
-        <RotateCw size={15} aria-hidden className="text-muted" />
         <div className="flex h-[28px] min-w-0 flex-1 items-center gap-[6px] rounded-sm bg-soft px-[10px]">
           <Lock size={12} aria-hidden className="text-muted" />
-          <span className="truncate font-mono text-[12px] text-ink-2">console.saga.id/auth/passkeys</span>
+          <span className="truncate font-mono text-[12px] text-ink-2">{lastUrl ?? 'No page open'}</span>
         </div>
-        <MousePointerClick size={15} aria-hidden className="text-muted" />
+        {lastUrl && (
+          <a href={lastUrl} target="_blank" rel="noreferrer" aria-label="Open page in a new tab" className={iconBtn}>
+            <ArrowUpRight size={15} aria-hidden />
+          </a>
+        )}
       </div>
 
-      {/* View */}
-      <div
-        className={`relative flex min-h-0 w-full flex-1 flex-col gap-[18px] bg-app p-[28px] ${
-          takenOver ? 'outline-2 -outline-offset-2 outline-warn' : ''
-        }`}
-      >
-        <div className="flex w-full flex-col gap-[4px]">
-          <span className="text-[10.5px] font-semibold tracking-[1px] text-faint">AUTHENTICATION</span>
-          <h2 className="m-0 font-display text-[22px] font-semibold text-ink">Passkeys</h2>
-          <p className="m-0 text-[12.5px] text-muted">Let people sign in with Face ID, Touch ID or a security key.</p>
-        </div>
-
-        <div className="flex w-full flex-col rounded-md bg-surface outline-1 -outline-offset-1 outline-line-strong">
-          {SETTINGS.map((s, i) => (
-            <div
-              key={s.label}
-              className={`flex w-full items-center gap-[12px] px-[16px] py-[14px] ${
-                i < SETTINGS.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
-              }`}
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-                <span className="text-[13px] font-medium text-ink">{s.label}</span>
-                <span className="text-[12px] text-muted">{s.desc}</span>
-              </div>
-              {/* The setting the agent just touched gets a 2px info ring (agent mode) */}
-              <span
-                className={`rounded-pill ${i === 0 ? 'p-[3px]' : ''} ${
-                  i === 0 && !takenOver ? 'outline-2 -outline-offset-2 outline-info' : ''
-                }`}
-              >
-                <Switch on={s.on} />
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <span className="flex-1" />
-
-        {takenOver ? (
-          <div className="flex w-full items-center gap-[10px] rounded-md bg-warn-tint px-[12px] py-[10px] outline-1 -outline-offset-1 outline-warn-line">
-            <Hand size={16} aria-hidden className="shrink-0 text-warn" />
-            <span className="flex-1 text-[12.5px] text-ink-2">You&apos;re in control · Dev paused and is watching</span>
-            <button
-              type="button"
-              onClick={() => setTakenOver(false)}
-              className="inline-flex h-[28px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[13px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary hover:bg-primary-hover"
-            >
-              <Undo2 size={16} aria-hidden />
-              Hand back to Dev
-            </button>
+      {/* View: what helpers did */}
+      <div className="relative flex min-h-0 w-full flex-1 flex-col gap-[14px] overflow-y-auto bg-app p-[28px]">
+        {isLoading ? (
+          <p className="m-0 text-[13px] text-muted">Loading activity…</p>
+        ) : isError ? (
+          <p role="alert" className="m-0 text-[13px] text-bad">Couldn’t load browser activity.</p>
+        ) : !current ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-[10px] text-center">
+            <Mascot size={40} radius={11} />
+            <p className="m-0 text-[13.5px] font-medium text-ink">No browser activity in this chat</p>
+            <p className="m-0 max-w-[360px] text-[12.5px] text-muted">
+              When a helper opens a page or clicks something to get your task done, each step shows up here.
+            </p>
           </div>
         ) : (
-          <div className="flex w-full items-center gap-[10px] rounded-md bg-surface px-[12px] py-[10px] outline-1 -outline-offset-1 outline-line-strong">
-            <Spinner />
-            <span className="flex-1 text-[12.5px] text-ink-2">Dev turned on passkeys · checking the login page next</span>
-            <button
-              type="button"
-              onClick={() => setTakenOver(true)}
-              className="inline-flex h-[28px] items-center rounded-btn px-[14px] text-[14px] text-muted hover:bg-hover"
-            >
-              Take over
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-[28px] items-center rounded-btn bg-surface px-[12px] text-[13px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
-            >
-              Stop
-            </button>
-          </div>
-        )}
-
-        {takenOver && (
-          <MousePointer2 size={20} aria-hidden className="pointer-events-none absolute top-[150px] left-[520px] text-ink" />
+          <>
+            <div className="flex w-full flex-col gap-[4px]">
+              <span className="text-[10.5px] font-semibold tracking-[1px] text-faint">ACTIVITY</span>
+              <h2 className="m-0 font-display text-[22px] font-semibold text-ink">{current.host}</h2>
+              <p className="m-0 text-[12.5px] text-muted">
+                {current.items.length} action{current.items.length === 1 ? '' : 's'} recorded in this chat
+              </p>
+            </div>
+            <div className="flex w-full flex-col rounded-md bg-surface outline-1 -outline-offset-1 outline-line-strong">
+              {current.items.map((a, i) => (
+                <div
+                  key={a.id}
+                  className={`flex w-full items-center gap-[12px] px-[16px] py-[12px] ${
+                    i < current.items.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''
+                  }`}
+                >
+                  <MousePointerClick size={15} aria-hidden className="shrink-0 text-muted" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                    <span className="truncate text-[13px] font-medium text-ink">{a.title ?? a.action}</span>
+                    <span className="truncate text-[12px] text-muted">
+                      {a.helper} · {a.action}
+                      {a.url ? ` · ${a.url}` : ''}
+                    </span>
+                  </div>
+                  <span className="shrink-0 font-mono text-[11px] text-faint">{timeOf(a.at)}</span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </aside>

@@ -38,6 +38,9 @@ class CreateChannelBody(BaseModel):
     icon: Optional[str] = None
     purpose: Optional[str] = None
     context_scope: Optional[str] = "isolated"
+    # ── sweep/chat ──
+    color: Optional[str] = None          # hex look colour
+    helper_ids: Optional[list[str]] = None  # helpers (besides Chief) joining the area
 
     @field_validator("name")
     @classmethod
@@ -122,7 +125,23 @@ def create_channel(
         icon=body.icon,
         purpose=body.purpose,
         context_scope=body.context_scope or "isolated",
+        color=body.color,  # sweep/chat
     )
     db.add(channel)
     db.flush()
+    # sweep/chat: helpers toggled on in the create dialog join the area.
+    if body.helper_ids:
+        from sqlalchemy.orm.attributes import flag_modified
+
+        from omilo.models.agents import Helper
+
+        joined = 0
+        for h in db.query(Helper).filter(Helper.id.in_(body.helper_ids)).all():
+            if h.is_chief:
+                continue
+            h.channel_ids = [*(h.channel_ids or []), channel.id]
+            flag_modified(h, "channel_ids")
+            joined += 1
+        channel.agent_count = joined
+        db.flush()
     return ChannelDTO.model_validate(channel, from_attributes=True).model_dump(by_alias=True, exclude_none=False)

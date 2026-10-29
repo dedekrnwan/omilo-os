@@ -3,9 +3,10 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Composer } from './Composer'
 import { DEFAULT_MODEL } from './ModelMenu'
+import { TEST_PICKER_SOURCE } from './testPickerSource'
 
 function renderComposer() {
-  return render(<Composer sessionId="s1" selectedModel={DEFAULT_MODEL} onModelChange={() => {}} />)
+  return render(<Composer sessionId="s1" selectedModel={DEFAULT_MODEL} onModelChange={() => {}} pickerSource={TEST_PICKER_SOURCE} />)
 }
 
 describe('Composer + menu', () => {

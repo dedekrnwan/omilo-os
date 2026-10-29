@@ -31,6 +31,7 @@ import { mockDocsRepos } from './docsMock'
 import { mockGoalDetail, mockRunDetail, mockSchedule, mockSuggestions } from './routinesMock'
 // ── sweep/inbox-flows ──
 import { mockFlowSuggestions, mockFlowVersions, mockProposals, withFlowExtras } from './sweepInboxFlows'
+import * as chatMock from './chatMock' // sweep/chat
 
 export function createMockRepos(): Repos {
   return {
@@ -54,7 +55,7 @@ export function createMockRepos(): Repos {
     },
 
     sessions: {
-      get: (id: Id) => Promise.resolve(sessions.find(s => s.id === id) ?? null),
+      get: (id: Id) => Promise.resolve(sessions.find(s => s.id === id) ?? chatMock.findSession(id) ?? null), // sweep/chat: + archived / Chief
       listByChannel: (channelId: Id) =>
         Promise.resolve(sessions.filter(s => s.channelId === channelId)),
       listAll: () => Promise.resolve([...sessions]),
@@ -332,6 +333,17 @@ function sweepMockActivity(q: ActivityQuery): ActivityPage {
       needs_you: mockActivity.filter((a) => a.kind === 'needs_you').length,
       failed: mockActivity.filter((a) => a.kind === 'failed').length,
       started: mockActivity.length,
+    // ── sweep/chat ──
+    chat: {
+      archived: (areaId: Id | null) =>
+        Promise.resolve(chatMock.archivedSessions.filter((s) => !areaId || s.channelId === areaId)),
+      chiefThreads: () => Promise.resolve([...chatMock.chiefThreads]),
+      chiefNudges: () => Promise.resolve(chatMock.listChiefNudges()),
+      folder: (id: Id) => Promise.resolve(chatMock.folderDetail(id)),
+      folderFiles: (id: Id) => Promise.resolve([...(chatMock.folderFiles[id] ?? [])]),
+      folderShares: (id: Id) => Promise.resolve({ members: [...(chatMock.folderShares[id] ?? [])] }),
+      sessionShares: (id: Id) => Promise.resolve(chatMock.getSessionShares(id)),
+      sessionResults: (id: Id) => Promise.resolve(chatMock.getSessionResults(id)),
     },
   }
 }

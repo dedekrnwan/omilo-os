@@ -13,7 +13,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-// ── module mock — intercept createCommands so we can spy on createArea ────────
+// ── spy on createArea through the Commands port ──────────────────────────────
 const mockCreateArea = vi.fn().mockResolvedValue({
   id: 'ch-new',
   name: 'Test Area',
@@ -24,11 +24,11 @@ const mockCreateArea = vi.fn().mockResolvedValue({
   contextScope: 'isolated',
 })
 
-vi.mock('../../adapters/http/commands', () => ({
-  createCommands: () => ({ createArea: mockCreateArea }),
-}))
-
+import { CommandsProvider } from '../../app/CommandsProvider'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
 import { CreateChannelDialog } from './CreateChannelDialog'
+
+const commands = { ...createMockCommands(), createArea: mockCreateArea }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,9 @@ function renderDialog(open = true, onOpenChange = vi.fn()) {
     onOpenChange,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <CreateChannelDialog open={open} onOpenChange={onOpenChange} />
+        <CommandsProvider commands={commands}>
+          <CreateChannelDialog open={open} onOpenChange={onOpenChange} />
+        </CommandsProvider>
       </QueryClientProvider>,
     ),
   }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { parseTrigger, filterItems, moveIndex } from './composerModel'
+import { parseTrigger, filterItems as filterAll, moveIndex } from './composerModel'
+import type { TriggerKind } from './composerModel'
+import { TEST_PICKER_SOURCE } from './testPickerSource'
+
+const filterItems = (kind: TriggerKind, q: string) => filterAll(kind, q, TEST_PICKER_SOURCE)
 
 describe('parseTrigger', () => {
   test('bare @ at start opens the mention picker with empty query', () => {

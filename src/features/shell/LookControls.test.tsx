@@ -1,19 +1,40 @@
-import { describe, test, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Channel } from '../../core/domain/types'
-import { useAppearance } from '../../app/appearance'
+import { CommandsProvider } from '../../app/CommandsProvider'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
 import { AreaBadgeButton, FolderIconButton } from './LookControls'
 import { LookPicker } from '../../ui/ds/LookPicker'
+
+// Area / folder looks persist through the API (PATCH /v1/channels|folders/{id}).
+let commands = createMockCommands()
+function render(ui: ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return rtlRender(
+    <QueryClientProvider client={qc}>
+      <CommandsProvider commands={commands}>{ui}</CommandsProvider>
+    </QueryClientProvider>,
+  )
+}
 
 const area: Channel = {
   id: 'ch-engineering', name: 'Engineering', accent: 'dev', agentCount: 3, chatCount: 24, openItems: 5, contextScope: 'isolated',
 }
 
 beforeEach(() => {
-  useAppearance.setState({ companies: {}, areas: {}, folders: {} })
+  commands = createMockCommands()
+  vi.spyOn(commands, 'updateArea')
+  vi.spyOn(commands, 'updateFolder')
 })
 
 describe('area icon badge', () => {
+  test('a saved look on the area drives the tile', () => {
+    render(<AreaBadgeButton area={{ ...area, icon: 'rocket', color: '#EF4444' }} size={24} />)
+    expect(screen.getByTestId('area-icon').querySelector('.lucide-rocket')).not.toBeNull()
+  })
+
   test('clicking the badge opens the picker; picking an icon and colour updates the area', async () => {
     render(<AreaBadgeButton area={area} size={24} />)
     fireEvent.click(screen.getByRole('button', { name: /change engineering icon/i }))
@@ -21,8 +42,8 @@ describe('area icon badge', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'rocket' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Colour #EF4444' }))
-    expect(useAppearance.getState().areas['ch-engineering']).toEqual({ icon: 'rocket', color: '#EF4444' })
-    expect(screen.getByTestId('area-icon').querySelector('.lucide-rocket')).not.toBeNull()
+    await waitFor(() => expect(commands.updateArea).toHaveBeenCalledWith('ch-engineering', { icon: 'rocket' }))
+    expect(commands.updateArea).toHaveBeenCalledWith('ch-engineering', { color: '#EF4444' })
   })
 
   test('search filters icons and Reset restores the default', async () => {
@@ -32,7 +53,7 @@ describe('area icon badge', () => {
     expect(screen.getAllByRole('radio').filter((r) => r.closest('[aria-label="Icon"]'))).toHaveLength(1)
     fireEvent.click(screen.getByRole('radio', { name: 'truck' }))
     fireEvent.click(screen.getByRole('button', { name: /reset/i }))
-    expect(useAppearance.getState().areas['ch-engineering']).toBeUndefined()
+    await waitFor(() => expect(commands.updateArea).toHaveBeenLastCalledWith('ch-engineering', { icon: null, color: null }))
   })
 })
 
@@ -41,7 +62,7 @@ describe('folder icon', () => {
     render(<FolderIconButton folder={{ id: 'f-q4', name: 'Q4 Launch' }} open={false} />)
     fireEvent.click(screen.getByRole('button', { name: /change q4 launch icon/i }))
     fireEvent.click(await screen.findByRole('radio', { name: 'flag' }))
-    expect(useAppearance.getState().folders['f-q4']).toEqual({ icon: 'flag' })
+    await waitFor(() => expect(commands.updateFolder).toHaveBeenCalledWith('f-q4', { icon: 'flag' }))
   })
 })
 

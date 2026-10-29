@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Mascot } from '../ds/Mascot'
 import { notify } from '../ds/Toaster'
+import { useCreateRoutine, useHelpers, useUpdateRoutine } from '../../app/queries'
 
 // ── Chat · Routine from chat (pen WTlg1) ──────────────────────────────────────
 // The owner asks Chief for a recurring job in plain words; Chief answers with a
@@ -11,17 +12,70 @@ import { notify } from '../ds/Toaster'
 // Times available for the inline time-picker popover
 const TIME_OPTIONS = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00']
 
-/** pen `Chat/Widget` (X3g17) filled as "Routine created". */
-export function RoutineCreatedCard() {
+/** Next Monday as "Oct 26". */
+function nextMonday(from = new Date()): string {
+  const d = new Date(from)
+  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7))
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+const ROUTINE_NAME = 'Weekly signups by city'
+const ROUTINE_INSTRUCTIONS = 'Every Monday, send how many RT admins signed up last week, by city.'
+
+/**
+ * pen `Chat/Widget` (X3g17) filled as "Routine created".
+ * With `routineId` the card edits that routine; without one, picking a time
+ * creates it (POST /v1/routines) and later changes update it.
+ */
+export function RoutineCreatedCard({ routineId: initialId }: { routineId?: string } = {}) {
   const navigate = useNavigate()
   const [timePickerOpen, setTimePickerOpen] = useState(false)
   const [selectedTime, setSelectedTime] = useState('09:00')
+  const [routineId, setRoutineId] = useState<string | undefined>(initialId)
+  const { data: helpers = [] } = useHelpers()
+  const createRoutine = useCreateRoutine()
+  const updateRoutine = useUpdateRoutine()
+  const owner =
+    helpers.find((h) => h.area === 'marketing' || h.area === 'ops') ?? helpers.find((h) => !h.isChief) ?? helpers[0]
+
+  function pickTime(t: string) {
+    setSelectedTime(t)
+    setTimePickerOpen(false)
+    if (routineId) {
+      updateRoutine.mutate(
+        { id: routineId, input: { at: t } },
+        { onSuccess: () => notify(`Routine time changed to ${t}`), onError: () => notify('Couldn’t change the time — try again') },
+      )
+      return
+    }
+    if (!owner) {
+      notify('Hire a helper first — routines need someone to run them')
+      return
+    }
+    createRoutine.mutate(
+      {
+        helperId: owner.id,
+        name: ROUTINE_NAME,
+        instructions: ROUTINE_INSTRUCTIONS,
+        freq: 'weekly',
+        at: t,
+        days: [1],
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      {
+        onSuccess: (r) => {
+          setRoutineId(r.id)
+          notify(`Routine set for Mondays at ${t}`)
+        },
+        onError: () => notify('Couldn’t create the routine — try again'),
+      },
+    )
+  }
 
   const details = [
-    ['Who', 'Growth'],
-    ['When', `Mondays · ${selectedTime} · starts Oct 26`],
-    ['Sends to', 'WhatsApp · you, and this chat'],
-    ['Cost', '~$0.01 a run'],
+    ['Who', owner?.name ?? 'Chief'],
+    ['When', `Mondays · ${selectedTime} · starts ${nextMonday()}`],
+    ['Sends to', 'You, and this chat'],
   ]
 
   return (
@@ -31,7 +85,7 @@ export function RoutineCreatedCard() {
           <CalendarSync size={16} aria-hidden className="text-[#4338CA]" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-          <span className="text-[14px] font-semibold text-ink">Weekly signups by city</span>
+          <span className="text-[14px] font-semibold text-ink">{ROUTINE_NAME}</span>
           <span className="text-[12px] text-muted">New routine · managed by Chief</span>
         </div>
         {/* pen `Chip/Up` (Elczk) */}
@@ -81,7 +135,7 @@ export function RoutineCreatedCard() {
                   type="button"
                   role="option"
                   aria-selected={t === selectedTime}
-                  onClick={() => { setSelectedTime(t); setTimePickerOpen(false); notify(`Routine time changed to ${t}`) }}
+                  onClick={() => pickTime(t)}
                   className={`flex w-full items-center rounded-btn px-[10px] py-[6px] text-left text-[13px] transition-colors hover:bg-hover ${t === selectedTime ? 'font-semibold text-ink' : 'text-ink-2'}`}
                 >
                   {t}

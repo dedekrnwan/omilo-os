@@ -1,9 +1,9 @@
 import type { ComponentType } from 'react'
 import {
-  BookOpen,
   CalendarClock,
   FileText,
   GitPullRequest,
+  MessageCircle,
   Repeat,
   Sheet,
   Target,
@@ -66,18 +66,21 @@ export interface PickerItem {
   trail?: string
 }
 
-const MENTION_HELPERS: { name: string; mention: string; area: HelperArea; sub: string }[] = [
-  { name: 'Chief of Staff', mention: 'Chief', area: 'brand', sub: 'In this chat' },
-  { name: 'Builder', mention: 'Builder', area: 'dev', sub: 'Engineering · working now' },
-  { name: 'Grower', mention: 'Grower', area: 'ops', sub: 'Growth' },
-  { name: 'Support', mention: 'Support', area: 'support', sub: 'Customer support' },
-]
+// ── Picker sources (live data: helpers, members, skills, goals, docs, chats) ──
 
-const MENTION_PEOPLE = [
-  { initials: 'RA', name: 'Rina Ayu', role: 'Engineering lead' },
-  { initials: 'BS', name: 'Budi Santoso', role: 'Product' },
-]
+export type ContextKind = 'doc' | 'goal' | 'chat' | 'file' | 'job'
 
+/** What the @ / / / # pickers list. Built from live queries by `usePickerSource`. */
+export interface PickerSource {
+  helpers: { name: string; mention: string; area: HelperArea; sub: string }[]
+  people: { name: string; initials: string; role: string }[]
+  skills: { cmd: string; desc: string }[]
+  context: { label: string; sub: string; trail: string; kind: ContextKind; tone?: 'soft' | 'ok' }[]
+}
+
+export const EMPTY_PICKER_SOURCE: PickerSource = { helpers: [], people: [], skills: [], context: [] }
+
+/** Built-in slash commands (product commands, not data). */
 const COMMANDS: { cmd: string; desc: string; icon: IconType }[] = [
   { cmd: '/loop', desc: 'Start a recurring job', icon: Repeat },
   { cmd: '/summarize', desc: 'Summarise this chat into a doc', icon: FileText },
@@ -85,33 +88,16 @@ const COMMANDS: { cmd: string; desc: string; icon: IconType }[] = [
   { cmd: '/remind', desc: 'Remind me or a helper later', icon: CalendarClock },
 ]
 
-const SKILLS = [
-  { cmd: '/skill: weekly-report', desc: 'Builder · writes the Friday report' },
-  { cmd: '/skill: release-notes', desc: 'Builder · from merged PRs' },
-]
-
-interface RawContext {
-  label: string
-  sub: string
-  trail: string
-  icon: IconType
-  tone?: 'soft' | 'ok'
+const CONTEXT_ICON: Record<ContextKind, IconType> = {
+  doc: FileText,
+  goal: Target,
+  chat: MessageCircle,
+  file: Sheet,
+  job: GitPullRequest,
 }
 
-const CONTEXT_RECENT: RawContext[] = [
-  { label: 'Passkey rollout plan', sub: 'Doc · Engineering', trail: 'Doc', icon: FileText },
-  { label: 'Passwordless login by Q4', sub: 'Goal · 64%', trail: 'Goal', icon: Target, tone: 'ok' },
-  { label: 'login-funnel-audit.csv', sub: 'File · in this chat', trail: 'File', icon: Sheet },
-  { label: 'fix/otp-retry', sub: 'Job · Builder · in progress', trail: 'Job', icon: GitPullRequest },
-]
-
-const CONTEXT_APPS: RawContext[] = [
-  { label: 'Q4 launch plan', sub: 'Notion', trail: 'Notion', icon: BookOpen },
-  { label: 'PR #214 · Retry limit for OTP', sub: 'GitHub', trail: 'GitHub', icon: FileText },
-]
-
 /** Build the full (unfiltered) item list for a picker kind. */
-export function buildItems(kind: TriggerKind): PickerItem[] {
+export function buildItems(kind: TriggerKind, source: PickerSource = EMPTY_PICKER_SOURCE): PickerItem[] {
   if (kind === 'mention') {
     return [
       {
@@ -124,7 +110,7 @@ export function buildItems(kind: TriggerKind): PickerItem[] {
         chip: true,
         icon: Users,
       },
-      ...MENTION_HELPERS.map((h): PickerItem => ({
+      ...source.helpers.map((h): PickerItem => ({
         id: `mention-${h.mention}`,
         kind: 'mention',
         value: h.mention,
@@ -134,7 +120,7 @@ export function buildItems(kind: TriggerKind): PickerItem[] {
         chip: true,
         area: h.area,
       })),
-      ...MENTION_PEOPLE.map((p): PickerItem => ({
+      ...source.people.map((p): PickerItem => ({
         id: `mention-${p.name}`,
         kind: 'mention',
         value: p.name,
@@ -158,12 +144,12 @@ export function buildItems(kind: TriggerKind): PickerItem[] {
         chip: false,
         icon: c.icon,
       })),
-      ...SKILLS.map((s): PickerItem => ({
-        id: `command-${s.cmd}`,
+      ...source.skills.map((sk): PickerItem => ({
+        id: `command-${sk.cmd}`,
         kind: 'command',
-        value: s.cmd,
-        title: s.cmd,
-        sub: s.desc,
+        value: sk.cmd,
+        title: sk.cmd,
+        sub: sk.desc,
         group: 'SKILLS',
         chip: false,
         icon: WandSparkles,
@@ -171,37 +157,23 @@ export function buildItems(kind: TriggerKind): PickerItem[] {
       })),
     ]
   }
-  return [
-    ...CONTEXT_RECENT.map((c): PickerItem => ({
-      id: `context-${c.label}`,
-      kind: 'context',
-      value: c.label,
-      title: c.label,
-      sub: c.sub,
-      group: 'RECENT',
-      chip: true,
-      icon: c.icon,
-      tone: c.tone,
-      trail: c.trail,
-    })),
-    ...CONTEXT_APPS.map((c): PickerItem => ({
-      id: `context-${c.label}`,
-      kind: 'context',
-      value: c.label,
-      title: c.label,
-      sub: c.sub,
-      group: 'FROM YOUR APPS',
-      chip: true,
-      icon: c.icon,
-      tone: c.tone,
-      trail: c.trail,
-    })),
-  ]
+  return source.context.map((c): PickerItem => ({
+    id: `context-${c.kind}-${c.label}`,
+    kind: 'context',
+    value: c.label,
+    title: c.label,
+    sub: c.sub,
+    group: 'RECENT',
+    chip: true,
+    icon: CONTEXT_ICON[c.kind],
+    tone: c.tone,
+    trail: c.trail,
+  }))
 }
 
 /** Items for a kind, filtered by a case-insensitive substring of the title or value. */
-export function filterItems(kind: TriggerKind, query: string): PickerItem[] {
-  const items = buildItems(kind)
+export function filterItems(kind: TriggerKind, query: string, source: PickerSource = EMPTY_PICKER_SOURCE): PickerItem[] {
+  const items = buildItems(kind, source)
   const q = query.trim().toLowerCase()
   if (!q) return items
   return items.filter((i) => i.title.toLowerCase().includes(q) || i.value.toLowerCase().includes(q))

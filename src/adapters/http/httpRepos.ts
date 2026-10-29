@@ -41,6 +41,7 @@ import type {
   HelperArea,
   ProposalDetail,
 } from '../../core/domain/types'
+import type { ChiefNudge, FolderFile, SessionResults, Shares } from '../../core/domain/types' // sweep/chat
 import type { Repos } from '../../core/ports/repos'
 import { apiFetch, ApiError } from './client'
 // ── sweep/docs ──
@@ -513,6 +514,7 @@ export function createHttpRepos(
       icon: raw.icon,
       purpose: raw.purpose,
       contextScope: raw.contextScope ?? raw.context_scope ?? 'isolated',
+      ...((raw as RawChannel & { color?: string }).color ? { color: (raw as RawChannel & { color?: string }).color } : {}), // sweep/chat
     }
   }
 
@@ -863,6 +865,17 @@ export function createHttpRepos(
         const raw = await getOrNull<RawProposalDetail>(`/v1/proposals/${id}`)
         return raw ? mapProposalDetail(raw) : null
       },
+    // ── sweep/chat ──
+    chat: {
+      archived: (areaId: Id | null) =>
+        get<Session[]>(`/v1/sessions?archived=1${areaId ? `&channel_id=${encodeURIComponent(areaId)}` : ''}`),
+      chiefThreads: () => get<Session[]>('/v1/sessions?kind=chief_private'),
+      chiefNudges: () => get<ChiefNudge[]>('/v1/chief/nudges'),
+      folder: (id: Id) => getOrNull<Folder>(`/v1/folders/${id}`),
+      folderFiles: (id: Id) => get<FolderFile[]>(`/v1/folders/${id}/files`),
+      folderShares: (id: Id) => get<Shares>(`/v1/folders/${id}/shares`),
+      sessionShares: (id: Id) => get<Shares>(`/v1/sessions/${id}/shares`),
+      sessionResults: (id: Id) => get<SessionResults>(`/v1/sessions/${id}/results`),
     },
   }
 }

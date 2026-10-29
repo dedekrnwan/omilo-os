@@ -34,6 +34,7 @@ import type {
   FlowVersionInfo,
   ProposalDetail,
 } from '../domain/types'
+import type { ChiefNudge, FolderFile, SessionResults, Shares } from '../domain/types' // sweep/chat
 
 export interface ChannelRepo {
   list(): Promise<Channel[]>
@@ -282,4 +283,28 @@ export interface HelperRepo {
   tools?(id: Id): Promise<HelperTools>
   skillRows?(id: Id): Promise<HelperSkillRow[]>
   files?(id: Id): Promise<HelperFile[]>
+  // ── sweep/chat ──
+  /** Optional so lightweight test repos need not implement it; both adapters do. */
+  chat?: ChatRepo
+
+// ── sweep/chat ────────────────────────────────────────────────────────────────
+
+/** Persisted chat workspace reads: archive, Chief DM, folder pages, results. */
+export interface ChatRepo {
+  /** GET /v1/sessions?archived=1[&channel_id=] — newest archived first. */
+  archived(areaId: Id | null): Promise<Session[]>
+  /** GET /v1/sessions?kind=chief_private — the caller's private Chief threads. */
+  chiefThreads(): Promise<Session[]>
+  /** GET /v1/chief/nudges */
+  chiefNudges(): Promise<ChiefNudge[]>
+  /** GET /v1/folders/{id} — with instructions + look. */
+  folder(id: Id): Promise<Folder | null>
+  /** GET /v1/folders/{id}/files */
+  folderFiles(id: Id): Promise<FolderFile[]>
+  /** GET /v1/folders/{id}/shares */
+  folderShares(id: Id): Promise<Shares>
+  /** GET /v1/sessions/{id}/shares */
+  sessionShares(id: Id): Promise<Shares>
+  /** GET /v1/sessions/{id}/results */
+  sessionResults(id: Id): Promise<SessionResults>
 }

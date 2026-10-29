@@ -46,6 +46,8 @@ import type {
   UpdateRoutineInput,
   UpdateWalletInput,
 } from '../http/commands'
+import type { SendMessageOptions } from '../http/commands' // sweep/chat
+import { chatMockCreateSession, chatMockRecordSend, createChatMockCommands } from './chatMockCommands' // sweep/chat
 import type { MeResult } from '../../core/domain/session'
 // ── sweep/docs ──
 import { mockDocsCommands } from './docsMock'
@@ -128,15 +130,9 @@ export function createMockCommands(): Commands {
   return {
     // ── P1 session + proposal commands ──────────────────────────────────────────
     createSession(input: CreateSessionInput): Promise<Session> {
-      const session: Session = {
-        id: nextId('ses'),
-        title: input.title ?? 'New chat',
-        channelId: input.channelId,
-        updated: 'now',
-      }
-      return Promise.resolve(session)
+      return Promise.resolve(chatMockCreateSession(nextId('ses'), input))
     },
-    sendMessage(sessionId: string, content: string): Promise<{ message: Message; jobId: string }> {
+    sendMessage(sessionId: string, content: string, opts?: SendMessageOptions): Promise<{ message: Message; jobId: string }> {
       const message: Message = {
         id: nextId('msg'),
         sessionId,
@@ -144,6 +140,7 @@ export function createMockCommands(): Commands {
         content,
         createdAt: new Date().toISOString(),
       }
+      chatMockRecordSend(message, opts)
       return Promise.resolve({ message, jobId: nextId('job') })
     },
     approveProposal(proposalId: string, _note?: string): Promise<{ executionJobId: string }> {
@@ -214,7 +211,8 @@ export function createMockCommands(): Commands {
       const channel: Channel = {
         id: nextId('ch'),
         name: input.name,
-        accent: input.color as Channel['accent'],
+        accent: (['dev', 'marketing', 'sales'].includes(input.color) ? input.color : 'general') as Channel['accent'], // sweep/chat
+        ...(input.colorHex ? { color: input.colorHex } : {}),
         agentCount: 0,
         chatCount: 0,
         openItems: 0,
@@ -782,5 +780,7 @@ function sweepApplyHelperUpdate(h: Helper, input: UpdateHelperInput): void {
       else merged[k] = v
     }
     h.behavior = merged
+    // ── sweep/chat ──
+    ...createChatMockCommands(),
   }
 }

@@ -8,24 +8,25 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useState } from 'react'
 import type { ComponentType } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import type { Connector, SessionOutput, SessionStep } from '../../core/domain/types'
+import { useConnectors, useCreateDoc, useSessionResults } from '../../app/queries'
+import { notify } from '../ds/Toaster'
 import {
   ArrowUpRight,
   ChevronDown,
   Circle,
   CircleCheck,
+  CircleAlert,
   Download,
-  FileCode,
   FileText,
   FoldVertical,
   FolderPlus,
-  Image as ImageIcon,
   LoaderCircle,
-  Maximize2,
   MessageCircle,
   Notebook,
   Pin,
   Plus,
-  Sheet,
   Target,
   X,
 } from 'lucide-react'
@@ -44,28 +45,6 @@ function Github({ size = 24, className }: { size?: number; className?: string })
     </svg>
   )
 }
-
-// ── Mock data (pen SP6gy) ─────────────────────────────────────────────────────
-
-const STEPS = [
-  { label: 'Audit current login flow', state: 'done', meta: '2 min' },
-  { label: 'Draft rollout plan', state: 'done', meta: '4 min' },
-  { label: 'Write migration doc for Support', state: 'running', meta: 'Dev · working' },
-  { label: 'Schedule staged rollout', state: 'pending', meta: '' },
-] as const
-
-const OUTPUTS: { title: string; meta: string; icon: Icon }[] = [
-  { title: 'Passkey rollout plan', meta: 'Doc · edited just now', icon: FileText },
-  { title: 'login-funnel-audit.csv', meta: 'Sheet · 1.2k rows', icon: Sheet },
-  { title: 'rollout-timeline.png', meta: 'Image · 1600×900', icon: ImageIcon },
-]
-
-const TIMELINE = [
-  ['Web + iOS WebAuthn', 'Dev', 'Nov 14'],
-  ['Android fallback', 'Dev', 'Nov 20'],
-  ['Resident comms', 'Grower', 'Nov 18'],
-  ['10% → 100% rollout', 'Chief', 'Nov 21–28'],
-]
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -93,10 +72,40 @@ function Chip({ icon: I, label }: { icon: Icon; label: string }) {
   )
 }
 
-function StepState({ state }: { state: (typeof STEPS)[number]['state'] }) {
+function StepState({ state }: { state: SessionStep['status'] }) {
   if (state === 'done') return <CircleCheck size={16} aria-hidden className="shrink-0 text-ok" />
-  if (state === 'running') return <LoaderCircle size={16} aria-hidden className="shrink-0 text-info" />
+  if (state === 'running' || state === 'waiting') return <LoaderCircle size={16} aria-hidden className="shrink-0 text-info" />
+  if (state === 'failed') return <CircleAlert size={16} aria-hidden className="shrink-0 text-bad" />
   return <Circle size={16} aria-hidden className="shrink-0 text-faint" />
+}
+
+function stepMeta(s: SessionStep): string {
+  if (s.status === 'running') return `${s.helper} · working`
+  if (s.status === 'waiting') return `${s.helper} · waiting on you`
+  if (s.status === 'failed') return `${s.helper} · failed`
+  if (s.durationS != null) return s.durationS < 60 ? `${s.durationS}s` : `${Math.round(s.durationS / 60)} min`
+  return s.helper
+}
+
+function relTime(iso?: string | null): string {
+  if (!iso) return ''
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return ''
+  const mins = Math.round((Date.now() - t) / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function downloadMarkdown(o: SessionOutput) {
+  const blob = new Blob([o.bodyMd], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${o.title.replace(/\s+/g, '-').toLowerCase()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /** pen `Drop Overlay` (kSbNy) filling the chat card under the topbar, with the drag ghost (Zdjc7). */
@@ -119,93 +128,100 @@ function DropOverlay({ onDone }: { onDone: () => void }) {
         <p className="m-0 text-[15px] font-semibold text-ink">Drop files to add to this message</p>
         <p className="m-0 text-[12px] text-muted">PDF, images, docs, sheets · up to 25 MB each</p>
       </div>
-      {/* Drag ghost (pen `Attachment Chip` JG9eD, rotated -4°) + count badge */}
-      <div aria-hidden className="pointer-events-none absolute top-[586px] left-[470px]">
-        <div className="flex w-[232px] -rotate-4 items-center gap-[10px] rounded-md bg-surface py-[6px] pr-[8px] pl-[6px] opacity-95 outline-1 -outline-offset-1 outline-line-strong shadow-[0_10px_24px_#0C0A0929]">
-          <span className="flex size-[36px] shrink-0 items-center justify-center rounded-sm bg-soft outline-1 -outline-offset-1 outline-line">
-            <FileText size={16} className="text-ink-2" />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-            <span className="truncate text-[13px] font-medium text-ink">Q3-board-notes.pdf</span>
-            <span className="font-mono text-[11px] text-muted">PDF · 1.2 MB</span>
-          </span>
-        </div>
-        <span className="absolute -top-[14px] left-[218px] flex h-[20px] items-center rounded-[10px] bg-info px-[7px] font-mono text-[11px] font-semibold text-white outline-2 outline-surface">
-          2
-        </span>
-      </div>
     </div>
   )
 }
 
 /** Output preview drawer over a scrim (pen CnBzj `Preview Drawer` EPRgt). */
-function PreviewDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function PreviewDrawer({
+  output,
+  onOpenChange,
+  onAskChange,
+}: {
+  output: SessionOutput | null
+  onOpenChange: (o: boolean) => void
+  onAskChange?: (helper: string, title: string) => void
+}) {
+  const navigate = useNavigate()
+  const createDoc = useCreateDoc()
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={output !== null} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-[#0C0A0926]" />
-        <Dialog.Content
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[620px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong shadow-[-8px_0_48px_#1C19173D]"
-        >
-          <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">
-            <span className="flex size-[32px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">
-              <FileText size={16} aria-hidden className="text-ink-2" />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-              <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">Passkey rollout plan</Dialog.Title>
-              <span className="text-[12.5px] text-muted">Doc · written by Dev · edited just now</span>
+        {output && (
+          <Dialog.Content
+            aria-describedby={undefined}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[620px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong shadow-[-8px_0_48px_#1C19173D]"
+          >
+            <div className="flex w-full items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] shadow-[inset_0_-1px_0_var(--color-line)]">
+              <span className="flex size-[32px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">
+                <FileText size={16} aria-hidden className="text-ink-2" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                <Dialog.Title className="m-0 truncate text-[16px] font-semibold text-ink">{output.title}</Dialog.Title>
+                <span className="text-[12.5px] text-muted">
+                  Report · written by {output.helper}
+                  {output.createdAt ? ` · ${relTime(output.createdAt)}` : ''}
+                </span>
+              </div>
+              <IconButton icon={Download} aria-label="Download" onClick={() => downloadMarkdown(output)} />
+              <Dialog.Close asChild>
+                <IconButton icon={X} aria-label="Close preview" />
+              </Dialog.Close>
             </div>
-            <IconButton icon={Download} aria-label="Download" />
-            <IconButton icon={Maximize2} aria-label="Expand" />
-            <Dialog.Close asChild>
-              <IconButton icon={X} aria-label="Close preview" />
-            </Dialog.Close>
-          </div>
 
-          <div className="flex min-h-0 w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[32px] py-[20px]">
-            <h2 className="m-0 font-display text-[22px] font-semibold text-ink">Passkey rollout plan</h2>
-            <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2">
-              Goal: passwordless login for 80% of active users by Q4 code freeze (Nov 28).
-            </p>
-            <h3 className="m-0 font-display text-[16px] font-semibold text-ink">Timeline</h3>
-            <div className="flex w-full flex-col overflow-hidden rounded-base outline-1 -outline-offset-1 outline-line">
-              {[['Phase', 'Who', 'When'], ...TIMELINE].map((row, i, all) => (
-                <div
-                  key={row[0]}
-                  className={`flex w-full gap-[12px] px-[12px] py-[8px] text-[12.5px] ${
-                    i === 0 ? 'bg-soft font-semibold text-muted' : 'text-ink-2'
-                  } ${i < all.length - 1 ? 'shadow-[inset_0_-1px_0_var(--color-line)]' : ''}`}
-                >
-                  <span className="flex-1">{row[0]}</span>
-                  <span className="w-[110px]">{row[1]}</span>
-                  <span className="w-[110px]">{row[2]}</span>
-                </div>
-              ))}
+            <div className="flex min-h-0 w-full flex-1 flex-col gap-[12px] overflow-y-auto px-[32px] py-[20px]">
+              <h2 className="m-0 font-display text-[22px] font-semibold text-ink">{output.title}</h2>
+              <p className="m-0 text-[13.5px] leading-[1.6] whitespace-pre-wrap text-ink-2">
+                {output.bodyMd || 'This report has no body.'}
+              </p>
             </div>
-            <h3 className="m-0 font-display text-[16px] font-semibold text-ink">Risks</h3>
-            <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2">
-              Legacy Android (&lt; v9) can&apos;t do WebAuthn — keep password + OTP for those 6% of users until they update.
-            </p>
-          </div>
 
-          <div className="flex w-full items-center gap-[8px] px-[20px] py-[12px] shadow-[inset_0_1px_0_var(--color-line)]">
-            <button type="button" className="inline-flex h-[32px] items-center gap-[6px] rounded-btn px-[14px] text-[13px] text-muted hover:bg-hover">
-              <MessageCircle size={16} aria-hidden />
-              Ask Dev to change something
-            </button>
-            <span className="h-px flex-1" />
-            <button type="button" className="inline-flex h-[32px] items-center gap-[6px] rounded-btn bg-surface px-[14px] text-[13px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft">
-              <ArrowUpRight size={16} aria-hidden />
-              Open in Docs
-            </button>
-            <button type="button" className="inline-flex h-[32px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[13px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary hover:bg-primary-hover">
-              <Pin size={16} aria-hidden />
-              Pin to Docs
-            </button>
-          </div>
-        </Dialog.Content>
+            <div className="flex w-full items-center gap-[8px] px-[20px] py-[12px] shadow-[inset_0_1px_0_var(--color-line)]">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false)
+                  onAskChange?.(output.helper, output.title)
+                }}
+                className="inline-flex h-[32px] items-center gap-[6px] rounded-btn px-[14px] text-[13px] text-muted hover:bg-hover"
+              >
+                <MessageCircle size={16} aria-hidden />
+                Ask {output.helper} to change something
+              </button>
+              <span className="h-px flex-1" />
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false)
+                  void navigate({ to: '/docs' })
+                }}
+                className="inline-flex h-[32px] items-center gap-[6px] rounded-btn bg-surface px-[14px] text-[13px] font-medium text-ink outline-1 -outline-offset-1 outline-line-strong hover:bg-soft"
+              >
+                <ArrowUpRight size={16} aria-hidden />
+                Open in Docs
+              </button>
+              <button
+                type="button"
+                disabled={createDoc.isPending}
+                onClick={() =>
+                  createDoc.mutate(
+                    { title: output.title, content: output.bodyMd },
+                    {
+                      onSuccess: () => notify(`“${output.title}” pinned to Docs`),
+                      onError: () => notify('Couldn’t pin to Docs — try again'),
+                    },
+                  )
+                }
+                className="inline-flex h-[32px] items-center gap-[6px] rounded-btn bg-primary px-[14px] text-[13px] font-medium text-primary-ink outline-1 -outline-offset-1 outline-primary hover:bg-primary-hover disabled:opacity-60"
+              >
+                <Pin size={16} aria-hidden />
+                Pin to Docs
+              </button>
+            </div>
+          </Dialog.Content>
+        )}
       </Dialog.Portal>
     </Dialog.Root>
   )
@@ -214,15 +230,56 @@ function PreviewDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export interface ResultsPanelProps {
+  /** Chat whose results are shown (GET /v1/sessions/{id}/results). */
+  sessionId: string
   onClose?: () => void
-  /** Files are being dragged in: "Files in this chat" lights up with the incoming count (Zdjc7). */
+  /** Files are being dragged in: "Files in this chat" lights up (Zdjc7). */
   highlightFiles?: boolean
   /** Open with the first output's preview drawer showing (CnBzj). */
   initialPreview?: boolean
+  /** Share of the context window in use, 0–100. */
+  contextUsed?: number
+  /** Model label for the context card, e.g. "Opus 5.5". */
+  modelLabel?: string
+  /** Compact the context now. */
+  onCompact?: () => void
+  /** Files attached to the chat or its folder. */
+  files?: string[]
+  /** Linked goal title. */
+  goal?: string
+  /** "Ask <helper> to change something" from an output preview. */
+  onAskChange?: (helper: string, title: string) => void
 }
 
-export function ResultsPanel({ highlightFiles = false, initialPreview = false }: ResultsPanelProps) {
-  const [preview, setPreview] = useState(initialPreview)
+const CONTEXT_WINDOW_K = 200
+
+export function ResultsPanel({
+  sessionId,
+  highlightFiles = false,
+  initialPreview = false,
+  contextUsed = 0,
+  modelLabel,
+  onCompact,
+  files = [],
+  goal,
+  onAskChange,
+}: ResultsPanelProps) {
+  const { data: results, isLoading, isError } = useSessionResults(sessionId)
+  const { data: connectors = [] } = useConnectors()
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewOpenedInitially, setPreviewOpenedInitially] = useState(false)
+
+  const steps = results?.steps ?? []
+  const outputs = results?.outputs ?? []
+  const done = steps.filter((s) => s.status === 'done').length
+  // Design state: open the first output's preview once it has loaded.
+  if (initialPreview && !previewOpenedInitially && outputs[0]) {
+    setPreviewOpenedInitially(true)
+    setPreviewId(outputs[0].id)
+  }
+  const preview = outputs.find((o) => o.id === previewId) ?? null
+  const live: Connector[] = connectors.filter((c) => c.enabled)
+  const usedK = Math.round((contextUsed / 100) * CONTEXT_WINDOW_K)
 
   return (
     <aside
@@ -232,33 +289,51 @@ export function ResultsPanel({ highlightFiles = false, initialPreview = false }:
     >
       <section className="flex w-full flex-col gap-[12px] px-[18px] py-[16px] shadow-[inset_0_-1px_0_var(--color-line)]">
         <SectionHead title="Progress" />
-        <div className="flex w-full flex-col gap-[10px]">
-          {STEPS.map((s) => (
-            <div key={s.label} className="flex w-full items-center gap-[10px]">
-              <StepState state={s.state} />
-              <span className={`flex-1 text-[12.5px] ${s.state === 'pending' ? 'text-muted' : 'text-ink'}`}>{s.label}</span>
-              {s.meta && <span className="text-[11.5px] text-faint">{s.meta}</span>}
+        {isLoading ? (
+          <span className="text-[12.5px] text-muted">Loading…</span>
+        ) : isError ? (
+          <span role="alert" className="text-[12.5px] text-bad">Couldn’t load progress.</span>
+        ) : steps.length === 0 ? (
+          <span className="text-[12.5px] text-muted">No helper work in this chat yet.</span>
+        ) : (
+          <>
+            <div className="flex w-full flex-col gap-[10px]">
+              {steps.map((s) => (
+                <div key={s.id} className="flex w-full items-center gap-[10px]">
+                  <StepState state={s.status} />
+                  <span className={`min-w-0 flex-1 truncate text-[12.5px] ${s.status === 'pending' ? 'text-muted' : 'text-ink'}`}>{s.label}</span>
+                  <span className="shrink-0 text-[11.5px] text-faint">{stepMeta(s)}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <span className="text-[11.5px] text-muted">2 of 4 steps done</span>
+            <span className="text-[11.5px] text-muted">
+              {done} of {steps.length} step{steps.length === 1 ? '' : 's'} done
+            </span>
+          </>
+        )}
       </section>
 
       <section className="flex w-full flex-col gap-[12px] px-[18px] py-[16px] shadow-[inset_0_-1px_0_var(--color-line)]">
         <SectionHead title="Outputs" />
-        {OUTPUTS.map((o) => (
+        {!isLoading && outputs.length === 0 && (
+          <span className="text-[12.5px] text-muted">Reports and docs helpers write here show up in this list.</span>
+        )}
+        {outputs.map((o) => (
           <button
-            key={o.title}
+            key={o.id}
             type="button"
-            onClick={() => setPreview(true)}
+            onClick={() => setPreviewId(o.id)}
             className="flex w-full items-center gap-[10px] rounded-md p-[8px] text-left outline-1 -outline-offset-1 outline-line transition-colors hover:bg-soft"
           >
             <span className="flex size-[32px] shrink-0 items-center justify-center rounded-sm bg-soft">
-              <o.icon size={16} aria-hidden className="text-ink-2" />
+              <FileText size={16} aria-hidden className="text-ink-2" />
             </span>
             <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
               <span className="truncate text-[12.5px] font-medium text-ink">{o.title}</span>
-              <span className="text-[11.5px] text-muted">{o.meta}</span>
+              <span className="text-[11.5px] text-muted">
+                Report · {o.helper}
+                {o.createdAt ? ` · ${relTime(o.createdAt)}` : ''}
+              </span>
             </span>
             <ArrowUpRight size={15} aria-hidden className="shrink-0 text-muted" />
           </button>
@@ -275,21 +350,28 @@ export function ResultsPanel({ highlightFiles = false, initialPreview = false }:
           }
         />
         <div className="flex w-full items-center gap-[10px] rounded-md px-[12px] py-[10px] outline-1 -outline-offset-1 outline-line">
-          <Ring size={28} value={42} inner={0.74} />
+          <Ring size={28} value={contextUsed} inner={0.74} />
           <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
-            <span className="text-[12.5px] font-semibold text-ink">84k / 200k · 42%</span>
-            <span className="text-[11.5px] text-muted">Opus 5.5 · auto at 85%</span>
+            <span className="text-[12.5px] font-semibold text-ink">
+              {usedK}k / {CONTEXT_WINDOW_K}k · {contextUsed}%
+            </span>
+            <span className="text-[11.5px] text-muted">{modelLabel ? `${modelLabel} · ` : ''}auto at 85%</span>
           </span>
-          <button type="button" aria-label="Compact" className="flex size-[28px] items-center justify-center rounded-btn text-muted hover:bg-hover">
+          <button type="button" aria-label="Compact" onClick={onCompact} className="flex size-[28px] items-center justify-center rounded-btn text-muted hover:bg-hover">
             <FoldVertical size={16} aria-hidden />
           </button>
         </div>
         <div className="flex w-full flex-col gap-[8px]">
           <span className="text-[11.5px] text-muted">Connectors</span>
-          <div className="flex gap-[6px]">
-            <Chip icon={Notebook} label="Notion" />
-            <Chip icon={Github} label="GitHub" />
-          </div>
+          {live.length ? (
+            <div className="flex flex-wrap gap-[6px]">
+              {live.map((c) => (
+                <Chip key={c.id} icon={/github/i.test(c.pieceId) ? Github : Notebook} label={c.label} />
+              ))}
+            </div>
+          ) : (
+            <span className="text-[12px] text-faint">No connectors on yet.</span>
+          )}
         </div>
         <div
           className={`flex w-full flex-col gap-[8px] ${
@@ -297,26 +379,33 @@ export function ResultsPanel({ highlightFiles = false, initialPreview = false }:
           }`}
         >
           <span className="text-[11.5px] text-muted">Files in this chat</span>
-          <div className="flex gap-[6px]">
-            <Chip icon={FileText} label="Q4 Launch brief" />
-            <Chip icon={FileCode} label="auth-spec.md" />
-          </div>
+          {files.length ? (
+            <div className="flex flex-wrap gap-[6px]">
+              {files.map((f) => (
+                <Chip key={f} icon={FileText} label={f} />
+              ))}
+            </div>
+          ) : (
+            !highlightFiles && <span className="text-[12px] text-faint">No files yet.</span>
+          )}
           {highlightFiles && (
             <span className="inline-flex h-[23px] w-fit items-center gap-[4px] rounded-sm bg-surface px-[8px] outline-1 -outline-offset-1 outline-info-line">
               <Plus size={12} aria-hidden className="text-info" />
-              <span className="text-[12px] font-medium text-info">2 files</span>
+              <span className="text-[12px] font-medium text-info">Drop to attach</span>
             </span>
           )}
         </div>
-        <div className="flex w-full flex-col gap-[8px]">
-          <span className="text-[11.5px] text-muted">Goal</span>
-          <div className="flex gap-[6px]">
-            <Chip icon={Target} label="Passwordless login by Q4" />
+        {goal && (
+          <div className="flex w-full flex-col gap-[8px]">
+            <span className="text-[11.5px] text-muted">Goal</span>
+            <div className="flex gap-[6px]">
+              <Chip icon={Target} label={goal} />
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
-      <PreviewDrawer open={preview} onOpenChange={setPreview} />
+      <PreviewDrawer output={preview} onOpenChange={(o) => { if (!o) setPreviewId(null) }} onAskChange={onAskChange} />
     </aside>
   )
 }

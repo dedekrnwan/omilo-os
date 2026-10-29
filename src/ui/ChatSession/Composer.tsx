@@ -13,7 +13,7 @@ import type { ComposerPopoverKind } from './ComposerPopovers'
 import { ComposerInput } from './ComposerInput'
 import type { ComposerInputHandle } from './ComposerInput'
 import { filterItems, moveIndex } from './composerModel'
-import type { PickerItem, TriggerMatch } from './composerModel'
+import type { PickerItem, PickerSource, TriggerMatch } from './composerModel'
 import { Ring } from './Ring'
 
 export type ComposerMenu = 'model' | 'thinking' | 'context'
@@ -45,6 +45,8 @@ export interface ComposerProps {
   /** Hide the model + thinking pickers (e.g. the onboarding interview, where the
    *  pool model isn't a per-message choice). Keeps Add / voice / send. */
   hideModelControls?: boolean
+  /** Live items for the @ / / / # pickers (see `usePickerSource`). Empty when absent. */
+  pickerSource?: PickerSource
 }
 
 /**
@@ -71,6 +73,7 @@ export function Composer({
   autoFocus = false,
   compact = false,
   hideModelControls = false,
+  pickerSource,
 }: ComposerProps) {
   const [thinking, setThinking] = useState<ThinkingLevel>('medium')
   const [plusOpen, setPlusOpen] = useState(false)
@@ -90,7 +93,10 @@ export function Composer({
   }, [autoFocus])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const items = useMemo(() => (picker ? filterItems(picker.kind, picker.query) : []), [picker])
+  const items = useMemo(
+    () => (picker ? filterItems(picker.kind, picker.query, pickerSource) : []),
+    [picker, pickerSource],
+  )
 
   function onTriggerChange(match: TriggerMatch | null) {
     // Reset the highlight only when the token itself changes — otherwise a keyUp

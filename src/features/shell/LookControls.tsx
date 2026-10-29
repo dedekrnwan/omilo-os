@@ -1,12 +1,21 @@
 import { forwardRef } from 'react'
 import type { ComponentPropsWithoutRef } from 'react'
 import type { Channel, Folder } from '../../core/domain/types'
-import { useAppearance } from '../../app/appearance'
+import type { Look } from '../../app/appearance'
+import { useUpdateArea, useUpdateFolder } from '../../app/queries'
 import { LookPicker } from '../../ui/ds/LookPicker'
 import { Folder as FolderIcon, FolderOpen } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { ICONS } from '../../ui/ds/iconCatalog'
 import { useAreaLook, useFolderLook } from '../../ui/ds/looks'
+
+/** Only the icon/colour keys a picker change touched (the API PATCHes just those). */
+function lookPatch(patch: Look): { icon?: string; color?: string } {
+  const out: { icon?: string; color?: string } = {}
+  if (patch.icon !== undefined) out.icon = patch.icon
+  if (patch.color !== undefined) out.color = patch.color
+  return out
+}
 
 /** The folder's chosen icon, else the open/closed folder glyph. */
 function FolderGlyph({ icon, open, size, className, style }: { icon?: string; open: boolean; size: number; className?: string; style?: CSSProperties }) {
@@ -51,7 +60,7 @@ export function AreaBadgeButton({
   onOpenChange?: (open: boolean) => void
 }) {
   const look = useAreaLook(area)
-  const { setLook, resetLook } = useAppearance()
+  const updateArea = useUpdateArea()
   return (
     <LookPicker
       open={open}
@@ -59,8 +68,8 @@ export function AreaBadgeButton({
       kind="area"
       title={`${area.name} icon`}
       value={{ icon: look.icon, color: look.color }}
-      onChange={(patch) => setLook('areas', area.id, patch)}
-      onReset={() => resetLook('areas', area.id)}
+      onChange={(patch) => updateArea.mutate({ id: area.id, input: lookPatch(patch) })}
+      onReset={() => updateArea.mutate({ id: area.id, input: { icon: null, color: null } })}
     >
       <button
         type="button"
@@ -82,7 +91,7 @@ export function FolderIconButton({
   pickerOpen,
   onPickerOpenChange,
 }: {
-  folder: Pick<Folder, 'id' | 'name'>
+  folder: Pick<Folder, 'id' | 'name' | 'icon' | 'color'>
   open: boolean
   active?: boolean
   /** Controlled picker (e.g. opened from the folder's menu) */
@@ -90,7 +99,7 @@ export function FolderIconButton({
   onPickerOpenChange?: (open: boolean) => void
 }) {
   const look = useFolderLook(folder)
-  const { setLook, resetLook } = useAppearance()
+  const updateFolder = useUpdateFolder()
   return (
     <LookPicker
       open={pickerOpen}
@@ -98,8 +107,8 @@ export function FolderIconButton({
       kind="folder"
       title={`${folder.name} icon`}
       value={{ icon: look.icon ?? 'folder', color: look.color ?? '#78716C' }}
-      onChange={(patch) => setLook('folders', folder.id, patch)}
-      onReset={() => resetLook('folders', folder.id)}
+      onChange={(patch) => updateFolder.mutate({ id: folder.id, input: lookPatch(patch) })}
+      onReset={() => updateFolder.mutate({ id: folder.id, input: { icon: null, color: null } })}
     >
       <button
         type="button"
@@ -120,20 +129,20 @@ export function FolderTileButton({
   defaultBg,
   defaultInk,
 }: {
-  folder: Pick<Folder, 'id' | 'name'>
+  folder: Pick<Folder, 'id' | 'name' | 'icon' | 'color'>
   defaultBg: string
   defaultInk: string
 }) {
   const look = useFolderLook(folder)
-  const { setLook, resetLook } = useAppearance()
+  const updateFolder = useUpdateFolder()
   return (
     <LookPicker
       kind="folder"
       title={`${folder.name} icon`}
       side="bottom"
       value={{ icon: look.icon ?? 'folder', color: look.color ?? '#78716C' }}
-      onChange={(patch) => setLook('folders', folder.id, patch)}
-      onReset={() => resetLook('folders', folder.id)}
+      onChange={(patch) => updateFolder.mutate({ id: folder.id, input: lookPatch(patch) })}
+      onReset={() => updateFolder.mutate({ id: folder.id, input: { icon: null, color: null } })}
     >
       <button
         type="button"

@@ -156,12 +156,12 @@ describe('Linked goal', () => {
 
 describe('EditGoalDialog', () => {
   test('does not render when closed', () => {
-    render(<EditGoalDialog open={false} onOpenChange={() => {}} goalTitle="Passwordless login by Q4" />)
+    render(<EditGoalDialog open={false} onOpenChange={() => {}} goalTitle="Passwordless login by Q4" />, { wrapper: makeWrapper() })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   test('renders when open', () => {
-    render(<EditGoalDialog open={true} onOpenChange={() => {}} goalTitle="Passwordless login by Q4" />)
+    render(<EditGoalDialog open={true} onOpenChange={() => {}} goalTitle="Passwordless login by Q4" />, { wrapper: makeWrapper() })
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveAccessibleName(/edit goal/i)
   })
@@ -175,6 +175,7 @@ describe('EditGoalDialog', () => {
         onOpenChange={(v) => { openState = v }}
         goalTitle="Passwordless login by Q4"
       />,
+      { wrapper: makeWrapper() },
     )
     const closeBtn = screen.getByRole('button', { name: /close/i })
     await act(async () => {
@@ -192,6 +193,7 @@ describe('EditGoalDialog', () => {
         onOpenChange={(v) => { openState = v }}
         goalTitle="Passwordless login by Q4"
       />,
+      { wrapper: makeWrapper() },
     )
     const saveBtn = screen.getByRole('button', { name: /save goal/i })
     await act(async () => {
@@ -209,6 +211,7 @@ describe('AddAgentPopover', () => {
       <AddAgentPopover>
         <button type="button">Add agent</button>
       </AddAgentPopover>,
+      { wrapper: makeWrapper() },
     )
     expect(screen.queryByPlaceholderText(/add a helper/i)).not.toBeInTheDocument()
   })
@@ -219,12 +222,14 @@ describe('AddAgentPopover', () => {
       <AddAgentPopover>
         <button type="button">Add agent</button>
       </AddAgentPopover>,
+      { wrapper: makeWrapper() },
     )
     await act(async () => {
       await user.click(screen.getByText('Add agent'))
     })
     expect(screen.getByPlaceholderText(/add a helper/i)).toBeInTheDocument()
-    // At least one agent item should be visible
-    expect(screen.getByText('Finance')).toBeInTheDocument()
+    // Real helpers (mock repo) other than Chief are listed
+    expect(await screen.findByText('Dev')).toBeInTheDocument()
+    expect(screen.queryByText('Chief')).not.toBeInTheDocument()
   })
 })

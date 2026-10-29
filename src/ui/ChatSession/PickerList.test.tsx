@@ -3,8 +3,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PickerList } from './ComposerPopovers'
 import { buildItems } from './composerModel'
+import { TEST_PICKER_SOURCE } from './testPickerSource'
 
-const items = buildItems('mention') // Chief, Builder, Grower, Support, Rina Ayu, Budi Santoso
+const items = buildItems('mention', TEST_PICKER_SOURCE) // Chief, Builder, Grower, Support, Rina Ayu, Budi Santoso
 
 describe('PickerList', () => {
   test('renders a row per item', () => {

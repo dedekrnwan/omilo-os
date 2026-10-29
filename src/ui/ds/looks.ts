@@ -43,10 +43,10 @@ function resolve(defaultIcon: string, defaultColor: string, look: Look | undefin
   }
 }
 
-/** An area's icon + colour: the person's choice, else the area's accent. */
+/** An area's icon + colour: what was saved on the area (API), else its accent. */
 export function useAreaLook(area: Channel | undefined): ResolvedLook {
-  const look = useAppearance((s) => (area ? s.areas[area.id] : undefined))
   const accent = area?.accent ?? 'general'
+  const look: Look | undefined = area && (area.icon || area.color) ? { icon: area.icon, color: area.color } : undefined
   return resolve(ACCENT_ICON_KEY[accent], ACCENT_HEX[accent], look, accents[accent].icon)
 }
 
@@ -63,8 +63,8 @@ export function useAreaChipLook(area: Channel | undefined) {
  * A folder's look. Undefined icon = the classic open/closed folder glyph in the
  * sidebar's muted colour; a chosen icon/colour replaces it.
  */
-export function useFolderLook(folder: Pick<FolderT, 'id'> | undefined) {
-  const look = useAppearance((s) => (folder ? s.folders[folder.id] : undefined))
+export function useFolderLook(folder: Pick<FolderT, 'id' | 'icon' | 'color'> | undefined) {
+  const look: Look | undefined = folder && (folder.icon || folder.color) ? { icon: folder.icon, color: folder.color } : undefined
   return {
     Icon: look?.icon && ICONS[look.icon] ? ICONS[look.icon] : undefined,
     icon: look?.icon,

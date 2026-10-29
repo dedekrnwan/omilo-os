@@ -48,7 +48,7 @@ export interface ChatSocketHandlers {
 
 export interface ChatSocket {
   /** Send a user message — emits {type:"user_message", content} to the server. */
-  send(content: string): void
+  send(content: string, opts?: { model?: string }): void
   /** Close the underlying WebSocket. */
   close(): void
 }
@@ -185,8 +185,8 @@ export function openChatSocket(
   }
 
   return {
-    send(content: string) {
-      ws.send(JSON.stringify({ type: 'user_message', content }))
+    send(content: string, opts?: { model?: string }) {
+      ws.send(JSON.stringify({ type: 'user_message', content, ...(opts?.model ? { model: opts.model } : {}) }))
     },
     close() {
       ws.close()
