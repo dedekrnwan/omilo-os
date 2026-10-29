@@ -1,14 +1,14 @@
 import { useArea } from '../../app/queries'
 import { useUIStore } from '../../app/store'
+import { useSession } from '../../app/session'
 import { AnalyticsPage, FALLBACK_JOBS_CHART, FALLBACK_SPEND_CHART, FALLBACK_TOKENS_CHART } from './AnalyticsPage'
-
-const COMPANY_NAME = 'Sahabat Warga'
 
 /**
  * Chat · Analytics — area-filtered. With no area selected it shows the
  * company-wide view; with one area selected it scopes to that area.
  */
 export function ChatAnalyticsRoute() {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const areaId = useUIStore((s) => s.areaId)
   const { data: channel } = useArea(areaId ?? '')
 
@@ -16,7 +16,7 @@ export function ChatAnalyticsRoute() {
     return (
       <AnalyticsPage
         meta="All areas"
-        title={`Analytics · ${COMPANY_NAME}`}
+        title={`Analytics · ${companyName}`}
         sub="Every helper across all areas this week."
         left={FALLBACK_SPEND_CHART}
         right={FALLBACK_JOBS_CHART}

@@ -14,6 +14,7 @@ import { createMockRepos } from '../../adapters/mock/mockRepos'
 import type { Repos } from '../../core/ports/repos'
 import type { AnalyticsOverview, HelperStat } from '../../core/domain/types'
 import { useUIStore } from '../../app/store'
+import { useSession } from '../../app/session'
 import { ChatAnalyticsRoute } from './ChatAnalyticsRoute'
 import { OfficeAnalyticsRoute } from './OfficeAnalyticsRoute'
 
@@ -43,10 +44,18 @@ async function mount(path: string, reposOverride?: Partial<Repos>) {
   render(<RouterProvider router={router} />)
 }
 
+// Seed a real company name for all tests so useSession(s => s.company?.name) returns a known string.
+const TEST_COMPANY = { id: 'cmp-test', name: 'Demo Workspace', currency: 'IDR', onboarded: true }
+
+beforeEach(() => {
+  useSession.setState({ status: 'authed', company: TEST_COMPANY, companies: [TEST_COMPANY] })
+})
+
 afterEach(() => {
   cleanup()
   window.history.replaceState(null, '', '/')
   useUIStore.setState({ areaId: null })
+  useSession.setState({ status: 'loading', company: null, companies: [] })
 })
 
 describe('ChatAnalyticsRoute', () => {
@@ -103,7 +112,8 @@ describe('ChatAnalyticsRoute', () => {
 describe('OfficeAnalyticsRoute', () => {
   test('renders the company overview', async () => {
     await mount('/office/analytics')
-    expect(await screen.findByText('Analytics · Sahabat Warga')).toBeInTheDocument()
+    // In mock mode the session company is "Demo Workspace" (from session.ts DEMO_COMPANY)
+    expect(await screen.findByText('Analytics · Demo Workspace')).toBeInTheDocument()
     // Fallback chart title (static constant, not fixture)
     expect(screen.getByText('Spend by channel')).toBeInTheDocument()
     // helpersSub now reflects live helper count from mock analyticsHelpers (3 helpers)

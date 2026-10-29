@@ -26,6 +26,7 @@ import { Chip, IconTile, Initials, PageHeader, PageShell, PenButton } from '../C
 import type { SectionProps } from '../ControlPanel'
 import { notify } from '../../../ui/ds/Toaster'
 import { useMembers } from '../../../app/queries'
+import { useSession } from '../../../app/session'
 
 // NOTE: The Handbook uses rich structured HandbookFile objects (sections,
 // suggestions, history, used-by stats). useKnowledge() returns KbItem recall
@@ -282,6 +283,7 @@ function avatarColor(id: string): string {
 
 /** pen TZ6Ia · Company handbook. Clicking a file opens it in a right-side drawer. */
 export function SectionHandbook({ variant, onVariant }: SectionProps) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const { data: members } = useMembers()
   const [open, setOpen] = useState<HandbookFile | null>(() =>
     variant === 'policies' ? FILES.find((f) => f.name === 'POLICIES.md') ?? null : null,
@@ -295,7 +297,7 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
       <PageHeader
         gap={10}
         title="Company handbook"
-        sub="What Sahabat Warga is, how it works and the rules. Every helper reads it before acting, and every person can read it in Docs."
+        sub={`What ${companyName} is, how it works and the rules. Every helper reads it before acting, and every person can read it in Docs.`}
         actions={
           <>
             <PenButton fs={13} icon={Eye} onClick={() => notify('Previewing as staff member')}>Preview as staff</PenButton>
@@ -314,7 +316,7 @@ export function SectionHandbook({ variant, onVariant }: SectionProps) {
         </div>
         <div className="w-full rounded-md bg-soft px-[14px] py-[12px] outline-1 -outline-offset-1 outline-line">
           <p className="m-0 font-mono text-[12.5px] leading-[1.6] text-ink-2">
-            Sahabat Warga runs neighbourhood admin for 64 RTs in South Jakarta: monthly dues, cover letters, facility bookings and clean-up days. We serve residents first, RT heads second. We speak Bahasa Indonesia, warm and plain. We never share a resident’s data outside their RT, and we never promise money we haven’t approved…
+            {companyName} runs neighbourhood admin for 64 RTs in South Jakarta: monthly dues, cover letters, facility bookings and clean-up days. We serve residents first, RT heads second. We speak Bahasa Indonesia, warm and plain. We never share a resident’s data outside their RT, and we never promise money we haven’t approved…
           </p>
         </div>
         <div className="flex items-center gap-[6px]">

@@ -3,9 +3,10 @@ import { useState } from 'react'
 import { ArrowLeft, ArrowRight, Pencil, Plus, TriangleAlert } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { notify } from '../../ui/ds/Toaster'
-import { CHECK_NOTES, COMPANY_NAME, KNOWLEDGE_NOTES } from './data'
+import { CHECK_NOTES, KNOWLEDGE_NOTES } from './data'
 import type { CheckNote } from './data'
 import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
+import { useSession } from '../../app/session'
 
 function NoteCard({ note }: { note: CheckNote }) {
   const meta = KNOWLEDGE_NOTES.find((k) => k.id === note.id)!
@@ -38,6 +39,7 @@ function NoteCard({ note }: { note: CheckNote }) {
 }
 
 export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [, setAdded] = useState(0)
   const rows = [CHECK_NOTES.slice(0, 4), CHECK_NOTES.slice(4)]
   return (
@@ -46,7 +48,7 @@ export function StepCheck({ onBack, onNext }: { onBack: () => void; onNext: () =
         <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
           <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">
-            Here's what I understood about {COMPANY_NAME}
+            Here's what I understood about {companyName}
           </h1>
           <p className="text-[14px] text-muted">
             Fix anything that's off. Helpers read these 7 notes before every job, and you can edit them later in

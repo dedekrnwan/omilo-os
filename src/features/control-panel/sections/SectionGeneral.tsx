@@ -9,9 +9,10 @@ import { useAppearance } from '../../../app/appearance'
 import { CompanyLogo } from '../../../ui/ds/CompanyLogo'
 import { useCompanyLook } from '../../../ui/ds/looks'
 import { LookPicker } from '../../../ui/ds/LookPicker'
+import { useSession } from '../../../app/session'
 
 const INITIAL_GENERAL = {
-  name: 'Sahabat Warga',
+  name: '',
   about: 'SaaS for RT/RW neighborhoods',
   timezone: 'Asia/Jakarta (UTC+7)',
   language: 'Bahasa Indonesia',
@@ -28,9 +29,10 @@ export function SectionGeneral({ onDialog }: SectionProps) {
   const company = COMPANIES.find((c) => c.id === companyId) ?? COMPANIES[0]
   const look = useCompanyLook(company)
   const { setLook, resetLook } = useAppearance()
+  const sessionCompanyName = useSession((s) => s.company?.name) ?? ''
 
-  const [general, setGeneral] = useState(INITIAL_GENERAL)
-  const { dirty, markDirty, save, discard } = useDirtyState(() => setGeneral(INITIAL_GENERAL))
+  const [general, setGeneral] = useState(() => ({ ...INITIAL_GENERAL, name: sessionCompanyName }))
+  const { dirty, markDirty, save, discard } = useDirtyState(() => setGeneral({ ...INITIAL_GENERAL, name: sessionCompanyName }))
   const edit = (key: keyof typeof INITIAL_GENERAL) => (v: string) => {
     setGeneral((prev) => ({ ...prev, [key]: v }))
     markDirty()
@@ -92,7 +94,7 @@ export function SectionGeneral({ onDialog }: SectionProps) {
       <Group title="Danger zone">
         <div className="flex w-full items-center gap-[16px] rounded-lg p-[14px] outline-1 -outline-offset-1 outline-[#FECACA]">
           <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="text-[13.5px] font-medium text-ink">Delete Sahabat Warga</span>
+            <span className="text-[13.5px] font-medium text-ink">Delete {sessionCompanyName || 'this workspace'}</span>
             <span className="text-[12px] text-muted">Removes chats, docs, flows and agents for everyone. Export your data first.</span>
           </div>
           <PenButton variant="danger" onClick={() => onDialog('delete-workspace')}>Delete</PenButton>

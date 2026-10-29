@@ -2,30 +2,30 @@ import { useState } from 'react'
 import { Download, Trash2 } from 'lucide-react'
 import { Field, PenButton, Scrim } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
-
-const WORKSPACE_NAME = 'Sahabat Warga'
+import { useSession } from '../../../app/session'
 
 /** pen JS6gc · General · Delete workspace */
 export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
+  const workspaceName = useSession((s) => s.company?.name) ?? 'your company'
   const [confirm, setConfirm] = useState('')
-  const canDelete = confirm.trim() === WORKSPACE_NAME
+  const canDelete = confirm.trim() === workspaceName
   return (
     <Scrim onClose={onClose} align="right">
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Delete Sahabat Warga?"
+        aria-label={`Delete ${workspaceName}?`}
         className="flex h-full w-[460px] flex-col gap-[14px] overflow-y-auto bg-surface p-[24px] shadow-[-24px_0_48px_#1C191747] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
       >
         <Mascot helper size={44} radius={12} area="brand" mood="sad" still />
-        <h2 className="m-0 font-serif text-[22px] font-medium text-ink">Delete Sahabat Warga?</h2>
+        <h2 className="m-0 font-serif text-[22px] font-medium text-ink">Delete {workspaceName}?</h2>
         <p className="m-0 text-[13.5px] leading-[1.55] text-ink-2">
           All 6 helpers stop, every channel disconnects and 1.204 chats, goals, flows and docs are deleted after 14 days. Billing ends today.
         </p>
         <Field
-          label={`Type “${WORKSPACE_NAME}” to confirm`}
+          label={`Type "${workspaceName}" to confirm`}
           value={confirm}
-          placeholder={WORKSPACE_NAME}
+          placeholder={workspaceName}
           onChange={setConfirm}
         />
         <button type="button" className="flex w-full items-center gap-[8px] text-left">

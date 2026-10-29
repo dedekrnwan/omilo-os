@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Repeat, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { AGENTS, COMPANY_NAME, TEMPLATES } from './data'
+import { AGENTS, TEMPLATES } from './data'
 import { Checkbox, PrimaryButton, SecondaryButton } from './ui'
+import { useSession } from '../../app/session'
 
 /** pen `Office · Routines · Empty` (diQBZ) — Chief offers starter routines. */
 export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSetUp: (ids: string[]) => void }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [checked, setChecked] = useState(() => new Set(TEMPLATES.filter((t) => t.checked).map((t) => t.id)))
   const toggle = (id: string) =>
     setChecked((s) => {
@@ -22,7 +24,7 @@ export function EmptyState({ onScratch, onSetUp }: { onScratch: () => void; onSe
         <div className="flex flex-col items-center gap-[6px]">
           <h2 className="m-0 font-display text-[24px] font-semibold tracking-[-0.4px] text-ink">No routines yet</h2>
           <p className="m-0 w-[520px] max-w-full text-center text-[14px] text-muted">
-            Chief can set up the usual ones for a company like {COMPANY_NAME} — you approve each before it runs.
+            Chief can set up the usual ones for a company like {companyName} — you approve each before it runs.
           </p>
         </div>
         <div className="flex w-full flex-col gap-[10px]">

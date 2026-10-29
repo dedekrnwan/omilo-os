@@ -1,10 +1,12 @@
 /** Onboarding 1 · Welcome (pen VYHu4). */
 import { ArrowRight } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { COMPANY_NAME, KNOWLEDGE_NOTES, WELCOME_STEPS } from './data'
+import { KNOWLEDGE_NOTES, WELCOME_STEPS } from './data'
 import { PrimaryButton, Stroke, WizardCard } from './parts'
+import { useSession } from '../../app/session'
 
 export function StepWelcome({ onNext }: { onNext: () => void }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   return (
     <WizardCard>
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-[22px] p-[56px]">
@@ -17,7 +19,7 @@ export function StepWelcome({ onNext }: { onNext: () => void }) {
           Let's build your AI team
         </h1>
         <p className="w-[460px] text-[16px] leading-[1.6] text-ink-2">
-          I'm Chief of Staff. I'll ask about {COMPANY_NAME} the way a good advisor would: one question at a time,
+          I'm Chief of Staff. I'll ask about {companyName} the way a good advisor would: one question at a time,
           with ideas when you're not sure. Then I'll suggest a team that fits.
         </p>
         <ol className="flex w-[460px] flex-col gap-[10px]">

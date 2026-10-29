@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Armchair, CircleCheck, Copy, Hash, Link, Send, Shield, UserPlus, X } from 'lucide-react'
 import { DialogCard, Field, PenButton, Radio } from '../ControlPanelShared'
+import { useSession } from '../../../app/session'
 
 const ROLE_OPTIONS = ['Member', 'Admin', 'Viewer']
 const CHANNEL_OPTIONS = ['Engineering, General', 'General', 'Engineering', 'All channels']
@@ -33,13 +34,14 @@ function Option({ on, title, sub, right }: { on?: boolean; title: string; sub: s
 
 /** pen aNKDy · Members · Invite — and iKSyB · Seats full (`seatsFull`). */
 export function DialogInvite({ onClose, seatsFull }: { onClose: () => void; seatsFull?: boolean }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [role, setRole] = useState('Member')
   const [channels, setChannels] = useState('Engineering, General')
   return (
     <DialogCard
       width={520}
       icon={UserPlus}
-      title="Invite people to Sahabat Warga"
+      title={`Invite people to ${companyName}`}
       sub="They get an email and can join with Google or a magic link."
       onClose={onClose}
       footer={

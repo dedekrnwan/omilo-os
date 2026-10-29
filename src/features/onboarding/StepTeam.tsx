@@ -2,10 +2,12 @@
 import { useState } from 'react'
 import { ArrowLeft, Lightbulb, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { COMPANY_NAME, TEAM_HELPERS } from './data'
+import { TEAM_HELPERS } from './data'
 import { ChipInfo, ChipNeutral, PrimaryButton, QuietButton, Stroke, Switch, WizardCard } from './parts'
+import { useSession } from '../../app/session'
 
 export function StepTeam({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const [on, setOn] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(TEAM_HELPERS.map((h) => [h.id, h.on])),
   )
@@ -14,7 +16,7 @@ export function StepTeam({ onBack, onNext }: { onBack: () => void; onNext: () =>
   return (
     <WizardCard className="flex-col gap-[18px] px-[40px] py-[32px]">
       <div className="flex w-full flex-col gap-[4px]">
-        <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">Your team for {COMPANY_NAME}</h1>
+        <h1 className="font-display text-[26px] font-semibold tracking-[-0.4px] text-ink">Your team for {companyName}</h1>
         <p className="w-full text-[14px] text-muted">
           Picked from your goals. After you create them, each helper proposes its own job, and nothing runs until you
           approve it in Inbox.
