@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import smtplib
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.message import EmailMessage
 
 from fastapi import HTTPException, status
@@ -32,6 +32,8 @@ class SentEmail:
     text: str
     html: str | None = None
     from_name: str | None = None
+    # Inline images the HTML references as ``cid:<key>`` → PNG bytes.
+    images: dict[str, bytes] = field(default_factory=dict)
 
 
 class EmailSender:
@@ -44,6 +46,7 @@ class EmailSender:
         text: str,
         html: str | None = None,
         from_name: str | None = None,
+        images: dict[str, bytes] | None = None,
     ) -> None:
         raise NotImplementedError
 
@@ -58,6 +61,7 @@ class SmtpEmailSender(EmailSender):
         text: str,
         html: str | None = None,
         from_name: str | None = None,
+        images: dict[str, bytes] | None = None,
     ) -> None:
         s = get_settings()
         if not s.smtp_host:
@@ -81,6 +85,15 @@ class SmtpEmailSender(EmailSender):
         msg.set_content(text)
         if html:
             msg.add_alternative(html, subtype="html")
+            if images:
+                # multipart/related: Gmail and Outlook show these without
+                # remote-image loading (Gmail strips inline SVG entirely).
+                html_part = msg.get_payload()[-1]
+                for cid, data in images.items():
+                    html_part.add_related(
+                        data, maintype="image", subtype="png", cid=f"<{cid}>",
+                        filename=cid.split("@")[0] + ".png", disposition="inline",
+                    )
 
         try:
             if s.smtp_ssl:
@@ -120,9 +133,11 @@ class CapturingEmailSender(EmailSender):
         text: str,
         html: str | None = None,
         from_name: str | None = None,
+        images: dict[str, bytes] | None = None,
     ) -> None:
         self.outbox.append(
-            SentEmail(to=to, subject=subject, text=text, html=html, from_name=from_name)
+            SentEmail(to=to, subject=subject, text=text, html=html, from_name=from_name,
+                      images=dict(images or {}))
         )
 
     def last_to(self, to: str) -> SentEmail | None:
