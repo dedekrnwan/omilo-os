@@ -1,22 +1,28 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Drawer } from '../../ui/ds/Drawer'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
   CalendarDays,
-  Layers,
   MessageCircle,
   MessageSquare,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Target,
+  Trash2,
   UserPlus,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
+import { ConfirmDialog } from '../../ui/ds/ConfirmDialog'
+import { MenuItemBody, menuItemClass, menuSurface } from '../../ui/ds/Menu'
 import { notify } from '../../ui/ds/Toaster'
 import { accents } from '../../ui/ds/accents'
 import type { HelperArea, Channel, Goal } from '../../core/domain/types'
-import { useArea, useAreas, useGoals } from '../../app/queries'
+import { useArea, useAreas, useGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } from '../../app/queries'
+import { useCommands } from '../../app/CommandsProvider'
 import { useUIStore } from '../../app/store'
 
 // ── Helper-picker popover ─────────────────────────────────────────────────────
@@ -113,16 +119,32 @@ function StatusRing({ value, status }: { value: number; status: GoalStatus }) {
 
 // ── GoalRow (live-shaped) ─────────────────────────────────────────────────────
 
-function GoalRow({ goal }: { goal: Goal }) {
+function GoalRow({ goal, onEdit }: { goal: Goal; onEdit: (goal: Goal) => void }) {
   const navigate = useNavigate()
+  const commands = useCommands()
+  const deleteGoal = useDeleteGoal()
+  const [confirmOpen, setConfirmOpen] = useState(false)
   // NOTE: status/tasks/due defaulted locally — no backend equivalent yet
   const status: GoalStatus = 'On track'
+
+  // Open (or create) a chat session seeded by this goal, then land on it. The
+  // backend has no goal-detail route yet, so the goal's "home" is its session.
+  async function openSession() {
+    const session = await commands.createSession({
+      channelId: goal.channelId,
+      goalId: goal.id,
+      title: goal.title,
+    })
+    void navigate({ to: '/chat/$sessionId', params: { sessionId: session.id } })
+  }
+
   return (
     <div className="flex flex-col">
       <div className="flex w-full items-center gap-[10px] py-[10px]">
         <button
           type="button"
           aria-label={goal.title}
+          onClick={() => { void openSession() }}
           className="flex min-w-0 flex-1 items-center gap-[12px] rounded-base px-[2px] py-0 text-left transition-colors hover:bg-soft"
         >
           <StatusRing value={goal.progress} status={status} />
@@ -136,10 +158,47 @@ function GoalRow({ goal }: { goal: Goal }) {
         </button>
 
         {/* Session action */}
-        <Button variant="secondary" height={28} icon={MessageCircle} onClick={() => navigate({ to: '/chat' })}>
+        <Button variant="secondary" height={28} icon={MessageCircle} onClick={() => { void openSession() }}>
           Session
         </Button>
+
+        {/* Row menu: edit / delete */}
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              aria-label={`Goal options for ${goal.title}`}
+              className="inline-flex size-[28px] shrink-0 items-center justify-center rounded-base text-muted transition-colors hover:bg-hover hover:text-ink-2 data-[state=open]:bg-hover"
+            >
+              <MoreHorizontal size={16} aria-hidden />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content side="bottom" align="end" sideOffset={6} className={`z-50 w-[160px] ${menuSurface}`}>
+              <DropdownMenu.Item className={menuItemClass} onSelect={() => onEdit(goal)}>
+                <MenuItemBody icon={Pencil} label="Edit goal" />
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className={menuItemClass} onSelect={() => setConfirmOpen(true)}>
+                <MenuItemBody icon={Trash2} label="Delete goal" />
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Delete "${goal.title}"?`}
+        message="This goal and its progress will be removed. This can't be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onConfirm={() => {
+          deleteGoal.mutate(goal.id, {
+            onSuccess: () => notify('Goal deleted'),
+          })
+        }}
+      />
     </div>
   )
 }
@@ -152,7 +211,7 @@ interface LiveAreaGroup {
   goals: Goal[]
 }
 
-function AreaGroupSection({ group }: { group: LiveAreaGroup }) {
+function AreaGroupSection({ group, onEdit }: { group: LiveAreaGroup; onEdit: (goal: Goal) => void }) {
   return (
     <section aria-label={group.channel.name}>
       {/* Area heading row */}
@@ -170,7 +229,7 @@ function AreaGroupSection({ group }: { group: LiveAreaGroup }) {
 
       <div className="flex flex-col divide-y divide-line">
         {group.goals.map((goal) => (
-          <GoalRow key={goal.id} goal={goal} />
+          <GoalRow key={goal.id} goal={goal} onEdit={onEdit} />
         ))}
       </div>
     </section>
@@ -223,6 +282,10 @@ function StatusFilterTabs({
 interface NewGoalDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Areas available for the Channel select (id + name). */
+  areas: Channel[]
+  /** When set, the dialog edits this goal instead of creating a new one. */
+  editing?: Goal | null
 }
 
 /** Toggle switch used inside the dialog. */
@@ -259,25 +322,71 @@ function HelperAvatar({ label, area }: { label: string; area: HelperArea }) {
 }
 
 /**
- * "New goal" dialog — visual-only, matches DlkiJ.png.
+ * New / edit goal dialog. Creates via useCreateGoal or (when `editing` is set)
+ * patches via useUpdateGoal, reading the bound fields. Channel is chosen from
+ * the real areas list so a channelId is sent to the backend.
  */
-export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
+export function NewGoalDialog({ open, onOpenChange, areas, editing = null }: NewGoalDialogProps) {
   const navigate = useNavigate()
-  const [goalText, setGoalText] = useState('Passwordless login for 80% of users by Q4')
-  const [channel, setChannel] = useState('Engineering')
-  const [due, setDue] = useState('31 Dec 2026')
-  const [measured, setMeasured] = useState('% of logins using passkey')
-  const [target, setTarget] = useState('80%')
+  const createGoal = useCreateGoal()
+  const updateGoal = useUpdateGoal()
+  const isEditing = editing !== null
+  const firstChannelId = areas[0]?.id ?? ''
+
+  const [goalText, setGoalText] = useState('')
+  const [channelId, setChannelId] = useState('')
+  const [due, setDue] = useState('')
+  const [measured, setMeasured] = useState('')
+  const [target, setTarget] = useState('')
   const [chiefDraft, setChiefDraft] = useState(true)
   const [helpers, setHelpers] = useState<string[]>(['Chief', 'Builder'])
   const [helperAnchor, setHelperAnchor] = useState<DOMRect | null>(null)
   const addHelperRef = useRef<HTMLButtonElement>(null)
 
+  // Seed the form whenever the dialog opens (either blank for create or from the
+  // goal being edited).
+  useEffect(() => {
+    if (!open) return
+    setGoalText(editing?.title ?? '')
+    setChannelId(editing?.channelId ?? firstChannelId)
+    setDue('')
+    setMeasured('')
+    setTarget('')
+    setHelpers(['Chief', 'Builder'])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing])
+
   if (!open) return null
+
+  const canSubmit = goalText.trim().length > 0 && channelId !== ''
+
+  function submit() {
+    if (!canSubmit) return
+    if (isEditing && editing) {
+      updateGoal.mutate(
+        {
+          id: editing.id,
+          input: { title: goalText.trim(), target: target.trim() || undefined, channelId, due: due.trim() || undefined },
+        },
+        { onSuccess: () => notify('Goal updated') },
+      )
+    } else {
+      createGoal.mutate(
+        {
+          channelId,
+          title: goalText.trim(),
+          target: target.trim(),
+          due: due.trim() || undefined,
+        },
+        { onSuccess: () => notify('Goal created') },
+      )
+    }
+    onOpenChange(false)
+  }
 
   return (
     <Drawer
-      title="New goal"
+      title={isEditing ? 'Edit goal' : 'New goal'}
       subtitle="Say what you want to move. Chief turns it into key results and assigns helpers."
       onClose={() => onOpenChange(false)}
       width={440}
@@ -297,8 +406,14 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
           <Button variant="secondary" height={30} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="primary" height={30} icon={Target} onClick={() => onOpenChange(false)}>
-            Create goal
+          <Button
+            variant="primary"
+            height={30}
+            icon={Target}
+            disabled={!canSubmit}
+            onClick={submit}
+          >
+            {isEditing ? 'Save goal' : 'Create goal'}
           </Button>
         </>
       }
@@ -335,14 +450,13 @@ export function NewGoalDialog({ open, onOpenChange }: NewGoalDialogProps) {
                   />
                   <select
                     id="goal-channel"
-                    value={channel}
-                    onChange={(e) => setChannel(e.target.value)}
+                    value={channelId}
+                    onChange={(e) => setChannelId(e.target.value)}
                     className="min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none"
                   >
-                    <option>Engineering</option>
-                    <option>Marketing</option>
-                    <option>Business</option>
-                    <option>General</option>
+                    {areas.map((ch) => (
+                      <option key={ch.id} value={ch.id}>{ch.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -459,6 +573,16 @@ function GoalsBoard({ areaId }: { areaId: string | null }) {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
+
+  function openNewGoal() {
+    setEditingGoal(null)
+    setDialogOpen(true)
+  }
+  function openEditGoal(goal: Goal) {
+    setEditingGoal(goal)
+    setDialogOpen(true)
+  }
 
   const areaName = areaId ? area?.name ?? '' : null
   const isLoading = areasLoading || goalsLoading
@@ -504,12 +628,7 @@ function GoalsBoard({ areaId }: { areaId: string | null }) {
         meta={areaName ? `in ${areaName}` : 'All areas · Q4 2026'}
         actions={
           <div className="flex items-center gap-[6px]">
-            {!areaName && (
-              <Button variant="secondary" height={28} icon={Layers}>
-                Group: Area
-              </Button>
-            )}
-            <Button icon={Plus} height={28} onClick={() => setDialogOpen(true)}>
+            <Button icon={Plus} height={28} onClick={openNewGoal}>
               New goal
             </Button>
           </div>
@@ -551,19 +670,24 @@ function GoalsBoard({ areaId }: { areaId: string | null }) {
                 : 'No goals match the selected filter.'}
             </p>
             {totalGoals === 0 && (
-              <Button icon={Plus} height={30} onClick={() => setDialogOpen(true)} className="mt-[4px]">
+              <Button icon={Plus} height={30} onClick={openNewGoal} className="mt-[4px]">
                 New goal
               </Button>
             )}
           </div>
         ) : (
           filteredGroups.map((group) => (
-            <AreaGroupSection key={group.channel.id} group={group} />
+            <AreaGroupSection key={group.channel.id} group={group} onEdit={openEditGoal} />
           ))
         )}
       </div>
 
-      <NewGoalDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <NewGoalDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        areas={allAreas}
+        editing={editingGoal}
+      />
     </>
   )
 }
