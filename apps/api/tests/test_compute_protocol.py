@@ -145,11 +145,11 @@ class TestRoundtripEachFrame:
 
 class TestDecodeUnknownType:
     def test_unknown_type_raises(self):
-        with pytest.raises((ValueError, Exception)):
+        with pytest.raises(ValueError):
             _decode('{"type": "not_a_real_frame"}')
 
     def test_missing_type_raises(self):
-        with pytest.raises((ValueError, Exception)):
+        with pytest.raises(ValueError):
             _decode('{"role": "worker"}')
 
 
@@ -170,7 +170,7 @@ class TestJobStepRequiresSeq:
         """seq must be an integer (not a string)."""
         from pydantic import ValidationError
         from omilo.compute.protocol import JobStepFrame
-        with pytest.raises((ValidationError, Exception)):
+        with pytest.raises(ValidationError):
             JobStepFrame(job_id="job-1", seq="not-an-int", stream="stdout", line="hi")
 
     def test_seq_zero_is_valid(self):
