@@ -55,6 +55,7 @@ StubExecutor
 """
 from __future__ import annotations
 
+import abc
 import json
 import pathlib
 from dataclasses import dataclass, field
@@ -102,7 +103,7 @@ type ExecEvent = tuple[str, dict]
 # ---------------------------------------------------------------------------
 
 
-class Executor:
+class Executor(abc.ABC):
     """Abstract base class for compute harness executors.
 
     Subclasses implement ``run`` as an **async generator** that yields
@@ -111,7 +112,8 @@ class Executor:
     See module docstring for the full ``run`` contract.
     """
 
-    async def run(self, ctx: JobContext) -> AsyncIterator[ExecEvent]:  # type: ignore[override]
+    @abc.abstractmethod
+    async def run(self, ctx: JobContext) -> AsyncIterator[ExecEvent]:
         """Execute the job described by *ctx* and stream events to the caller.
 
         Parameters
@@ -128,13 +130,10 @@ class Executor:
 
         Notes
         -----
-        The base implementation raises :exc:`NotImplementedError`.  Subclasses
-        (including Plan #2's ``GvisorExecutor``) MUST override this method and
-        honour the contract above.
+        Subclasses (including Plan #2's ``GvisorExecutor``) MUST override this
+        method and honour the contract above.
         """
-        raise NotImplementedError  # pragma: no cover
-        # Make this a valid async generator in the type system.
-        yield  # type: ignore[misc]
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +164,7 @@ class StubExecutor(Executor):
     multi-run persistence scenarios can be tested.
     """
 
-    async def run(self, ctx: JobContext) -> AsyncIterator[ExecEvent]:  # type: ignore[override]
+    async def run(self, ctx: JobContext) -> AsyncIterator[ExecEvent]:
         """Run the stub executor for *ctx* and yield events.
 
         Yields
