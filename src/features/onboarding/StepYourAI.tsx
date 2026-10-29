@@ -24,6 +24,7 @@ import { useAiAccounts } from '../../app/queries'
 import { createCommands } from '../../adapters/http/commands'
 import { platform } from '../../platform'
 import type { AiAccount } from '../../core/domain/types'
+import { DetectedHarnesses } from '../../ui/ds/DetectedHarnesses'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -361,6 +362,21 @@ export function StepYourAI({
   })()
 
   const hasAccounts = displayAccounts.length > 0
+  const connectedHarnessIds = new Set(displayAccounts.map((a) => a.harness))
+
+  /** Connect a detected local harness as a keyless "session" account. */
+  async function handleConnectHarness(harnessId: string, name: string) {
+    const acc = await createCommands(BASE_URL, getToken).createAiAccount({
+      harness: harnessId,
+      name,
+      tokenEnc: '',
+      tokenHint: 'Local session',
+      tag: 'session',
+    })
+    setConnected(acc)
+    setExistingAccountId(acc.id)
+    setSelfHostPick('existing')
+  }
 
   const seg = (id: AIMode, label: string) => {
     const on = mode === id
@@ -435,6 +451,18 @@ export function StepYourAI({
 
         {/* ── Self-host ── */}
         {mode === 'self-host' && (
+          <div className="flex flex-col gap-[16px]">
+            {/* Detected local harness CLIs — connect a running session, no key */}
+            <div className="flex flex-col gap-[8px]">
+              <span className="text-[11px] font-semibold tracking-[0.8px] text-muted">
+                DETECTED ON THIS COMPUTER
+              </span>
+              <DetectedHarnesses
+                onConnect={handleConnectHarness}
+                connectedHarnessIds={connectedHarnessIds}
+              />
+            </div>
+
           <div role="radiogroup" aria-label="AI account" className="flex flex-col gap-[8px]">
             {/* "Existing accounts" option — shown when there are accounts or still loading */}
             {(hasAccounts || accountsLoading) && (
@@ -500,6 +528,7 @@ export function StepYourAI({
                 onSelect={() => setSelfHostPick('api-key')}
               />
             )}
+          </div>
           </div>
         )}
 

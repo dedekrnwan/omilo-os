@@ -81,6 +81,15 @@ export function createMockRepos(): Repos {
 
     aiAccounts: {
       list: () => Promise.resolve([...aiAccounts]),
+      detect: () =>
+        Promise.resolve([
+          { id: 'claude-code', name: 'Claude Code', installed: true, signedIn: true, detail: '/usr/local/bin/claude' },
+          { id: 'opencode', name: 'OpenCode', installed: true, signedIn: true, detail: '/usr/local/bin/opencode' },
+          { id: 'codex', name: 'Codex', installed: true, signedIn: false, detail: '~/.codex' },
+          { id: 'copilot', name: 'GitHub Copilot', installed: false, signedIn: false, detail: '' },
+          { id: 'gemini-cli', name: 'Gemini CLI', installed: false, signedIn: false, detail: '' },
+          { id: 'cursor', name: 'Cursor', installed: false, signedIn: false, detail: '' },
+        ]),
     },
 
     marketplace: {

@@ -187,6 +187,16 @@ export function useAiAccounts() {
   })
 }
 
+/** Probe this machine for local harness CLIs (self-host). */
+export function useHarnessDetect() {
+  const repos = useRepos()
+  return useQuery({
+    queryKey: ['harnessDetect'],
+    queryFn: () => repos.aiAccounts.detect?.() ?? Promise.resolve([]),
+    staleTime: 60_000,
+  })
+}
+
 // ── P8 query hooks ─────────────────────────────────────────────────────────────
 
 export function useFlows() {

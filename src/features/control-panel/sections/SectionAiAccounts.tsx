@@ -4,6 +4,7 @@
  * Empty state when no accounts. Error state when query rejects.
  */
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '../../../ui/ds/Button'
 import { Breadcrumb, SectionPane, StatusBadge } from '../legacyShared'
@@ -11,7 +12,10 @@ import type { DialogKind } from '../legacyTypes'
 import { HARNESS_BY_ID } from '../harnesses'
 import type { HarnessId } from '../harnesses'
 import { useAiAccounts, useCheckAiAccounts, useTestAiAccount } from '../../../app/queries'
+import { useCommands } from '../../../app/CommandsProvider'
 import { notify } from '../../../ui/ds/Toaster'
+import { HarnessLogo } from '../../../ui/ds/harnessLogos'
+import { DetectedHarnesses } from '../../../ui/ds/DetectedHarnesses'
 
 const GRID = 'grid-cols-[168px_1fr_96px_176px_80px_auto]'
 
@@ -47,7 +51,28 @@ export function SectionAiAccounts({ onDialog }: Props) {
   const { data: accounts, isError, isLoading } = useAiAccounts()
   const checkAccounts = useCheckAiAccounts()
   const testAccount = useTestAiAccount()
+  const commands = useCommands()
+  const qc = useQueryClient()
   const [testingId, setTestingId] = useState<string | null>(null)
+
+  const connectedHarnessIds = new Set((accounts ?? []).map((a) => a.harness))
+
+  /** Connect a detected local harness as a keyless "session" account. */
+  async function handleConnectHarness(harnessId: string, name: string) {
+    try {
+      await commands.createAiAccount({
+        harness: harnessId,
+        name,
+        tokenEnc: '',
+        tokenHint: 'Local session',
+        tag: 'session',
+      })
+      await qc.invalidateQueries({ queryKey: ['aiAccounts'] })
+      notify(`${name} connected`)
+    } catch (e) {
+      notify(e instanceof Error && e.message ? e.message : 'Could not connect harness')
+    }
+  }
 
   async function handleCheck() {
     try {
@@ -93,6 +118,19 @@ export function SectionAiAccounts({ onDialog }: Props) {
         <p className="mb-[24px] text-[13px] text-muted">
           The accounts and keys agents run on. When one hits a limit, the next job moves to another.
         </p>
+
+        {/* Detected local harnesses — connect a running CLI session, no key */}
+        <div className="mb-[24px]">
+          <div className="mb-[8px] flex items-end justify-between">
+            <div>
+              <h2 className="text-[15px] font-semibold text-ink">Detected on this computer</h2>
+              <p className="text-[12px] text-muted">
+                Local coding-assistant sessions Omilo can pool — no API key, uses the CLI you're signed in to.
+              </p>
+            </div>
+          </div>
+          <DetectedHarnesses onConnect={handleConnectHarness} connectedHarnessIds={connectedHarnessIds} />
+        </div>
 
         {/* Error state */}
         {isError && (
@@ -162,7 +200,7 @@ export function SectionAiAccounts({ onDialog }: Props) {
                     {/* Harness */}
                     <div className="flex items-center gap-[8px]">
                       <span className="flex size-[24px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">
-                        <harness.icon size={14} className="text-ink-2" aria-hidden />
+                        <HarnessLogo id={harness.id} size={15} />
                       </span>
                       <span className="truncate text-[12.5px] font-medium text-ink">{harness.name}</span>
                     </div>

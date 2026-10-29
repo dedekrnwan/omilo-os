@@ -1,5 +1,6 @@
 import type {
   AiAccount,
+  HarnessDetection,
   AnalyticsOverview,
   BillingPlan,
   BillingSubscription,
@@ -77,6 +78,10 @@ export interface WalletRepo {
 
 export interface AiAccountRepo {
   list(): Promise<AiAccount[]>
+  /** Probe this machine for installed/signed-in local harness CLIs.
+   * Optional so lightweight test repos need not implement it; both the HTTP
+   * and mock adapters do. */
+  detect?(): Promise<HarnessDetection[]>
 }
 
 export interface MarketplaceRepo {

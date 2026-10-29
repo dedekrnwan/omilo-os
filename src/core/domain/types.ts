@@ -232,6 +232,19 @@ export interface AiAccount {
   lastUsed?: string | null
 }
 
+/** Result of probing this machine for a local AI-harness CLI. */
+export interface HarnessDetection {
+  /** Harness id, e.g. 'claude-code', 'opencode', 'cursor'. */
+  id: string
+  name: string
+  /** CLI is on PATH or a known install dir exists. */
+  installed: boolean
+  /** A credential/auth file is present (an authenticated session). */
+  signedIn: boolean
+  /** Binary path or install dir, for display. */
+  detail: string
+}
+
 // ── Marketplace ───────────────────────────────────────────────────────────────
 
 export interface Piece {

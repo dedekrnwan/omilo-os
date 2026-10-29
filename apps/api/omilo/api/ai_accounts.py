@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from omilo.engine.pool import classify, WARN_THRESHOLD
+from omilo.harness.detect import detect_harnesses
 from omilo.models.accounts import HarnessAccount
 from omilo.models.base import prefixed_id
 from omilo.tenancy.context import RequestContext
@@ -90,6 +91,23 @@ def list_ai_accounts(
     """Return all HarnessAccount rows for the active company (RLS-enforced)."""
     rows = db.query(HarnessAccount).all()
     return [_account_to_dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/ai-accounts/detect  (local-harness detection — self-host/runtime)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/ai-accounts/detect")
+def detect_ai_harnesses(
+    _ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Probe this machine for installed/signed-in AI-harness CLIs.
+
+    Read-only. In a cloud deployment this returns everything not-installed (there
+    is no user machine to inspect), which the UI renders as "connect manually".
+    """
+    return {"harnesses": detect_harnesses()}
 
 
 # ---------------------------------------------------------------------------

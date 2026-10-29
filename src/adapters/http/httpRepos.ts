@@ -567,6 +567,19 @@ export function createHttpRepos(
         const raw = await res.json() as RawAiAccount[]
         return raw.map(mapAiAccount)
       },
+      detect: async () => {
+        const res = await apiFetch(`${baseUrl}/v1/ai-accounts/detect`, getToken)
+        const body = await res.json() as {
+          harnesses?: { id: string; name: string; installed: boolean; signed_in: boolean; detail: string }[]
+        }
+        return (body.harnesses ?? []).map((h) => ({
+          id: h.id,
+          name: h.name,
+          installed: h.installed,
+          signedIn: h.signed_in,
+          detail: h.detail,
+        }))
+      },
     },
 
     marketplace: {
