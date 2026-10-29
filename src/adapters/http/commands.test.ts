@@ -785,4 +785,300 @@ describe('createCommands', () => {
     expect((init.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${TOKEN}`)
     expect(result.onboarded).toBe(true)
   })
+
+  // ── P2 Goal commands ───────────────────────────────────────────────────────────
+
+  it('createGoal POSTs to /v1/goals with camel→snake body and maps the response', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'g_1', title: 'Ship', channel_id: 'ch_1', progress: 0 }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.createGoal({ channelId: 'ch_1', title: 'Ship', target: 'Q4', due: '2026-12-31', autonomyOverride: 'yolo' })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/goals`)
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toEqual({ channel_id: 'ch_1', title: 'Ship', target: 'Q4', due: '2026-12-31', autonomy_override: 'yolo' })
+    expect(body.channelId).toBeUndefined()
+    expect(result.channelId).toBe('ch_1')
+    expect((result as unknown as Record<string, unknown>).channel_id).toBeUndefined()
+  })
+
+  it('updateGoal PATCHes /v1/goals/{id} with only non-undefined snake_case fields', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'g_1', title: 'New', channel_id: 'ch_1', progress: 10 }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.updateGoal('g_1', { title: 'New', status: 'done' })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/goals/g_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ title: 'New', status: 'done' })
+  })
+
+  it('deleteGoal DELETEs /v1/goals/{id}', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.deleteGoal('g_1')
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/goals/g_1`)
+    expect(init.method).toBe('DELETE')
+  })
+
+  // ── P2 Routine commands ────────────────────────────────────────────────────────
+
+  const rawRoutine = {
+    id: 'rtn_1', company_id: 'cmp_1', helper_id: 'h_1', name: 'Brief', subtitle: 's',
+    instructions: 'do', freq: 'daily', at: '07:00', days: [], monthly: null, timezone: 'Asia/Jakarta',
+    cron: '0 7 * * *', sends_to: [], enabled: true, paused: false, managed_by_chief: false,
+    next_at: null, last_at: null, goal_ids: [], created_by: 'operator',
+  }
+
+  it('createRoutine POSTs to /v1/routines with camel→snake body and maps snake→camel response', async () => {
+    fetchMock.mockResolvedValueOnce(okJson(rawRoutine))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.createRoutine({
+      helperId: 'h_1', name: 'Brief', instructions: 'do', freq: 'daily', at: '07:00',
+      goalIds: ['g_1'], sendsTo: [{ channel: 'email' }], subtitle: 's',
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines`)
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toMatchObject({ helper_id: 'h_1', name: 'Brief', goal_ids: ['g_1'], sends_to: [{ channel: 'email' }] })
+    expect(body.helperId).toBeUndefined()
+    expect(result.helperId).toBe('h_1')
+    expect(result.managedByChief).toBe(false)
+  })
+
+  it('updateRoutine PATCHes /v1/routines/{id} with schedule + paused fields', async () => {
+    fetchMock.mockResolvedValueOnce(okJson(rawRoutine))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.updateRoutine('rtn_1', { paused: true, freq: 'weekly', at: '09:00', helperId: 'h_2' })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines/rtn_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ paused: true, freq: 'weekly', at: '09:00', helper_id: 'h_2' })
+  })
+
+  it('deleteRoutine DELETEs /v1/routines/{id}', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.deleteRoutine('rtn_1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines/rtn_1`)
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('skipRoutineNext POSTs to /v1/routines/{id}/skip-next and maps next_at→nextAt', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ next_at: '2026-11-01T00:00:00Z' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.skipRoutineNext('rtn_1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/routines/rtn_1/skip-next`)
+    expect(init.method).toBe('POST')
+    expect(result.nextAt).toBe('2026-11-01T00:00:00Z')
+    expect((result as unknown as Record<string, unknown>).next_at).toBeUndefined()
+  })
+
+  // ── P2 Flow commands ─────────────────────────────────────────────────────────────
+
+  const rawFlow = {
+    id: 'flw_1', title: 'Flow', status: 'draft', enabled: false, count: 1, areas: ['general'],
+    created_at: null, channel_ids: ['ch_1'], trigger: { kind: 'manual', spec: {} }, nodes: [{}], edges: [],
+  }
+
+  it('createFlow POSTs to /v1/flows with camel→snake body and maps the response', async () => {
+    fetchMock.mockResolvedValueOnce(okJson(rawFlow))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.createFlow({
+      title: 'Flow', trigger: { kind: 'manual', spec: {} }, nodes: [{}], edges: [],
+      channelIds: ['ch_1'], areas: ['general'],
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows`)
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toMatchObject({ title: 'Flow', channel_ids: ['ch_1'], areas: ['general'] })
+    expect(body.channelIds).toBeUndefined()
+    expect(result.channelIds).toEqual(['ch_1'])
+  })
+
+  it('updateFlow PATCHes /v1/flows/{id} with enabled + title', async () => {
+    fetchMock.mockResolvedValueOnce(okJson(rawFlow))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.updateFlow('flw_1', { enabled: true, title: 'Renamed' })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ enabled: true, title: 'Renamed' })
+  })
+
+  it('deleteFlow DELETEs /v1/flows/{id}', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.deleteFlow('flw_1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows/flw_1`)
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('duplicateFlow POSTs the copied body to /v1/flows', async () => {
+    fetchMock.mockResolvedValueOnce(okJson(rawFlow))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.duplicateFlow({ title: 'Flow copy', trigger: { kind: 'manual', spec: {} }, nodes: [], edges: [] })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/flows`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toMatchObject({ title: 'Flow copy' })
+  })
+
+  // ── P2 Helper commands ───────────────────────────────────────────────────────────
+
+  it('createHelper POSTs to /v1/helpers with camel→snake body', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'h_1', name: 'Dev', area: 'dev', role: 'Engineer', is_chief: false, autonomy_cap: 'review_first', job_description: 'build' }))
+
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.createHelper({ name: 'Dev', area: 'dev', role: 'Engineer', jobDescription: 'build', autonomyCap: 'review_first', isChief: false })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/helpers`)
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toEqual({ name: 'Dev', area: 'dev', role: 'Engineer', job_description: 'build', autonomy_cap: 'review_first', is_chief: false })
+    expect(result.jobDescription).toBe('build')
+    expect(result.isChief).toBe(false)
+  })
+
+  it('updateHelper PATCHes /v1/helpers/{id} with model + status (snake_case)', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'h_1', name: 'Dev', area: 'dev', status: 'paused' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.updateHelper('h_1', { status: 'paused', model: 'gpt-5', jobDescription: 'x' })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/helpers/h_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ status: 'paused', model: 'gpt-5', job_description: 'x' })
+  })
+
+  // ── P2 Member commands ───────────────────────────────────────────────────────────
+
+  it('changeMemberRole PATCHes /v1/members/{id} with {role} and maps user_id→userId', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'm_1', user_id: 'u_1', name: 'A', email: 'a@x.com', role: 'admin' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.changeMemberRole('m_1', 'admin')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/members/m_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ role: 'admin' })
+    expect(result.userId).toBe('u_1')
+    expect((result as unknown as Record<string, unknown>).user_id).toBeUndefined()
+  })
+
+  it('removeMember DELETEs /v1/members/{id}', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.removeMember('m_1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/members/m_1`)
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('inviteMember POSTs to /v1/auth/invites with email/role/channels', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'inv_1', email: 'new@x.com', status: 'pending' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.inviteMember({ email: 'new@x.com', role: 'member', channels: ['ch_1'] })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/auth/invites`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'new@x.com', role: 'member', channels: ['ch_1'] })
+  })
+
+  // ── P2 Company commands ──────────────────────────────────────────────────────────
+
+  it('deleteCompany DELETEs /v1/company', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.deleteCompany()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/company`)
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('getCompanySettings GETs /v1/company/settings', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ safety: { autonomy: 'review_first' }, about: 'We ship.' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.getCompanySettings()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/company/settings`)
+    expect(init.method).toBe('GET')
+    expect(result).toEqual({ safety: { autonomy: 'review_first' }, about: 'We ship.' })
+  })
+
+  it('updateCompanySettings PATCHes /v1/company/settings with the partial', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ safety: { autonomy: 'yolo' }, notifications: { email: true } }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.updateCompanySettings({ safety: { autonomy: 'yolo' } })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/company/settings`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ safety: { autonomy: 'yolo' } })
+    expect(result.notifications).toEqual({ email: true })
+  })
+
+  // ── P2 AI-account commands ───────────────────────────────────────────────────────
+
+  it('checkAiAccounts POSTs to /v1/ai-accounts/check', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ checked: 2, ok: 2 }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.checkAiAccounts()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/ai-accounts/check`)
+    expect(init.method).toBe('POST')
+    expect(result).toEqual({ checked: 2, ok: 2 })
+  })
+
+  it('testAiAccount POSTs to /v1/ai-accounts/{id}/test', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'acc_1', ok: true }))
+    const commands = createCommands(BASE, () => TOKEN)
+    await commands.testAiAccount('acc_1')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/ai-accounts/acc_1/test`)
+    expect(init.method).toBe('POST')
+  })
+
+  // ── P2 Doc (memory) commands ───────────────────────────────────────────────────────
+
+  it('createDoc POSTs to /v1/memory with {title,content,kind?} and maps the response', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'doc_1', title: 'Runbook', content: 'steps', kind: 'runbook' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.createDoc({ title: 'Runbook', content: 'steps', kind: 'runbook' })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/memory`)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ title: 'Runbook', content: 'steps', kind: 'runbook' })
+    expect(result.id).toBe('doc_1')
+    expect(result.kind).toBe('runbook')
+  })
+
+  it('updateDoc PATCHes /v1/memory/{id} with {content}', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ id: 'doc_1', title: 'Runbook', content: 'new', kind: 'runbook' }))
+    const commands = createCommands(BASE, () => TOKEN)
+    const result = await commands.updateDoc('doc_1', 'new')
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${BASE}/v1/memory/doc_1`)
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ content: 'new' })
+    expect(result.content).toBe('new')
+  })
+
+  it('new P2 commands throw ApiError on a non-OK response', async () => {
+    fetchMock.mockResolvedValueOnce(errorJson(403, 'Forbidden'))
+    const commands = createCommands(BASE, () => TOKEN)
+    await expect(commands.deleteCompany()).rejects.toBeInstanceOf(ApiError)
+  })
 })
