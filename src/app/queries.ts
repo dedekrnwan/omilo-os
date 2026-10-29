@@ -61,6 +61,7 @@ export function useChannelSessions(channelId: Id) {
   return useQuery({
     queryKey: ['sessions', 'byChannel', channelId],
     queryFn: () => repos.sessions.listByChannel(channelId),
+    enabled: Boolean(channelId),
   })
 }
 
@@ -78,6 +79,8 @@ export function useMessages(sessionId: Id) {
   return useQuery({
     queryKey: ['messages', sessionId],
     queryFn: () => repos.messages.listBySession(sessionId),
+    // No thread selected yet (e.g. Chief DM on open) → don't call /sessions//messages.
+    enabled: Boolean(sessionId),
   })
 }
 
@@ -103,6 +106,7 @@ export function useChannelFolders(channelId: Id) {
   return useQuery({
     queryKey: ['folders', 'byChannel', channelId],
     queryFn: () => repos.folders.listByChannel(channelId),
+    enabled: Boolean(channelId),
   })
 }
 
@@ -111,6 +115,7 @@ export function useChannelGoals(channelId: Id) {
   return useQuery({
     queryKey: ['goals', 'byChannel', channelId],
     queryFn: () => repos.goals.listByChannel(channelId),
+    enabled: Boolean(channelId),
   })
 }
 
@@ -240,6 +245,7 @@ export function useFlowRuns(flowId: Id) {
   return useQuery({
     queryKey: ['flowRuns', flowId],
     queryFn: () => repos.flows.runs(flowId),
+    enabled: Boolean(flowId),
   })
 }
 
@@ -1092,6 +1098,9 @@ export function useFlowRun(flowId: Id, runId: Id | undefined, opts: { poll?: boo
 export function useFlowVersions(flowId: Id) {
     queryKey: ['flowVersions', flowId],
     queryFn: () => repos.flows.versions?.(flowId) ?? Promise.resolve([]),
+    enabled: Boolean(flowId),
+  })
+}
 
 export function useFlowSuggestions() {
     queryKey: ['flowSuggestions'],

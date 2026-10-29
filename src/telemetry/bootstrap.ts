@@ -33,6 +33,7 @@ export function bootstrapTelemetry(): void {
       // the stored token when present; without it the fetch 401s and telemetry
       // stays off (fail-safe) until a later bootstrap once the user is signed in.
       const token = platform.tokenStorage.getToken()
+      if (!token) return
       const res = await fetch(`${BASE_URL}/v1/telemetry-config`, {
         headers: {
           Accept: 'application/json',

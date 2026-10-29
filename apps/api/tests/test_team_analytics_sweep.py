@@ -451,5 +451,5 @@ def test_behavior_instructions_and_spend_cap():
     assert "You are Support." in text
     assert "Bahasa Indonesia" in text and "Legal, Politics" in text
     assert "Rp 50.000" in text and "60 messages" in text
-    assert spend_cap_credits(h) == 3333
+    assert spend_cap_credits(h) == 1000  # Rp 50.000 at Rp 50 per credit (billing.catalog)
     assert spend_cap_credits(SimpleNamespace(behavior={})) is None

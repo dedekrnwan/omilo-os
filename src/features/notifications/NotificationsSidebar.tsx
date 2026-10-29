@@ -76,7 +76,7 @@ export function NotificationsSidebar({ filter, onFilter, items }: Props) {
                 <span
                   data-testid="area-dot"
                   className="size-[8px] rounded-full"
-                  style={{ background: helperColor[area] }}
+                  style={{ background: helperColor[area as keyof typeof helperColor] ?? helperColor.brand }}
                 />
               </span>
             }

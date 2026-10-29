@@ -260,7 +260,7 @@ export interface MascotProps {
 export function Mascot({
   size,
   radius,
-  area = 'brand',
+  area: areaProp = 'brand',
   color: colorOverride,
   helper = false,
   shape: shapeProp,
@@ -273,6 +273,8 @@ export function Mascot({
   title,
   style,
 }: MascotProps) {
+  // Areas come from the API as free text; anything unknown draws as the brand mascot.
+  const area: HelperArea = areaProp in HELPER_LOOK ? areaProp : 'brand'
   // The helper's saved Profile look (colour / shape / prop), if any.
   const saved = useMascotLook((s) => s.looks[area])
   const color = colorOverride ?? saved?.color ?? helperColor[area]

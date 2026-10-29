@@ -23,7 +23,7 @@ export function LetGoDialog({ helper, onClose, onLetGo }: { helper: LetGoHelper;
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  const c = helperColor[helper.area]
+  const c = helperColor[helper.area] ?? helperColor.brand
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-[#0C0A0940]" onClick={onClose} aria-hidden />

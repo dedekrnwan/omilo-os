@@ -86,8 +86,8 @@ export function ProfileTab({
 }) {
   const n = helper.name
   const live = helper.helper
-  const look = HELPER_LOOK[helper.area]
-  const base = helperColor[helper.area]
+  const look = HELPER_LOOK[helper.area] ?? HELPER_LOOK.brand
+  const base = helperColor[helper.area] ?? helperColor.brand
   const defaultColour = COLOURS.find((c) => c.toLowerCase() === String(base).toLowerCase()) ?? COLOURS[0]
   const updateHelper = useUpdateHelperEverywhere()
   const save = (input: UpdateHelperInput, ok?: string) =>

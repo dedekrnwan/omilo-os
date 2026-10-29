@@ -23,6 +23,7 @@ from omilo.db import SessionLocal
 from omilo.models.agents import Helper
 from omilo.models.chat import ChatSession, Message
 from omilo.models.inbox import InboxItem
+from omilo.models.approvals import Proposal
 from omilo.models.tenancy import Company, Member, User
 from omilo.models.workspace import Channel, Folder, Goal
 from omilo.seed.fixtures import (
@@ -37,6 +38,9 @@ from omilo.seed.fixtures import (
     MESSAGES,
     SESSIONS,
 )
+
+# inbox item id → proposals entries linked to seeded Proposal rows
+INBOX_DECISION_LINKS: dict[str, list[dict]] = {}
 
 DEMO_CMP_ID = "cmp_demo"
 
@@ -198,8 +202,39 @@ def seed_demo() -> Company:
                 )
 
             # ── Inbox items ──────────────────────────────────────────────────
+            # Decision items get real Proposal rows (one per task, or one for the
+            # whole ask) so Approve / Reject / Undo work against the API in the demo.
+            area_helper = {"dev": "hlp-dev", "marketing": "hlp-growth", "sales": "hlp-sales"}
+            for row in INBOX_ITEMS:
+                if row["kind"] != "decision" or row["status"] != "pending":
+                    continue
+                entries = row.get("proposals") or [{}]
+                linked = []
+                for i, entry in enumerate(entries):
+                    pid = f"prp-{row['id']}" + (f"-{i + 1}" if len(entries) > 1 else "")
+                    area = entry.get("area") or row["asker_area"]
+                    db.merge(
+                        Proposal(
+                            id=pid,
+                            company_id=DEMO_CMP_ID,
+                            job_id=f"job-seed-{row['id']}",
+                            helper_id=area_helper.get(area, "hlp-chief"),
+                            type="task" if len(entries) > 1 else "decision",
+                            risk="low" if len(entries) > 1 else "medium",
+                            title=entry.get("text") or row["title"],
+                            body_md=row.get("summary", ""),
+                            status="pending",
+                            current_revision=1,
+                        )
+                    )
+                    linked.append({**entry, "proposal_id": pid})
+                row = {**row, "proposals": linked}
+                INBOX_DECISION_LINKS[row["id"]] = linked
+
             for row in INBOX_ITEMS:
                 created_at = _parse_iso(row["created_at"])
+                if row["id"] in INBOX_DECISION_LINKS:
+                    row = {**row, "proposals": INBOX_DECISION_LINKS[row["id"]]}
                 db.merge(
                     InboxItem(
                         id=row["id"],
@@ -244,7 +279,7 @@ def main() -> None:
     print(f"  sessions  : {len(SESSIONS)}")
     print(f"  messages  : {len(MESSAGES)}")
     print(f"  inbox     : {len(INBOX_ITEMS)}")
-    print(f"  plans     : 2 (self_hosted, cloud)")
+    print("  plans     : starter, team, business, self_hosted")
     print("omilo-seed: done.")
     sys.exit(0)
 
