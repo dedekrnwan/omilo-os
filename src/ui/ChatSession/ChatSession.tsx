@@ -224,8 +224,10 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
 
   // Model: the session's stored model (falls back to the default); a pick is saved.
   const sessionModel = MODELS.find((m) => m.id === session?.model)
-  // (ChatSessionRoute keys this component by sessionId, so the pick resets per chat.)
-  const [pickedModel, setPickedModel] = useState<Model | null>(null)
+  // A pick belongs to the chat it was made in: switching sessionId resets it.
+  const [pick, setPick] = useState<{ sid: string; model: Model | null }>({ sid: sessionId, model: null })
+  const pickedModel = pick.sid === sessionId ? pick.model : null
+  const setPickedModel = (m: Model) => setPick({ sid: sessionId, model: m })
   const selectedModel: Model = pickedModel ?? sessionModel ?? DEFAULT_MODEL
   function changeModel(m: Model) {
     setPickedModel(m)
