@@ -499,6 +499,9 @@ def create_helper(
             )
     db.flush()
 
+    from omilo import audit  # sweep/control — activity log
+
+    audit.record_ctx(ctx, type="helpers", action="added helper", target=helper.name)
     return _helper_to_dict(helper)
 
 
@@ -569,6 +572,16 @@ def patch_helper(
         helper.budget_credits_month = body.budget_credits_month
 
     db.flush()
+
+    from omilo import audit  # sweep/control — activity log
+
+    changed = [k for k, v in body.model_dump(exclude_none=True).items()]
+    if changed:
+        what = "paused" if body.status == "paused" else "resumed" if body.status == "active" else "changed"
+        audit.record_ctx(
+            ctx, type="helpers", action=what,
+            target=helper.name if what != "changed" else f"{helper.name} · {', '.join(k.replace('_', ' ') for k in changed)}",
+        )
     return _helper_to_dict(helper)
 
 

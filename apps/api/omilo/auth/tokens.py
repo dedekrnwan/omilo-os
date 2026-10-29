@@ -51,6 +51,7 @@ def make_access_token(
     company_id: str,
     role: str,
     ttl_s: int | None = None,
+    method: str | None = None,
 ) -> tuple[str, datetime]:
     """Sign and return (token, expires_at) for the given user/company/role.
 
@@ -64,6 +65,8 @@ def make_access_token(
         ttl_s:      Optional access-token lifetime in seconds. Defaults to
                     ``Settings.jwt_access_ttl_s`` (the short session TTL). Pass a
                     larger value for "keep me signed in" (e.g. 30 days).
+        method:     How the person signed in (password | google | …); stored
+                    on the tracked sign-in session (sweep/control).
 
     Returns:
         (access_token, expires_at) — expires_at is a UTC-aware datetime.
@@ -72,12 +75,17 @@ def make_access_token(
     now = datetime.now(tz=timezone.utc)
     ttl = settings.jwt_access_ttl_s if ttl_s is None else ttl_s
     expires_at = now + timedelta(seconds=ttl)
+    # sweep/control — every token gets a session id (devices list / sign out).
+    from omilo.models.base import prefixed_id
+
+    sid = prefixed_id("usn")
     payload = {
         "sub": user_id,
         "cmp": company_id,
         "role": role,
         "exp": expires_at,
         "iat": now,
+        "sid": sid,
     }
 
     private_key_pem: str | None = getattr(settings, "omilo_jwt_private_key", None)
@@ -96,6 +104,9 @@ def make_access_token(
     else:
         token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
+    from omilo.auth.sessions import create_session_row
+
+    create_session_row(sid, user_id, company_id, expires_at, method=method)
     return token, expires_at
 
 

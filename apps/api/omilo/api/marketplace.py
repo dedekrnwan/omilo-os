@@ -198,4 +198,7 @@ def install_connector(
     )
     db.add(connector)
     db.flush()
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="connectors", action="installed", target=connector.label)
     return _connector_to_dict(connector)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,6 +62,9 @@ class Company(IdMixin, TimestampMixin, Base):
         JSONB, nullable=False, server_default="{}"
     )
 
+    # sweep/control — uploaded company logo, stored as a data: URL (small images).
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class User(IdMixin, TimestampMixin, Base):
     """Human login — global, no company_id, no RLS."""
@@ -83,6 +86,13 @@ class User(IdMixin, TimestampMixin, Base):
         nullable=False, server_default="false"
     )
 
+    # sweep/control — profile photo (data: URL) and per-user preferences
+    # (nickname, language, notification matrix, quiet hours).
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferences: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+
 
 class Member(IdMixin, TimestampMixin, Base):
     """User ↔ Company binding with role. Tenant table (RLS-protected)."""
@@ -95,3 +105,5 @@ class Member(IdMixin, TimestampMixin, Base):
         ForeignKey("user.id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[str] = mapped_column(nullable=False, server_default="member")
+    # sweep/control — channel ids this member works in (null = all channels).
+    channels: Mapped[list | None] = mapped_column(JSONB, nullable=True)

@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from omilo.api.billing import PACKS
+from omilo.billing.catalog import PACKS
 from omilo.billing.balance import balance, grant_credits
 from omilo.models.base import prefixed_id
 from omilo.models.commerce import DoitPayment, WalletSettings
@@ -125,9 +125,10 @@ def _maybe_auto_topup_inner(
                 return None  # already have one pending auto-topup
 
     # ── 4. Resolve pack ───────────────────────────────────────────────────────
-    pack_name = ws.auto_topup_pack or "medium"
+    from omilo.billing.catalog import resolve_pack_id
+    pack_name = resolve_pack_id(ws.auto_topup_pack or "5000")
     if pack_name not in PACKS:
-        pack_name = "medium"
+        pack_name = "5000"
     pack = PACKS[pack_name]
     credits_to_grant = pack["credits"]
     amount_idr = pack["amount_idr"]

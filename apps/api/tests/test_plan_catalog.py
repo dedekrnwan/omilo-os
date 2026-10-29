@@ -1,9 +1,10 @@
 """Tests for P12-T1: billing model extensions + plan catalog seeding.
 
 Covers:
-- seed_plans twice → exactly 2 Plan rows (idempotent upsert)
-- cloud plan: monthly_price_idr==299000, yearly_price_idr==2990000,
-              included_credits==2000, seats==5
+- seed_plans twice → exactly one row per catalog plan (idempotent upsert)
+- Starter / Team / Business tiers (sweep/control owner decision):
+  team: monthly_price_idr==2_000_000, yearly_price_idr==20_000_000,
+        included_credits==40_000, seats==5
 - self_hosted plan: included_credits==0
 - new Subscription column: billing_interval defaults to "monthly"
 """
@@ -34,7 +35,7 @@ def _count_plans(session) -> int:
 
 
 def test_seed_plans_idempotent() -> None:
-    """Running seed_plans twice must produce exactly 2 Plan rows (no duplication)."""
+    """Running seed_plans twice must not duplicate catalog rows."""
     from omilo.billing.catalog import seed_plans
 
     with SessionLocal() as db:
@@ -49,34 +50,45 @@ def test_seed_plans_idempotent() -> None:
         plans = db.execute(select(Plan)).scalars().all()
 
     plan_ids = {p.id for p in plans}
-    assert "plan_self_hosted" in plan_ids, "plan_self_hosted must exist"
-    assert "plan_cloud" in plan_ids, "plan_cloud must exist"
+    catalog_ids = ("plan_self_hosted", "plan_starter", "plan_team", "plan_business")
+    for pid in catalog_ids:
+        assert pid in plan_ids, f"{pid} must exist"
+    assert "plan_cloud" not in plan_ids, "legacy plan_cloud is migrated to plan_team"
 
-    # Exactly these two catalog plans (there may be other plans from other tests)
     # The key invariant: running seed_plans twice doesn't double-insert
-    catalog_plans = [p for p in plans if p.id in ("plan_self_hosted", "plan_cloud")]
-    assert len(catalog_plans) == 2, (
-        f"Expected exactly 2 catalog plans, found {len(catalog_plans)}"
+    catalog_plans = [p for p in plans if p.id in catalog_ids]
+    assert len(catalog_plans) == 4, (
+        f"Expected exactly 4 catalog plans, found {len(catalog_plans)}"
     )
 
 
 def test_cloud_plan_fields() -> None:
-    """Cloud plan has correct prices, credits, and seats."""
-    from omilo.billing.catalog import seed_plans
+    """Starter / Team / Business match the control-panel Change plan dialog."""
+    from omilo.billing.catalog import resolve_plan_id, seed_plans
 
     seed_plans(None)
 
     with SessionLocal() as db:
-        plan = db.get(Plan, "plan_cloud")
+        starter = db.get(Plan, "plan_starter")
+        plan = db.get(Plan, "plan_team")
+        business = db.get(Plan, "plan_business")
 
-    assert plan is not None, "plan_cloud must exist after seeding"
-    assert plan.tier == "cloud"
-    assert plan.monthly_price_idr == 299000
-    assert int(plan.monthly_price_usd) == 19  # Decimal 19
-    assert plan.yearly_price_idr == 2990000
-    assert int(plan.yearly_price_usd) == 190  # Decimal 190
-    assert plan.included_credits == 2000
+    assert plan is not None, "plan_team must exist after seeding"
+    assert plan.tier == "team"
+    assert plan.monthly_price_idr == 2_000_000
+    assert plan.yearly_price_idr == 20_000_000  # 2 months free
+    assert plan.included_credits == 40_000
     assert plan.seats == 5
+    assert plan.features["max_seats"] == 15
+    assert plan.features["seat_price_idr"] == 150_000
+
+    assert starter.monthly_price_idr == 500_000 and starter.seats == 2
+    assert starter.features["seat_price_idr"] is None
+    assert business.monthly_price_idr == 6_000_000 and business.seats == 20
+    assert business.features["max_seats"] is None
+
+    assert resolve_plan_id("plan_cloud") == "plan_team"
+    assert resolve_plan_id("business") == "plan_business"
 
 
 def test_self_hosted_plan_fields() -> None:
@@ -109,7 +121,7 @@ def test_subscription_billing_interval_default() -> None:
             sub = Subscription(
                 id=prefixed_id("sub"),
                 company_id="cmp_test_catalog",
-                plan_id="plan_cloud",
+                plan_id="plan_team",
                 status="active",
                 seats=1,
             )

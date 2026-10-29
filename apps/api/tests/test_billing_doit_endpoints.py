@@ -203,9 +203,9 @@ def _auth(token: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_doit_topup_returns_pending_hosted_url_balance_unchanged():
-    """POST /v1/billing/topup {pack:"medium"} under DoitProvider
-    → returns {payment_id, hosted_url, status:"pending", credits:5000, amount_idr:70000};
-      balance UNCHANGED; a pending DoitPayment(credits=5000, amount_idr=70000) is created.
+    """POST /v1/billing/topup {pack:"medium"} (legacy alias of "5000") under DoitProvider
+    → returns {payment_id, hosted_url, status:"pending", credits:5000, amount_idr:238000};
+      balance UNCHANGED; a pending DoitPayment(credits=5000, amount_idr=238000) is created.
     """
     app, _fake_client = _make_doit_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -227,7 +227,7 @@ async def test_doit_topup_returns_pending_hosted_url_balance_unchanged():
     assert data["hosted_url"] is not None, "hosted_url must be set"
     assert "payment_id" in data, f"payment_id missing from {data}"
     assert data["credits"] == 5000
-    assert data["amount_idr"] == 70000
+    assert data["amount_idr"] == 238000
 
     # Balance UNCHANGED
     assert _get_balance(company_id) == balance_before, (
@@ -241,7 +241,7 @@ async def test_doit_topup_returns_pending_hosted_url_balance_unchanged():
     pay = payments[0]
     assert pay.status == "pending"
     assert pay.credits == 5000
-    assert pay.amount_idr == 70000
+    assert pay.amount_idr == 238000
     assert pay.kind == "topup"
 
 

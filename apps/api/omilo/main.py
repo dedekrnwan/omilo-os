@@ -160,6 +160,21 @@ def create_app() -> FastAPI:
     app.include_router(handbook_router, prefix="/v1")
     app.include_router(lessons_router, prefix="/v1")
     # ── end sweep/docs ──
+    # ── sweep/control ──
+    # Control-panel endpoints: activity log, data exports + storage, per-user
+    # account (preferences / avatar / sessions), external MCP servers; plus the
+    # middleware that records User-Agent/IP for sign-in session rows.
+    from omilo.api.audit_log import router as audit_router
+    from omilo.api.data_export import router as data_export_router
+    from omilo.api.me_account import router as me_account_router
+    from omilo.api.mcp_servers import router as mcp_servers_router
+    from omilo.auth.sessions import request_meta_middleware
+
+    app.include_router(audit_router, prefix="/v1")
+    app.include_router(data_export_router, prefix="/v1")
+    app.include_router(me_account_router, prefix="/v1")
+    app.include_router(mcp_servers_router, prefix="/v1")
+    app.middleware("http")(request_meta_middleware)
 
     return app
 

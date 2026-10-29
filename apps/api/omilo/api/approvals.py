@@ -294,6 +294,10 @@ def approve_proposal(
         },
     })
 
+    from omilo import audit  # sweep/control — activity log
+
+    audit.record_ctx(ctx, type="approvals", action="approved", target=proposal.title or proposal.type)
+
     # Emit telemetry: proposal decided (approved) — best-effort, never raises.
     try:
         from omilo.telemetry import PROPOSAL_DECIDED
@@ -357,6 +361,10 @@ def reject_proposal(
             "decision": "rejected",
         },
     })
+
+    from omilo import audit  # sweep/control — activity log
+
+    audit.record_ctx(ctx, type="approvals", action="declined", target=proposal.title or proposal.type)
 
     # Emit telemetry: proposal decided (rejected) — best-effort, never raises.
     try:

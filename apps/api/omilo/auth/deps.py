@@ -156,6 +156,18 @@ def _ensure_company_shadow(cp, company_id: str, db: Session) -> None:
         raise _503_offline_first_run from exc
 
 
+def _sid_claim(token: str) -> str | None:
+    """Read the (already verified) token's ``sid`` claim without re-verifying."""
+    try:
+        import jwt as _jwt
+
+        claims = _jwt.decode(token, options={"verify_signature": False})
+        sid = claims.get("sid")
+        return sid if isinstance(sid, str) else None
+    except Exception:
+        return None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> User | _RuntimeIdentity:
@@ -205,11 +217,16 @@ def get_current_user(
     # ── CLOUD MODE (LocalControlPlane) — IDENTICAL to before ────────────────
     # The local DB is authoritative for User and Member.  We load the User row
     # and attach _jwt_claims so get_context can read them without re-decoding.
+    # sweep/control — reject tokens whose sign-in session was revoked.
+    from omilo.auth.sessions import check_session
+
+    sid = _sid_claim(credentials.credentials)
     with SessionLocal() as session:
         with session.begin():
             user = session.get(User, user_id)
+            session_ok = check_session(session, sid)
 
-    if user is None:
+    if user is None or not session_ok:
         raise _401
 
     # Attach the identity as a claims-compatible dict so that tenancy/deps.py
@@ -219,5 +236,6 @@ def get_current_user(
         "sub": identity.user_id,
         "cmp": identity.company_id,
         "role": identity.role,
+        "sid": sid,
     }
     return user

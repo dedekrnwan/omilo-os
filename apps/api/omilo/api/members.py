@@ -11,6 +11,8 @@ GET /v1/members
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
@@ -30,10 +32,56 @@ class MemberOut(BaseModel):
     name: str
     email: str
     role: str
+    # sweep/control — channel access (null = all channels) + presence.
+    channels: list[str] | None = None
+    channel_names: list[str] | None = None
+    last_seen_at: datetime | None = None
+    avatar_url: str | None = None
 
 
 class PatchMemberBody(BaseModel):
-    role: str
+    role: str | None = None
+    # Channel ids this member works in; [] or null → all channels.
+    channels: list[str] | None = None
+    all_channels: bool | None = None
+
+
+def _channel_names(session, company_id: str) -> dict[str, str]:
+    from omilo.models.workspace import Channel
+
+    rows = session.query(Channel.id, Channel.name).filter(Channel.company_id == company_id).all()
+    return {cid: name for cid, name in rows}
+
+
+def _last_seen(session, user_ids: list[str]) -> dict[str, datetime]:
+    from sqlalchemy import func
+
+    from omilo.models.control import UserSession
+
+    if not user_ids:
+        return {}
+    rows = (
+        session.query(UserSession.user_id, func.max(UserSession.last_seen_at))
+        .filter(UserSession.user_id.in_(user_ids))
+        .group_by(UserSession.user_id)
+        .all()
+    )
+    return {uid: ts for uid, ts in rows if ts is not None}
+
+
+def _member_out(member: Member, user: User | None, names: dict[str, str], seen: dict[str, datetime]) -> MemberOut:
+    chans = member.channels if isinstance(member.channels, list) and member.channels else None
+    return MemberOut(
+        id=member.id,
+        user_id=member.user_id,
+        name=user.name if user else "",
+        email=user.email if user else "",
+        role=member.role,
+        channels=chans,
+        channel_names=[names[c] for c in chans if c in names] if chans else None,
+        last_seen_at=seen.get(member.user_id),
+        avatar_url=getattr(user, "avatar_url", None) if user else None,
+    )
 
 
 @router.get("/members", response_model=list[MemberOut])
@@ -52,17 +100,10 @@ def list_members(ctx: RequestContext = Depends(get_context)) -> list[MemberOut]:
             .order_by(Member.created_at)
             .all()
         )
+        names = _channel_names(session, ctx.company_id)
+        seen = _last_seen(session, [m.user_id for m, _ in rows])
 
-    return [
-        MemberOut(
-            id=member.id,
-            user_id=member.user_id,
-            name=user.name,
-            email=user.email,
-            role=member.role,
-        )
-        for member, user in rows
-    ]
+    return [_member_out(member, user, names, seen) for member, user in rows]
 
 
 def _owner_count(session, company_id: str, *, exclude_member_id: str | None = None) -> int:
@@ -88,7 +129,7 @@ def patch_member(
     in the authed company. Uses a privileged session scoped to ctx.company_id
     (Member join + User is a global table).
     """
-    if body.role not in _VALID_ROLES:
+    if body.role is not None and body.role not in _VALID_ROLES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid role {body.role!r}. Allowed: {sorted(_VALID_ROLES)}.",
@@ -107,24 +148,42 @@ def patch_member(
                 )
 
             # Last-owner guard: refuse demoting the only owner.
-            if member.role == "owner" and body.role != "owner":
+            if body.role is not None and member.role == "owner" and body.role != "owner":
                 if _owner_count(session, ctx.company_id) <= 1:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Cannot demote the last owner of the company.",
                     )
 
-            member.role = body.role
+            old_role = member.role
+            if body.role is not None:
+                member.role = body.role
+            names = _channel_names(session, ctx.company_id)
+            if body.all_channels:
+                member.channels = None
+            elif body.channels is not None:
+                unknown = [c for c in body.channels if c not in names]
+                if unknown:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Unknown channel(s): {', '.join(unknown)}",
+                    )
+                member.channels = list(body.channels) or None
             session.flush()
 
             user = session.get(User, member.user_id)
-            return MemberOut(
-                id=member.id,
-                user_id=member.user_id,
-                name=user.name if user else "",
-                email=user.email if user else "",
-                role=member.role,
-            )
+            out = _member_out(member, user, names, _last_seen(session, [member.user_id]))
+
+    from omilo import audit
+
+    if body.role is not None and body.role != old_role:
+        audit.record_ctx(ctx, type="members", action="changed role of", target=f"{out.name} → {out.role}")
+    if body.channels is not None or body.all_channels:
+        audit.record_ctx(
+            ctx, type="members", action="changed channels of",
+            target=f"{out.name} → {', '.join(out.channel_names or []) or 'All channels'}",
+        )
+    return out
 
 
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -156,4 +215,9 @@ def delete_member(
                     detail="Cannot remove the last owner of the company.",
                 )
 
+            removed = session.get(User, member.user_id)
             session.delete(member)
+
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="members", action="removed", target=removed.name if removed else member_id)

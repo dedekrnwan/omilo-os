@@ -137,6 +137,9 @@ def create_ai_account(
     )
     db.add(acc)
     db.flush()
+    from omilo import audit  # sweep/control
+
+    audit.record_ctx(ctx, type="settings", action="connected AI account", target=acc.label)
     return _account_to_dict(acc)
 
 
@@ -205,10 +208,16 @@ def patch_ai_account(
             detail=f"Account {account_id!r} not found.",
         )
     if body.name is not None:
-        acc.label = body.name
+        if not body.name.strip():
+            raise HTTPException(status_code=422, detail="Name must not be empty.")
+        acc.label = body.name.strip()
     if body.tag is not None:
         acc.tag = body.tag
     if body.status is not None:
+        # sweep/control — "paused" takes an account out of the pool (pool.py
+        # only selects status == "ready"); "ready" puts it back.
+        if body.status not in ("ready", "paused", "near_limit", "cooling", "error"):
+            raise HTTPException(status_code=422, detail="Unknown account status.")
         acc.status = body.status
     db.flush()
     return _account_to_dict(acc)

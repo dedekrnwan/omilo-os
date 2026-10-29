@@ -10,6 +10,8 @@ from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from omilo.db import Base
@@ -36,6 +38,9 @@ class Channel(IdMixin, TimestampMixin, Base):
     context_scope: Mapped[str] = mapped_column(nullable=False, server_default="isolated")
     # ── sweep/chat (0023): custom area colour (hex); icon reuses `icon` ──
     color: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # sweep/control — archive (read-only, hidden from the app) + mute.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    muted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
 
 class Folder(IdMixin, TimestampMixin, Base):

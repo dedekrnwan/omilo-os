@@ -138,6 +138,9 @@ def create_skill(
     )
     db.add(skill)
     db.flush()
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="skills", action="wrote", target=skill.name)
     return _skill_to_dict(skill)
 
 
@@ -307,3 +310,61 @@ def publish_skill(
         pass
 
     return _proposal_to_dict(proposal)
+
+
+
+# ── sweep/control ────────────────────────────────────────────────────────────
+# PATCH /v1/skills/{id} {status?, name?, body_md?, helper_id?}
+#   status: "disabled" turns a live skill off (helpers stop seeing it);
+#           "active" turns a disabled skill back on.  A draft still goes live
+#           only through POST /publish (review).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class PatchSkillBody(BaseModel):
+    status: str | None = None
+    name: str | None = None
+    body_md: str | None = None
+    helper_id: str | None = None
+
+
+@router.patch("/skills/{skill_id}", status_code=status.HTTP_200_OK)
+def patch_skill(
+    skill_id: str,
+    body: PatchSkillBody,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+    if skill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found.")
+    from omilo import audit
+
+    if body.status is not None and body.status != skill.status:
+        if body.status not in ("active", "disabled", "draft"):
+            raise HTTPException(status_code=422, detail="status must be active, disabled or draft.")
+        if body.status == "active" and skill.status == "draft":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Drafts go live through publish review. Publish it instead.",
+            )
+        skill.status = body.status
+        audit.record_ctx(
+            ctx, type="skills",
+            action="turned on" if body.status == "active" else "turned off" if body.status == "disabled" else "moved to draft",
+            target=skill.name,
+        )
+    edited = False
+    if body.name is not None and body.name.strip():
+        skill.name = body.name.strip()
+        edited = True
+    if body.body_md is not None:
+        skill.body_md = body.body_md
+        edited = True
+    if body.helper_id is not None:
+        skill.helper_id = body.helper_id
+        edited = True
+    if edited:
+        audit.record_ctx(ctx, type="skills", action="edited", target=skill.name)
+    db.flush()
+    return _skill_to_dict(skill)

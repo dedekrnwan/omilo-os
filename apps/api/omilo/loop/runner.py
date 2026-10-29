@@ -287,13 +287,27 @@ def run_job(
         operator_note=job.operator_note,
         autonomy=effective,
         goal_delivery=bool(job.goal_id),
-        memory=_assemble_memory(db, job.brief),
+        memory=(
+            _assemble_memory(db, job.brief)
+            if _knowledge_enabled_for(company, helper)  # sweep/control
+            else ""
+        ),
         emit=emitter,
         instructions=build_helper_instructions(helper),
         spend_cap_credits=spend_cap_credits(helper),
     )
 
     engine_cfg = helper.engine if helper.engine else {"type": "fake"}
+    # sweep/control — AI engine "Models by role": a company-wide model per
+    # role (chief / agents) applies unless the helper pins its own model.
+    try:
+        from omilo.engine.routing import role_model
+
+        _model = role_model(company, helper)
+        if _model and not (engine_cfg or {}).get("model"):
+            engine_cfg = {**engine_cfg, "model": _model}
+    except Exception as exc:
+        logger.warning("model routing failed for job %s: %s", job.id, exc)
     # Record engine_type on the job for metering/analytics downstream.
     job.engine_type = engine_cfg.get("type", "fake")
     db.flush()
@@ -328,6 +342,19 @@ def run_job(
         usage: dict = {}
 
         verdict = decide(effective, risk, action_type, safety_limits, usage)
+
+        # sweep/control — company Safety & limits settings (always-wait toggles,
+        # no-delete, auto-approve spend under X, daily spend cap).
+        try:
+            from omilo.engine.company_safety import gate as _company_gate
+
+            verdict = _company_gate(
+                db, company, helper, verdict,
+                effective=effective, proposal_type=action_type,
+                arguments=action.get("args") if isinstance(action.get("args"), dict) else action,
+            )
+        except Exception as exc:  # never let settings parsing break a run
+            logger.warning("company safety gate failed for job %s: %s", job.id, exc)
 
         if verdict == "allowed":
             # ── execute (fake: record the action as a tool RunEvent) ──────────
@@ -754,3 +781,19 @@ def _auto_topup_best_effort(db: Session, job: Job) -> None:
             job.id,
             exc,
         )  # auto-topup errors are never fatal
+
+
+# ── sweep/control ────────────────────────────────────────────────────────────
+
+def _knowledge_enabled_for(company, helper) -> bool:
+    """Knowledge page: off for everyone, or off for specific helpers."""
+    settings = getattr(company, "settings", None) or {}
+    k = settings.get("knowledge") if isinstance(settings, dict) else None
+    if not isinstance(k, dict):
+        return True
+    if k.get("knowledgeOn") is False:
+        return False
+    disabled = k.get("disabledHelperIds")
+    if isinstance(disabled, list) and getattr(helper, "id", None) in disabled:
+        return False
+    return True

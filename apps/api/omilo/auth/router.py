@@ -151,7 +151,9 @@ class TwoFactorChallenge(BaseModel):
 class CreateInviteRequest(BaseModel):
     email: str
     role: str = "member"
-    channels: str | None = None
+    # Channel ids the invitee will work in (null/[] = all channels).  A
+    # comma-separated string is still accepted for older clients.
+    channels: list[str] | str | None = None
 
 
 class InviteOut(BaseModel):
@@ -160,6 +162,11 @@ class InviteOut(BaseModel):
     role: str
     channels: str | None = None
     expires_at: datetime
+    # sweep/control — parsed channel ids/names + when it was sent.
+    channel_ids: list[str] | None = None
+    channel_names: list[str] | None = None
+    created_at: datetime | None = None
+    invited_by: str | None = None
 
 
 class InvitePreview(BaseModel):
@@ -640,19 +647,34 @@ def create_invite(
         if company is None:
             raise HTTPException(status_code=404, detail="Company not found.")
 
+        invite_role = body.role or "member"
+        if invite_role not in ("admin", "member", "viewer"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Role must be admin, member or viewer.",
+            )
+        _check_invite_seat(session, company_id, invite_role)
+
         token = codes.generate_url_token()
         invite = Invite(
             id=prefixed_id("inv"),
             company_id=company_id,
-            email=body.email,
-            role=body.role or "member",
-            channels=body.channels,
+            email=body.email.strip(),
+            role=invite_role,
+            channels=_channels_to_column(body.channels),
             token_hash=codes.hash_secret(token),
             invited_by_user_id=current_user.id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         )
         session.add(invite)
         session.commit()
+
+        from omilo import audit
+
+        audit.record(
+            company_id, type="members", action="invited",
+            target=f"{invite.email} as {invite.role}", actor_id=current_user.id,
+        )
 
         link = f"{get_settings().frontend_base}/auth/invite?token={token}"
         emails.send_invite(
@@ -662,13 +684,7 @@ def create_invite(
             getattr(current_user, "name", None),
             invite.role,
         )
-        return InviteOut(
-            id=invite.id,
-            email=invite.email,
-            role=invite.role,
-            channels=invite.channels,
-            expires_at=invite.expires_at,
-        )
+        return _invite_out(session, invite)
 
 
 @router.get("/invite", response_model=InvitePreview)
@@ -692,10 +708,12 @@ def get_invite(token: str) -> InvitePreview:
             else None
         )
         existing = session.query(User).filter_by(email=invite.email).first()
+        names = _channel_name_map(session, invite.company_id)
+        ids = _channels_from_column(invite.channels)
         return InvitePreview(
             email=invite.email,
             role=invite.role,
-            channels=invite.channels,
+            channels=", ".join(names.get(c, c) for c in ids) if ids else None,
             company_name=company.name if company else "",
             inviter_name=inviter.name if inviter else None,
             expires_at=invite.expires_at,
@@ -751,11 +769,14 @@ def accept_invite(body: AcceptInviteRequest) -> SignInResponse:
             .first()
         )
         if member is None:
+            names = _channel_name_map(session, invite.company_id)
+            chan_ids = [c for c in _channels_from_column(invite.channels) if c in names]
             member = Member(
                 id=prefixed_id("mem"),
                 company_id=invite.company_id,
                 user_id=user.id,
                 role=invite.role,
+                channels=chan_ids or None,
             )
             session.add(member)
 
@@ -766,6 +787,136 @@ def accept_invite(body: AcceptInviteRequest) -> SignInResponse:
         )
         session.commit()
         return resp
+
+
+# ── sweep/control: invite helpers + list / revoke / resend ──────────────────
+
+
+def _channels_to_column(channels: list[str] | str | None) -> str | None:
+    """Normalise the request's channel ids to the comma-separated column."""
+    if channels is None:
+        return None
+    items = channels.split(",") if isinstance(channels, str) else channels
+    cleaned = [c.strip() for c in items if c and c.strip()]
+    return ",".join(cleaned) or None
+
+
+def _channels_from_column(value: str | None) -> list[str]:
+    return [c.strip() for c in (value or "").split(",") if c.strip()]
+
+
+def _channel_name_map(session: Session, company_id: str) -> dict[str, str]:
+    from omilo.models.workspace import Channel
+
+    rows = session.query(Channel.id, Channel.name).filter(Channel.company_id == company_id).all()
+    return {cid: name for cid, name in rows}
+
+
+def _invite_out(session: Session, invite: Invite) -> InviteOut:
+    names = _channel_name_map(session, invite.company_id)
+    ids = _channels_from_column(invite.channels)
+    inviter = session.get(User, invite.invited_by_user_id) if invite.invited_by_user_id else None
+    return InviteOut(
+        id=invite.id,
+        email=invite.email,
+        role=invite.role,
+        channels=invite.channels,
+        expires_at=invite.expires_at,
+        channel_ids=ids or None,
+        channel_names=[names.get(c, c) for c in ids] or None,
+        created_at=getattr(invite, "created_at", None),
+        invited_by=inviter.name if inviter else None,
+    )
+
+
+def _check_invite_seat(session: Session, company_id: str, role: str) -> None:
+    """Cloud: members/admins hold a seat — refuse when none are free (409).
+
+    Viewers are free.  Self-hosted (local mode) and companies without a
+    subscription yet are never blocked.
+    """
+    if role == "viewer":
+        return
+    from omilo.api.billing import seats_summary
+
+    summary = seats_summary(session, company_id)
+    if summary.get("self_hosted") or not summary.get("plan_id"):
+        return
+    if (summary.get("available") or 0) <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"No seats left ({summary.get('used', 0) + summary.get('pending', 0)} of "
+                f"{summary.get('total', 0)} used). Add seats or invite as a Viewer."
+            ),
+        )
+
+
+def _require_inviter(current_user: User) -> tuple[str, str]:
+    claims = current_user._jwt_claims  # type: ignore[attr-defined]
+    company_id: str = claims["cmp"]
+    role: str = claims.get("role") or "member"
+    if role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only owners and admins can manage invites.",
+        )
+    return company_id, role
+
+
+@router.get("/invites", response_model=list[InviteOut])
+def list_invites(current_user: User = Depends(get_current_user)) -> list[InviteOut]:
+    """Open (not accepted, not expired) invites for the active company."""
+    company_id, _ = _require_inviter(current_user)
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as session:
+        rows = (
+            session.query(Invite)
+            .filter(Invite.company_id == company_id, Invite.accepted_at.is_(None))
+            .order_by(Invite.created_at.desc())
+            .all()
+        )
+        return [_invite_out(session, i) for i in rows if i.is_open(now)]
+
+
+@router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_invite(invite_id: str, current_user: User = Depends(get_current_user)) -> None:
+    """Revoke a pending invite (frees its seat)."""
+    company_id, _ = _require_inviter(current_user)
+    with SessionLocal() as session:
+        with session.begin():
+            invite = session.get(Invite, invite_id)
+            if invite is None or invite.company_id != company_id:
+                raise HTTPException(status_code=404, detail="Invite not found.")
+            email = invite.email
+            session.delete(invite)
+    from omilo import audit
+
+    audit.record(company_id, type="members", action="revoked invite for", target=email, actor_id=current_user.id)
+
+
+@router.post("/invites/{invite_id}/resend", response_model=InviteOut)
+def resend_invite(invite_id: str, current_user: User = Depends(get_current_user)) -> InviteOut:
+    """Re-send a pending invite with a fresh link (expiry reset to 7 days)."""
+    company_id, _ = _require_inviter(current_user)
+    with SessionLocal() as session:
+        invite = session.get(Invite, invite_id)
+        if invite is None or invite.company_id != company_id or invite.accepted_at is not None:
+            raise HTTPException(status_code=404, detail="Invite not found.")
+        company = session.get(Company, company_id)
+        token = codes.generate_url_token()
+        invite.token_hash = codes.hash_secret(token)
+        invite.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        session.commit()
+        link = f"{get_settings().frontend_base}/auth/invite?token={token}"
+        emails.send_invite(
+            invite.email,
+            link,
+            company.name if company else "",
+            getattr(current_user, "name", None),
+            invite.role,
+        )
+        return _invite_out(session, invite)
 
 
 # ---------------------------------------------------------------------------

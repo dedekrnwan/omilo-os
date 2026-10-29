@@ -69,6 +69,10 @@ _TENANT_TABLES = (
     "wallet_settings",
     "channel",
     "folder",
+    # sweep/control
+    "audit_event",
+    "data_export",
+    "mcp_server",
 )
 
 router = APIRouter(tags=["company"])
@@ -106,8 +110,28 @@ class CompanyPatchBody(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/company", response_model=CompanyOut)
-def get_company(ctx: RequestContext = Depends(get_context)) -> CompanyOut:
+class CompanyDetailOut(CompanyOut):
+    """GET /v1/company — CompanyOut plus control-panel fields (sweep/control)."""
+
+    timezone: str = "UTC"
+    logo_url: str | None = None
+    plan_id: str | None = None
+    edition: str | None = None
+
+
+def _company_detail(company: Company) -> CompanyDetailOut:
+    base = _company_out(company)
+    return CompanyDetailOut(
+        **base.model_dump(),
+        timezone=company.timezone or "UTC",
+        logo_url=getattr(company, "logo_url", None),
+        plan_id=company.plan_id,
+        edition=company.edition,
+    )
+
+
+@router.get("/company", response_model=CompanyDetailOut)
+def get_company(ctx: RequestContext = Depends(get_context)) -> CompanyDetailOut:
     """Return the authenticated user's company including profile fields."""
     with SessionLocal() as session:
         company = session.get(Company, ctx.company_id)
@@ -118,7 +142,7 @@ def get_company(ctx: RequestContext = Depends(get_context)) -> CompanyOut:
             detail="Company not found.",
         )
 
-    return _company_out(company)
+    return _company_detail(company)
 
 
 # ---------------------------------------------------------------------------
@@ -126,12 +150,12 @@ def get_company(ctx: RequestContext = Depends(get_context)) -> CompanyOut:
 # ---------------------------------------------------------------------------
 
 
-@router.patch("/company", response_model=CompanyOut)
+@router.patch("/company", response_model=CompanyDetailOut)
 def patch_company(
     body: CompanyPatchBody,
     _guard: None = Depends(require_role("owner", "admin")),
     ctx: RequestContext = Depends(get_context),
-) -> CompanyOut:
+) -> CompanyDetailOut:
     """Update the authed company's profile fields. Requires owner or admin role."""
     with SessionLocal() as session:
         with session.begin():
@@ -151,7 +175,15 @@ def patch_company(
             session.flush()
 
             # Snapshot fields before session closes (expire_on_commit default).
-            return _company_out(company)
+            out = _company_detail(company)
+
+    if update_data:
+        from omilo import audit
+
+        labels = {"autonomy_default": "autonomy", "pic_role": "contact role", "team_size": "team size"}
+        changed = ", ".join(labels.get(k, k.replace("_", " ")) for k in update_data)
+        audit.record_ctx(ctx, type="settings", action="changed", target=f"Company · {changed}")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +249,24 @@ def patch_company_settings(
             # JSONB mutation via reassignment is tracked, but flag to be safe.
             flag_modified(company, "settings")
             session.flush()
-            return dict(merged)
+            result = dict(merged)
+
+    if body:
+        from omilo import audit
+
+        sections = {
+            "safety": "Safety & limits",
+            "aiEngine": "AI engine",
+            "knowledge": "Knowledge",
+            "notifications": "Notifications",
+            "data": "Data & storage",
+            "about": "General",
+            "language": "General",
+            "hours": "General",
+        }
+        names = sorted({sections.get(k, k) for k in body})
+        audit.record_ctx(ctx, type="settings", action="changed", target=", ".join(names))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -291,3 +340,51 @@ def delete_company(
             )
 
             session.delete(company)
+
+
+
+# ── sweep/control ────────────────────────────────────────────────────────────
+# Company logo: POST /v1/company/logo {data_url} · DELETE /v1/company/logo
+# Stored as a data: URL on company.logo_url (≤ 512 KB) and returned by
+# GET /v1/company as ``logo_url`` (the rail + General page read it).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class LogoBody(BaseModel):
+    data_url: str
+
+
+@router.post("/company/logo", response_model=CompanyDetailOut)
+def upload_company_logo(
+    body: LogoBody,
+    _guard: None = Depends(require_role("owner", "admin")),
+    ctx: RequestContext = Depends(get_context),
+) -> CompanyDetailOut:
+    from omilo.api.me_account import validate_image_data_url
+
+    url = validate_image_data_url(body.data_url)
+    with SessionLocal() as session:
+        with session.begin():
+            company = session.get(Company, ctx.company_id)
+            if company is None:
+                raise HTTPException(status_code=404, detail="Company not found.")
+            company.logo_url = url
+            out = _company_detail(company)
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="settings", action="changed", target="Company logo")
+    return out
+
+
+@router.delete("/company/logo", response_model=CompanyDetailOut)
+def delete_company_logo(
+    _guard: None = Depends(require_role("owner", "admin")),
+    ctx: RequestContext = Depends(get_context),
+) -> CompanyDetailOut:
+    with SessionLocal() as session:
+        with session.begin():
+            company = session.get(Company, ctx.company_id)
+            if company is None:
+                raise HTTPException(status_code=404, detail="Company not found.")
+            company.logo_url = None
+            return _company_detail(company)

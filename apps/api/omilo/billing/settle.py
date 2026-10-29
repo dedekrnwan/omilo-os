@@ -71,6 +71,8 @@ def apply_payment_paid(
         _settle_topup(db, company, payment)
     elif payment.kind == "subscription":
         _settle_subscription(db, company, payment)
+    elif payment.kind == "seats":
+        _settle_seats(db, company, payment)
     else:
         logger.warning(
             "apply_payment_paid: unknown kind=%r for payment %r; marking paid, no grant",
@@ -200,3 +202,35 @@ def _settle_subscription(
             plan.included_credits,
             payment.id,
         )
+
+
+def _settle_seats(db: "Session", company: "Company", payment: "DoitPayment") -> None:
+    """Add the paid extra seats to the active subscription (sweep/control)."""
+    count = 0
+    if isinstance(payment.raw, dict):
+        count = int(payment.raw.get("omilo_seats") or 0)
+    if count <= 0 and payment.reference and payment.reference.startswith("seats:"):
+        try:
+            count = int(payment.reference.split(":")[2])
+        except (IndexError, ValueError):
+            count = 0
+    if count <= 0:
+        logger.warning("apply_payment_paid: seats payment %r has no seat count", payment.id)
+        return
+    sub = (
+        db.query(Subscription)
+        .filter(
+            Subscription.company_id == company.id,
+            Subscription.status.in_(["active", "trialing"]),
+        )
+        .order_by(Subscription.created_at.desc())
+        .first()
+    )
+    if sub is None:
+        logger.error("apply_payment_paid: no active subscription for seats payment %r", payment.id)
+        return
+    sub.seats = (sub.seats or 0) + count
+    db.flush()
+    logger.info(
+        "apply_payment_paid: +%d seats company=%r payment=%r", count, company.id, payment.id
+    )

@@ -41,7 +41,7 @@ from omilo.models.tenancy import Company
 
 TEST_SECRET = "whsec_autotopup_test"
 MEDIUM_CREDITS = 5_000
-MEDIUM_IDR = 70_000
+MEDIUM_IDR = 238_000  # canonical 5,000-credit pack (catalog.PACK_CATALOG)
 
 
 # ---------------------------------------------------------------------------

@@ -318,6 +318,16 @@ def check_can_start_job(
             db.flush()
             return False, "helper_budget_exceeded"
 
+    # ── 2b. Company / role monthly AI budgets (sweep/control — AI engine page)
+    try:
+        from omilo.engine.routing import budget_block_reason
+
+        reason = budget_block_reason(db, company, helper)
+        if reason is not None:
+            return False, reason
+    except Exception as exc:  # settings must never break the gate
+        logger.warning("budget settings check failed for company_id=%s: %s", company.id, exc)
+
     # ── 3. LOCAL MODE early-return — free BYO-only posture (P6b) ─────────────
     # In local mode every job is 0-credit and always allowed — no balance
     # check, no CreditLedger, no cloud contact.  Pooled/litellm engines are

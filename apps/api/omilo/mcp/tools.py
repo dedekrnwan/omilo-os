@@ -382,8 +382,8 @@ def tool_skill_publish(db: Session, helper: Helper, arguments: dict) -> dict:
 
 
 def tool_skills_list(db: Session, helper: Helper, arguments: dict) -> list[dict]:
-    """List all skills for this company (RLS-scoped)."""
-    skills = db.query(Skill).all()
+    """List all skills for this company (RLS-scoped); turned-off skills are hidden."""
+    skills = db.query(Skill).filter(Skill.status != "disabled").all()
     return [
         {
             "id": s.id,
@@ -440,6 +440,16 @@ def tool_propose(db: Session, helper: Helper, arguments: dict) -> dict:
 
     # Run the gate
     verdict = decide(eff, risk, proposal_type, safety, {})
+
+    # sweep/control — company Safety & limits settings (always-wait toggles,
+    # no-delete, auto-approve spend under X, daily spend cap).
+    if company is not None:
+        from omilo.engine.company_safety import gate as _company_gate
+
+        verdict = _company_gate(
+            db, company, helper, verdict,
+            effective=eff, proposal_type=proposal_type, arguments=arguments,
+        )
 
     if verdict == "allowed":
         # Act-and-log: record allowed, but do NOT execute any real connector action.
@@ -612,6 +622,15 @@ def tool_connector_call(
     risk = "medium"  # connector writes are medium risk by default
 
     verdict = decide(eff, risk, proposal_type, safety, {})
+
+    # sweep/control — company Safety & limits settings.
+    if company is not None:
+        from omilo.engine.company_safety import gate as _company_gate
+
+        verdict = _company_gate(
+            db, company, helper, verdict,
+            effective=eff, proposal_type=proposal_type, arguments=arguments,
+        )
 
     if verdict == "allowed":
         # Act-and-log: no real HTTP; return stub

@@ -278,7 +278,7 @@ async def google_callback(
     user, company, role = _upsert_user(email, name)
 
     # Mint access token.
-    jwt_token, _expires = make_access_token(user.id, company.id, role)
+    jwt_token, _expires = make_access_token(user.id, company.id, role, method="google")
 
     # Redirect to client.
     if oauth_client == "desktop":

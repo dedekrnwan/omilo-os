@@ -2,11 +2,11 @@
 
 Tests:
 (a) local company → start_trial returns None, no Subscription, no credits
-(b) cloud company → start_trial creates trialing sub (+14d) + grants 2000 credits
+(b) cloud company → start_trial creates trialing sub (+14d) + grants 40000 credits
     ONCE; 2nd call never double-grants
 (c) change-plan interval="yearly" → Doit/Manual uses yearly price + period_end ≈ +1yr
     + billing_interval=="yearly"
-(d) GET /v1/billing/plans (cloud) returns plan_cloud with yearly_price_idr + trial_days=14
+(d) GET /v1/billing/plans (cloud) returns plan_team with yearly_price_idr + trial_days=14
     (snake_case keys)
 (e) GET /v1/billing/subscription exposes is_trial + trial_days_left for trialing sub
 
@@ -131,10 +131,10 @@ def _auth(token: str) -> dict:
 
 
 def _seed_cloud_plan() -> str:
-    """Ensure plan_cloud exists and return 'plan_cloud'."""
+    """Ensure the catalog (incl. plan_team, the trial plan) exists; return 'plan_team'."""
     from omilo.billing.catalog import seed_plans
     seed_plans()
-    return "plan_cloud"
+    return "plan_team"
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def test_start_trial_local_mode_returns_none():
 
 def test_start_trial_cloud_mode_creates_trialing_sub():
     """In cloud mode start_trial creates a trialing Subscription expiring in 14 days
-    and grants plan_cloud.included_credits (2000) ONCE."""
+    and grants plan_team.included_credits (40000) ONCE."""
     from omilo.billing.trial import start_trial
 
     _seed_cloud_plan()
@@ -201,7 +201,7 @@ def test_start_trial_cloud_mode_creates_trialing_sub():
     assert len(subs) == 1, f"Expected 1 subscription, got {len(subs)}"
     sub = subs[0]
     assert sub.status == "trialing"
-    assert sub.plan_id == "plan_cloud"
+    assert sub.plan_id == "plan_team"
     assert sub.billing_interval == "monthly"
 
     # period_end should be ~14 days from now (within a minute of tolerance)
@@ -210,15 +210,15 @@ def test_start_trial_cloud_mode_creates_trialing_sub():
     delta = abs((sub.current_period_end - expected_end).total_seconds())
     assert delta < 120, f"period_end delta too large: {delta}s (expected ~14d from now)"
 
-    # Seats from plan_cloud = 5
+    # Seats from plan_team = 5
     assert sub.seats == 5
 
     # N1: a trial must be hard-overage so pooled blocks at 0 (no unpaid debt).
     assert _get_company(company.id).overage_policy == "hard"
 
-    # Credits granted: 2000
+    # Credits granted: 40000
     balance = _get_credit_balance(company.id)
-    assert balance == 2000, f"Expected 2000 credits, got {balance}"
+    assert balance == 40000, f"Expected 40000 credits, got {balance}"
 
     # trial_grant ledger row exists
     trial_rows = _get_ledger_rows(company.id, "trial_grant")
@@ -249,10 +249,10 @@ def test_start_trial_cloud_mode_no_double_grant():
     assert sub1 is not None
     assert sub2 is not None
 
-    # Balance must still be exactly 2000 (not 4000)
+    # Balance must still be exactly 40000 (not 80000)
     balance = _get_credit_balance(company.id)
-    assert balance == 2000, (
-        f"Expected 2000 credits after 2 start_trial calls, got {balance} — double-grant!"
+    assert balance == 40000, (
+        f"Expected 40000 credits after 2 start_trial calls, got {balance} — double-grant!"
     )
 
     # Only 1 trial_grant ledger row
@@ -275,7 +275,7 @@ def test_start_trial_returns_existing_sub_if_already_has_subscription():
         existing_sub = Subscription(
             id=existing_sub_id,
             company_id=company.id,
-            plan_id="plan_cloud",
+            plan_id="plan_team",
             status="active",
             provider="manual",
             seats=5,
@@ -318,7 +318,7 @@ async def test_change_plan_yearly_interval_manual_provider(async_client):
 
     resp = await async_client.post(
         "/v1/billing/change-plan",
-        json={"plan_id": "plan_cloud", "interval": "yearly"},
+        json={"plan_id": "plan_team", "interval": "yearly"},
         headers=_auth(token),
     )
     assert resp.status_code == 200, resp.text
@@ -365,7 +365,7 @@ async def test_change_plan_monthly_interval_is_default(async_client):
 
     resp = await async_client.post(
         "/v1/billing/change-plan",
-        json={"plan_id": "plan_cloud"},
+        json={"plan_id": "plan_team"},
         headers=_auth(token),
     )
     assert resp.status_code == 200, resp.text
@@ -392,7 +392,7 @@ async def test_change_plan_monthly_interval_is_default(async_client):
 @pytest.mark.asyncio
 async def test_change_plan_yearly_doit_uses_yearly_price():
     """POST /v1/billing/change-plan {plan_id, interval:"yearly"} with DoitProvider
-    → pending DoitPayment.amount_idr == plan.yearly_price_idr (2990000)."""
+    → pending DoitPayment.amount_idr == plan.yearly_price_idr (20000000)."""
     from omilo.billing.doit_client import FakeDoitClient
     from omilo.billing.doit_provider import DoitProvider
     from omilo.billing.provider import get_payment_provider
@@ -411,7 +411,7 @@ async def test_change_plan_yearly_doit_uses_yearly_price():
 
         resp = await client.post(
             "/v1/billing/change-plan",
-            json={"plan_id": "plan_cloud", "interval": "yearly"},
+            json={"plan_id": "plan_team", "interval": "yearly"},
             headers=_auth(token),
         )
 
@@ -419,7 +419,7 @@ async def test_change_plan_yearly_doit_uses_yearly_price():
     data = resp.json()
     assert data["status"] == "pending"
 
-    # Verify amount_idr == plan_cloud.yearly_price_idr == 2990000
+    # Verify amount_idr == plan_team.yearly_price_idr == 20000000
     with _superuser_session() as sess:
         from omilo.models.commerce import DoitPayment
         pay = (
@@ -432,8 +432,8 @@ async def test_change_plan_yearly_doit_uses_yearly_price():
             .first()
         )
     assert pay is not None
-    assert pay.amount_idr == 2990000, (
-        f"Expected yearly_price_idr=2990000, got {pay.amount_idr}"
+    assert pay.amount_idr == 20000000, (
+        f"Expected yearly_price_idr=20000000, got {pay.amount_idr}"
     )
 
 
@@ -443,8 +443,8 @@ async def test_change_plan_yearly_doit_uses_yearly_price():
 
 
 @pytest.mark.asyncio
-async def test_get_plans_cloud_mode_returns_plan_cloud_snake_case(async_client):
-    """GET /v1/billing/plans in cloud mode returns plan_cloud with all snake_case keys
+async def test_get_plans_cloud_mode_returns_tiers_snake_case(async_client):
+    """GET /v1/billing/plans in cloud mode returns plan_team with all snake_case keys
     including yearly_price_idr, yearly_price_usd, monthly_price_idr, trial_days=14.
     """
     _seed_cloud_plan()
@@ -458,9 +458,9 @@ async def test_get_plans_cloud_mode_returns_plan_cloud_snake_case(async_client):
     assert isinstance(plans, list), f"Expected list, got {type(plans)}"
     assert len(plans) >= 1, "Expected at least one plan"
 
-    # Find plan_cloud
-    cloud_plans = [p for p in plans if p.get("id") == "plan_cloud"]
-    assert len(cloud_plans) == 1, f"Expected plan_cloud in response, got ids={[p['id'] for p in plans]}"
+    # Find plan_team
+    cloud_plans = [p for p in plans if p.get("id") == "plan_team"]
+    assert len(cloud_plans) == 1, f"Expected plan_team in response, got ids={[p['id'] for p in plans]}"
 
     plan = cloud_plans[0]
 
@@ -475,19 +475,24 @@ async def test_get_plans_cloud_mode_returns_plan_cloud_snake_case(async_client):
         assert key in plan, f"Missing key {key!r} in plan_dict: {list(plan.keys())}"
 
     # Correct values
-    assert plan["id"] == "plan_cloud"
-    assert plan["monthly_price_idr"] == 299000
-    assert plan["yearly_price_idr"] == 2990000
-    assert plan["monthly_price_usd"] == 19.0
-    assert plan["yearly_price_usd"] == 190.0
-    assert plan["included_credits"] == 2000
+    assert plan["id"] == "plan_team"
+    assert plan["monthly_price_idr"] == 2000000
+    assert plan["yearly_price_idr"] == 20000000
+    assert plan["monthly_price_usd"] == 120.0
+    assert plan["yearly_price_usd"] == 1200.0
+    assert plan["included_credits"] == 40000
     assert plan["trial_days"] == 14
+    # sweep/control — the three cloud tiers, in order, with seat limits.
+    assert [p["id"] for p in plans] == ["plan_starter", "plan_team", "plan_business"]
+    assert plan["seats"] == 5 and plan["max_seats"] == 15
+    assert plan["seat_price_idr"] == 150000
+    assert plan["features"] and plan["features"][0].startswith("5 people")
 
 
 @pytest.mark.asyncio
 async def test_get_plans_lazy_starts_trial_for_cloud_company(async_client):
     """GET /v1/billing/plans for a fresh cloud company lazy-starts a trial
-    (subscription created + 2000 credits granted).
+    (subscription created + 40000 credits granted).
     """
     _seed_cloud_plan()
 
@@ -529,7 +534,7 @@ async def test_subscription_exposes_trial_fields_for_trialing_sub(async_client):
         sub = Subscription(
             id=sub_id,
             company_id=company_id,
-            plan_id="plan_cloud",
+            plan_id="plan_team",
             status="trialing",
             provider="manual",
             seats=5,
@@ -574,7 +579,7 @@ async def test_subscription_trial_fields_null_for_active_sub(async_client):
     # Subscribe normally (active, monthly)
     resp_cp = await async_client.post(
         "/v1/billing/change-plan",
-        json={"plan_id": "plan_cloud"},
+        json={"plan_id": "plan_team"},
         headers=_auth(token),
     )
     assert resp_cp.status_code == 200, resp_cp.text
@@ -636,7 +641,7 @@ async def test_expired_trial_sub_not_returned_as_active(async_client):
         sub = Subscription(
             id=sub_id,
             company_id=company_id,
-            plan_id="plan_cloud",
+            plan_id="plan_team",
             status="trialing",
             provider="manual",
             seats=5,

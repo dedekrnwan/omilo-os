@@ -47,11 +47,18 @@ router = APIRouter(tags=["billing"])
 # (spec §7 pinned prices; 1 credit ≈ Rp 12.5 for topups)
 # ---------------------------------------------------------------------------
 
-PACKS: dict[str, dict[str, int]] = {
-    "small": {"credits": 1_000, "amount_idr": 15_000},
-    "medium": {"credits": 5_000, "amount_idr": 70_000},
-    "large": {"credits": 20_000, "amount_idr": 250_000},
-}
+# Canonical packs live in omilo.billing.catalog (the control-panel "Buy
+# credits" dialog: 2,000 / 5,000 / 20,000 credits at Rp 100 rb / 238 rb /
+# 800 rb).  Re-exported here for existing importers.
+from omilo.billing.catalog import (  # noqa: E402
+    CLOUD_PLAN_IDS,
+    PACK_CATALOG,
+    PACKS,
+    SELF_HOSTED_PLAN_ID,
+    plan_features,
+    resolve_pack_id,
+    resolve_plan_id,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +149,13 @@ def _plan_dict(plan: Plan) -> dict[str, Any]:
         "included_credits": plan.included_credits,
         "credit_overage_usd": float(plan.credit_overage_usd),
         "seats": plan.seats,
-        "trial_days": 14,
+        "trial_days": 14 if plan.id != SELF_HOSTED_PLAN_ID else 0,
+        # sweep/control — seat + helper limits and the marketing bullets.
+        "max_seats": plan_features(plan).get("max_seats"),
+        "max_helpers": plan_features(plan).get("max_helpers"),
+        "seat_price_idr": plan_features(plan).get("seat_price_idr"),
+        "features": plan_features(plan).get("bullets", []),
+        "badge": plan_features(plan).get("badge"),
     }
 
 
@@ -329,7 +342,7 @@ def get_plans(
 ) -> list[dict[str, Any]]:
     """Return the plan catalog available in the current mode.
 
-    Cloud/hybrid: returns [plan_cloud].
+    Cloud/hybrid: returns [plan_starter, plan_team, plan_business].
     Local: returns [plan_self_hosted] (free, 0 credits).
 
     Also lazy-starts a trial for a fresh cloud/hybrid company with no subscription.
@@ -351,13 +364,11 @@ def get_plans(
             start_trial(db, company)
             db.flush()
 
-        plan = db.get(Plan, "plan_cloud")
-        if plan is None:
-            return []
-        return [_plan_dict(plan)]
+        plans = [db.get(Plan, pid) for pid in CLOUD_PLAN_IDS]
+        return [_plan_dict(p) for p in plans if p is not None]
     else:
         # local mode — self-hosted plan only
-        plan = db.get(Plan, "plan_self_hosted")
+        plan = db.get(Plan, SELF_HOSTED_PLAN_ID)
         if plan is None:
             return []
         return [_plan_dict(plan)]
@@ -500,7 +511,7 @@ def change_plan(
       Returns {payment_id, hosted_url, status:"pending", plan_id}.
       Activation + credit grant happen in the webhook handler (T3) on payment.paid.
     """
-    plan = db.get(Plan, body.plan_id)
+    plan = db.get(Plan, resolve_plan_id(body.plan_id))
     if plan is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -508,6 +519,19 @@ def change_plan(
         )
 
     company = _load_company(db, ctx.company_id)
+
+    # ── Seats carry over (extra paid seats stay), capped by the new plan ──────
+    seats_for_plan = _seats_after_change(db, company.id, plan)
+    used = _seat_usage(db, company.id)["used"]
+    max_seats = plan_features(plan).get("max_seats")
+    if max_seats is not None and used > max_seats:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{plan.name} allows {max_seats} people, but {used} seats are in use. "
+                "Remove people or revoke invites first."
+            ),
+        )
 
     # ── Resolve billing interval ──────────────────────────────────────────────
     interval = (body.interval or "monthly").lower()
@@ -550,7 +574,7 @@ def change_plan(
             plan_id=plan.id,
             status="pending",
             billing_interval=interval,
-            seats=plan.seats,
+            seats=seats_for_plan,
             provider="doit",
             external_ref=None,
             current_period_end=None,
@@ -610,7 +634,7 @@ def change_plan(
         plan_id=plan.id,
         status="active",
         billing_interval=interval,
-        seats=plan.seats,
+        seats=seats_for_plan,
         provider="manual",
         external_ref=None,
         current_period_end=period_end,
@@ -633,6 +657,12 @@ def change_plan(
         )
 
     new_balance = get_balance(db, company)
+
+    from omilo import audit
+    audit.record_ctx(
+        ctx, type="billing", action="changed plan to", target=f"{plan.name} · {interval}",
+        meta={"plan_id": plan.id, "interval": interval},
+    )
 
     # Emit telemetry: plan changed — best-effort, never raises.
     try:
@@ -678,7 +708,7 @@ def topup(
       Does NOT touch the balance; returns {payment_id, hosted_url, status:"pending", credits, amount_idr}.
       Credits are granted by the webhook handler (T3) on payment.paid.
     """
-    pack_name = body.pack
+    pack_name = resolve_pack_id(body.pack)
     pack = PACKS.get(pack_name)
     if pack is None:
         raise HTTPException(
@@ -764,6 +794,12 @@ def topup(
 
     new_balance = get_balance(db, company)
 
+    from omilo import audit
+    audit.record_ctx(
+        ctx, type="billing", action="bought", target=f"{credits:,} credits",
+        meta={"pack": pack_name, "amount_idr": amount_idr},
+    )
+
     # Emit telemetry: credit topup — best-effort, never raises.
     try:
         from omilo.telemetry import CREDIT_TOPUP
@@ -779,4 +815,237 @@ def topup(
     return {
         "balance": new_balance,
         "invoice": _invoice_dict(inv),
+    }
+
+
+# ── sweep/control ────────────────────────────────────────────────────────────
+# Seats, packs and seat checkout.
+#
+#   GET  /v1/billing/packs          → canonical credit packs
+#   GET  /v1/billing/seats          → {included, total, max, used, pending, …}
+#   POST /v1/billing/seats {count}  → add seats (Manual: instant; Doit: hosted checkout)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SeatsBody(BaseModel):
+    count: int
+
+
+def _active_subscription(db: Session, company_id: str) -> Subscription | None:
+    return (
+        db.query(Subscription)
+        .filter(
+            Subscription.company_id == company_id,
+            Subscription.status.in_(["active", "trialing"]),
+        )
+        .order_by(Subscription.created_at.desc())
+        .first()
+    )
+
+
+def _seat_usage(db: Session, company_id: str) -> dict[str, int]:
+    """Count seat holders: members/admins/owners + open non-viewer invites.
+
+    Viewers are free and never hold a seat.
+    """
+    from omilo.models.auth_codes import Invite
+    from omilo.models.tenancy import Member
+
+    members = db.query(Member).filter(Member.company_id == company_id).all()
+    used = sum(1 for m in members if m.role != "viewer")
+    viewers = sum(1 for m in members if m.role == "viewer")
+    now = datetime.now(timezone.utc)
+    invites = (
+        db.query(Invite)
+        .filter(Invite.company_id == company_id, Invite.accepted_at.is_(None))
+        .all()
+    )
+    pending = sum(1 for i in invites if i.is_open(now) and i.role != "viewer")
+    return {"used": used, "pending": pending, "viewers": viewers}
+
+
+def _seats_after_change(db: Session, company_id: str, plan: Plan) -> int:
+    """Seats on a new plan: included seats + extra seats already paid for."""
+    current = _active_subscription(db, company_id)
+    extra = 0
+    if current is not None and current.status == "active":
+        old_plan = db.get(Plan, current.plan_id) if current.plan_id else None
+        if old_plan is not None:
+            extra = max(0, (current.seats or 0) - (old_plan.seats or 0))
+    if plan_features(plan).get("seat_price_idr") is None:
+        extra = 0  # plan sells no extra seats (Starter)
+    total = (plan.seats or 0) + extra
+    max_seats = plan_features(plan).get("max_seats")
+    if max_seats is not None:
+        total = min(total, max_seats)
+    return total
+
+
+def seats_summary(db: Session, company_id: str) -> dict[str, Any]:
+    """Seat state for the Members page + invite gating (also used by auth invites)."""
+    usage = _seat_usage(db, company_id)
+    if not _is_cloud_or_hybrid():
+        return {
+            "self_hosted": True,
+            "plan_id": SELF_HOSTED_PLAN_ID,
+            "plan_name": "Self-Hosted",
+            "included": None,
+            "total": None,
+            "max": None,
+            "available": None,
+            "seat_price_idr": 0,
+            "can_add": False,
+            **usage,
+        }
+    sub = _active_subscription(db, company_id)
+    plan = db.get(Plan, sub.plan_id) if sub and sub.plan_id else None
+    feats = plan_features(plan)
+    total = (sub.seats if sub else (plan.seats if plan else 0)) or 0
+    return {
+        "self_hosted": False,
+        "plan_id": plan.id if plan else None,
+        "plan_name": plan.name if plan else None,
+        "included": plan.seats if plan else 0,
+        "total": total,
+        "max": feats.get("max_seats"),
+        "available": max(0, total - usage["used"] - usage["pending"]),
+        "seat_price_idr": feats.get("seat_price_idr"),
+        "can_add": feats.get("seat_price_idr") is not None,
+        "billing_interval": sub.billing_interval if sub else "monthly",
+        "period_end": sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
+        **usage,
+    }
+
+
+def _prorated_seat_amount(sub: Subscription | None, count: int, seat_price: int) -> tuple[int, int]:
+    """Return (due_today_idr, days_left) for adding ``count`` seats now."""
+    now = datetime.now(timezone.utc)
+    yearly = bool(sub and sub.billing_interval == "yearly")
+    period_days = 365 if yearly else 30
+    unit = seat_price * (12 if yearly else 1)
+    days_left = period_days
+    if sub is not None and sub.current_period_end is not None:
+        end = sub.current_period_end
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        days_left = max(1, min(period_days, math.ceil((end - now).total_seconds() / 86400)))
+    due = int(round(count * unit * days_left / period_days))
+    return due, days_left
+
+
+@router.get("/billing/packs", status_code=200)
+def get_packs(_ctx: RequestContext = Depends(get_context)) -> list[dict[str, Any]]:
+    """Return the canonical credit packs (ids accepted by POST /billing/topup)."""
+    return [dict(p) for p in PACK_CATALOG]
+
+
+@router.get("/billing/seats", status_code=200)
+def get_seats(
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Seat summary for the Members page (local mode → unlimited)."""
+    return seats_summary(db, ctx.company_id)
+
+
+@router.post("/billing/seats", status_code=200)
+def add_seats(
+    body: SeatsBody,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+    provider: Any = Depends(get_payment_provider),
+) -> dict[str, Any]:
+    """Buy ``count`` extra seats on the current plan (owner/admin).
+
+    ManualProvider: seats are added instantly → {seats, amount_idr}.
+    DoitProvider: pending DoitPayment(kind="seats") → {payment_id, hosted_url, …};
+    seats are added by the webhook/reconcile settle on payment.paid.
+    """
+    if ctx.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only owners and admins can add seats.")
+    if body.count < 1 or body.count > 100:
+        raise HTTPException(status_code=422, detail="count must be between 1 and 100.")
+    if not _is_cloud_or_hybrid():
+        raise HTTPException(status_code=409, detail="Self-hosted workspaces have unlimited seats.")
+
+    company = _load_company(db, ctx.company_id)
+    sub = _active_subscription(db, company.id)
+    plan = db.get(Plan, sub.plan_id) if sub and sub.plan_id else None
+    if sub is None or plan is None:
+        raise HTTPException(status_code=409, detail="No active plan. Pick a plan first.")
+    feats = plan_features(plan)
+    seat_price = feats.get("seat_price_idr")
+    if seat_price is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{plan.name} has no extra seats. Upgrade to add more people.",
+        )
+    max_seats = feats.get("max_seats")
+    if max_seats is not None and (sub.seats or 0) + body.count > max_seats:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{plan.name} tops out at {max_seats} seats.",
+        )
+
+    amount_idr, days_left = _prorated_seat_amount(sub, body.count, int(seat_price))
+    monthly_idr = body.count * int(seat_price)
+
+    from omilo import audit
+
+    if isinstance(provider, DoitProvider):
+        short_id = uuid.uuid4().hex[:8]
+        reference = f"seats:{company.id}:{body.count}:{short_id}"
+        charge = provider.charge_one_off(
+            company,
+            max(amount_idr, 1),
+            reference,
+            metadata={"seats": body.count, "plan_id": plan.id},
+        )
+        raw = charge.get("raw") if isinstance(charge.get("raw"), dict) else {}
+        pay = DoitPayment(
+            id=prefixed_id("pay"),
+            company_id=company.id,
+            kind="seats",
+            credits=0,
+            amount_idr=max(amount_idr, 1),
+            reference=reference,
+            plan_id=plan.id,
+            provider_payment_id=charge["provider_payment_id"],
+            hosted_url=charge["hosted_url"],
+            status="pending",
+            raw={**(raw or {}), "omilo_seats": body.count},
+        )
+        db.add(pay)
+        db.flush()
+        audit.record_ctx(
+            ctx, type="billing", action="started checkout for",
+            target=f"{body.count} extra seat{'s' if body.count != 1 else ''}",
+            meta={"payment_id": pay.id, "amount_idr": pay.amount_idr},
+        )
+        return {
+            "payment_id": pay.id,
+            "hosted_url": pay.hosted_url,
+            "status": "pending",
+            "count": body.count,
+            "amount_idr": pay.amount_idr,
+            "monthly_idr": monthly_idr,
+            "days_left": days_left,
+        }
+
+    # Manual / offline: add instantly.
+    provider.charge_one_off(company, amount_idr, f"seats:{body.count}")
+    sub.seats = (sub.seats or 0) + body.count
+    db.flush()
+    audit.record_ctx(
+        ctx, type="billing", action="added",
+        target=f"{body.count} extra seat{'s' if body.count != 1 else ''}",
+        meta={"amount_idr": amount_idr},
+    )
+    return {
+        "status": "active",
+        "count": body.count,
+        "seats": sub.seats,
+        "amount_idr": amount_idr,
+        "monthly_idr": monthly_idr,
+        "days_left": days_left,
     }

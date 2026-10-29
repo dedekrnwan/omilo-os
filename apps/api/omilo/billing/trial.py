@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import text
 
 from omilo.billing.balance import grant_credits
-from omilo.billing.catalog import PLAN_CATALOG
+from omilo.billing.catalog import PLAN_CATALOG, TRIAL_PLAN_ID
 from omilo.config import get_settings
 from omilo.control.factory import _normalize_mode
 from omilo.models.base import prefixed_id
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TRIAL_DAYS = 14
-TRIAL_PLAN_ID = "plan_cloud"
+# Trial runs on Team (catalog.TRIAL_PLAN_ID).
 
 
 def start_trial(db: "Session", company: "Company") -> "Subscription | None":

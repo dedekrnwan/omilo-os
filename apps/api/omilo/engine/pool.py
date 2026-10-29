@@ -41,7 +41,7 @@ def classify(account: HarnessAccount) -> str:
         - pct_window >= WARN_THRESHOLD                → "near_limit"
         - otherwise                                   → "ready"
     """
-    if account.status in ("cooling", "error"):
+    if account.status in ("cooling", "error", "paused"):
         return account.status
     if account.pct_window >= WARN_THRESHOLD:
         return "near_limit"

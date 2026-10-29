@@ -103,12 +103,63 @@ def list_connectors(
 ) -> list[dict[str, Any]]:
     """Return all installed Connector rows for the active company (RLS-enforced)."""
     connectors = db.query(Connector).all()
-    return [_connector_to_dict(c) for c in connectors]
+    return [{**_connector_to_dict(c), "auth": _auth_info(db, c)} for c in connectors]
 
 
 # ---------------------------------------------------------------------------
 # PATCH /v1/connectors/{id}
 # ---------------------------------------------------------------------------
+
+
+# ── sweep/control: auth descriptor + reauth ─────────────────────────────────
+
+
+def _auth_info(db: Session, connector: Connector) -> dict[str, Any]:
+    """Return {type, provider, fields} for the connector's piece (credentials form)."""
+    from omilo.models.pieces import Piece
+
+    piece = db.get(Piece, connector.piece_id) if connector.piece_id else None
+    desc = dict((piece.auth_descriptor if piece else None) or {})
+    auth_type = desc.get("type") or "api_key"
+    fields = desc.get("fields")
+    names: list[str] = []
+    if isinstance(fields, list):
+        for f in fields:
+            if isinstance(f, str):
+                names.append(f)
+            elif isinstance(f, dict) and f.get("name"):
+                names.append(str(f["name"]))
+    elif isinstance(fields, dict):
+        names = [str(k) for k in fields]
+    if not names:
+        names = ["access_token"] if auth_type == "oauth2" else ["api_key"]
+    return {"type": auth_type, "provider": desc.get("provider"), "fields": names}
+
+
+@router.post("/connectors/{connector_id}/reauth", status_code=200)
+def reauth_connector(
+    connector_id: str,
+    db: Session = Depends(get_tenant_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict[str, Any]:
+    """Start re-authenticating a connector: status → needs_auth.
+
+    Returns the connector plus its ``auth`` descriptor so the UI can show the
+    credentials form; the existing secrets stay until new ones are saved via
+    POST /connectors/{id}/credentials.
+    """
+    connector = db.get(Connector, connector_id)
+    if connector is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connector {connector_id!r} not found.",
+        )
+    connector.status = "needs_auth"
+    db.flush()
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="connectors", action="reconnecting", target=connector.label)
+    return {**_connector_to_dict(connector), "auth": _auth_info(db, connector)}
 
 
 @router.patch("/connectors/{connector_id}", status_code=200)
@@ -138,6 +189,13 @@ def patch_connector(
         connector.status = body.status
 
     db.flush()
+    if body.enabled is not None:
+        from omilo import audit
+
+        audit.record_ctx(
+            ctx, type="connectors", action="turned on" if body.enabled else "turned off",
+            target=connector.label,
+        )
     return _connector_to_dict(connector)
 
 
@@ -179,6 +237,9 @@ def store_credentials(
     connector.secrets_enc = merged
     connector.status = "connected"
     db.flush()
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="connectors", action="connected", target=connector.label)
 
     return _connector_to_dict(connector)
 
@@ -205,5 +266,9 @@ def delete_connector(
             detail=f"Connector {connector_id!r} not found.",
         )
 
+    label = connector.label
     db.delete(connector)
     db.flush()
+    from omilo import audit
+
+    audit.record_ctx(ctx, type="connectors", action="disconnected", target=label)

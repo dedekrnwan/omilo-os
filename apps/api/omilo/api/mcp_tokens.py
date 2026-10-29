@@ -125,6 +125,9 @@ def mint_mcp_access_token(
     db.add(tok)
     db.flush()
 
+    from omilo import audit  # sweep/control
+
+    audit.record_ctx(ctx, type="settings", action="minted MCP token", target=tok.label)
     return _token_to_mint_dict(tok, raw_secret)
 
 
