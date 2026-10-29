@@ -4,9 +4,15 @@ import { CalendarSync, Check, ChevronLeft, ChevronRight, Plus, Users } from 'luc
 import { Button, IconButton } from '../../ui/ds/Button'
 import { Topbar } from '../../ui/ds/Frame'
 import { notify } from '../../ui/ds/Toaster'
-import { createCommands } from '../../adapters/http/commands'
-import { platform } from '../../platform'
-import { useRoutines, useRoutine } from '../../app/queries'
+import { useCommands } from '../../app/CommandsProvider'
+import {
+  useRoutines,
+  useRoutine,
+  useCreateRoutine,
+  useUpdateRoutine,
+  useDeleteRoutine,
+  useSkipRoutineNext,
+} from '../../app/queries'
 import { routinesToGroups, routineToDetail } from './routineAdapters'
 import {
   AGENTS,
@@ -188,6 +194,7 @@ interface BoardProps {
  * the `nav` prop carries the mode-specific routing.
  */
 function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
+  const navigate = useNavigate()
   const search = useSearch({ strict: false }) as { view?: string; state?: string }
   const initialState = (search.state as RoutinesState | undefined) ?? null
 
@@ -231,9 +238,12 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   const open = nav.openRoutine
   const closeDrawer = nav.closeDrawer
 
-  // ── Live data ───────────────────────────────────────────────────────────────
-  const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
-  const getRoutineCommands = () => createCommands(BASE_URL, () => platform.tokenStorage.getToken())
+  // ── Live data + mutations (port-swappable: mock or HTTP) ──────────────────────
+  const commands = useCommands()
+  const createRoutine = useCreateRoutine()
+  const updateRoutine = useUpdateRoutine()
+  const deleteRoutine = useDeleteRoutine()
+  const skipRoutineNext = useSkipRoutineNext()
 
   const { data: routinesData = [], isLoading, isError } = useRoutines()
   const groups = routinesToGroups(routinesData)
@@ -255,12 +265,61 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
   const handleRunNow = async () => {
     if (routine) {
       try {
-        await getRoutineCommands().runRoutineNow(routine.id)
+        await commands.runRoutineNow(routine.id)
       } catch {
         // UI still transitions to the running state view; error is silently swallowed
       }
       open(routine.id, 'running')
     }
+  }
+
+  // Fire-and-forget run (used by the failure-popover Retry, where there is no
+  // open routine detail — the failed row carries its own routine id).
+  const runNowById = async (id: string) => {
+    try {
+      await commands.runRoutineNow(id)
+    } catch {
+      // best-effort
+    }
+    notify('Re-running now…')
+  }
+
+  // ── Create / save / delete / skip handlers ────────────────────────────────────
+  // Map the New routine drawer's "when" string to freq + at (best-effort parse).
+  const handleCreate = (data: { prompt: string; when: string; helperId: string }) => {
+    const [dayPart = '', timePart = ''] = data.when.split('·').map((s) => s.trim())
+    const freq = /mon|tue|wed|thu|fri|weekday/i.test(dayPart)
+      ? /weekday/i.test(dayPart) ? 'Weekdays' : 'Weekly'
+      : /daily|every day/i.test(dayPart) ? 'Daily' : 'Weekly'
+    createRoutine.mutate(
+      {
+        helperId: data.helperId,
+        name: data.prompt.slice(0, 60),
+        instructions: data.prompt,
+        freq,
+        at: timePart || '09:00',
+      },
+      { onSuccess: () => notify('Routine created') },
+    )
+    setCreating(null)
+  }
+
+  const handleSave = (patch: { instructions: string; freq: string; at: string; helperId: string }) => {
+    if (!routine) return
+    updateRoutine.mutate(
+      { id: routine.id, input: { instructions: patch.instructions, freq: patch.freq, at: patch.at, helperId: patch.helperId } },
+      { onSuccess: () => notify('Routine updated') },
+    )
+    closeDrawer()
+  }
+
+  const handleDelete = (id: string) => {
+    deleteRoutine.mutate(id, { onSuccess: () => notify('Routine deleted') })
+    setDeleting(null)
+  }
+
+  const handleSkip = (id: string) => {
+    skipRoutineNext.mutate(id, { onSuccess: () => notify('Skipped next run') })
   }
 
   return (
@@ -331,7 +390,19 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
       {toast && <AppliedToast onClose={() => setToast(false)} />}
 
       {failAnchor && (
-        <FailurePopover anchor={failAnchor} onClose={() => setFailAnchor(null)} onReconnect={() => setFailAnchor(null)} onRetry={() => setFailAnchor(null)} />
+        <FailurePopover
+          anchor={failAnchor}
+          onClose={() => setFailAnchor(null)}
+          onReconnect={() => {
+            setFailAnchor(null)
+            void navigate({ to: '/control-panel/$section', params: { section: 'connectors' } } as never)
+          }}
+          onRetry={() => {
+            setFailAnchor(null)
+            // The failure popover is tied to the morning-brief fixture row.
+            void runNowById(routine?.id ?? 'morning-brief')
+          }}
+        />
       )}
 
       {menu && (
@@ -342,8 +413,8 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
           onEdit={() => open(menu.id)}
           onRun={() => open(menu.id, 'running')}
           onSkip={() => {
+            handleSkip(menu.id)
             setMenu(null)
-            notify('Skipped next run')
           }}
           onDelete={() => setDeleting(menu.id)}
         />
@@ -358,11 +429,11 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
             setDeleting(null)
             open(id, 'paused')
           }}
-          onDelete={() => setDeleting(null)}
+          onDelete={() => handleDelete(deleting)}
         />
       )}
 
-      {creating && <NewRoutineDrawer clash={creating === 'clash'} onClose={() => setCreating(null)} onCreate={() => setCreating(null)} />}
+      {creating && <NewRoutineDrawer clash={creating === 'clash'} onClose={() => setCreating(null)} onCreate={handleCreate} />}
 
       {runOpen && (
         <RunDetailDrawer
@@ -384,7 +455,12 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
 
       {routine &&
         (drawer === 'output' ? (
-          <RunOutputDrawer onClose={closeDrawer} onOpenRoutine={() => open(routine.id)} />
+          <RunOutputDrawer
+            onClose={closeDrawer}
+            onOpenRoutine={() => open(routine.id)}
+            onResend={() => { void runNowById(routine.id) }}
+            onDiscuss={() => void navigate({ to: '/chat' } as never)}
+          />
         ) : (
           <RoutineDrawer
             routine={routine}
@@ -394,7 +470,7 @@ function RoutinesBoard({ nav, routineId, drawerState }: BoardProps) {
             onPause={() => open(routine.id, 'paused')}
             onResume={() => open(routine.id)}
             onStop={() => open(routine.id)}
-            onSave={closeDrawer}
+            onSave={handleSave}
             onOpenRun={() => open(routine.id, 'output')}
           />
         ))}

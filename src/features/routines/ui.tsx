@@ -125,17 +125,29 @@ export function Field({
   label,
   chevron = false,
   className = '',
+  onChange,
 }: {
   icon?: LucideIcon
   value: string
   label?: string
   chevron?: boolean
   className?: string
+  /** When set, the value becomes an editable text input. */
+  onChange?: (v: string) => void
 }) {
   const field = (
     <div className="flex h-[36px] w-full items-center gap-[8px] rounded-base bg-surface px-[10px] outline-1 -outline-offset-1 outline-line-strong">
       {Icon && <Icon size={16} aria-hidden className="shrink-0 text-muted" />}
-      <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{value}</span>
+      {onChange ? (
+        <input
+          aria-label={label ?? 'Value'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none"
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{value}</span>
+      )}
       {chevron && <ChevronDown size={16} aria-hidden className="shrink-0 text-muted" />}
     </div>
   )

@@ -117,15 +117,30 @@ function DayPicker({ days }: { days: number[] }) {
   )
 }
 
-function Schedule({ r, holidays, next }: { r: RoutineDetail; holidays: boolean; next?: string }) {
-  const [freq, setFreq] = useState<Frequency>(r.frequency)
+function Schedule({
+  r,
+  holidays,
+  next,
+  freq,
+  onFreq,
+  at,
+  onAt,
+}: {
+  r: RoutineDetail
+  holidays: boolean
+  next?: string
+  freq: Frequency
+  onFreq: (f: Frequency) => void
+  at: string
+  onAt: (v: string) => void
+}) {
   const [move, setMove] = useState(true)
   const [skip, setSkip] = useState(true)
   const [monthly, setMonthly] = useState(r.monthly ?? 'date')
   return (
     <section className="flex w-full shrink-0 flex-col gap-[10px]">
       <SectionLabel>Schedule</SectionLabel>
-      <Segmented items={FREQUENCIES} value={freq} onChange={setFreq} fill label="Frequency" />
+      <Segmented items={FREQUENCIES} value={freq} onChange={onFreq} fill label="Frequency" />
       {freq === 'Weekly' && <DayPicker days={r.days ?? [0]} />}
       {freq === 'Monthly' && (
         <div className="flex w-full gap-[8px]">
@@ -140,7 +155,7 @@ function Schedule({ r, holidays, next }: { r: RoutineDetail; holidays: boolean; 
         </div>
       )}
       <div className="flex w-full gap-[10px]">
-        <Field label="At" icon={Clock} value={r.at} className="flex-1" />
+        <Field label="At" icon={Clock} value={at} onChange={onAt} className="flex-1" />
         <Field label="Time zone" icon={Globe} value={r.zone} chevron className="flex-1" />
       </div>
       <ToggleRow title="Let Chief move this" desc="Chief may shift it up to 1 hour to avoid clashes." on={move} onChange={setMove} />
@@ -155,14 +170,25 @@ function Schedule({ r, holidays, next }: { r: RoutineDetail; holidays: boolean; 
   )
 }
 
-function WhatItDoes({ r, ask }: { r: RoutineDetail; ask: boolean }) {
+function WhatItDoes({
+  r,
+  ask,
+  instructions,
+  onInstructions,
+}: {
+  r: RoutineDetail
+  ask: boolean
+  instructions: string
+  onInstructions: (v: string) => void
+}) {
   const [askOn, setAskOn] = useState(false)
   return (
     <section className="flex w-full shrink-0 flex-col gap-[10px]">
       <SectionLabel>What it does</SectionLabel>
       <textarea
         aria-label="What it does"
-        defaultValue={r.instructions}
+        value={instructions}
+        onChange={(e) => onInstructions(e.target.value)}
         className="h-[64px] w-full resize-none rounded-base bg-surface px-[10px] py-[8px] text-[12.5px] leading-[1.5] text-ink-2 outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
       />
       <div className="flex w-full items-center gap-[6px]">
@@ -283,9 +309,16 @@ function PausedBox({ onResume }: { onResume: () => void }) {
   )
 }
 
-function WhoDoesIt({ agentId, open: initialOpen }: { agentId: string; open: boolean }) {
+function WhoDoesIt({
+  who,
+  onWho,
+  open: initialOpen,
+}: {
+  who: string
+  onWho: (id: string) => void
+  open: boolean
+}) {
   const [open, setOpen] = useState(initialOpen)
-  const [who, setWho] = useState(agentId)
   const agent = AGENTS[who]
   return (
     <section className="flex w-full shrink-0 flex-col gap-[8px]">
@@ -321,7 +354,7 @@ function WhoDoesIt({ agentId, open: initialOpen }: { agentId: string; open: bool
                 <button
                   type="button"
                   onClick={() => {
-                    setWho(o.agentId)
+                    onWho(o.agentId)
                     setOpen(false)
                   }}
                   className={`flex w-full items-center gap-[10px] rounded-btn p-[8px] text-left hover:bg-hover ${sel ? 'bg-hover' : ''}`}
@@ -349,6 +382,14 @@ function WhoDoesIt({ agentId, open: initialOpen }: { agentId: string; open: bool
 
 // ── Routine drawer (xuAoe · a2xdN · oTi8l · H4Cdpf · rljUL) ─────────────────
 
+/** The editable fields a routine Save persists. */
+export interface RoutineSavePatch {
+  instructions: string
+  freq: Frequency
+  at: string
+  helperId: string
+}
+
 export function RoutineDrawer({
   routine: r,
   state,
@@ -367,12 +408,18 @@ export function RoutineDrawer({
   onPause: () => void
   onResume: () => void
   onStop: () => void
-  onSave: () => void
+  onSave: (patch: RoutineSavePatch) => void
   onOpenRun: () => void
 }) {
   const editor = r.frequency === 'Weekly' || r.frequency === 'Monthly'
   const plain = state === 'detail' && !editor
   const subtitle = state === 'paused' ? PAUSED.subtitle : r.subtitle
+
+  // Editable draft, lifted so Save can persist the whole patch.
+  const [instructions, setInstructions] = useState(r.instructions)
+  const [freq, setFreq] = useState<Frequency>(r.frequency)
+  const [at, setAt] = useState(r.at)
+  const [who, setWho] = useState(r.agentId)
 
   const footer =
     state === 'running' ? (
@@ -393,7 +440,7 @@ export function RoutineDrawer({
         <SecondaryButton icon={Play} onClick={onRunNow}>
           Run now
         </SecondaryButton>
-        <PrimaryButton onClick={onSave}>Save</PrimaryButton>
+        <PrimaryButton onClick={() => onSave({ instructions, freq, at, helperId: who })}>Save</PrimaryButton>
       </>
     )
 
@@ -408,9 +455,17 @@ export function RoutineDrawer({
       {plain && <StatusTiles r={r} />}
       {state === 'running' && <RunningBox />}
       {state === 'paused' && <PausedBox onResume={onResume} />}
-      {editor && <WhoDoesIt agentId={r.agentId} open={state === 'reassign'} />}
-      <Schedule r={r} holidays={!plain} next={editor ? r.nextDates : undefined} />
-      {!editor && <WhatItDoes r={r} ask={plain} />}
+      {editor && <WhoDoesIt who={who} onWho={setWho} open={state === 'reassign'} />}
+      <Schedule
+        r={r}
+        holidays={!plain}
+        next={editor ? r.nextDates : undefined}
+        freq={freq}
+        onFreq={setFreq}
+        at={at}
+        onAt={setAt}
+      />
+      {!editor && <WhatItDoes r={r} ask={plain} instructions={instructions} onInstructions={setInstructions} />}
       {(plain || state === 'paused') && <RecentRuns r={r} onOpenRun={onOpenRun} />}
     </Drawer>
   )
@@ -420,7 +475,17 @@ export function RoutineDrawer({
 
 const SOURCE_ICON = { target: Target, inbox: Inbox, workflow: Workflow }
 
-export function RunOutputDrawer({ onClose, onOpenRoutine }: { onClose: () => void; onOpenRoutine: () => void }) {
+export function RunOutputDrawer({
+  onClose,
+  onOpenRoutine,
+  onResend,
+  onDiscuss,
+}: {
+  onClose: () => void
+  onOpenRoutine: () => void
+  onResend: () => void
+  onDiscuss: () => void
+}) {
   const [vote, setVote] = useState<'up' | 'down' | null>(null)
   return (
     <Drawer
@@ -430,7 +495,7 @@ export function RunOutputDrawer({ onClose, onOpenRoutine }: { onClose: () => voi
       footer={
         <>
           <span className="h-px flex-1" />
-          <SecondaryButton icon={Send}>Re-send</SecondaryButton>
+          <SecondaryButton icon={Send} onClick={onResend}>Re-send</SecondaryButton>
           <PrimaryButton onClick={onOpenRoutine}>Open routine</PrimaryButton>
         </>
       }
@@ -460,7 +525,7 @@ export function RunOutputDrawer({ onClose, onOpenRoutine }: { onClose: () => voi
         <span className="min-w-0 flex-1 text-[12.5px] text-muted">Was this useful?</span>
         <IconButton icon={ThumbsUp} aria-label="Useful" aria-pressed={vote === 'up'} onClick={() => setVote('up')} />
         <IconButton icon={ThumbsDown} aria-label="Not useful" aria-pressed={vote === 'down'} onClick={() => setVote('down')} />
-        <SecondaryButton height={30} fontSize={12} icon={MessageCircle}>
+        <SecondaryButton height={30} fontSize={12} icon={MessageCircle} onClick={onDiscuss}>
           Discuss
         </SecondaryButton>
       </div>
@@ -589,14 +654,31 @@ export function RunDetailDrawer({
 
 // ── New routine drawer (F4RGvz · oY6x7) ──────────────────────────────────────
 
-export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean; onClose: () => void; onCreate: () => void }) {
+/** The data a New routine create submits. */
+export interface NewRoutineData {
+  prompt: string
+  when: string
+  helperId: string
+}
+
+export function NewRoutineDrawer({
+  clash,
+  onClose,
+  onCreate,
+}: {
+  clash: boolean
+  onClose: () => void
+  onCreate: (data: NewRoutineData) => void
+}) {
   const [move, setMove] = useState(true)
   const [slot, setSlot] = useState(0)
   const [editingTime, setEditingTime] = useState(false)
   const [customTime, setCustomTime] = useState(NEW_ROUTINE.when)
+  const [prompt, setPrompt] = useState(NEW_ROUTINE.prompt)
   const timeInputRef = useRef<HTMLInputElement>(null)
   const who = AGENTS[NEW_ROUTINE.who]
   const displayedWhen = clash ? NEW_ROUTINE.slots[slot].title.replace(' — recommended', '') : customTime
+  const canCreate = prompt.trim().length > 0
   const rows: { k: string; v: React.ReactNode; edit?: boolean }[] = [
     {
       k: 'Who',
@@ -621,7 +703,11 @@ export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean;
         <>
           <span className="min-w-0 flex-1 text-[12px] text-muted">Nothing runs until you create it</span>
           <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-          <PrimaryButton icon={Check} onClick={onCreate}>
+          <PrimaryButton
+            icon={Check}
+            disabled={!canCreate}
+            onClick={() => onCreate({ prompt: prompt.trim(), when: displayedWhen, helperId: NEW_ROUTINE.who })}
+          >
             Create routine
           </PrimaryButton>
         </>
@@ -630,7 +716,9 @@ export function NewRoutineDrawer({ clash, onClose, onCreate }: { clash: boolean;
       <label className="flex w-full shrink-0 flex-col gap-[6px]">
         <span className="text-[13px] font-medium text-ink-2">What should happen, and how often?</span>
         <textarea
-          defaultValue={NEW_ROUTINE.prompt}
+          aria-label="What should happen, and how often?"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
           className="h-[84px] w-full resize-none rounded-base bg-surface px-[10px] py-[8px] text-[13.5px] leading-[1.55] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
         />
       </label>

@@ -2,6 +2,8 @@ import { describe, expect, test, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReposProvider } from '../../app/ReposProvider'
+import { CommandsProvider } from '../../app/CommandsProvider'
+import { createMockCommands } from '../../adapters/mock/mockCommands'
 import type { Repos } from '../../core/ports/repos'
 import type { Routine } from '../../core/domain/types'
 import { routineToDetail, routineToRow, routinesToGroups } from './routineAdapters'
@@ -322,10 +324,6 @@ describe('routineAdapters', () => {
 
 const mockRunRoutineNow = vi.fn().mockResolvedValue({ jobId: 'job_1' })
 
-vi.mock('../../adapters/http/commands', () => ({
-  createCommands: () => ({ runRoutineNow: mockRunRoutineNow }),
-}))
-
 function makeRepos(routines: Routine[]): Repos {
   const stub = (v: unknown) => vi.fn().mockResolvedValue(v)
   return {
@@ -360,11 +358,14 @@ function makeRepos(routines: Routine[]): Repos {
 
 function renderWithRepos(path: string, repos: Repos) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const commands = { ...createMockCommands(), runRoutineNow: mockRunRoutineNow }
   const root = createRootRoute({ component: () => <Outlet /> })
   const office = createRoute({ getParentRoute: () => root, id: 'office-live', component: () => (
     <QueryClientProvider client={queryClient}>
       <ReposProvider repos={repos}>
-        <Outlet />
+        <CommandsProvider commands={commands}>
+          <Outlet />
+        </CommandsProvider>
       </ReposProvider>
     </QueryClientProvider>
   )})
@@ -404,5 +405,77 @@ describe('RoutinesBoard — live data', () => {
     renderWithRepos('/routines/rtn-morning-brief', makeRepos([SEED_ROUTINE]))
     fireEvent.click(await screen.findByRole('button', { name: 'Run now' }))
     await waitFor(() => expect(mockRunRoutineNow).toHaveBeenCalledWith('rtn-morning-brief'))
+  })
+})
+
+// ── CTA wiring tests (create / save / delete / skip) ────────────────────────────
+
+/** Render with repos + a spy-wired Commands port so mutations can be asserted. */
+function renderWithCommands(path: string, repos: Repos, commands: Record<string, unknown>) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const cmds = { ...createMockCommands(), ...commands }
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const office = createRoute({ getParentRoute: () => root, id: 'office-cmd', component: () => (
+    <QueryClientProvider client={queryClient}>
+      <ReposProvider repos={repos}>
+        <CommandsProvider commands={cmds as never}>
+          <Outlet />
+        </CommandsProvider>
+      </ReposProvider>
+    </QueryClientProvider>
+  )})
+  const list = createRoute({ getParentRoute: () => office, path: '/routines', component: RoutinesRoute })
+  const detail = createRoute({ getParentRoute: () => office, path: '/routines/$routineId', component: RoutineDetailRoute })
+  const router = createRouter({
+    routeTree: root.addChildren([office.addChildren([list, detail])]),
+    history: createMemoryHistory({ initialEntries: [path] }),
+  })
+  render(<RouterProvider router={router} />)
+  return router
+}
+
+describe('RoutinesBoard — CTA wiring', () => {
+  test('New routine → Create routine calls createRoutine with the typed prompt', async () => {
+    const createRoutine = vi.fn().mockResolvedValue({ id: 'rtn-new' })
+    renderWithCommands('/routines', makeRepos([SEED_ROUTINE]), { createRoutine })
+    fireEvent.click(await screen.findByRole('button', { name: 'New routine' }))
+    const textarea = await screen.findByLabelText('What should happen, and how often?')
+    fireEvent.change(textarea, { target: { value: 'Check overdue invoices every Friday' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create routine' }))
+    await waitFor(() =>
+      expect(createRoutine).toHaveBeenCalledWith(
+        expect.objectContaining({ instructions: 'Check overdue invoices every Friday' }),
+      ),
+    )
+  })
+
+  test('Delete confirm → Delete routine calls deleteRoutine with the id', async () => {
+    const deleteRoutine = vi.fn().mockResolvedValue(undefined)
+    renderWithCommands('/routines/rtn-morning-brief?state=delete', makeRepos([SEED_ROUTINE]), { deleteRoutine })
+    const confirm = await screen.findByRole('button', { name: 'Delete routine' })
+    fireEvent.click(confirm)
+    await waitFor(() => expect(deleteRoutine).toHaveBeenCalled())
+  })
+
+  test('row menu → Skip next run calls skipRoutineNext', async () => {
+    const skipRoutineNext = vi.fn().mockResolvedValue({ next_at: null })
+    renderWithCommands('/routines?view=list', makeRepos([SEED_ROUTINE]), { skipRoutineNext })
+    fireEvent.click(await screen.findByRole('button', { name: 'More actions for Morning brief' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Skip next run/ }))
+    await waitFor(() => expect(skipRoutineNext).toHaveBeenCalledWith('rtn-morning-brief'))
+  })
+
+  test('detail Save calls updateRoutine with the edited instructions', async () => {
+    const updateRoutine = vi.fn().mockResolvedValue({ id: 'rtn-morning-brief' })
+    renderWithCommands('/routines/rtn-morning-brief', makeRepos([SEED_ROUTINE]), { updateRoutine })
+    const textarea = await screen.findByLabelText('What it does')
+    fireEvent.change(textarea, { target: { value: 'New instructions' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(updateRoutine).toHaveBeenCalledWith(
+        'rtn-morning-brief',
+        expect.objectContaining({ instructions: 'New instructions' }),
+      ),
+    )
   })
 })
