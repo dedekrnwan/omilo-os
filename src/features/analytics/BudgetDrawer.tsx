@@ -1,12 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Wallet, X } from 'lucide-react'
 import { IconButton } from '../../ui/ds/Button'
 import { Mascot } from '../../ui/ds/Mascot'
-import { useUpdateWallet } from '../../app/queries'
+import { useCompanySettings, useUpdateCompanySettings } from '../../app/queries'
 import { notify } from '../../ui/ds/Toaster'
 import type { HelperStat } from './data'
 import { BigButton, Switch } from './parts'
+
+/** One helper's budget, stored under company settings → budgets[helperId]. */
+interface HelperBudget {
+  amount: number
+  threshold: string
+  mode: string
+}
 
 const QUICK = [10, 15, 25, 50]
 const THRESHOLDS = ['50%', '80%', '90%']
@@ -33,22 +40,37 @@ export function BudgetDrawer({ helper, onClose }: { helper: HelperStat | null; o
 
 function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => void }) {
   const suggested = helper.budget?.limit ?? 15
-  const [amount, setAmount] = useState(String(suggested))
-  const [threshold, setThreshold] = useState('80%')
-  const [mode, setMode] = useState('pause')
+  // Per-helper budgets live under company settings → budgets[helperId], so one
+  // helper's budget never clobbers another's (the old company-wide wallet did).
+  const { data: settings } = useCompanySettings()
+  const updateSettings = useUpdateCompanySettings()
+  const budgets = settings?.budgets as Record<string, HelperBudget | null | undefined> | undefined
+  const saved = budgets?.[helper.id] ?? undefined
+
+  const [amount, setAmount] = useState(String(saved?.amount ?? suggested))
+  const [threshold, setThreshold] = useState(saved?.threshold ?? '80%')
+  const [mode, setMode] = useState(saved?.mode ?? 'pause')
   const [askBig, setAskBig] = useState(true)
-  const updateWallet = useUpdateWallet()
+
+  // Hydrate from the saved per-helper entry once the settings query resolves,
+  // as long as the user hasn't started editing.
+  const touched = useRef(false)
+  useEffect(() => {
+    if (touched.current || !saved) return
+    setAmount(String(saved.amount))
+    setThreshold(saved.threshold)
+    setMode(saved.mode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved?.amount, saved?.threshold, saved?.mode])
+
+  const editAmount = (v: string) => { touched.current = true; setAmount(v) }
+  const editThreshold = (v: string) => { touched.current = true; setThreshold(v) }
+  const editMode = (v: string) => { touched.current = true; setMode(v) }
 
   const save = () => {
-    const thresholdPct = Number(threshold.replace('%', '')) || 80
     const limit = Number(amount) || suggested
-    updateWallet.mutate(
-      {
-        autoTopupEnabled: askBig,
-        // Budget ($) → credits (1$ ≈ 1 credit here) kept at the chosen alert threshold.
-        autoTopupThresholdCredits: Math.round((limit * thresholdPct) / 100),
-        autoTopupPack: `$${limit}`,
-      },
+    updateSettings.mutate(
+      { budgets: { [helper.id]: { amount: limit, threshold, mode } } },
       {
         onSuccess: () => {
           notify(`Budget saved for ${helper.name}`)
@@ -60,8 +82,9 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   }
 
   const removeBudget = () => {
-    updateWallet.mutate(
-      { autoTopupEnabled: false, autoTopupThresholdCredits: 0, autoTopupPack: null },
+    // Clear only this helper's entry — leave every other helper's budget intact.
+    updateSettings.mutate(
+      { budgets: { [helper.id]: null } },
       {
         onSuccess: () => {
           notify(`Budget removed for ${helper.name}`)
@@ -94,7 +117,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
             <span className="text-[13px] font-medium text-ink-2">Monthly budget</span>
             <input
               value={`$${amount}`}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+              onChange={(e) => editAmount(e.target.value.replace(/[^0-9.]/g, ''))}
               className="h-[36px] w-full rounded-base bg-surface px-[10px] text-[14px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
             />
             <span className="text-[12.5px] text-muted">
@@ -109,7 +132,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
                   key={q}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => setAmount(String(q))}
+                  onClick={() => editAmount(String(q))}
                   className={`flex h-[28px] items-center rounded-pill px-[12px] font-mono text-[12px] outline-1 -outline-offset-1 ${
                     on ? 'bg-ink text-primary-ink outline-ink' : 'bg-surface text-ink-2 outline-line-strong hover:bg-soft'
                   }`}
@@ -132,7 +155,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  onClick={() => setThreshold(t)}
+                  onClick={() => editThreshold(t)}
                   className={`flex h-[28px] items-center rounded-sm px-[10px] text-[12px] font-medium ${
                     on ? 'bg-surface text-ink shadow-[0_1px_2px_#00000014]' : 'text-muted'
                   }`}
@@ -154,7 +177,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => setMode(o.id)}
+                onClick={() => editMode(o.id)}
                 className={`flex w-full gap-[12px] rounded-md px-[14px] py-[12px] text-left ${
                   on ? 'outline-2 -outline-offset-2 outline-ink' : 'outline-1 -outline-offset-1 outline-line-strong hover:bg-soft'
                 }`}
@@ -195,7 +218,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
           Cancel
         </BigButton>
         <BigButton kind="primary" onClick={save}>
-          {updateWallet.isPending ? 'Saving…' : 'Save budget'}
+          {updateSettings.isPending ? 'Saving…' : 'Save budget'}
         </BigButton>
       </footer>
     </Dialog.Content>

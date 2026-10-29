@@ -39,8 +39,14 @@ const HELPER: HelperStat = {
   lastActive: '2m ago',
 }
 
-function renderBudget(updateWallet: ReturnType<typeof vi.fn>) {
-  const commands = { updateWallet } as unknown as Commands
+function renderBudget(
+  updateCompanySettings: ReturnType<typeof vi.fn>,
+  initialSettings: Record<string, unknown> = {},
+) {
+  const commands = {
+    getCompanySettings: vi.fn().mockResolvedValue(initialSettings),
+    updateCompanySettings,
+  } as unknown as Commands
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
@@ -52,21 +58,38 @@ function renderBudget(updateWallet: ReturnType<typeof vi.fn>) {
 }
 
 describe('BudgetDrawer', () => {
-  test('Save budget calls updateWallet with the bound amount/threshold', async () => {
-    const updateWallet = vi.fn().mockResolvedValue({})
-    renderBudget(updateWallet)
+  test('Save writes the per-helper budget key (amount/threshold/mode), not the shared wallet', async () => {
+    const updateCompanySettings = vi.fn().mockResolvedValue({})
+    renderBudget(updateCompanySettings)
     fireEvent.click(screen.getByRole('button', { name: 'Save budget' }))
-    await waitFor(() => expect(updateWallet).toHaveBeenCalledTimes(1))
-    const arg = updateWallet.mock.calls[0][0]
-    expect(arg.autoTopupPack).toBe('$15')
-    expect(arg.autoTopupThresholdCredits).toBe(12) // 15 * 80%
+    await waitFor(() => expect(updateCompanySettings).toHaveBeenCalledTimes(1))
+    const arg = updateCompanySettings.mock.calls[0][0]
+    // Persists under budgets[helper.id] — one helper never clobbers another.
+    expect(arg.budgets).toEqual({ h1: { amount: 15, threshold: '80%', mode: 'pause' } })
   })
 
-  test('Remove budget disables auto-topup', async () => {
-    const updateWallet = vi.fn().mockResolvedValue({})
-    renderBudget(updateWallet)
+  test('Remove clears only this helper, leaving other helpers untouched', async () => {
+    const updateCompanySettings = vi.fn().mockResolvedValue({})
+    renderBudget(updateCompanySettings)
     fireEvent.click(screen.getByRole('button', { name: 'Remove budget' }))
-    await waitFor(() => expect(updateWallet).toHaveBeenCalled())
-    expect(updateWallet.mock.calls[0][0].autoTopupEnabled).toBe(false)
+    await waitFor(() => expect(updateCompanySettings).toHaveBeenCalled())
+    const arg = updateCompanySettings.mock.calls[0][0]
+    // Only this helper's entry is cleared (set to null); no company-wide toggle.
+    expect(arg.budgets).toEqual({ h1: null })
+    expect(arg.autoTopupEnabled).toBeUndefined()
+  })
+
+  test('loads the drawer from the saved per-helper entry', async () => {
+    const updateCompanySettings = vi.fn().mockResolvedValue({})
+    renderBudget(updateCompanySettings, {
+      budgets: { h1: { amount: 42, threshold: '90%', mode: 'stop' } },
+    })
+    // Amount input hydrates from the saved entry.
+    await waitFor(() => expect(screen.getByDisplayValue('$42')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Save budget' }))
+    await waitFor(() => expect(updateCompanySettings).toHaveBeenCalled())
+    expect(updateCompanySettings.mock.calls[0][0].budgets).toEqual({
+      h1: { amount: 42, threshold: '90%', mode: 'stop' },
+    })
   })
 })

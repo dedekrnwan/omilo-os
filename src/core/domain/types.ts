@@ -16,6 +16,8 @@ export interface Company {
   currency?: string
   picRole?: string | null
   timezone?: string | null
+  /** Workspace autonomy dial (the column the enforcement engine reads): strict | ask | yolo. */
+  autonomyDefault?: string
 }
 
 export interface Helper {
@@ -447,6 +449,8 @@ export interface CompanySettings {
   about?: string
   language?: string
   hours?: Record<string, unknown>
+  /** Per-helper monthly budgets, keyed by helper id (null clears an entry). */
+  budgets?: Record<string, unknown>
   [key: string]: unknown
 }
 
