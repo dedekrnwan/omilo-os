@@ -1,5 +1,20 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Flow, Id } from '../core/domain/types'
+import type {
+  CreateDocInput,
+  CreateFlowInput,
+  CreateGoalInput,
+  CreateHelperInput,
+  CreateRoutineInput,
+  InviteMemberInput,
+  UpdateFlowInput,
+  UpdateGoalInput,
+  UpdateHelperInput,
+  UpdateRoutineInput,
+  UpdateWalletInput,
+} from '../adapters/http/commands'
+import type { CompanySettings } from '../core/domain/types'
+import { useCommands } from './CommandsProvider'
 import { useRepos } from './ReposProvider'
 
 export function useChannels() {
@@ -310,5 +325,276 @@ export function useMembers() {
   return useQuery({
     queryKey: ['members'],
     queryFn: () => repos.members.list(),
+  })
+}
+
+// ── P2 company settings query ─────────────────────────────────────────────────
+
+export function useCompanySettings() {
+  const commands = useCommands()
+  return useQuery({
+    queryKey: ['companySettings'],
+    queryFn: () => commands.getCompanySettings(),
+  })
+}
+
+// ── P2 mutation hooks ─────────────────────────────────────────────────────────
+// Each mutation goes through the Commands port (HTTP or mock, swapped by
+// CommandsProvider) and invalidates the list/detail query key it mutates so the
+// cached read refreshes after a create/update/delete.
+
+// Goals → ['goals']
+
+export function useCreateGoal() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateGoalInput) => commands.createGoal(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['goals'] }) },
+  })
+}
+
+export function useUpdateGoal() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: Id; input: UpdateGoalInput }) =>
+      commands.updateGoal(id, input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['goals'] }) },
+  })
+}
+
+export function useDeleteGoal() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.deleteGoal(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['goals'] }) },
+  })
+}
+
+// Routines → ['routines'] (+ ['routine', id])
+
+export function useCreateRoutine() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateRoutineInput) => commands.createRoutine(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['routines'] }) },
+  })
+}
+
+export function useUpdateRoutine() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: Id; input: UpdateRoutineInput }) =>
+      commands.updateRoutine(id, input),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['routines'] })
+      void qc.invalidateQueries({ queryKey: ['routine', id] })
+    },
+  })
+}
+
+export function useDeleteRoutine() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.deleteRoutine(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['routines'] }) },
+  })
+}
+
+export function useSkipRoutineNext() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.skipRoutineNext(id),
+    onSuccess: (_data, id) => {
+      void qc.invalidateQueries({ queryKey: ['routines'] })
+      void qc.invalidateQueries({ queryKey: ['routine', id] })
+    },
+  })
+}
+
+// Flows → ['flows']
+
+export function useCreateFlow() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateFlowInput) => commands.createFlow(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['flows'] }) },
+  })
+}
+
+export function useUpdateFlow() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: Id; input: UpdateFlowInput }) =>
+      commands.updateFlow(id, input),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['flows'] })
+      void qc.invalidateQueries({ queryKey: ['flow', id] })
+    },
+  })
+}
+
+export function useDeleteFlow() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.deleteFlow(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['flows'] }) },
+  })
+}
+
+export function useDuplicateFlow() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateFlowInput) => commands.duplicateFlow(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['flows'] }) },
+  })
+}
+
+// Helpers → ['helpers']
+
+export function useCreateHelper() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateHelperInput) => commands.createHelper(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['helpers'] }) },
+  })
+}
+
+export function useUpdateHelper() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: Id; input: UpdateHelperInput }) =>
+      commands.updateHelper(id, input),
+    onSuccess: (_data, { id }) => {
+      void qc.invalidateQueries({ queryKey: ['helpers'] })
+      void qc.invalidateQueries({ queryKey: ['helper', id] })
+    },
+  })
+}
+
+// Members → ['members']
+
+export function useChangeMemberRole() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, role }: { id: Id; role: string }) =>
+      commands.changeMemberRole(id, role),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['members'] }) },
+  })
+}
+
+export function useRemoveMember() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.removeMember(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['members'] }) },
+  })
+}
+
+export function useInviteMember() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: InviteMemberInput) => commands.inviteMember(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['members'] }) },
+  })
+}
+
+// Company settings → ['companySettings']
+
+export function useUpdateCompanySettings() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: CompanySettings) => commands.updateCompanySettings(patch),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['companySettings'] }) },
+  })
+}
+
+// AI accounts → ['aiAccounts']
+
+export function useCheckAiAccounts() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => commands.checkAiAccounts(),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['aiAccounts'] }) },
+  })
+}
+
+export function useTestAiAccount() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: Id) => commands.testAiAccount(id),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['aiAccounts'] }) },
+  })
+}
+
+// Docs / knowledge → ['knowledge']
+
+export function useCreateDoc() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateDocInput) => commands.createDoc(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['knowledge'] }) },
+  })
+}
+
+export function useUpdateDoc() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, content }: { id: Id; content: string }) =>
+      commands.updateDoc(id, content),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['knowledge'] }) },
+  })
+}
+
+// Billing → ['billingSubscription'] / ['usage']
+
+export function useTopup() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (pack: string) => commands.topup(pack),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['usage'] }) },
+  })
+}
+
+export function useChangePlan() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ planId, interval }: { planId: string; interval: 'monthly' | 'yearly' }) =>
+      commands.changePlan(planId, interval),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['billingSubscription'] })
+      void qc.invalidateQueries({ queryKey: ['usage'] })
+    },
+  })
+}
+
+export function useUpdateWallet() {
+  const commands = useCommands()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateWalletInput) => commands.updateWallet(input),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['usage'] }) },
   })
 }
