@@ -631,3 +631,53 @@ async def test_company_b_cannot_see_company_a_memory(async_client):
     assert resp_patch.status_code == 404, (
         f"Company B must not be able to PATCH company A's doc; got {resp_patch.status_code}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 1.8: POST /v1/memory — create a company-KB doc
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_memory_doc_endpoint(async_client):
+    """POST /v1/memory {title, content} → created doc; appears in list + recall."""
+    token, cmp_id = await _sign_up_user(async_client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await async_client.post(
+        "/v1/memory",
+        json={"title": "Refund policy", "content": "Refunds within 30 days, no questions."},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    doc = resp.json()
+    assert doc["id"].startswith("mem_")
+    assert "Refunds within 30 days" in doc["content"]
+    assert doc["title"] == "Refund policy"
+    assert "path" in doc
+
+    # Appears in the company memory list.
+    list_resp = await async_client.get("/v1/memory", headers=headers)
+    assert list_resp.status_code == 200, list_resp.text
+    ids = {d["id"] for d in list_resp.json()}
+    assert doc["id"] in ids
+
+    # Recall-able via KB.
+    from omilo.kb.retrieve import recall
+    with _tenant_session(cmp_id) as db:
+        results = recall(db, "refund policy", k=10)
+    assert any("refund" in r["text"].lower() for r in results), results
+
+
+@pytest.mark.asyncio
+async def test_create_memory_doc_with_kind(async_client):
+    """POST /v1/memory with kind nests it under that kind in the path."""
+    token, _ = await _sign_up_user(async_client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await async_client.post(
+        "/v1/memory",
+        json={"title": "SLA", "content": "99.9% uptime.", "kind": "sop"},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    assert "/sop/" in resp.json()["path"]

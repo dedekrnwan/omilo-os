@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from omilo.kb.db import get_knowledge_db
 from omilo.kb.index import index_source
+from omilo.models.base import prefixed_id
 from omilo.models.memory import MemoryDoc
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context
@@ -51,6 +52,66 @@ def _doc_to_dict(doc: MemoryDoc) -> dict[str, Any]:
 
 class PatchMemoryBody(BaseModel):
     content: str
+
+
+class CreateMemoryBody(BaseModel):
+    title: str
+    content: str
+    kind: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/memory — create a company-KB doc
+# ---------------------------------------------------------------------------
+
+
+def _slugify(title: str) -> str:
+    """Lowercase, replace non-alnum runs with '-', trim. Fallback 'doc'."""
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return slug or "doc"
+
+
+@router.post("/memory", status_code=status.HTTP_201_CREATED)
+def create_memory(
+    body: CreateMemoryBody,
+    db: Session = Depends(get_knowledge_db),
+    ctx: RequestContext = Depends(get_context),
+) -> dict:
+    """Create a company-KB MemoryDoc ({title, content, kind?}) and index it.
+
+    The doc is company-scoped (helper_id=None). ``kind`` (default 'doc') prefixes
+    the logical path. The content is KB-indexed so it appears in knowledge recall.
+    """
+    kind = body.kind or "doc"
+    path = f"Docs/{kind}/{_slugify(body.title)}-{prefixed_id('mem')[-6:]}.md"
+
+    doc = MemoryDoc(
+        id=prefixed_id("mem"),
+        company_id=ctx.company_id,
+        helper_id=None,
+        path=path,
+        content=body.content,
+        updated_by=f"operator:{ctx.user_id}",
+        updated_at=datetime.now(timezone.utc),
+    )
+    db.add(doc)
+    db.flush()
+
+    # Index so the doc is recall-able via GET /v1/knowledge.
+    index_source(
+        db,
+        kind="memory",
+        ref=doc.path,
+        title=body.title,
+        body=doc.content,
+        helper_id=None,
+    )
+
+    result = _doc_to_dict(doc)
+    result["title"] = body.title
+    return result
 
 
 # ---------------------------------------------------------------------------
