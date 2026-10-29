@@ -459,6 +459,42 @@ These are flagged, with my leanings, to resolve during planning or a quick spike
 
 ---
 
+## 16. Spike findings (2026-10-29, throwaway spikes — inputs to Plan #1)
+
+**Spike 1 — control loop (local, Python).** Proved client→relay→worker→executor→status end-to-end.
+- **Relay protocol pinned:** `register` (worker: id/company/capacity · client: id) · `start_job`
+  {job_id,company_id,spec,secrets} · `job_queued` (no-worker path) · `job_accepted` (relay stamps
+  worker_id) · `job_step` {seq,stream,line} · `job_status` · `job_done` {ok,result,artifact} ·
+  `job_error`. Routing state: workers-by-company, job→owner, job→worker; worker disconnect
+  synthesizes `job_error` to owners.
+- **Executor seam pinned:** `Executor.run(JobContext{job_id,company_id,volume_path,spec,secrets}) ->
+  async events`. Per-company volume persists across jobs (session-continuity substrate); secrets via
+  env, value never crosses back. A `GvisorExecutor` implements the same signature.
+- **Key gap it caught:** a worker won't notice a silently-dead relay without an explicit
+  **heartbeat** — Plan #1 MUST pin ping/pong interval + redial + in-flight-job resume semantics.
+  Also: capacity slots need **leases/timeouts** (not free-only-on-done); **backpressure** policy for
+  chatty step streams.
+- Not proven (→ plan tasks): auth/pairing, durable job/lease store, real scheduler, GitHub-App mint.
+
+**Spike 2 — gVisor on the pilot host (saga VPS, non-disruptive).** `runsc release-20261026` runs on
+Ubuntu 24.04 / kernel 6.8; **no nested virt needed** (userspace). Syscall interception confirmed
+(sandbox reports `4.19.0-gvisor` vs host `6.8`); **env secret-injection works**. Not tested: Docker
+`--runtime=runsc` (needs daemon restart — skipped on prod), bind-mount volume, hardening
+(seccomp/netns/egress), real harness inside, perf. NOTE: saga is a shared **prod** box (4c/8GB) —
+capability-only; **pilot compute needs a separate host.**
+
+**Claude Code harness mapping (authoritative, for the `HarnessSession` task):**
+- Session state = the **working dir** + the harness **config/session dir**; set `CLAUDE_CONFIG_DIR`
+  onto the per-company **volume**, capture the `session_id`, resume with `--resume <session-id>`.
+- Drive headless: `claude -p "<prompt>" --output-format stream-json`; map its events →
+  `job_step`/`job_status`/`job_done`. Claude Code = native resume (easy adapter); the other four
+  harnesses need the thread-replay adapter.
+- **Auth differs by Computer kind:** managed sandbox = inject `ANTHROPIC_API_KEY` at job start (a
+  subscription `/login` does NOT work headless on a fresh box); BYO = use the machine's existing
+  harness login (what harness-detection surfaces).
+
+---
+
 ## 15. Open questions for the human (from the builder-check)
 
 **Calls I settled myself** (a sensible builder could decide these; recorded as my call):
