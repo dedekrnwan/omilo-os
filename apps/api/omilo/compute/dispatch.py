@@ -70,6 +70,18 @@ def _db_pick_and_reserve(
                 worker = session.get(ComputeWorker, wid)
                 if worker is None:
                     continue
+                # Defense-in-depth: re-verify company isolation at the DB layer.
+                # The registry pre-filters by company, but we never trust an
+                # in-memory snapshot as the sole cross-company guard.
+                if worker.company_id != job.company_id:
+                    logger.warning(
+                        "_db_pick_and_reserve: cross-company candidate skipped "
+                        "(worker %s company=%s, job company=%s)",
+                        wid,
+                        worker.company_id,
+                        job.company_id,
+                    )
+                    continue
                 if worker.status != "online":
                     continue
                 if worker.in_use < worker.capacity:
@@ -81,15 +93,6 @@ def _db_pick_and_reserve(
                     return wid
 
             return None
-
-
-def _db_mark_queued(job_id: str) -> None:
-    """Ensure job.status='queued' (no-op if already queued)."""
-    with SessionLocal() as session:
-        with session.begin():
-            job = session.get(ComputeJob, job_id)
-            if job is not None and job.status != "queued":
-                job.status = "queued"
 
 
 def _db_reap_expired(now: datetime) -> int:

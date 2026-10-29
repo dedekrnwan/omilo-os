@@ -125,33 +125,60 @@ async def create_job(
             detail="spec must be a JSON object (dict).",
         )
 
-    job = ComputeJob(
-        id=prefixed_id("cjb"),
-        company_id=ctx.company_id,
-        status="queued",
+    job_id = prefixed_id("cjb")
+    company_id = ctx.company_id
+
+    # Commit the job row on a DEDICATED session so it is immediately visible
+    # (READ COMMITTED) to the separate SessionLocal connection that
+    # dispatch → _db_pick_and_reserve opens.  We cannot call db.commit() here
+    # because the get_tenant_db session is already inside a with session.begin()
+    # context manager — committing inside that block closes the managed
+    # transaction and makes subsequent db.refresh() / db.query() calls fail.
+    with SessionLocal() as _sess:
+        with _sess.begin():
+            _job = ComputeJob(
+                id=job_id,
+                company_id=company_id,
+                status="queued",
+                spec=body.spec,
+            )
+            _sess.add(_job)
+            _sess.flush()
+            _sess.expunge(_job)
+        # _sess.begin().__exit__ commits here → row is now durably visible
+
+    # Build a lightweight stub so dispatch() can read .id / .company_id / .spec
+    # without needing an active session; _db_pick_and_reserve re-fetches by PK.
+    import types as _types
+    job_stub = _types.SimpleNamespace(
+        id=job_id,
+        company_id=company_id,
         spec=body.spec,
     )
-    db.add(job)
-    db.flush()
 
     # Attempt immediate dispatch — fire-and-forget the result; if no worker is
-    # available the job remains 'queued' and the response will reflect that.
-    # We re-read the job from the DB after dispatch so the response shows the
-    # up-to-date status (dispatched vs queued).
+    # available the job remains 'queued' and will be picked up when a worker
+    # comes online.
     try:
         from omilo.compute.dispatch import dispatch as _dispatch
 
-        await _dispatch(job)
+        await _dispatch(job_stub)  # type: ignore[arg-type]
     except Exception as exc:
         # Dispatch errors are non-fatal — the job stays queued and will be
         # picked up when a worker comes online.
         import logging as _logging
         _logging.getLogger(__name__).warning(
-            "create_job: dispatch attempt failed for job %s: %s", job.id, exc
+            "create_job: dispatch attempt failed for job %s: %s", job_id, exc
         )
 
-    # Refresh the job so status/worker_id reflect any dispatch update
-    db.refresh(job)
+    # Read the final state via the request session (RLS-scoped, same company).
+    job = db.get(ComputeJob, job_id)
+    if job is None:
+        # Should not happen — we just committed it above.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Job row disappeared after creation.",
+        )
 
     return {
         "id": job.id,
