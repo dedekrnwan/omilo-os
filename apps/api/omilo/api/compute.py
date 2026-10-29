@@ -104,16 +104,20 @@ def pair_worker(
 
 
 @router.post("/compute/jobs")
-def create_job(
+async def create_job(
     body: CreateJobBody,
     ctx: RequestContext = Depends(get_context),
     db: Session = Depends(get_tenant_db),
 ) -> dict[str, Any]:
-    """Create a ComputeJob with status='queued' for the active company.
+    """Create a ComputeJob with status='queued' and attempt immediate dispatch.
 
     Any authenticated user (not just owner/admin) can submit a job.
     ``spec`` must be a dict (JSONB); a 400 is returned otherwise since the DB
     JSONB column does not enforce the dict constraint at the application level.
+
+    After creating the job, dispatch() is called to assign it to a free same-
+    company worker (if one is available).  The response reflects the final
+    status — either 'dispatched' (worker assigned) or 'queued' (no worker).
     """
     if not isinstance(body.spec, dict):
         raise HTTPException(
@@ -130,13 +134,34 @@ def create_job(
     db.add(job)
     db.flush()
 
+    # Attempt immediate dispatch — fire-and-forget the result; if no worker is
+    # available the job remains 'queued' and the response will reflect that.
+    # We re-read the job from the DB after dispatch so the response shows the
+    # up-to-date status (dispatched vs queued).
+    try:
+        from omilo.compute.dispatch import dispatch as _dispatch
+
+        await _dispatch(job)
+    except Exception as exc:
+        # Dispatch errors are non-fatal — the job stays queued and will be
+        # picked up when a worker comes online.
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "create_job: dispatch attempt failed for job %s: %s", job.id, exc
+        )
+
+    # Refresh the job so status/worker_id reflect any dispatch update
+    db.refresh(job)
+
     return {
         "id": job.id,
         "company_id": job.company_id,
         "status": job.status,
         "spec": job.spec,
         "worker_id": job.worker_id,
-        "lease_expires_at": job.lease_expires_at,
+        "lease_expires_at": (
+            job.lease_expires_at.isoformat() if job.lease_expires_at else None
+        ),
         "result": job.result,
         "artifact": job.artifact,
         "error": job.error,

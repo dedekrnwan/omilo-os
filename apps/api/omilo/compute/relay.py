@@ -64,13 +64,20 @@ HEARTBEAT_S: float = 20.0
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
+@dataclass
 class WorkerConn:
-    """Immutable snapshot of a connected worker's key attributes."""
+    """Handle for a connected worker stored in the registry.
+
+    ``outbox`` is an asyncio.Queue onto which dispatch() enqueues encoded
+    frames (e.g. start_job).  The WS send-loop drains it and calls
+    ``websocket.send_text()`` for each frame, decoupling the async REST/dispatch
+    context from the socket send without any locking.
+    """
 
     worker_id: str
     company_id: str
     capacity: int
+    outbox: asyncio.Queue = field(default_factory=asyncio.Queue)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +252,38 @@ async def worker_relay_handler(
     except Exception as exc:
         logger.warning("Worker %s: failed to mark online in DB: %s", worker_id, exc)
 
-    # ── 5. Heartbeat loop + message loop (concurrent tasks) ──────────────────
+    # ── 4b. Dispatch any queued jobs for this company now that a worker is available
+    try:
+        from omilo.compute.dispatch import dispatch as _dispatch  # avoid circular at module load
+        from omilo.db import SessionLocal as _SL
+        from omilo.models.compute import ComputeJob as _CJ
+
+        def _get_queued_jobs() -> list[_CJ]:
+            with _SL() as _session:
+                jobs = (
+                    _session.query(_CJ)
+                    .filter_by(company_id=company_id, status="queued")
+                    .all()
+                )
+                for j in jobs:
+                    _session.expunge(j)
+                return jobs
+
+        queued_jobs = await asyncio.to_thread(_get_queued_jobs)
+        for queued_job in queued_jobs:
+            try:
+                await _dispatch(queued_job, registry=registry)
+            except Exception as exc:
+                logger.warning(
+                    "Worker %s: dispatch of queued job %s failed: %s",
+                    worker_id,
+                    queued_job.id,
+                    exc,
+                )
+    except Exception as exc:
+        logger.warning("Worker %s: failed to dispatch queued jobs: %s", worker_id, exc)
+
+    # ── 5. Heartbeat loop + message loop + outbox send-loop (concurrent tasks) ─
     # last_pong_at tracks the last received pong (monotonic time).
     # last_ping_sent_at tracks when the most recent ping was dispatched.
     # Dead-peer detection: after waiting `interval` for a pong, the worker is
@@ -309,13 +347,36 @@ async def worker_relay_handler(
         except Exception as exc:
             logger.debug("Worker %s: receive loop ended: %s", worker_id, exc)
 
-    # Run both loops concurrently; whichever exits first triggers cleanup
+    async def _send_loop() -> None:
+        """Drain conn.outbox and forward each encoded frame to the worker socket.
+
+        Running as a separate task decouples the async REST/dispatch context
+        (which enqueues onto outbox) from the actual socket send, keeping both
+        on the same event loop without any locking.
+        """
+        try:
+            while True:
+                raw_frame = await conn.outbox.get()
+                try:
+                    await websocket.send_text(raw_frame)
+                except Exception as exc:
+                    logger.debug(
+                        "Worker %s: send_loop failed to send frame: %s", worker_id, exc
+                    )
+                    return  # Socket is gone; outer cleanup will handle it
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.debug("Worker %s: send_loop ended: %s", worker_id, exc)
+
+    # Run all three loops concurrently; whichever exits first triggers cleanup
     heartbeat_task = asyncio.create_task(_heartbeat_loop())
     receive_task = asyncio.create_task(_receive_loop())
+    send_task = asyncio.create_task(_send_loop())
 
     try:
         done, pending = await asyncio.wait(
-            {heartbeat_task, receive_task},
+            {heartbeat_task, receive_task, send_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
@@ -330,6 +391,8 @@ async def worker_relay_handler(
         # ── 6. Drop: remove from registry + mark offline in DB ────────────
         # Run in a thread pool so the DB round-trip doesn't block the event
         # loop, matching how _mark_worker_online is already offloaded.
+        # _mark_worker_offline_and_error_inflight already sets in_use=0 and
+        # errors all in-flight jobs, so release() is not needed separately here.
         try:
             await asyncio.to_thread(_drop_worker, worker_id)
         except Exception as exc:
