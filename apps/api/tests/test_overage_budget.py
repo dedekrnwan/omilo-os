@@ -7,8 +7,8 @@ Tests (company-scoped session, real DB):
 2. hard overage: Company balance 0, overage_policy="hard" → start_job returns
    a blocked job (status "blocked", error "insufficient_credits"), the engine
    did NOT run (no Report), and an alert InboxItem exists.
-3. helper budget: Helper budget_credits_month=50, CreditLedger rows for this
-   helper this month summing credits_charged ≥ 50 → start_job → helper gets
+3. helper budget: Helper budget_tokens_month=50k, jobs for this
+   helper this month using ≥ 50k tokens → start_job → helper gets
    paused (status "paused"), job blocked ("helper_budget_exceeded").
 4. paused helper: helper.status="paused" → start_job blocked ("helper_paused").
 5. grant_credits: adds balance + positive ledger row.
@@ -129,7 +129,7 @@ def _make_helper(
     *,
     company_id: str,
     status: str = "active",
-    budget_credits_month: int | None = None,
+    budget_tokens_month: int | None = None,
 ) -> Helper:
     helper = Helper(
         id=prefixed_id("hlp"),
@@ -142,11 +142,22 @@ def _make_helper(
         permissions=[],
         status=status,
         channel_ids=[],
-        budget_credits_month=budget_credits_month,
+        budget_tokens_month=budget_tokens_month,
     )
     db.add(helper)
     db.flush()
     return helper
+
+
+def _seed_token_job(db, *, company_id: str, helper_id: str, tokens: int) -> None:
+    """A finished job this month that used *tokens* AI tokens."""
+    from omilo.models.execution import Job
+
+    db.add(Job(
+        id=prefixed_id("job"), company_id=company_id, helper_id=helper_id, origin="chat",
+        brief="earlier work", status="done", tokens_in=tokens, tokens_out=0, attempts=1, checkpoint={},
+    ))
+    db.flush()
 
 
 def _seed_ledger_rows(
@@ -313,7 +324,7 @@ class TestHardOverage:
 
 
 class TestHelperBudgetExceeded:
-    """Helper budget_credits_month=50, mtd≥50 → paused + job blocked."""
+    """Helper budget_tokens_month=50k, tokens this month ≥ 50k → paused + job blocked."""
 
     def test_helper_paused_and_job_blocked(self):
         with _superuser_session() as sdb:
@@ -323,11 +334,11 @@ class TestHelperBudgetExceeded:
             cid = company.id
 
         with _tenant_session(cid) as db:
-            helper = _make_helper(db, company_id=cid, budget_credits_month=50)
+            helper = _make_helper(db, company_id=cid, budget_tokens_month=50_000)
             hid = helper.id
-            # Seed ledger rows summing credits_charged = 55 (≥ 50 budget)
-            _seed_ledger_rows(db, company_id=cid, helper_id=hid, credits_charged=30)
-            _seed_ledger_rows(db, company_id=cid, helper_id=hid, credits_charged=25)
+            # Jobs this month used 55k tokens (≥ 50k budget)
+            _seed_token_job(db, company_id=cid, helper_id=hid, tokens=30_000)
+            _seed_token_job(db, company_id=cid, helper_id=hid, tokens=25_000)
 
         with _tenant_session(cid) as db:
             job = start_job(
@@ -353,7 +364,7 @@ class TestHelperBudgetExceeded:
         )
 
     def test_helper_budget_not_exceeded(self):
-        """Helper budget_credits_month=100, mtd=30 → job allowed (status done)."""
+        """Helper budget_tokens_month=100k, 30k used → job allowed (status done)."""
         with _superuser_session() as sdb:
             company = _make_company(
                 sdb, credit_balance=5000, overage_policy="soft"
@@ -361,10 +372,10 @@ class TestHelperBudgetExceeded:
             cid = company.id
 
         with _tenant_session(cid) as db:
-            helper = _make_helper(db, company_id=cid, budget_credits_month=100)
+            helper = _make_helper(db, company_id=cid, budget_tokens_month=100_000)
             hid = helper.id
-            # Only 30 credits used — under budget
-            _seed_ledger_rows(db, company_id=cid, helper_id=hid, credits_charged=30)
+            # Only 30k tokens used — under budget
+            _seed_token_job(db, company_id=cid, helper_id=hid, tokens=30_000)
 
         with _tenant_session(cid) as db:
             job = start_job(

@@ -320,7 +320,7 @@ async def test_weekly_digest_monday_8am_once(async_client, outbox):
     m = m[0]
     assert m.subject == "Your week in Omilo · 4 jobs finished"
     assert "4 of 5 jobs succeeded (80%)." in m.html
-    assert "Rp 50rb" in m.html  # 1 000 credits × Rp 50 (billing.catalog.IDR_PER_CREDIT)
+    assert "7.5k" in m.html  # AI tokens: 5 jobs × 1,500 tokens
     assert chief.name in m.html and m.from_name == "Chief of Staff via Omilo"
 
 

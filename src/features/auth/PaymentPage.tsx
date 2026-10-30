@@ -12,7 +12,7 @@ const COUNTRIES = ['Indonesia', 'Singapore', 'Malaysia', 'Philippines', 'Thailan
 const LINES: { k: string; v: string; tone?: 'ok'; strong?: boolean; rule?: boolean }[] = [
   { k: 'Team plan, 12 × $49', v: '$588' },
   { k: 'Yearly discount (20%)', v: '−$118', tone: 'ok' },
-  { k: 'AI credit', v: '$20 / month included', rule: true },
+  { k: 'AI', v: 'Your own key · billed per token by your provider', rule: true },
   { k: 'Due today', v: '$0', strong: true },
   { k: 'From Nov 7, 2026', v: '$470 / year' },
 ]

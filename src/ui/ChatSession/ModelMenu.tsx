@@ -18,7 +18,7 @@ export interface ModelOption extends Model {
 
 const PROVIDER = {
   anthropic: { letter: 'A', color: '#D97757', heading: 'ANTHROPIC', meta: 'Your key' },
-  openai: { letter: 'O', color: '#10A37F', heading: 'OPENAI', meta: 'Omilo credits' },
+  openai: { letter: 'O', color: '#10A37F', heading: 'OPENAI', meta: 'Your key' },
 } as const
 
 export const MODELS: ModelOption[] = [
@@ -170,7 +170,7 @@ export const THINKING_LEVELS = [
   { id: 'low', label: 'Low', desc: 'A quick think first' },
   { id: 'medium', label: 'Medium', desc: 'Default · balanced' },
   { id: 'high', label: 'High', desc: 'Slower, more careful' },
-  { id: 'max', label: 'Max', desc: 'Hardest problems · uses more credits' },
+  { id: 'max', label: 'Max', desc: 'Hardest problems · uses more tokens' },
 ] as const
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]['id']

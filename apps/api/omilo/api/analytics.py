@@ -15,13 +15,13 @@ Endpoints:
       (lives here, not in a jobs module, so it doesn't collide with other
        sweep areas; move it if a jobs router lands.)
 
-All values computed from real Job / CreditLedger / Routine / Flow / Proposal
+All values computed from real Job / Routine / Flow / Proposal
 rows (company-scoped via RLS), never hardcoded.
 
 range values: "day" (1d), "week" (7d, default), "month" (30d), "quarter" (91d).
 Labels the UI used to send ("7 days", "30 days", "90 days") are accepted too.
 
-Currency: spend is in credits (CreditLedger.credits_charged, reason="job").
+AI usage is counted in tokens (Job.tokens_in + tokens_out) — the unit for budgets too.
 
 Every stat carries the previous-period value (`prev`) so the UI can show a
 delta vs the period before.
@@ -39,7 +39,6 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from omilo.models.agents import Helper
-from omilo.models.billing import CreditLedger
 from omilo.models.execution import Job
 from omilo.tenancy.context import RequestContext
 from omilo.tenancy.deps import get_context, get_tenant_db
@@ -160,26 +159,6 @@ def _jobs(db: Session, scope, since: datetime, until: datetime | None = None):
     return q.all()
 
 
-def _ledger_rows(db: Session, scope, since: datetime, until: datetime | None = None):
-    q = db.query(CreditLedger).filter(CreditLedger.reason == "job", CreditLedger.at >= since)
-    if until is not None:
-        q = q.filter(CreditLedger.at < until)
-    rows = q.all()
-    if scope is None:
-        return rows
-    helper_ids, session_ids = scope
-    job_ids = {r.job_id for r in rows if r.job_id}
-    job_sessions = (
-        dict(db.query(Job.id, Job.session_id).filter(Job.id.in_(job_ids)).all()) if job_ids else {}
-    )
-    hset, sset = set(helper_ids), set(session_ids)
-    return [
-        r
-        for r in rows
-        if (r.helper_id in hset) or (job_sessions.get(r.job_id) in sset)
-    ]
-
-
 def _stat(label: str, value: int | float, prev: int | float, note: str | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {"label": label, "value": value, "prev": prev}
     if note is not None:
@@ -203,7 +182,7 @@ def analytics_overview(
       - "Jobs done"    → count(status='done')
       - "Success rate" → round(100 * done / total) if total > 0 else 0
       - "Tokens"       → sum(tokens_in + tokens_out)
-      - "Spend"        → sum(CreditLedger.credits_charged) (credits)
+      - "Tokens per job" → average tokens per job
 
     series:
       - "Jobs per day" → total jobs per day over the range (legacy, daily)
@@ -226,14 +205,13 @@ def analytics_overview(
 
     total, done_count, failed_count, tokens, success_rate = summary(all_jobs)
     _pt, p_done, _pf, p_tokens, p_success = summary(prev_jobs)
-    spend = sum(r.credits_charged or 0 for r in _ledger_rows(db, scope, start))
-    p_spend = sum(r.credits_charged or 0 for r in _ledger_rows(db, scope, prev_start, start))
 
     stats = [
         _stat("Jobs done", done_count, p_done),
         _stat("Success rate", success_rate, p_success, "%"),
         _stat("Tokens", tokens, p_tokens),
-        _stat("Spend", int(spend), int(p_spend), "credits"),
+        _stat("Tokens per job", round(tokens / total) if total else 0,
+              round(p_tokens / _pt) if _pt else 0, "tokens"),
     ]
     stats[1]["failed"] = failed_count
     stats[2]["perJob"] = round(tokens / total) if total else 0
@@ -293,10 +271,11 @@ def analytics_helpers(
 
     [{helperId, name, area, role, status, doing, jobs, success, tokens, spend,
       lastActive, budget: {spent, limit} | null, budgetReached}]
-    Retired helpers are excluded. spend/budget are credits.
+    Retired helpers are excluded. tokens, spend and budget are AI tokens (spend = tokens, kept
+    for older clients).
     """
     from omilo.api.helpers import (
-        cost_by_helper,
+        tokens_by_helper,
         current_job_by_helper,
         last_active_by_helper,
         month_start,
@@ -328,12 +307,7 @@ def analytics_helpers(
             "tokens": int(row.tokens or 0),
         }
 
-    ledger_spend: dict[str, int] = {}
-    for r in _ledger_rows(db, scope, start):
-        if r.helper_id:
-            ledger_spend[r.helper_id] = ledger_spend.get(r.helper_id, 0) + int(r.credits_charged or 0)
-
-    mtd = cost_by_helper(db, month_start())
+    mtd = tokens_by_helper(db, month_start())
     current = current_job_by_helper(db)
     nxt = next_routine_by_helper(db)
     last = last_active_by_helper(db)
@@ -344,7 +318,7 @@ def analytics_helpers(
         total = a["total"]
         done = a["done"]
         success = round(100 * done / total) if total > 0 else 0
-        limit = h.budget_credits_month
+        limit = h.budget_tokens_month
         spent_mtd = mtd.get(h.id, 0)
         reached = limit is not None and spent_mtd >= limit and not (h.budget_allow_jobs or 0)
         cur = current.get(h.id)
@@ -369,7 +343,7 @@ def analytics_helpers(
                 "jobs": total,
                 "success": success,
                 "tokens": a["tokens"],
-                "spend": ledger_spend.get(h.id, 0),
+                "spend": a["tokens"],
                 "lastActive": last.get(h.id),
                 "budget": {"spent": spent_mtd, "limit": limit} if limit is not None else None,
                 "budgetReached": reached,
@@ -389,22 +363,18 @@ def analytics_spend_by_channel(
     db: Session = Depends(get_tenant_db),
     ctx: RequestContext = Depends(get_context),
 ) -> dict[str, Any]:
-    """Credits per channel per bucket (stacked). A charge is attributed to the
-    job's chat-session channel, else the helper's first channel, else 'General'."""
+    """AI tokens per channel per bucket (stacked). A job is attributed to its
+    chat-session channel, else the helper's first channel, else 'General'."""
     from omilo.models.chat import ChatSession
     from omilo.models.workspace import Channel
 
     range_key = _norm_range(range)
     buckets = _buckets(range_key)
     scope = _channel_scope(db, channel_id)
-    rows = _ledger_rows(db, scope, buckets[0][0])
+    rows = _jobs(db, scope, buckets[0][0])
 
     channels = {c.id: c for c in db.query(Channel).all()}
-    job_ids = {r.job_id for r in rows if r.job_id}
-    job_sess = (
-        dict(db.query(Job.id, Job.session_id).filter(Job.id.in_(job_ids)).all()) if job_ids else {}
-    )
-    sess_ids = {s for s in job_sess.values() if s}
+    sess_ids = {j.session_id for j in rows if j.session_id}
     sess_chan = (
         dict(db.query(ChatSession.id, ChatSession.channel_id).filter(ChatSession.id.in_(sess_ids)).all())
         if sess_ids
@@ -417,14 +387,17 @@ def analytics_spend_by_channel(
     per: dict[str, list[int]] = {}
     total = 0
     for r in rows:
-        i = _bucket_index(buckets, r.at)
+        i = _bucket_index(buckets, r.created_at)
         if i is None:
             continue
-        cid = sess_chan.get(job_sess.get(r.job_id)) or helper_chan.get(r.helper_id) or "general"
+        used = int(r.tokens_in or 0) + int(r.tokens_out or 0)
+        if not used:
+            continue
+        cid = sess_chan.get(r.session_id) or helper_chan.get(r.helper_id) or "general"
         if cid not in channels:
             cid = "general"
-        per.setdefault(cid, [0] * len(buckets))[i] += int(r.credits_charged or 0)
-        total += int(r.credits_charged or 0)
+        per.setdefault(cid, [0] * len(buckets))[i] += used
+        total += used
 
     series = []
     for cid, values in sorted(per.items(), key=lambda kv: -sum(kv[1])):
@@ -546,7 +519,7 @@ def analytics_loops(
             last = runs[0]
             job = db.get(Job, last.job_id) if last.job_id else None
             last_result = job.status if job is not None else (last.outcome or None)
-        costs = [x.cost_credits or 0 for x in recent]
+        costs = [x.tokens or 0 for x in recent]
         out.append(
             {
                 "id": r.id,
@@ -559,7 +532,7 @@ def analytics_loops(
                 "nextAt": r.next_at.isoformat() if r.next_at and not r.paused else None,
                 "lastResult": last_result,
                 "runs": len(recent),
-                "avgCost": round(sum(costs) / len(costs)) if costs else 0,
+                "avgTokens": round(sum(costs) / len(costs)) if costs else 0,
                 "on": bool(r.enabled and not r.paused),
             }
         )
@@ -571,7 +544,7 @@ def analytics_loops(
             db.query(FlowRun).filter(FlowRun.flow_id == f.id).order_by(FlowRun.created_at.desc()).all()
         )
         recent = [x for x in runs if x.created_at and x.created_at >= start]
-        costs = [x.cost_credits or 0 for x in recent]
+        costs = [x.tokens or 0 for x in recent]
         areas = f.areas or []
         out.append(
             {
@@ -585,7 +558,7 @@ def analytics_loops(
                 "nextAt": None,
                 "lastResult": runs[0].status if runs else None,
                 "runs": len(recent),
-                "avgCost": round(sum(costs) / len(costs)) if costs else 0,
+                "avgTokens": round(sum(costs) / len(costs)) if costs else 0,
                 "on": bool(f.enabled),
             }
         )
@@ -598,14 +571,14 @@ _CAUSES = [
     ("Expired or missing connection", re.compile(r"token|expired|auth|not connected|unauthori[sz]ed|credential|401|403|connect", re.I)),
     ("Rate limits", re.compile(r"rate.?limit|429|too many requests|quota", re.I)),
     ("Timeouts", re.compile(r"time.?out|timed out|deadline", re.I)),
-    ("Budget or credits", re.compile(r"budget|credit|paused_offline|insufficient", re.I)),
+    ("Budget reached", re.compile(r"budget|token limit|credit|paused_offline|insufficient", re.I)),
     ("Bad input from a step", re.compile(r"invalid|validation|bad input|parse|missing field|not found", re.I)),
 ]
 _CAUSE_TIPS = {
     "Expired or missing connection": "Most failures come from expired or missing connections. Reconnect them in Connectors.",
     "Rate limits": "Most failures are rate limits. Spread loops out or lower messages per hour.",
     "Timeouts": "Most failures are timeouts. Retry them, or give the step a smaller job.",
-    "Budget or credits": "Most failures come from budgets or credits. Raise a budget or top up credits.",
+    "Budget reached": "Most failures come from AI token budgets. Raise the budget in AI engine or on the helper.",
     "Bad input from a step": "Most failures come from bad input between steps. Check the step before the failing one.",
     "Other errors": "Failures don't share one cause. Open each run to see what happened.",
 }
@@ -624,7 +597,7 @@ def _failure_action(cause: str, status: str) -> str:
         return "view"
     if cause == "Expired or missing connection":
         return "connect"
-    if cause == "Budget or credits":
+    if cause == "Budget reached":
         return "budget"
     return "retry"
 
@@ -783,10 +756,6 @@ def retry_job(
 ACTIVITY_KINDS = ("done", "needs_you", "failed", "started")
 
 
-def _ago_cost(credits: int) -> str:
-    return f" · {credits} cr" if credits else ""
-
-
 @router.get("/activity", status_code=200)
 def activity_feed(
     kinds: Optional[str] = Query(default=None, description="comma list of done,needs_you,failed,started"),
@@ -863,7 +832,7 @@ def activity_feed(
                 "who": h.name if h else "Helper",
                 "area": h.area if h else "ops",
                 "what": what,
-                "meta": " · ".join(meta_bits) + _ago_cost(j.cost_credits or 0),
+                "meta": " · ".join(meta_bits),
                 "jobId": j.id,
             }
         )

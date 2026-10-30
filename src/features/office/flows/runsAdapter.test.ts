@@ -20,6 +20,7 @@ function run(partial: Partial<FlowRun>): FlowRun {
     triggerSummary: 'schedule',
     startedBy: 'system',
     costCredits: 0,
+    tokens: 0,
     duration: null,
     waitingFor: null,
     jobIds: [],
@@ -61,9 +62,9 @@ describe('formatDuration / formatCost', () => {
     expect(formatDuration(72)).toBe('1m 12s')
     expect(formatDuration(120)).toBe('2m')
   })
-  it('formats cost from credits in Rupiah (Rp 50 per credit)', () => {
-    expect(formatCost(0)).toBe('Rp 0')
-    expect(formatCost(18)).toBe('Rp 900')
+  it('formats AI usage in tokens', () => {
+    expect(formatCost(0)).toBe('—')
+    expect(formatCost(18_000)).toBe('18k tokens')
   })
 })
 
@@ -75,7 +76,7 @@ describe('officeRunRow', () => {
         flowId: 'f2',
         status: 'failed',
         triggerSummary: 'GitHub · deploy',
-        costCredits: 4,
+        tokens: 4_000,
         duration: 38,
         startedAt: new Date(NOW - 12 * 60_000).toISOString(),
       }),
@@ -90,7 +91,7 @@ describe('officeRunRow', () => {
       trigger: 'GitHub · deploy',
       startedAt: '12m ago',
       duration: '38s',
-      cost: 'Rp 200',
+      cost: '4k tokens',
     })
   })
 
@@ -100,18 +101,18 @@ describe('officeRunRow', () => {
 })
 
 describe('runsStats', () => {
-  it('computes week count, success rate, needs-you, and spend', () => {
+  it('computes week count, success rate, needs-you, and tokens', () => {
     const runs: FlowRun[] = [
-      run({ id: 'a', status: 'done', costCredits: 5, startedAt: new Date(NOW - 60_000).toISOString() }),
-      run({ id: 'b', status: 'failed', costCredits: 3, startedAt: new Date(NOW - 2 * 24 * 3_600_000).toISOString() }),
-      run({ id: 'c', status: 'needs_you', costCredits: 2, startedAt: new Date(NOW - 60_000).toISOString() }),
-      run({ id: 'd', status: 'running', costCredits: 0, startedAt: new Date(NOW - 20 * 24 * 3_600_000).toISOString() }),
+      run({ id: 'a', status: 'done', tokens: 5_000, startedAt: new Date(NOW - 60_000).toISOString() }),
+      run({ id: 'b', status: 'failed', tokens: 3_000, startedAt: new Date(NOW - 2 * 24 * 3_600_000).toISOString() }),
+      run({ id: 'c', status: 'needs_you', tokens: 2_000, startedAt: new Date(NOW - 60_000).toISOString() }),
+      run({ id: 'd', status: 'running', tokens: 0, startedAt: new Date(NOW - 20 * 24 * 3_600_000).toISOString() }),
     ]
     const stats = runsStats(runs, NOW)
     expect(stats['Runs this week']).toBe('3') // a, b, c within 7d; d is 20d old
     expect(stats['Success rate']).toBe('50%') // finished = a(done) + b(failed); 1/2
     expect(stats['Needs you']).toBe('1') // c
-    expect(stats.Spend).toBe('Rp 500') // 5+3+2+0 = 10 credits
+    expect(stats.Tokens).toBe('10k tokens') // 5k+3k+2k+0
   })
 
   it('shows "—" success rate when nothing has finished', () => {

@@ -1,5 +1,10 @@
 # 08 · Billing & AI Credits
 
+> **Update (2026-10-30):** customers never see credits. Omilo Cloud plans are priced per
+> company by storage, AI is billed per token (your own key, or Omilo's AI partner later), and
+> every AI budget and limit is in tokens. The credit ledger below remains only as the internal
+> settlement unit for the optional pooled/partner AI (`OMILO_POOL_AI=1`).
+
 > Track: **technical**. The money model: subscription plans + **metered AI credits with
 > margin**. **Fully designed here; built in phases (meter → wallet → pay).** Product-facing
 > plan behavior in the Omilo Cloud plan notes (private, `omilo-cloud`).
@@ -60,9 +65,11 @@ phase makes Usage/Analytics exact and is a prerequisite for everything below.
   - *hard*: block new consequential Jobs (`402 insufficient credits`), queue non-urgent work,
     and raise an `alert` InboxItem. Routines/flows pause; chat read stays free.
   - The operator sets soft/hard and a top-up threshold in Control-Panel → Usage/Safety.
-- **Budgets** ≠ billing: per-Helper `budget_credits_month` and `SafetyLimit` spend caps are
-  *controls* the gate enforces; exceeding a budget pauses the helper, it does not change what's
-  owed.
+- **Budgets** ≠ billing: AI budgets are counted in **tokens** (input + output, from each Job),
+  never credits — per company and role (`aiEngine.monthlyBudgetTokens`, `roles.*.budgetTokens`),
+  per helper (`helper.budget_tokens_month`), per task (`behavior.tokens_per_task`) and per flow
+  (`monthlyBudgetTokens`, `tokenCapPerRun`). They are *controls* the gate enforces (see
+  `omilo/ai/usage.py`); exceeding one pauses the work, it does not change what's owed.
 
 ## 5. Wallet & top-up (Phase P5a — provider-independent core)
 

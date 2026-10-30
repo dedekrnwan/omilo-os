@@ -351,7 +351,8 @@ def render_digest(*, company: str, week_label: str, stats: Sequence[Stat], summa
 {summary}
 
 Busiest helpers
-""" + "\n".join(f"- {r.name}: {r.jobs} jobs · {r.tokens} · {r.cost}" for r in busiest) + """
+""" + "\n".join(f"- {r.name}: " + " · ".join(x for x in (f"{r.jobs} jobs", r.tokens, r.cost) if x)
+            for r in busiest) + """
 
 What got approved
 """ + "\n".join(f"- {a}" for a in approved) + (f"\n\n{budget_note}" if budget_note else "") + f"""

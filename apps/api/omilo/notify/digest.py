@@ -6,7 +6,7 @@ cron.  For every onboarded company whose local time is past Monday 08:00 it
 summarises the *previous* ISO week and mails each owner once (EmailLog
 dedupe).  A quiet week (no jobs, nothing waiting) sends nothing.
 
-Spend is shown in rupiah at the app-wide rate (``billing.catalog.IDR_PER_CREDIT``).
+AI usage is shown in tokens (Job.tokens_in + tokens_out).
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from omilo.emails import templates as t
 from omilo.models.agents import Helper
 from omilo.models.approvals import Proposal
 from omilo.models.base import prefixed_id
-from omilo.models.billing import CreditLedger
+from omilo.ai.usage import fmt_tokens
 from omilo.models.execution import Job
 from omilo.models.notify import EmailLog
 from omilo.models.tenancy import Company
@@ -38,13 +38,6 @@ log = logging.getLogger("omilo.notify")
 SEND_HOUR = 8  # local
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December"]
-
-
-def idr_per_credit() -> float:
-    """The app-wide Rupiah-per-credit rate (base credit pack, billing.catalog)."""
-    from omilo.billing.catalog import IDR_PER_CREDIT
-
-    return float(IDR_PER_CREDIT)
 
 
 def rupiah(amount: float, short: bool = True) -> str:
@@ -104,25 +97,24 @@ def _count_jobs(s, cid: str, status: str, a: datetime, b: datetime) -> int:
         Job.company_id == cid, Job.status == status, Job.ended_at >= a, Job.ended_at < b)).scalar() or 0
 
 
-def _spend(s, cid: str, a: datetime, b: datetime, helper_id: str | None = None) -> int:
-    q = select(func.coalesce(func.sum(CreditLedger.credits_charged), 0)).where(
-        CreditLedger.company_id == cid, CreditLedger.reason == "job",
-        CreditLedger.at >= a, CreditLedger.at < b)
+def _tokens(s, cid: str, a: datetime, b: datetime, helper_id: str | None = None) -> int:
+    """AI tokens (in + out) used by the company's jobs that finished in [a, b)."""
+    q = select(func.coalesce(func.sum(Job.tokens_in + Job.tokens_out), 0)).where(
+        Job.company_id == cid, Job.ended_at >= a, Job.ended_at < b)
     if helper_id:
-        q = q.where(CreditLedger.helper_id == helper_id)
+        q = q.where(Job.helper_id == helper_id)
     return int(s.execute(q).scalar() or 0)
 
 
 def build_digest(s, company: Company, w: Window, now: datetime) -> t.RenderedEmail | None:
     cid = company.id
-    rate = idr_per_credit()
     prev_a = w.start - timedelta(days=7)
 
     done = _count_jobs(s, cid, "done", w.start, w.end)
     failed = _count_jobs(s, cid, "failed", w.start, w.end)
     done_before = _count_jobs(s, cid, "done", prev_a, w.start)
-    spent = _spend(s, cid, w.start, w.end)
-    spent_before = _spend(s, cid, prev_a, w.start)
+    used = _tokens(s, cid, w.start, w.end)
+    used_before = _tokens(s, cid, prev_a, w.start)
 
     waiting_rows = s.execute(select(Proposal.created_at).where(
         Proposal.company_id == cid, Proposal.status == "pending")).scalars().all()
@@ -136,7 +128,7 @@ def build_digest(s, company: Company, w: Window, now: datetime) -> t.RenderedEma
                "green" if done >= done_before and done else "neutral"),
         t.Stat("Waiting on you", str(waiting), f"oldest {oldest}" if oldest else "all clear",
                "amber" if waiting else "green"),
-        t.Stat("Spent", rupiah(spent * rate), pct_delta(spent, spent_before), "neutral"),
+        t.Stat("AI tokens", fmt_tokens(used).replace(" tokens", ""), pct_delta(used, used_before), "neutral"),
     ]
 
     # Summary sentence: success rate + how fast decisions were made.
@@ -154,18 +146,17 @@ def build_digest(s, company: Company, w: Window, now: datetime) -> t.RenderedEma
 
     # Busiest helpers: most jobs finished or failed in the week.
     rows = s.execute(
-        select(Job.helper_id, func.count(), func.coalesce(func.sum(Job.tokens_in + Job.tokens_out), 0),
-               func.coalesce(func.sum(Job.cost_credits), 0))
+        select(Job.helper_id, func.count(), func.coalesce(func.sum(Job.tokens_in + Job.tokens_out), 0))
         .where(Job.company_id == cid, Job.status.in_(("done", "failed")),
                Job.ended_at >= w.start, Job.ended_at < w.end)
         .group_by(Job.helper_id).order_by(func.count().desc()).limit(3)
     ).all()
     helpers = {h.id: h for h in s.execute(select(Helper).where(Helper.company_id == cid)).scalars()}
     busiest = []
-    for hid, jobs, tokens, credits in rows:
+    for hid, jobs, tokens in rows:
         h = helpers.get(hid)
-        busiest.append(t.HelperWeek(helper_look(h), h.name if h else "Helper", int(jobs),
-                                    f"{round(int(tokens) / 1000)}k tok", rupiah(int(credits) * rate, short=False)))
+        busiest.append(t.HelperWeek(helper_look(h), h.name if h else "Helper", int(jobs), "",
+                                    fmt_tokens(int(tokens))))
 
     # What got approved, per helper.
     approved: list[str] = []
@@ -184,10 +175,10 @@ def build_digest(s, company: Company, w: Window, now: datetime) -> t.RenderedEma
     month_start = datetime.combine(now.astimezone(company_tz(company)).date().replace(day=1), time(0),
                                    company_tz(company)).astimezone(timezone.utc)
     for h in helpers.values():
-        if not h.budget_credits_month:
+        if not h.budget_tokens_month:
             continue
-        used = _spend(s, cid, month_start, now, h.id)
-        share = used / h.budget_credits_month
+        h_used = _tokens(s, cid, month_start, now, h.id)
+        share = h_used / h.budget_tokens_month
         if share >= 0.8:
             budget_note = f"{h.name} is at {round(share * 100)}% of its monthly budget."
             errors = Counter((e or "").strip().splitlines()[0][:80] for e in s.execute(
@@ -203,7 +194,7 @@ def build_digest(s, company: Company, w: Window, now: datetime) -> t.RenderedEma
     pre = " · ".join(x for x in [
         f"{waiting} waiting on you" if waiting else "Nothing waiting on you",
         f"{top} was the busiest helper" if top else "",
-        f"{rupiah(spent * rate, short=False)} spent",
+        f"{fmt_tokens(used)} used",
     ] if x)
     return t.render_digest(
         company=company.name, week_label=week_label(w.start_local), stats=stats, summary=summary,

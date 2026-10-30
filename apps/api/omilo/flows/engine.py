@@ -106,8 +106,8 @@ def run_flow(
 
     # ── 4. Budget gate (flow Settings › Budget & limits) ─────────────────────
     if not test:
-        cap = flow_limits(flow).get("monthly_budget_credits")
-        if cap is not None and spent_this_month_credits(db, flow.id) >= cap:
+        cap = flow_limits(flow).get("monthly_budget_tokens")
+        if cap is not None and tokens_this_month(db, flow) >= cap:
             run.status = "failed"
             run.waiting_for = "Monthly budget reached"
             run.ended_at = datetime.now(timezone.utc)
@@ -148,7 +148,7 @@ def _walk(
     limits = flow_limits(flow)
     if limits.get("max_steps"):
         max_steps = min(max_steps, limits["max_steps"])
-    cost_cap = None if test else limits.get("cost_cap_credits")
+    token_cap = None if test else limits.get("token_cap_per_run")
     steps = len(run.steps or [])  # resumed runs keep counting
 
     while current_id is not None and steps < max_steps:
@@ -173,9 +173,9 @@ def _walk(
 
         current_id = result  # type: ignore[assignment]
 
-        if cost_cap is not None and current_id is not None and _run_cost(db, run) > cost_cap:
+        if token_cap is not None and current_id is not None and _run_tokens(db, run) > token_cap:
             run.status = "failed"
-            run.waiting_for = "Max cost per run reached"
+            run.waiting_for = "Token limit per run reached"
             run.ended_at = datetime.now(timezone.utc)
             break
     else:
@@ -239,7 +239,7 @@ def _log_step(
 
 
 def _finish(db: Session, run: FlowRun) -> None:
-    """Fill duration (seconds) + cost (sum of the run's jobs) once a run ends."""
+    """Fill duration (seconds), tokens and internal cost (sums of the run's jobs) once a run ends."""
     if run.ended_at and run.started_at:
         run.duration = max(0, int((run.ended_at - run.started_at).total_seconds()))
     if run.job_ids:
@@ -247,6 +247,7 @@ def _finish(db: Session, run: FlowRun) -> None:
 
         jobs = db.query(Job).filter(Job.id.in_(list(run.job_ids))).all()
         run.cost_credits = sum(int(j.cost_credits or 0) for j in jobs)
+        run.tokens = sum(int(j.tokens_in or 0) + int(j.tokens_out or 0) for j in jobs)
     db.flush()
 
 
@@ -558,53 +559,36 @@ def _int_or_none(v: Any) -> int | None:
 
 
 def flow_limits(flow: Flow) -> dict[str, int | None]:
-    """Read the editor's Budget & limits into credits / step counts.
+    """Read the editor's Budget & limits: AI tokens and step counts.
 
-    New settings store Rupiah strings (``monthlyBudgetRp``, ``costCapRp``);
-    flows saved earlier stored dollars (``monthlyBudget``, ``costCap``,
-    1 credit = $0.001). Missing / zero values mean "no limit".
+    ``monthlyBudgetTokens`` (tokens per month across runs), ``tokenCapPerRun``
+    (tokens in one run) and ``maxSteps``. Missing / zero values mean "no limit".
+    Older flows stored Rupiah / dollar amounts; those no longer apply.
     """
-    from omilo.billing.catalog import IDR_PER_CREDIT
+    from omilo.ai.usage import positive_tokens
 
     st = flow.settings if isinstance(flow.settings, dict) else {}
-
-    def credits(rp_key: str, usd_key: str) -> int | None:
-        rp = _int_or_none(st.get(rp_key))
-        if rp is not None:
-            return max(1, rp // IDR_PER_CREDIT)
-        usd = st.get(usd_key)
-        try:
-            usd_f = float(usd) if usd is not None else 0.0
-        except (TypeError, ValueError):
-            return None
-        return max(1, int(round(usd_f * 1000))) if usd_f > 0 else None
-
-    max_steps = _int_or_none(st.get("maxSteps"))
     return {
-        "monthly_budget_credits": credits("monthlyBudgetRp", "monthlyBudget"),
-        "cost_cap_credits": credits("costCapRp", "costCap"),
-        "max_steps": max_steps,
+        "monthly_budget_tokens": positive_tokens(st.get("monthlyBudgetTokens")),
+        "token_cap_per_run": positive_tokens(st.get("tokenCapPerRun")),
+        "max_steps": _int_or_none(st.get("maxSteps")),
     }
 
 
-def spent_this_month_credits(db: Session, flow_id: str) -> int:
-    """Sum of finished runs' cost since the 1st of the current (UTC) month."""
-    from sqlalchemy import func
+def tokens_this_month(db: Session, flow: Flow) -> int:
+    """AI tokens used by this flow's runs since the 1st of the current (UTC) month."""
+    from omilo.ai.usage import month_start, tokens_used
 
-    now = datetime.now(timezone.utc)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    total = (
-        db.query(func.coalesce(func.sum(FlowRun.cost_credits), 0))
-        .filter(FlowRun.flow_id == flow_id, FlowRun.started_at >= start)
-        .scalar()
-    )
-    return int(total or 0)
+    start = month_start()
+    run_ids = [r for (r,) in db.query(FlowRun.id).filter(FlowRun.flow_id == flow.id, FlowRun.started_at >= start)]
+    return tokens_used(db, flow.company_id, since=start, flow_run_ids=run_ids)
 
 
-def _run_cost(db: Session, run: FlowRun) -> int:
+def _run_tokens(db: Session, run: FlowRun) -> int:
     if not run.job_ids:
         return 0
+    from omilo.ai.usage import job_tokens
     from omilo.models.execution import Job
 
     jobs = db.query(Job).filter(Job.id.in_(list(run.job_ids))).all()
-    return sum(int(j.cost_credits or 0) for j in jobs)
+    return sum(job_tokens(j) for j in jobs)

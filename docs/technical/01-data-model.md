@@ -126,7 +126,7 @@ via `Member.channel_scope` (`all` or a list of channel ids).
 | engine | jsonb | `{type, auth, model, tier}` (see [`06`](06-llm-routing-account-pool.md)) |
 | autonomy_cap | Autonomy | tightest this helper may act at (layered dial) |
 | permissions | jsonb | allowed `ProposalType`s it can self-authorize at its autonomy |
-| budget_credits_month | int | monthly credit cap; null = workspace pooled |
+| budget_tokens_month | bigint | monthly AI budget in tokens (input + output); null = no limit |
 | voice | text | tone/style guidance |
 | status | `active`\|`paused`\|`resting` | |
 | channel_ids | jsonb | channels it serves |

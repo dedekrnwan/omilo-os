@@ -6,7 +6,7 @@ import type { HelperBehavior } from '../../../core/domain/types'
 import { useCompanySettings, useHelpers, useMembers, useUpdateHelperEverywhere } from '../../../app/queries'
 import { useSession } from '../../../app/session'
 import { notify } from '../../../ui/ds/Toaster'
-import { formatRp } from '../../analytics/format'
+import { parseTokens, tokensInput } from '../../analytics/format'
 import { IconBtn, InputField, SettingRow, Switch, choiceRing } from '../ui'
 import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
 
@@ -156,7 +156,7 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
     LANGUAGE_OPTIONS.find((l) => (LANGUAGE_API[l] ?? l) === b.language) ?? 'Auto (detect)'
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [languageOpen, setLanguageOpen] = useState(false)
-  const [spend, setSpend] = useState(b.spend_per_task_idr ? formatRp(b.spend_per_task_idr) : '')
+  const [spend, setSpend] = useState(tokensInput(b.tokens_per_task))
   const [rate, setRate] = useState(b.messages_per_hour ? String(b.messages_per_hour) : '')
   const addInputRef = useRef<HTMLInputElement>(null)
 
@@ -164,14 +164,14 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
   const setOverride = (v: boolean) => saveBehavior({ work_hours_override: v })
   const setTopics = (next: string[]) => saveBehavior({ never_discuss: next })
   const commitSpend = () => {
-    const idr = Number(spend.replace(/[^0-9]/g, ''))
-    if (!idr) {
+    const tokens = parseTokens(spend)
+    if (!tokens) {
       setSpend('')
-      if (b.spend_per_task_idr) saveBehavior({ spend_per_task_idr: null }, 'Spend limit removed')
+      if (b.tokens_per_task) saveBehavior({ tokens_per_task: null }, 'Token limit removed')
       return
     }
-    setSpend(formatRp(idr))
-    if (idr !== b.spend_per_task_idr) saveBehavior({ spend_per_task_idr: idr }, 'Spend limit saved')
+    setSpend(tokensInput(tokens))
+    if (tokens !== b.tokens_per_task) saveBehavior({ tokens_per_task: tokens }, 'Token limit saved')
   }
   const commitRate = () => {
     const v = Number(rate.replace(/[^0-9]/g, ''))
@@ -218,7 +218,7 @@ export function BehaviorTab({ helper }: { helper: HelperRecord }) {
       <section className="flex w-full flex-col gap-[10px]">
         <Head title="Limits" desc="On top of the company's Safety & limits" />
         <Box>
-          <SettingRow title="Spend per task" desc="Pauses and asks above this.">
+          <SettingRow title="Tokens per task" desc="AI tokens one task may use (e.g. 200k). Pauses and asks above this.">
             <span onBlur={commitSpend} onKeyDown={(e) => e.key === 'Enter' && commitSpend()}>
               <InputField icon={Wallet} value={spend} onChange={setSpend} placeholder="No limit" width={180} />
             </span>

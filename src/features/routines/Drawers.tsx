@@ -39,7 +39,7 @@ import {
   asArea,
   browserTimeZone,
   fmtClock,
-  fmtCredits,
+  fmtTokens,
   fmtDayDate,
   fmtDuration,
   fmtMonthDay,
@@ -680,7 +680,7 @@ export function RunOutputDrawer({
   const d = detail
   const title = d ? `${d.routine.name} · ${fmtDayDate(d.run.at)}` : 'Run output'
   const subtitle = d
-    ? `Ran ${fmtClock(d.run.at).slice(0, 5)} · ${fmtDuration(d.run.duration)} · ${fmtCredits(d.run.costCredits)} · by ${d.routine.helperName || 'Helper'}`
+    ? `Ran ${fmtClock(d.run.at).slice(0, 5)} · ${fmtDuration(d.run.duration)} · ${fmtTokens(d.run.tokens ?? 0)} · by ${d.routine.helperName || 'Helper'}`
     : ''
   const targets = (d?.delivery.sendsTo ?? []).map(sourceLabel)
   return (
@@ -893,13 +893,13 @@ function cadenceText(freq: Frequency, at: string, days: number[], monthly: strin
 export function NewRoutineDrawer({
   onClose,
   onCreate,
-  avgCost,
+  avgTokens,
   busy = false,
 }: {
   onClose: () => void
   onCreate: (data: NewRoutineData) => void
-  /** Average credits per run for a helper's routines (cost estimate), or null. */
-  avgCost: (helperId: string) => number | null
+  /** Average AI tokens per run for a helper's routines (usage estimate), or null. */
+  avgTokens: (helperId: string) => number | null
   busy?: boolean
 }) {
   const { helpers, info } = useHelperLookup()
@@ -930,7 +930,7 @@ export function NewRoutineDrawer({
   )
   const clashes = preview.data?.clashes ?? []
   const slots = preview.data?.suggestedSlots ?? []
-  const cost = who ? avgCost(who) : null
+  const cost = who ? avgTokens(who) : null
   const label = cadenceText(when.freq, when.at, when.days, when.monthly)
   const canCreate = prompt.trim().length > 0 && !!who && /^\d{1,2}:\d{2}$/.test(when.at) && !busy
 
@@ -950,7 +950,7 @@ export function NewRoutineDrawer({
     { k: 'When', v: label, edit: 'when' },
     { k: 'Next run', v: preview.data?.nextAt ? fmtShort(preview.data.nextAt) : '—' },
     { k: 'Sends to', v: 'Activity log' },
-    { k: 'Cost', v: cost != null ? `~${fmtCredits(cost)} a run` : 'Shown after the first run' },
+    { k: 'Cost', v: cost != null ? `~${fmtTokens(cost)} a run` : 'Shown after the first run' },
   ]
 
   return (

@@ -24,7 +24,7 @@ import {
 } from './data'
 import type { BarChart, Stat } from './data'
 import type { LocalHelperRow } from './AnalyticsPage'
-import { formatCredits, nextRunLabel } from './format'
+import { formatTokens, nextRunLabel } from './format'
 import {
   BarChartCard,
   BigButton,
@@ -112,18 +112,17 @@ function HelperCard({
         <Metric label="Jobs" value={h.jobs} />
         <Metric label="Success" value={h.success} />
         <Metric label="Tokens" value={h.tokens} />
-        <Metric label="Spend" value={h.spend} />
       </div>
       <div className="flex w-full flex-col gap-[6px]">
         <div className="flex w-full items-center">
-          <span className="min-w-0 flex-1 text-[11px] text-muted">Budget this month</span>
+          <span className="min-w-0 flex-1 text-[11px] text-muted">Token budget this month</span>
           {b ? (
             <button
               type="button"
               onClick={() => onSetBudget(h)}
               className={`font-mono text-[11px] hover:underline ${reached ? 'text-warn' : 'text-ink-2'}`}
             >
-              {formatCredits(b.spent)} / {formatCredits(b.limit)}
+              {formatTokens(b.spent)} / {formatTokens(b.limit)} tokens
               {reached && ' · reached'}
             </button>
           ) : (
@@ -234,7 +233,7 @@ export function LoopsTab({ range = 'week' }: { range?: string }) {
             ['Next run', 'w-[120px]'],
             ['Last result', 'w-[110px]'],
             ['Runs', 'w-[80px]'],
-            ['Avg cost', 'w-[70px]'],
+            ['Avg tokens', 'w-[70px]'],
             ['On', 'w-[40px]'],
           ].map(([l, w]) => (
             <span key={l} className={`${w} shrink-0 text-[11px] font-medium text-muted`}>
@@ -283,7 +282,7 @@ export function LoopsTab({ range = 'week' }: { range?: string }) {
                 <Chip tone={result.tone}>{result.label}</Chip>
               </span>
               <span className="w-[80px] shrink-0 font-mono text-[12px] text-ink">{l.runs}</span>
-              <span className="w-[70px] shrink-0 font-mono text-[12px] text-ink">{formatCredits(l.avgCost)}</span>
+              <span className="w-[70px] shrink-0 font-mono text-[12px] text-ink">{formatTokens(l.avgTokens)}</span>
               <span className="w-[40px] shrink-0">
                 <Switch on={on} label={`${l.name} on`} onChange={(v) => toggle(l, v)} />
               </span>

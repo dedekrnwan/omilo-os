@@ -117,7 +117,7 @@ async def test_list_extras_and_retire(async_client):
 
     rows = (await async_client.get("/v1/helpers", headers=c["h"])).json()
     b = next(r for r in rows if r["id"] == dev)
-    assert b["costMonth"] == 25
+    assert b["tokensMonth"] == 300  # two jobs × (100 in + 50 out) tokens
     assert b["jobsMonth"] == 2
     assert b["currentJob"]["brief"] == "Open the PR"
     assert b["lastActive"]
@@ -172,7 +172,7 @@ async def test_create_with_setup_fields_and_patch_profile(async_client):
             "reports_to": "owner",
             "look": {"color": "#EC4899", "shape": "blob", "prop": "tie"},
             "behavior": {"language": "English", "never_discuss": ["Legal"]},
-            "budget_credits_month": 500,
+            "budget_tokens_month": 500_000,
             "autonomy_cap": "strict",
         },
         headers=c["h"],
@@ -181,17 +181,17 @@ async def test_create_with_setup_fields_and_patch_profile(async_client):
     p = r.json()
     assert p["name"] == "Closer" and p["title"] == "Sales · Partnerships"
     assert p["reportsTo"] == "owner" and p["look"]["prop"] == "tie"
-    assert p["behavior"]["language"] == "English" and p["budgetCreditsMonth"] == 500
+    assert p["behavior"]["language"] == "English" and p["budgetTokensMonth"] == 500_000
     assert p["autonomyCap"] == "strict"
 
     # null clears budget; behavior key null removes; empty model → company default
     r = await async_client.patch(
         f"/v1/helpers/{h['id']}",
-        json={"budget_credits_month": None, "behavior": {"language": None}, "model": ""},
+        json={"budget_tokens_month": None, "behavior": {"language": None}, "model": ""},
         headers=c["h"],
     )
     p = r.json()
-    assert p["budgetCreditsMonth"] is None and "language" not in p["behavior"]
+    assert p["budgetTokensMonth"] is None and "language" not in p["behavior"]
     assert p["model"] is None
     # bad status rejected
     r = await async_client.patch(f"/v1/helpers/{h['id']}", json={"status": "retired"}, headers=c["h"])
@@ -300,11 +300,11 @@ async def test_budget_allow_one_more_job(async_client):
     c = await _company(async_client)
     hid = _seed_helper(c["company_id"], "Builder", area="dev")
     _seed_job(c["company_id"], hid, credits=100)
-    await async_client.patch(f"/v1/helpers/{hid}", json={"budget_credits_month": 50}, headers=c["h"])
+    await async_client.patch(f"/v1/helpers/{hid}", json={"budget_tokens_month": 100}, headers=c["h"])
 
     rows = (await async_client.get("/v1/analytics/helpers", headers=c["h"])).json()
     row = next(r for r in rows if r["helperId"] == hid)
-    assert row["budget"] == {"spent": 100, "limit": 50} and row["budgetReached"] is True
+    assert row["budget"] == {"spent": 150, "limit": 100} and row["budgetReached"] is True  # tokens
 
     r = await async_client.post(f"/v1/helpers/{hid}/budget/allow-one", headers=c["h"])
     assert r.status_code == 200 and r.json()["budgetAllowJobs"] == 1
@@ -334,7 +334,7 @@ async def test_overview_ranges_prev_and_series(async_client):
         ov = (await async_client.get(f"/v1/analytics/overview?range={label}", headers=c["h"])).json()
         stats = {s["label"]: s for s in ov["stats"]}
         assert stats["Jobs done"]["value"] == 1 and stats["Jobs done"]["prev"] == 1
-        assert stats["Spend"]["value"] == 15 and stats["Spend"]["prev"] == 7
+        assert stats["Tokens"]["value"] == 300 and stats["Tokens"]["prev"] == 150
         assert stats["Success rate"]["failed"] == 1
     series = {s["label"]: s for s in ov["series"]}
     assert sum(series["Done"]["values"]) == 1 and sum(series["Failed"]["values"]) == 1
@@ -345,7 +345,7 @@ async def test_overview_ranges_prev_and_series(async_client):
     assert {s["label"]: s for s in q["stats"]}["Jobs done"]["value"] == 2
 
     spend = (await async_client.get("/v1/analytics/spend-by-channel?range=week", headers=c["h"])).json()
-    assert spend["total"] == 15 and spend["series"][0]["label"] == "General"
+    assert spend["total"] == 300 and spend["series"][0]["label"] == "General"  # tokens
     tok = (await async_client.get("/v1/analytics/tokens-by-helper?range=week", headers=c["h"])).json()
     assert tok["total"] == 300 and tok["series"][0]["label"] == "Builder"
 
@@ -358,7 +358,7 @@ async def test_channel_filter(async_client):
     _seed_job(c["company_id"], a, credits=3)
     _seed_job(c["company_id"], b, credits=4)
     ov = (await async_client.get("/v1/analytics/overview?channel_id=chn_x", headers=c["h"])).json()
-    assert {s["label"]: s for s in ov["stats"]}["Spend"]["value"] == 3
+    assert {s["label"]: s for s in ov["stats"]}["Tokens"]["value"] == 150
     rows = (await async_client.get("/v1/analytics/helpers?channel_id=chn_x", headers=c["h"])).json()
     assert [r["helperId"] for r in rows] == [a]
 
@@ -434,7 +434,7 @@ async def test_activity_feed(async_client):
 def test_behavior_instructions_and_spend_cap():
     from types import SimpleNamespace
 
-    from omilo.loop.behavior import build_helper_instructions, spend_cap_credits
+    from omilo.loop.behavior import build_helper_instructions, task_token_cap
 
     h = SimpleNamespace(
         job_description="You are Support.",
@@ -443,13 +443,14 @@ def test_behavior_instructions_and_spend_cap():
             "language": "Bahasa Indonesia",
             "never_discuss": ["Legal", "Politics"],
             "handoff_to": "owner",
-            "spend_per_task_idr": 50000,
+            "tokens_per_task": 200_000,
             "messages_per_hour": 60,
         },
     )
     text = build_helper_instructions(h)
     assert "You are Support." in text
     assert "Bahasa Indonesia" in text and "Legal, Politics" in text
-    assert "Rp 50.000" in text and "60 messages" in text
-    assert spend_cap_credits(h) == 1000  # Rp 50.000 at Rp 50 per credit (billing.catalog)
-    assert spend_cap_credits(SimpleNamespace(behavior={})) is None
+    assert "200,000 AI tokens" in text and "60 messages" in text
+    assert task_token_cap(h) == 200_000
+    assert task_token_cap(SimpleNamespace(behavior={"tokens_per_task": "500k"})) == 500_000
+    assert task_token_cap(SimpleNamespace(behavior={})) is None

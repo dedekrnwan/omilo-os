@@ -1,7 +1,7 @@
 """TDD — Task 7 P3: Retro / scorecard + Improvement.
 
 Tests:
-1. GET /v1/retro/scorecard → per-helper row with EXACT runs/success_rate/cost_credits.
+1. GET /v1/retro/scorecard → per-helper row with EXACT runs/success_rate/tokens.
 2. POST /v1/retro/run → creates an Improvement row (status=active, by=chief,
    baseline non-empty, ref/helper_id point at weak subject).
 3. Tenancy: company B's scorecard/retro excludes company A's data.
@@ -129,7 +129,7 @@ def _seed_jobs(
                     origin="chat",
                     brief=f"Done {i}",
                     status="done",
-                    cost_credits=cost_credits,
+                    tokens_in=cost_credits * 1000, tokens_out=0,
                 ))
             for i in range(failed):
                 session.add(Job(
@@ -139,7 +139,7 @@ def _seed_jobs(
                     origin="chat",
                     brief=f"Failed {i}",
                     status="failed",
-                    cost_credits=cost_credits,
+                    tokens_in=cost_credits * 1000, tokens_out=0,
                 ))
 
 
@@ -195,7 +195,7 @@ async def company_b(async_client):
 
 @pytest.mark.asyncio
 async def test_scorecard_exact_metrics(async_client, company_a):
-    """Scorecard returns exact DB-computed runs, success_rate, cost_credits."""
+    """Scorecard returns exact DB-computed runs, success_rate, tokens."""
     resp = await async_client.get(
         "/v1/retro/scorecard",
         headers=_auth(company_a["token"]),
@@ -211,14 +211,14 @@ async def test_scorecard_exact_metrics(async_client, company_a):
     total = company_a["total"]
     done = company_a["done"]
     expected_success_rate = done / total  # exact float: 0.4
-    expected_cost = total * company_a["cost_credits_per_job"]  # 5 * 7 = 35
+    expected_tokens = total * company_a["cost_credits_per_job"] * 1000  # 5 jobs × 7k tokens
 
     assert row["runs"] == total, f"runs: expected {total}, got {row['runs']}"
     assert abs(row["success_rate"] - expected_success_rate) < 1e-6, (
         f"success_rate: expected {expected_success_rate}, got {row['success_rate']}"
     )
-    assert row["cost_credits"] == expected_cost, (
-        f"cost_credits: expected {expected_cost}, got {row['cost_credits']}"
+    assert row["tokens"] == expected_tokens, (
+        f"tokens: expected {expected_tokens}, got {row['tokens']}"
     )
 
 

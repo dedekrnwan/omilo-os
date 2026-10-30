@@ -28,7 +28,7 @@ def retro_scorecard(
 ) -> list[dict[str, Any]]:
     """Return per-helper scorecard computed from real Job/Proposal rows.
 
-    Each row: {helper_id, name, runs, success_rate, approval_rate, cost_credits}.
+    Each row: {helper_id, name, runs, success_rate, approval_rate, tokens}.
     All values exact — not estimated.  Company-scoped via RLS.
     """
     return scorecard(db, days=days)

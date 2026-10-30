@@ -315,7 +315,7 @@ function sweepMockOverview(): AnalyticsOverview {
       { label: 'Jobs done', value: 128, prev: 114 },
       { label: 'Success rate', value: 96, prev: 94, note: '%', failed: 4 },
       { label: 'Tokens', value: 284_000, prev: 241_000, perJob: 2_100 },
-      { label: 'Spend', value: 1_450, prev: 1_310, note: 'credits' },
+      { label: 'Tokens per job', value: 2_100, prev: 2_300, note: 'tokens' },
     ],
     series: [
       ...analyticsOverview.series,
@@ -333,8 +333,8 @@ function sweepMockHelperStats(channelId?: string): HelperStat[] {
     .filter((s) => !channelId || channelId === 'ch-general' || s.helperId !== 'h-growth' || channelId === 'ch-marketing')
     .map((s) => {
       const h = live.find((x) => x.id === s.helperId)!
-      const limit = h.budgetCreditsMonth ?? null
-      const spent = h.costMonth ?? 0
+      const limit = h.budgetTokensMonth ?? null
+      const spent = h.tokensMonth ?? 0
       const cur = h.currentJob
       return {
         ...s,

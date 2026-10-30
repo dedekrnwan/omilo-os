@@ -153,7 +153,7 @@ export function SectionUsage({ onDialog }: Props) {
                       ? 'Storage is full — new uploads are paused. Upgrade or delete files you no longer need.'
                       : 'Storage is almost full. New uploads pause at the limit.'}
                   </p>
-                  <Button variant="secondary" height={26} onClick={() => onDialog('change-plan')}>
+                  <Button variant="secondary" height={28} onClick={() => onDialog('change-plan')}>
                     Upgrade
                   </Button>
                 </div>

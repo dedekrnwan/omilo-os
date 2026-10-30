@@ -14,7 +14,8 @@ import {
 } from '../legacyShared'
 import { useSectionSave } from '../ControlPanelShared'
 import { Mascot } from '../../../ui/ds/Mascot'
-import { useCompanySettings, useHelpers, useSubscription, useUpdateCompanySettings, useUsage } from '../../../app/queries'
+import { useCompanySettings, useHelpers, useSubscription, useUpdateCompanySettings } from '../../../app/queries'
+import { formatTokens, parseTokens, tokensInput } from '../../../app/tokens'
 import { notify } from '../../../ui/ds/Toaster'
 import { shortDate } from '../format'
 
@@ -46,18 +47,15 @@ const INITIAL = {
   compactAt: '85% full',
 }
 
-const toCredits = (v: string): number | null => {
-  const n = parseInt(v.replace(/[^0-9]/g, ''), 10)
-  return Number.isFinite(n) && n > 0 ? n : null
-}
-const fmtCredits = (n: number) => n.toLocaleString()
+// Budgets are AI tokens (input + output): "60M", "500k" or a plain number.
+const toTokens = (v: string): number | null => parseTokens(v)
+const fmtTok = (n: number) => formatTokens(n)
 
 const DEFAULT_KEEP = ['Decisions', 'Pinned messages', 'Files']
 
 export function SectionAiEngine() {
   const { data: settings } = useCompanySettings()
   const updateSettings = useUpdateCompanySettings()
-  const { data: usage } = useUsage()
   const { data: subscription } = useSubscription()
   const { data: helpers = [] } = useHelpers()
   const [roles, setRoles] = useState<RoleState>(INITIAL_ROLES)
@@ -83,9 +81,9 @@ export function SectionAiEngine() {
         compactAt,
         // Read by the runtime: per-role model routing + monthly budgets
         // (omilo/engine/routing.py, billing/balance.py).
-        monthlyBudgetCredits: toCredits(monthlyBudget),
+        monthlyBudgetTokens: toTokens(monthlyBudget),
         roles: Object.fromEntries(
-          ROLES.map((r) => [r.key, { model: roles[r.key].model, budgetCredits: toCredits(roles[r.key].budget) }]),
+          ROLES.map((r) => [r.key, { model: roles[r.key].model, budgetTokens: toTokens(roles[r.key].budget) }]),
         ),
       },
     })
@@ -118,8 +116,8 @@ export function SectionAiEngine() {
     if (typeof e.showContextMeter === 'boolean') setShowContextMeter(e.showContextMeter)
     if (Array.isArray(e.alwaysKeep)) setAlwaysKeep(new Set(e.alwaysKeep as string[]))
     if (typeof e.compactAt === 'string') setCompactAt(e.compactAt)
-    if (typeof e.monthlyBudgetCredits === 'number') setMonthlyBudget(fmtCredits(e.monthlyBudgetCredits))
-    const r = e.roles as Partial<Record<RoleKey, { model?: unknown; budgetCredits?: unknown }>> | undefined
+    if (typeof e.monthlyBudgetTokens === 'number') setMonthlyBudget(tokensInput(e.monthlyBudgetTokens))
+    const r = e.roles as Partial<Record<RoleKey, { model?: unknown; budgetTokens?: unknown }>> | undefined
     if (r && typeof r === 'object') {
       setRoles((prev) => {
         const next = { ...prev }
@@ -128,7 +126,7 @@ export function SectionAiEngine() {
           if (!v) continue
           next[k] = {
             model: typeof v.model === 'string' ? v.model : prev[k].model,
-            budget: typeof v.budgetCredits === 'number' ? fmtCredits(v.budgetCredits) : '',
+            budget: typeof v.budgetTokens === 'number' ? tokensInput(v.budgetTokens) : '',
           }
         }
         return next
@@ -137,13 +135,13 @@ export function SectionAiEngine() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings])
 
-  // This month's spend split by role (credits), against the monthly budget.
-  const chiefIds = new Set(helpers.filter((h) => h.isChief).map((h) => h.id))
-  const usedCredits = usage?.usedThisPeriod ?? 0
-  const chiefCredits = (usage?.byHelper ?? []).filter((b) => chiefIds.has(b.helperId)).reduce((n, b) => n + b.credits, 0)
-  const agentCredits = Math.max(0, usedCredits - chiefCredits)
-  const budgetCredits = toCredits(monthlyBudget)
-  const scale = Math.max(budgetCredits ?? 0, usedCredits, 1)
+  // This month's AI tokens split by role, against the monthly token budget.
+  const usedTokens = helpers.reduce((n, h) => n + (h.tokensMonth ?? 0), 0)
+  const chiefTokens = helpers.filter((h) => h.isChief).reduce((n, h) => n + (h.tokensMonth ?? 0), 0)
+  const agentTokens = Math.max(0, usedTokens - chiefTokens)
+  const activeHelpers = helpers.filter((h) => (h.tokensMonth ?? 0) > 0).length
+  const budgetTokens = toTokens(monthlyBudget)
+  const scale = Math.max(budgetTokens ?? 0, usedTokens, 1)
   const pct = (n: number) => Math.min(100, Math.round((n / scale) * 100))
 
   function editRole(key: RoleKey, patch: Partial<{ model: string; budget: string }>) {
@@ -169,30 +167,29 @@ export function SectionAiEngine() {
 
       <SectionPane>
         <h1 className="mb-[4px] font-display text-[28px] font-semibold text-ink">AI engine</h1>
-        <p className="mb-[4px] text-[13px] text-muted">Which model each part of Omilo thinks with, and how much it can spend.</p>
+        <p className="mb-[4px] text-[13px] text-muted">Which model each part of Omilo thinks with, and how many AI tokens it can use.</p>
 
         {/* This month stats */}
         <div className="mb-[24px] flex items-end gap-[8px]">
-          <span className="text-[36px] font-semibold text-ink leading-none">{usedCredits.toLocaleString()}</span>
+          <span className="text-[36px] font-semibold text-ink leading-none">{fmtTok(usedTokens)}</span>
           <span className="mb-[4px] text-[13px] text-muted">
-            credits{budgetCredits ? ` of ${budgetCredits.toLocaleString()} budget` : ' this month'}
+            tokens{budgetTokens ? ` of ${fmtTok(budgetTokens)} budget` : ' this month'}
           </span>
           <div className="ml-auto flex items-center gap-[16px] text-[12px] text-muted">
-            <span>Balance {(usage?.balance ?? 0).toLocaleString()}</span>
-            <span>{usage?.byHelper.length ?? 0} helpers active</span>
+            <span>{activeHelpers} helpers active</span>
             {subscription?.currentPeriodEnd && <span>Renews {shortDate(subscription.currentPeriodEnd)}</span>}
           </div>
         </div>
         {/* Mini usage bar */}
         <div className="mb-[4px] h-[6px] overflow-hidden rounded-full bg-line-strong">
           <div className="flex h-full">
-            <div className="h-full bg-[#6366F1]" style={{ width: `${pct(chiefCredits)}%` }} />
-            <div className="h-full bg-[#0EA5E9]" style={{ width: `${pct(agentCredits)}%` }} />
+            <div className="h-full bg-[#6366F1]" style={{ width: `${pct(chiefTokens)}%` }} />
+            <div className="h-full bg-[#0EA5E9]" style={{ width: `${pct(agentTokens)}%` }} />
           </div>
         </div>
         <div className="mb-[24px] flex gap-[12px] text-[11.5px] text-muted">
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#6366F1]" />Chief {chiefCredits.toLocaleString()}</span>
-          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#0EA5E9]" />Agents {agentCredits.toLocaleString()}</span>
+          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#6366F1]" />Chief {fmtTok(chiefTokens)}</span>
+          <span className="flex items-center gap-[4px]"><span className="size-[8px] rounded-full bg-[#0EA5E9]" />Agents {fmtTok(agentTokens)}</span>
         </div>
 
         {/* Models by role */}
@@ -207,7 +204,7 @@ export function SectionAiEngine() {
                 <span className="text-[12px] text-muted">{r.desc}</span>
               </div>
               <TextInput
-                aria-label={`${r.role} monthly budget (credits)`}
+                aria-label={`${r.role} monthly token budget`}
                 value={roles[r.key].budget}
                 placeholder="No cap"
                 width={110}
@@ -226,9 +223,9 @@ export function SectionAiEngine() {
         {/* Budget & limits */}
         <SubHeading label="Budget & limits" />
         <SettingCardRows>
-          <SettingRow label="Monthly budget" desc="AI pauses when it's reached (credits). Connectors and flows keep running.">
+          <SettingRow label="Monthly token budget" desc="AI pauses when the company's tokens this month reach it (e.g. 60M). Connectors keep running.">
             <TextInput
-              aria-label="Monthly budget (credits)"
+              aria-label="Monthly token budget"
               value={monthlyBudget}
               placeholder="No cap"
               width={120}
@@ -238,12 +235,12 @@ export function SectionAiEngine() {
           <RowDivider />
           <SettingRow
             label="Warn me at 80%"
-            desc={budgetCredits ? `WhatsApp + inbox when this month passes ${Math.round(budgetCredits * 0.8).toLocaleString()} credits.` : 'WhatsApp + inbox when this month passes 80% of the budget.'}
+            desc={budgetTokens ? `WhatsApp + inbox when this month passes ${fmtTok(Math.round(budgetTokens * 0.8))} tokens.` : 'WhatsApp + inbox when this month passes 80% of the budget.'}
           >
             <Toggle on={warnAt80} onClick={() => { setWarnAt80((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />
-          <SettingRow label="Ask before a single run over $1" desc="Long research or big documents wait for your OK.">
+          <SettingRow label="Ask before a single run over 200k tokens" desc="Long research or big documents wait for your OK.">
             <Toggle on={askOverDollar} onClick={() => { setAskOverDollar((v) => !v); mark() }} />
           </SettingRow>
           <RowDivider />

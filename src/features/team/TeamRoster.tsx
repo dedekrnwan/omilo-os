@@ -15,7 +15,7 @@ import {
   useUpdateHelperEverywhere,
 } from '../../app/queries'
 import { useSession } from '../../app/session'
-import { formatCredits } from '../analytics/format'
+import { formatTokens } from '../analytics/format'
 import { buildHelperRecord, companyDefaultModel } from './model'
 import type { HelperRecord } from './teamData'
 import { StatusChip, TeamTopbar } from './StatusChip'
@@ -64,7 +64,7 @@ function ChiefLead({
       <div className="flex shrink-0 gap-[28px]">
         <Stat value={String(jobs)} label="Jobs routed" />
         <Stat value={String(waiting)} label="Waiting on you" warn={waiting > 0} />
-        <Stat value={formatCredits(cost)} label="This month" />
+        <Stat value={formatTokens(cost)} label="Tokens this month" />
       </div>
     </Link>
   )
@@ -300,7 +300,7 @@ export function TeamRoster() {
   const ctx = { helpers: live, ownerName, defaultModel: companyDefaultModel(settings) }
   const allHelpers = live.map((h) => buildHelperRecord(h, ctx))
   const teamJobs = live.reduce((n, h) => n + (h.jobsMonth ?? 0), 0)
-  const teamCost = live.reduce((n, h) => n + (h.costMonth ?? 0), 0)
+  const teamCost = live.reduce((n, h) => n + (h.tokensMonth ?? 0), 0)
   const waiting = inbox.filter((i) => i.needsYou && i.status === 'pending').length
   const chief = allHelpers.find((h) => h.helper.isChief)
   const reports = allHelpers.filter((h) => !h.helper.isChief)

@@ -76,7 +76,7 @@ function Editor({ flowId, draft }: { flowId: string; draft: boolean }) {
     >
       <span className={`size-[7px] rounded-full ${lastRun.status === 'failed' ? 'bg-bad' : 'bg-ok'}`} aria-hidden />
       {f.enabled
-        ? `Last run ${formatRelative(lastRun.startedAt, Date.now())} · ${[formatDuration(lastRun.duration), formatCost(lastRun.costCredits)].filter((x) => x !== '—').join(' · ')}`
+        ? `Last run ${formatRelative(lastRun.startedAt, Date.now())} · ${[formatDuration(lastRun.duration), formatCost((lastRun.tokens ?? 0))].filter((x) => x !== '—').join(' · ')}`
         : `Off · last run ${formatRelative(lastRun.startedAt, Date.now())}`}
     </button>
   )

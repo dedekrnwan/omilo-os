@@ -433,9 +433,9 @@ function RoutinesBoard({ nav, routineId, drawerState, runId }: BoardProps) {
     })
   }
 
-  const avgCost = (helperId: string) => {
-    const runs = routinesData.filter((r) => r.helperId === helperId).flatMap((r) => r.runs ?? []).filter((x) => x.outcome === 'ok' && x.costCredits > 0)
-    return runs.length ? Math.round(runs.reduce((s, x) => s + x.costCredits, 0) / runs.length) : null
+  const avgTokens = (helperId: string) => {
+    const runs = routinesData.filter((r) => r.helperId === helperId).flatMap((r) => r.runs ?? []).filter((x) => x.outcome === 'ok' && (x.tokens ?? 0) > 0)
+    return runs.length ? Math.round(runs.reduce((s, x) => s + (x.tokens ?? 0), 0) / runs.length) : null
   }
 
   const failureInfo = (chip: WeekChip): FailureInfo => {
@@ -578,7 +578,7 @@ function RoutinesBoard({ nav, routineId, drawerState, runId }: BoardProps) {
         <NewRoutineDrawer
           onClose={() => setCreating(false)}
           onCreate={handleCreate}
-          avgCost={avgCost}
+          avgTokens={avgTokens}
           busy={createRoutine.isPending}
         />
       )}
@@ -592,7 +592,7 @@ function RoutinesBoard({ nav, routineId, drawerState, runId }: BoardProps) {
                   const r = routinesData.find((x) => x.id === runOpen.routineId)
                   const ref = r?.runs?.find((x) => x.id === runOpen.runId)
                   return ref ? runSummaryDetail(ref, r!.helperId) : runSummaryDetail(
-                    { id: runOpen.runId, routineId: runOpen.routineId, jobId: null, at: null, outcome: 'ok', duration: null, costCredits: 0, trigger: null, error: null, feedback: null },
+                    { id: runOpen.runId, routineId: runOpen.routineId, jobId: null, at: null, outcome: 'ok', duration: null, costCredits: 0, tokens: 0, trigger: null, error: null, feedback: null },
                     r?.helperId ?? '',
                   )
                 })()

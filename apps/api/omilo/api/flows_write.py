@@ -177,6 +177,7 @@ def _run_to_dict(run: FlowRun) -> dict[str, Any]:
         "trigger_summary": run.trigger_summary,
         "started_by": run.started_by,
         "cost_credits": run.cost_credits,
+        "tokens": int(run.tokens or 0),
         "duration": run.duration,
         "waiting_for": run.waiting_for,
         "job_ids": run.job_ids,
@@ -670,7 +671,7 @@ def _detail_extras(db: Session, flow: Flow) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     spent = sum(
-        int(r.cost_credits or 0)
+        int(r.tokens or 0)
         for r in db.query(FlowRun)
         .filter(FlowRun.flow_id == flow.id, FlowRun.created_at >= month_start)
         .all()
@@ -695,7 +696,7 @@ def _detail_extras(db: Session, flow: Flow) -> dict[str, Any]:
     else:
         publish_state = "draft"
     return {
-        "spent_this_month_credits": spent,
+        "tokens_this_month": spent,
         "publish_state": publish_state,
         "pending_proposal_id": pending.id if pending is not None else None,
         "published_version": live.version if live is not None else None,

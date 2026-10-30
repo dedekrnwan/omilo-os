@@ -63,10 +63,10 @@ function PlanCard({ plan, billing, onSubscribe, loading }: PlanCardProps) {
       <span className="h-px w-full bg-line" />
       <ul className="flex w-full flex-col gap-[9px]">
         {[
-          `${plan.seats} seats`,
+          'Unlimited people and helpers',
           'All agents & flows',
           'Knowledge (pgvector)',
-          `${plan.includedCredits.toLocaleString()} AI credits / month`,
+          plan.storageGb == null ? 'Unlimited storage' : `${plan.storageGb} GB storage`,
           'Email support',
         ].map((f) => (
           <li key={f} className="flex items-center gap-[8px]">

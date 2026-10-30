@@ -237,7 +237,7 @@ async def test_flow_cards_have_run_stats(async_client, tenant_a):
     assert len(card["runs_7d"]) == 7 and card["runs_7d"][-1] >= 1
     assert card["last_run"]["status"] == "done"
     detail = (await async_client.get(f"/v1/flows/{flow['id']}", headers=h)).json()
-    assert "spent_this_month_credits" in detail
+    assert "tokens_this_month" in detail
     assert detail["publish_state"] == "draft"
 
 
@@ -353,36 +353,42 @@ async def test_tenancy_on_new_endpoints(async_client, tenant_a, tenant_b):
 # ── Budget & limits enforcement (sweep merge) ───────────────────────────────
 
 
-def test_flow_limits_reads_rupiah_and_legacy_dollars():
+def test_flow_limits_read_tokens():
     from omilo.flows.engine import flow_limits
 
     class F:  # minimal stand-in for the ORM object
         settings: dict = {}
 
     f = F()
-    f.settings = {"monthlyBudgetRp": "1.000.000", "costCapRp": "5000", "maxSteps": "12"}
-    assert flow_limits(f) == {"monthly_budget_credits": 20_000, "cost_cap_credits": 100, "max_steps": 12}
-    f.settings = {"monthlyBudget": "20", "costCap": "0.10"}  # pre-Rupiah flows (1 credit = $0.001)
-    assert flow_limits(f) == {"monthly_budget_credits": 20_000, "cost_cap_credits": 100, "max_steps": None}
-    f.settings = {}
-    assert flow_limits(f) == {"monthly_budget_credits": None, "cost_cap_credits": None, "max_steps": None}
+    f.settings = {"monthlyBudgetTokens": "5M", "tokenCapPerRun": "200k", "maxSteps": "12"}
+    assert flow_limits(f) == {"monthly_budget_tokens": 5_000_000, "token_cap_per_run": 200_000, "max_steps": 12}
+    f.settings = {"monthlyBudgetTokens": 1_000_000, "tokenCapPerRun": ""}
+    assert flow_limits(f) == {"monthly_budget_tokens": 1_000_000, "token_cap_per_run": None, "max_steps": None}
+    f.settings = {"monthlyBudgetRp": "1.000.000", "costCapRp": "5000"}  # old Rupiah limits no longer apply
+    assert flow_limits(f) == {"monthly_budget_tokens": None, "token_cap_per_run": None, "max_steps": None}
 
 
 @pytest.mark.asyncio
 async def test_run_blocked_when_monthly_budget_spent(async_client, tenant_a):
+    from omilo.models.execution import Job
     from omilo.models.flows import FlowRun
 
     company_id, _, h = await _auth(async_client, tenant_a)
     flow = await _flow(async_client, h, title="Budget flow")
     resp = await async_client.patch(
-        f"/v1/flows/{flow['id']}", json={"settings": {"monthlyBudgetRp": "5000"}}, headers=h
+        f"/v1/flows/{flow['id']}", json={"settings": {"monthlyBudgetTokens": "5k"}}, headers=h
     )
     assert resp.status_code == 200, resp.text
-    with _tenant_session(company_id) as db:  # 100 credits = Rp 5.000 already spent
+    with _tenant_session(company_id) as db:  # an earlier run already used 6k tokens
+        run_id = prefixed_id("frn")
         db.add(FlowRun(
-            id=prefixed_id("frn"), company_id=company_id, flow_id=flow["id"], status="done",
+            id=run_id, company_id=company_id, flow_id=flow["id"], status="done",
             trigger_summary="earlier", started_by="test", job_ids=[], steps=[],
-            started_at=datetime.now(timezone.utc), cost_credits=100,
+            started_at=datetime.now(timezone.utc), cost_credits=0,
+        ))
+        db.add(Job(
+            id=prefixed_id("job"), company_id=company_id, helper_id="hlp_x", origin="flow", brief="earlier",
+            status="done", flow_run_id=run_id, tokens_in=4_000, tokens_out=2_000, attempts=1, checkpoint={},
         ))
     resp = await async_client.post(f"/v1/flows/{flow['id']}/run", json={}, headers=h)
     assert resp.status_code == 200, resp.text

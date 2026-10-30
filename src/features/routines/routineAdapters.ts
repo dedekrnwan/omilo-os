@@ -4,7 +4,7 @@
  */
 import type { Routine } from '../../core/domain/types'
 import {
-  fmtCredits,
+  fmtTokens,
   fmtDayTime,
   fmtDuration,
   fmtShort,
@@ -69,18 +69,18 @@ function pastRuns(r: Routine): PastRun[] {
           ? `Failed — ${run.error ?? 'see run'}`
           : run.outcome === 'running'
             ? 'Running…'
-            : `Done · ${fmtCredits(run.costCredits)}`,
+            : `Done · ${fmtTokens((run.tokens ?? 0))}`,
     duration: fmtDuration(run.duration),
     skipped: run.outcome === 'skip',
     failed: run.outcome === 'fail',
   }))
 }
 
-function avgCost(r: Routine): string {
-  const paid = (r.runs ?? []).filter((x) => x.outcome === 'ok' && x.costCredits > 0)
+function avgTokens(r: Routine): string {
+  const paid = (r.runs ?? []).filter((x) => x.outcome === 'ok' && (x.tokens ?? 0) > 0)
   if (paid.length === 0) return '—'
-  const avg = Math.round(paid.reduce((s, x) => s + x.costCredits, 0) / paid.length)
-  return `~${fmtCredits(avg)} a run`
+  const avg = Math.round(paid.reduce((s, x) => s + (x.tokens ?? 0), 0) / paid.length)
+  return `~${fmtTokens(avg)} a run`
 }
 
 function lastRunLabel(r: Routine): string {
@@ -113,7 +113,7 @@ export function routineToDetail(r: Routine, helperName = 'Helper'): RoutineDetai
     nextRun: r.paused ? 'Paused' : fmtDayTime(r.nextAt),
     nextAt: r.nextAt,
     lastRun: lastRunLabel(r),
-    cost: avgCost(r),
+    cost: avgTokens(r),
     runs: pastRuns(r),
     days: r.days.length > 0 ? r.days : undefined,
     monthly: r.monthly ? ((r.monthly.replace(/_/g, '-') as RoutineDetail['monthly'])) : undefined,

@@ -267,7 +267,7 @@ def check_can_start_job(
 
     Evaluation order:
       1. Helper already paused → (False, "helper_paused")
-      2. Per-helper monthly budget exceeded → pause helper,
+      2. Per-helper monthly token budget reached → pause helper,
          (False, "helper_budget_exceeded")
       3. If engine_type is 0-credit (BYO/local/pool) → ALWAYS allowed,
          even when the control plane is offline. Skip credit checks entirely.
@@ -301,10 +301,12 @@ def check_can_start_job(
     if getattr(helper, "status", "active") == "retired":  # sweep/team-analytics: let go
         return False, "helper_retired"
 
-    # ── 2. Per-helper monthly budget ─────────────────────────────────────────
-    budget = getattr(helper, "budget_credits_month", None)
+    # ── 2. Per-helper monthly AI budget (tokens) ─────────────────────────────
+    budget = getattr(helper, "budget_tokens_month", None)
     if budget is not None:
-        mtd = _helper_mtd_credits(db, company.id, helper.id)
+        from omilo.ai.usage import tokens_used
+
+        mtd = tokens_used(db, company.id, helper_ids=[helper.id])
         if mtd >= budget:
             # sweep/team-analytics: one-off "Allow one more job" override.
             allow = getattr(helper, "budget_allow_jobs", 0) or 0

@@ -127,7 +127,7 @@ describe('OfficeAnalyticsRoute', () => {
     // In mock mode the session company is "Demo Workspace" (from session.ts DEMO_COMPANY)
     expect(await screen.findByText('Analytics · Demo Workspace')).toBeInTheDocument()
     // Spend chart built from GET /v1/analytics/spend-by-channel
-    expect(await screen.findByText('Spend by channel')).toBeInTheDocument()
+    expect(await screen.findByText('Tokens by channel')).toBeInTheDocument()
     // helpersSub reflects the live helper rows (3 helpers, 2 working)
     expect(screen.getByText('3 helpers · 2 working now')).toBeInTheDocument()
   })

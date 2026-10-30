@@ -211,7 +211,7 @@ function steps(kind: 'done' | 'waiting' | 'failed'): FlowRunStep[] {
 function triageRun(id: string, status: string, agoMs: number, st: FlowRunStep[], cost: number, duration: number | null): FlowRun {
   return {
     id, flowId: TRIAGE_FLOW.id, status, triggerSummary: 'GitHub · deploy failed on main', startedBy: 'GitHub',
-    costCredits: cost, duration, waitingFor: status === 'needs_you' ? 'approve' : null, jobIds: [],
+    costCredits: cost, tokens: cost * 2_000, duration, waitingFor: status === 'needs_you' ? 'approve' : null, jobIds: [],
     startedAt: agoIso(agoMs), endedAt: status === 'needs_you' ? null : agoIso(agoMs - (duration ?? 0) * 1000), steps: st,
   }
 }
@@ -269,9 +269,9 @@ export function withFlowExtras(f: Flow): Flow {
     aiSteps: nodes.filter((n) => n.kind === 'ai_step').length,
     runs7d: days,
     lastRun: runs[0] ?? null,
-    spentThisMonthCredits: runs
+    tokensThisMonth: runs
       .filter((r) => r.startedAt && new Date(r.startedAt) >= monthStart)
-      .reduce((s, r) => s + r.costCredits, 0),
+      .reduce((s, r) => s + (r.tokens ?? 0), 0),
     publishState: pending ? 'pending' : f.status === 'published' ? 'live' : 'draft',
     pendingProposalId: pending?.id ?? null,
     publishedVersion: f.status === 'published' ? f.version ?? 1 : null,
@@ -393,7 +393,7 @@ export function mockRun(f: Flow, test: boolean): FlowRun {
   }
   const run: FlowRun = {
     id: `frn-mock-${Date.now().toString(36)}-${st.length}`, flowId: f.id, status, triggerSummary: test ? 'test-run' : 'manual',
-    startedBy: 'operator', costCredits: 4 * nodes.filter((n) => n.kind === 'ai_step').length, duration: status === 'done' ? 2 : null,
+    startedBy: 'operator', costCredits: 4 * nodes.filter((n) => n.kind === 'ai_step').length, tokens: 8_000 * nodes.filter((n) => n.kind === 'ai_step').length, duration: status === 'done' ? 2 : null,
     waitingFor: status === 'needs_you' ? st[st.length - 1]?.nodeId ?? null : null, jobIds: [], startedAt: nowIso(),
     endedAt: status === 'done' ? nowIso() : null, steps: st,
   }

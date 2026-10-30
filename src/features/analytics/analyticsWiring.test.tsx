@@ -35,7 +35,7 @@ const HELPER: HelperStat = {
   jobs: '12',
   success: '98%',
   tokens: '1.2M',
-  spend: '600 cr',
+  spend: '600k',
   budget: { spent: 600, limit: 1500, warn: false },
   lastActive: '2m ago',
 }
@@ -85,7 +85,7 @@ function renderBudget(
 }
 
 describe('BudgetDrawer', () => {
-  test('Save sets the enforced credit cap on the helper and the alert settings per helper', async () => {
+  test('Save sets the enforced token cap on the helper and the alert settings per helper', async () => {
     const updateCompanySettings = vi.fn().mockResolvedValue({})
     const updateHelper = vi.fn().mockResolvedValue({})
     renderBudget(updateCompanySettings, updateHelper)
@@ -94,7 +94,7 @@ describe('BudgetDrawer', () => {
     expect(updateCompanySettings.mock.calls[0][0].budgets).toEqual({
       h1: { amount: 1500, threshold: '80%', mode: 'pause' },
     })
-    expect(updateHelper).toHaveBeenCalledWith('h1', { budgetCreditsMonth: 1500 })
+    expect(updateHelper).toHaveBeenCalledWith('h1', { budgetTokensMonth: 1500 })
   })
 
   test('Remove clears only this helper, leaving other helpers untouched', async () => {
@@ -106,7 +106,7 @@ describe('BudgetDrawer', () => {
     const arg = updateCompanySettings.mock.calls[0][0]
     expect(arg.budgets).toEqual({ h1: null })
     expect(arg.autoTopupEnabled).toBeUndefined()
-    expect(updateHelper).toHaveBeenCalledWith('h1', { budgetCreditsMonth: null })
+    expect(updateHelper).toHaveBeenCalledWith('h1', { budgetTokensMonth: null })
   })
 
   test('loads the drawer from the saved per-helper entry', async () => {
@@ -115,7 +115,7 @@ describe('BudgetDrawer', () => {
     renderBudget(updateCompanySettings, updateHelper, {
       budgets: { h1: { amount: 4200, threshold: '90%', mode: 'stop' } },
     })
-    await waitFor(() => expect(screen.getByDisplayValue('4200 cr')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByDisplayValue('4200')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Save budget' }))
     await waitFor(() => expect(updateCompanySettings).toHaveBeenCalled())
     expect(updateCompanySettings.mock.calls[0][0].budgets).toEqual({

@@ -2013,7 +2013,7 @@ export interface UpdateHelperInput {
   /** Shallow-merged server-side; a key set to null is removed. */
   behavior?: { [K in keyof HelperBehavior]?: HelperBehavior[K] | null }
   /** null clears the budget. */
-  budgetCreditsMonth?: number | null
+  budgetTokensMonth?: number | null
 }
 
 export interface ConnectHelperChannelInput {
@@ -2071,7 +2071,7 @@ function helperExtras(r: RawHelper): Partial<Helper> {
   if (x.reportsTo !== undefined) out.reportsTo = x.reportsTo
   if (x.look !== undefined) out.look = x.look
   if (x.behavior !== undefined) out.behavior = x.behavior
-  if (x.budgetCreditsMonth !== undefined) out.budgetCreditsMonth = x.budgetCreditsMonth
+  if (x.budgetTokensMonth !== undefined) out.budgetTokensMonth = x.budgetTokensMonth
   if (x.budgetAllowJobs !== undefined) out.budgetAllowJobs = x.budgetAllowJobs
   return out
 }
@@ -2094,7 +2094,7 @@ function updateHelperExtrasBody(input: UpdateHelperInput): Record<string, unknow
   if (input.reportsTo !== undefined) body.reports_to = input.reportsTo
   if (input.look !== undefined) body.look = input.look
   if (input.behavior !== undefined) body.behavior = input.behavior
-  if (input.budgetCreditsMonth !== undefined) body.budget_credits_month = input.budgetCreditsMonth
+  if (input.budgetTokensMonth !== undefined) body.budget_tokens_month = input.budgetTokensMonth
   return body
 }
 

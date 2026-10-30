@@ -6,14 +6,14 @@ import { Mascot } from '../../ui/ds/Mascot'
 import { useCompanySettings, useHelper, useUpdateCompanySettings, useUpdateHelperEverywhere } from '../../app/queries'
 import { notify } from '../../ui/ds/Toaster'
 import type { HelperStat } from './data'
-import { creditsInRp, formatCredits, formatRp } from './format'
+import { formatTokens, parseTokens, tokensInput, tokensLabel } from './format'
 import { BigButton, Switch } from './parts'
 
 /**
- * One helper's budget. The enforced cap is helper.budget_credits_month (the
- * runner pauses the helper when month-to-date credits reach it); the alert
- * threshold and run-out mode live under company settings → budgets[helperId].
- * Amounts are credits.
+ * One helper's AI budget, in tokens (input + output). The enforced cap is
+ * helper.budget_tokens_month (the runner pauses the helper when month-to-date
+ * tokens reach it); the alert threshold and run-out mode live under company
+ * settings → budgets[helperId].
  */
 interface HelperBudget {
   amount: number
@@ -21,13 +21,13 @@ interface HelperBudget {
   mode: string
 }
 
-const QUICK = [500, 1000, 2500, 5000]
-/** "Ask before any single job over Rp 15.000" → helper.behavior.spend_per_task_idr */
-const BIG_JOB_IDR = 15_000
+const QUICK = [500_000, 1_000_000, 2_500_000, 5_000_000]
+/** "Ask before any single job over 200k tokens" → helper.behavior.tokens_per_task */
+const BIG_JOB_TOKENS = 200_000
 
 function suggestBudget(spent: number): number {
-  if (spent <= 0) return 1000
-  return Math.max(500, Math.ceil((spent * 1.5) / 100) * 100)
+  if (spent <= 0) return 1_000_000
+  return Math.max(500_000, Math.ceil((spent * 1.5) / 100_000) * 100_000)
 }
 
 function nextMonthLabel(now = new Date()): string {
@@ -39,7 +39,7 @@ const THRESHOLDS = ['50%', '80%', '90%']
 function runsOut(name: string) {
   return [
     { id: 'pause', t: 'Pause and ask me', d: `${name} finishes the current reply, then waits for you in Inbox.` },
-    { id: 'keep', t: 'Keep going, just tell me', d: 'Spending continues. You get a notification.' },
+    { id: 'keep', t: 'Keep going, just tell me', d: 'Work continues. You get a notification.' },
     { id: 'stop', t: 'Stop right away', d: 'Even mid-reply. Customers may see a half answer.' },
   ]
 }
@@ -68,11 +68,11 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const budgets = settings?.budgets as Record<string, HelperBudget | null | undefined> | undefined
   const saved = budgets?.[helper.id] ?? undefined
 
-  const [amount, setAmount] = useState(String(saved?.amount ?? suggested))
+  const [amount, setAmount] = useState(tokensInput(saved?.amount ?? suggested))
   const [threshold, setThreshold] = useState(saved?.threshold ?? '80%')
   const [mode, setMode] = useState(saved?.mode ?? 'pause')
   const [askBig, setAskBigState] = useState<boolean | null>(null)
-  const askBigOn = askBig ?? (liveHelper?.behavior?.spend_per_task_idr ?? 0) > 0
+  const askBigOn = askBig ?? (liveHelper?.behavior?.tokens_per_task ?? 0) > 0
   const setAskBig = (v: boolean) => setAskBigState(v)
 
   // Hydrate from the saved per-helper entry once the settings query resolves,
@@ -80,7 +80,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const touched = useRef(false)
   useEffect(() => {
     if (touched.current || !saved) return
-    setAmount(String(saved.amount))
+    setAmount(tokensInput(saved.amount))
     setThreshold(saved.threshold)
     setMode(saved.mode)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,14 +91,14 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const editMode = (v: string) => { touched.current = true; setMode(v) }
 
   const save = () => {
-    const limit = Number(amount) || suggested
+    const limit = parseTokens(amount) ?? suggested
     Promise.all([
-      // Enforced cap (credits) + the per-task ask switch on the helper itself…
+      // Enforced cap (tokens) + the per-task ask switch on the helper itself…
       updateHelper.mutateAsync({
         id: helper.id,
         input: {
-          budgetCreditsMonth: limit,
-          ...(askBig !== null ? { behavior: { spend_per_task_idr: askBig ? BIG_JOB_IDR : null } } : {}),
+          budgetTokensMonth: limit,
+          ...(askBig !== null ? { behavior: { tokens_per_task: askBig ? BIG_JOB_TOKENS : null } } : {}),
         },
       }),
       // …and the alert threshold / run-out mode under company settings.
@@ -114,7 +114,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
   const removeBudget = () => {
     // Clear only this helper's entry — leave every other helper's budget intact.
     Promise.all([
-      updateHelper.mutateAsync({ id: helper.id, input: { budgetCreditsMonth: null } }),
+      updateHelper.mutateAsync({ id: helper.id, input: { budgetTokensMonth: null } }),
       updateSettings.mutateAsync({ budgets: { [helper.id]: null } }),
     ])
       .then(() => {
@@ -135,7 +135,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <Dialog.Title className="m-0 text-[16px] font-semibold text-ink">Budget for {helper.name}</Dialog.Title>
           <span className="text-[12px] text-muted">
-            {formatCredits(spent)} spent this month · resets {nextMonthLabel()}
+            {tokensLabel(spent)} used this month · resets {nextMonthLabel()}
           </span>
         </div>
         <Dialog.Close asChild>
@@ -146,31 +146,32 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
       <div className="flex min-h-0 w-full flex-1 flex-col gap-[20px] overflow-y-auto p-[20px]">
         <div className="flex w-full flex-col gap-[8px]">
           <label className="flex w-full flex-col gap-[6px]">
-            <span className="text-[13px] font-medium text-ink-2">Monthly budget (credits)</span>
+            <span className="text-[13px] font-medium text-ink-2">Monthly budget (tokens)</span>
             <input
-              value={`${amount} cr`}
-              onChange={(e) => editAmount(e.target.value.replace(/[^0-9]/g, ''))}
+              value={amount}
+              inputMode="text"
+              placeholder="e.g. 2M or 500k"
+              onChange={(e) => editAmount(e.target.value.replace(/[^0-9.,kKmMbB]/g, ''))}
               className="h-[36px] w-full rounded-base bg-surface px-[10px] text-[14px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-ink"
             />
             <span className="text-[12.5px] text-muted">
-              {creditsInRp(Number(amount) || 0)} · {helper.name} has spent {formatCredits(spent)} this month. We
-              suggest {formatCredits(suggestBudget(spent))}.
+              {helper.name} has used {tokensLabel(spent)} this month. We suggest {tokensLabel(suggestBudget(spent))}.
             </span>
           </label>
           <div className="flex gap-[6px]">
             {QUICK.map((q) => {
-              const on = String(q) === amount
+              const on = parseTokens(amount) === q
               return (
                 <button
                   key={q}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => editAmount(String(q))}
+                  onClick={() => editAmount(tokensInput(q))}
                   className={`flex h-[28px] items-center rounded-pill px-[12px] font-mono text-[12px] outline-1 -outline-offset-1 ${
                     on ? 'bg-ink text-primary-ink outline-ink' : 'bg-surface text-ink-2 outline-line-strong hover:bg-soft'
                   }`}
                 >
-                  {formatCredits(q)}
+                  {formatTokens(q)}
                 </button>
               )
             })}
@@ -233,7 +234,7 @@ function DrawerBody({ helper, onClose }: { helper: HelperStat; onClose: () => vo
 
         <div className="flex w-full gap-[12px] py-[12px] shadow-[inset_0_-1px_0_var(--color-line)]">
           <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className="text-[13.5px] font-medium text-ink">Ask before any single job over {formatRp(BIG_JOB_IDR)}</span>
+            <span className="text-[13.5px] font-medium text-ink">Ask before any single job over {tokensLabel(BIG_JOB_TOKENS)}</span>
             <span className="text-[12.5px] leading-[1.5] text-muted">
               Catches runaway jobs early, like a long research task.
             </span>

@@ -4,7 +4,7 @@ Public API
 ----------
     scorecard(db, *, days=30) -> list[dict]
         One row per helper active in the window.
-        {helper_id, name, runs, success_rate, approval_rate, cost_credits}
+        {helper_id, name, runs, success_rate, approval_rate, tokens}
         All values computed EXACTLY from Job/Proposal rows — never estimated.
 
     review(db, *, days=7) -> dict
@@ -44,7 +44,7 @@ def _window_start(days: int) -> datetime:
 def _job_aggregates(db: Session, since: datetime) -> dict[str, dict[str, Any]]:
     """Return per-helper job aggregates for all helpers visible in *db*.
 
-    Returns {helper_id: {total, done, cost_credits}}.
+    Returns {helper_id: {total, done, tokens}}.
     RLS scopes results to the active company automatically.
     """
     rows = (
@@ -52,7 +52,7 @@ def _job_aggregates(db: Session, since: datetime) -> dict[str, dict[str, Any]]:
             Job.helper_id,
             func.count(Job.id).label("total"),
             func.sum(case((Job.status == "done", 1), else_=0)).label("done"),
-            func.sum(Job.cost_credits).label("cost_credits"),
+            func.sum(Job.tokens_in + Job.tokens_out).label("tokens"),
         )
         .filter(Job.created_at >= since)
         .group_by(Job.helper_id)
@@ -63,7 +63,7 @@ def _job_aggregates(db: Session, since: datetime) -> dict[str, dict[str, Any]]:
         result[row.helper_id] = {
             "total": row.total or 0,
             "done": int(row.done or 0),
-            "cost_credits": int(row.cost_credits or 0),
+            "tokens": int(row.tokens or 0),
         }
     return result
 
@@ -112,7 +112,7 @@ def scorecard(db: Session, *, days: int = 30) -> list[dict[str, Any]]:
             "runs": int,              # count of Jobs in window
             "success_rate": float,    # done / total  (0.0 when total == 0)
             "approval_rate": float,   # approved / raised (0.0 when none raised)
-            "cost_credits": int,      # sum(cost_credits) over the window
+            "tokens": int,            # AI tokens (in + out) over the window
         }
     """
     since = _window_start(days)
@@ -147,7 +147,7 @@ def scorecard(db: Session, *, days: int = 30) -> list[dict[str, Any]]:
                 "runs": total,
                 "success_rate": success_rate,
                 "approval_rate": approval_rate,
-                "cost_credits": agg["cost_credits"],
+                "tokens": agg["tokens"],
             }
         )
 
@@ -222,7 +222,7 @@ def review(db: Session, *, days: int = 7) -> dict[str, Any]:
                 "runs": worst["runs"],
                 "success_rate": worst["success_rate"],
                 "approval_rate": worst["approval_rate"],
-                "cost_credits": worst["cost_credits"],
+                "tokens": worst["tokens"],
             },
             after={},
             reason=reason,

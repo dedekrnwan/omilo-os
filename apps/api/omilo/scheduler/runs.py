@@ -58,6 +58,7 @@ def fire_routine(
         duration=duration,
         skipped=False,
         cost_credits=job.cost_credits or 0,
+        tokens=int(job.tokens_in or 0) + int(job.tokens_out or 0),
         trigger=trigger,
         error=job.error if job.status in _FAIL_STATUSES else None,
     )
@@ -78,6 +79,7 @@ def record_skip(db: Session, routine: Routine, when: datetime, reason: str) -> R
         duration=None,
         skipped=True,
         cost_credits=0,
+        tokens=0,
         trigger="schedule",
         error=reason,
     )
@@ -95,5 +97,6 @@ def sync_run_from_job(run: RoutineRun, job: object) -> None:
     if started and ended:
         run.duration = max(0, int((ended - started).total_seconds()))
     run.cost_credits = getattr(job, "cost_credits", 0) or 0
+    run.tokens = int(getattr(job, "tokens_in", 0) or 0) + int(getattr(job, "tokens_out", 0) or 0)
     if status in _FAIL_STATUSES:
         run.error = getattr(job, "error", None) or run.error

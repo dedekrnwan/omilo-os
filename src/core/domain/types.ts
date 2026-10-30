@@ -382,7 +382,10 @@ export interface FlowRun {
   status: string
   triggerSummary: string | null
   startedBy: string | null
+  /** Internal metering unit (pooled AI only). */
   costCredits: number
+  /** AI tokens (input + output) the run used. */
+  tokens: number
   duration: number | null
   waitingFor: string | null
   jobIds: string[]
@@ -754,7 +757,10 @@ export interface RoutineRunSummary {
   outcome: RoutineRunOutcome
   /** Seconds. */
   duration: number | null
+  /** Internal metering unit (pooled AI only). */
   costCredits: number
+  /** AI tokens (input + output) the run used. */
+  tokens: number
   trigger: 'schedule' | 'manual' | 'resend' | null
   error: string | null
   feedback: 'up' | 'down' | null
@@ -902,8 +908,8 @@ export interface Flow {
   /** Runs per day for the last 7 days (oldest → today). */
   runs7d?: number[]
   lastRun?: FlowRun | null
-  /** Detail only. */
-  spentThisMonthCredits?: number
+  /** Detail only: AI tokens this flow's runs used this month. */
+  tokensThisMonth?: number
   publishState?: 'draft' | 'pending' | 'live'
   pendingProposalId?: string | null
   publishedVersion?: number | null
@@ -957,7 +963,7 @@ export interface ProposalDetail {
 
 // ── sweep/team-analytics ──────────────────────────────────────────────────────
 // Interface merging adds the fields the Team + Analytics endpoints now return.
-// Currency: every cost/spend below is in credits.
+// AI usage and budgets below are in tokens (input + output).
 
 export interface HelperJobRef {
   id: Id
@@ -982,7 +988,8 @@ export interface HelperLook {
 
 /** Behavior tab settings (helper.behavior). */
 export interface HelperBehavior {
-  spend_per_task_idr?: number
+  /** Per-task AI limit in tokens (input + output). */
+  tokens_per_task?: number
   messages_per_hour?: number
   never_discuss?: string[]
   work_hours_override?: boolean
@@ -1000,13 +1007,15 @@ export interface Helper {
   look?: HelperLook | null
   behavior?: HelperBehavior
   jobsMonth?: number
-  costMonth?: number
+  /** AI tokens this month. */
+  tokensMonth?: number
   currentJob?: HelperJobRef | null
   nextRoutine?: HelperNextRoutine | null
   /** Enabled routines owned by this helper. */
   loops?: number
   lastActive?: string | null
-  budgetCreditsMonth?: number | null
+  /** Monthly AI budget in tokens; null = no limit. */
+  budgetTokensMonth?: number | null
   budgetAllowJobs?: number
   channelCount?: number
 }
@@ -1131,7 +1140,8 @@ export interface AnalyticsLoop {
   nextAt: string | null
   lastResult: string | null
   runs: number
-  avgCost: number
+  /** Average AI tokens per run. */
+  avgTokens: number
   on: boolean
 }
 

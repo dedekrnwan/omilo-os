@@ -1,7 +1,5 @@
 import type { AnalyticsStackedSeries, AnalyticsStat, HelperArea } from '../../core/domain/types'
 import {
-  creditsInRp,
-  formatCredits,
   formatDuration,
   formatTokens,
   pctChange,
@@ -28,7 +26,7 @@ export interface Stat {
 export interface Series {
   label: string
   color: string
-  /** Raw value per bar (jobs, tokens or credits) — the chart scales them. */
+  /** Raw value per bar (jobs or tokens) — the chart scales them. */
   values: number[]
 }
 
@@ -63,7 +61,7 @@ export interface HelperStat {
   successWarn?: boolean
   tokens: string
   spend: string
-  /** Monthly budget in credits; undefined = no budget set. */
+  /** Monthly budget in tokens; undefined = no budget set. */
   budget?: { spent: number; limit: number; warn?: boolean }
   /** Budget spent and no one-off override left — the helper is paused. */
   budgetReached?: boolean
@@ -118,9 +116,9 @@ function deltaChip(value: number, prev: number | undefined, upIsGood = true): { 
 export function toDisplayStat(s: AnalyticsStat, range: string): Stat {
   const period = `vs ${PERIOD_WORD[range] ?? 'last period'}`
   switch (s.label) {
-    case 'Spend': {
+    case 'Tokens per job': {
       const d = deltaChip(s.value, s.prev, false)
-      return { label: s.label, value: formatCredits(s.value), ...d, note: creditsInRp(s.value) }
+      return { label: s.label, value: formatTokens(s.value), ...d, note: period }
     }
     case 'Tokens': {
       const d = deltaChip(s.value, s.prev, false)
@@ -258,14 +256,14 @@ export function stackedChart(
   const total = data?.total ?? 0
   return kind === 'spend'
     ? {
-        title: 'Spend by channel',
-        sub: `${formatCredits(total)} ${periodWord}`,
+        title: 'Tokens by channel',
+        sub: `${formatTokens(total)} ${periodWord}`,
         stack,
         legend: series.map((s) => ({ label: s.label, color: AREA_COLOR[s.area] ?? AREA_COLOR.ops })),
         labels,
         tipLabels: tips,
-        fmt: formatCredits,
-        unit: '',
+        fmt: formatTokens,
+        unit: 'tokens',
       }
     : {
         title: 'Tokens by helper',

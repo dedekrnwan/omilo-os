@@ -5,7 +5,7 @@ import { LookPicker } from '../../ui/ds/LookPicker'
 import type { Look } from '../../app/appearance'
 import { useCompanySettings, useHelpers } from '../../app/queries'
 import { useSession } from '../../app/session'
-import { creditsInRp, formatCredits } from '../analytics/format'
+import { tokensLabel } from '../analytics/format'
 import { HIRE_OPTIONS } from './teamData'
 import { MODEL_IDS, companyDefaultModel } from './model'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconTile, InputField, SelectField, TextareaField } from './ui'
@@ -62,10 +62,10 @@ export function SetupDialog({
     { value: '', label: `${defaultModel} · default` },
     ...MODEL_IDS.filter((m) => m !== defaultModel).map((m) => ({ value: m, label: m })),
   ]
-  // Monthly cost estimate from the helpers you already have (credits).
-  const others = team.filter((h) => !h.isChief && (h.costMonth ?? 0) > 0)
+  // Monthly AI usage estimate (tokens) from the helpers you already have.
+  const others = team.filter((h) => !h.isChief && (h.tokensMonth ?? 0) > 0)
   const estimate = others.length
-    ? Math.round(others.reduce((n, h) => n + (h.costMonth ?? 0), 0) / others.length)
+    ? Math.round(others.reduce((n, h) => n + (h.tokensMonth ?? 0), 0) / others.length)
     : null
   const [name, setName] = useState(option.name)
   const [jobDescription, setJobDescription] = useState(option.tagline)
@@ -188,7 +188,7 @@ export function SetupDialog({
         <div className="flex w-full items-center gap-[8px] rounded-md bg-info-tint px-[12px] py-[10px] outline-1 -outline-offset-1 outline-info-line">
           <Wallet size={14} aria-hidden className="text-info" />
           <span className="text-[12.5px] text-ink-2">
-            About {formatCredits(estimate)} ({creditsInRp(estimate)}) a month, like your other helpers
+            About {tokensLabel(estimate)} a month, like your other helpers
           </span>
         </div>
       )}

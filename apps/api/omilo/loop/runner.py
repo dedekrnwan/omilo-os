@@ -50,7 +50,7 @@ MAX_STEPS: int = 12  # bounds re-loop; single pass in P1
 from omilo.loop.behavior import (  # sweep/team-analytics
     build_helper_instructions,
     enforce_spend_cap,
-    spend_cap_credits,
+    task_token_cap,
 )
 
 def start_job(
@@ -294,7 +294,7 @@ def run_job(
         ),
         emit=emitter,
         instructions=build_helper_instructions(helper),
-        spend_cap_credits=spend_cap_credits(helper),
+        task_token_cap=task_token_cap(helper),
     )
 
     engine_cfg = helper.engine if helper.engine else {"type": "fake"}
@@ -360,7 +360,7 @@ def run_job(
     job.cost_credits = (job.cost_credits or 0) + result.cost_credits
     job.result_text = result.text
     db.flush()
-    enforce_spend_cap(db, job, helper, ctx.spend_cap_credits)
+    enforce_spend_cap(db, job, helper, ctx.task_token_cap)
 
     # ── e. Gate: handle pending_action ────────────────────────────────────────
     if result.pending_action:

@@ -6,7 +6,7 @@
 import { Code, Crown, Handshake, Headset, Megaphone, Receipt, Settings2, UserRound, History } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Helper, HelperDetail, HelperFile, HelperRoutineRow } from '../../core/domain/types'
-import { formatCredits, nextRunLabel } from '../analytics/format'
+import { nextRunLabel, tokensLabel } from '../analytics/format'
 import type { HelperRecord, HelperStatus, Routine, WorkingFile } from './teamData'
 
 export const MODEL_IDS = ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5'] as const
@@ -129,7 +129,7 @@ export function buildHelperRecord(
   const status = statusOf(h)
   const reports = reportsToLabel(h.reportsTo, ctx.helpers, ctx.ownerName, h.isChief)
   const loops = h.loops ?? detail?.routines.filter((r) => r.enabled).length ?? 0
-  const cost = h.costMonth ?? 0
+  const cost = h.tokensMonth ?? 0
   const role = h.title || h.role || h.area
   const nb = nowBox(h)
   const routines = (detail?.routines ?? []).map(toRoutineRow)
@@ -145,12 +145,12 @@ export function buildHelperRecord(
     rosterStatus: status,
     model: h.model || ctx.defaultModel,
     statsLine: h.isChief
-      ? `Reports to ${reports.startsWith('You') ? 'you' : reports} · routed ${h.jobsMonth ?? 0} jobs this month · ${formatCredits(cost)}`
-      : `Reports to ${reports} · ${loopsText(loops)} · ${formatCredits(cost)} this month`,
+      ? `Reports to ${reports.startsWith('You') ? 'you' : reports} · routed ${h.jobsMonth ?? 0} jobs this month · ${tokensLabel(cost)}`
+      : `Reports to ${reports} · ${loopsText(loops)} · ${tokensLabel(cost)} this month`,
     nowLabel: nb.nowLabel,
     now: nb.now,
     rosterMeta: h.isChief ? `Reports to you · ${loopsText(loops)}` : loopsText(loops),
-    cost: `${formatCredits(cost)} this month`,
+    cost: `${tokensLabel(cost)} this month`,
     description: h.jobDescription ?? '',
     routinesNote: h.isChief
       ? chiefRoutines

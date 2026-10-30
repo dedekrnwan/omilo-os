@@ -15,23 +15,15 @@ import type { FlowSettings, OverlapPolicy } from './data'
 import { formatRelative } from '../runsAdapter'
 import { EditorFrame } from './EditorFrame'
 import { useSession } from '../../../../app/session'
-import { creditsToIdr, formatRp, IDR_PER_CREDIT } from '../../../../app/money'
+import { parseTokens, tokensInput, tokensLabel } from '../../../../app/tokens'
 
-/** "1.000.000" / "Rp 5.000" / "5000" → 5000. */
-function parseRp(v: string | undefined): number {
-  const n = Number(String(v ?? '').replace(/[^0-9]/g, ''))
-  return Number.isFinite(n) ? n : 0
-}
-
-/** Flows saved before the Rupiah switch stored $ budgets (1 credit = $0.001). */
-export function withRupiahBudgets(s: Partial<FlowSettings>): Partial<FlowSettings> {
-  const out = { ...s }
-  const usdToRp = (usd: string) => String(Math.round(Number(usd) * 1000 * IDR_PER_CREDIT))
-  if (out.monthlyBudgetRp === undefined && out.monthlyBudget !== undefined && !Number.isNaN(Number(out.monthlyBudget))) {
-    out.monthlyBudgetRp = usdToRp(out.monthlyBudget)
-  }
-  if (out.costCapRp === undefined && out.costCap !== undefined && !Number.isNaN(Number(out.costCap))) {
-    out.costCapRp = usdToRp(out.costCap)
+/** Saved settings → the form. Old Rupiah / dollar budgets no longer apply and are dropped. */
+export function withTokenBudgets(s: Partial<FlowSettings>): Partial<FlowSettings> {
+  const out = { ...s } as Partial<FlowSettings> & Record<string, unknown>
+  for (const k of ['monthlyBudgetRp', 'costCapRp', 'monthlyBudget', 'costCap']) delete out[k]
+  for (const k of ['monthlyBudgetTokens', 'tokenCapPerRun'] as const) {
+    const v = out[k] as unknown
+    if (typeof v === 'number') out[k] = tokensInput(v)
   }
   return out
 }
@@ -166,9 +158,9 @@ export function FlowSettingsPage() {
   const { data: runs = [] } = useFlowRuns(flowId)
   const restoreVersion = useRestoreFlowVersion()
   const v = f.settings
-  // Spend is in credits; shown in Rupiah at the app-wide rate (src/app/money.ts).
-  const spent = creditsToIdr(liveFlow?.spentThisMonthCredits ?? 0)
-  const avgRun = runs.length ? creditsToIdr(runs.reduce((acc, r) => acc + r.costCredits, 0)) / runs.length : 0
+  // AI usage is counted in tokens (input + output), like every AI budget in Omilo.
+  const spent = liveFlow?.tokensThisMonth ?? 0
+  const avgRun = runs.length ? runs.reduce((acc, r) => acc + (r.tokens ?? 0), 0) / runs.length : 0
   const nextMonth = new Date()
   nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
   const resets = nextMonth.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -235,7 +227,7 @@ export function FlowSettingsPage() {
     const s = liveFlow?.settings
     if (!s) return
     hydratedSettingsRef.current = true
-    st.setSettings(flowId, withRupiahBudgets(s as Partial<FlowSettings>))
+    st.setSettings(flowId, withTokenBudgets(s as Partial<FlowSettings>))
     st.saveSettings(flowId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveFlow])
@@ -261,7 +253,7 @@ export function FlowSettingsPage() {
     return () => io.disconnect()
   }, [])
 
-  const budget = parseRp(v.monthlyBudgetRp)
+  const budget = parseTokens(v.monthlyBudgetTokens ?? '') ?? 0
   const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0
 
   return (
@@ -391,10 +383,10 @@ export function FlowSettingsPage() {
               </Anchor>
 
               <Anchor id="limits">
-                <Group title="Budget & limits" desc="A run that hits a limit stops and tells you — it never keeps spending.">
+                <Group title="Budget & limits" desc="AI is counted in tokens. A run that hits a limit stops and tells you — it never keeps going.">
                   <Box>
-                    <Row title="Monthly budget" desc={`${formatRp(spent)} spent this month · resets ${resets}`}>
-                      <Affix label="Monthly budget" prefix="Rp" value={v.monthlyBudgetRp} onChange={(monthlyBudgetRp) => set({ monthlyBudgetRp })} width={140} />
+                    <Row title="Monthly token budget" desc={`${tokensLabel(spent)} used this month · resets ${resets}`}>
+                      <Affix label="Monthly token budget" value={v.monthlyBudgetTokens ?? ''} suffix="tokens" onChange={(monthlyBudgetTokens) => set({ monthlyBudgetTokens })} width={150} />
                     </Row>
                     <div className={`flex flex-col gap-[6px] pt-[2px] pb-[14px] ${lineBottom}`}>
                       <div className="h-[6px] w-full overflow-hidden rounded-full bg-app" role="meter" aria-label="Budget used" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
@@ -402,11 +394,11 @@ export function FlowSettingsPage() {
                       </div>
                       <span className="text-[12px] text-muted">
                         {Math.round(pct)}% used
-                        {avgRun > 0 ? ` · about ${Math.max(0, Math.floor((budget - spent) / avgRun))} more runs at today’s cost` : ''}
+                        {avgRun > 0 && budget > 0 ? ` · about ${Math.max(0, Math.floor((budget - spent) / avgRun))} more runs at today’s usage` : ''}
                       </span>
                     </div>
-                    <Row title="Max cost per run" desc={avgRun > 0 ? `Typical run is ~${formatRp(avgRun)}.` : 'No runs yet.'}>
-                      <Affix label="Max cost per run" prefix="Rp" value={v.costCapRp} onChange={(costCapRp) => set({ costCapRp })} width={140} />
+                    <Row title="Max tokens per run" desc={avgRun > 0 ? `Typical run uses ~${tokensLabel(avgRun)}.` : 'No runs yet.'}>
+                      <Affix label="Max tokens per run" value={v.tokenCapPerRun ?? ''} suffix="tokens" onChange={(tokenCapPerRun) => set({ tokenCapPerRun })} width={150} />
                     </Row>
                     <Row title="Max steps per run" desc="Counts every step, including retries.">
                       <Affix label="Max steps per run" value={v.maxSteps} suffix="steps" onChange={(maxSteps) => set({ maxSteps })} width={110} />

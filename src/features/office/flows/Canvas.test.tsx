@@ -215,9 +215,9 @@ describe('Flow settings', () => {
     expect(screen.getByRole('switch', { name: 'Weekly summary' })).toHaveAttribute('aria-checked', 'true')
   })
 
-  test('spend and version history come from the flow', async () => {
+  test('token usage and version history come from the flow', async () => {
     renderAt(`/flows/${F}/settings`)
-    expect(await screen.findByText(/spent this month/)).toBeInTheDocument()
+    expect(await screen.findByText(/used this month/)).toBeInTheDocument()
     expect(await screen.findByText('v7')).toBeInTheDocument()
     expect(screen.getByText('Live')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()

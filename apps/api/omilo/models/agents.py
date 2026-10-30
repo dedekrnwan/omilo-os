@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,11 +54,11 @@ class Helper(IdMixin, TimestampMixin, Base):
     # mcp_token_hash: sha256 hex digest of the per-helper MCP token secret.
     # Null = no token minted yet.  Raw token is NEVER stored.
     mcp_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # budget_credits_month: optional per-helper monthly credit cap.
-    # Null = unlimited.  When the helper's month-to-date credits_charged
-    # reaches this value, the runner pauses the helper automatically.
-    budget_credits_month: Mapped[int | None] = mapped_column(
-        nullable=True
+    # budget_tokens_month: optional per-helper monthly AI budget in tokens
+    # (input + output). Null = unlimited. When the helper's month-to-date
+    # tokens reach it, the runner pauses the helper (omilo.ai.usage).
+    budget_tokens_month: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
     )
 
     # ── sweep/team-analytics ──
@@ -68,7 +68,7 @@ class Helper(IdMixin, TimestampMixin, Base):
     reports_to: Mapped[str | None] = mapped_column(Text, nullable=True)
     # look: {color, shape, prop, picture} mascot look (Profile tab)
     look: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # behavior: Behavior tab settings — spend_per_task_idr, messages_per_hour,
+    # behavior: Behavior tab settings — tokens_per_task, messages_per_hour,
     # never_discuss[], work_hours_override, handoff_to, language
     behavior: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     # tool_access: {builtins: {browser: bool, web_search: bool, code_runner: bool}}

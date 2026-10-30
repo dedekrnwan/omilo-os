@@ -174,6 +174,7 @@ def _run_to_dict(rr: RoutineRun) -> dict[str, Any]:
         "duration": rr.duration,
         "skipped": rr.skipped,
         "cost_credits": rr.cost_credits,
+        "tokens": int(rr.tokens or 0),
         "trigger": rr.trigger,
         "error": rr.error,
         "feedback": rr.feedback,

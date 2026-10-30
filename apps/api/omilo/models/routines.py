@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -70,6 +70,8 @@ class RoutineRun(IdMixin, Base):
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)  # seconds
     skipped: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     cost_credits: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # AI tokens (input + output) the run used — the unit for budgets and limits.
+    tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
     # ── sweep/goals-routines (0023) ──
     trigger: Mapped[str | None] = mapped_column(Text, nullable=True)  # schedule|manual|resend
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

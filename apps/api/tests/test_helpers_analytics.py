@@ -393,11 +393,9 @@ async def test_analytics_overview_exact_counts(async_client, company_a):
         f"Expected Tokens={expected_tokens}, got {stats}"
     )
 
-    # Spend = sum cost_credits across all jobs
-    expected_spend = total * company_a["cost_credits_per_job"]
-    assert stats.get("Spend") == expected_spend, (
-        f"Expected Spend={expected_spend}, got {stats}"
-    )
+    # Tokens per job = average tokens; credits ("Spend") are not a customer-facing unit.
+    assert stats.get("Tokens per job") == round(expected_tokens / total), stats
+    assert "Spend" not in stats
 
     # series must have at least one entry
     assert len(data["series"]) >= 1

@@ -3,8 +3,8 @@
 Endpoints:
   GET  /v1/helpers              → HelperStat[] (retired helpers excluded unless ?include_retired=true)
       {id, name, area, role, status, jobs: <count>, success: <pct>, isChief,
-       model, title, reportsTo, look, jobsMonth, costMonth, currentJob, nextRoutine,
-       loops, lastActive, budgetCreditsMonth, channelCount}
+       model, title, reportsTo, look, jobsMonth, tokensMonth, currentJob, nextRoutine,
+       loops, lastActive, budgetTokensMonth, channelCount}
   GET  /v1/helpers/{id}         → {helper, jobs: [recent], skills: [], routines: [], counts}
   POST /v1/helpers {name, area, role, job_description?, autonomy_cap?, is_chief?,
                     model?, reports_to?, title?, look?, channels?}
@@ -12,7 +12,7 @@ Endpoints:
       Guard: if is_chief=true and a Chief already exists → 409.
   PATCH /v1/helpers/{id} {status?, role?, job_description?, autonomy_cap?, model?,
                           name?, area?, title?, reports_to?, look?, behavior?,
-                          budget_credits_month?}
+                          budget_tokens_month?}
       → {id, name, area, role, status, ...}
   POST /v1/helpers/{id}/retire  → let a helper go (status='retired'); Chief → 409
   POST /v1/helpers/{id}/budget/allow-one → one-off budget override (+ resume if paused)
@@ -29,7 +29,7 @@ Endpoints:
   GET /v1/helpers/{id}/files   → working files (PERSONA/STYLE/PLAYBOOK/MEMORY.md)
   PUT /v1/helpers/{id}/files/{name} {content} → upsert the helper's working file
 
-Currency: every cost here is in credits (CreditLedger.credits_charged).
+AI usage here is counted in tokens (Job.tokens_in + tokens_out); budgets are tokens too.
 """
 from __future__ import annotations
 
@@ -44,7 +44,6 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from omilo.models.agents import Helper
 from omilo.models.base import prefixed_id
-from omilo.models.billing import CreditLedger
 from omilo.models.execution import Job
 from omilo.models.helper_channel import HelperChannel
 from omilo.models.routines import Routine
@@ -88,7 +87,7 @@ class PatchHelperBody(BaseModel):
     reports_to: Optional[str] = None
     look: Optional[dict[str, Any]] = None
     behavior: Optional[dict[str, Any]] = None
-    budget_credits_month: Optional[int] = None
+    budget_tokens_month: Optional[int] = None
 
 
 VALID_STATUSES = {"active", "paused"}
@@ -130,16 +129,12 @@ def month_start(now: datetime | None = None) -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
-def cost_by_helper(db: Session, since: datetime) -> dict[str, int]:
-    """Credits charged per helper since *since* (CreditLedger reason='job')."""
+def tokens_by_helper(db: Session, since: datetime) -> dict[str, int]:
+    """AI tokens (in + out) each helper's jobs used since *since*."""
     rows = (
-        db.query(CreditLedger.helper_id, func.sum(CreditLedger.credits_charged))
-        .filter(
-            CreditLedger.reason == "job",
-            CreditLedger.at >= since,
-            CreditLedger.helper_id.isnot(None),
-        )
-        .group_by(CreditLedger.helper_id)
+        db.query(Job.helper_id, func.sum(Job.tokens_in + Job.tokens_out))
+        .filter(Job.created_at >= since)
+        .group_by(Job.helper_id)
         .all()
     )
     return {hid: int(total or 0) for hid, total in rows}
@@ -225,7 +220,7 @@ def _helper_to_dict(helper: Helper) -> dict[str, Any]:
         "reportsTo": helper.reports_to,
         "look": helper.look,
         "behavior": helper.behavior or {},
-        "budgetCreditsMonth": helper.budget_credits_month,
+        "budgetTokensMonth": helper.budget_tokens_month,
         "budgetAllowJobs": helper.budget_allow_jobs or 0,
         "retiredAt": helper.retired_at.isoformat() if helper.retired_at else None,
     }
@@ -303,7 +298,7 @@ def list_helpers(
 
     since = month_start()
     jobs_month = _count_by_helper(db, Job.helper_id, Job.created_at >= since)
-    cost_month = cost_by_helper(db, since)
+    tokens_month = tokens_by_helper(db, since)
     current = current_job_by_helper(db)
     nxt = next_routine_by_helper(db)
     last = last_active_by_helper(db)
@@ -322,12 +317,12 @@ def list_helpers(
                 "jobDescription": h.job_description,
                 "autonomyCap": h.autonomy_cap,
                 "jobsMonth": jobs_month.get(h.id, 0),
-                "costMonth": cost_month.get(h.id, 0),
+                "tokensMonth": tokens_month.get(h.id, 0),
                 "currentJob": current.get(h.id),
                 "nextRoutine": nxt.get(h.id),
                 "loops": loops.get(h.id, 0),
                 "lastActive": last.get(h.id),
-                "budgetCreditsMonth": h.budget_credits_month,
+                "budgetTokensMonth": h.budget_tokens_month,
                 "channelCount": channels.get(h.id, 0),
             }
         )
@@ -399,7 +394,7 @@ def get_helper_detail(
             "jobs": total,
             "success": round(100 * done / total) if total else 0,
             "jobsMonth": jobs_month,
-            "costMonth": cost_by_helper(db, since).get(helper_id, 0),
+            "tokensMonth": tokens_by_helper(db, since).get(helper_id, 0),
             "currentJob": current_job_by_helper(db).get(helper_id),
             "nextRoutine": next_routine_by_helper(db).get(helper_id),
             "lastActive": last_active_by_helper(db).get(helper_id),
@@ -515,7 +510,7 @@ def patch_helper(
     """Update a Helper. 404 for another company's helper (RLS).
 
     status accepts 'active' | 'paused' (use POST /retire to let a helper go).
-    budget_credits_month: explicit null clears the budget.
+    budget_tokens_month: explicit null clears the budget (tokens per month).
     behavior: shallow-merged; keys set to null are removed.
     """
     helper = _get_helper(db, helper_id)
@@ -566,10 +561,10 @@ def patch_helper(
                 merged[k] = v
         helper.behavior = merged
         flag_modified(helper, "behavior")
-    if "budget_credits_month" in fields:
-        if body.budget_credits_month is not None and body.budget_credits_month < 0:
+    if "budget_tokens_month" in fields:
+        if body.budget_tokens_month is not None and body.budget_tokens_month < 0:
             raise HTTPException(status_code=422, detail="Budget must be ≥ 0.")
-        helper.budget_credits_month = body.budget_credits_month
+        helper.budget_tokens_month = body.budget_tokens_month or None
 
     db.flush()
     from omilo import audit  # sweep/control — activity log

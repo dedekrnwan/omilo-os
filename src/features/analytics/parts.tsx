@@ -6,7 +6,7 @@ import type { HelperArea } from '../../core/domain/types'
 import { Mascot } from '../../ui/ds/Mascot'
 import { RANGE_LABELS } from './data'
 import type { BarChart, ChipTone, HelperStat, HelperStatus, Stat } from './data'
-import { formatCredits } from './format'
+import { formatTokens } from './format'
 
 type LocalHelperRow = HelperStat
 
@@ -401,7 +401,7 @@ export function Track({ pct, color, height = 4 }: { pct: number; color: string; 
 
 // ── Helpers table (overview) ──────────────────────────────────────────────────
 
-const COLS = 'w-[110px] w-[60px] w-[70px] w-[80px] w-[70px] w-[170px] w-[90px]'.split(' ')
+const COLS = 'w-[110px] w-[60px] w-[70px] w-[80px] w-[170px] w-[90px]'.split(' ')
 
 export function HelpersTable({
   rows,
@@ -412,7 +412,7 @@ export function HelpersTable({
   sub: string
   onSetBudget?: (h: LocalHelperRow) => void
 }) {
-  const head = ['Now', 'Jobs', 'Success', 'Tokens', 'Spend', 'Budget (month)', 'Last active']
+  const head = ['Now', 'Jobs', 'Success', 'Tokens', 'Token budget (month)', 'Last active']
   return (
     <Card className="flex flex-col overflow-hidden">
       <CardTitle title="Helpers" sub={sub} />
@@ -450,13 +450,12 @@ export function HelpersTable({
             {h.success}
           </span>
           <span className="w-[80px] shrink-0 font-mono text-[12px] text-ink">{h.tokens}</span>
-          <span className="w-[70px] shrink-0 font-mono text-[12px] text-ink">{h.spend}</span>
           <div className="flex w-[170px] shrink-0 flex-col gap-[5px]">
             {h.budget ? (
               <>
                 <Track pct={h.budget.spent / h.budget.limit} color={h.budget.warn ? 'var(--color-warn)' : 'var(--color-ink)'} />
                 <span className="font-mono text-[11px] text-muted">
-                  {formatCredits(h.budget.spent)} / {formatCredits(h.budget.limit)}
+                  {formatTokens(h.budget.spent)} / {formatTokens(h.budget.limit)}
                 </span>
               </>
             ) : (

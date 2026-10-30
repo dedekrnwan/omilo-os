@@ -4,7 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { AreaChip } from '../../../../ui/ds/AreaChip'
 import { useChannel, useFlowRuns, useUpdateFlow } from '../../../../app/queries'
 import { notify } from '../../../../ui/ds/Toaster'
-import { avgCost } from './runs'
+import { avgTokens } from './runs'
 import { useFlow, useFlowStore } from './store'
 import { usePublish, useSaveGraph, useSeedFlow } from './useFlowSync'
 
@@ -71,7 +71,7 @@ export function EditorFrame({
   const updateFlow = useUpdateFlow()
   const save = useSaveGraph(flowId)
   const { publish, pending } = usePublish(flowId)
-  const cost = avgCost(runs)
+  const cost = avgTokens(runs)
   const publishState = f.dirty ? 'draft' : liveFlow?.publishState ?? 'draft'
 
   function toggle(on: boolean) {

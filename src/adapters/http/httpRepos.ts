@@ -380,6 +380,7 @@ type RawFlowRun = {
   trigger_summary: string | null
   started_by: string | null
   cost_credits: number
+  tokens?: number
   duration: number | null
   waiting_for: string | null
   job_ids: string[]
@@ -395,6 +396,7 @@ function mapFlowRun(r: RawFlowRun): FlowRun {
     triggerSummary: r.trigger_summary,
     startedBy: r.started_by,
     costCredits: r.cost_credits,
+    tokens: r.tokens ?? 0,
     duration: r.duration,
     waitingFor: r.waiting_for,
     jobIds: r.job_ids ?? [],
@@ -1100,7 +1102,7 @@ type RawFlowSweep = RawFlow & {
   ai_steps?: number
   runs_7d?: number[]
   last_run?: RawFlowRunSweep | null
-  spent_this_month_credits?: number
+  tokens_this_month?: number
   publish_state?: 'draft' | 'pending' | 'live'
   pending_proposal_id?: string | null
   published_version?: number | null
@@ -1130,7 +1132,7 @@ export function mapFlowSweep(r: RawFlowSweep): Flow {
   if (r.ai_steps !== undefined) f.aiSteps = r.ai_steps
   if (r.runs_7d !== undefined) f.runs7d = r.runs_7d
   if (r.last_run !== undefined) f.lastRun = r.last_run ? mapFlowRunSweep(r.last_run) : null
-  if (r.spent_this_month_credits !== undefined) f.spentThisMonthCredits = r.spent_this_month_credits
+  if (r.tokens_this_month !== undefined) f.tokensThisMonth = r.tokens_this_month
   if (r.publish_state !== undefined) f.publishState = r.publish_state
   if (r.pending_proposal_id !== undefined) f.pendingProposalId = r.pending_proposal_id
   if (r.published_version !== undefined) f.publishedVersion = r.published_version

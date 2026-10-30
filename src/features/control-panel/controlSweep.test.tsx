@@ -13,7 +13,6 @@ import { createMockRepos } from '../../adapters/mock/mockRepos'
 import { createMockCommands } from '../../adapters/mock/mockCommands'
 import type { Commands } from '../../adapters/http/commands'
 import { DialogChangePlan } from './dialogs/DialogChangePlan'
-import { DialogBuyCredits } from './dialogs/DialogBuyCredits'
 import { DialogInvite } from './dialogs/DialogInvite'
 import { SectionMembers } from './sections/SectionMembers'
 import { SectionChannels } from './sections/SectionChannels'
@@ -60,29 +59,6 @@ describe('DialogChangePlan', () => {
     wrap(<DialogChangePlan onClose={() => {}} />, commands)
     await user.click(await screen.findByRole('button', { name: 'Upgrade' }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith('plan_business', 'monthly'))
-  })
-})
-
-describe('DialogBuyCredits', () => {
-  test('packs come from the catalog and the topup sends the pack id', async () => {
-    const commands = createMockCommands()
-    const spy = vi.spyOn(commands, 'topup')
-    const user = userEvent.setup()
-    wrap(<DialogBuyCredits onClose={() => {}} />, commands)
-    expect(await screen.findByText('20,000 credits')).toBeInTheDocument()
-    await user.click(screen.getByText('20,000 credits'))
-    await user.click(screen.getByRole('button', { name: 'Pay with Mayar' }))
-    await waitFor(() => expect(spy).toHaveBeenCalledWith('20000'))
-  })
-
-  test('auto top-up toggle updates the wallet', async () => {
-    const commands = createMockCommands()
-    const spy = vi.spyOn(commands, 'updateWallet')
-    const user = userEvent.setup()
-    wrap(<DialogBuyCredits onClose={() => {}} />, commands)
-    await screen.findByText('5,000 credits')
-    await user.click(screen.getByRole('switch', { name: 'Auto top-up' }))
-    await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ autoTopupEnabled: true })))
   })
 })
 

@@ -3,6 +3,7 @@
  * and pure helpers. All data comes from the repos/commands ports; nothing in
  * here is fixture data except the starter TEMPLATES offered on the empty state.
  */
+import { tokensLabel } from '../../app/tokens'
 import type {
   HelperArea,
   RoutineRunDetail,
@@ -102,7 +103,7 @@ export function fmtDuration(secs: number | null | undefined): string {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
-export const fmtCredits = (c: number | null | undefined) => (c == null ? '—' : `${c} credit${c === 1 ? '' : 's'}`)
+export const fmtTokens = (t: number | null | undefined) => (t == null ? '—' : tokensLabel(t))
 
 /** Local yyyy-mm-dd for <input type="date">. */
 export function toDateInput(iso: string | null | undefined): string {
@@ -339,7 +340,7 @@ export function runSummaryDetail(run: RoutineRunSummary, agentId: string): RunDe
     agentId,
     duration: fmtDuration(run.duration),
     triggeredBy: TRIGGER[run.trigger ?? 'schedule'] ?? 'Schedule',
-    cost: fmtCredits(run.costCredits),
+    cost: fmtTokens(run.tokens ?? 0),
     attempts: '—',
     outcome: result === 'skip' ? `Skipped — ${run.error ?? 'nothing to do'}` : result === 'fail' ? 'Failed' : 'Completed',
     ...(result === 'fail' ? { error: run.error ?? 'The run failed.' } : {}),
@@ -354,7 +355,7 @@ export function runDetailFromApi(d: RoutineRunDetail): RunDetail {
   return {
     ...base,
     attempts: d.job ? `${d.job.attempts}` : '—',
-    cost: fmtCredits(d.job?.costCredits ?? d.run.costCredits),
+    cost: fmtTokens(d.job ? (d.job.tokensIn ?? 0) + (d.job.tokensOut ?? 0) : d.run.tokens ?? 0),
     outcome: d.output?.headline ?? base.outcome,
     ...(base.result === 'fail' ? { error: d.job?.error ?? d.run.error ?? 'The run failed.' } : {}),
     ...(base.result === 'ok' && d.output ? { output: d.output.lines.length ? d.output.lines : [d.output.headline] } : {}),

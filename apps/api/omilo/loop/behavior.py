@@ -3,7 +3,7 @@
 The Team → helper → Behavior tab stores ``helper.behavior``:
 
     {
-      "spend_per_task_idr": 50000,      # pause-and-ask threshold per task (Rupiah)
+      "tokens_per_task": 200000,        # per-task AI limit in tokens (input + output)
       "messages_per_hour": 60,          # runaway-loop guard on external channels
       "never_discuss": ["Legal", ...],  # topics always handed to a person
       "work_hours_override": false,     # use the helper's own hours instead of the company's
@@ -14,8 +14,8 @@ The Team → helper → Behavior tab stores ``helper.behavior``:
 ``build_helper_instructions`` turns the job description + these settings into
 the standing instructions every engine gets on ``TaskContext.instructions``
 (the system-prompt material). ``enforce_spend_cap`` raises an Inbox alert when
-one task costs more than the per-task cap (engines report cost only after the
-turn, so the cap is enforced as an alert rather than a mid-turn stop).
+one task uses more tokens than the per-task limit (engines report usage only
+after the turn, so the limit is enforced as an alert rather than a mid-turn stop).
 """
 from __future__ import annotations
 
@@ -23,25 +23,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-# Rupiah per credit comes from the billing catalogue (base pack: 2,000 credits
-# for Rp 100 rb). Used to convert the Rupiah cap to credits.
-from omilo.billing.catalog import IDR_PER_CREDIT  # noqa: E402
-
-
 def _behavior(helper: Any) -> dict[str, Any]:
     b = getattr(helper, "behavior", None)
     return b if isinstance(b, dict) else {}
 
 
-def spend_cap_credits(helper: Any) -> int | None:
-    idr = _behavior(helper).get("spend_per_task_idr")
-    try:
-        idr = int(idr)
-    except (TypeError, ValueError):
-        return None
-    if idr <= 0:
-        return None
-    return max(1, idr // IDR_PER_CREDIT)
+def task_token_cap(helper: Any) -> int | None:
+    """The helper's per-task token limit (Behavior tab), or None."""
+    from omilo.ai.usage import positive_tokens
+
+    return positive_tokens(_behavior(helper).get("tokens_per_task"))
 
 
 def build_helper_instructions(helper: Any) -> str:
@@ -70,9 +61,9 @@ def build_helper_instructions(helper: Any) -> str:
     if handoff:
         who = "the owner" if handoff == "owner" else handoff.split(":", 1)[-1]
         lines.append(f"When you're stuck, hand off to {who} with a short summary.")
-    idr = b.get("spend_per_task_idr")
-    if idr:
-        lines.append(f"Pause and ask before one task costs more than Rp {int(idr):,}.".replace(",", "."))
+    cap = task_token_cap(helper)
+    if cap:
+        lines.append(f"Keep each task under about {cap:,} AI tokens; if it needs more, pause and ask first.")
     mph = b.get("messages_per_hour")
     if mph:
         lines.append(f"Send at most {int(mph)} messages per hour on any channel.")
@@ -80,17 +71,17 @@ def build_helper_instructions(helper: Any) -> str:
 
 
 def enforce_spend_cap(db: Session, job: Any, helper: Any, cap: int | None) -> bool:
-    """Create an Inbox alert when *job* cost more than the per-task cap. Returns True if over."""
-    if cap is None or (job.cost_credits or 0) <= cap:
+    """Create an Inbox alert when *job* used more tokens than the per-task cap. Returns True if over."""
+    from omilo.ai.usage import fmt_tokens, job_tokens
+
+    used = job_tokens(job)
+    if cap is None or used <= cap:
         return False
     try:
         from omilo.models.base import prefixed_id
         from omilo.models.inbox import InboxItem
 
-        summary = (
-            f"One task cost {job.cost_credits} credits; the limit is {cap} credits "
-            f"(≈ Rp {cap * IDR_PER_CREDIT:,}).".replace(",", ".")
-        )
+        summary = f"One task used {fmt_tokens(used)}; the limit is {fmt_tokens(cap)} per task."
         item = InboxItem(
             id=prefixed_id("inb"),
             company_id=job.company_id,

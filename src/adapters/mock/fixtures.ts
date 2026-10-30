@@ -440,6 +440,7 @@ export const flowRuns: FlowRun[] = [
     triggerSummary: 'schedule',
     startedBy: 'scheduler',
     costCredits: 12,
+    tokens: 24_300,
     duration: 45,
     waitingFor: null,
     jobIds: ['job-1', 'job-2'],
@@ -453,6 +454,7 @@ export const flowRuns: FlowRun[] = [
     triggerSummary: 'schedule',
     startedBy: 'scheduler',
     costCredits: 10,
+    tokens: 19_800,
     duration: 38,
     waitingFor: null,
     jobIds: ['job-3'],
@@ -557,7 +559,7 @@ export const analyticsOverview: AnalyticsOverview = {
     { label: 'Jobs done', value: 142 },
     { label: 'Success rate', value: 94, note: '%' },
     { label: 'Tokens', value: 284_000 },
-    { label: 'Spend', value: 1_450, note: 'credits' },
+    { label: 'Tokens per job', value: 2_100, note: 'tokens' },
   ],
   series: [
     {
@@ -569,9 +571,9 @@ export const analyticsOverview: AnalyticsOverview = {
 }
 
 export const analyticsHelpers: HelperStat[] = [
-  { helperId: 'h-chief', name: 'Chief', jobs: 80, success: 96, tokens: 160_000, spend: 820 },
-  { helperId: 'h-dev',   name: 'Dev',   jobs: 42, success: 93, tokens: 98_000,  spend: 430 },
-  { helperId: 'h-growth',name: 'Growth',jobs: 20, success: 90, tokens: 26_000,  spend: 200 },
+  { helperId: 'h-chief', name: 'Chief', jobs: 80, success: 96, tokens: 160_000, spend: 160_000 },
+  { helperId: 'h-dev',   name: 'Dev',   jobs: 42, success: 93, tokens: 98_000,  spend: 98_000 },
+  { helperId: 'h-growth',name: 'Growth',jobs: 20, success: 90, tokens: 26_000,  spend: 26_000 },
 ]
 
 // ── Skills ────────────────────────────────────────────────────────────────────
@@ -817,21 +819,21 @@ const iso = (minsAgo: number) => new Date(SWEEP_TODAY.getTime() - minsAgo * 60_0
 
 const MOCK_HELPER_EXTRAS: Record<string, Partial<Helper>> = {
   'h-chief': {
-    model: 'Opus 5.5', title: 'Chief of Staff', reportsTo: 'owner', jobsMonth: 112, costMonth: 1_820, loops: 3,
+    model: 'Opus 5.5', title: 'Chief of Staff', reportsTo: 'owner', jobsMonth: 112, tokensMonth: 1_820_000, loops: 3,
     currentJob: { id: 'job-brief', brief: 'Planning next week', status: 'running' },
     nextRoutine: { id: 'rtn-morning-brief', name: 'Morning brief', nextAt: '2026-10-29T00:00:00Z' },
-    lastActive: iso(1), budgetCreditsMonth: 2_500, channelCount: 0,
+    lastActive: iso(1), budgetTokensMonth: 2_500_000, channelCount: 0,
     behavior: { language: 'Bahasa Indonesia', never_discuss: ['Legal', 'Politics'], handoff_to: 'owner' },
   },
   'h-dev': {
-    model: 'Opus 5.5', title: 'Dev · Engineering', reportsTo: 'h-chief', jobsMonth: 61, costMonth: 930, loops: 2,
+    model: 'Opus 5.5', title: 'Dev · Engineering', reportsTo: 'h-chief', jobsMonth: 61, tokensMonth: 930_000, loops: 2,
     currentJob: { id: 'job-pr', brief: 'Opening the PR for the passkey cut-off', status: 'running' },
-    lastActive: iso(3), budgetCreditsMonth: null, channelCount: 0,
+    lastActive: iso(3), budgetTokensMonth: null, channelCount: 0,
   },
   'h-growth': {
-    model: 'Sonnet 5.5', title: 'Growth · Marketing', reportsTo: 'h-chief', jobsMonth: 19, costMonth: 210, loops: 1,
+    model: 'Sonnet 5.5', title: 'Growth · Marketing', reportsTo: 'h-chief', jobsMonth: 19, tokensMonth: 210_000, loops: 1,
     currentJob: { id: 'job-ig', brief: 'Your pick between two Instagram drafts', status: 'waiting' },
-    lastActive: iso(120), budgetCreditsMonth: null, channelCount: 1,
+    lastActive: iso(120), budgetTokensMonth: null, channelCount: 1,
   },
 }
 for (const h of helpers) Object.assign(h, MOCK_HELPER_EXTRAS[h.id] ?? {})
@@ -895,11 +897,11 @@ export const mockJobsSeries = {
 
 export const mockSpendByChannel: AnalyticsStackedSeries = {
   buckets: BUCKETS_7,
-  total: 1_450,
+  total: 2_900_000,
   series: [
-    { key: 'ch-engineering', label: 'Engineering', area: 'dev', values: [110, 140, 160, 30, 20, 190, 120] },
-    { key: 'ch-marketing', label: 'Marketing', area: 'marketing', values: [30, 40, 20, 20, 10, 50, 60] },
-    { key: 'ch-general', label: 'General', area: 'brand', values: [20, 15, 25, 10, 5, 30, 25] },
+    { key: 'ch-engineering', label: 'Engineering', area: 'dev', values: [220000, 280000, 320000, 60000, 40000, 380000, 240000] },
+    { key: 'ch-marketing', label: 'Marketing', area: 'marketing', values: [60000, 80000, 40000, 40000, 20000, 100000, 120000] },
+    { key: 'ch-general', label: 'General', area: 'brand', values: [40000, 30000, 50000, 20000, 10000, 60000, 50000] },
   ],
 }
 
@@ -914,10 +916,10 @@ export const mockTokensByHelper: AnalyticsStackedSeries = {
 }
 
 export const mockLoops: AnalyticsLoop[] = [
-  { id: 'rtn-morning-brief', kind: 'routine', name: 'Morning brief', helperId: 'h-chief', helperName: 'Chief', area: 'brand', schedule: 'Daily · 07:00', nextAt: '2026-10-29T00:00:00Z', lastResult: 'done', runs: 7, avgCost: 12, on: true },
-  { id: 'rtn-pr-digest', kind: 'routine', name: 'PR digest to #engineering', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Weekdays · 09:00', nextAt: '2026-10-29T02:00:00Z', lastResult: 'done', runs: 5, avgCost: 4, on: true },
-  { id: 'rtn-latency', kind: 'routine', name: 'Weekly latency report', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Fri · 16:00', nextAt: '2026-10-30T09:00:00Z', lastResult: 'failed', runs: 1, avgCost: 21, on: true },
-  { id: 'flw-weekly-growth', kind: 'flow', name: 'Weekly growth review', helperId: null, helperName: 'Flow', area: 'marketing', schedule: 'Weekly · 08:00', nextAt: null, lastResult: 'done', runs: 1, avgCost: 35, on: false },
+  { id: 'rtn-morning-brief', kind: 'routine', name: 'Morning brief', helperId: 'h-chief', helperName: 'Chief', area: 'brand', schedule: 'Daily · 07:00', nextAt: '2026-10-29T00:00:00Z', lastResult: 'done', runs: 7, avgTokens: 24000, on: true },
+  { id: 'rtn-pr-digest', kind: 'routine', name: 'PR digest to #engineering', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Weekdays · 09:00', nextAt: '2026-10-29T02:00:00Z', lastResult: 'done', runs: 5, avgTokens: 8000, on: true },
+  { id: 'rtn-latency', kind: 'routine', name: 'Weekly latency report', helperId: 'h-dev', helperName: 'Dev', area: 'dev', schedule: 'Fri · 16:00', nextAt: '2026-10-30T09:00:00Z', lastResult: 'failed', runs: 1, avgTokens: 42000, on: true },
+  { id: 'flw-weekly-growth', kind: 'flow', name: 'Weekly growth review', helperId: null, helperName: 'Flow', area: 'marketing', schedule: 'Weekly · 08:00', nextAt: null, lastResult: 'done', runs: 1, avgTokens: 70000, on: false },
 ]
 
 export const mockReliability: AnalyticsReliability = {

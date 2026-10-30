@@ -43,7 +43,7 @@ const iso = (daysFromNow: number, hh = 7, mm = 30) => {
 }
 
 const run = (id: string, routineId: string, ago: number, outcome: RoutineRunSummary['outcome'] = 'ok', error: string | null = null): RoutineRunSummary => ({
-  id, routineId, jobId: `job_${id}`, at: iso(-ago), outcome, duration: 110, costCredits: 3,
+  id, routineId, jobId: `job_${id}`, at: iso(-ago), outcome, duration: 110, costCredits: 3, tokens: 3_000,
   trigger: 'schedule', error, feedback: null,
 })
 
@@ -408,7 +408,7 @@ describe('Routines · Detail drawer', () => {
     const drawer = await screen.findByRole('dialog', { name: 'Morning brief' })
     expect(drawer).toHaveTextContent('Chief · weekdays at 07:30 · managed by Chief')
     expect(drawer).toHaveTextContent('Recent runs')
-    expect(drawer).toHaveTextContent('~3 credits a run')
+    expect(drawer).toHaveTextContent('~3k tokens a run')
     expect(screen.getByRole('tab', { name: 'Weekdays' })).toHaveAttribute('aria-selected', 'true')
   })
 
@@ -502,7 +502,7 @@ describe('routine adapters + helpers', () => {
     expect(d.agentId).toBe('hlp_chief')
     expect(d.sendsTo).toEqual([{ icon: 'message-circle', label: 'WhatsApp' }])
     expect(d.runs).toHaveLength(2)
-    expect(d.cost).toBe('~3 credits a run')
+    expect(d.cost).toBe('~3k tokens a run')
     expect(d.latestRunId).toBe('rrn_b2')
   })
 

@@ -72,7 +72,7 @@ export function DialogConnectKey({ onClose }: Props) {
   return (
     <Modal
       title="Connect an AI account"
-      subtitle="Use your own provider key. Helpers bill to it instead of Omilo credits."
+      subtitle="Use your own provider key. Your provider bills you per token for what helpers use."
       width={480}
       onClose={onClose}
       footer={

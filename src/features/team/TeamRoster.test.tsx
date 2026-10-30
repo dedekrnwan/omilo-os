@@ -162,8 +162,8 @@ describe('TeamRoster — live repo', () => {
   test('Chief stats and topbar come from live data, not literals', async () => {
     useSession.setState({ company: { id: 'c1', name: 'Acme Kopi', currency: 'IDR', onboarded: true } })
     const helpers: Helper[] = [
-      { ...LIVE_HELPERS[0], jobsMonth: 30, costMonth: 400 },
-      { ...LIVE_HELPERS[1], jobsMonth: 12, costMonth: 1000, currentJob: { id: 'j', brief: 'Fix the login bug', status: 'running' } },
+      { ...LIVE_HELPERS[0], jobsMonth: 30, tokensMonth: 400_000 },
+      { ...LIVE_HELPERS[1], jobsMonth: 12, tokensMonth: 1_000_000, currentJob: { id: 'j', brief: 'Fix the login bug', status: 'running' } },
     ]
     renderRoster(
       makeRepos({
@@ -178,7 +178,7 @@ describe('TeamRoster — live repo', () => {
     )
     expect(await screen.findByText('Fix the login bug')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
-    expect(screen.getByText('1.400 cr')).toBeInTheDocument()
+    expect(screen.getByText('1.4M')).toBeInTheDocument()
     expect(screen.getByText(/Acme Kopi/)).toBeInTheDocument()
     expect(screen.queryByText('Sahabat Warga', { exact: false })).toBeNull()
   })

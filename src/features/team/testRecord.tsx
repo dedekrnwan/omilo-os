@@ -21,7 +21,7 @@ export function makeRecord(over: Partial<Helper> = {}, detail?: Partial<HelperDe
     isChief: false,
     jobDescription: 'Answer customer questions.',
     loops: 1,
-    costMonth: 120,
+    tokensMonth: 120,
     ...over,
   }
   return buildHelperRecord(

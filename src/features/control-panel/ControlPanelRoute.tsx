@@ -9,7 +9,7 @@ const VALID_SECTIONS: ControlPanelSection[] = [
   'usage', 'activity', 'data', 'account', 'notifications',
 ]
 
-const VARIANTS: Exclude<PageVariant, null>[] = ['self-hosted', 'cloud', 'credits-low', 'policies']
+const VARIANTS: Exclude<PageVariant, null>[] = ['self-hosted', 'cloud', 'policies']
 
 function isValidSection(s: string | undefined): s is ControlPanelSection {
   return VALID_SECTIONS.includes(s as ControlPanelSection)

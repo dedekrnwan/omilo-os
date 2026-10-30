@@ -1,17 +1,10 @@
 /**
- * Shared number / money / time formatting for Analytics and Team.
+ * Shared number / time formatting for Analytics and Team.
  *
- * Money: spend is reported in credits; the Rupiah equivalent uses the single
- * app-wide rate in src/app/money.ts.
+ * AI usage and budgets are counted in tokens (src/app/tokens.ts).
  */
-export { IDR_PER_CREDIT, formatCredits, formatRp, creditsInRp } from '../../app/money'
-
-/** 1240000 → "1.2M", 41200 → "41k", 950 → "950". */
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1000) return `${Math.round(n / 1000)}k`
-  return String(Math.round(n))
-}
+export { formatRp } from '../../app/money'
+export { formatTokens, tokensLabel, parseTokens, tokensInput } from '../../app/tokens'
 
 /** "now" · "12m ago" · "2h ago" · "3d ago" · "—" */
 export function relativeTime(isoStr: string | null | undefined, now: Date = new Date()): string {

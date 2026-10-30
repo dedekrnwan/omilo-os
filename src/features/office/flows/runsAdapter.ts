@@ -1,6 +1,6 @@
 import type { FlowRun } from '../../../core/domain/types'
 import type { FlowRunRow, FlowRunStatus } from './data'
-import { costLabel } from '../../../app/money'
+import { tokensLabel } from '../../../app/tokens'
 
 /**
  * Adapters for the office-level "Runs" tab, which aggregates runs across ALL
@@ -47,9 +47,9 @@ export function formatDuration(sec: number | null): string {
   return s ? `${m}m ${s}s` : `${m}m`
 }
 
-/** Rupiah cost label from a credit count (app-wide rate, src/app/money.ts). */
-export function formatCost(credits: number): string {
-  return costLabel(credits)
+/** AI usage label for a run: "12k tokens", or "—" when it used none. */
+export function formatCost(tokens: number): string {
+  return tokens > 0 ? tokensLabel(tokens) : '—'
 }
 
 /** Map a live FlowRun + its flow's title into the office Runs table row. */
@@ -63,7 +63,7 @@ export function officeRunRow(run: FlowRun, flowTitle: string, now: number): Flow
     startedBy: run.startedBy ?? '',
     startedAt: formatRelative(run.startedAt, now),
     duration: formatDuration(run.duration),
-    cost: formatCost(run.costCredits),
+    cost: formatCost(run.tokens ?? 0),
     waitingFor: run.waitingFor ?? undefined,
   }
 }
@@ -72,7 +72,7 @@ export interface RunsStats {
   'Runs this week': string
   'Success rate': string
   'Needs you': string
-  Spend: string
+  Tokens: string
 }
 
 /** Header stats for the office Runs tab, computed from the aggregated live runs. */
@@ -90,13 +90,13 @@ export function runsStats(runs: FlowRun[], now: number): RunsStats {
   const successRate = finished.length ? `${Math.round((succeeded / finished.length) * 100)}%` : '—'
 
   const needsYou = runs.filter((r) => r.status === 'needs_you' || r.status === 'waiting').length
-  const spend = runs.reduce((sum, r) => sum + r.costCredits, 0)
+  const used = runs.reduce((sum, r) => sum + (r.tokens ?? 0), 0)
 
   return {
     'Runs this week': String(thisWeek),
     'Success rate': successRate,
     'Needs you': String(needsYou),
-    Spend: formatCost(spend),
+    Tokens: formatCost(used),
   }
 }
 

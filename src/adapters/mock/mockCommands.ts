@@ -629,7 +629,7 @@ export function createMockCommands(): Commands {
       if (run) run.feedback = vote
       return Promise.resolve(run ?? {
         id: runId, routineId: '', jobId: null, at: null, outcome: 'ok' as const, duration: null,
-        costCredits: 0, trigger: null, error: null, feedback: vote,
+        costCredits: 0, tokens: 0, trigger: null, error: null, feedback: vote,
       })
     },
     resendRoutineRun(runId: string) {
@@ -984,7 +984,7 @@ import {
 } from './fixtures'
 
 function sweepCreateHelperExtras(input: CreateHelperInput): Partial<Helper> {
-  const out: Partial<Helper> = { jobs: 0, success: 0, jobsMonth: 0, costMonth: 0, loops: 0 }
+  const out: Partial<Helper> = { jobs: 0, success: 0, jobsMonth: 0, tokensMonth: 0, loops: 0 }
   if (input.model !== undefined) out.model = input.model
   if (input.reportsTo !== undefined) out.reportsTo = input.reportsTo
   if (input.title !== undefined) out.title = input.title
@@ -999,7 +999,7 @@ function sweepApplyHelperUpdate(h: Helper, input: UpdateHelperInput): void {
   if (input.title !== undefined) h.title = input.title
   if (input.reportsTo !== undefined) h.reportsTo = input.reportsTo
   if (input.look !== undefined) h.look = input.look
-  if (input.budgetCreditsMonth !== undefined) h.budgetCreditsMonth = input.budgetCreditsMonth
+  if (input.budgetTokensMonth !== undefined) h.budgetTokensMonth = input.budgetTokensMonth
   if (input.behavior !== undefined) {
     const merged: Record<string, unknown> = { ...(h.behavior ?? {}) }
     for (const [k, v] of Object.entries(input.behavior)) {

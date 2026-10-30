@@ -28,6 +28,7 @@ export type RawRoutineRun = {
   duration: number | null
   skipped?: boolean
   cost_credits: number
+  tokens?: number
   trigger?: string | null
   error?: string | null
   feedback?: string | null
@@ -43,6 +44,7 @@ export function mapRoutineRun(r: RawRoutineRun): RoutineRunSummary {
     outcome: (['ok', 'fail', 'skip', 'running'] as const).includes(outcome) ? outcome : 'ok',
     duration: r.duration ?? null,
     costCredits: r.cost_credits ?? 0,
+    tokens: r.tokens ?? 0,
     trigger: (r.trigger ?? null) as RoutineRunSummary['trigger'],
     error: r.error ?? null,
     feedback: (r.feedback ?? null) as RoutineRunSummary['feedback'],

@@ -15,7 +15,7 @@ const TEAM: TeamMember[] = [
 const DONE = [
   { t: 'Account created', d: 'dede@saga.co.id' },
   { t: 'Company set up', d: 'Sahabat Warga · Asia/Jakarta' },
-  { t: 'Team plan · trial', d: '5 seats · $20 AI credit' },
+  { t: 'Team plan · trial', d: 'Unlimited people · 50 GB storage' },
   { t: 'Agents hired', d: 'Chief, Dev, Ops, Growth, Finance' },
 ]
 

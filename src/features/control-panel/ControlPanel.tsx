@@ -28,7 +28,6 @@ import { DialogConnectDrive } from './dialogs/DialogConnectDrive'
 import { DialogAddMcp } from './dialogs/DialogAddMcp'
 import { DialogWriteSkill } from './dialogs/DialogWriteSkill'
 import { DialogChangePlan } from './dialogs/DialogChangePlan'
-import { DialogBuyCredits } from './dialogs/DialogBuyCredits'
 import { DIALOG_KINDS } from './types'
 import type { ControlPanelSection, DialogKind, PageVariant } from './types'
 import type { DialogKind as LegacyDialogKind } from './legacyTypes'
@@ -104,7 +103,6 @@ function DialogOverlay({
     case 'build-oas':        return <DialogAddMcp onClose={onClose} mode="oas" />
     case 'write-skill':      return <DialogWriteSkill onClose={onClose} />
     case 'change-plan':      return <DialogChangePlan onClose={onClose} />
-    case 'buy-credits':      return <DialogBuyCredits onClose={onClose} />
     case 'connect-drive':    return <DialogConnectDrive onClose={onClose} />
     // oas-tools: not built yet
     default:                 return null

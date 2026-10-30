@@ -13,7 +13,7 @@ import { notify } from '../../ui/ds/Toaster'
 import { BudgetDrawer, BudgetToast } from './BudgetDrawer'
 import { PERIOD_SUFFIX, RANGE_KEY, asArea, jobsChart, stackedChart, toDisplayStat } from './data'
 import type { BarChart, HelperStat, HelperStatus, RangeLabel } from './data'
-import { formatCredits, formatTokens, relativeTime } from './format'
+import { formatTokens, relativeTime } from './format'
 import { ALL_HELPERS, PageHeader, Tabs, Toolbar } from './parts'
 import type { TabId } from './parts'
 import { ActivityTab, HelpersTab, LoopsTab, OverviewTab, ReliabilityTab } from './tabs'
@@ -45,7 +45,7 @@ function toDomainRow(h: DomainHelperStat): LocalHelperRow {
     success: h.jobs === 0 ? '—' : `${h.success}%`,
     successWarn: h.success < 80 && h.jobs > 0,
     tokens: formatTokens(h.tokens),
-    spend: formatCredits(h.spend),
+    spend: formatTokens(h.spend),
     budget,
     budgetReached: !!h.budgetReached,
     lastActive: relativeTime(h.lastActive),

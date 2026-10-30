@@ -87,7 +87,7 @@ export function toRunStates(runs: ApiRun[], now = Date.now()): RunState[] {
     const number = runs.length - i
     const when = formatRelative(r.startedAt, now)
     const waitingFor = r.status === 'needs_you' && r.startedAt ? formatRelative(r.startedAt, now).replace(' ago', '') : ''
-    const meta = [formatDuration(r.duration), formatCost(r.costCredits)].filter((x) => x !== '—').join(' · ')
+    const meta = [formatDuration(r.duration), formatCost(r.tokens ?? 0)].filter((x) => x !== '—').join(' · ')
     const status = runStatus(r.status)
     return {
       id: r.id,
@@ -125,7 +125,7 @@ export function lastByNode(run: ApiRun | undefined): Record<string, string> {
 }
 
 /** Average cost per run, "$0.018", or null when there are no runs. */
-export function avgCost(runs: ApiRun[]): string | null {
+export function avgTokens(runs: ApiRun[]): string | null {
   if (!runs.length) return null
-  return formatCost(Math.round(runs.reduce((s, r) => s + r.costCredits, 0) / runs.length))
+  return formatCost(Math.round(runs.reduce((s, r) => s + (r.tokens ?? 0), 0) / runs.length))
 }
