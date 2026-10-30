@@ -47,6 +47,7 @@ import { Topbar } from '../../ui/ds/Frame'
 import { Mascot } from '../../ui/ds/Mascot'
 import { accents } from '../../ui/ds/accents'
 import { CreateFolderDialog } from '../shell/CreateFolderDialog'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 // ── pen `Chat · Folder` (A8lWSN) ─────────────────────────────────────────────
 
@@ -394,7 +395,13 @@ export function FolderRoute() {
                   {g.title}
                 </button>
               ))}
-              {goals.length === 0 && <p className="m-0 text-[13px] text-muted">No goals yet.</p>}
+              {goals.length === 0 && (
+                <EmptyState
+                  size="sm"
+                  title="No goals in this folder"
+                  description="Goals give the chats here something to push on — Chief breaks each into key results."
+                />
+              )}
             </div>
             <div className="flex justify-end">
               <Button variant="secondary" style={{ height: 32 }} onClick={() => setGoalPickerFor(null)}>Cancel</Button>
@@ -535,7 +542,12 @@ export function FolderRoute() {
               {filesLoading ? (
                 <span className="text-[12.5px] text-faint">Loading…</span>
               ) : files.length === 0 ? (
-                <span className="text-[12.5px] text-faint">No files yet — add docs helpers should read.</span>
+                <EmptyState
+                  size="sm"
+                  title="No files yet"
+                  description="Add docs helpers should read before they work in this folder."
+                  primary={{ label: 'Add file', icon: Plus, onClick: () => fileInputRef.current?.click() }}
+                />
               ) : (
                 files.map((f) => (
                   <div key={f.id} className="group flex w-full items-center gap-[8px]">
@@ -568,9 +580,15 @@ export function FolderRoute() {
           </div>
           <div className="flex w-full flex-col">
             {chats.length === 0 && (
-              <p className="m-0 px-[9px] py-[11px] text-[13px] text-muted">
-                No chats here yet. Start one with “New chat in folder”, or move a chat in from the sidebar.
-              </p>
+              <EmptyState
+                title="No chats in this folder"
+                description="Start one here, or drag a chat in from the sidebar."
+                primary={{
+                  label: 'New chat in folder',
+                  icon: Plus,
+                  onClick: () => void navigate({ to: '/chat', search: { folder: folder.id } } as never),
+                }}
+              />
             )}
             {chats.map((chat, i) => (
               <FolderChatRow

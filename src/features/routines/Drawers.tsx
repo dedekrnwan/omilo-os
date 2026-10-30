@@ -65,6 +65,7 @@ import {
 } from './ui'
 import { useHelperLookup } from './useHelperLookup'
 import { guessCadence, guessHelper, nameFromPrompt } from './guess'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 const SEND_ICON: Record<string, LucideIcon> = { 'message-circle': MessageCircle, hash: Hash }
 
@@ -258,7 +259,9 @@ function RecentRuns({ r, onOpenRun }: { r: RoutineDetail; onOpenRun?: (runId: st
     <section className="flex w-full shrink-0 flex-col gap-[10px]">
       <SectionLabel>Recent runs</SectionLabel>
       {r.runs.length === 0 ? (
-        <p className="m-0 rounded-md bg-soft p-[12px] text-[12.5px] text-muted">No runs yet. Use Run now to try it.</p>
+        <div className="rounded-md bg-soft">
+          <EmptyState size="sm" title="No runs yet" description="Use Run now to try it — you'll see what it did here." />
+        </div>
       ) : (
         <ul className="m-0 flex w-full list-none flex-col overflow-hidden rounded-md p-0 outline-1 -outline-offset-1 outline-line-strong">
           {r.runs.map((run, i) => (

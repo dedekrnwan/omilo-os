@@ -9,6 +9,7 @@ import type { AuditEvent, AuditQuery } from '../../../core/domain/controlPanel'
 import type { HelperArea } from '../../../core/domain/types'
 import { notify } from '../../../ui/ds/Toaster'
 import { errorMessage, initialsOf, saveBlob } from '../format'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 const FILTERS: { label: string; query: Pick<AuditQuery, 'type' | 'actor'> }[] = [
   { label: 'All', query: {} },
@@ -157,10 +158,22 @@ export function SectionActivity() {
 
         {/* Events */}
         {isLoading && <p className="text-[13px] text-muted">Loading activity…</p>}
-        {isError && <p className="text-[13px] text-muted">Could not load the activity log. Please try again.</p>}
+        {isError && (
+          <div className="rounded-lg border border-line-strong bg-surface">
+            <EmptyState
+              mood="worried"
+              title="Couldn't load the activity log"
+              description="Check your connection and try again."
+              primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+            />
+          </div>
+        )}
         {!isLoading && !isError && events.length === 0 && (
-          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
-            <p className="text-[13px] text-muted">Nothing here yet for {RANGES[range].label.toLowerCase()}.</p>
+          <div className="rounded-lg border border-line-strong bg-surface">
+            <EmptyState
+              title={`No activity ${RANGES[range].label.toLowerCase()}`}
+              description="Every approval, change and helper action is logged here. Try a longer range."
+            />
           </div>
         )}
         {groups.length > 0 && (

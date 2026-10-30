@@ -36,6 +36,7 @@ import { notify } from '../../ui/ds/Toaster'
 import { useFabHidden } from './fabStore'
 import { QUICK_PROMPTS, THREADS_NOTE } from './data'
 import type { ChiefMessage } from './data'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 export type ChiefDmState = 'closed' | 'nudge' | 'open' | 'full' | 'threads'
 const STATES: ChiefDmState[] = ['closed', 'nudge', 'open', 'full', 'threads']
@@ -366,7 +367,15 @@ function Threads({
       </div>
       {loading && <p className="m-0 px-[10px] text-[12.5px] text-muted">Loading…</p>}
       {!loading && list.length === 0 && (
-        <p className="m-0 px-[10px] text-[12.5px] text-muted">{query ? 'No private chats match.' : 'No private chats yet.'}</p>
+        query ? (
+          <EmptyState size="sm" title="No private chats match" description="Try another word." />
+        ) : (
+          <EmptyState
+            size="sm"
+            title="No private chats yet"
+            description="Ask me anything here — only you can see these chats."
+          />
+        )
       )}
       {(['TODAY', 'EARLIER'] as const).map((g) => {
         const rows = list.filter((t) => groupOf(t) === g)

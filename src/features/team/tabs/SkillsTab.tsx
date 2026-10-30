@@ -6,6 +6,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import type { HelperRecord } from '../teamData'
 import { Btn, IconTile, Switch } from '../ui'
 import { MenuItemBody, menuItemClass, menuSurface } from '../../../ui/ds/Menu'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 type Permission = 'Always allowed' | 'Ask each time'
 const PERMISSION_OPTIONS: Permission[] = ['Always allowed', 'Ask each time']
@@ -121,11 +122,13 @@ export function SkillsTab({ helper, onBrowse }: { helper: HelperRecord; onBrowse
         </div>
         <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
           {isLoading && <span className="py-[14px] text-[12.5px] text-muted">Loading skills…</span>}
-          {isError && <span className="py-[14px] text-[12.5px] text-bad">Couldn't load skills.</span>}
+          {isError && <EmptyState size="sm" mood="worried" title="Couldn't load skills" />}
           {!isLoading && !isError && skills.length === 0 && (
-            <span className="py-[14px] text-[12.5px] text-muted">
-              No skills yet. Browse company skills, or {helper.name} learns its own as it works.
-            </span>
+            <EmptyState
+              size="sm"
+              title="No skills yet"
+              description={`Browse company skills, or ${helper.name} learns its own as it works.`}
+            />
           )}
           {skills.map((s, i) => (
             <SkillRow key={s.id} s={s} last={i === skills.length - 1} onChange={(n) => change(s, n)} />

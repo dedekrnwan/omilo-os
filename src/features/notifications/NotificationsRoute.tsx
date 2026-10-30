@@ -12,6 +12,7 @@ import { useUIStore } from '../../app/store'
 import { useDecide, useInbox, useMarkAllInboxRead, useMarkInboxRead } from '../../app/queries'
 import { inboxToDisplay } from './inboxAdapter'
 import { decisionsFor, isDecidable, runAll } from '../office/decisions'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 /**
  * Prompt to turn on real desktop/browser push — shown until the user grants
@@ -306,17 +307,22 @@ export function NotificationsRoute() {
 
           {/* Error state */}
           {isError && (
-            <p className="text-[13px] text-muted" role="alert">
-              Could not load notifications. Please try again.
-            </p>
+            <EmptyState
+              size="lg"
+              mood="worried"
+              title="Couldn't load notifications"
+              description="Check your connection and try again."
+              primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+            />
           )}
 
           {/* All caught up */}
           {isEmpty && (
-            <div className="flex flex-col items-center gap-[12px] py-[40px] text-center" data-testid="empty-state">
-              <p className="text-[15px] font-medium text-ink">You&apos;re all caught up</p>
-              <p className="text-[13px] text-muted">No notifications here right now.</p>
-            </div>
+            <EmptyState
+              size="lg"
+              title="You're all caught up"
+              description="Decisions, finished work and alerts from your helpers show up here."
+            />
           )}
 
           {/* Pinned decisions */}

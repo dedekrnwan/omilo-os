@@ -36,6 +36,7 @@ import type { FlowIconId } from '../../../ui/ds/FlowChain'
 import { TEMPLATES } from './data'
 import type { FlowTab, TemplateFlow } from './data'
 import { RunStatusChip, Sparkline, Toggle } from './shared'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 /** "Use" on a template → a draft flow body (trigger → AI step → app). */
 function templateBody(t: TemplateFlow): CreateFlowInput {
@@ -251,7 +252,15 @@ function YoursTab({
   const { deleted } = useFlowBoard()
 
   if (error) {
-    return <div className="px-[24px] py-[20px] text-[13px] text-bad">Failed to load flows. Please refresh to try again.</div>
+    return (
+      <EmptyState
+        size="lg"
+        mood="worried"
+        title="Couldn't load your flows"
+        description="Check your connection and try again."
+        primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+      />
+    )
   }
   if (loading) {
     return <div className="px-[24px] py-[20px] text-[13px] text-muted">Loading flows…</div>
@@ -264,7 +273,13 @@ function YoursTab({
     return (
       <div className="flex flex-col gap-[20px]">
         <div className="grid grid-cols-3 gap-[12px]">
-          <div className="col-span-3 py-[24px] text-center text-[13px] text-muted">No flows yet</div>
+          <EmptyState
+            className="col-span-3"
+            size="lg"
+            title="No flows yet"
+            description="A flow chains helpers into one process — a lead comes in, Sales drafts the offer, you approve it. Start from a suggestion below or build your own."
+            primary={onNewClick ? { label: 'New flow', icon: Plus, onClick: onNewClick } : undefined}
+          />
           {suggestions.map((item) => (
             <SuggestedCard key={item.id} item={item} onCreate={() => onSuggestedCreate?.(item)} />
           ))}

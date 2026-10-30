@@ -12,6 +12,7 @@ import { CreateChannelDialog } from '../../chat/CreateChannelDialog'
 import { useDeleteChannel, useManagedChannels, useUpdateChannel } from '../../../app/queries'
 import type { ManagedChannel } from '../../../core/domain/controlPanel'
 import { errorMessage, shortDate } from '../format'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 type MascotArea = 'dev' | 'marketing' | 'ops' | 'finance' | 'sales' | 'support' | 'retro' | 'brand'
 const AREAS: MascotArea[] = ['dev', 'marketing', 'ops', 'finance', 'sales', 'support', 'retro', 'brand']
@@ -132,7 +133,13 @@ export function SectionChannels() {
               <span>Context</span>
               <span />
             </div>
-            {channels.length === 0 && <p className="px-[16px] py-[12px] text-[13px] text-muted">No channels yet.</p>}
+            {channels.length === 0 && (
+              <EmptyState
+                title="No channels yet"
+                description="Channels group chats, goals and helpers by area of the business — Sales, Support, Ops."
+                primary={{ label: 'New channel', icon: Plus, onClick: () => setCreating(true) }}
+              />
+            )}
             {channels.map((ch, i) => (
               <div
                 key={ch.id}

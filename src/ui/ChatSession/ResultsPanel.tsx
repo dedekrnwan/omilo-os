@@ -33,6 +33,7 @@ import {
 import { IconButton } from '../ds/Button'
 import { Mascot } from '../ds/Mascot'
 import { Ring } from './Ring'
+import { EmptyState } from '../ds/EmptyState'
 
 type Icon = ComponentType<{ size?: number; className?: string; 'aria-hidden'?: boolean }>
 
@@ -292,9 +293,13 @@ export function ResultsPanel({
         {isLoading ? (
           <span className="text-[12.5px] text-muted">Loading…</span>
         ) : isError ? (
-          <span role="alert" className="text-[12.5px] text-bad">Couldn’t load progress.</span>
+          <EmptyState size="sm" mood="worried" title="Couldn’t load progress" />
         ) : steps.length === 0 ? (
-          <span className="text-[12.5px] text-muted">No helper work in this chat yet.</span>
+          <EmptyState
+            size="sm"
+            title="No helper work yet"
+            description="When Chief hands part of this chat to a helper, its steps and results show up here."
+          />
         ) : (
           <>
             <div className="flex w-full flex-col gap-[10px]">

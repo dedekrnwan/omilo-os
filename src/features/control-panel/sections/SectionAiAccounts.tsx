@@ -20,6 +20,7 @@ import { useCommands } from '../../../app/CommandsProvider'
 import { notify } from '../../../ui/ds/Toaster'
 import { HarnessLogo } from '../../../ui/ds/harnessLogos'
 import { DetectedHarnesses } from '../../../ui/ds/DetectedHarnesses'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 const GRID = 'grid-cols-[168px_1fr_96px_176px_80px_auto]'
 
@@ -233,12 +234,12 @@ export function SectionAiAccounts({ onDialog }: Props) {
 
         {/* Empty state */}
         {isEmpty && (
-          <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
-            <KeyRound size={20} className="mx-auto mb-[8px] text-faint" aria-hidden />
-            <p className="text-[13px] text-muted">No AI accounts configured yet.</p>
-            <Button variant="primary" height={28} icon={Plus} style={{ marginTop: 12 }} onClick={() => onDialog('add-harness')}>
-              Add account
-            </Button>
+          <div className="rounded-lg border border-line-strong bg-surface">
+            <EmptyState
+              title="No AI accounts yet"
+              description="Add a Claude, ChatGPT or Gemini subscription — or an API key — and your helpers share it."
+              primary={{ label: 'Add account', icon: Plus, onClick: () => onDialog('add-harness') }}
+            />
           </div>
         )}
 

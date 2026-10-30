@@ -18,6 +18,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useHelpers, useMcpTokens, useMintMcpToken, useRevokeMcpToken } from '../../../app/queries'
 import type { McpToken } from '../../../core/domain/types'
 import { capture } from '../../../telemetry'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -305,9 +306,12 @@ export function SectionMcpTokens() {
 
             {/* Empty state */}
             {tokens && tokens.length === 0 && (
-              <div className="rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
-                <KeyRound size={20} className="mx-auto mb-[8px] text-faint" aria-hidden />
-                <p className="text-[13px] text-muted">No MCP tokens yet. Mint one to give an MCP client access.</p>
+              <div className="rounded-lg border border-line-strong bg-surface">
+                <EmptyState
+                  title="No MCP tokens yet"
+                  description="Mint a token to let an MCP client — Claude Desktop, Cursor — work with your helpers."
+                  primary={{ label: 'Mint token', icon: KeyRound, onClick: () => setMintOpen(true) }}
+                />
               </div>
             )}
 

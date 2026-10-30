@@ -32,6 +32,7 @@ import { ResultsPanel } from './ResultsPanel'
 import { BrowserPanel } from './BrowserPanel'
 import { RoutineCreatedThread } from './RoutineFromChat'
 import { capture } from '../../telemetry'
+import { EmptyState } from '../ds/EmptyState'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
 
@@ -669,10 +670,11 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
             ]
             if (combined.length === 0) {
               return (
-                <div className="flex h-full flex-col items-center justify-center gap-[6px] px-[24px] text-center">
-                  <Mascot size={40} radius={11} />
-                  <p className="m-0 mt-[6px] text-[13.5px] font-medium text-ink">No messages yet</p>
-                  <p className="m-0 text-[13px] text-muted">Start the conversation below.</p>
+                <div className="flex h-full items-center justify-center">
+                  <EmptyState
+                    title="No messages yet"
+                    description="Ask Chief anything below — it answers, or hands the work to the right helper."
+                  />
                 </div>
               )
             }

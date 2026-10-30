@@ -7,6 +7,7 @@ import { useCompanySettings, useHelpers, useUpdateCompanySettings, useUpdateHelp
 import { MODEL_IDS, companyDefaultModel } from './model'
 import { Btn, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, SelectField } from './ui'
 import type { SelectOption } from './ui'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 const COMPANY_DEFAULT_OPTIONS: readonly SelectOption[] = MODEL_IDS.map((m) => ({ value: m, label: `${m} · Anthropic` }))
 
@@ -89,7 +90,7 @@ export function RolesModelsDialog({ onClose }: { onClose: () => void }) {
       <div className="flex w-full flex-col rounded-lg px-[14px] outline-1 -outline-offset-1 outline-line-strong">
         {isLoading && <span className="py-[12px] text-[12.5px] text-muted">Loading helpers…</span>}
         {!isLoading && team.length === 0 && (
-          <span className="py-[12px] text-[12.5px] text-muted">No helpers yet.</span>
+          <EmptyState size="sm" title="No helpers yet" description="Hire a helper first, then pick its model here." />
         )}
         {team.map((h, i) => (
           <div

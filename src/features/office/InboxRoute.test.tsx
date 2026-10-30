@@ -225,7 +225,7 @@ describe('InboxRoute — empty inbox', () => {
     render(<RouterProvider router={router} />)
 
     await waitFor(() => {
-      expect(screen.getByText(/no items/i)).toBeInTheDocument()
+      expect(screen.getByTestId('empty-state')).toHaveTextContent(/your inbox is clear/i)
     })
   })
 })

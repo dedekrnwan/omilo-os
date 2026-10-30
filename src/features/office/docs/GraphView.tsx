@@ -12,6 +12,7 @@ import { NetworkGraph } from './graph/NetworkGraph'
 import { DOC_FRAME, areaColor, layoutDocGraph } from './graph/graphData'
 import type { DocGraphNode } from './graph/graphData'
 import { areaLabel, longAgo } from './docsUtil'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 function CheckRow({ on, onChange, children, count }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; count?: number }) {
   return (
@@ -191,11 +192,26 @@ export function GraphView({
             </div>
           </section>
         )}
-        {(isLoading || isError || docNodes.length === 0) && (
+        {isLoading && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className={`text-[13px] ${isError ? 'text-bad' : 'text-muted'}`}>
-              {isError ? "Couldn't load the graph" : isLoading ? 'Loading the graph…' : 'No docs yet — link docs with [[their title]] to grow the graph'}
-            </span>
+            <span className="text-[13px] text-muted">Loading the graph…</span>
+          </div>
+        )}
+        {!isLoading && (isError || docNodes.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isError ? (
+              <EmptyState
+                mood="worried"
+                title="Couldn't load the graph"
+                description="Check your connection and try again."
+                primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+              />
+            ) : (
+              <EmptyState
+                title="Your graph is empty"
+                description="Each doc becomes a node. Link docs with [[their title]] and the graph grows as your helpers learn."
+              />
+            )}
           </div>
         )}
         <div className="pointer-events-none absolute bottom-[20px] left-[20px] flex items-center gap-[12px]">

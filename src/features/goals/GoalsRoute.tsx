@@ -38,6 +38,7 @@ import {
   useReplanGoal,
 } from '../../app/queries'
 import { useUIStore } from '../../app/store'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 const HELPER_AREAS: HelperArea[] = ['brand', 'ops', 'dev', 'support', 'finance', 'marketing', 'sales', 'retro']
 const areaOf = (h: Helper | undefined): HelperArea =>
@@ -167,14 +168,18 @@ function GoalWork({ goalId }: { goalId: string }) {
   const { data, isLoading, isError } = useGoalDetail(goalId)
   const { data: helpers = [] } = useHelpers()
   if (isLoading) return <p className="m-0 py-[6px] pl-[30px] text-[12px] text-muted">Loading…</p>
-  if (isError) return <p className="m-0 py-[6px] pl-[30px] text-[12px] text-bad">Couldn’t load the goal’s work.</p>
+  if (isError)
+    return <EmptyState size="sm" mood="worried" className="pl-[30px]" title="Couldn’t load the goal’s work" />
   const work = (data?.jobs ?? []).filter((j) => j.origin === 'delegation')
   const pending = (data?.proposals ?? []).filter((p) => p.status === 'pending')
   if (work.length === 0 && pending.length === 0) {
     return (
-      <p className="m-0 py-[6px] pl-[30px] text-[12px] text-muted">
-        No key results yet — use Replan to let Chief draft them.
-      </p>
+      <EmptyState
+        size="sm"
+        className="pl-[30px]"
+        title="No key results yet"
+        description="Use Replan and Chief drafts them, then hands each to a helper."
+      />
     )
   }
   return (
@@ -832,26 +837,26 @@ function GoalsBoard({ areaId }: { areaId: string | null }) {
 
         {/* States */}
         {isError ? (
-          <p className="mt-[24px] text-[13px] text-bad" role="alert">
-            Failed to load goals. Please try again.
-          </p>
+          <EmptyState
+            size="lg"
+            mood="worried"
+            title="Couldn't load your goals"
+            description="Check your connection and try again."
+            primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+          />
         ) : isLoading ? (
           <p className="mt-[24px] text-[13px] text-muted">Loading…</p>
         ) : filteredGroups.length === 0 ? (
-          <div className="mt-[40px] flex flex-col items-center gap-[8px] text-center">
-            <Target size={32} className="text-faint" aria-hidden />
-            <p className="m-0 text-[14px] font-medium text-ink-2">{totalGoals === 0 ? 'No goals yet' : 'Nothing here'}</p>
-            <p className="m-0 text-[12.5px] text-muted">
-              {totalGoals === 0
-                ? 'Create your first goal to start tracking what the team is pushing on.'
-                : 'No goals match the selected filter.'}
-            </p>
-            {totalGoals === 0 && (
-              <Button icon={Plus} height={30} onClick={openNewGoal} className="mt-[4px]">
-                New goal
-              </Button>
-            )}
-          </div>
+          totalGoals === 0 ? (
+            <EmptyState
+              size="lg"
+              title="No goals yet"
+              description="Tell Chief what you're pushing on this quarter. It breaks each goal into key results and hands them to your helpers."
+              primary={{ label: 'New goal', icon: Plus, onClick: openNewGoal }}
+            />
+          ) : (
+            <EmptyState size="lg" title="No goals match this filter" description="Try another status or area." />
+          )
         ) : (
           filteredGroups.map((group) => (
             <AreaGroupSection key={group.channel.id} group={group} onEdit={openEditGoal} />

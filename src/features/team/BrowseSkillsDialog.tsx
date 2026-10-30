@@ -5,6 +5,7 @@ import { useHelperSkillRows, useHelpers, useSetHelperSkills, useSkills } from '.
 import { notify } from '../../ui/ds/Toaster'
 import type { HelperRecord } from './teamData'
 import { Btn, Chip, Drawer, DrawerClose, DrawerTitle, Eyebrow, IconTile, InputField } from './ui'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 /** Browse skills — pen uvNJ3 (Drawer nsZwE). Lists the company's skills; Add attaches one to this helper. */
 export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; onClose: () => void }) {
@@ -57,9 +58,15 @@ export function BrowseSkillsDialog({ helper, onClose }: { helper: HelperRecord; 
       <div className="flex w-full flex-col rounded-lg px-[14px] outline-1 -outline-offset-1 outline-line-strong">
         {isLoading && <span className="py-[12px] text-[12.5px] text-muted">Loading skills…</span>}
         {!isLoading && list.length === 0 && (
-          <span className="py-[12px] text-[12.5px] text-muted">
-            {query ? 'No skills match.' : 'No company skills yet — write one in Control panel → Skills.'}
-          </span>
+          query ? (
+            <EmptyState size="sm" title="No skills match" description="Try another word." />
+          ) : (
+            <EmptyState
+              size="sm"
+              title="No company skills yet"
+              description="Write one in Control panel → Skills and every helper can use it."
+            />
+          )
         )}
         {list.map((s, i) => (
           <div

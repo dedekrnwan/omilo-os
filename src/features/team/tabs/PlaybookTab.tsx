@@ -8,6 +8,7 @@ import { relativeTime } from '../../analytics/format'
 import { FILE_ICON } from '../teamData'
 import type { HelperRecord, WorkingFile } from '../teamData'
 import { Btn, Drawer, DrawerClose, DrawerTitle, IconBtn, IconTile, Segmented } from '../ui'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 const MODES = ['View', 'Edit', 'History'] as const
 
@@ -183,7 +184,7 @@ export function PlaybookDrawer({
               <span className="font-mono text-[11.5px] text-muted">{new Date(doc.updatedAt).toLocaleString()}</span>
             </div>
           ) : (
-            <p className="m-0 text-[13px] text-muted">No edits yet.</p>
+            <EmptyState size="sm" title="No edits yet" description="Changes to this playbook show up here." />
           )}
           <p className="m-0 text-[12px] text-faint">Only the latest version is kept for now.</p>
         </div>

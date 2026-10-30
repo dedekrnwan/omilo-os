@@ -26,6 +26,7 @@ import { capture } from '../../../telemetry'
 import { useCommands } from '../../../app/CommandsProvider'
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessage } from '../format'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -318,9 +319,11 @@ export function SectionConnectors({ onDialog }: Props) {
 
             {/* Empty state */}
             {connectors && connectors.length === 0 && (
-              <div className="mb-[24px] rounded-lg border border-line-strong bg-surface px-[16px] py-[20px] text-center">
-                <Plug size={20} className="mx-auto mb-[8px] text-faint" aria-hidden />
-                <p className="text-[13px] text-muted">No connectors installed yet. Browse the marketplace below to add one.</p>
+              <div className="mb-[24px] rounded-lg border border-line-strong bg-surface">
+                <EmptyState
+                  title="No connectors yet"
+                  description="Connectors let helpers work in your tools — Gmail, WhatsApp Business, Google Drive. Pick one from the marketplace below."
+                />
               </div>
             )}
 

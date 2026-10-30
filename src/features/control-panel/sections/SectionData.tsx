@@ -24,6 +24,7 @@ import {
 import type { DataExport } from '../../../core/domain/controlPanel'
 import { notify } from '../../../ui/ds/Toaster'
 import { errorMessage, formatBytes, saveBlob, shortDate } from '../format'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 const SEGMENT_COLORS: Record<string, string> = {
   chats: '#6366F1',
@@ -179,7 +180,14 @@ export function SectionData() {
         <SubHeading label="Exports" />
         {exportsLoading && <p className="text-[13px] text-muted">Loading exports…</p>}
         {!exportsLoading && exports.length === 0 && (
-          <p className="text-[12.5px] text-muted">No exports yet. “Export everything” builds a zip of your company’s data.</p>
+          <div className="rounded-lg border border-line-strong bg-surface">
+            <EmptyState
+              size="sm"
+              title="No exports yet"
+              description="“Export everything” builds a zip of your company’s data — chats, docs, notes and settings."
+              primary={{ label: 'Export everything', icon: Download, onClick: () => void handleExport() }}
+            />
+          </div>
         )}
         {exports.length > 0 && (
           <div className="overflow-hidden rounded-lg border border-line-strong bg-surface">

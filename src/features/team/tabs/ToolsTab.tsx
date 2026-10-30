@@ -6,6 +6,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import type { HelperRecord } from '../teamData'
 import { Btn, Chip, SelectField, Switch } from '../ui'
 import type { SelectOption } from '../ui'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 interface ToolRow {
   id: string
@@ -82,7 +83,7 @@ function Group({
   title: string
   desc: string
   rows: ToolRow[]
-  empty?: string
+  empty?: { title: string; description?: string }
   onToggle: (t: ToolRow, on: boolean) => void
   onAccess?: (t: ToolRow, access: string) => void
 }) {
@@ -93,7 +94,7 @@ function Group({
         <span className="text-[12.5px] text-muted">{desc}</span>
       </div>
       <div className="flex w-full flex-col rounded-lg px-[16px] outline-1 -outline-offset-1 outline-line-strong">
-        {rows.length === 0 && empty && <span className="py-[12px] text-[12.5px] text-muted">{empty}</span>}
+        {rows.length === 0 && empty && <EmptyState size="sm" title={empty.title} description={empty.description} />}
         {rows.map((t, i) => (
           <Row
             key={t.id}
@@ -164,7 +165,11 @@ export function ToolsTab({ helper }: { helper: HelperRecord }) {
         title="From the company"
         desc={companyDesc}
         rows={company}
-        empty={isLoading ? undefined : 'No connectors yet — add them in Control panel → Connectors.'}
+        empty={
+          isLoading
+            ? undefined
+            : { title: 'No connectors yet', description: 'Add them in Control panel → Connectors, then switch them on here.' }
+        }
         onToggle={toggleConnector}
         onAccess={setAccess}
       />

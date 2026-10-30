@@ -29,6 +29,7 @@ import { useDocVersions, useHelpers, useMembers, useMemoryDoc, usePatchDoc } fro
 import { areaLabel, docLink, headingId, headingOf, longAgo, outlineOf, whoLabel } from './docsUtil'
 import type { DocGroup, DocRow } from './docsUtil'
 import { useSession } from '../../../app/session'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
@@ -182,11 +183,12 @@ export function NotesSidebar({
             ))
           )}
           {companyDocs.length === 0 && !query && (
-            <div className="flex flex-col items-center gap-[4px] px-[8px] py-[24px] text-center">
-              <FileText size={18} className="text-faint" aria-hidden />
-              <span className="text-[12.5px] text-muted">No docs yet</span>
-              <span className="text-[11.5px] text-faint">Add your first doc to get started</span>
-            </div>
+            <EmptyState
+              size="sm"
+              title="No docs yet"
+              description="Write what helpers should know — prices, policies, how you work."
+              primary={{ label: 'New doc', icon: Plus, onClick: onNewDoc }}
+            />
           )}
         </>
       )}

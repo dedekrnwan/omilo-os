@@ -25,6 +25,7 @@ import { SetupDialog } from './SetupDialog'
 import type { HireSubmit } from './SetupDialog'
 import { RolesModelsDialog } from './RolesModelsDialog'
 import { LetGoDialog } from './LetGoDialog'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 type RosterHelper = HelperRecord
 
@@ -343,12 +344,12 @@ export function TeamRoster() {
             )}
 
             {!isLoading && !isError && allHelpers.length === 0 && (
-              <div className="flex w-full items-center justify-center py-[40px] text-[13px] text-muted">
-                No helpers on your team yet.{' '}
-                <button type="button" className="ml-[4px] text-link hover:underline" onClick={() => setState('hire')}>
-                  Hire your first helper
-                </button>
-              </div>
+              <EmptyState
+                size="lg"
+                title="No helpers on your team yet"
+                description="Hire a helper for the work that repeats — support, sales, finance. Each one asks before it acts."
+                primary={{ label: 'Hire your first helper', icon: Plus, onClick: () => setState('hire') }}
+              />
             )}
 
             {chief && <ChiefLead chief={chief} jobs={teamJobs} waiting={waiting} cost={teamCost} />}

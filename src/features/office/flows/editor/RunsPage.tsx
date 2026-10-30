@@ -11,6 +11,7 @@ import { runsThisWeek, toRunStates } from './runs'
 import type { RunState } from './runs'
 import { useFlowRun, useFlowRunAction, useFlowRuns } from '../../../../app/queries'
 import type { FlowRunAction } from '../../../../app/queries'
+import { EmptyState } from '../../../../ui/ds/EmptyState'
 
 type Filter = 'all' | 'waiting' | 'failed'
 
@@ -299,8 +300,12 @@ export function FlowRunsPage() {
             </li>
           )}
           {!isLoading && !isError && runs.length === 0 && (
-            <li className="px-[16px] py-[24px] text-[12.5px] text-muted">
-              {all.length === 0 ? 'No runs yet' : `No ${filter} runs.`}
+            <li>
+              {all.length === 0 ? (
+                <EmptyState size="sm" title="No runs yet" description="Use Run now or Test run to try this flow." />
+              ) : (
+                <EmptyState size="sm" title={`No ${filter} runs`} description="Try another filter." />
+              )}
             </li>
           )}
         </ul>
@@ -346,7 +351,14 @@ export function FlowRunsPage() {
         </section>
       ) : (
         <div className="flex flex-1 items-center justify-center text-[13px] text-muted">
-          {all.length === 0 && !isLoading ? 'No runs yet — use Run now or Test run.' : 'Pick a run to see its steps.'}
+          {all.length === 0 && !isLoading ? (
+            <EmptyState
+              title="This flow hasn't run yet"
+              description="Use Run now for a real run, or Test run to try it without touching anything. Each step's input and output shows up here."
+            />
+          ) : (
+            'Pick a run to see its steps.'
+          )}
         </div>
       )}
     </EditorFrame>

@@ -9,6 +9,7 @@ import { notify } from '../../../ui/ds/Toaster'
 import { useHelpers, usePublishSkill, useSkills, useUpdateSkill } from '../../../app/queries'
 import type { Skill } from '../../../core/domain/types'
 import { errorMessage } from '../format'
+import { EmptyState } from '../../../ui/ds/EmptyState'
 
 const SKILL_FILTERS = ['All', 'active', 'draft', 'disabled'] as const
 
@@ -106,16 +107,12 @@ export function SectionSkills({ onDialog }: Props) {
 
         {/* Empty */}
         {!isLoading && !isError && shown.length === 0 && (
-          <div className="flex w-full items-center justify-center py-[40px] text-[13px] text-muted">
-            No skills found.{' '}
-            <button
-              type="button"
-              className="ml-[4px] text-link hover:underline"
-              onClick={() => onDialog('write-skill')}
-            >
-              Write your first skill
-            </button>
-          </div>
+          <EmptyState
+            size="lg"
+            title="No skills yet"
+            description="A skill is a how-to every helper can follow — how you write an offer, how you close the month."
+            primary={{ label: 'Write your first skill', icon: Plus, onClick: () => onDialog('write-skill') }}
+          />
         )}
 
         {/* Grid */}

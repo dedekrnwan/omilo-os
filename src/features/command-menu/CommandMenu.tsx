@@ -41,6 +41,7 @@ import type { HireOption, Item, Preview, TabId } from './data'
 import { flatten, search } from './search'
 import { useCommandCorpus } from './corpus'
 import type { Section } from './search'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 export interface CommandMenuProps {
   open: boolean
@@ -558,7 +559,9 @@ function Sections({
   onRun: (i: Item) => void
 }) {
   if (!flat.length) {
-    return <p className="m-0 px-[10px] py-[16px] text-[13px] text-muted">Nothing here yet.</p>
+    return (
+      <EmptyState size="sm" title="Nothing found" description="Try another word, or ask Chief in any chat." />
+    )
   }
   return (
     <>

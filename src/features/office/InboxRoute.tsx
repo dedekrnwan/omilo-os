@@ -18,6 +18,7 @@ import type { ReviewResult } from './InboxReviewDialog'
 import { InboxChangeAmountDialog } from './InboxChangeAmountDialog'
 import { amountOf, currencyOf, formatAmount, daysOf, decisionsFor, isDecidable, isToday, linkedEntries, runAll } from './decisions'
 import { Toast } from './ui'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 /** Next scheduled routine for the "Running now" footer (earliest enabled nextAt). */
 function useNextRoutine(): { area: HelperArea; text: string } | null {
@@ -436,7 +437,7 @@ function AreaFilterButton({ label, channels }: { label: string; channels: Channe
 
 function InboxList({ area }: { area: AreaFilter }) {
   const navigate = useNavigate()
-  const { data: all = [], isLoading, isError } = useInbox()
+  const { data: all = [], isLoading, isError, refetch } = useInbox()
   const { data: channels = [] } = useChannels()
   const decide = useDecide()
   const channelOf = (id: string) => channels.find((c) => c.id === id)
@@ -560,11 +561,20 @@ function InboxList({ area }: { area: AreaFilter }) {
         </header>
 
         {isLoading ? null : isError ? (
-          <p role="alert" className="m-0 text-[13px] text-muted">
-            Could not load the inbox. Please refresh to try again.
-          </p>
+          <EmptyState
+            size="lg"
+            mood="worried"
+            title="Couldn't load your inbox"
+            description="Check your connection and try again."
+            primary={{ label: 'Try again', onClick: () => void refetch() }}
+          />
         ) : items.length === 0 ? (
-          <p className="m-0 text-[13px] text-muted">No items in this area yet.</p>
+          <EmptyState
+            size="lg"
+            title={areaName ? `Nothing from ${areaName} yet` : 'Your inbox is clear'}
+            description="When a helper needs your decision or finishes something worth a look, it lands here. Nothing runs without your OK."
+            primary={{ label: 'Give a helper a job', icon: ArrowRight, onClick: () => void navigate({ to: '/chat' }) }}
+          />
         ) : (
           <div className="flex w-full gap-[20px]">
             <section aria-label="Needs you" className="flex min-w-0 flex-1 flex-col gap-[10px]">

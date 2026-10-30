@@ -40,6 +40,7 @@ import {
   Switch,
   Track,
 } from './parts'
+import { EmptyState } from '../../ui/ds/EmptyState'
 
 // ── Overview (pen fqQP5 / gcqA2) ──────────────────────────────────────────────
 
@@ -242,11 +243,19 @@ export function LoopsTab({ range = 'week' }: { range?: string }) {
           ))}
         </div>
         {isLoading && <p className="m-0 px-[16px] py-[20px] text-[13px] text-muted">Loading loops…</p>}
-        {isError && <p className="m-0 px-[16px] py-[20px] text-[13px] text-bad">Couldn't load loops. Try again.</p>}
+        {isError && (
+          <EmptyState
+            mood="worried"
+            title="Couldn't load loops"
+            description="Check your connection and try again."
+            primary={{ label: 'Try again', onClick: () => window.location.reload() }}
+          />
+        )}
         {!isLoading && !isError && loops.length === 0 && (
-          <p className="m-0 px-[16px] py-[20px] text-[13px] text-muted">
-            No loops yet. Add a routine or a scheduled flow and it shows up here.
-          </p>
+          <EmptyState
+            title="No loops yet"
+            description="Loops are the work that repeats — add a routine or a scheduled flow and its runs, cost and success rate show up here."
+          />
         )}
         {loops.map((l, i) => {
           const on = isOn(l)
