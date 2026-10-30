@@ -1,3 +1,9 @@
+import os
+
+# Billing tests run against an example cloud plugin (plans, trial, packs). The real
+# Omilo Cloud plugin is private; a caller may point at it before importing this.
+os.environ.setdefault("OMILO_CLOUD_PLUGIN", "tests.example_cloud_plugin")
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient

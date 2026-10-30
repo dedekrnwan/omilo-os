@@ -170,14 +170,14 @@ def _settle_subscription(
             company_id=company.id,
             plan_id=plan.id,
             status="active",
-            provider="doit",
+            provider="hosted",
             provider_ref=payment.provider_payment_id,
             seats=plan.seats,
         )
         db.add(sub)
     else:
         sub.status = "active"
-        sub.provider = "doit"
+        sub.provider = sub.provider or "hosted"
         sub.provider_ref = payment.provider_payment_id
 
     db.flush()

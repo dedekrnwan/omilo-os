@@ -71,8 +71,8 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     # Payment provider
     # ---------------------------------------------------------------------------
-    # Which payment provider to use: "manual" (default, offline), "doit",
-    # "stripe", "xendit".
+    # Built-in payment provider: "manual" (default, offline), "stripe", "xendit".
+    # A hosted Omilo Cloud's gateway comes from the cloud plugin (omilo.cloud_plugin).
     omilo_payment_provider: str = "manual"
 
     # ---------------------------------------------------------------------------
@@ -88,11 +88,6 @@ class Settings(BaseSettings):
     posthog_api_key: str = ""
     posthog_host: str = "https://us.i.posthog.com"
     telemetry_enabled: bool | None = None
-
-    # Doit (pay.doit.id) credentials
-    doit_api_key: str | None = None
-    doit_signing_secret: str | None = None
-    doit_base_url: str = "https://pay.doit.id/v1"
 
     # ---------------------------------------------------------------------------
     # Google OAuth (P10) — off by default; enabled when both creds are set.

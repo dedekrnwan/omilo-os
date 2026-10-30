@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.14, FastAPI + Starlette WebSockets, Pydantic v2, SQLAlchemy 2.0 + Alembic, the `websockets` client lib (worker), pytest. Reuses the existing `omilo` package, `get_tenant_db`/`get_context` RLS, and `omilo/realtime/sse.py`.
 
-**Spec:** `docs/superpowers/specs/2026-10-29-omilo-managed-cloud-compute-design.md` (esp. §6, §6.1, §7, §9, §16 — the spike pinned the protocol + Executor seam this plan implements).
+**Spec:** the managed-cloud compute design (private, `omilo-cloud/docs/specs/2026-10-29-omilo-managed-cloud-compute-design.md`; esp. §6, §6.1, §7, §9, §16 — the spike pinned the protocol + Executor seam this plan implements).
 
 ## Global Constraints
 

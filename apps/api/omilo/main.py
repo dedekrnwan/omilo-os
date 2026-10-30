@@ -5,7 +5,6 @@ from fastapi import FastAPI
 
 from omilo.api.ai_accounts import router as ai_accounts_router
 from omilo.api.compute import router as compute_router
-from omilo.api.webhooks import router as webhooks_router
 from omilo.api.marketplace import router as marketplace_router
 from omilo.api.connectors import router as connectors_router
 from omilo.api.approvals import router as approvals_router
@@ -58,15 +57,23 @@ def create_app() -> FastAPI:
         from omilo import notify
 
         notify.start_loop()
-        # Keep the plan table in step with omilo.billing.catalog (prices are set there).
+        # Keep the plan table in step with the catalog (self-hosted + the cloud plugin's plans).
+        import logging
+
         try:
             from omilo.billing.catalog import seed_plans
 
             seed_plans()
         except Exception:  # noqa: BLE001 — never block start-up on the catalog
-            import logging
-
             logging.getLogger(__name__).warning("plan catalog sync failed", exc_info=True)
+        from omilo import cloud_plugin
+
+        _cp = cloud_plugin.get()
+        if _cp is not None and _cp.on_startup is not None:
+            try:
+                _cp.on_startup()
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).warning("cloud plugin start-up failed", exc_info=True)
         yield
 
     app = FastAPI(title="Omilo API", version="0.1.0", lifespan=_lifespan)
@@ -148,8 +155,12 @@ def create_app() -> FastAPI:
     app.include_router(chat_workspace_router, prefix="/v1")
     # SSE event bus (Task 8)
     app.include_router(sse_router, prefix="/v1")
-    # Doit payment gateway webhooks (Task 3 P5a)
-    app.include_router(webhooks_router, prefix="/v1")
+    # Omilo Cloud's private plugin: its routers (e.g. the payment gateway webhook).
+    from omilo import cloud_plugin
+
+    _plugin = cloud_plugin.get()
+    for extra in (_plugin.routers if _plugin else []):
+        app.include_router(extra, prefix="/v1")
     # Compute control-plane: worker pairing + job creation (Task 3 compute)
     app.include_router(compute_router, prefix="/v1")
     # Compute worker relay WebSocket (Task 4 compute)

@@ -53,11 +53,12 @@ def limit_bytes(session: Any, company: Any) -> int | None:
 
     if is_local_mode() or company is None:
         return None
-    plan = session.get(Plan, company.plan_id or TRIAL_PLAN_ID)
-    gb = plan_features(plan).get("storage_gb") if plan is not None else None
-    if gb is None:
-        return None if (company.plan_id or "") == "plan_self_hosted" else 5 * GB
-    return int(gb) * GB
+    plan_id = company.plan_id or TRIAL_PLAN_ID
+    plan = session.get(Plan, plan_id) if plan_id else None
+    if plan is None:
+        return None  # no plan sold here (no cloud plugin) → no limit
+    gb = plan_features(plan).get("storage_gb")
+    return None if gb is None else int(gb) * GB
 
 
 def usage(session: Any, company: Any, counted_only: bool = False) -> dict:

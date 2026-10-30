@@ -5,7 +5,7 @@
 > is the *behavior* doc; the tables and enforcement live in
 > [`../technical/07-multitenancy-auth.md`](../technical/07-multitenancy-auth.md) and
 > [`../technical/01-data-model.md`](../technical/01-data-model.md). Money and seats are in
-> [`subscription-plans.md`](subscription-plans.md).
+> the Omilo Cloud plan notes (private, `omilo-cloud`).
 
 ---
 
@@ -150,7 +150,7 @@ Constraints and edges:
 - **Google domain sign-in**: a Company may restrict sign-in to an allowlisted email domain. An
   invite to an off-domain address hits the `google-not-allowed` screen; the admin must add the
   domain or invite a matching address. (Domain allowlist is a Growth/Business-tier feature — see
-  [`subscription-plans.md`](subscription-plans.md).)
+  the Omilo Cloud plan notes (private, `omilo-cloud`).)
 - **Re-invite of an existing Member**: no duplicate row (unique `(company_id, user_id)`); the
   UI offers "already a member" instead.
 - Every invite/accept/revoke is audited.
@@ -188,7 +188,7 @@ How it behaves:
 - Inviting or activating a Member that would exceed `Plan.seats` is blocked until the owner adds
   seats or upgrades. The seat/plan change takes effect in omilo immediately; if a payment
   provider is wired it also prorates the charge (otherwise it's reconciled offline). See
-  [`subscription-plans.md`](subscription-plans.md) and `08` §6.
+  the Omilo Cloud plan notes (private, `omilo-cloud`) and `08` §6.
 - **Suspended** Members still consume a seat (their access is withheld, not released). To free a
   seat, **remove** the Member.
 - Self-host editions don't meter seats for payment; seat limits (if any) are license terms,
@@ -210,7 +210,7 @@ behavior, the founder:
 3. **Connects the AI** (onboarding "Your AI" step, `onboarding/data.ts` → `AI_MODES`): choose
    **self-host** (BYO sign-in / subscription / API key, no credits) or **cloud** (omilo
    credits). This sets `Company.edition` and the default AI engine. Billing hinges on this —
-   see [`subscription-plans.md`](subscription-plans.md).
+   see the Omilo Cloud plan notes (private, `omilo-cloud`).
 4. **Chooses a plan** (`ChoosePlanPage`, cloud only) and **optionally pays** (`PaymentPage`):
    picks a tier and starts a trial; the subscription is activated in omilo immediately. The
    payment step only appears when a payment provider is configured — otherwise billing is
@@ -260,7 +260,7 @@ Reading the example:
 
 ## See also
 
-- [`subscription-plans.md`](subscription-plans.md) — seats, plan tiers, credits, overage, the
+- the Omilo Cloud plan notes (private, `omilo-cloud`) — seats, plan tiers, credits, overage, the
   owner-only billing surface.
 - [`../technical/07-multitenancy-auth.md`](../technical/07-multitenancy-auth.md) — roles table,
   RLS, auth, channel_scope enforcement, self-host edition.

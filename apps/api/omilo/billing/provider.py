@@ -7,7 +7,8 @@ Public API:
     ManualProvider          default offline provider — all methods are no-ops
     StripeProvider          structural stub — raises ProviderNotConfigured
     XenditProvider          structural stub — raises ProviderNotConfigured
-    get_payment_provider()  factory — returns ManualProvider unless overridden by env
+    get_payment_provider()  factory — the cloud plugin's gateway, else ManualProvider / env stubs
+    is_hosted_checkout()    True for gateways that settle via a hosted checkout page
 
 Design:
 - ManualProvider is the DEFAULT.  All tests run offline with no external calls.
@@ -16,7 +17,7 @@ Design:
 - StripeProvider / XenditProvider are structural stubs so the port has real
   implementors.  They are never invoked in offline / test mode.
 - Set OMILO_PAYMENT_PROVIDER=stripe or =xendit to swap at runtime.
-- Set OMILO_PAYMENT_PROVIDER=doit + DOIT_API_KEY to use the Doit gateway.
+- The cloud plugin (omilo.cloud_plugin) can supply a hosted-checkout gateway.
 """
 from __future__ import annotations
 
@@ -258,45 +259,32 @@ class XenditProvider:
 # ---------------------------------------------------------------------------
 
 
+def is_hosted_checkout(provider: Any) -> bool:
+    """True for gateways that charge on a hosted checkout page (pending payment
+    first, settled by webhook / reconcile) — e.g. the cloud plugin's gateway."""
+    return bool(getattr(provider, "hosted_checkout", False))
+
+
 def get_payment_provider():
     """Return the configured payment provider.
 
-    Defaults to ManualProvider (offline) unless OMILO_PAYMENT_PROVIDER env
-    selects another:
-      OMILO_PAYMENT_PROVIDER=doit    → DoitProvider (requires DOIT_API_KEY)
-      OMILO_PAYMENT_PROVIDER=stripe  → StripeProvider (raises if unconfigured)
-      OMILO_PAYMENT_PROVIDER=xendit  → XenditProvider (raises if unconfigured)
+    The cloud plugin's gateway when it supplies one (``CloudPlugin.payment``);
+    otherwise ``OMILO_PAYMENT_PROVIDER``:
+      stripe → StripeProvider (stub) · xendit → XenditProvider (stub)
+      anything else → ManualProvider (offline, the default)
     """
+    from omilo import cloud_plugin
     from omilo.config import get_settings
 
-    settings = get_settings()
-    provider_env = settings.omilo_payment_provider.lower()
+    plugin = cloud_plugin.get()
+    if plugin is not None and plugin.payment is not None:
+        provider = plugin.payment()
+        if provider is not None:
+            return provider
 
-    if provider_env == "doit":
-        if not settings.doit_api_key:
-            raise ProviderNotConfigured(
-                "DOIT_API_KEY required for doit provider"
-            )
-        if not settings.doit_signing_secret:
-            raise ProviderNotConfigured(
-                "DOIT_SIGNING_SECRET required for doit provider"
-            )
-        from omilo.billing.doit_client import DoitClient
-        from omilo.billing.doit_provider import DoitProvider
-
-        client = DoitClient(settings.doit_api_key, settings.doit_base_url)
-        return DoitProvider(client, settings.doit_signing_secret)
-
+    provider_env = (get_settings().omilo_payment_provider or "manual").lower()
     if provider_env == "stripe":
         return StripeProvider()
     if provider_env == "xendit":
         return XenditProvider()
-
-    # Default: ManualProvider — but warn if a Doit key is present without the flag.
-    if settings.doit_api_key:
-        logger.warning(
-            "DOIT_API_KEY is set but OMILO_PAYMENT_PROVIDER is %r (not 'doit'). "
-            "Doit integration is NOT active. Set OMILO_PAYMENT_PROVIDER=doit to enable it.",
-            provider_env,
-        )
     return ManualProvider()

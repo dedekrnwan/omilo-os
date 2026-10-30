@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TRIAL_DAYS = 14
-# Trial runs on Team (catalog.TRIAL_PLAN_ID).
+# Trial runs on the cloud plugin's trial plan (catalog.TRIAL_PLAN_ID).
 
 
 def start_trial(db: "Session", company: "Company") -> "Subscription | None":
@@ -110,6 +110,8 @@ def start_trial(db: "Session", company: "Company") -> "Subscription | None":
         return existing_sub
 
     # ── Look up the trial plan ────────────────────────────────────────────────
+    if TRIAL_PLAN_ID is None:  # no cloud plugin: nothing to trial
+        return None
     plan = db.get(Plan, TRIAL_PLAN_ID)
     if plan is None:
         logger.error(

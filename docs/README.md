@@ -68,7 +68,7 @@ These four forks were decided up front and every doc assumes them:
    processor is undecided and optional**, sitting behind a pluggable `PaymentProvider` port
    (Stripe / Xendit / Midtrans / Paddle / manual) wired only when ready. See
    [`technical/08-billing-ai-credits.md`](technical/08-billing-ai-credits.md) and
-   [`business/subscription-plans.md`](business/subscription-plans.md).
+   the Omilo Cloud plan notes (private, `omilo-cloud`).
 4. **Layered autonomy:** `effective = min(workspace_default, goal_override, helper_cap)`
    over `strict < ask < yolo`. See [`business/autonomy.md`](business/autonomy.md).
 
@@ -110,8 +110,7 @@ This is the shared vocabulary used across every doc.
 
 **To approve the product behavior:**
 `business/chief-orchestration` → `goals` → `routines` → `flows` → `inbox-approvals` →
-`autonomy` → `learning-skills-flows` → `docs-knowledge` → `teams-members-roles` →
-`subscription-plans`.
+`autonomy` → `learning-skills-flows` → `docs-knowledge` → `teams-members-roles`.
 
 **To approve integrations:** `integrations/README`.
 

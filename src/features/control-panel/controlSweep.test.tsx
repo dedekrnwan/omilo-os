@@ -46,7 +46,7 @@ describe('DialogChangePlan', () => {
     wrap(<DialogChangePlan onClose={() => {}} />)
     expect(await screen.findByText('Starter')).toBeInTheDocument()
     expect(screen.getByText('Business')).toBeInTheDocument()
-    expect(screen.getByText('Rp 499 rb')).toBeInTheDocument()
+    expect(screen.getByText('Rp 300 rb')).toBeInTheDocument()
     expect(screen.getByText(/250 GB for docs, files and knowledge/)).toBeInTheDocument()
     // Mock subscription is a Team trial → Team offers "Subscribe", Business "Upgrade".
     expect(screen.getByRole('button', { name: 'Subscribe' })).toBeInTheDocument()

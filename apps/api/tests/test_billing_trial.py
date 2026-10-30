@@ -379,59 +379,6 @@ async def test_change_plan_monthly_interval_is_default(async_client):
 
 
 @pytest.mark.asyncio
-async def test_change_plan_yearly_doit_uses_yearly_price():
-    """POST /v1/billing/change-plan {plan_id, interval:"yearly"} with DoitProvider
-    → pending DoitPayment.amount_idr == plan.yearly_price_idr (20000000)."""
-    from omilo.billing.doit_client import FakeDoitClient
-    from omilo.billing.doit_provider import DoitProvider
-    from omilo.billing.provider import get_payment_provider
-    from omilo.main import create_app
-
-    _seed_cloud_plan()
-
-    app = create_app()
-    fake_client = FakeDoitClient()
-    fake_provider = DoitProvider(fake_client, "whsec_test")
-    app.dependency_overrides[get_payment_provider] = lambda: fake_provider
-
-    from httpx import ASGITransport, AsyncClient as HttpxClient
-    async with HttpxClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        token, company_id = await _sign_up(client, name="Doit Yearly Test")
-
-        resp = await client.post(
-            "/v1/billing/change-plan",
-            json={"plan_id": "plan_team", "interval": "yearly"},
-            headers=_auth(token),
-        )
-
-    assert resp.status_code in (200, 201), resp.text
-    data = resp.json()
-    assert data["status"] == "pending"
-
-    # Verify amount_idr == plan_team.yearly_price_idr == 20000000
-    with _superuser_session() as sess:
-        from omilo.models.commerce import DoitPayment
-        pay = (
-            sess.query(DoitPayment)
-            .filter(
-                DoitPayment.company_id == company_id,
-                DoitPayment.kind == "subscription",
-            )
-            .order_by(DoitPayment.created_at.desc())
-            .first()
-        )
-    assert pay is not None
-    assert pay.amount_idr == 4990000, (
-        f"Expected yearly_price_idr=4990000, got {pay.amount_idr}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test (d): GET /v1/billing/plans returns snake_case keys with trial_days
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
 async def test_get_plans_cloud_mode_returns_tiers_snake_case(async_client):
     """GET /v1/billing/plans in cloud mode returns plan_team with all snake_case keys
     including yearly_price_idr, yearly_price_usd, monthly_price_idr, trial_days=14.
@@ -465,8 +412,8 @@ async def test_get_plans_cloud_mode_returns_tiers_snake_case(async_client):
 
     # Correct values
     assert plan["id"] == "plan_team"
-    assert plan["monthly_price_idr"] == 499000
-    assert plan["yearly_price_idr"] == 4990000
+    assert plan["monthly_price_idr"] == 300000  # example plugin prices
+    assert plan["yearly_price_idr"] == 3000000
     assert plan["storage_gb"] == 50
     assert plan["included_credits"] == 0
     assert plan["trial_days"] == 14

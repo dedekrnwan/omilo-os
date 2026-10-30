@@ -12,7 +12,7 @@ omilo is open-source (ELv2) monetized by **subscription + margin on AI credits**
 |---|---|---|
 | Identity: `User`, `Member`, sign-up/sign-in, **JWT issuance** | ✅ owns | verifies cloud JWTs (resource server) |
 | `Company`/account registry, `Plan`, `Subscription`, entitlements | ✅ owns | keeps a read-only **shadow** (id + display fields) synced from cloud |
-| Billing: `CreditLedger`, `DoitPayment`, `WalletSettings`, Doit webhooks | ✅ owns | never — reports usage, cloud debits |
+| Billing: `CreditLedger`, `DoitPayment`, `WalletSettings`, gateway webhooks (cloud plugin) | ✅ owns | never — reports usage, cloud debits |
 | Agent loop, Jobs, RunEvents, Proposals | — | ✅ runs locally |
 | Channels/Areas, Goals, Routines, Flows, Chat, Inbox | — | ✅ local data |
 | RAG (KbSource/KbChunk), Memory, Skills | — | ✅ local data |
@@ -24,7 +24,7 @@ omilo is open-source (ELv2) monetized by **subscription + margin on AI credits**
 
 The same backend image runs as either mode via `OMILO_MODE`:
 
-- `OMILO_MODE=cloud` — the control plane. Owns auth + billing in-process (authoritative). Exposes the `/control/*` federation API + the existing Doit billing + `/auth/*`.
+- `OMILO_MODE=cloud` — the control plane. Owns auth + billing in-process (authoritative). Exposes the `/control/*` federation API + billing (gateway from the cloud plugin) + `/auth/*`.
 - `OMILO_MODE=runtime` — the local runtime. Does **not** own auth/billing; delegates through a `ControlPlane` port to a remote cloud via `OMILO_CONTROL_PLANE_URL`.
 
 ### 3.1 The `ControlPlane` port (`omilo/control/`)
@@ -81,7 +81,7 @@ This makes the margin un-forgeable (credits only ever move in the cloud ledger) 
 
 ## 7. Deployment shapes
 
-- **Cloud control plane:** one deployment, `OMILO_MODE=cloud`, multi-tenant, owns auth + billing + `/control/*` + the Doit webhook. This is the existing backend — no data model fork.
+- **Cloud control plane:** one deployment, `OMILO_MODE=cloud`, multi-tenant, owns auth + billing + `/control/*` + the payment gateway webhook (cloud plugin). This is the existing backend — no data model fork.
 - **Local runtime:** the self-host stack (Docker, or the desktop app's companion), `OMILO_MODE=runtime` + `OMILO_CONTROL_PLANE_URL=https://api.omilo.app`. Its Postgres holds only workspace/runtime data.
 - **Desktop (P5c):** the thin Tauri client points at a local runtime (localhost) that itself federates to the cloud — or, in the simplest install, the desktop app bundles/launches the local runtime.
 

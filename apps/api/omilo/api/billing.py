@@ -10,7 +10,7 @@ Endpoints:
 
 All endpoints are company-scoped via the tenant session dependency (RLS-enforced).
 ManualProvider is the default — all operations work offline with no Stripe/Xendit.
-DoitProvider creates a pending DoitPayment + returns hosted_url; credits are
+Hosted-checkout provider creates a pending DoitPayment + returns hosted_url; credits are
 granted by the webhook handler (T3) on payment.paid.
 """
 from __future__ import annotations
@@ -27,8 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from omilo.billing.balance import balance as get_balance, grant_credits
-from omilo.billing.doit_provider import DoitProvider
-from omilo.billing.provider import get_payment_provider
+from omilo.billing.provider import get_payment_provider, is_hosted_checkout
 from omilo.config import get_settings
 from omilo.control.factory import _normalize_mode
 from omilo.models.base import prefixed_id
@@ -505,7 +504,7 @@ def change_plan(
       6. Grant plan.included_credits (reason="subscription_grant").
       Returns {subscription, balance, plan}.
 
-    DoitProvider:
+    Hosted-checkout provider:
       Creates a pending DoitPayment (kind="subscription") + calls
       provider.change_subscription → gets hosted_url.
       Does NOT activate the Subscription or grant credits.
@@ -551,9 +550,9 @@ def change_plan(
         period_end = now + timedelta(days=30)
 
     # -----------------------------------------------------------------------
-    # DoitProvider path — create a pending payment; do NOT activate subscription
+    # Hosted-checkout provider path — create a pending payment; do NOT activate subscription
     # -----------------------------------------------------------------------
-    if isinstance(provider, DoitProvider):
+    if is_hosted_checkout(provider):
         short_id = uuid.uuid4().hex[:8]
         reference = f"sub:{company.id}:{plan.id}:{short_id}"
 
@@ -576,7 +575,7 @@ def change_plan(
             status="pending",
             billing_interval=interval,
             seats=seats_for_plan,
-            provider="doit",
+            provider=getattr(provider, "name", "hosted"),
             external_ref=None,
             current_period_end=None,
             provider_ref=sub_result.get("provider_ref") if sub_result else None,
@@ -704,7 +703,7 @@ def topup(
     ManualProvider (default):
       Instant grant — creates a CreditLedger + offline Invoice; returns {balance, invoice}.
 
-    DoitProvider:
+    Hosted-checkout provider:
       Creates a pending DoitPayment + calls provider.charge_one_off → gets hosted_url.
       Does NOT touch the balance; returns {payment_id, hosted_url, status:"pending", credits, amount_idr}.
       Credits are granted by the webhook handler (T3) on payment.paid.
@@ -723,9 +722,9 @@ def topup(
     company = _load_company(db, ctx.company_id)
 
     # -----------------------------------------------------------------------
-    # DoitProvider path — create a pending payment; no balance change
+    # Hosted-checkout provider path — create a pending payment; no balance change
     # -----------------------------------------------------------------------
-    if isinstance(provider, DoitProvider):
+    if is_hosted_checkout(provider):
         # Unique reference for idempotency
         short_id = uuid.uuid4().hex[:8]
         reference = f"topup:{company.id}:{pack_name}:{short_id}"
@@ -977,7 +976,7 @@ def add_seats(
     """Buy ``count`` extra seats on the current plan (owner/admin).
 
     ManualProvider: seats are added instantly → {seats, amount_idr}.
-    DoitProvider: pending DoitPayment(kind="seats") → {payment_id, hosted_url, …};
+    Hosted-checkout provider: pending DoitPayment(kind="seats") → {payment_id, hosted_url, …};
     seats are added by the webhook/reconcile settle on payment.paid.
     """
     if ctx.role not in ("owner", "admin"):
@@ -1011,7 +1010,7 @@ def add_seats(
 
     from omilo import audit
 
-    if isinstance(provider, DoitProvider):
+    if is_hosted_checkout(provider):
         short_id = uuid.uuid4().hex[:8]
         reference = f"seats:{company.id}:{body.count}:{short_id}"
         charge = provider.charge_one_off(

@@ -2,7 +2,7 @@
 
 > Track: **technical**. The money model: subscription plans + **metered AI credits with
 > margin**. **Fully designed here; built in phases (meter → wallet → pay).** Product-facing
-> plan behavior in [`business/subscription-plans.md`](../business/subscription-plans.md).
+> plan behavior in the Omilo Cloud plan notes (private, `omilo-cloud`).
 >
 > **Payment-provider is deliberately decoupled and OPTIONAL.** The billing *domain* (plans,
 > credits, ledger, metering, overage, subscriptions-as-state) is fully provider-independent and

@@ -1,7 +1,8 @@
 # deploy/docker-compose.cloud.yml — Omilo CLOUD CONTROL PLANE
 #
 # This is the vendor-hosted multi-tenant stack.
-# OMILO_MODE=cloud: owns auth + billing + /control/* + Doit webhook.
+# OMILO_MODE=cloud: owns auth + billing + /control/*. Plans, prices and the payment
+# gateway come from a cloud plugin (OMILO_CLOUD_PLUGIN); without one nothing is sold.
 # Copy deploy/.env.cloud.example → .env.cloud, fill in real values, then:
 #
 #   docker compose -f deploy/docker-compose.cloud.yml --env-file deploy/.env.cloud up -d
@@ -57,11 +58,9 @@ services:
       # (pydantic-settings: OMILO_JWT_PRIVATE_KEY → Settings.omilo_jwt_private_key)
       OMILO_JWT_PRIVATE_KEY: ${OMILO_JWT_PRIVATE_KEY:-}
 
-      # Payment provider — Doit (optional; defaults to manual/offline)
+      # Cloud plugin (optional): plans, prices, payment gateway — see omilo/cloud_plugin.py
+      OMILO_CLOUD_PLUGIN: ${OMILO_CLOUD_PLUGIN:-}
       OMILO_PAYMENT_PROVIDER: ${OMILO_PAYMENT_PROVIDER:-manual}
-      DOIT_API_KEY: ${DOIT_API_KEY:-}
-      DOIT_SIGNING_SECRET: ${DOIT_SIGNING_SECRET:-}
-      DOIT_BASE_URL: ${DOIT_BASE_URL:-https://pay.doit.id/v1}
 
       # App environment label
       ENV: production

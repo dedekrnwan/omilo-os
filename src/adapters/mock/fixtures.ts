@@ -970,25 +970,25 @@ import type {
   UserPreferences,
 } from '../../core/domain/controlPanel'
 
-/** Cloud tiers (Starter / Team / Business) — priced per company by storage (billing.catalog). */
+/** Example Cloud tiers for mock mode (real prices come from the private cloud plugin). */
 billingPlans.push(
   {
     id: 'plan_starter', tier: 'starter', name: 'Starter',
-    monthlyPriceUsd: 9.31, monthlyPriceIdr: 149_000, yearlyPriceUsd: 93.1, yearlyPriceIdr: 1_490_000,
+    monthlyPriceUsd: 6.25, monthlyPriceIdr: 100_000, yearlyPriceUsd: 62.5, yearlyPriceIdr: 1_000_000,
     includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 5,
     features: ['5 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Your own AI key'],
     badge: null,
   },
   {
     id: 'plan_team', tier: 'team', name: 'Team',
-    monthlyPriceUsd: 31.19, monthlyPriceIdr: 499_000, yearlyPriceUsd: 311.9, yearlyPriceIdr: 4_990_000,
+    monthlyPriceUsd: 18.75, monthlyPriceIdr: 300_000, yearlyPriceUsd: 187.5, yearlyPriceIdr: 3_000_000,
     includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 50,
     features: ['50 GB for docs, files and knowledge', 'Unlimited people and helpers', 'Always on in Omilo Cloud', 'Email support'],
     badge: 'Most popular',
   },
   {
     id: 'plan_business', tier: 'business', name: 'Business',
-    monthlyPriceUsd: 93.69, monthlyPriceIdr: 1_499_000, yearlyPriceUsd: 936.9, yearlyPriceIdr: 14_990_000,
+    monthlyPriceUsd: 56.25, monthlyPriceIdr: 900_000, yearlyPriceUsd: 562.5, yearlyPriceIdr: 9_000_000,
     includedCredits: 0, seats: 9999, trialDays: 14, maxSeats: null, maxHelpers: null, seatPriceIdr: null, storageGb: 250,
     features: ['250 GB for docs, files and knowledge', 'Unlimited people and helpers', 'SSO and audit log', 'Priority WhatsApp support'],
     badge: null,
