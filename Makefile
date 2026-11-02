@@ -50,6 +50,10 @@ dev: db
 	@$(MAKE) --no-print-directory migrate seed index
 	@command -v npm >/dev/null 2>&1 || { echo "npm is required for the web dev server."; exit 1; }
 	@test -d node_modules || npm install --no-audit --no-fund
+	@command -v lsof >/dev/null 2>&1 && for p in 8000 5173; do \
+	  pids=$$(lsof -ti tcp:$$p -s tcp:LISTEN 2>/dev/null); \
+	  if [ -n "$$pids" ]; then echo "→ clearing stale listener(s) on :$$p ($$pids)"; kill $$pids 2>/dev/null || true; sleep 1; fi; \
+	done || true
 	@trap 'kill 0' INT TERM; \
 	  ( cd apps/api && $(VENV_BIN)/omilo-api ) & \
 	  ( VITE_USE_HTTP=1 VITE_API_URL=http://localhost:5173 npm run dev ) & \
