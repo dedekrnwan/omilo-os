@@ -6,11 +6,15 @@
  *   - Cloud: pick the company's plan (storage tiers) AND connect the company's
  *     own AI key — Cloud plans don't include AI (bring your own key).
  *
- * NOTE: POST /v1/ai-accounts/check only reclassifies existing pool accounts
- * by pct_window — it does NOT detect locally running processes.  There is no
- * API endpoint that detects "Claude Code signed in on this machine", so the
- * fake hardcoded detection has been removed.  Users connect via an existing
- * pool account OR by entering an API key.
+ * Self-host local-harness detection IS wired: <DetectedHarnesses> calls
+ * GET /v1/ai-accounts/detect, which probes this machine for installed /
+ * signed-in coding CLIs (Claude Code, OpenCode, Codex, Copilot, Gemini,
+ * Cursor). A signed-in harness connects as a keyless "local session" account.
+ * In a cloud deployment the probe finds nothing (no user machine), so the
+ * cards read "Not detected" and users fall back to a pool account or API key.
+ *
+ * (Separately, POST /v1/ai-accounts/check only reclassifies existing pool
+ * accounts by pct_window — it is unrelated to local detection.)
  */
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, KeyRound, Loader } from 'lucide-react'

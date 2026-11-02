@@ -29,6 +29,10 @@ export interface InterviewView {
   coverage: { id: TopicId; label: string; done: boolean }[]
   options: string[]
   website: string
+  /** Topics whose note is Chief's own proposal — Check asks the owner to check them. */
+  suggested?: TopicId[]
+  /** Minutes from the first to the latest answer, for "Took 9 minutes". */
+  took_min?: number | null
   ai: { label: string; practice: boolean }
 }
 
@@ -111,6 +115,32 @@ export async function planTeam(): Promise<{ helpers: PlannedHelper[]; by: 'ai' |
   return (await res.json()) as { helpers: PlannedHelper[]; by: 'ai' | 'rules' }
 }
 
+export interface ProfileSuggestion {
+  industry: string
+  teamSize: string
+  region: string
+  currency: string
+  picRole: string
+}
+
+/**
+ * GET /v1/onboarding/company-profile-suggestion — Chief's guess at the company
+ * profile (industry, team size, region, currency, your role) from the interview
+ * notes. Applied when onboarding finishes; editable later in Company settings.
+ * Best-effort: any failure (incl. 401) resolves to empty, so a missing
+ * suggestion never blocks the step or logs the owner out mid-onboarding.
+ */
+export async function getProfileSuggestion(): Promise<ProfileSuggestion> {
+  const empty: ProfileSuggestion = { industry: '', teamSize: '', region: '', currency: '', picRole: '' }
+  if (!live()) return empty
+  try {
+    const res = await apiFetch(`${base()}/v1/onboarding/company-profile-suggestion`, token)
+    return { ...empty, ...((await res.json()) as Partial<ProfileSuggestion>) }
+  } catch {
+    return empty
+  }
+}
+
 /** Read a small text file the owner attached, to share it with Chief. */
 export async function readTextFile(file: File): Promise<string | null> {
   const ok = /\.(txt|md|markdown|csv|json|html?)$/i.test(file.name) || file.type.startsWith('text/')
@@ -138,6 +168,7 @@ const mock = (() => {
     history: [], topic: 'company', notes: {}, coverage: [], options: [], website: '',
     ai: { label: 'Practice mode', practice: true },
   }
+  let started: number | null = null
   const cov = () => TOPIC_IDS.map((id) => ({ id, label: LABELS[id], done: Boolean(state.notes[id]?.trim()) }))
   const view = (): InterviewView => ({ ...state, coverage: cov() })
   return {
@@ -147,6 +178,9 @@ const mock = (() => {
       return view()
     },
     turn: async (message: string, h: TurnHandlers) => {
+      const now = Date.now()
+      started ??= now
+      if (message.trim()) state = { ...state, took_min: Math.max(1, Math.round((now - started) / 60000)) }
       const asked = state.topic && state.topic !== 'finish' ? state.topic : 'company'
       const history = [...state.history]
       if (message.trim()) {

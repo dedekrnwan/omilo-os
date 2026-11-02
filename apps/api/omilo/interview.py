@@ -48,13 +48,17 @@ STYLE = """Style:
 - Offer 2-4 clickable suggestions with suggest_replies when a choice or brainstorm helps.
 - Save facts the moment you hear them with save_note (the whole note for that topic, rewritten, concise, in the
   owner's words; only what they said or their website states — never invent numbers or customers).
+- If they ask you to propose something (e.g. rules) or you fill a gap with your own idea, save it with
+  save_note(..., suggested=true) so they are asked to check it on the summary.
 - Move on with set_topic when a topic is covered well enough; call set_topic("finish") when every topic has a note."""
 
 TOOLS: list[dict[str, Any]] = [
     {"name": "save_note", "description": "Write the note for one topic (replaces the note; include what to keep).",
      "parameters": {"type": "object", "required": ["topic", "content"], "properties": {
          "topic": {"type": "string", "enum": TOPIC_IDS},
-         "content": {"type": "string", "description": "2-6 short lines, facts only"}}}},
+         "content": {"type": "string", "description": "2-6 short lines, facts only"},
+         "suggested": {"type": "boolean",
+                       "description": "true when the note holds your own proposal, not what the owner said"}}}},
     {"name": "suggest_replies", "description": "Show 2-4 short clickable replies under your message (each < 60 chars).",
      "parameters": {"type": "object", "required": ["options"],
                     "properties": {"options": {"type": "array", "items": {"type": "string"}}}}},
@@ -70,7 +74,7 @@ URL_RE = re.compile(r"(https?://[^\s<>\"')\]]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?
 
 
 def empty_state() -> dict:
-    return {"interview": {"history": [], "topic": "company"}, "notes": {}, "website": ""}
+    return {"interview": {"history": [], "topic": "company"}, "notes": {}, "website": "", "suggested": []}
 
 
 def coverage(notes: dict) -> list[dict]:
@@ -177,6 +181,8 @@ async def stream_turn(cfg: AiConfig, company_name: str, state: dict, message: st
 
     options: list[str] = []
     state_topic = {"topic": topic}
+    # Topics whose note is Chief's own proposal — the Check step asks the owner to check them.
+    suggested = set(state.get("suggested") or [])
 
     async def on_call(name: str, args: dict) -> str:
         if name == "save_note":
@@ -184,6 +190,7 @@ async def stream_turn(cfg: AiConfig, company_name: str, state: dict, message: st
             content = str(args.get("content") or "").strip()
             if tid in TOPIC_IDS and content:
                 notes[tid] = content[:2000]
+                (suggested.add if args.get("suggested") else suggested.discard)(tid)
                 pending_notes.append((tid, notes[tid]))
                 return "saved"
             return "unknown topic"
@@ -222,7 +229,7 @@ async def stream_turn(cfg: AiConfig, company_name: str, state: dict, message: st
     if new_topic != "finish" and str(notes.get(new_topic) or "").strip() and next_topic(notes) == "finish":
         new_topic = "finish"
     yield {"type": "final", "reply": reply.strip() or "Got it. Tell me more?", "notes": notes, "topic": new_topic,
-           "options": options}
+           "options": options, "suggested": sorted(suggested)}
 
 
 # ── the team that fits ───────────────────────────────────────────────────────
@@ -312,6 +319,69 @@ async def plan_team(cfg: AiConfig, company_name: str, notes: dict) -> dict:
                     "description": str(h.get("focus") or r["summary"])[:300],
                     "reason": str(h.get("why") or "")[:160], "on": h.get("on", True) is not False})
     return {"helpers": out or fallback_team(notes), "by": "ai" if out else "rules"}
+
+
+# ── company-profile extraction (prefills the "Your company" step) ─────────────
+# The structured fields the onboarding form asks for are NOT free knowledge —
+# they're enums (team size, region, currency) plus two short labels. Rather than
+# make the owner re-type what they already told Chief in the interview, infer
+# them from the notes and prefill; the owner confirms or edits.
+
+_PROFILE_ENUMS = {
+    "team_size": {"1-10", "11-50", "51-200", "200+"},
+    "region": {"Indonesia", "Southeast Asia", "Global"},
+    "currency": {"IDR", "USD", "SGD", "MYR"},
+}
+
+SUGGEST_PROFILE = {
+    "name": "suggest_profile",
+    "description": "The company profile inferred from what the owner said. Omit any field the owner's "
+                   "words don't clearly imply — never guess.",
+    "parameters": {"type": "object", "properties": {
+        "industry": {"type": "string", "description": "short industry label, e.g. 'Fintech', 'F&B', 'Gov-tech'"},
+        "team_size": {"type": "string", "enum": sorted(_PROFILE_ENUMS["team_size"])},
+        "region": {"type": "string", "enum": sorted(_PROFILE_ENUMS["region"])},
+        "currency": {"type": "string", "enum": sorted(_PROFILE_ENUMS["currency"])},
+        "pic_role": {"type": "string", "description": "the owner's own role, e.g. 'Founder', 'Ops Lead', 'CTO'"},
+    }},
+}
+
+_PROFILE_KEYS = ("industry", "team_size", "region", "currency", "pic_role")
+
+
+async def suggest_profile(cfg: AiConfig, company_name: str, notes: dict) -> dict:
+    """Infer the structured company profile from the interview notes.
+
+    Returns only the fields the model could ground in what the owner said;
+    omits the rest. Empty dict when there's nothing to go on (fake AI, no
+    notes) — the form then keeps its own defaults. Never raises.
+    """
+    if cfg.is_fake or not any(str(v or "").strip() for v in notes.values()):
+        return {}
+    got: dict = {}
+
+    async def on_call(name: str, args: dict) -> str:
+        if name == "suggest_profile" and isinstance(args, dict):
+            got.update(args)
+        return "ok"
+
+    system = ("You extract a small business's structured profile from its onboarding interview. "
+              "Only fill a field when the owner's words clearly imply it; omit anything you'd have to "
+              f"guess at.\n\nWhat {company_name} told you:\n" + json.dumps(notes, ensure_ascii=False)[:6000])
+    try:
+        async for _ in converse(cfg, system, [{"role": "user", "content": "Infer the profile with suggest_profile."}],
+                                tools=[SUGGEST_PROFILE], on_call=on_call, final_tools={"suggest_profile"},
+                                max_turns=2, max_tokens=400, timeout=60):
+            pass
+    except AiError:
+        return {}
+    out: dict = {}
+    for k in _PROFILE_KEYS:
+        v = str(got.get(k) or "").strip()
+        if not v or (k in _PROFILE_ENUMS and v not in _PROFILE_ENUMS[k]):
+            continue
+        out[k] = v[:80]
+    return out
 
 
 def find_url(text: str) -> str | None:

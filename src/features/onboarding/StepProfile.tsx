@@ -1,16 +1,20 @@
 /**
- * Onboarding 3b · Company profile (industry, teamSize, region, currency, picRole).
+ * Onboarding 3 · Your company (industry, teamSize, region, currency, picRole).
  *
- * Placed between know-you and check in the wizard flow.
- * Mirrors the onboarding's visual language: WizardCard, Mascot ChiefSays header,
- * token classes (text-ink, bg-surface, border/line, text-[12px]).
- * On valid submit calls PATCH /v1/company via updateCompanyProfile then advances.
+ * Sits between know-you and check. Shares the Check step's visual language —
+ * Mascot + title header, a flex-row grid of bg-surface cards with an IconTile
+ * and a Stroke border — so it reads as part of the same wizard, not a bare
+ * form. Chief prefills what it can infer from the interview (getProfileSuggestion);
+ * the owner confirms or edits. On valid submit, PATCH /v1/company via
+ * updateCompanyProfile, then advance.
  */
-import { useState } from 'react'
-import { ArrowRight, Building2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, ArrowRight, Building2, Coins, Globe, Sparkles, UserRound, Users } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
-import { PrimaryButton, Stroke, WizardCard } from './parts'
+import { IconTile, PrimaryButton, QuietButton, Stroke, WizardCard } from './parts'
 import { createCommands } from '../../adapters/http/commands'
+import { getProfileSuggestion } from './interviewApi'
 import { platform } from '../../platform'
 
 // ── commands factory (mirrors ChatSession.tsx pattern) ────────────────────────
@@ -28,36 +32,55 @@ const CURRENCIES = ['IDR', 'USD', 'SGD', 'MYR'] as const
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
-  return (
-    <label htmlFor={htmlFor} className="w-[108px] shrink-0 text-[13px] font-medium text-ink-2 sm:w-[140px]">
-      {children}
-    </label>
-  )
-}
+/** Shared input/select styling — the card-internal field, matching the Check step's note editor. */
+const FIELD_CLS =
+  'h-[36px] w-full min-w-0 rounded-base bg-surface px-[10px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-2 focus:outline-primary placeholder:text-faint'
 
-function FieldError({ id, message }: { id: string; message: string }) {
+/** Marks a field Chief prefilled from the interview, so the owner knows to check it. */
+function PrefillTag() {
   return (
-    <span id={id} role="alert" className="mt-[4px] pl-[148px] text-[12px] font-medium text-danger">
-      {message}
+    <span
+      title="Filled in from your chat with Chief"
+      className="flex shrink-0 items-center gap-[3px] text-[11px] font-medium whitespace-nowrap text-info"
+    >
+      <Sparkles size={11} aria-hidden />
+      from your chat
     </span>
   )
 }
 
-function FieldRow({ children }: { children: React.ReactNode }) {
+/** One field as a card, in the Check step's language: IconTile + label + input + Stroke border. */
+function FieldCard({
+  icon,
+  label,
+  prefilled,
+  error,
+  children,
+}: {
+  icon: LucideIcon
+  label: string
+  prefilled?: boolean
+  error?: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="flex w-full flex-col">
-      <div className="flex w-full items-center gap-[8px]">{children}</div>
-    </div>
+    <article className="relative flex min-w-0 flex-col gap-[10px] rounded-md bg-surface p-[14px]">
+      <div className="flex w-full items-center gap-[8px]">
+        <IconTile icon={icon} />
+        <h3 className="truncate text-[14px] font-semibold whitespace-nowrap text-ink">{label}</h3>
+        <span className="h-px flex-1" />
+        {prefilled && <PrefillTag />}
+      </div>
+      {children}
+      {error && (
+        <span role="alert" className="text-[12px] font-medium text-danger">
+          {error}
+        </span>
+      )}
+      <Stroke />
+    </article>
   )
 }
-
-/** Shared input class that matches the onboarding's existing input styling. */
-const INPUT_CLS =
-  'h-[36px] min-w-0 flex-1 rounded-btn bg-surface px-[12px] text-[13px] text-ink outline-1 -outline-offset-1 outline-line-strong focus:outline-2 focus:-outline-offset-2 focus:outline-primary placeholder:text-faint'
-
-/** Shared select class. */
-const SELECT_CLS = INPUT_CLS
 
 // ── main component ────────────────────────────────────────────────────────────
 
@@ -85,7 +108,15 @@ export interface ProfileData {
   picRole: string
 }
 
-export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; onProfileChange?: (data: ProfileData) => void }) {
+export function StepProfile({
+  onNext,
+  onBack,
+  onProfileChange,
+}: {
+  onNext: () => void
+  onBack?: () => void
+  onProfileChange?: (data: ProfileData) => void
+}) {
   const [form, setForm] = useState<ProfileForm>({
     industry: '',
     teamSize: '',
@@ -95,10 +126,48 @@ export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; o
   })
   const [errors, setErrors] = useState<ProfileErrors>({})
   const [saving, setSaving] = useState(false)
+  // Fields Chief prefilled from the interview — shown with a subtle marker so
+  // the owner knows what to double-check. User edits clear the marker.
+  const [prefilled, setPrefilled] = useState<Set<keyof ProfileForm>>(new Set())
+
+  // On mount, ask Chief to infer the profile from the interview notes and
+  // prefill whatever it's confident about. Best-effort: a failed/empty
+  // suggestion just leaves the form at its defaults (see getProfileSuggestion).
+  useEffect(() => {
+    let alive = true
+    getProfileSuggestion().then((s) => {
+      if (!alive) return
+      const filled = new Set<keyof ProfileForm>()
+      setForm((f) => {
+        const next = { ...f }
+        ;(['industry', 'teamSize', 'region', 'currency', 'picRole'] as const).forEach((k) => {
+          // Only prefill fields the owner hasn't touched. Currency defaults to
+          // 'IDR', so let a grounded suggestion override that default too.
+          const untouched = !f[k] || (k === 'currency' && f[k] === 'IDR')
+          if (s[k] && untouched) {
+            next[k] = s[k]
+            filled.add(k)
+          }
+        })
+        return next
+      })
+      setPrefilled(filled)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   function set(field: keyof ProfileForm, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
     if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }))
+    // The owner edited this field — it's their value now, not Chief's guess.
+    setPrefilled((p) => {
+      if (!p.has(field)) return p
+      const next = new Set(p)
+      next.delete(field)
+      return next
+    })
   }
 
   function validate(): ProfileErrors {
@@ -137,8 +206,8 @@ export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; o
   }
 
   return (
-    <WizardCard className="flex-col gap-[24px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px] lg:overflow-y-auto">
-      {/* Header — mirrors StepCheck's Mascot + title pattern */}
+    <WizardCard stack>
+      {/* Header — same Mascot + title language as the Check step */}
       <div className="flex w-full items-center gap-[14px]">
         <Mascot helper area="brand" size={44} radius={12} title="Chief of Staff" />
         <div className="flex min-w-0 flex-1 flex-col gap-[2px]">
@@ -151,131 +220,114 @@ export function StepProfile({ onNext, onProfileChange }: { onNext: () => void; o
         </div>
       </div>
 
-      {/* Form */}
       <form
         id="profile-form"
         onSubmit={handleSubmit}
         noValidate
-        className="relative flex w-full flex-col gap-[14px] rounded-md bg-soft p-[24px]"
+        className="grid w-full grid-cols-1 gap-[12px] sm:grid-cols-2 lg:grid-cols-3"
       >
-        <Stroke color="var(--color-line)" />
-
-        {/* Industry */}
-        <div className="flex w-full flex-col gap-[4px]">
-          <FieldRow>
-            <FieldLabel htmlFor="field-industry">
-              <span className="flex items-center gap-[6px]">
-                <Building2 size={13} aria-hidden className="text-muted" />
-                Industry
-              </span>
-            </FieldLabel>
-            <input
-              id="field-industry"
-              type="text"
-              aria-label="Industry"
-              placeholder="e.g. Fintech, Healthcare, Gov-tech…"
-              value={form.industry}
-              onChange={(e) => set('industry', e.target.value)}
-              aria-describedby={errors.industry ? 'err-industry' : undefined}
-              className={INPUT_CLS}
-            />
-          </FieldRow>
-          {errors.industry && <FieldError id="err-industry" message={errors.industry} />}
-        </div>
-
-        {/* Team size */}
-        <div className="flex w-full flex-col gap-[4px]">
-          <FieldRow>
-            <FieldLabel htmlFor="field-teamsize">Team size</FieldLabel>
-            <select
-              id="field-teamsize"
-              aria-label="Team size"
-              value={form.teamSize}
-              onChange={(e) => set('teamSize', e.target.value)}
-              aria-describedby={errors.teamSize ? 'err-teamsize' : undefined}
-              className={SELECT_CLS}
-            >
-              <option value="">Select team size…</option>
-              {TEAM_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          {errors.teamSize && <FieldError id="err-teamsize" message={errors.teamSize} />}
-        </div>
-
-        {/* Region */}
-        <div className="flex w-full flex-col gap-[4px]">
-          <FieldRow>
-            <FieldLabel htmlFor="field-region">Region</FieldLabel>
-            <select
-              id="field-region"
-              aria-label="Region"
-              value={form.region}
-              onChange={(e) => set('region', e.target.value)}
-              aria-describedby={errors.region ? 'err-region' : undefined}
-              className={SELECT_CLS}
-            >
-              <option value="">Select region…</option>
-              {REGIONS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          {errors.region && <FieldError id="err-region" message={errors.region} />}
-        </div>
-
-        {/* Currency */}
-        <div className="flex w-full flex-col gap-[4px]">
-          <FieldRow>
-            <FieldLabel htmlFor="field-currency">Currency</FieldLabel>
-            <select
-              id="field-currency"
-              aria-label="Currency"
-              value={form.currency}
-              onChange={(e) => set('currency', e.target.value)}
-              aria-describedby={errors.currency ? 'err-currency' : undefined}
-              className={SELECT_CLS}
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          {errors.currency && <FieldError id="err-currency" message={errors.currency} />}
-        </div>
-
-        {/* PIC role */}
-        <div className="flex w-full flex-col gap-[4px]">
-          <FieldRow>
-            <FieldLabel htmlFor="field-picrole">Your role</FieldLabel>
-            <input
-              id="field-picrole"
-              type="text"
-              aria-label="Your role"
-              placeholder="e.g. Ops Lead, Founder, CTO…"
-              value={form.picRole}
-              onChange={(e) => set('picRole', e.target.value)}
-              aria-describedby={errors.picRole ? 'err-picrole' : undefined}
-              className={INPUT_CLS}
-            />
-          </FieldRow>
-          {errors.picRole && <FieldError id="err-picrole" message={errors.picRole} />}
+        <FieldCard icon={Building2} label="Industry" prefilled={prefilled.has('industry')} error={errors.industry}>
+          <input
+            id="field-industry"
+            type="text"
+            aria-label="Industry"
+            placeholder="e.g. Fintech, Healthcare, Gov-tech…"
+            value={form.industry}
+            onChange={(e) => set('industry', e.target.value)}
+            aria-describedby={errors.industry ? 'err-industry' : undefined}
+            className={FIELD_CLS}
+          />
+        </FieldCard>
+        <FieldCard icon={Users} label="Team size" prefilled={prefilled.has('teamSize')} error={errors.teamSize}>
+          <select
+            id="field-teamsize"
+            aria-label="Team size"
+            value={form.teamSize}
+            onChange={(e) => set('teamSize', e.target.value)}
+            className={FIELD_CLS}
+          >
+            <option value="">Select team size…</option>
+            {TEAM_SIZES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </FieldCard>
+        <FieldCard icon={Globe} label="Region" prefilled={prefilled.has('region')} error={errors.region}>
+          <select
+            id="field-region"
+            aria-label="Region"
+            value={form.region}
+            onChange={(e) => set('region', e.target.value)}
+            className={FIELD_CLS}
+          >
+            <option value="">Select region…</option>
+            {REGIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </FieldCard>
+        <FieldCard icon={Coins} label="Currency" prefilled={prefilled.has('currency')} error={errors.currency}>
+          <select
+            id="field-currency"
+            aria-label="Currency"
+            value={form.currency}
+            onChange={(e) => set('currency', e.target.value)}
+            className={FIELD_CLS}
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </FieldCard>
+        <FieldCard icon={UserRound} label="Your role" prefilled={prefilled.has('picRole')} error={errors.picRole}>
+          <input
+            id="field-picrole"
+            type="text"
+            aria-label="Your role"
+            placeholder="e.g. Ops Lead, Founder, CTO…"
+            value={form.picRole}
+            onChange={(e) => set('picRole', e.target.value)}
+            aria-describedby={errors.picRole ? 'err-picrole' : undefined}
+            className={FIELD_CLS}
+          />
+        </FieldCard>
+        {/* Note card — fills the third slot, carries the prefill + editable-later message. */}
+        <div className="relative flex min-w-0 flex-col items-start justify-center gap-[6px] rounded-md p-[14px]">
+          {prefilled.size > 0 ? (
+            <span className="flex items-start gap-[6px] text-[12px] leading-[1.5] text-muted">
+              <Sparkles size={13} aria-hidden className="mt-[2px] shrink-0 text-info" />
+              Chief filled some of this in from your chat — check it’s right. You can change everything later in
+              Company settings.
+            </span>
+          ) : (
+            <span className="text-[12px] leading-[1.5] text-muted">
+              You can change all of this later in Company settings.
+            </span>
+          )}
+          <Stroke color="var(--color-wire-strong)" />
         </div>
       </form>
 
       <div className="w-full flex-1" />
 
-      {/* Footer actions */}
-      <div className="flex w-full items-center">
+      {/* Footer — mirrors the Check step */}
+      <div className="flex w-full items-center gap-[10px]">
+        {onBack && (
+          <QuietButton icon={ArrowLeft} onClick={onBack}>
+            Back to our chat
+          </QuietButton>
+        )}
         <span className="h-px flex-1" />
-        <PrimaryButton icon={ArrowRight} onClick={() => void handleSubmit(new Event('submit') as unknown as React.FormEvent)}>
+        <PrimaryButton
+          icon={ArrowRight}
+          onClick={() => void handleSubmit(new Event('submit') as unknown as React.FormEvent)}
+        >
           {saving ? 'Saving…' : 'Continue'}
         </PrimaryButton>
       </div>

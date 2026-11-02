@@ -6,8 +6,7 @@ import type { AIMode } from './data'
 import { StepWelcome } from './StepWelcome'
 import { StepYourAI } from './StepYourAI'
 import { StepKnowYou } from './StepKnowYou'
-import { StepProfile } from './StepProfile'
-import type { ProfileData } from './StepProfile'
+import { getProfileSuggestion } from './interviewApi'
 import { StepCheck } from './StepCheck'
 import { StepTeam } from './StepTeam'
 import type { AiSelection } from './StepYourAI'
@@ -32,7 +31,7 @@ import { useSession } from '../../app/session'
  */
 export const ONBOARDED_KEY = 'omilo_onboarded'
 
-const STEPS: OnboardingStep[] = ['welcome', 'your-ai', 'know-you', 'profile', 'check', 'team', 'inbox']
+const STEPS: OnboardingStep[] = ['welcome', 'your-ai', 'know-you', 'check', 'team', 'inbox']
 
 const BASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
 function getToken(): string | null {
@@ -41,14 +40,14 @@ function getToken(): string | null {
 
 /**
  * Standalone full-screen onboarding wizard at /onboarding (no Shell).
- * Step order: welcome → your-ai → know-you → profile → check → team → inbox.
+ * Step order: welcome → your-ai → know-you → check → team → inbox.
  * `?step=<id>` opens a step directly; `?mode=cloud` opens Your AI on Cloud.
  * The last step (first Inbox) is the real app layout, so it has no wizard header.
  *
  * On mount: if localStorage has `omilo_onboarded=1`, redirect straight to the
  * app home so returning users are never trapped in the wizard.
  *
- * On finish: call updateCompanyProfile with collected profile fields (skipped in
+ * On finish: write the company profile Chief inferred from the interview (skipped in
  * mock mode), set the onboarded flag in localStorage, then navigate to the app.
  */
 export function OnboardingRoute() {
@@ -57,7 +56,6 @@ export function OnboardingRoute() {
   const initial = STEPS.includes(search.step as OnboardingStep) ? (search.step as OnboardingStep) : 'welcome'
   const [step, setStep] = useState<OnboardingStep>(initial)
   const initialMode: AIMode = search.mode === 'cloud' ? 'cloud' : 'self-host'
-  const [profileData, setProfileData] = useState<ProfileData | null>(null)
   const [aiSelection, setAiSelection] = useState<AiSelection | null>(null)
 
   // Redirect already-onboarded users immediately (before rendering the wizard).
@@ -99,19 +97,15 @@ export function OnboardingRoute() {
         }
       }
 
-      // Persist profile to backend (non-fatal — profile can be updated later in settings).
-      if (profileData) {
-        try {
-          await commands.updateCompanyProfile({
-            industry: profileData.industry,
-            teamSize: profileData.teamSize,
-            region: profileData.region,
-            currency: profileData.currency,
-            picRole: profileData.picRole,
-          })
-        } catch {
-          // Non-fatal: profile can be updated later in settings.
-        }
+      // Company profile (industry, team size, region, currency, role) comes from
+      // the interview: Chief infers it from the notes the owner just checked.
+      // Only grounded fields are written; non-fatal — editable later in Company settings.
+      try {
+        const guess = await getProfileSuggestion()
+        const profile = Object.fromEntries(Object.entries(guess).filter(([, v]) => Boolean(v)))
+        if (Object.keys(profile).length > 0) await commands.updateCompanyProfile(profile)
+      } catch {
+        // Non-fatal: profile can be updated later in settings.
       }
 
       // Set the backend onboarded flag (idempotent) and update the session so
@@ -153,14 +147,8 @@ export function OnboardingRoute() {
               }}
             />
           )}
-          {step === 'know-you' && <StepKnowYou onNext={() => goToStep('profile')} onBack={() => goToStep('your-ai')} />}
-          {step === 'profile' && (
-            <StepProfile
-              onNext={() => goToStep('check')}
-              onProfileChange={(data) => setProfileData(data)}
-            />
-          )}
-          {step === 'check' && <StepCheck onBack={() => goToStep('profile')} onNext={() => goToStep('team')} />}
+          {step === 'know-you' && <StepKnowYou onNext={() => goToStep('check')} onBack={() => goToStep('your-ai')} />}
+          {step === 'check' && <StepCheck onBack={() => goToStep('know-you')} onNext={() => goToStep('team')} />}
           {step === 'team' && (
             <StepTeam
               onBack={() => goToStep('check')}

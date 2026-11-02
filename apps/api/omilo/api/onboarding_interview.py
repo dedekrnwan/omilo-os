@@ -12,6 +12,7 @@ State is kept in ``company.settings["onboarding"]`` (see omilo.interview).
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 from typing import Any
@@ -56,7 +57,7 @@ def _load(ctx: RequestContext) -> tuple[dict, str, AiConfig]:
         if company is None:
             raise HTTPException(status_code=404, detail="Company not found.")
         st = ((company.settings or {}).get("onboarding") or {})
-        state = {**I.empty_state(), **{k: v for k, v in st.items() if k in ("interview", "notes", "website")}}
+        state = {**I.empty_state(), **{k: v for k, v in st.items() if k in ("interview", "notes", "website", "suggested")}}
         state["interview"] = {**I.empty_state()["interview"], **(state.get("interview") or {})}
         cfg = resolve(db, ctx.company_id, None, tier="balanced")
         return state, company.name, cfg
@@ -69,16 +70,30 @@ def _save(ctx: RequestContext, state: dict) -> None:
         company = db.get(Company, ctx.company_id)
         settings = dict(company.settings or {})
         ob = dict(settings.get("onboarding") or {})
-        ob.update({"interview": state["interview"], "notes": state["notes"], "website": state.get("website") or ""})
+        ob.update({"interview": state["interview"], "notes": state["notes"], "website": state.get("website") or "",
+                   "suggested": state.get("suggested") or []})
         settings["onboarding"] = ob
         company.settings = settings
         flag_modified(company, "settings")
 
 
+def _took_min(interview: dict) -> int | None:
+    """Minutes from the first to the latest answered turn (the Check step's 'Took 9 minutes')."""
+    try:
+        start = datetime.fromisoformat(interview["started_at"])
+        end = datetime.fromisoformat(interview["last_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return max(1, round((end - start).total_seconds() / 60))
+
+
 def _view(state: dict, cfg: AiConfig, options: list[str] | None = None) -> dict:
+    notes = state["notes"]
     return {"history": state["interview"]["history"], "topic": state["interview"].get("topic"),
-            "notes": state["notes"], "coverage": I.coverage(state["notes"]), "options": options or [],
+            "notes": notes, "coverage": I.coverage(notes), "options": options or [],
             "website": state.get("website") or "",
+            "suggested": [t for t in state.get("suggested") or [] if str(notes.get(t) or "").strip()],
+            "took_min": _took_min(state["interview"]),
             "ai": {"label": cfg.label, "practice": cfg.is_fake}}
 
 
@@ -125,8 +140,12 @@ async def interview_stream(body: TurnBody, request: Request, ctx: RequestContext
         if final.get("practice"):
             ai_entry["topic"] = final["topic"]
         hist.append(ai_entry)
-        state["interview"] = {"history": hist[-80:], "topic": final["topic"]}
+        now = datetime.now(timezone.utc).isoformat()
+        started = state["interview"].get("started_at") or now
+        state["interview"] = {"history": hist[-80:], "topic": final["topic"], "started_at": started,
+                              "last_at": now if (message or website) else state["interview"].get("last_at") or now}
         state["notes"] = final["notes"]
+        state["suggested"] = final.get("suggested", state.get("suggested") or [])
         if website:
             state["website"] = website
         await asyncio.to_thread(_save, ctx, state)
@@ -142,6 +161,8 @@ async def put_note(topic: str, body: NoteBody, ctx: RequestContext = Depends(get
         raise HTTPException(status_code=404, detail="Unknown topic.")
     state, _name, cfg = await asyncio.to_thread(_load, ctx)
     content = body.content.strip()[:2000]
+    # The owner wrote this note now — it's theirs, not Chief's suggestion.
+    state["suggested"] = [t for t in state.get("suggested") or [] if t != topic]
     if content:
         state["notes"][topic] = content
     else:
@@ -155,6 +176,25 @@ async def team_plan(ctx: RequestContext = Depends(get_context)) -> dict:
     state, company_name, cfg = await asyncio.to_thread(_load, ctx)
     plan = await I.plan_team(cfg, company_name, state["notes"])
     return plan
+
+
+@router.get("/onboarding/company-profile-suggestion")
+async def company_profile_suggestion(ctx: RequestContext = Depends(get_context)) -> dict:
+    """Chief's guess at the "Your company" fields, from the interview notes.
+
+    Best-effort: returns empty strings for anything it couldn't ground, so the
+    form prefills what it can and the owner fills/corrects the rest. camelCase
+    keys mirror the frontend ProfileForm.
+    """
+    state, company_name, cfg = await asyncio.to_thread(_load, ctx)
+    sug = await I.suggest_profile(cfg, company_name, state["notes"])
+    return {
+        "industry": sug.get("industry", ""),
+        "teamSize": sug.get("team_size", ""),
+        "region": sug.get("region", ""),
+        "currency": sug.get("currency", ""),
+        "picRole": sug.get("pic_role", ""),
+    }
 
 
 @router.get("/onboarding/ai-status")
