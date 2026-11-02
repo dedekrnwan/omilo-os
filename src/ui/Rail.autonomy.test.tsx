@@ -8,7 +8,8 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useUIStore } from '../app/store'
+import { useSession } from '../app/session'
+import type { Company } from '../core/domain/session'
 import { Rail } from './Rail'
 
 async function renderRail() {
@@ -28,9 +29,12 @@ async function renderRail() {
   render(<RouterProvider router={router} />)
 }
 
+const COMPANY: Company = { id: 'cmp-a', name: 'Test Co', currency: 'IDR', autonomyDefault: 'ask' }
+
 describe('Autonomy popover', () => {
   beforeEach(() => {
-    useUIStore.setState({ autonomy: 'ask' })
+    // Autonomy is the real company.autonomy_default on the session (not UI store).
+    useSession.setState({ status: 'authed', company: { ...COMPANY } })
   })
 
   test('opening the tray → Autonomy shows the three levels', async () => {
@@ -43,14 +47,14 @@ describe('Autonomy popover', () => {
     expect(screen.getByText('YOLO')).toBeInTheDocument()
   })
 
-  test('picking YOLO updates and persists the autonomy level', async () => {
+  test('picking YOLO writes the autonomy level to the session company (shared source)', async () => {
     const user = userEvent.setup()
     await renderRail()
     await user.click(screen.getByRole('button', { name: 'More' }))
     await user.click(screen.getByRole('button', { name: 'Autonomy' }))
     await user.click(await screen.findByRole('button', { name: /YOLO/ }))
-    expect(useUIStore.getState().autonomy).toBe('yolo')
-    expect(JSON.parse(localStorage.getItem('omilo-ui') ?? '{}').state.autonomy).toBe('yolo')
+    // Same column the Control Panel and the enforcement engine read — not a UI-only copy.
+    expect(useSession.getState().company?.autonomyDefault).toBe('yolo')
   })
 
   test('the ⋯ tray opens on click and closes on Escape (not hover)', async () => {

@@ -102,6 +102,9 @@ export function SectionSafety() {
   async function persist() {
     // Autonomy → company.autonomy_default (PATCH /v1/company); the real column.
     await commands.updateCompanyProfile({ autonomyDefault: autonomy })
+    // Patch the session so the Rail's autonomy popover (same source) updates at once.
+    const company = useSession.getState().company
+    if (company) useSession.setState({ company: { ...company, autonomyDefault: autonomy } })
     // The remaining toggles stay in free-form safety settings.
     await updateSettings.mutateAsync({
       safety: {

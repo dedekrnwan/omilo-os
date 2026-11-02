@@ -45,6 +45,7 @@ import { LookPicker } from './ds/LookPicker'
 import { ContextMenuArea } from './ds/ItemMenu'
 import type { MenuEntries } from './ds/ItemMenu'
 import { useSession } from '../app/session'
+import { useAutonomy } from '../app/useAutonomy'
 import { useAuth } from '../app/useAuth'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Company } from '../core/domain/session'
@@ -258,8 +259,7 @@ function AutonomyPopover({
   onOpenChange: (o: boolean) => void
 }) {
   const navigate = useNavigate()
-  const autonomy = useUIStore((s) => s.autonomy)
-  const setAutonomy = useUIStore((s) => s.setAutonomy)
+  const { autonomy, setAutonomy } = useAutonomy()
   const companyName = useSession((s) => s.company?.name) ?? 'your company'
   const active = AUTONOMY_OPTIONS.find((o) => o.level === autonomy) ?? AUTONOMY_OPTIONS[1]
   return (
@@ -297,7 +297,7 @@ function AutonomyPopover({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => {
-                    setAutonomy(o.level)
+                    void setAutonomy(o.level)
                     onOpenChange(false)
                   }}
                   className={`flex w-full items-start gap-[10px] rounded-[9px] px-[10px] py-[9px] text-left transition-colors ${
@@ -360,7 +360,7 @@ function BottomActions({ unread = 3, helpers = 6, currentPage }: BottomActionsPr
   const [autonomyOpen, setAutonomyOpen] = useState(false)
   const groupRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const autonomy = useUIStore((s) => s.autonomy)
+  const { autonomy } = useAutonomy()
 
   // ⋯ opens the tray on click; it closes on an outside click (ignoring the
   // portaled autonomy popover) or Escape.

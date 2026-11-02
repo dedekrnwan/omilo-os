@@ -3,20 +3,11 @@ import { useUIStore, MODE_HOME } from './store'
 
 describe('UIStore', () => {
   beforeEach(() => {
-    useUIStore.setState({ mode: 'chat', areaId: null, companyId: 'sahabat-warga', autonomy: 'ask' })
+    useUIStore.setState({ mode: 'chat', areaId: null, companyId: 'sahabat-warga' })
   })
 
-  test('autonomy defaults to "ask"', () => {
-    expect(useUIStore.getState().autonomy).toBe('ask')
-  })
-
-  test('setAutonomy updates and persists the level', () => {
-    useUIStore.getState().setAutonomy('yolo')
-    expect(useUIStore.getState().autonomy).toBe('yolo')
-    expect(JSON.parse(localStorage.getItem('omilo-ui') ?? '{}').state.autonomy).toBe('yolo')
-    useUIStore.getState().setAutonomy('strict')
-    expect(useUIStore.getState().autonomy).toBe('strict')
-  })
+  // Autonomy is no longer UI-store state — it's the real company.autonomy_default
+  // on the session, read/written via useAutonomy() (see Rail.autonomy.test.tsx).
 
   test('areaId defaults to null (All areas)', () => {
     expect(useUIStore.getState().areaId).toBe(null)

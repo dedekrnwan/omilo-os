@@ -3,7 +3,14 @@ import { persist } from 'zustand/middleware'
 
 export type Mode = 'chat' | 'office'
 
-/** How much helpers may do on their own, workspace-wide. */
+/**
+ * How much helpers may do on their own, workspace-wide.
+ *
+ * NOTE: this is the real `company.autonomy_default` column, NOT UI store state.
+ * It lives on the session company and is read/written via `useAutonomy()` so the
+ * Rail popover and the Control Panel stay in sync. (It used to be duplicated in
+ * this store, which drifted — see useAutonomy.ts.)
+ */
 export type Autonomy = 'strict' | 'ask' | 'yolo'
 
 /**
@@ -19,14 +26,11 @@ export interface UIState {
   companyId: string
   /** Selected Area filter (a channel id), or null for "All areas". Shared across both modes. */
   areaId: string | null
-  /** Workspace-wide autonomy level for every helper. */
-  autonomy: Autonomy
   /** User opted into desktop / browser push. The OS permission is the real gate. */
   pushEnabled: boolean
   setMode(mode: Mode): void
   setCompany(id: string): void
   setArea(id: string | null): void
-  setAutonomy(level: Autonomy): void
   setPushEnabled(on: boolean): void
 }
 
@@ -41,7 +45,6 @@ export const useUIStore = create<UIState>()(
       mode: 'chat',
       companyId: 'sahabat-warga',
       areaId: null,
-      autonomy: 'ask',
       pushEnabled: false,
 
       setMode(mode: Mode) {
@@ -53,16 +56,13 @@ export const useUIStore = create<UIState>()(
       setArea(id: string | null) {
         if (get().areaId !== id) set({ areaId: id })
       },
-      setAutonomy(level: Autonomy) {
-        if (get().autonomy !== level) set({ autonomy: level })
-      },
       setPushEnabled(on: boolean) {
         if (get().pushEnabled !== on) set({ pushEnabled: on })
       },
     }),
     {
       name: 'omilo-ui',
-      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId, autonomy: s.autonomy, pushEnabled: s.pushEnabled }),
+      partialize: (s) => ({ mode: s.mode, companyId: s.companyId, areaId: s.areaId, pushEnabled: s.pushEnabled }),
     },
   ),
 )
