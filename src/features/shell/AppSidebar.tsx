@@ -43,7 +43,6 @@ import {
   useUpdateSession,
 } from '../../app/queries'
 import { AreaBadgeButton, AreaTile, FolderIconButton } from './LookControls'
-import { Button } from '../../ui/ds/Button'
 import { ChatRow, FolderRow, GroupLabel, NavGroup, NavLink, SidebarFrame } from '../../ui/ds/Sidebar'
 import { ContextMenuArea, MoreMenu, copyText } from '../../ui/ds/ItemMenu'
 import type { MenuEntries } from '../../ui/ds/ItemMenu'
@@ -270,6 +269,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
   const updateFolder = useUpdateFolder()
   const deleteFolder = useDeleteFolder()
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [chatQuery, setChatQuery] = useState('')
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null)
   const [areaPickerOpen, setAreaPickerOpen] = useState(false)
   const [popoverOpen, setPopoverOpen] = useState(state === 'switcher')
@@ -300,9 +300,16 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
     for (const s of sessions) if (s.folderId && !s.pinned) (map[s.folderId] ??= []).push(s)
     return map
   }, [sessions])
-  const pinned = sessions.filter((s) => s.pinned)
   const activeSession = sessions.find((s) => s.id === sessionId)
-  const recent = sessions.filter((s) => !s.folderId && !s.pinned)
+  // Inline chat filter (the composer search row). Matches a chat's title or any
+  // helper in it; when active, folders with no match are hidden and opened.
+  const chatQ = chatQuery.trim().toLowerCase()
+  const matchesQuery = (s: Session) =>
+    !chatQ ||
+    s.title.toLowerCase().includes(chatQ) ||
+    (s.participants ?? []).some((p) => p.name.toLowerCase().includes(chatQ))
+  const pinned = sessions.filter((s) => s.pinned && matchesQuery(s))
+  const recent = sessions.filter((s) => !s.folderId && !s.pinned && matchesQuery(s))
 
   function chatMenu(s: Session & { pinned?: boolean }): MenuEntries {
     const moveTargets = folders.filter((f) => f.id !== s.folderId)
@@ -412,6 +419,7 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
         menu={chatMenu(s)}
         renaming={renaming === s.id}
         onRename={(v) => renameChat(s.id, v)}
+        participants={s.participants}
       />
     )
   }
@@ -484,9 +492,28 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
       )}
 
       {isChat && (
-        <Button icon={Plus} className="w-full" onClick={() => void navigate({ to: '/chat' })}>
-          New chat
-        </Button>
+        <div className="flex w-full items-center gap-[6px]">
+          <label className="flex h-[30px] min-w-0 flex-1 items-center gap-[6px] rounded-btn bg-surface px-[8px] outline-1 -outline-offset-1 outline-line-strong focus-within:outline-ink">
+            <Search size={14} aria-hidden className="shrink-0 text-faint" />
+            <input
+              type="text"
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-muted focus:outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/chat' })}
+            aria-label="New chat"
+            title="New chat"
+            className="flex size-[30px] shrink-0 items-center justify-center rounded-btn bg-primary text-primary-ink transition hover:bg-primary-hover active:scale-[0.97]"
+          >
+            <Plus size={16} aria-hidden />
+          </button>
+        </div>
       )}
 
       <NavGroup>
@@ -524,11 +551,13 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
         <NavGroup>
           <GroupLabel label="FOLDERS" action={{ label: 'New folder', onClick: () => setCreateFolderOpen(true) }} />
           {folders.map((f) => {
-            const open = isOpen(f.id)
-            const chats = byFolder[f.id] ?? []
-            const showAll = expanded[f.id]
+            const chats = (byFolder[f.id] ?? []).filter(matchesQuery)
+            // While searching: hide folders with no hit, and open the rest so the matches show.
+            if (chatQ && chats.length === 0) return null
+            const open = chatQ ? true : isOpen(f.id)
+            const showAll = expanded[f.id] || Boolean(chatQ)
             const shown = showAll ? chats : chats.slice(0, FOLDER_PREVIEW)
-            const more = Math.max(f.count, chats.length) - shown.length
+            const more = chatQ ? 0 : Math.max(f.count, chats.length) - shown.length
             return (
               <div key={f.id} className="flex flex-col gap-px">
                 {f.id === folderId ? (

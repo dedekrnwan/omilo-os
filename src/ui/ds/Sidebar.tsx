@@ -3,6 +3,28 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, Pin, Plus } from 'lucide
 import { ContextMenuArea, MoreMenu } from './ItemMenu'
 import type { MenuEntries } from './ItemMenu'
 import type { LucideIcon } from 'lucide-react'
+import type { SessionParticipant } from '../../core/domain/types'
+import { Mascot } from './Mascot'
+
+/** Overlapping mini-avatars of the helpers in a chat (up to 3, then "+N"). */
+function ParticipantStack({ participants }: { participants: SessionParticipant[] }) {
+  const shown = participants.slice(0, 3)
+  const extra = participants.length - shown.length
+  return (
+    <span className="flex shrink-0 items-center" aria-label={`${participants.length} in this chat`}>
+      {shown.map((p, i) => (
+        <span key={i} className={`rounded-[5px] outline-1 -outline-offset-1 outline-app ${i > 0 ? '-ml-[5px]' : ''}`}>
+          <Mascot size={15} radius={5} area={p.area} still title={p.name} />
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="-ml-[5px] flex size-[15px] items-center justify-center rounded-[5px] bg-soft text-[8.5px] font-medium text-muted outline-1 -outline-offset-1 outline-app">
+          +{extra}
+        </span>
+      )}
+    </span>
+  )
+}
 
 /** pen `Chat Sidebar` / `Office Sidebar` frame: 232 wide · padding 10/8 · gap 12 · fill app. */
 export function SidebarFrame({ label, children }: { label: string; children: ReactNode }) {
@@ -210,6 +232,7 @@ export function ChatRow({
   renaming,
   onRename,
   pinned,
+  participants,
 }: {
   title: string
   time: string
@@ -220,6 +243,7 @@ export function ChatRow({
   renaming?: boolean
   onRename?: (next: string | null) => void
   pinned?: boolean
+  participants?: SessionParticipant[]
 }) {
   const row = (
     <div
@@ -241,6 +265,11 @@ export function ChatRow({
           <RenameField value={title} onCommit={(v) => onRename?.(v)} className="-my-[3px]" />
         ) : (
           <span className={`min-w-0 flex-1 truncate text-[12.5px] ${active ? 'font-medium text-ink' : 'text-ink-2'}`}>{title}</span>
+        )}
+        {!renaming && participants && participants.length > 0 && (
+          <span className={menu ? 'group-hover/row:hidden group-focus-within/row:hidden' : ''}>
+            <ParticipantStack participants={participants} />
+          </span>
         )}
         {!renaming && (
           <span className={`text-[11.5px] whitespace-nowrap text-faint ${menu ? 'group-hover/row:hidden group-focus-within/row:hidden' : ''}`}>{time}</span>
