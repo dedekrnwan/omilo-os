@@ -168,12 +168,27 @@ export function Stroke({ color = 'var(--color-line-strong)', width = 1 }: { colo
  * card grows to its content and scrolls as one — so a long step (e.g. the AI
  * step with many detected harnesses) is never clipped on a narrow or short
  * viewport.
+ *
+ * `stack` keeps it a single column at every width (header → content → footer),
+ * for the full-width steps: Your company, Check, Your team. Without it the
+ * built-in `lg:flex-row` lays those children side by side on desktop.
  */
-export function WizardCard({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function WizardCard({
+  children,
+  className = '',
+  stack = false,
+}: {
+  children: ReactNode
+  className?: string
+  stack?: boolean
+}) {
+  const layout = stack
+    ? 'gap-[18px] px-[20px] py-[24px] sm:px-[40px] sm:py-[32px]'
+    : 'lg:flex-row lg:overflow-hidden'
   return (
     <div className="flex min-h-0 w-full flex-1 items-center justify-center px-[16px] pt-[8px] pb-[16px] sm:px-[24px] sm:pb-[24px]">
       <section
-        className={`relative flex min-h-0 w-[1120px] max-h-full max-w-full flex-col overflow-y-auto overscroll-contain rounded-lg bg-surface lg:h-[720px] lg:flex-row lg:overflow-hidden ${className}`}
+        className={`relative flex min-h-0 w-[1120px] max-h-full max-w-full flex-col overflow-y-auto overscroll-contain rounded-lg bg-surface lg:h-[720px] ${layout} ${className}`}
         style={{ boxShadow: '0 12px 40px #0C0A0914' }}
       >
         {children}

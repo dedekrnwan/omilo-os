@@ -1,13 +1,16 @@
 /**
  * Tests for onboarding finish wiring (T7 · P9 auth gate, Wave 2).
  *
- * (a) In HTTP mode, finishing the wizard calls updateCompanyProfile with the
- *     collected profile, navigates into the app, and sets the onboarded flag.
+ * (a) In HTTP mode, finishing the wizard writes the company profile Chief
+ *     inferred from the interview (updateCompanyProfile — only the fields it
+ *     could ground), navigates into the app, and sets the onboarded flag.
+ *     There is no profile form: the wizard is Your AI → Get to know you →
+ *     Check → Your team.
  * (b) An already-onboarded user hitting /onboarding is redirected to the app
  *     home, not shown the wizard.
  *
- * Command stubbing mirrors the pattern in StepProfile.test.tsx:
- *   vi.mock the createCommands module so we can spy on updateCompanyProfile.
+ * Command stubbing: vi.mock the createCommands module so we can spy on
+ *   updateCompanyProfile; getProfileSuggestion is mocked to Chief's guess.
  * Router rendering mirrors authFlow.test.tsx / routeSmoke.test.tsx:
  *   createMemoryHistory + createRouter + RouterProvider.
  */
@@ -60,6 +63,21 @@ vi.mock('../../app/useAuth', () => ({
   isMockMode: () => mockIsMockMode(),
 }))
 
+// ── Chief's profile guess from the interview ─────────────────────────────────
+
+const mockGetProfileSuggestion = vi.fn().mockResolvedValue({
+  industry: 'Fintech',
+  teamSize: '11-50',
+  region: 'Indonesia',
+  currency: 'IDR',
+  picRole: '',
+})
+
+vi.mock('./interviewApi', async (importActual) => ({
+  ...(await importActual<typeof import('./interviewApi')>()),
+  getProfileSuggestion: () => mockGetProfileSuggestion(),
+}))
+
 // ── import after mocks ────────────────────────────────────────────────────────
 
 import { OnboardingRoute } from './OnboardingRoute'
@@ -106,15 +124,6 @@ function buildRouter(initialPath: string) {
   return router
 }
 
-// Fill in StepProfile fields and click Continue
-async function fillAndSubmitProfile(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByRole('textbox', { name: /industry/i }), 'Fintech')
-  await user.selectOptions(screen.getByRole('combobox', { name: /team size/i }), '11-50')
-  await user.selectOptions(screen.getByRole('combobox', { name: /region/i }), 'Indonesia')
-  await user.selectOptions(screen.getByRole('combobox', { name: /currency/i }), 'IDR')
-  await user.type(screen.getByRole('textbox', { name: /your role/i }), 'Ops Lead')
-  await user.click(screen.getByRole('button', { name: /continue/i }))
-}
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
@@ -132,7 +141,7 @@ describe('onboarding finish', () => {
     localStorage.removeItem(ONBOARDED_KEY)
   })
 
-  test('(a) HTTP mode: finishing calls updateCompanyProfile, navigates to app home, sets onboarded flag', async () => {
+  test('(a) HTTP mode: finishing writes the interview profile, navigates to app home, sets onboarded flag', async () => {
     const user = userEvent.setup()
     const router = buildRouter('/onboarding')
     render(<RouterProvider router={router} />)
@@ -140,7 +149,7 @@ describe('onboarding finish', () => {
     // Wizard renders at welcome step
     expect(await screen.findByRole('main', { name: 'Onboarding' })).toBeInTheDocument()
 
-    // --- navigate through steps to reach StepProfile ---
+    // --- navigate through the wizard: no profile form between Know You and Check ---
     // Welcome → Your AI
     const startBtn = await screen.findByRole('button', { name: /get started|let's go|start|connect|continue/i })
     await user.click(startBtn)
@@ -149,15 +158,12 @@ describe('onboarding finish', () => {
     const yourAiNext = await screen.findByRole('button', { name: /connect and continue|continue/i })
     await user.click(yourAiNext)
 
-    // Know You → Profile (skip topic)
+    // Know You → Check (skip topic)
     const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
+    expect(screen.queryByRole('textbox', { name: /industry/i })).not.toBeInTheDocument()
 
-    // StepProfile is now shown — fill it and submit
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
-    await fillAndSubmitProfile(user)
-
-    // After profile submit, we're at StepCheck — advance to StepTeam
+    // StepCheck — advance to StepTeam
     const looksRightBtn = await screen.findByRole('button', { name: /looks right|build my team/i })
     await user.click(looksRightBtn)
 
@@ -166,17 +172,14 @@ describe('onboarding finish', () => {
     await user.click(createTeamBtn)
 
     // Assertions
-    // 1. updateCompanyProfile was called with the profile fields from StepProfile
+    // 1. updateCompanyProfile got Chief's grounded fields — the empty role is left out
     await waitFor(() => {
-      // The finish call should have been made at least once (from StepProfile advance AND/OR from completeOnboarding)
-      expect(mockUpdateCompanyProfile).toHaveBeenCalled()
-      const lastCall = mockUpdateCompanyProfile.mock.calls[mockUpdateCompanyProfile.mock.calls.length - 1][0]
-      expect(lastCall).toMatchObject({
+      expect(mockUpdateCompanyProfile).toHaveBeenCalledTimes(1)
+      expect(mockUpdateCompanyProfile.mock.calls[0][0]).toEqual({
         industry: 'Fintech',
         teamSize: '11-50',
         region: 'Indonesia',
         currency: 'IDR',
-        picRole: 'Ops Lead',
       })
     })
 
@@ -205,13 +208,6 @@ describe('onboarding finish', () => {
     const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
 
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
-    // In mock mode, StepProfile still calls createCommands internally (the mock is always there)
-    // but the finish completeOnboarding should NOT call it again.
-    // We clear the mock here so we can assert the finish call specifically.
-    mockUpdateCompanyProfile.mockClear()
-    await fillAndSubmitProfile(user)
-    mockUpdateCompanyProfile.mockClear() // clear the StepProfile's own call
 
     const looksRightBtn = await screen.findByRole('button', { name: /looks right|build my team/i })
     await user.click(looksRightBtn)
@@ -241,8 +237,6 @@ describe('onboarding finish', () => {
     await user.click(yourAiNext)
     const skipBtn = await screen.findByRole('button', { name: /next step/i })
     await user.click(skipBtn)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /industry/i })).toBeInTheDocument())
-    await fillAndSubmitProfile(user)
     const looksRightBtn = await screen.findByRole('button', { name: /looks right|build my team/i })
     await user.click(looksRightBtn)
     const createTeamBtn = await screen.findByRole('button', { name: /create my team/i })

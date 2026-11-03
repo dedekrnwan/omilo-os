@@ -42,7 +42,7 @@ describe('OnboardingHeader — company name', () => {
       company: { id: 'cmp-x', name: 'My Real Company', currency: 'IDR', onboarded: false },
     })
 
-    renderHeader('profile')
+    renderHeader('check')
 
     // Should show the real company name (findBy waits for router async render)
     expect(await screen.findByText(/My Real Company/)).toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('OnboardingHeader — company name', () => {
   test('shows fallback text when session has no company', async () => {
     useSession.setState({ status: 'anon', company: null })
 
-    renderHeader('profile')
+    renderHeader('check')
 
     // Should not crash and should show the fallback
     expect(await screen.findByText(/your workspace/i)).toBeInTheDocument()
