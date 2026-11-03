@@ -35,10 +35,17 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["onboarding-interview"])
 
 
+class FileAttachment(BaseModel):
+    name: str
+    mime: str = "application/octet-stream"
+    data: str  # base64-encoded bytes, no data-URI prefix
+
+
 class TurnBody(BaseModel):
     message: str = ""
     website: str | None = None
     restart: bool = False
+    file: FileAttachment | None = None
 
 
 class NoteBody(BaseModel):
@@ -113,12 +120,19 @@ async def interview_stream(body: TurnBody, request: Request, ctx: RequestContext
 
     async def gen():
         hist = state["interview"]["history"]
-        if not message and not website and hist and hist[-1]["role"] == "ai":
+        if not message and not website and not body.file and hist and hist[-1]["role"] == "ai":
             yield _sse("done", _view(state, cfg, hist[-1].get("options")))  # reopened: show where we were
             return
+        # Size-check the attachment before anything else (base64 → raw byte estimate)
+        if body.file:
+            raw_size = len(body.file.data) * 3 // 4
+            if raw_size > 10 * 1024 * 1024:
+                yield _sse("error", {"message": "That file is over 10 MB — attach a smaller one."})
+                return
         final: dict = {}
         try:
-            async for ev in I.stream_turn(cfg, company_name, state, message, website=website):
+            async for ev in I.stream_turn(cfg, company_name, state, message, website=website,
+                                          file=body.file.model_dump() if body.file else None):
                 if ev["type"] == "text":
                     yield _sse("text", {"delta": ev["delta"]})
                 elif ev["type"] == "activity":
@@ -134,8 +148,12 @@ async def interview_stream(body: TurnBody, request: Request, ctx: RequestContext
             log.exception("interview turn failed")
             yield _sse("error", {"message": f"Something went wrong: {str(e)[:200]}"})
             return
-        if message or website:
-            hist.append({"role": "owner", "text": message or f"Read {website}"})
+        if message or website or body.file:
+            text = message or (f"📎 {body.file.name}" if body.file else f"Read {website}")
+            entry: dict[str, Any] = {"role": "owner", "text": text}
+            if body.file:
+                entry["attachment"] = {"name": body.file.name}
+            hist.append(entry)
         ai_entry: dict[str, Any] = {"role": "ai", "text": final["reply"], "options": final.get("options") or []}
         if final.get("practice"):
             ai_entry["topic"] = final["topic"]
@@ -143,7 +161,7 @@ async def interview_stream(body: TurnBody, request: Request, ctx: RequestContext
         now = datetime.now(timezone.utc).isoformat()
         started = state["interview"].get("started_at") or now
         state["interview"] = {"history": hist[-80:], "topic": final["topic"], "started_at": started,
-                              "last_at": now if (message or website) else state["interview"].get("last_at") or now}
+                              "last_at": now if (message or website or body.file) else state["interview"].get("last_at") or now}
         state["notes"] = final["notes"]
         state["suggested"] = final.get("suggested", state.get("suggested") or [])
         if website:

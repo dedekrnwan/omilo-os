@@ -145,7 +145,7 @@ def _scripted(company_name: str, state: dict, message: str) -> dict:
 
 
 async def stream_turn(cfg: AiConfig, company_name: str, state: dict, message: str,
-                      website: str | None = None) -> AsyncIterator[dict]:
+                      website: str | None = None, file: dict | None = None) -> AsyncIterator[dict]:
     """One interview exchange. Yields:
         {"type": "activity", "label"} · {"type": "text", "delta"} · {"type": "note", "topic", "content"}
         {"type": "final", "reply", "notes", "topic", "options"}
