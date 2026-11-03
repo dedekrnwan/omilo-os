@@ -49,11 +49,32 @@ function Github({ size = 24, className }: { size?: number; className?: string })
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
-function SectionHead({ title, action }: { title: string; action?: React.ReactNode }) {
+function SectionHead({
+  title,
+  open = true,
+  onToggle,
+  action,
+}: {
+  title: string
+  open?: boolean
+  onToggle?: () => void
+  action?: React.ReactNode
+}) {
   return (
     <div className="flex w-full items-center gap-[6px]">
-      <h3 className="m-0 text-[13px] font-semibold text-ink">{title}</h3>
-      <ChevronDown size={14} aria-hidden className="text-muted" />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex items-center gap-[6px] text-left"
+      >
+        <h3 className="m-0 text-[13px] font-semibold text-ink">{title}</h3>
+        <ChevronDown
+          size={14}
+          aria-hidden
+          className={`text-muted transition-transform ${open ? '' : '-rotate-90'}`}
+        />
+      </button>
       {action && (
         <>
           <span className="h-px flex-1" />
@@ -269,6 +290,9 @@ export function ResultsPanel({
   const { data: connectors = [] } = useConnectors()
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewOpenedInitially, setPreviewOpenedInitially] = useState(false)
+  // Each panel section collapses on its header; all open by default.
+  const [open, setOpen] = useState({ progress: true, outputs: true, context: true })
+  const toggle = (k: keyof typeof open) => setOpen((o) => ({ ...o, [k]: !o[k] }))
 
   const steps = results?.steps ?? []
   const outputs = results?.outputs ?? []
@@ -289,8 +313,8 @@ export function ResultsPanel({
       className="ml-[6px] flex min-h-0 w-[340px] shrink-0 flex-col overflow-y-auto rounded-lg bg-surface outline-1 -outline-offset-1 outline-line-strong"
     >
       <section className="flex w-full flex-col gap-[12px] px-[18px] py-[16px] shadow-[inset_0_-1px_0_var(--color-line)]">
-        <SectionHead title="Progress" />
-        {isLoading ? (
+        <SectionHead title="Progress" open={open.progress} onToggle={() => toggle('progress')} />
+        {open.progress && (isLoading ? (
           <span className="text-[12.5px] text-muted">Loading…</span>
         ) : isError ? (
           <EmptyState size="sm" mood="worried" title="Couldn’t load progress" />
@@ -315,11 +339,13 @@ export function ResultsPanel({
               {done} of {steps.length} step{steps.length === 1 ? '' : 's'} done
             </span>
           </>
-        )}
+        ))}
       </section>
 
       <section className="flex w-full flex-col gap-[12px] px-[18px] py-[16px] shadow-[inset_0_-1px_0_var(--color-line)]">
-        <SectionHead title="Outputs" />
+        <SectionHead title="Outputs" open={open.outputs} onToggle={() => toggle('outputs')} />
+        {open.outputs && (
+        <>
         {!isLoading && outputs.length === 0 && (
           <span className="text-[12.5px] text-muted">Reports and docs helpers write here show up in this list.</span>
         )}
@@ -343,17 +369,23 @@ export function ResultsPanel({
             <ArrowUpRight size={15} aria-hidden className="shrink-0 text-muted" />
           </button>
         ))}
+        </>
+        )}
       </section>
 
       <section className="flex w-full flex-col gap-[12px] px-[18px] py-[16px]">
         <SectionHead
           title="Context"
+          open={open.context}
+          onToggle={() => toggle('context')}
           action={
             <button type="button" aria-label="Add context" className="text-muted hover:text-ink-2">
               <FolderPlus size={15} aria-hidden />
             </button>
           }
         />
+        {open.context && (
+        <>
         <div className="flex w-full items-center gap-[10px] rounded-md px-[12px] py-[10px] outline-1 -outline-offset-1 outline-line">
           <Ring size={28} value={contextUsed} inner={0.74} />
           <span className="flex min-w-0 flex-1 flex-col gap-[1px]">
@@ -407,6 +439,8 @@ export function ResultsPanel({
               <Chip icon={Target} label={goal} />
             </div>
           </div>
+        )}
+        </>
         )}
       </section>
 
