@@ -174,13 +174,6 @@ export async function readFileBase64(file: File): Promise<FilePayload> {
   }
 }
 
-/** Read a small text file the owner attached, to share it with Chief. */
-export async function readTextFile(file: File): Promise<string | null> {
-  const ok = /\.(txt|md|markdown|csv|json|html?)$/i.test(file.name) || file.type.startsWith('text/')
-  if (!ok || file.size > 1_000_000) return null
-  return (await file.text()).slice(0, 12000)
-}
-
 // ── offline practice interview (mock mode) ───────────────────────────────────
 
 const LABELS: Record<TopicId, string> = {

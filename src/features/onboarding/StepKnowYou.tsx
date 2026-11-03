@@ -7,16 +7,15 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ArrowRight, CircleCheck, Globe, Loader2, Paperclip, Pause, Pencil, SkipForward, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleCheck, FileText, Globe, Loader2, Paperclip, Pause, Pencil, SkipForward, Sparkles } from 'lucide-react'
 import { Mascot } from '../../ui/ds/Mascot'
 import { IconButton } from '../../ui/ds/Button'
 import { Composer } from '../../ui/ChatSession/Composer'
 import { DEFAULT_MODEL } from '../../ui/ChatSession/ModelMenu'
 import { KNOWLEDGE_NOTES } from './data'
 import { Pill, QuietButton, Stroke } from './parts'
-import { notify } from '../../ui/ds/Toaster'
-import { getAiStatus, getInterview, interviewTurn, readTextFile, TOPIC_IDS } from './interviewApi'
-import type { AiStatus, InterviewEntry, InterviewView, TopicId } from './interviewApi'
+import { getAiStatus, getInterview, interviewTurn, readFileBase64, TOPIC_IDS } from './interviewApi'
+import type { AiStatus, AttachmentMeta, FilePayload, InterviewEntry, InterviewView, TopicId } from './interviewApi'
 
 function ChiefSays({ text, ideas, onIdea, children }: {
   text: string
@@ -44,11 +43,37 @@ function ChiefSays({ text, ideas, onIdea, children }: {
   )
 }
 
-function OwnerSays({ text }: { text: string }) {
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function AttachmentChip({ name, size }: { name: string; size?: number }) {
+  return (
+    <div className="flex items-center gap-[6px] rounded-[8px] bg-surface px-[10px] py-[6px]">
+      <FileText size={14} aria-hidden className="shrink-0 text-ink-2" />
+      <span className="min-w-0 truncate text-[13px] font-medium text-ink">{name}</span>
+      {size !== undefined && (
+        <span className="shrink-0 text-[11px] text-muted">{humanSize(size)}</span>
+      )}
+    </div>
+  )
+}
+
+const INJECTED_BLOCK_RE = /\n?<(file|website)>[\s\S]*?<\/\1>/g
+
+export function OwnerSays({ text, attachment }: { text: string; attachment?: AttachmentMeta }) {
   return (
     <div className="flex w-full justify-end">
       <div className="relative max-w-[460px] rounded-[14px_14px_4px_14px] bg-soft px-[14px] py-[10px]">
-        <p className="w-full text-[14px] leading-[1.55] whitespace-pre-wrap text-ink">{text}</p>
+        {attachment ? (
+          <AttachmentChip name={attachment.name} size={attachment.size} />
+        ) : (
+          <p className="w-full text-[14px] leading-[1.55] whitespace-pre-wrap text-ink">
+            {text.replace(INJECTED_BLOCK_RE, '')}
+          </p>
+        )}
         <Stroke color="var(--color-line)" />
       </div>
     </div>
@@ -151,7 +176,7 @@ function LearnedPanel({
             ref={fileRef}
             type="file"
             hidden
-            accept=".txt,.md,.markdown,.csv,.json,.html,text/*"
+            accept="*/*"
             onChange={(e) => {
               const f = e.target.files?.[0]
               if (f) onFile(f)
@@ -168,7 +193,7 @@ function LearnedPanel({
 export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: () => void }) {
   const navigate = useNavigate()
   const [view, setView] = useState<InterviewView | null>(null)
-  const [pendingOwner, setPendingOwner] = useState<string | null>(null)
+  const [pendingOwner, setPendingOwner] = useState<{ text?: string; attachment?: AttachmentMeta } | null>(null)
   const [liveText, setLiveText] = useState<string | null>(null)
   const [activity, setActivity] = useState<string | null>(null)
   const [writing, setWriting] = useState<TopicId | null>(null)
@@ -180,12 +205,12 @@ export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: (
   const scrollRef = useRef<HTMLDivElement>(null)
   const busy = liveText !== null
 
-  function turn(body: { message?: string; website?: string }, ownerText?: string) {
+  function turn(body: { message?: string; website?: string; file?: FilePayload }, owner?: { text?: string; attachment?: AttachmentMeta }) {
     if (abortRef.current) return
     const ctrl = new AbortController()
     abortRef.current = ctrl
     setError(null)
-    setPendingOwner(ownerText ?? null)
+    setPendingOwner(owner ?? null)
     setLiveText('')
     setActivity(null)
     void interviewTurn(
@@ -206,7 +231,6 @@ export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: (
         },
         onError: (message) => {
           setError(message)
-          if (ownerText) notify(message)
         },
       },
       ctrl.signal,
@@ -246,20 +270,16 @@ export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: (
   const send = (text: string) => {
     const t = text.trim()
     if (!t || busy) return
-    turn({ message: t }, t)
+    turn({ message: t }, { text: t })
   }
   const readWebsite = () => {
     const url = website.trim()
     if (!url || busy) return
-    turn({ website: url }, `Read ${url}`)
+    turn({ website: url }, { text: `Read ${url}` })
   }
   const shareFile = async (file: File) => {
-    const content = await readTextFile(file)
-    if (content === null) {
-      notify('I can read text, Markdown, CSV and HTML files for now — paste the important part instead.')
-      return
-    }
-    turn({ message: `I'm sharing a file (${file.name}):\n<file>\n${content}\n</file>` }, `Shared ${file.name}`)
+    const payload = await readFileBase64(file)
+    turn({ file: payload }, { attachment: { name: file.name, mime: file.type, size: file.size } })
   }
 
   const history: InterviewEntry[] = view?.history ?? []
@@ -343,10 +363,10 @@ export function StepKnowYou({ onNext, onBack }: { onNext: () => void; onBack?: (
                 onIdea={send}
               />
             ) : (
-              <OwnerSays key={i} text={h.text} />
+              <OwnerSays key={i} text={h.text} attachment={h.attachment} />
             ),
           )}
-          {pendingOwner && <OwnerSays text={pendingOwner} />}
+          {pendingOwner && <OwnerSays text={pendingOwner.text ?? ''} attachment={pendingOwner.attachment} />}
           {liveText !== null && (
             <ChiefSays text={liveText || ''}>
               {!liveText && (
