@@ -14,3 +14,7 @@ apps/api/.venv
 .env.*
 !.env.example
 !.env.*.example
+
+# e2e testing artifacts (traces, videos, logs, replay cache)
+.e2e/
+.playwright-mcp/
