@@ -50,7 +50,7 @@ export function DialogDeleteWorkspace({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label={`Delete ${workspaceName}?`}
-        className="flex h-full w-[460px] flex-col gap-[14px] overflow-y-auto bg-surface p-[24px] shadow-[-24px_0_48px_#1C191747] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
+        className="flex h-full w-[460px] flex-col gap-[14px] overflow-y-auto rounded-dialog bg-surface p-[24px] shadow-[0_24px_64px_#0C0A0940] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
       >
         <Mascot helper size={44} radius={12} area="brand" mood="sad" still />
         <h2 className="m-0 font-serif text-[22px] font-medium text-ink">Delete {workspaceName}?</h2>

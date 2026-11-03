@@ -159,7 +159,7 @@ export function ArchivedDrawer({
         <Dialog.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[460px] flex-col overflow-hidden rounded-lg bg-surface shadow-[-8px_0_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong focus:outline-none"
+          className="fixed top-[8px] right-[8px] bottom-[8px] z-50 flex w-[460px] flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940] outline-1 -outline-offset-1 outline-line-strong focus:outline-none"
         >
           <div className="flex w-full shrink-0 items-center gap-[12px] shadow-[inset_0_-1px_0_var(--color-line)] py-[14px] pr-[12px] pl-[20px]">
             <span className="flex size-[32px] shrink-0 items-center justify-center rounded-md bg-soft outline-1 -outline-offset-1 outline-line">

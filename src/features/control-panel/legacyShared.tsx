@@ -246,7 +246,7 @@ export function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-[#0C0A0940] backdrop-blur-sm duration-150 animate-in fade-in-0"
+      className="fixed inset-0 z-50 flex justify-end bg-[#0C0A0940] p-[8px] backdrop-blur-sm duration-150 animate-in fade-in-0"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.()
       }}
@@ -255,7 +255,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative flex h-full flex-col overflow-hidden bg-surface shadow-[-24px_0_48px_#0C0A091F] duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
+        className="relative flex h-full flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
         style={{ width }}
       >
         {/* Header */}

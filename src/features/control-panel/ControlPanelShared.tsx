@@ -543,7 +543,7 @@ export function Scrim({ onClose, children, align = 'center' }: { onClose?: () =>
   useEscapeKey(() => onClose?.(), !!onClose)
   return (
     <div
-      className={`fixed inset-0 z-50 flex bg-[#0C0A0940] duration-150 animate-in fade-in-0 ${align === 'center' ? 'items-center justify-center' : 'justify-end'}`}
+      className={`fixed inset-0 z-50 flex bg-[#0C0A0940] duration-150 animate-in fade-in-0 ${align === 'center' ? 'items-center justify-center' : 'justify-end p-[8px] backdrop-blur-[2px]'}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose?.()
       }}
@@ -603,7 +603,7 @@ export function DialogCard({
         role="dialog"
         aria-modal="true"
         aria-label={label ?? (typeof title === 'string' ? title : undefined)}
-        className="flex h-full flex-col overflow-hidden bg-surface shadow-[-24px_0_48px_#1C19173D] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
+        className="flex h-full flex-col overflow-hidden rounded-dialog bg-surface shadow-[0_24px_64px_#0C0A0940] outline-1 -outline-offset-1 outline-line-strong duration-200 ease-soft animate-in fade-in-0 slide-in-from-right-8"
         style={{ width }}
       >
         <div className={`flex w-full shrink-0 items-center gap-[12px] py-[14px] pr-[12px] pl-[20px] ${lineBottom}`}>
@@ -645,7 +645,7 @@ export function DrawerCard({
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`flex h-full flex-col overflow-hidden bg-surface ${className}`}
+        className={`flex h-full flex-col overflow-hidden rounded-dialog bg-surface ${className}`}
         style={{ width }}
       >
         {children}
