@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from omilo.ai import AiConfig, AiError, converse
+from omilo.ai.llm import attachment_content
 
 TOPICS: list[dict[str, str]] = [
     {"id": "company", "label": "Company", "ask": "What does {company} do, and who's on the team?",
@@ -173,8 +174,9 @@ async def stream_turn(cfg: AiConfig, company_name: str, state: dict, message: st
         yield {"type": "activity", "label": f"Reading {website}…"}
         page = await read_site(website)
         owner_msg = (f"{message}\n\n" if message else "") + f"(I shared my website: {website})\n<website>\n{page[:8000]}\n</website>"
-    if owner_msg:
-        history.append({"role": "user", "content": owner_msg})
+    if owner_msg or file:
+        owner_content = attachment_content(cfg, owner_msg, file) if file else owner_msg
+        history.append({"role": "user", "content": owner_content})
     else:
         history = history or [{"role": "user", "content": "(The owner just opened the interview. Greet them in one line "
                                                           "and ask the first question.)"}]

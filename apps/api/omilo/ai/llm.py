@@ -71,14 +71,26 @@ def estimate_usd(model: str | None, tokens_in: int, tokens_out: int) -> float:
 
 
 def normalise_history(history: list[dict]) -> list[dict]:
-    """[{role: user|assistant, content}] alternating, starting with user."""
+    """[{role: user|assistant, content}] alternating, starting with user.
+
+    When a message's ``content`` is already a block list (from
+    ``attachment_content``), it is passed through as-is so Anthropic and
+    OpenAI-compat providers receive the native block shape.  Block-list
+    messages are never merged with adjacent same-role turns.
+    """
     out: list[dict] = []
     for h in history:
         role = "assistant" if h.get("role") in ("assistant", "ai", "agent", "helper") else "user"
-        text = str(h.get("content") if h.get("content") is not None else h.get("text") or "").strip()
+        raw = h.get("content") if h.get("content") is not None else h.get("text") or ""
+        if isinstance(raw, list):
+            # Native content block list — pass through unchanged; never merge.
+            if raw:
+                out.append({"role": role, "content": raw})
+            continue
+        text = str(raw).strip()
         if not text:
             continue
-        if out and out[-1]["role"] == role:
+        if out and out[-1]["role"] == role and not isinstance(out[-1].get("content"), list):
             out[-1]["content"] += "\n\n" + text
         else:
             out.append({"role": role, "content": text})
@@ -703,6 +715,50 @@ async def _cli(cfg, system, msgs, tools, on_call, web, max_turns, final_tools, t
     yield {"type": "text", "delta": reply}
     yield {"type": "done", "text": reply, "tokens_in": len(convo) // 4, "tokens_out": len(reply) // 4,
            "cost_usd": 0.0, "model": cfg.vendor}
+
+
+def attachment_content(cfg: AiConfig, text: str, file: dict | None) -> str | list:
+    """Build the user message content for a turn that may include a file attachment.
+
+    Returns:
+    - ``text`` (plain str) when there is no file, or when the provider/mime
+      combination cannot take a binary block (cli/fake; openai-compat non-image).
+    - A provider-native block list otherwise.
+
+    ``file`` keys: ``name``, ``mime``, ``data`` (base64, no data: prefix).
+    """
+    if file is None:
+        return text
+    name = file.get("name") or "file"
+    mime = file.get("mime") or "application/octet-stream"
+    data = file.get("data") or ""
+    note = (text + "\n\n" if text else "") + f"(I attached a file: {name}. Please read it and react.)"
+
+    if cfg.provider == "anthropic":
+        if mime.startswith("image/"):
+            return [
+                {"type": "text", "text": note},
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": data}},
+            ]
+        if mime == "application/pdf":
+            return [
+                {"type": "text", "text": note},
+                {"type": "document", "source": {"type": "base64", "media_type": mime, "data": data}},
+            ]
+        # unknown mime — degrade to string
+        return note
+
+    if cfg.provider == "openai_compat":
+        if mime.startswith("image/"):
+            return [
+                {"type": "text", "text": note},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}},
+            ]
+        # non-image openai-compat — degrade to string
+        return note
+
+    # cli / fake — transcript is plain text; cannot embed binary
+    return note
 
 
 def _label_for(name: str, args: dict) -> str:

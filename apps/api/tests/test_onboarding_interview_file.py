@@ -97,6 +97,8 @@ async def test_interview_stream_persists_file_attachment(async_client, owner_tok
     owner = [h for h in done["history"] if h["role"] == "owner"][-1]
     assert owner["text"].startswith("📎")
     assert owner["attachment"]["name"] == "deck.pdf"
+    assert "data" not in owner
+    assert "data" not in owner.get("attachment", {})
 
 
 async def test_interview_stream_rejects_oversize_file(async_client, owner_token):
