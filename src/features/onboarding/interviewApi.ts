@@ -16,10 +16,24 @@ import type { HelperArea } from '../../core/domain/types'
 export type TopicId = 'company' | 'customers' | 'goals' | 'offer' | 'rules' | 'systems' | 'voice'
 export const TOPIC_IDS: TopicId[] = ['company', 'customers', 'goals', 'offer', 'rules', 'systems', 'voice']
 
+export interface FilePayload {
+  name: string
+  mime: string
+  /** Base64-encoded file content — no `data:` prefix. */
+  data: string
+}
+
+export interface AttachmentMeta {
+  name: string
+  mime?: string
+  size?: number
+}
+
 export interface InterviewEntry {
   role: 'owner' | 'ai'
   text: string
   options?: string[]
+  attachment?: AttachmentMeta
 }
 
 export interface InterviewView {
@@ -66,11 +80,11 @@ export async function getInterview(): Promise<InterviewView> {
 }
 
 export async function interviewTurn(
-  body: { message?: string; website?: string; restart?: boolean },
+  body: { message?: string; website?: string; restart?: boolean; file?: FilePayload },
   h: TurnHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (!live()) return mock.turn(body.message ?? '', h)
+  if (!live()) return mock.turn(body.message ?? (body.file ? `📎 ${body.file.name}` : ''), h)
   let finished = false
   try {
     await postSse(
@@ -138,6 +152,25 @@ export async function getProfileSuggestion(): Promise<ProfileSuggestion> {
     return { ...empty, ...((await res.json()) as Partial<ProfileSuggestion>) }
   } catch {
     return empty
+  }
+}
+
+/**
+ * Read a File as a base64-encoded FilePayload (no `data:` prefix).
+ * Uses chunked String.fromCharCode to avoid call-stack overflow on large files.
+ */
+export async function readFileBase64(file: File): Promise<FilePayload> {
+  const buf = await file.arrayBuffer()
+  const bytes = new Uint8Array(buf)
+  const CHUNK = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return {
+    name: file.name,
+    mime: file.type || 'application/octet-stream',
+    data: btoa(binary),
   }
 }
 
