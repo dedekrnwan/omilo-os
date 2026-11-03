@@ -13,6 +13,7 @@ import {
   useFolderFiles,
   useMessages,
   useSession,
+  useSessionResults,
   useUpdateSession,
 } from '../../app/queries'
 import { useCommands } from '../../app/CommandsProvider'
@@ -37,6 +38,8 @@ import { capture } from '../../telemetry'
 import { EmptyState } from '../ds/EmptyState'
 
 const CHIEF: SessionParticipant = { name: 'Chief', area: 'brand' }
+/** Default model context window (tokens) the fill meter measures against. */
+const CONTEXT_WINDOW_TOKENS = 200_000
 
 function joinNames(names: string[]) {
   if (names.length <= 1) return names[0] ?? ''
@@ -208,6 +211,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const [screen] = useState(readScreenState)
   const navigate = useNavigate()
   const { data: messages, isLoading } = useMessages(sessionId)
+  const { data: sessionResults } = useSessionResults(sessionId)
   const { data: session } = useSession(sessionId)
   const channelId = session?.channelId ?? ''
   const { data: channel } = useChannel(channelId)
@@ -370,10 +374,16 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const contextUsed: number = useMemo(() => {
     if (screen === 'almost-full') return 94
     if (screen === 'compacted') return 18
+    // Real signal: the most recent turn's input tokens ≈ what currently fills the
+    // window (each turn re-sends the history). Falls back to a rough char estimate
+    // for chats whose turns haven't reported token counts yet.
+    const steps = sessionResults?.steps ?? []
+    const lastTokens = [...steps].reverse().find((s) => (s.tokensIn ?? 0) > 0)?.tokensIn
+    if (lastTokens) return Math.min(99, Math.round((lastTokens / CONTEXT_WINDOW_TOKENS) * 100))
     const allMsgs = [...(messages ?? []), ...streamedMessages]
     const totalChars = allMsgs.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
     return Math.min(99, Math.round((totalChars / 200_000) * 100))
-  }, [screen, messages, streamedMessages])
+  }, [screen, sessionResults, messages, streamedMessages])
   const browser = browserOpen
   const panelOpen = resultsOpen || browserOpen
   // With the 600px browser beside it the thread and composer keep 28px gutters (pen E5554m).

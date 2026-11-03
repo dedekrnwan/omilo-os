@@ -370,6 +370,9 @@ async def test_session_results_from_jobs(async_client, ws):
     assert step["label"] == "Draft the plan"
     assert step["helper"] == "Chief"
     assert step["status"] in ("done", "waiting", "failed")
+    # Each step carries its own token counts (the context meter reads the latest).
+    assert "tokensIn" in step and "tokensOut" in step
+    assert isinstance(step["tokensIn"], int) and isinstance(step["tokensOut"], int)
     assert set(res["usage"]) == {"tokensIn", "tokensOut", "costCredits"}
 
 

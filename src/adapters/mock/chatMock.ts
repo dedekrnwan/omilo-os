@@ -263,9 +263,9 @@ export function folderDetail(id: string): Folder | null {
 export const sessionResults: Record<string, SessionResults> = {
   'sess-passkey': {
     steps: [
-      { id: 'job-1', label: 'Audit current login flow', status: 'done', helper: 'Dev', helperArea: 'dev', durationS: 120 },
-      { id: 'job-2', label: 'Draft rollout plan', status: 'done', helper: 'Chief', helperArea: 'brand', durationS: 240 },
-      { id: 'job-3', label: 'Write migration doc for Support', status: 'running', helper: 'Dev', helperArea: 'dev' },
+      { id: 'job-1', label: 'Audit current login flow', status: 'done', helper: 'Dev', helperArea: 'dev', durationS: 120, tokensIn: 42_000, tokensOut: 9_000 },
+      { id: 'job-2', label: 'Draft rollout plan', status: 'done', helper: 'Chief', helperArea: 'brand', durationS: 240, tokensIn: 88_000, tokensOut: 14_000 },
+      { id: 'job-3', label: 'Write migration doc for Support', status: 'running', helper: 'Dev', helperArea: 'dev', tokensIn: 96_000, tokensOut: 3_000 },
       { id: 'job-4', label: 'Schedule staged rollout', status: 'pending', helper: 'Chief', helperArea: 'brand' },
     ],
     outputs: [

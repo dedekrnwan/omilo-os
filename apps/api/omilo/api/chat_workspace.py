@@ -422,6 +422,8 @@ def get_session_results(
                 "startedAt": _iso(j.started_at),
                 "endedAt": _iso(j.ended_at),
                 "durationS": duration,
+                "tokensIn": j.tokens_in or 0,
+                "tokensOut": j.tokens_out or 0,
             }
         )
         tokens_in += j.tokens_in or 0

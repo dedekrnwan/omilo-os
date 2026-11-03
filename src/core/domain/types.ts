@@ -1380,6 +1380,9 @@ export interface SessionStep {
   startedAt?: string | null
   endedAt?: string | null
   durationS?: number | null
+  /** Tokens the turn sent / produced; the latest step's tokensIn ≈ current context fill. */
+  tokensIn?: number | null
+  tokensOut?: number | null
 }
 
 export interface SessionOutput {
