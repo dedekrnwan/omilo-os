@@ -55,6 +55,12 @@ vi.mock('../../adapters/http/commands', () => ({
   }),
 }))
 
+// Existing roster used by the idempotency check in completeOnboarding.
+const mockHelpersList = vi.fn().mockResolvedValue([])
+vi.mock('../../adapters/http/httpRepos', () => ({
+  createHttpRepos: () => ({ helpers: { list: () => mockHelpersList() } }),
+}))
+
 // ── isMockMode mock — control HTTP vs mock mode per test ──────────────────────
 
 const mockIsMockMode = vi.fn().mockReturnValue(false) // default: HTTP mode
@@ -73,9 +79,12 @@ const mockGetProfileSuggestion = vi.fn().mockResolvedValue({
   picRole: '',
 })
 
+const mockPlanTeam = vi.fn().mockResolvedValue({ by: 'rules', helpers: [] })
+
 vi.mock('./interviewApi', async (importActual) => ({
   ...(await importActual<typeof import('./interviewApi')>()),
   getProfileSuggestion: () => mockGetProfileSuggestion(),
+  planTeam: () => mockPlanTeam(),
 }))
 
 // ── import after mocks ────────────────────────────────────────────────────────
@@ -131,6 +140,9 @@ describe('onboarding finish', () => {
   beforeEach(() => {
     mockUpdateCompanyProfile.mockClear()
     mockOnboardCompany.mockClear()
+    mockCreateHelper.mockClear()
+    mockHelpersList.mockReset().mockResolvedValue([])
+    mockPlanTeam.mockReset().mockResolvedValue({ by: 'rules', helpers: [] })
     mockIsMockMode.mockReturnValue(false) // HTTP mode by default
     localStorage.removeItem(ONBOARDED_KEY)
     // Reset to chat mode so navigate target is /chat
@@ -264,5 +276,36 @@ describe('onboarding finish', () => {
 
     // The app home should be rendered instead
     expect(await screen.findByTestId('app-home')).toBeInTheDocument()
+  })
+
+  test('(c) finishing does not re-create a helper that already exists (idempotent team)', async () => {
+    const user = userEvent.setup()
+    // Chief plans Support + Sales; Support already exists on the roster.
+    mockPlanTeam.mockResolvedValue({
+      by: 'rules',
+      helpers: [
+        { id: 'support', name: 'Support', area: 'support', role: 'customer support', description: 'Answers customers', reason: 'You get tickets', on: true },
+        { id: 'sales', name: 'Sales', area: 'sales', role: 'sales', description: 'Chases leads', reason: 'You have leads', on: true },
+      ],
+    })
+    mockHelpersList.mockResolvedValue([{ name: 'Support', area: 'support' }])
+
+    const router = buildRouter('/onboarding')
+    render(<RouterProvider router={router} />)
+
+    const startBtn = await screen.findByRole('button', { name: /get started|let's go|start|connect|continue/i })
+    await user.click(startBtn)
+    const yourAiNext = await screen.findByRole('button', { name: /connect and continue|continue/i })
+    await user.click(yourAiNext)
+    const skipBtn = await screen.findByRole('button', { name: /next step/i })
+    await user.click(skipBtn)
+    const looksRightBtn = await screen.findByRole('button', { name: /looks right|build my team/i })
+    await user.click(looksRightBtn)
+    const createTeamBtn = await screen.findByRole('button', { name: /create my team/i })
+    await user.click(createTeamBtn)
+
+    // Only Sales is created; the existing Support is skipped (no duplicate).
+    await waitFor(() => expect(mockCreateHelper).toHaveBeenCalledTimes(1))
+    expect(mockCreateHelper).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sales', area: 'sales' }))
   })
 })

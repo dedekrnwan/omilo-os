@@ -15,6 +15,7 @@ import type { TeamHelper } from './data'
 import { capture } from '../../telemetry'
 import { isMockMode } from '../../app/useAuth'
 import { createCommands } from '../../adapters/http/commands'
+import { createHttpRepos } from '../../adapters/http/httpRepos'
 import { platform } from '../../platform'
 import { useUIStore, MODE_HOME } from '../../app/store'
 import { useSession } from '../../app/session'
@@ -80,7 +81,21 @@ export function OnboardingRoute() {
       // Create the helpers the owner picked on StepTeam. The Chief already exists
       // (created with the company), so it is never created twice. Non-fatal per
       // helper so one failure doesn't block finishing onboarding.
-      const picked = (selectedHelpers ?? []).filter((h) => h.id !== 'chief')
+      //
+      // Idempotent: re-running onboarding (or finishing twice) must not duplicate
+      // the team, so we skip any helper whose name+area already exists. The
+      // backend only guards the Chief, so without this the roster piles up.
+      const key = (name: string, area: string) => `${name.trim().toLowerCase()}|${area}`
+      let existing = new Set<string>()
+      try {
+        const current = await createHttpRepos(BASE_URL, getToken).helpers.list()
+        existing = new Set(current.map((h) => key(h.name, h.area)))
+      } catch {
+        // Non-fatal: if the roster can't be read, fall through and create.
+      }
+      const picked = (selectedHelpers ?? []).filter(
+        (h) => h.id !== 'chief' && !existing.has(key(h.name, h.area)),
+      )
       if (typeof commands.createHelper === 'function') {
         for (const h of picked) {
           try {
