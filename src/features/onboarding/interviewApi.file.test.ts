@@ -34,7 +34,7 @@ describe('readFileBase64', () => {
   })
 })
 
-describe('interviewTurn', () => {
+describe('interviewTurn (HTTP mode)', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_USE_HTTP', '1')
     capturedBody = undefined
@@ -52,5 +52,43 @@ describe('interviewTurn', () => {
     expect(capturedBody).toMatchObject({
       file: { name: 'a.pdf', mime: 'application/pdf', data: 'QUJD' },
     })
+  })
+})
+
+describe('interviewTurn (mock mode)', () => {
+  // Mock mode is default (VITE_USE_HTTP !== '1').
+  // Each test uses a fresh getInterview() to read the current mock view.
+  beforeEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  test('file turn: owner history entry has attachment.name, topic note not overwritten', async () => {
+    // Import here so we pick up the same module instance as the mock state.
+    const { interviewTurn: turn, getInterview } = await import('./interviewApi')
+
+    // Capture what the mock view looks like after the turn.
+    let capturedView: Awaited<ReturnType<typeof getInterview>> | null = null
+
+    await turn(
+      { file: { name: 'brief.pdf', mime: 'application/pdf', data: 'QUJD' } },
+      {
+        onDone: (v) => {
+          capturedView = v
+        },
+      },
+    )
+
+    expect(capturedView).not.toBeNull()
+
+    // The last owner entry must carry attachment metadata.
+    const ownerEntries = capturedView!.history.filter((e) => e.role === 'owner')
+    const lastOwner = ownerEntries[ownerEntries.length - 1]
+    expect(lastOwner?.attachment?.name).toBe('brief.pdf')
+
+    // The file label must NOT have been written into any topic note.
+    const notesValues = Object.values(capturedView!.notes ?? {})
+    for (const note of notesValues) {
+      expect(note).not.toMatch(/📎/)
+    }
   })
 })

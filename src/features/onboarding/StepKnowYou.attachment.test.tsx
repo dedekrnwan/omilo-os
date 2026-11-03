@@ -20,4 +20,10 @@ describe('OwnerSays', () => {
     expect(screen.queryByText(/SECRET BLOB/)).not.toBeInTheDocument()
     expect(screen.getByText(/note here/)).toBeInTheDocument()
   })
+
+  test('strips an injected <website> block from plain text', () => {
+    render(<OwnerSays text={'note\n<website>\nRAW PAGE TEXT\n</website>'} />)
+    expect(screen.queryByText(/RAW PAGE TEXT/)).not.toBeInTheDocument()
+    expect(screen.getByText(/note/)).toBeInTheDocument()
+  })
 })

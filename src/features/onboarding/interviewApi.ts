@@ -84,7 +84,12 @@ export async function interviewTurn(
   h: TurnHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (!live()) return mock.turn(body.message ?? (body.file ? `📎 ${body.file.name}` : ''), h)
+  if (!live()) {
+    const attachment: AttachmentMeta | undefined = body.file
+      ? { name: body.file.name, mime: body.file.mime }
+      : undefined
+    return mock.turn(body.message ?? (attachment ? `📎 ${attachment.name}` : ''), h, attachment)
+  }
   let finished = false
   try {
     await postSse(
@@ -203,21 +208,28 @@ const mock = (() => {
       state = { ...state, notes: { ...state.notes, [topic]: content } }
       return view()
     },
-    turn: async (message: string, h: TurnHandlers) => {
+    turn: async (message: string, h: TurnHandlers, attachment?: AttachmentMeta) => {
       const now = Date.now()
       started ??= now
-      if (message.trim()) state = { ...state, took_min: Math.max(1, Math.round((now - started) / 60000)) }
+      const hasOwnerContent = Boolean(message.trim() || attachment)
+      if (hasOwnerContent) state = { ...state, took_min: Math.max(1, Math.round((now - started) / 60000)) }
       const asked = state.topic && state.topic !== 'finish' ? state.topic : 'company'
       const history = [...state.history]
-      if (message.trim()) {
-        history.push({ role: 'owner', text: message.trim() })
-        state = { ...state, notes: { ...state.notes, [asked]: message.trim() } }
-        h.onNote?.(asked, message.trim())
+      if (hasOwnerContent) {
+        const ownerText = attachment ? `📎 ${attachment.name}` : message.trim()
+        const entry: InterviewEntry = { role: 'owner', text: ownerText }
+        if (attachment) entry.attachment = attachment
+        history.push(entry)
+        // Only record a typed answer into notes — a file upload is not a topic answer.
+        if (!attachment && message.trim()) {
+          state = { ...state, notes: { ...state.notes, [asked]: message.trim() } }
+          h.onNote?.(asked, message.trim())
+        }
       }
-      const next = message.trim()
+      const next = hasOwnerContent && !attachment
         ? TOPIC_IDS.find((t) => !state.notes[t]?.trim()) ?? 'finish'
         : asked
-      const reply = next === 'finish' ? 'Thank you — that’s everything I need.' : (message.trim() ? 'Got it. ' : 'Hi! I’m Chief. ') + ASK[next]
+      const reply = next === 'finish' ? 'Thank you — that’s everything I need.' : (hasOwnerContent ? 'Got it. ' : 'Hi! I’m Chief. ') + ASK[next]
       h.onText?.(reply)
       history.push({ role: 'ai', text: reply, options: [] })
       state = { ...state, history, topic: next }
