@@ -103,4 +103,66 @@ describe('ReplyBlocks', () => {
     expect(screen.getByText(/You approved/)).toBeInTheDocument()
     expect(screen.getByText(/Undo for 5 min/)).toBeInTheDocument()
   })
+
+  test('task shows status, meta and progress', () => {
+    const blocks: MessageBlock[] = [
+      { type: 'task', title: 'Pause 2 goals', status: 'running', staff: 'Dev', stepsDone: 2, stepsTotal: 4, taskId: 'job-1' },
+    ]
+    render(<ReplyBlocks blocks={blocks} />)
+    expect(screen.getByText('In progress')).toBeInTheDocument()
+    expect(screen.getByText('2 of 4 steps')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open job/ })).toHaveAttribute('href', '/jobs/job-1')
+  })
+
+  test('usage_meter prints compact tokens and the account', () => {
+    const blocks: MessageBlock[] = [
+      { type: 'usage_meter', account: 'Claude Code pool', tier: 'Max', tokensIn: 1200, tokensOut: 860 },
+    ]
+    render(<ReplyBlocks blocks={blocks} />)
+    expect(screen.getByText('1.2k in / 860 out')).toBeInTheDocument()
+    expect(screen.getByText(/Claude Code pool · Max/)).toBeInTheDocument()
+  })
+
+  test('document links Open in Docs to its docPath', () => {
+    const blocks: MessageBlock[] = [
+      { type: 'document', title: 'Pause note', source: 'Docs', docPath: 'q4/pause-note.md' },
+    ]
+    render(<ReplyBlocks blocks={blocks} />)
+    expect(screen.getByText('Pause note')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open in Docs/ })).toHaveAttribute(
+      'href',
+      '/docs/?path=q4%2Fpause-note.md',
+    )
+  })
+
+  test('pr_card shows the diff stats and dismisses on "Not now"', async () => {
+    const user = userEvent.setup()
+    const blocks: MessageBlock[] = [
+      { type: 'pr_card', repo: 'omilo-os', branch: 'feat/x', base: 'main', filesChanged: 2, additions: 18, deletions: 4 },
+    ]
+    render(<ReplyBlocks blocks={blocks} />)
+    expect(screen.getByText('2 files changed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Not now' }))
+    expect(screen.queryByText('Open a pull request')).toBeNull()
+  })
+
+  test('streaming shows a stop control only when onStop is given', async () => {
+    const user = userEvent.setup()
+    const onStop = vi.fn()
+    const { rerender } = render(<ReplyBlocks blocks={[{ type: 'streaming', text: 'Writing a reply', tokens: 12 }]} />)
+    expect(screen.getByText(/Writing… · 12 tokens/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Stop/ })).toBeNull()
+    rerender(<ReplyBlocks blocks={[{ type: 'streaming', text: 'Writing a reply', tokens: 12 }]} onStop={onStop} />)
+    await user.click(screen.getByRole('button', { name: /Stop/ }))
+    expect(onStop).toHaveBeenCalled()
+  })
+
+  test('image shows a chooser and the generating state', () => {
+    const { rerender } = render(
+      <ReplyBlocks blocks={[{ type: 'image', imageOptions: [{ url: 'a.png' }, { url: 'b.png' }] }]} />,
+    )
+    expect(screen.getByRole('button', { name: 'Use option 1' })).toBeInTheDocument()
+    rerender(<ReplyBlocks blocks={[{ type: 'image', generating: true, progress: 40, prompt: 'a cat' }]} />)
+    expect(screen.getByText('40%')).toBeInTheDocument()
+  })
 })

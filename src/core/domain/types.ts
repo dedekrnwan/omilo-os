@@ -161,6 +161,12 @@ export interface MessageBlock {
     | 'sources'
     | 'action_card'
     | 'confirmation'
+    | 'task'
+    | 'usage_meter'
+    | 'document'
+    | 'image'
+    | 'streaming'
+    | 'pr_card'
     | (string & {})
   /** Primary text: markdown for reasoning/markdown, source for code, body for confirmation. */
   text?: string
@@ -199,6 +205,72 @@ export interface MessageBlock {
   done?: boolean
   /** confirmation: short recap shown in the answered row ("You approved: …"). */
   doneLabel?: string
+
+  // ── task ──────────────────────────────────────────────────────────────────
+  /** task/image: lifecycle state ("pending" | "running" | "done" | "failed"). */
+  status?: 'pending' | 'running' | 'done' | 'failed' | (string & {})
+  /** task: steps completed / total, drawn as a progress track. */
+  stepsDone?: number
+  stepsTotal?: number
+  /** task: the helper the work was handed to. */
+  staff?: string
+  /** task: links "Open job" to the job page. */
+  taskId?: string
+  /** task: optional meta chips. */
+  due?: string
+  branch?: string
+  goal?: string
+
+  // ── usage_meter ─────────────────────────────────────────────────────────── (durationS reused)
+  /** usage_meter: tokens spent on this turn. */
+  tokensIn?: number
+  tokensOut?: number
+  /** usage_meter: share of today's budget used (0–100), drawn as a track. */
+  budgetPct?: number
+  /** usage_meter: the AI account and its tier ("Claude Code pool", "Max"). */
+  account?: string
+  tier?: string
+
+  // ── document ──────────────────────────────────────────────────────────────
+  /** document: where it lives ("Docs", "PDF", …), shown as a chip. */
+  source?: string
+  /** document: who wrote it and its length. */
+  writtenBy?: string
+  words?: number
+  /** document/image: a link to open the file. */
+  url?: string
+  /** document: an in-app Docs path ("/docs/?path=…"); preferred over url when set. */
+  docPath?: string
+
+  // ── image ───────────────────────────────────────────────────────────────── (url/name reused)
+  /** image: true while generating (shimmer tiles + progress + Stop). */
+  generating?: boolean
+  /** image: generation progress (0–100). */
+  progress?: number
+  /** image: the prompt, shown italic under the tiles. */
+  prompt?: string
+  /** image: candidate images to choose from (done state). */
+  imageOptions?: { url: string }[]
+  /** image: the currently selected option index. */
+  selectedOption?: number
+
+  // ── streaming ─────────────────────────────────────────────────────────────── (text reused)
+  /** streaming: running token count, shown as "Writing… · N tokens". */
+  tokens?: number
+
+  // ── pr_card ───────────────────────────────────────────────────────────────── (branch reused)
+  /** pr_card: the repository and the branches ("feat/x" → "main"). */
+  repo?: string
+  base?: string
+  /** pr_card: diff stats. */
+  filesChanged?: number
+  additions?: number
+  deletions?: number
+  /** pr_card: a one-line test summary and the reviewer. */
+  tests?: string
+  reviewer?: string
+  /** pr_card: the PR URL opened by the primary button. */
+  prUrl?: string
 }
 
 export interface Message {
