@@ -87,6 +87,66 @@ function seedChiefMessages() {
         },
       ],
     },
+    {
+      id: 'chief-m4c',
+      sessionId: 'chief-t1',
+      author: chiefAuthor,
+      createdAt: t(14, 5),
+      content: 'Here’s my plan and what I read to decide it.',
+      blocks: [
+        {
+          type: 'todos',
+          title: 'Plan',
+          items: [
+            { text: 'Read the 7 open goals and their last activity', status: 'done' },
+            { text: 'Draft the pause note', status: 'done' },
+            { text: 'Bring it to you with the Q4 review', status: 'active' },
+            { text: 'Apply once you approve', status: 'pending' },
+          ],
+        },
+        {
+          type: 'sources',
+          sources: [
+            { title: 'Goals board', subtitle: '7 open · 3 moved this month', url: '#' },
+            { title: 'Q4 review draft', subtitle: 'Docs · written by Chief', url: '#' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'chief-m4d',
+      sessionId: 'chief-t1',
+      author: chiefAuthor,
+      createdAt: t(14, 6),
+      content: 'Ready to open the PR that pauses the 2 goals.',
+      blocks: [
+        {
+          type: 'action_card',
+          title: 'Open a pull request',
+          target: 'omilo-os · chore/pause-goals → main',
+          details: ['2 files changed · +18 −4', 'Tests: 721 passing', 'Reviewer: you'],
+          actionLabel: 'Open PR',
+        },
+      ],
+    },
+    {
+      id: 'chief-m4e',
+      sessionId: 'chief-t1',
+      author: chiefAuthor,
+      createdAt: t(14, 7),
+      content: 'One thing needs your OK before it leaves the company.',
+      blocks: [
+        {
+          type: 'confirmation',
+          title: 'Send the renewal reply to Kopi Kenangan?',
+          text: 'Offers 6% — your floor. Goes from sales@ with your signature.',
+          actionLabel: 'Send to 1',
+          who: 'Sales',
+          when: '2m ago',
+          undoMin: 5,
+        },
+      ],
+    },
     { id: 'chief-m5', sessionId: 'chief-t2', author: chiefAuthor, content: 'Clean-up budget and late pickups — 2 notes ready for your 3pm.', createdAt: t(11, 20) },
     { id: 'chief-m6', sessionId: 'chief-t3', author: chiefAuthor, content: 'They’ll ask for 10% off. Your floor is 6%.', createdAt: t(9, 12) },
   ]

@@ -127,6 +127,24 @@ export interface MessageAction {
   primary?: boolean
 }
 
+/** One step in a `todos` block. */
+export interface TodoItem {
+  text: string
+  status?: 'done' | 'active' | 'pending'
+}
+
+/** One citation in a `sources` block. */
+export interface SourceItem {
+  /** Display number; falls back to the 1-based index. */
+  n?: number
+  title?: string
+  subtitle?: string
+  url?: string
+}
+
+/** An owner's decision on an interactive block (action_card, confirmation). */
+export type BlockDecision = 'approve' | 'changes' | 'reject'
+
 /**
  * A typed segment of an agent reply (ported from omilo-os "chat components").
  * An assistant message is either plain `content` (legacy) or a sequence of
@@ -135,10 +153,18 @@ export interface MessageAction {
  * frontend release.
  */
 export interface MessageBlock {
-  type: 'reasoning' | 'markdown' | 'code' | (string & {})
-  /** Primary text: markdown for reasoning/markdown, source for code. */
+  type:
+    | 'reasoning'
+    | 'markdown'
+    | 'code'
+    | 'todos'
+    | 'sources'
+    | 'action_card'
+    | 'confirmation'
+    | (string & {})
+  /** Primary text: markdown for reasoning/markdown, source for code, body for confirmation. */
   text?: string
-  /** reasoning: the pill label (e.g. "Thought for 12s"); falls back to durationS. */
+  /** reasoning/todos: the pill or plan label (e.g. "Thought for 12s"); falls back to durationS. */
   label?: string
   /** reasoning: seconds spent thinking, used to build the default label. */
   durationS?: number
@@ -146,6 +172,33 @@ export interface MessageBlock {
   lang?: string
   /** code: optional filename shown in the header. */
   name?: string
+  /** todos/action_card/confirmation: the headline (plan name, the ask, the action). */
+  title?: string
+  /** todos: the plan's steps. */
+  items?: TodoItem[]
+  /** sources: the citations, shown as pills that expand into a list. */
+  sources?: SourceItem[]
+  /** action_card: the secondary target line under the title (e.g. "omilo-os · feat/x → main"). */
+  target?: string
+  /** action_card: bullet detail rows shown in the soft box. */
+  details?: string[]
+  /** action_card/confirmation: label for the primary (approve) button; defaults per type. */
+  actionLabel?: string
+  /** action_card/confirmation: links the decision to a backend proposal, when wired. */
+  proposalId?: string
+  /** action_card/confirmation: links the decision to a backend access/action request, when wired. */
+  requestId?: string
+  /** confirmation: risk level — anything but "low" styles the confirm button as destructive. */
+  risk?: 'low' | 'medium' | 'high'
+  /** confirmation: who raised the ask and when, shown in the footer ("Dev asked · 2m ago"). */
+  who?: string
+  when?: string
+  /** confirmation: minutes the action can be undone after approval (default 5). */
+  undoMin?: number
+  /** confirmation: pre-decided state for an already-answered ask. */
+  done?: boolean
+  /** confirmation: short recap shown in the answered row ("You approved: …"). */
+  doneLabel?: string
 }
 
 export interface Message {
