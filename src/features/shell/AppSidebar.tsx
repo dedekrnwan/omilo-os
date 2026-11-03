@@ -492,28 +492,17 @@ export function AppSidebar({ mode, sessionId, folderId, activeNav }: AppSidebarP
       )}
 
       {isChat && (
-        <div className="flex w-full items-center gap-[6px]">
-          <label className="flex h-[30px] min-w-0 flex-1 items-center gap-[6px] rounded-btn bg-surface px-[8px] outline-1 -outline-offset-1 outline-line-strong focus-within:outline-ink">
-            <Search size={14} aria-hidden className="shrink-0 text-faint" />
-            <input
-              type="text"
-              value={chatQuery}
-              onChange={(e) => setChatQuery(e.target.value)}
-              placeholder="Search chats"
-              aria-label="Search chats"
-              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-muted focus:outline-none"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void navigate({ to: '/chat' })}
-            aria-label="New chat"
-            title="New chat"
-            className="flex size-[30px] shrink-0 items-center justify-center rounded-btn bg-primary text-primary-ink transition hover:bg-primary-hover active:scale-[0.97]"
-          >
-            <Plus size={16} aria-hidden />
-          </button>
-        </div>
+        <label className="flex h-[30px] w-full items-center gap-[6px] rounded-btn bg-surface px-[8px] outline-1 -outline-offset-1 outline-line-strong focus-within:outline-ink">
+          <Search size={14} aria-hidden className="shrink-0 text-faint" />
+          <input
+            type="text"
+            value={chatQuery}
+            onChange={(e) => setChatQuery(e.target.value)}
+            placeholder="Search chats"
+            aria-label="Search chats"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink placeholder:text-muted focus:outline-none"
+          />
+        </label>
       )}
 
       <NavGroup>
