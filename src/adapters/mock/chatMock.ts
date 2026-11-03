@@ -62,6 +62,31 @@ function seedChiefMessages() {
     { id: 'chief-m2', sessionId: 'chief-t1', author: chiefAuthor, content: 'A bit, yes. 7 goals are open but only 3 moved this month. The other 4 share one blocker: they wait on your approval, usually 2+ days.\n\nTwo ways out: pause 2 of them until December, or let Builder approve its own small deploys.', createdAt: t(14, 2) },
     { id: 'chief-m3', sessionId: 'chief-t1', author: you, content: 'Second one. Don’t change anything yet, just draft it.', createdAt: t(14, 3) },
     { id: 'chief-m4', sessionId: 'chief-t1', author: chiefAuthor, content: 'Drafted, not applied. I’ll bring it to you Monday with the Q4 review — nothing changes until you say so.', createdAt: t(14, 3) },
+    {
+      id: 'chief-m4b',
+      sessionId: 'chief-t1',
+      author: chiefAuthor,
+      createdAt: t(14, 4),
+      // Plain-text fallback (search / notifications); the blocks drive the bubble.
+      content: 'Here’s the draft and a short pause note.',
+      blocks: [
+        {
+          type: 'reasoning',
+          durationS: 8,
+          text: 'Looked at the 7 open goals and when each last moved.\n\n- **4** share one blocker: they wait on your approval\n- Pausing the 2 slowest frees ~2 days/week and lets the other 2 breathe\n- Nothing here changes a live goal — this is a draft only',
+        },
+        {
+          type: 'markdown',
+          text: '**Draft — pause 2 goals until December**\n\nTwo goals have waited on you and haven’t moved in 3 weeks:\n\n1. Loyalty program\n2. Second kitchen\n\nI’ll keep them visible, just off the active board. Reply `resume loyalty` anytime to bring one back.',
+        },
+        {
+          type: 'code',
+          lang: 'markdown',
+          name: 'pause-note.md',
+          text: 'Paused until Dec 1\nReason: waiting on owner approval\nUnblock: reply "resume <goal>"',
+        },
+      ],
+    },
     { id: 'chief-m5', sessionId: 'chief-t2', author: chiefAuthor, content: 'Clean-up budget and late pickups — 2 notes ready for your 3pm.', createdAt: t(11, 20) },
     { id: 'chief-m6', sessionId: 'chief-t3', author: chiefAuthor, content: 'They’ll ask for 10% off. Your floor is 6%.', createdAt: t(9, 12) },
   ]

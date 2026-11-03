@@ -4,6 +4,8 @@ import { ArrowUpRight, FileText, ListChecks } from 'lucide-react'
 import type { Message } from '../../core/domain/types'
 import { Button } from '../ds/Button'
 import { Mascot } from '../ds/Mascot'
+import { Markdown } from './Markdown'
+import { ReplyBlocks } from './ReplyBlocks'
 
 /** "10:41" — 24h clock, the way the design prints message times. */
 export function formatTime(iso: string): string {
@@ -42,7 +44,11 @@ function AgentMessage({ message }: { message: Message }) {
             {formatTime(message.createdAt)}
           </time>
         </div>
-        <p className="m-0 text-[13.5px] leading-[1.55] whitespace-pre-wrap text-ink-2">{message.content}</p>
+        {message.blocks && message.blocks.length > 0 ? (
+          <ReplyBlocks blocks={message.blocks} />
+        ) : (
+          <Markdown text={message.content} />
+        )}
       </div>
     </div>
   )

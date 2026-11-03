@@ -127,6 +127,27 @@ export interface MessageAction {
   primary?: boolean
 }
 
+/**
+ * A typed segment of an agent reply (ported from omilo-os "chat components").
+ * An assistant message is either plain `content` (legacy) or a sequence of
+ * `blocks`. `type` is intentionally open — an unknown/future type renders as
+ * markdown (safe fallback), so the backend can add block types without a
+ * frontend release.
+ */
+export interface MessageBlock {
+  type: 'reasoning' | 'markdown' | 'code' | (string & {})
+  /** Primary text: markdown for reasoning/markdown, source for code. */
+  text?: string
+  /** reasoning: the pill label (e.g. "Thought for 12s"); falls back to durationS. */
+  label?: string
+  /** reasoning: seconds spent thinking, used to build the default label. */
+  durationS?: number
+  /** code: language tag shown in the header and used for the copy affordance. */
+  lang?: string
+  /** code: optional filename shown in the header. */
+  name?: string
+}
+
 export interface Message {
   id: Id
   sessionId: Id
@@ -139,6 +160,12 @@ export interface Message {
   attachment?: MessageAttachment
   /** Optional suggested-action buttons rendered below the message */
   actions?: MessageAction[]
+  /**
+   * Typed reply blocks (reasoning, markdown, code, …). When present, the bubble
+   * renders these instead of `content`; `content` stays as the plain-text
+   * fallback and for search/notifications.
+   */
+  blocks?: MessageBlock[]
 }
 
 export interface SessionParticipant {
