@@ -8,6 +8,7 @@ import {
   useChannel,
   useChannelFolders,
   useChannelGoals,
+  useDecide,
   useDeleteSession,
   useFolderFiles,
   useMessages,
@@ -22,6 +23,7 @@ import { Button, IconButton } from '../ds/Button'
 import { Topbar } from '../ds/Frame'
 import { Mascot } from '../ds/Mascot'
 import { MessageList } from './MessageList'
+import type { BlockDecideFn } from './ReplyBlocks'
 import { DEFAULT_MODEL, MODELS } from './ModelMenu'
 import { Composer } from './Composer'
 import type { ComposerMenu } from './Composer'
@@ -216,6 +218,31 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
   const updateSession = useUpdateSession()
   const deleteSession = useDeleteSession()
   const commands = useCommands()
+  const decide = useDecide()
+  // A helper's action_card / confirmation block carries a proposalId once the
+  // backend records the ask as a Proposal. Approving / rejecting / requesting
+  // changes runs the shared decide mutation (which invalidates the Inbox).
+  // Demo blocks with no proposalId stay purely optimistic.
+  const onBlockDecide = useCallback<BlockDecideFn>(
+    (block, decision) => {
+      const proposalId = block.proposalId
+      if (!proposalId) return
+      const run =
+        decision === 'approve'
+          ? decide.mutateAsync({ kind: 'approve', proposalId })
+          : decision === 'changes'
+            ? decide.mutateAsync({ kind: 'changes', proposalId, note: '' })
+            : decide.mutateAsync({ kind: 'reject', proposalId, note: '' })
+      return run.then(
+        () => undefined,
+        (e: unknown) => {
+          notify(e instanceof Error ? e.message : 'Could not send your decision.')
+          throw e
+        },
+      )
+    },
+    [decide],
+  )
   const effectiveTitle = session?.title ?? ''
   const effectiveGoal = session?.goal
   const pickerSource = usePickerSource(channelId || null, sessionId)
@@ -684,6 +711,7 @@ export function ChatSession({ sessionId, channelName }: ChatSessionProps) {
                 columnClass={col}
                 before={screen === 'compacted' ? <CompactedMarker onViewFullHistory={() => setActionToast('Loading full history…')} /> : undefined}
                 onTasksAction={createTasks}
+                onBlockDecide={onBlockDecide}
                 replaceActions={
                   tasksCreated && effectiveGoal ? (
                     <TasksCreated goal={effectiveGoal} onDismiss={() => setTasksCreated(false)} />

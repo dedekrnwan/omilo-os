@@ -5,7 +5,7 @@ import type { Message } from '../../core/domain/types'
 import { Button } from '../ds/Button'
 import { Mascot } from '../ds/Mascot'
 import { Markdown } from './Markdown'
-import { ReplyBlocks } from './ReplyBlocks'
+import { ReplyBlocks, type BlockDecideFn } from './ReplyBlocks'
 
 /** "10:41" — 24h clock, the way the design prints message times. */
 export function formatTime(iso: string): string {
@@ -30,7 +30,7 @@ function UserMessage({ message }: { message: Message }) {
 }
 
 /** pen `Agent Message` (gkzJ4): 24px mascot · name/role/time · body 13.5/1.55 ink-2. */
-function AgentMessage({ message }: { message: Message }) {
+function AgentMessage({ message, onBlockDecide }: { message: Message; onBlockDecide?: BlockDecideFn }) {
   const col = useContext(ColContext)
   const { author } = message
   return (
@@ -45,7 +45,7 @@ function AgentMessage({ message }: { message: Message }) {
           </time>
         </div>
         {message.blocks && message.blocks.length > 0 ? (
-          <ReplyBlocks blocks={message.blocks} />
+          <ReplyBlocks blocks={message.blocks} onDecide={onBlockDecide} />
         ) : (
           <Markdown text={message.content} />
         )}
@@ -128,10 +128,12 @@ interface MessageListProps {
   before?: ReactNode
   /** Rendered instead of the last message's suggested actions (e.g. "Tasks created"). */
   replaceActions?: ReactNode
+  /** Owner decided on an interactive reply block (action_card, confirmation). */
+  onBlockDecide?: BlockDecideFn
 }
 
 /** pen `Thread`: centred column · gap 20 · padding 23 0 13 0. */
-export function MessageList({ messages, onTasksAction, columnClass = DEFAULT_COL, before, replaceActions }: MessageListProps) {
+export function MessageList({ messages, onTasksAction, columnClass = DEFAULT_COL, before, replaceActions, onBlockDecide }: MessageListProps) {
   return (
     <ColContext.Provider value={columnClass}>
     <div role="log" aria-label="Messages" className="flex flex-col items-center gap-[20px] pt-[23px] pb-[13px]">
@@ -143,7 +145,7 @@ export function MessageList({ messages, onTasksAction, columnClass = DEFAULT_COL
           ) : m.author.kind === 'you' ? (
             <UserMessage message={m} />
           ) : (
-            <AgentMessage message={m} />
+            <AgentMessage message={m} onBlockDecide={onBlockDecide} />
           )}
           {m.attachment && <DocCard {...m.attachment} />}
           {m.actions && m.actions.length > 0 &&

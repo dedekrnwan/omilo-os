@@ -30,8 +30,8 @@ import type { BlockDecision, MessageBlock } from '../../core/domain/types'
 import { Button } from '../ds/Button'
 import { Markdown } from './Markdown'
 
-/** Called when the owner decides on an interactive block. */
-type DecideFn = (block: MessageBlock, decision: BlockDecision) => void | Promise<void>
+/** Called when the owner decides on an interactive block (action_card, confirmation). */
+export type BlockDecideFn = (block: MessageBlock, decision: BlockDecision) => void | Promise<void>
 
 /** Collapsed: a compact "Thought for 12s" pill. Open: a left-accent reasoning body. */
 function ReasoningBlock({ block }: { block: MessageBlock }) {
@@ -195,7 +195,7 @@ function NeedsYou() {
  * choices: approve (primary), request changes, or defer. Decision is optimistic
  * and also forwarded to `onDecide`.
  */
-function ActionCardBlock({ block, onDecide }: { block: MessageBlock; onDecide?: DecideFn }) {
+function ActionCardBlock({ block, onDecide }: { block: MessageBlock; onDecide?: BlockDecideFn }) {
   const [decided, setDecided] = useState<BlockDecision | null>(null)
   const [busy, setBusy] = useState(false)
   const details = block.details ?? []
@@ -258,7 +258,7 @@ function ActionCardBlock({ block, onDecide }: { block: MessageBlock; onDecide?: 
  * Pending: a full card with Cancel / confirm + "who asked · when". Answered: a
  * compact row with an undo window. Optimistic, also forwarded to `onDecide`.
  */
-function ConfirmationBlock({ block, onDecide }: { block: MessageBlock; onDecide?: DecideFn }) {
+function ConfirmationBlock({ block, onDecide }: { block: MessageBlock; onDecide?: BlockDecideFn }) {
   const [state, setState] = useState<'pending' | 'approved' | 'cancelled'>(block.done ? 'approved' : 'pending')
   const [busy, setBusy] = useState(false)
   const risky = block.risk != null && block.risk !== 'low'
@@ -333,7 +333,7 @@ function ConfirmationBlock({ block, onDecide }: { block: MessageBlock; onDecide?
 }
 
 /** Dispatch one block to its renderer; unknown types fall back to markdown. */
-function renderBlock(block: MessageBlock, i: number, onDecide?: DecideFn) {
+function renderBlock(block: MessageBlock, i: number, onDecide?: BlockDecideFn) {
   switch (block.type) {
     case 'reasoning':
       return <ReasoningBlock key={i} block={block} />
@@ -360,6 +360,6 @@ function renderBlock(block: MessageBlock, i: number, onDecide?: DecideFn) {
  * confirmation); without it those blocks still work with local optimistic
  * state.
  */
-export function ReplyBlocks({ blocks, onDecide }: { blocks: MessageBlock[]; onDecide?: DecideFn }) {
+export function ReplyBlocks({ blocks, onDecide }: { blocks: MessageBlock[]; onDecide?: BlockDecideFn }) {
   return <div className="flex flex-col gap-[10px]">{blocks.map((b, i) => renderBlock(b, i, onDecide))}</div>
 }
