@@ -105,23 +105,56 @@ func call(method, path string, body any, out any) error {
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		var e struct {
-			Detail any `json:"detail"`
-		}
-		_ = json.Unmarshal(data, &e)
-		msg := fmt.Sprint(e.Detail)
-		if e.Detail == nil {
-			msg = strings.TrimSpace(string(data))
-		}
-		if resp.StatusCode == 401 {
-			msg += " (run `omilo login`)"
-		}
-		return &apiError{resp.StatusCode, msg}
+		return &apiError{resp.StatusCode, errorMessage(resp.StatusCode, data)}
 	}
 	if out != nil {
-		return json.Unmarshal(data, out)
+		if err := json.Unmarshal(data, out); err != nil {
+			return fmt.Errorf("unexpected response from %s (is this the Omilo address?): %w", c.URL, err)
+		}
 	}
 	return nil
+}
+
+func errorMessage(status int, data []byte) string {
+	var e struct {
+		Detail any `json:"detail"`
+	}
+	_ = json.Unmarshal(data, &e)
+	var msg string
+	switch d := e.Detail.(type) {
+	case nil:
+		msg = strings.TrimSpace(string(data))
+	case string:
+		msg = d
+	case []any:
+		parts := make([]string, 0, len(d))
+		for _, item := range d {
+			parts = append(parts, validationMessage(item))
+		}
+		msg = strings.Join(parts, "; ")
+	default:
+		b, _ := json.Marshal(d)
+		msg = string(b)
+	}
+	if msg == "" {
+		msg = http.StatusText(status)
+	}
+	if status == 401 {
+		msg += " (run `omilo login`)"
+	}
+	return msg
+}
+
+func validationMessage(item any) string {
+	m, ok := item.(map[string]any)
+	if !ok || str(m, "msg") == "" {
+		b, _ := json.Marshal(item)
+		return string(b)
+	}
+	if loc, _ := m["loc"].([]any); len(loc) > 0 {
+		return fmt.Sprintf("%v: %s", loc[len(loc)-1], str(m, "msg"))
+	}
+	return str(m, "msg")
 }
 
 // ------------------------------------------------------------------ helpers
