@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func makeResp(body string) *http.Response {
@@ -90,5 +91,36 @@ func TestStartBuildsLightEnv(t *testing.T) {
 		if strings.Contains(lower, "docker") || strings.Contains(lower, "compose") {
 			t.Errorf("env entry %q contains docker/compose; light-tier must not use Docker", e)
 		}
+	}
+}
+
+func TestShort(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		n    int
+		want string
+	}{
+		{"fits", "Weekly report", 20, "Weekly report"},
+		{"exact length", "abcde", 5, "abcde"},
+		{"too long", "abcdefgh", 5, "abcd…"},
+		{"newline", "line one\nline two", 40, "line one line two"},
+		{"windows newline", "line one\r\nline two", 40, "line one line two"},
+		{"carriage return", "draft\rfinal", 40, "draft final"},
+		{"tab", "Promo\tLebaran", 40, "Promo Lebaran"},
+		{"accented letters", "Café Kopi Kenangan Ölçü", 10, "Café Kopi…"},
+		{"emoji at the cut", "Promo 🎉🎉🎉 akhir tahun", 8, "Promo 🎉…"},
+		{"multibyte fits", "日本語のタイトル", 8, "日本語のタイトル"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := short(tc.in, tc.n)
+			if got != tc.want {
+				t.Errorf("short(%q, %d) = %q; want %q", tc.in, tc.n, got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Errorf("short(%q, %d) returned invalid UTF-8", tc.in, tc.n)
+			}
+		})
 	}
 }
