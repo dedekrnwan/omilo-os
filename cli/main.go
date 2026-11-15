@@ -12,11 +12,13 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -464,7 +466,11 @@ func cmdDecide(decision string, args []string) {
 func reorder(args []string) []string {
 	var flags, pos []string
 	for i := 0; i < len(args); i++ {
-		if strings.HasPrefix(args[i], "-") {
+		if args[i] == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		if strings.HasPrefix(args[i], "-") && args[i] != "-" {
 			flags = append(flags, args[i])
 			if !strings.Contains(args[i], "=") && i+1 < len(args) {
 				flags = append(flags, args[i+1])
@@ -474,7 +480,7 @@ func reorder(args []string) []string {
 			pos = append(pos, args[i])
 		}
 	}
-	return append(flags, pos...)
+	return append(append(flags, "--"), pos...)
 }
 
 func cmdCompanies() {
@@ -533,15 +539,8 @@ func cmdTasks(args []string) {
 	status := fs.String("status", "", "queued | running | done | failed")
 	n := fs.Int("n", 20, "how many")
 	_ = fs.Parse(args)
-	q := fmt.Sprintf("?limit=%d", *n)
-	if *staff != "" {
-		q += "&staff_id=" + *staff
-	}
-	if *status != "" {
-		q += "&status=" + *status
-	}
 	var tasks []map[string]any
-	must(call("GET", "/tasks"+q, nil, &tasks))
+	must(call("GET", "/tasks"+tasksQuery(*staff, *status, *n), nil, &tasks))
 	rows := [][]string{}
 	for _, t := range tasks {
 		res := str(t, "brief")
@@ -553,6 +552,17 @@ func cmdTasks(args []string) {
 		rows = append(rows, []string{str(t, "id"), str(t, "status"), str(t, "staff_id"), str(t, "origin"), short(res, 70)})
 	}
 	table("ID\tSTATUS\tSTAFF\tORIGIN\tRESULT", rows)
+}
+
+func tasksQuery(staff, status string, n int) string {
+	q := url.Values{"limit": {strconv.Itoa(n)}}
+	if staff != "" {
+		q.Set("staff_id", staff)
+	}
+	if status != "" {
+		q.Set("status", status)
+	}
+	return "?" + q.Encode()
 }
 
 func cmdRun(args []string) {
