@@ -20,6 +20,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 )
 
 var version = "0.3.0"
@@ -168,10 +169,12 @@ func table(header string, rows [][]string) {
 	w.Flush()
 }
 
+var flatten = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
 func short(s string, n int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	if len(s) > n {
-		return s[:n-1] + "…"
+	s = flatten.Replace(s)
+	if utf8.RuneCountInString(s) > n {
+		return string([]rune(s)[:n-1]) + "…"
 	}
 	return s
 }
