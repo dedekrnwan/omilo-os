@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -90,5 +91,46 @@ func TestStartBuildsLightEnv(t *testing.T) {
 		if strings.Contains(lower, "docker") || strings.Contains(lower, "compose") {
 			t.Errorf("env entry %q contains docker/compose; light-tier must not use Docker", e)
 		}
+	}
+}
+
+func TestErrorMessage(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"string detail", 404, `{"detail":"unknown proposal"}`, "unknown proposal"},
+		{"validation error", 422, `{"detail":[{"type":"string_too_short","loc":["body","text"],"msg":"String should have at least 1 character","input":""}]}`, "text: String should have at least 1 character"},
+		{"several validation errors", 422, `{"detail":[{"loc":["body","staff_id"],"msg":"Field required"},{"loc":["body","brief"],"msg":"Field required"}]}`, "staff_id: Field required; brief: Field required"},
+		{"validation error without loc", 422, `{"detail":[{"msg":"bad input"}]}`, "bad input"},
+		{"object detail", 409, `{"detail":{"code":"busy"}}`, `{"code":"busy"}`},
+		{"plain text body", 500, "Internal Server Error\n", "Internal Server Error"},
+		{"empty body", 502, "", "Bad Gateway"},
+		{"empty string detail", 400, `{"detail":""}`, "Bad Request"},
+		{"unauthorized", 401, `{"detail":"not signed in"}`, "not signed in (run `omilo login`)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := errorMessage(tc.status, []byte(tc.body)); got != tc.want {
+				t.Errorf("errorMessage() = %q; want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCallNonJSONResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<!doctype html><html></html>")
+	}))
+	defer srv.Close()
+	t.Setenv("OMILO_HOME", t.TempDir())
+	t.Setenv("OMILO_URL", srv.URL)
+	var out map[string]any
+	err := call("GET", "/overview", nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "is this the Omilo address?") {
+		t.Errorf("call() error = %v; want a hint about the Omilo address", err)
 	}
 }
